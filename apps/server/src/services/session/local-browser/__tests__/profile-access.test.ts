@@ -32,7 +32,7 @@ describe('who may use a named browser profile', () => {
       profiles,
       resolveSessionRuntime: async () => runtime,
       guardsOf: (type) => GUARDS[type],
-      getSessionAgentPath: async () => agentPath,
+      sessionAgent: async () => agentPath ?? undefined,
       agentIdAtPath: () => id,
       realFolder: () => folder,
     });
@@ -65,7 +65,7 @@ describe('who may use a named browser profile', () => {
       profiles,
       resolveSessionRuntime: async () => claude,
       guardsOf: (type) => GUARDS[type],
-      getSessionAgentPath: async () => '/agents/a',
+      sessionAgent: async () => '/agents/a',
       agentIdAtPath: () => 'bound',
       realFolder: () => undefined,
     });
@@ -95,7 +95,7 @@ describe('who may use a named browser profile', () => {
       profiles,
       resolveSessionRuntime: async () => claude,
       guardsOf: () => ({ protectedPaths: false }),
-      getSessionAgentPath: async () => '/agents/a',
+      sessionAgent: async () => '/agents/a',
       agentIdAtPath: () => 'bound',
       realFolder: () => '/agents/a',
     });

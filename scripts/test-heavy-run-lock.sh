@@ -38,6 +38,14 @@
 #   * IT USES ONLY A DIRECTORY THAT IS OURS (DOR-3509) — a symlinked or
 #     foreign lock directory is refused, and a planted symlink slot file is
 #     never followed (the previous script truncated the file it pointed at).
+#   * THE GATE IS THE LINE (DOR-4209) — the copy run inside the app's turn
+#     takes no slot here and asks no load a second time.
+#   * THE ORDER LINE (DOR-4209, DOR-4901) — with --label, only the order
+#     file's top label starts; it leaves the line when it ends or with
+#     --done; and a top label with no live run for the
+#     stale bound moves down one place, with a note and its owner told, while
+#     a top label that is running (or held for a pid, as QA's drivers are) is
+#     never moved.
 #   * --hold (DOR-3274 Phase 2) — a slot taken for another pid, as a bare
 #     `turbo` run does, is held until that pid ends and leaves no output open;
 #     a nested call inside a turbo task, which has lost the env, still sees
@@ -57,7 +65,8 @@ CHECK="${CHECK:-$repo_root/scripts/heavy-run-lock.sh}"
 # below except the CI one is about the capped path.
 unset CI DORKOS_HEAVY_SLOT_HELD DORKOS_HEAVY_LOCK DORKOS_HEAVY_WAIT_SECONDS DORKOS_HEAVY_SLOTS \
   DORKOS_HEAVY_MAX_LOAD DORKOS_HEAVY_TEST_MAX_LOAD DORKOS_IGNORE_LOAD DORKOS_HEAVY_LOAD_WAIT_SECONDS DORKOS_HEAVY_LOAD_POLL_SECONDS \
-  CI_STEWARD_TIMINGS_FILE CI_STEWARD_RUN_ID
+  CI_STEWARD_TIMINGS_FILE CI_STEWARD_RUN_ID DORKOS_HEAVY_ORDER_DIR DORKOS_HEAVY_LABEL \
+  DORKOS_HEAVY_ORDER_STALE_SECONDS DORKOS_LOAD_GATE_IN_TURN DORKOS_HEAVY_NOTIFY
 # This machine's real load must never decide a case: a busy host would make
 # every --job case below wait out the load bound. The load cases set their own.
 export DORKOS_HEAVY_LOADAVG_CMD='echo 0.00'
@@ -725,6 +734,236 @@ check_contains 'DORKOS_IGNORE_LOAD=1 runs a test run over the bar' 'ignored-the-
 check_contains 'DORKOS_IGNORE_LOAD=1 says so' 'DORKOS_IGNORE_LOAD=1' "$out"
 check_le 'DORKOS_IGNORE_LOAD=1 does not wait' 2 "$(($(date +%s) - started))"
 check_contains 'DORKOS_IGNORE_LOAD=1 is recorded as load_ignored' '"o":"load_ignored"' "$(cat "$notes")"
+
+
+
+echo ""
+echo "== the gate is the line: a run inside the app's turn goes straight through (DOR-4209) =="
+
+# The only slot is held and the load is far over the bar: a copy run inside a
+# gate turn must not wait on either, because the turn already judged both.
+locks=$(new_locks)
+start_holder "$locks" 30
+echo 90.00 >"$loadf"
+started=$(date +%s)
+out=$(load_env DORKOS_LOAD_GATE_IN_TURN=1 DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 \
+  DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 DORKOS_HEAVY_WAIT_SECONDS=20 \
+  bash "$CHECK" --job bash -c 'printf "in-turn:%s" "$DORKOS_HEAVY_SLOT_HELD"' 2>&1)
+check_eq 'inside a gate turn the command runs at once, told it holds a slot' '0:in-turn:1' "$?:$out"
+check_le 'inside a gate turn nothing waits' 2 "$(($(date +%s) - started))"
+out=$(load_env DORKOS_LOAD_GATE_IN_TURN=1 DORKOS_HEAVY_LOCK_DIR="$locks" bash "$CHECK" --tests bash -c 'exit 5' 2>&1)
+check_eq 'inside a gate turn the exit code is kept' 5 "$?"
+signal_tree KILL "$holder"
+wait "$holder" 2>/dev/null
+echo ""
+echo "== the order line: only the top label starts (DOR-4209) =="
+
+# An order folder of its own per case, standing in for ~/.dork/load-gate.
+new_coord() { mktemp -d "$work/order.XXXXXX"; }
+order_env() { env DORKOS_HEAVY_ORDER_DIR="$1" DORKOS_HEAVY_LOCK_DIR="$2" "${@:3}"; }
+
+# No order file: a labelled run is a plain job.
+coord=$(new_coord)
+locks=$(new_locks)
+out=$(order_env "$coord" "$locks" bash "$CHECK" --label 'pr1-verify' bash -c 'echo no-order-ran' 2>&1)
+check_eq 'with no order file a labelled run runs' '0:no-order-ran' "$?:$out"
+
+# The order folder is made on first use, closed to others.
+coord="$work/made-on-first-use"
+locks=$(new_locks)
+out=$(order_env "$coord" "$locks" bash "$CHECK" --status 2>&1)
+check_eq '--status with no folder yet exits 0' 0 "$?"
+check_eq 'the order folder is made, mode 700' 700 "$(perl -e 'printf "%o", (stat shift)[2] & 0777' "$coord")"
+# A symlink in its place is refused, and the run goes on with no order.
+coord_target=$(new_coord)
+printf 'someone-else\n' >"$coord_target/heavy-order"
+ln -s "$coord_target" "$work/order-link"
+out=$(order_env "$work/order-link" "$locks" bash "$CHECK" --label 'mine' bash -c 'echo ran-without-order' 2>&1)
+check_contains 'a symlinked order folder is refused' 'is not a folder you own' "$out"
+check_contains 'and the run goes on with no order' 'ran-without-order' "$out"
+
+# A waiter on this lock (the fall-through when the gate is not reached) sees the label.
+coord=$(new_coord)
+locks=$(new_locks)
+order_env "$coord" "$locks" DORKOS_HEAVY_SLOTS=1 bash "$CHECK" --label 'first' sleep 30 >/dev/null 2>&1 &
+holder=$!
+own_pids+=("$holder")
+await_locked "$locks" 1 || not_ok 'the first labelled run never took slot-1'
+out=$(order_env "$coord" "$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=1 bash "$CHECK" --label 'second' bash -c 'echo second-ran' 2>&1)
+check_contains 'a waiter sees the holder label' '[first]' "$out"
+signal_tree KILL "$holder"
+wait "$holder" 2>/dev/null
+
+# Two in line: the second is refused at once, runs nothing, and is told who is next.
+coord=$(new_coord)
+locks=$(new_locks)
+printf '  a-verify  \n\nb-verify\nc-build\n' >"$coord/heavy-order"
+started=$(date +%s)
+out=$(order_env "$coord" "$locks" bash "$CHECK" --label 'b-verify' bash -c 'echo b-ran' 2>&1)
+status=$?
+check_eq 'a label that is not on top exits 75' 75 "$status"
+check_lacks 'and runs nothing' 'b-ran' "$out"
+check_contains 'it is told who is next' "Next is 'a-verify'" "$out"
+check_contains 'the refusal keeps the old [heavy] REFUSE (order) words' '[heavy] REFUSE (order)' "$out"
+check_le 'a refusal is immediate' 2 "$(($(date +%s) - started))"
+
+# The top label runs, keeps its exit code, and leaves the line when it ends.
+out=$(order_env "$coord" "$locks" bash "$CHECK" --label 'a-verify' bash -c 'echo a-ran; exit 3' 2>&1)
+check_eq 'the top label runs and keeps its exit code' '3' "$?"
+check_contains 'the top label command ran' 'a-ran' "$out"
+check_eq 'it left the line when it ended; blank lines and others stay' \
+  "$(printf '\nb-verify\nc-build')" "$(cat "$coord/heavy-order")"
+out=$(order_env "$coord" "$locks" bash "$CHECK" --label 'b-verify' bash -c 'echo b-ran-now' 2>&1)
+check_eq 'the next label now runs' '0:b-ran-now' "$?:$out"
+
+# --done: a job that ran outside this script leaves the line.
+out=$(order_env "$coord" "$locks" bash "$CHECK" --done 'c-build' 2>&1)
+check_eq '--done exits 0' 0 "$?"
+check_contains '--done says who is next' "popped 'c-build'" "$out"
+check_eq '--done removed the line' '' "$(awk 'NF' "$coord/heavy-order")"
+
+# --status lists the line and marks the running top.
+coord=$(new_coord)
+locks=$(new_locks)
+printf 'run-me\nwait-me\n' >"$coord/heavy-order"
+order_env "$coord" "$locks" bash "$CHECK" --label 'run-me' sleep 30 >/dev/null 2>&1 &
+holder=$!
+own_pids+=("$holder")
+await_locked "$locks" 1 || not_ok 'run-me never took a slot'
+out=$(order_env "$coord" "$locks" bash "$CHECK" --status 2>&1)
+check_contains '--status lists the line' '2. wait-me' "$out"
+check_contains '--status marks the running top' '1. run-me (running)' "$out"
+signal_tree KILL "$holder"
+wait "$holder" 2>/dev/null
+
+# A labelled run refused for the load ran nothing, so it keeps its place.
+coord=$(new_coord)
+locks=$(new_locks)
+printf 'loaded\nbehind\n' >"$coord/heavy-order"
+echo 60.00 >"$loadf"
+out=$(load_env DORKOS_HEAVY_COORD_DIR="$coord" DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOAD_WAIT_SECONDS=1 \
+  DORKOS_HEAVY_LOAD_POLL_SECONDS=0.3 bash "$CHECK" --label 'loaded' bash -c 'echo should-not-run' 2>&1)
+check_eq 'a load-refused labelled run exits 75' 75 "$?"
+check_lacks 'and runs nothing' 'should-not-run' "$out"
+check_eq 'and keeps its place on top' 'loaded' "$(awk 'NF { print; exit }' "$coord/heavy-order")"
+
+# CI and a nested call never check the order.
+coord=$(new_coord)
+locks=$(new_locks)
+printf 'someone-else\n' >"$coord/heavy-order"
+out=$(order_env "$coord" "$locks" CI=true bash "$CHECK" --label 'mine' bash -c 'echo ci-ran' 2>&1)
+check_eq 'under CI the order is not checked' '0:ci-ran' "$?:$out"
+out=$(order_env "$coord" "$locks" DORKOS_HEAVY_SLOT_HELD=1 bash "$CHECK" --label 'mine' bash -c 'echo nested-ran' 2>&1)
+check_eq 'a nested call is not checked' '0:nested-ran' "$?:$out"
+
+echo ""
+echo "== a top label with no live run moves down one place (DOR-4901) =="
+
+stale_env() { order_env "$1" "$2" DORKOS_HEAVY_ORDER_STALE_SECONDS=2 "${@:3}"; }
+
+# The Nov 21 case: the top never starts, the slots are empty, the next waits.
+coord=$(new_coord)
+locks=$(new_locks)
+printf 'never-starts\nwaiting\nthird\n' >"$coord/heavy-order"
+# The owner's notify program, named in the caller's own environment.
+notify_bin="$work/notify-owner"
+printf '#!/usr/bin/env bash\nprintf "%%s|%%s\\n" "$1" "$2" >>"%s/told"\n' "$coord" >"$notify_bin"
+chmod +x "$notify_bin"
+# A planted executable in the order folder must never run (Security S1, Nov 21).
+printf '#!/usr/bin/env bash\n: >"%s/planted-ran"\n' "$coord" >"$coord/heavy-notify"
+chmod +x "$coord/heavy-notify"
+stale_env() { order_env "$1" "$2" DORKOS_HEAVY_ORDER_STALE_SECONDS=2 DORKOS_HEAVY_NOTIFY="$notify_bin" "${@:3}"; }
+out=$(stale_env "$coord" "$locks" bash "$CHECK" --label 'waiting' bash -c 'echo too-early' 2>&1)
+check_eq 'before the bound the next label is still refused' 75 "$?"
+sleep 3
+out=$(stale_env "$coord" "$locks" bash "$CHECK" --label 'waiting' bash -c 'echo waiting-ran' 2>&1)
+check_eq 'after the bound the next label runs' 0 "$?"
+check_contains 'its command ran' 'waiting-ran' "$out"
+check_contains 'whoever moved it is told' "moved 'never-starts' down one place, below 'waiting'" "$out"
+check_eq 'the idle top moved down ONE place and was not deleted' \
+  "$(printf 'never-starts\nthird')" "$(cat "$coord/heavy-order")"
+check_contains 'a dated note is written' "moved 'never-starts' down one place" "$(cat "$coord/heavy-order-notes.md")"
+for _ in $(seq 1 20); do
+  [ -s "$coord/told" ] && break
+  sleep 0.1
+done
+check_contains 'its owner is told through DORKOS_HEAVY_NOTIFY' 'never-starts|' "$(cat "$coord/told" 2>/dev/null)"
+sleep 0.5
+if [ -e "$coord/planted-ran" ]; then not_ok 'an executable heavy-notify in the order folder was run'; else ok 'an executable heavy-notify in the order folder is never run'; fi
+out=$(stale_env "$coord" "$locks" bash "$CHECK" --label 'third' bash -c 'echo x' 2>&1)
+check_contains 'the moved label is back on top, so the one below waits again' "Next is 'never-starts'" "$out"
+printf 'other\nnever-starts\n' >"$coord/heavy-order"
+out=$(stale_env "$coord" "$locks" bash "$CHECK" --label 'never-starts' bash -c 'echo x' 2>&1)
+check_contains 'the owner is told when it next asks' "about 'never-starts'" "$out"
+
+# A top label that is running is never moved, however long it runs.
+coord=$(new_coord)
+locks=$(new_locks)
+printf 'long-run\npatient\n' >"$coord/heavy-order"
+stale_env "$coord" "$locks" bash "$CHECK" --label 'long-run' sleep 30 >/dev/null 2>&1 &
+holder=$!
+own_pids+=("$holder")
+await_locked "$locks" 1 || not_ok 'long-run never took a slot'
+stale_env "$coord" "$locks" bash "$CHECK" --label 'patient' true >/dev/null 2>&1
+sleep 3
+out=$(stale_env "$coord" "$locks" bash "$CHECK" --label 'patient' bash -c 'echo jumped' 2>&1)
+check_eq 'a running top is never moved' 75 "$?"
+check_eq 'the line is unchanged' "$(printf 'long-run\npatient')" "$(cat "$coord/heavy-order")"
+signal_tree KILL "$holder"
+wait "$holder" 2>/dev/null
+
+# Waiting for a slot counts as live too: the claim is taken before the wait.
+coord=$(new_coord)
+locks=$(new_locks)
+printf 'queued-top\nbehind-it\n' >"$coord/heavy-order"
+start_holder "$locks" 30
+order_env "$coord" "$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_ORDER_STALE_SECONDS=2 DORKOS_HEAVY_WAIT_SECONDS=30 \
+  bash "$CHECK" --label 'queued-top' true >/dev/null 2>&1 &
+waiter=$!
+own_pids+=("$waiter")
+sleep 1
+stale_env "$coord" "$locks" bash "$CHECK" --label 'behind-it' true >/dev/null 2>&1
+sleep 3
+out=$(stale_env "$coord" "$locks" bash "$CHECK" --label 'behind-it' bash -c 'echo jumped' 2>&1)
+check_eq 'a top waiting for a slot is never moved' 75 "$?"
+signal_tree KILL "$waiter"
+signal_tree KILL "$holder"
+wait "$waiter" "$holder" 2>/dev/null
+
+# The QA case (DOR-4901 comment): a driver that runs outside this script, with
+# every slot empty of commands. Held for its pid, it keeps its place and a slot.
+coord=$(new_coord)
+locks=$(new_locks)
+printf 'qa-driver\nnext-pr\n' >"$coord/heavy-order"
+sleep 30 &
+driver=$!
+own_pids+=("$driver")
+out=$(stale_env "$coord" "$locks" bash "$CHECK" --label 'qa-driver' --hold "$driver" 2>&1)
+check_eq '--label --hold returns at once' 0 "$?"
+if slot_locked "$locks" 1; then ok '--label --hold holds a slot for the driver'; else not_ok '--label --hold took no slot'; fi
+stale_env "$coord" "$locks" bash "$CHECK" --label 'next-pr' true >/dev/null 2>&1
+sleep 3
+out=$(stale_env "$coord" "$locks" bash "$CHECK" --label 'next-pr' bash -c 'echo jumped' 2>&1)
+check_eq 'a held driver is never moved while it lives' 75 "$?"
+check_eq 'the held line is unchanged' "$(printf 'qa-driver\nnext-pr')" "$(cat "$coord/heavy-order")"
+kill -KILL "$driver" 2>/dev/null
+wait "$driver" 2>/dev/null
+# Its beat ages out after two minutes; age it by hand rather than wait.
+for b in "$coord"/heavy-claims/*.beat; do touch -t 202001010000 "$b"; done
+stale_env "$coord" "$locks" bash "$CHECK" --label 'next-pr' true >/dev/null 2>&1
+sleep 3
+out=$(stale_env "$coord" "$locks" bash "$CHECK" --label 'next-pr' bash -c 'echo next-pr-ran' 2>&1)
+check_contains 'once the driver is gone, its idle line moves down' 'next-pr-ran' "$out"
+
+# Alone in line: there is nobody to let past, so it stays.
+coord=$(new_coord)
+locks=$(new_locks)
+printf 'lonely\n' >"$coord/heavy-order"
+stale_env "$coord" "$locks" bash "$CHECK" --status >/dev/null 2>&1
+sleep 3
+stale_env "$coord" "$locks" bash "$CHECK" --status >/dev/null 2>&1
+check_eq 'a lone idle top is not moved' 'lonely' "$(cat "$coord/heavy-order")"
+if [ -e "$coord/heavy-order-notes.md" ]; then not_ok 'a note was written for a lone top'; else ok 'and no note is written'; fi
 
 echo ""
 printf '%s passed, %s failed\n' "$pass" "$fail"

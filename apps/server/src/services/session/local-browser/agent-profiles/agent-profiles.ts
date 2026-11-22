@@ -33,7 +33,7 @@ export function createAgentBrowserProfiles(deps: AgentBrowserProfileDeps) {
         throw new LocalBrowserError('profile_not_found', 'That browser no longer exists.');
       return { id, label: profile.label, agentId: null, agentName: null };
     }
-    const folder = await deps.getSessionAgentPath(input.sessionId);
+    const folder = await deps.sessionAgent(input.sessionId);
     const agentId = folder ? deps.agentIdAtPath(folder) : undefined;
     const real = folder ? deps.realFolder(folder) : undefined;
     if (!agentId || !real)

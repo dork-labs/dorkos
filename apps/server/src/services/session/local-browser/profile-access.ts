@@ -10,7 +10,11 @@ export interface LocalBrowserProfileAccessDeps {
   resolveSessionRuntime(sessionId: string): Promise<{ type: string; bound: boolean }>;
   /** The safety guards a runtime declares, or undefined for one this server doesn't have. */
   guardsOf(runtimeType: string): RuntimeGuards | undefined;
-  getSessionAgentPath(sessionId: string): Promise<string | null>;
+  /**
+   * The chat's agent: the recorded one, else the agent whose home its server-held
+   * folder is (`session-agent`'s `sessionAgentById`, DOR-5038), or `undefined`.
+   */
+  sessionAgent(sessionId: string): Promise<string | undefined>;
   agentIdAtPath(agentPath: string): string | undefined;
   /** The folder's real path, or undefined when it can't be read. */
   realFolder(agentPath: string): string | undefined;
@@ -75,8 +79,8 @@ export function createLocalBrowserProfileAccess(
     // and put a shell read of it to a person below Full. Read from what the runtime declares,
     // which fails closed (DOR-3596).
     assertProfileRuntime(deps.guardsOf, runtime);
-    const agentPath = await deps.getSessionAgentPath(sessionId);
-    requireProfileBinding(deps, profileId, agentPath);
+    const agentPath = await deps.sessionAgent(sessionId);
+    requireProfileBinding(deps, profileId, agentPath ?? null);
   };
 }
 

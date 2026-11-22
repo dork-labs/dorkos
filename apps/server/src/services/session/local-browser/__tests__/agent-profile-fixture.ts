@@ -44,7 +44,7 @@ export async function profileLeaseFixture(): Promise<ProfileLeaseFixture> {
       bound: facts.has(id),
     }),
     guardsOf: () => ({ protectedPaths: true as const }),
-    getSessionAgentPath: async (id: string) => facts.get(id)?.agentPath ?? null,
+    sessionAgent: async (id: string) => facts.get(id)?.agentPath ?? undefined,
     agentIdAtPath: (folder: string) => folder.split('/').at(-1),
     realFolder: (folder: string) => folder,
     agentName: (id: string) => id,

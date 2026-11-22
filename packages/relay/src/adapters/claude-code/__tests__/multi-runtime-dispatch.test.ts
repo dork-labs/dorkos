@@ -804,6 +804,34 @@ describe('the relay adapter picks the runtime a message names', () => {
         expect(call![1]).toBe(SDK_ID);
       });
 
+      it('records nothing when the relay resolved no agent, whatever the payload names (DOR-5057)', async () => {
+        // Without an agent from the subject there is nobody to record, and a
+        // payload's `cwd` or `forAgent` is the sender's word, not an agent.
+        // With no agent, the default runtime answers; it says something, so only
+        // the missing agent keeps this turn unrecorded.
+        const quiet = claude.sendMessage;
+        claude.sendMessage = vi.fn().mockImplementation(() =>
+          (async function* (): AsyncGenerator<StreamEvent> {
+            yield { type: 'text_delta', data: { text: 'here' } } as StreamEvent;
+            yield { type: 'done', data: {} } as StreamEvent;
+          })()
+        );
+        try {
+          const sticky = stickyAdapter();
+          await sticky.start(mockRelay());
+          const envelope = agentEnvelope(MESH_SUBJECT);
+          (envelope.payload as Record<string, unknown>).cwd = '/projects/checkout';
+          (envelope.payload as Record<string, unknown>).forAgent = '/agents/other';
+
+          await sticky.deliver(MESH_SUBJECT, envelope, undefined);
+
+          expect(claude.sendMessage).toHaveBeenCalledOnce();
+          expect(bindSessionRuntime).not.toHaveBeenCalled();
+        } finally {
+          claude.sendMessage = quiet;
+        }
+      });
+
       it('records nothing for a subject that names its own runtime', async () => {
         // That id is a session somebody else created and bound — the cockpit,
         // or the chat binding that minted it. A second opinion written from here

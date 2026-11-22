@@ -16,6 +16,26 @@ describe('revealHiddenCharacters', () => {
     expect(revealHiddenCharacters('a‮b​c⁦d﻿')).toBe('a<U+202E>b<U+200B>c<U+2066>d<U+FEFF>');
   });
 
+  it.each([
+    // A tag character is invisible to a person and read as text by a model (DOR-5060).
+    ['a tag character', 0xe0041, '<U+E0041>'],
+    ['the first tag character', 0xe0000, '<U+E0000>'],
+    ['the last tag character', 0xe007f, '<U+E007F>'],
+    ['a variation selector', 0xfe0f, '<U+FE0F>'],
+    ['a supplementary variation selector', 0xe0100, '<U+E0100>'],
+    ['a soft hyphen', 0x00ad, '<U+00AD>'],
+    ['a line separator', 0x2028, '<U+2028>'],
+    ['a paragraph separator', 0x2029, '<U+2029>'],
+  ])('shows %s as a visible marker', (_what, codePoint, marker) => {
+    const hidden = String.fromCodePoint(codePoint);
+    expect(revealHiddenCharacters(`run${hidden}this`)).toBe(`run${marker}this`);
+  });
+
+  it('marks a whole run of tag characters, one marker each, so a hidden sentence shows', () => {
+    const tags = [...'rm'].map((ch) => String.fromCodePoint(0xe0000 + ch.codePointAt(0)!)).join('');
+    expect(revealHiddenCharacters(`ok${tags}`)).toBe('ok<U+E0072><U+E006D>');
+  });
+
   it('leaves ordinary text, other scripts included, alone', () => {
     expect(revealHiddenCharacters('rm -rf ./tmp && echo héllo 日本')).toBe(
       'rm -rf ./tmp && echo héllo 日本'

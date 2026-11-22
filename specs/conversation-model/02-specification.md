@@ -11,7 +11,7 @@ status: draft
 **Author:** Claude (the DorkOS agent), for Dorian Collier
 **Date:** 2026-10-17
 **Decision:** ADR [261017-211859](../../decisions/261017-211859-a-conversation-is-the-shared-log-a-session-is-private.md)
-**Revised:** 2026-10-18, to the navigation fix's plan of record: the DM looks like a room and runs on the session (§3.1, §7 step 4, §8).
+**Revised:** 2026-10-18, to the navigation fix's plan of record: the DM looks like a room and runs on the session (§3.1, §7 step 4, §8). 2026-11-22, §6 carries a **proposed delta**: the canonical form becomes the two `dork:` shapes of `research/20261122_dorkos-address-format.md` (ADR [261122-124821](../../decisions/261122-124821-one-dork-reference-ids-for-machines-addresses-for-people.md), proposed); the display form and §8.6 stand.
 **Anchor:** `main` @ `5078d6c7cb`. Every `file:line` below was read on that commit.
 
 ## Overview
@@ -168,22 +168,38 @@ A conversation in a remote space is the remote server's truth (ADR 260916-210002
 
 ## 6. Addresses
 
-**Rule: an address points at exactly one conversation id.** Everything a person or an outside system can type (an email address, a link, a mention in another space) resolves to one conversation, so a reply always lands in the same log.
+> **Proposed delta (2026-11-22).** This section replaces the 2026-10-17 draft (`dork://{space}/{handle}/{conversation}`). Source: `research/20261122_dorkos-address-format.md`; decision: ADR [261122-124821](../../decisions/261122-124821-one-dork-reference-ids-for-machines-addresses-for-people.md), proposed. The display form and §8.6 stand, with `@{space}` optional inside your own space; the email form follows §9's 2026-10-24 decision (the space in the local part). The six decisions in that report's §12 were made on 2026-11-22 (Dorian delegated them to DorkOS Code; every pick stands); this section becomes the text of record when the PR that carries it merges.
 
-| Form      | Shape                                     | Example                          | Used for                                 |
-| --------- | ----------------------------------------- | -------------------------------- | ---------------------------------------- |
-| Canonical | `dork://{space}/{handle}/{conversation}`  | `dork://acme/marketing/c_01J…`   | storage, links, the API; never shown raw |
-| Display   | `{handle}[+{name}]@{space}`               | `marketing+launch@acme`          | what people see and type                 |
-| Email     | `{handle}[+{name}]@{space}.{mail domain}` | `marketing+launch@acme.<domain>` | inbound and outbound mail (§9)           |
+**Rule: an address resolves to exactly one reference (a member, or a member's named conversation), and a reply always lands in one conversation whose id never changes.** Everything a person or an outside system can type (an email address, a link, a mention in another space) resolves to one thing; a bare member address reaches that member's front door for the sender, so a reply always lands in the same log.
 
-- `{handle}` is a member's handle: a person or an agent.
-- `+{name}` picks a named conversation that member owns (a project, a customer, a launch). The name is a stable slug on the conversation, not its id, so it can be renamed only by keeping the old name as an alias.
+One scheme, `dork:`, with two shapes:
+
+| Shape         | Grammar                          | Example                                                          | Used for                                                                       | Changes                                                  |
+| ------------- | -------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| **Reference** | `dork:{kind}:{id}`               | `dork:room:01JD3G7…`, `dork:agent:01KJ…`, `dork:chat:7c1e4b2a-…` | storage, links, signatures, the work graph; never typed by a person            | never                                                    |
+| **Address**   | `dork:{space}/{handle}[/{name}]` | `dork:acme/marketing`, `dork:acme/marketing/launch`              | the directory, email, mentions; the Cloud contract's `AddressSchema.canonical` | only by retiring the old words (tombstone), never edited |
+
+Kinds: `space`, `person`, `agent`, `host`, `room`, `entry`, `chat`, `turn`. Ids are the ones each thing already has (room and agent ULIDs, the DorkOS session UUID, the entry id, a one-way hash of the install id, a community id). A reference names **what**, never **where**: the link's origin, a signature's `space` and `host` fields, and an email's domain carry the location.
+
+Renderings of an address, for people:
+
+| Rendering | Shape                                         | Example                                   | Used for                                                                                                                   |
+| --------- | --------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Display   | `{handle}[+{name}][@{space}]`                 | `marketing+launch@acme`                   | what people see and type; `@{space}` is dropped inside your own space                                                      |
+| Mention   | `@{handle}[@{space}]`, `#{channel}[@{space}]` | `@marketing@acme`, `#build@acme`          | rooms; `#channel` renders a room, not an address, and resolves while the channel is live (its slug is released on archive) |
+| Email     | `{handle}.{space}[+{name}]@{mail domain}`     | `marketing.acme+launch@<mail domain>`     | inbound and outbound mail (§9); routing reads the envelope recipient                                                       |
+| Link      | `{origin}/r/{dork-uri}`                       | `https://<origin>/r/dork:chat:7c1e4b2a-…` | one link form for a chat, a room, an entry or an agent; `dorkos://r/…` on the desktop                                      |
+
+- `{handle}` is a member's handle: a person or an agent. Grammar: the Cloud contract's `HandleSchema` (lowercase, 2 to 32, `[a-z0-9_-]`, no dot). A local handle may contain a dot (`HANDLE_PATTERN`); such a handle keeps working as a mention and gets no address until a dot-free handle is issued for it.
+- `+{name}` picks a named conversation that member owns (a project, a customer, a launch). The name is a stable slug on the conversation (1 to 23, `[a-z0-9-]`), retired by keeping the old name as a forward, never edited. In email the `+` may be stripped by some senders; a stripped name falls back to the front door, and `In-Reply-To` does the real routing for replies.
 - A bare `{handle}@{space}` points at that member's **front door**: one conversation per outside sender, made on first contact, so two strangers never share a log.
-- `{space}` is the space's slug. On this computer's private space it is the install's own slug.
+- `{space}` is the org slug: the personal org for the private space, the team's org for a team space. A local install with no account has no slug; its display forms drop `@{space}`, and its things still have references.
+- An address may be issued only if `len(handle) + 1 + len(space) <= 40`, so the email local part stays within 64 characters with a `+name`.
+- **A conversation is addressed; a chat is only linked.** Email, mentions and `chat_send` name a conversation or an agent, and the seat picks the chat. A chat has a reference and a link, never an address.
 
-**What exists today.** `authors.handle` (`packages/db/src/schema/rooms.ts:85`) is lowercase by grammar and unique per install by `authors_handle_unique` (`:178`). A freed handle is kept in `handle_tombstones` (`:213`, unique on `lower(handle)`) so it cannot be taken again and inherit someone's old mentions. Nothing parses or stores `dork://` or `+name` today.
+**What exists today.** `authors.handle` (`packages/db/src/schema/rooms.ts`) is lowercase by grammar and unique per install (`authors_handle_unique`); a freed handle is kept in `handle_tombstones` so it cannot be taken again and inherit someone's old mentions. The Cloud contract stores `dork:<org-slug>/<handle>` as a seat's canonical address (`packages/cloud-api/src/seats.ts`). Nothing parses `dork:` references or `+name` yet; the parser is W1 of the work graph (DOR-4967).
 
-**Open item: per-space handles.** A local handle is unique per install, but a person or agent belongs to several spaces, and two spaces can each have a `marketing`. Space servers already have per-space handles: `community_handles` is one namespace for people and agents per space, never released, and `agents.handle` is unique per space (`specs/server-merge/03-agents-as-members.md`). C4 (DOR-2876) keeps it that way: an agent's member row has **no** handle (its decision 13); the handle stays in `agents.handle` and `community_handles`. So an address resolves `{handle}@{space}` against that space's `community_handles`, and a local conversation's address uses the install's `authors.handle`. What is open is how a private space's handles relate to a team space's when the same agent is in both. Not decided here.
+**Per-space handles (was open item 1).** A handle is unique per space: `community_handles` on a space server, the org directory on Cloud, `authors.handle` on a local install. The same agent keeps one reference and may hold one handle in each space it is seated in; `marketing@acme` and `marketing@dorian` resolve through the directory to whichever agent holds each. Once an address has been issued, its handle is write-once: a rename retires it and issues a new one, the old address forwards for 90 days and is never reissued (the contract models an address as `active` or `retired`, never edited; the forward and the never-reissue rule are DOR-4075's; the local rename screen, DOR-3156, says so). This closes the open item (decision 3 of the research report, made 2026-11-22).
 
 ## 7. Sequence
 
@@ -328,7 +344,7 @@ The public repo names these services as architecture only. Costs, plans and supp
 
 ## 10. Open items
 
-1. **Per-space handles** (§6).
+1. **Per-space handles** (§6): answered by the 2026-11-22 proposed delta (decision 3 of `research/20261122_dorkos-address-format.md`, made 2026-11-22).
 2. **A turn run outside DorkOS** (bare CLI resume) writes no entries. Backfill on the next DorkOS turn, or leave the log short and say so in the view.
 3. **Log growth.** The log is never trimmed; 1:1s multiply its size. Decide retention for a log, not for a transcript, before step 4.
 4. **Who may read a turn** behind an entry (R2) when the reader is a member of the conversation but not the session's owner. Rooms answer this today for the peek; 1:1s and spaces need the same rule. **This blocks R2:** until the rule exists, Show work is absent, not disabled (§8.2).

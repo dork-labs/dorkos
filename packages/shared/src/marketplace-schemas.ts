@@ -520,11 +520,16 @@ export function describeProgramLine(command: string, args: readonly string[] = [
 
 /**
  * Characters that change how text around them is displayed without being seen:
- * bidirectional controls (which can make `rm -rf ~` read as something else) and
- * zero-width characters.
+ * bidirectional controls (which can make `rm -rf ~` read as something else),
+ * zero-width characters, the soft hyphen, the line and paragraph separators,
+ * variation selectors, and Unicode tag characters (U+E0000\u2013E007F). Tag
+ * characters show nothing to a person but read as text to a model, so they can
+ * carry instructions nobody approving the text could see (DOR-5060). Variation
+ * selectors are matched by their Unicode property, outside the class: inside
+ * one they would combine with the character before them.
  */
 const HIDDEN_CHARACTERS =
-  /[\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+  /[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2028\u2029\u2060-\u2064\u2066-\u2069\uFEFF\u{E0000}-\u{E007F}]|\p{Variation_Selector}/gu;
 
 /**
  * Show every invisible or direction-changing character in a string a person is

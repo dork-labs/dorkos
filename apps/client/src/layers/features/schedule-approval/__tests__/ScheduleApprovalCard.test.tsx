@@ -495,6 +495,33 @@ describe('ScheduleApprovalCard — what it says', () => {
     );
   });
 
+  it('shows hidden characters in the prompt as markers, and its yes hashes the real prompt (DOR-5060)', async () => {
+    // A zero-width space, a bidi override, and a tag character: the last is
+    // invisible to a person but read as text by a model.
+    const hidden = [0x200b, 0x202e, 0xe0041].map((cp) => String.fromCodePoint(cp));
+    const prompt = `Sweep${hidden.join(' the ')} backlog.`;
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+    renderCard(
+      proposal({ proposedByAgentPath: null, proposedByName: null, fileCapNext: true, prompt }),
+      { updateTask }
+    );
+    const shownText = slot('schedule-prompt')!.textContent ?? '';
+    expect(shownText).toContain('<U+200B>');
+    expect(shownText).toContain('<U+202E>');
+    expect(shownText).toContain('<U+E0041>');
+    for (const ch of hidden) expect(shownText).not.toContain(ch);
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+    const real = await promptHash(prompt);
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        status: 'active',
+        approvedPromptHash: real,
+        expectedApprovalRevision: 'a'.repeat(64),
+        approvalSurface: 'home',
+      })
+    );
+  });
+
   it('still approves on a plain-http page, with no hash, so it attests no file', async () => {
     vi.stubGlobal('crypto', {});
     try {

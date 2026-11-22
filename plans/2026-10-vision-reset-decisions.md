@@ -21,7 +21,7 @@ The research behind these decisions is in `research/20261006_*.md`.
 
 **Considered and rejected:** giving every person and agent an always-on home server in the cloud. It would make a monthly fee the price of entry, which goes against ownership.
 
-**Refined 2026-10-15** (ADR `261015-042933`): an account may get its own DorkOS in the cloud, but only lazily, the first time the person opens the full app on the web. It sleeps when idle, runs no agents and costs little, so it is never the price of entry; local use stays free with no account.
+**Refined 2026-10-15** (ADR `261015-042933`): an account may get its own DorkOS in the cloud, but only lazily, the first time the person opens the full app on the web. It sleeps when idle, runs no agents and costs little, so it is never the price of entry; local use stays free with no account. (2026-11-22, ADR `261122-173853`: a hub is a one-tenant space server, and "runs no agents" is a hosting policy, not an architectural wall.)
 
 ## 3. A hard reset
 

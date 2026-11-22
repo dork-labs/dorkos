@@ -137,8 +137,8 @@ async function init(agentRuntimes: Map<string, AgentRuntimeLike>) {
  * over the wiring rather than over a function it imported itself.
  *
  * @param subsystem - The initialized subsystem.
- * @param cwd - The answering agent's project directory, which is what the
- *   router passes: it resolves it from the binding's agent id.
+ * @param cwd - Where the session works. Here it is the answering agent's own
+ *   home, which is also the agent the router names (DOR-5055).
  */
 async function createSessionThrough(
   subsystem: BindingSubsystem,
@@ -148,9 +148,13 @@ async function createSessionThrough(
   expect(router).toBeDefined();
   return (
     router as unknown as {
-      deps: { agentManager: { createSession(cwd: string, mode: string): Promise<{ id: string }> } };
+      deps: {
+        agentManager: {
+          createSession(cwd: string, mode: string, agentPath: string): Promise<{ id: string }>;
+        };
+      };
     }
-  ).deps.agentManager.createSession(cwd, 'default');
+  ).deps.agentManager.createSession(cwd, 'default', cwd);
 }
 
 /**

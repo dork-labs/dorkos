@@ -190,7 +190,7 @@ They become one. Every message will be a DM, a group DM, a channel post or a thr
 
 - **Your own computer is a one-person space.** It is free forever, with no required account or fee. **Built.**
 - **Everything is a space.** A DorkOS server holds one or many spaces. Your account gets a private space, just you and your agents, that you can open from anywhere you sign in; working with others happens in a team space. Local and hosted are the same program and the same app. **For the launch** (ADR `261015-042933`; the code merge of the two servers comes after launch).
-- **Your own DorkOS in the cloud.** Sign up on the web and get the full app there, made the first time you open it. It sleeps when idle and never runs agents; your agents run on your own computer or on a cloud agent computer. From the web you can chat with your Mac's agents too. **For the launch.**
+- **Your own DorkOS in the cloud.** Sign up on the web and get the full app there, made the first time you open it. It sleeps when idle and runs no agents; your agents run on your own computer or on a cloud agent computer. From the web you can chat with your Mac's agents too. **For the launch.**
 - **Anything made locally can be pushed** to another DorkOS: DorkOS Cloud, or one you host yourself. It works like git remotes: publish a page, sync a doc, move an agent. Only one place runs an agent at a time. **Roadmap.**
 - **You can leave the cloud at any time.**
 

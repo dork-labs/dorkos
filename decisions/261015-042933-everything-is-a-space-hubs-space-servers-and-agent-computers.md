@@ -18,6 +18,8 @@ Accepted (operator decision, #dorkos, 2026-10-15: "lets move forward with your p
 
 **Amended 2026-10-18** by [261018-124422](261018-124422-one-program-before-launch.md): the three roles become one server package before launch (server-merge step 7), each role keeping its own entry and image target. Spec decision P1's "one program comes after launch" is retired; everything else stands.
 
+**Amended 2026-11-22** by [261122-173853](261122-173853-one-space-model.md) (one space model): there are two kinds of state, not two kinds of place. A space holds its members' data (agents' identity, rules, memory and schedules, conversations, connections, settings, documents, extensions); only execution state (workspaces, runtime transcripts and sign-ins, running processes) stays on the computer that runs turns. A hub is a one-tenant space server, and the private space becomes a tenant on the space store after launch, domain by domain, agents last. "A space server never runs a member's agent" and "a hub never runs an agent" are now a hosting policy read from the role setting (DorkOS's shared hosts register no runtime), not an architectural wall; a self-hoster may run one process in both roles. The wall that stays: a shared host never holds a member's credentials or a key to a member's computer (rules 3 and 5 below), and the permission gate reads the agent's identity on a server its owner trusts. The three roles, the session relay and the account as the door stand.
+
 "Hub" is an internal word. It never appears in anything a person reads; the app says **Private** for the private space and **space** for everything else.
 
 **Amends** (each stays Accepted):

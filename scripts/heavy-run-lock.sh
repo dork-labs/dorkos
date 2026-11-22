@@ -10,6 +10,16 @@
 #                                           (hold a slot for <pid>'s lifetime;
 #                                           what a bare `turbo` run uses, via
 #                                           scripts/heavy-turbo-slot.mjs)
+#   bash scripts/heavy-run-lock.sh --label <label> [--tests] <command> [args...]
+#                                           (a --job that waits its turn in the
+#                                           ORDER line; see scripts/lib/heavy-order.sh)
+#   bash scripts/heavy-run-lock.sh --label <label> --hold <pid>
+#                                           (keep <label>'s place in the line,
+#                                           and a slot, for <pid>'s lifetime)
+#   bash scripts/heavy-run-lock.sh --done <label>
+#                                           (leave the line: a job that ran
+#                                           outside this script)
+#   bash scripts/heavy-run-lock.sh --status (the line, who runs, the stale check)
 #
 # It forwards the command's output and exit code unchanged, so on a quiet
 # machine it is invisible: the first slot is free and the command starts. The
@@ -152,6 +162,14 @@
 #                               line before this lock runs the job alone (60)
 #   DORKOS_LOAD_GATE_IN_TURN    set by the helper on the copy of this script it
 #                               runs inside the turn; not for people
+#   DORKOS_HEAVY_ORDER_DIR      the folder holding the order file
+#                               ($DORK_HOME/load-gate, else ~/.dork/load-gate)
+#   DORKOS_HEAVY_ORDER_STALE_SECONDS  how long the top label may sit with no
+#                               live run before it moves down one place (900)
+#   DORKOS_HEAVY_NOTIFY         a program run as `<it> <label> <note>` after a
+#                               move; from the caller's environment only
+#   DORKOS_HEAVY_LABEL          set for the copy run inside the app's line, so
+#                               waiters see the label; not for people
 # scripts/test-load-gate-turn.sh drives the app's line.
 # The fixture suite (scripts/test-heavy-run-lock.sh) drives every path through
 # them with second-scale values.
@@ -169,6 +187,30 @@
 # a no-op, so this script stays usable by hand.
 
 set -uo pipefail
+
+here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(CDPATH='' cd -- "$here/.." && pwd)
+
+# --label <label>, --done <label> and --status: the ORDER line (DOR-4209,
+# DOR-4901), in scripts/lib/heavy-order.sh. They come first on the line.
+label=''
+order_cmd=''
+case "${1:-}" in
+  --label | --done)
+    [ "$1" = --done ] && order_cmd='done'
+    label=${2:-}
+    label=$(printf '%s' "$label" | awk '{ $1 = $1; print }')
+    if [ -z "$label" ]; then
+      echo "heavy-run-lock.sh: $1 needs a label" >&2
+      exit 2
+    fi
+    shift 2
+    ;;
+  --status)
+    order_cmd=status
+    shift
+    ;;
+esac
 
 job=0
 if [ "${1:-}" = --job ]; then
@@ -200,7 +242,42 @@ if [ "${1:-}" = --hold ]; then
   esac
   hold_pid=$2
   shift 2
-  [ "$#" -eq 0 ] && set -- "pid $hold_pid"
+  [ "$#" -eq 0 ] && set -- "pid ${label:-$hold_pid}"
+fi
+# A labelled run is a heavy job: it waits for the load like one.
+[ -n "$label" ] && [ -z "$order_cmd" ] && job=1
+
+order_on=0
+if [ -n "$label" ] || [ -n "$order_cmd" ]; then
+  # shellcheck source=lib/heavy-order.sh
+  . "$here/lib/heavy-order.sh"
+  order_dir=$(heavy_order_dir)
+  if order_dir_ready "$order_dir"; then
+    order_init "$order_dir"
+    order_on=1
+  fi
+fi
+
+if [ "$order_cmd" = 'done' ]; then
+  if [ "$order_on" = 0 ]; then
+    echo "[heavy] order: no usable order folder, so there is no line to leave."
+    exit 0
+  fi
+  order_lock
+  order_pop "$label"
+  claim_drop "$label"
+  order_rotate_stale
+  order_unlock
+  echo "[heavy] order: popped '$label'; next is '$(order_top)'"
+  exit 0
+fi
+if [ "$order_cmd" = status ]; then
+  if [ "$order_on" = 0 ]; then
+    echo "[heavy] order: no usable order folder, so there is no line."
+    exit 0
+  fi
+  order_status
+  exit 0
 fi
 
 if [ "$#" -eq 0 ]; then
@@ -208,8 +285,7 @@ if [ "$#" -eq 0 ]; then
   exit 2
 fi
 
-here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-repo_root=$(CDPATH='' cd -- "$here/.." && pwd)
+[ -n "$label" ] && export DORKOS_HEAVY_LABEL="$label"
 
 # Notes are best-effort and must never fail a gate, exactly as the time-wrap's
 # own writes are. Sourcing is guarded so a checkout without the file still runs.
@@ -281,6 +357,52 @@ run_uncapped() {
   run_command "$@"
 }
 
+# THE ORDER LINE (DOR-4209, DOR-4901). Only the label on the order file's top
+# line may start; anyone else is refused with exit 75 and told who is next. The
+# check runs before every way past the cap below, because it is about whose
+# turn it is, not how busy the machine is. Not checked: CI (no order there), a
+# nested call (its parent already took the turn) and the copy of this script
+# the app's line runs (its parent did too).
+# A run refused for the load ran nothing, so it keeps its place at the top (and
+# moves down only if it never comes back); any other end leaves the line.
+order_keep_place=0
+order_leave() {
+  [ -n "$ORDER_BEATER" ] && kill "$ORDER_BEATER" 2>/dev/null
+  order_lock
+  [ "$order_keep_place" = 1 ] || order_pop "$label"
+  claim_drop "$label"
+  order_rotate_stale
+  order_unlock
+}
+if [ "$order_on" = 1 ] && [ -z "${DORKOS_HEAVY_SLOT_HELD:-}" ] && [ -z "${DORKOS_LOAD_GATE_IN_TURN:-}" ]; then
+  case "${CI:-}" in
+    '' | 0 | false)
+      order_lock
+      order_rotate_stale
+      next=$(order_top)
+      if [ -n "$next" ] && [ "$next" != "$label" ]; then
+        order_unlock
+        echo "[heavy] REFUSE (order): '$label' is not next. Next is '$next'. Order: $(order_lines | tr '\n' '|' | sed 's/|$//; s/|/ | /g')" >&2
+        moved=$(order_last_note_for "$label")
+        [ -n "$moved" ] && echo "[heavy] about '$label': $moved" >&2
+        echo "[heavy] Nothing ran. Try again when '$label' is on top (exit 75). See: bash scripts/heavy-run-lock.sh --status" >&2
+        exit 75
+      fi
+      if [ -n "$next" ]; then
+        if [ -n "$hold_pid" ]; then
+          # Kept for <pid>'s life; the line is left with --done.
+          claim_take "$label" "$hold_pid" 0
+        else
+          claim_take "$label" "$$" 1
+          trap order_leave EXIT
+        fi
+        printf '%s\t%s\n' "$(date +%s)" "$label" >"$TOP_STATE" 2>/dev/null
+      fi
+      order_unlock
+      ;;
+  esac
+fi
+
 if [ "${DORKOS_HEAVY_LOCK:-1}" = 0 ]; then
   # The way out stays open, and is now on the record: an opt-out nobody can see
   # is how a cap stops existing.
@@ -297,8 +419,12 @@ case "${CI:-}" in '' | 0 | false) ;; *) run_uncapped "$@" ;; esac
 # so the repo's runs and agents' runs are one first-come line, under the app's
 # `runtimes.loadGate` settings (slots, max load, hard cap). scripts/load-gate/turn.ts
 # takes the turn, through the server's own TicketQueue, and once it comes runs
-# THIS SCRIPT AGAIN inside it (`DORKOS_LOAD_GATE_IN_TURN=1`), which skips the
-# line and takes this lock's slot and load guard as before.
+# THIS SCRIPT AGAIN inside it (`DORKOS_LOAD_GATE_IN_TURN=1`), which runs the
+# command straight away: THE GATE IS THE LINE (DOR-4209, Nov 21). Its turn
+# already judged the load (five-minute average, `runtimes.loadGate.maxLoad`) and
+# the slot count, so this lock's slots and its one-minute load guard are not
+# asked a second time. They remain for what never joins the gate: the commit
+# gate, a bare `turbo` run's --hold slot, and every fall-through below.
 #
 # The order is the agents' order, and it is the point. An agent's gated command
 # already holds an app slot when its nested `heavy-run-lock --job` asks for one
@@ -317,6 +443,9 @@ case "${CI:-}" in '' | 0 | false) ;; *) run_uncapped "$@" ;; esac
 line=0
 if [ -n "${DORKOS_LOAD_GATE_IN_TURN:-}" ]; then
   unset DORKOS_LOAD_GATE_IN_TURN
+  # Nested calls inside the command must not queue behind this run's own turn.
+  export DORKOS_HEAVY_SLOT_HELD=1
+  run_command "$@"
 elif [ "$job" = 1 ] && [ -z "$hold_pid" ]; then
   line=1
 fi
@@ -389,6 +518,9 @@ join_line() {
     return 0
   fi
   rm -f -- "$turn_file"
+  # 75 from the copy inside the turn is its load refusal: nothing ran, so a
+  # labelled run keeps its place (a command that itself exits 75 does too).
+  [ "$turn_status" = 75 ] && order_keep_place=1
   case $turn_said in ran | stopped) exit "$turn_status" ;; esac
   # Killed by a signal before it could say so: still a stop, so nothing runs.
   case $turn_status in 129 | 130 | 143) exit "$turn_status" ;; esac
@@ -702,6 +834,7 @@ $release->();
 '
 
 describe="$(printf '%s' "$*" | tr '\n' ' ' | cut -c1-160) (in $PWD)"
+[ -n "${DORKOS_HEAVY_LABEL:-}" ] && describe="[${DORKOS_HEAVY_LABEL}] $describe"
 
 # Process substitution keeps the wrapped command in the FOREGROUND of this
 # shell: same stdin, same terminal, same exit code. fd 9 carries the sidecar's
@@ -732,6 +865,7 @@ case $verdict in
   overloaded)
     [ "${waited:-0}" -gt 0 ] 2>/dev/null && ci_steward_note load_wait "$waited"
     ci_steward_note load_refused "$extra"
+    order_keep_place=1
     # EX_TEMPFAIL: nothing is wrong with the command; try again later.
     exit 75
     ;;

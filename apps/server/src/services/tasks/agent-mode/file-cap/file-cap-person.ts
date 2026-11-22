@@ -1,7 +1,8 @@
 /**
- * A person's two acts on a file cap (DOR-3703, M4): Undo on the notice an
- * agent's lift posted, which caps the task again, and approving the file as
- * it is now, which lifts the cap. Only a person reaches either; the routes in
+ * A person's acts on a file cap (DOR-3703, M4): Undo on the notice an
+ * agent's lift posted, which caps the task again; approving the file as it is
+ * now, which lifts the cap; and, with no cap standing yet, approving the file
+ * its next run would be capped for (DOR-5060). Only a person reaches either; the routes in
  * front refuse every agent (`routes/task-mode-undo.ts`, `routes/task-file-approve.ts`).
  *
  * Each acts only on what it names: the Undo on the lift its notice named,
@@ -102,6 +103,44 @@ export async function approveCappedFile(
   });
   if (task.prompt !== state.body) store.updateTask(id, { prompt: state.body });
   auditPerson(task, fileAttest?.hash, state.hash, 'Approved a changed file');
+  return { ok: true, task: store.getTask(id) ?? task };
+}
+
+/**
+ * Approve the task's SKILL file as it is now while no cap stands yet but its
+ * next run would be capped (DOR-5060, Security's ruling of Nov 22, option D):
+ * a body the sync folded in, or one no attestation covers. Only the hash the
+ * person's review showed (`Task.fileReview.hash`), and only while both the
+ * file and the prompt the run sends still hash to exactly it. A standing cap
+ * is approved from its own diff instead ({@link approveCappedFile}).
+ *
+ * @param store - The store.
+ * @param id - The schedule.
+ * @param hash - The hash the review showed.
+ */
+export async function approveFileAsItIs(
+  store: PersonStore,
+  id: string,
+  hash: string
+): Promise<FileCapPersonOutcome> {
+  const task = store.getTask(id);
+  if (!task) return NOT_FOUND;
+  const { fileCap, fileAttest } = store.approvals.agentModeColumnOf(id);
+  if (fileCap)
+    return changedSince(task, 'Its runs are capped now. Approve the file from its diff.');
+  const state = await readFileState(task.filePath);
+  if (!state || state.hash !== hash || bodyHash(task.prompt) !== hash) {
+    return changedSince(task, 'The file changed again. Review it once more.');
+  }
+  // A run may have capped it while the file was read: that cap is approved from its own diff.
+  if (store.approvals.agentModeColumnOf(id).fileCap) {
+    return changedSince(task, 'Its runs are capped now. Approve the file from its diff.');
+  }
+  store.approvals.patchAgentModeColumn(id, {
+    fileAttest: attestationOf(state, 'person'),
+    fileLift: null,
+  });
+  auditPerson(task, fileAttest?.hash, state.hash, 'Approved a file as it is');
   return { ok: true, task: store.getTask(id) ?? task };
 }
 

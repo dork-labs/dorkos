@@ -2166,13 +2166,17 @@ registry.registerPath({
   description:
     'Lifts the cap a change outside the task tools put on a schedule: its runs go back to its ' +
     'own mode instead of Never ask (DOR-3703). The body names the cap you saw and the file ' +
-    'hash its diff showed (`capAt` and `hash`, from `fileCap`). Only a person can use it: an ' +
-    'agent is refused. Answers 409 once the file changed since that diff.',
+    'hash its diff showed (`capAt` and `hash`, from `fileCap`). With no cap standing, it ' +
+    'names the hash alone (from `fileReview`) and approves the file as it is now (DOR-5060). ' +
+    'Only a person can use it: an agent is refused. Answers 409 once the file changed since ' +
+    'that diff.',
   request: {
     params: z.object({ id: z.string() }),
     body: {
       content: {
-        'application/json': { schema: z.object({ capAt: z.string(), hash: z.string() }) },
+        'application/json': {
+          schema: z.object({ capAt: z.string().optional(), hash: z.string() }),
+        },
       },
     },
   },

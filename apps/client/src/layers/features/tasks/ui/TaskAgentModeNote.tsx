@@ -77,10 +77,15 @@ function refusedPhrase(task: Task): string | null {
   return listRefusedTools(tools.map(readableToolName))?.list ?? null;
 }
 
+/** What a review shows: the hash approving binds to, and the two sides of the diff. */
+type FileReviewView = Pick<NonNullable<Task['fileCap']>, 'hash' | 'previous' | 'current'>;
+
 /** Props for {@link FileCapReview}. */
 interface FileCapReviewProps {
   task: Task;
-  cap: NonNullable<Task['fileCap']>;
+  review: FileReviewView;
+  /** When the cap the person sees first held, or `null` with no cap standing (DOR-5060). */
+  capAt: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -113,14 +118,14 @@ function openOnFirstChange(line: HTMLDivElement | null): void {
  * is what a person is deciding on. A file that changed again is refused by the
  * server.
  */
-function FileCapReview({ task, cap, open, onOpenChange }: FileCapReviewProps) {
+function FileCapReview({ task, review, capAt, open, onOpenChange }: FileCapReviewProps) {
   const approve = useApproveTaskFile();
   // The mode its runs go back to, named as the runtime's picker names it.
   const backTo = usePermissionModeLabel(task.runtime)(task.permissionMode);
-  const lines = cap.current == null ? [] : fileDiff(cap.previous ?? null, cap.current);
+  const lines = review.current == null ? [] : fileDiff(review.previous ?? null, review.current);
   const firstChange = lines.findIndex((line) => line.kind !== 'same');
   const changes = diffChangeCount(lines);
-  const hash = cap.hash;
+  const hash = review.hash;
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       {/* Clicks inside never reach the task row behind the dialog. */}
@@ -133,7 +138,7 @@ function FileCapReview({ task, cap, open, onOpenChange }: FileCapReviewProps) {
       >
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>
-            Review the changed file
+            {capAt === null ? 'Review the file' : 'Review the changed file'}
             {lines.length > ONE_SCREEN_OF_LINES && changes > 0 && (
               <span
                 data-slot="task-file-cap-change-count"
@@ -144,7 +149,10 @@ function FileCapReview({ task, cap, open, onOpenChange }: FileCapReviewProps) {
             )}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription data-slot="task-file-cap-review-body">
-            {task.displayName ?? task.name}. Approving lifts the cap, so its runs go back to{' '}
+            {task.displayName ?? task.name}.{' '}
+            {capAt === null
+              ? 'Approving lets its runs go at'
+              : 'Approving lifts the cap, so its runs go back to'}{' '}
             {backTo}.
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
@@ -168,7 +176,8 @@ function FileCapReview({ task, cap, open, onOpenChange }: FileCapReviewProps) {
                   )}
                 >
                   {line.kind === 'added' ? '+ ' : line.kind === 'removed' ? '− ' : '  '}
-                  {line.text}
+                  {/* Hidden characters shown, as on the approval card (DOR-5060). */}
+                  {revealHiddenCharacters(line.text)}
                 </div>
               ))}
             </pre>
@@ -185,11 +194,11 @@ function FileCapReview({ task, cap, open, onOpenChange }: FileCapReviewProps) {
           </Button>
           <Button
             type="button"
-            disabled={hash == null || cap.current == null || approve.isPending}
+            disabled={hash == null || review.current == null || approve.isPending}
             onClick={() => {
               if (hash == null) return;
               approve.mutate(
-                { taskId: task.id, capAt: cap.at, hash },
+                { taskId: task.id, capAt, hash },
                 { onSuccess: () => onOpenChange(false) }
               );
             }}
@@ -245,7 +254,56 @@ export function TaskFileCapNote({ task }: { task: Task }) {
           Its agent can accept the file from a chat.
         </span>
       )}
-      <FileCapReview task={task} cap={cap} open={reviewing} onOpenChange={setReviewing} />
+      <FileCapReview
+        task={task}
+        review={cap}
+        capAt={cap.at}
+        open={reviewing}
+        onOpenChange={setReviewing}
+      />
+    </div>
+  );
+}
+
+/**
+ * Says a task's next run is capped though no cap stands yet (DOR-3703, M4;
+ * DOR-5060): no approval covers the prompt it runs. The row's Approve and
+ * switch show no content, so they approve no file; Review file opens the file
+ * first, and Approve inside it binds to the hash it shows.
+ */
+export function TaskFileReviewNote({ task }: { task: Task }) {
+  const [reviewing, setReviewing] = useState(false);
+  const review = task.fileReview;
+  if (task.fileCapNext !== true || task.fileCap) return null;
+  return (
+    <div
+      data-slot="task-file-cap-next"
+      className="text-status-warning-fg flex min-w-0 flex-wrap items-center gap-2 text-xs"
+    >
+      <span>The next run is capped until you approve the file.</span>
+      {review && (
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            className="h-11 sm:h-auto"
+            onClick={(e) => {
+              e.stopPropagation();
+              setReviewing(true);
+            }}
+          >
+            Review file
+          </Button>
+          <FileCapReview
+            task={task}
+            review={review}
+            capAt={null}
+            open={reviewing}
+            onOpenChange={setReviewing}
+          />
+        </>
+      )}
     </div>
   );
 }

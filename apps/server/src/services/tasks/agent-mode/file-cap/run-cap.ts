@@ -33,7 +33,7 @@ import { AGENT_MODE_WITHOUT_A_PERSON } from '../agent-mode-actions.js';
 import { modeNeedsAPerson } from '../agent-mode-decision.js';
 import { liveAgentModeSources } from '../agent-mode-sources.js';
 import type { AgentModeColumn, FileCapState } from '../agent-mode-record-field.js';
-import { attestationOf, fileEditsRunCapped } from './file-cap-rule.js';
+import { attestationOf, bodyMatchesAttest, fileEditsRunCapped } from './file-cap-rule.js';
 import {
   bodyHash,
   KEPT_BODY_CHARS,
@@ -121,7 +121,7 @@ export interface RunCapExecution {
 
 /**
  * Whether the run may go uncapped: the file AND the prompt the run sends both
- * hash to the attested hash (M-D). A row with no attested hash yet takes the
+ * match the attestation, spacing aside (M-D, DOR-5060). A row with no attested hash yet takes the
  * file as its baseline only when the prompt it runs is the file and no sync
  * folded that prompt in (M5, M-B).
  */
@@ -131,10 +131,15 @@ function runsUncapped(
   state: FileState | null,
   store: RunCapStore
 ): boolean {
-  const runs = bodyHash(task.prompt);
-  if (column.fileAttest)
-    return state?.hash === column.fileAttest.hash && runs === column.fileAttest.hash;
-  if (!state || state.hash !== runs || column.syncedPrompt === state.hash) return false;
+  const attest = column.fileAttest;
+  if (attest) {
+    return (
+      !!state && bodyMatchesAttest(state.body, attest) && bodyMatchesAttest(task.prompt, attest)
+    );
+  }
+  if (!state || state.hash !== bodyHash(task.prompt) || column.syncedPrompt === state.hash) {
+    return false;
+  }
   store.approvals.patchAgentModeColumn(task.id, { fileAttest: attestationOf(state, 'baseline') });
   return true;
 }
@@ -184,7 +189,10 @@ export async function capRunIfFileChanged(
     : { from, to, at: new Date().toISOString(), needsPerson, ...kept };
   approvals.patchAgentModeColumn(task.id, { fileCap: cap });
   if (!same) await recordNewCap(resolved, cap);
-  store.updateRun(run.id, { cappedAt: 'dontAsk' });
+  store.updateRun(run.id, {
+    cappedAt: 'dontAsk',
+    ...(task.filePath ? { cappedFile: { path: task.filePath, from, to } } : {}),
+  });
   return {
     ...task,
     permissionMode: cappedModeOf(resolved),

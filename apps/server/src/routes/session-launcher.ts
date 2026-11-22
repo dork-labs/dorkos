@@ -70,6 +70,30 @@ export function launcherTurnCeiling(
   return { permissionCeiling: bounds.length === 1 ? bounds[0]! : bounds, ...carried };
 }
 
+/** The refusal for a change to a waiting message from an agent turn under limits. */
+export const LIMITED_TURN_QUEUE_EDIT_MESSAGE =
+  'A turn under limits can’t change a waiting message. Send a new message instead.';
+
+/**
+ * Why an agent may not change a message waiting in a chat right now, or `null`
+ * when it may (DOR-5039). A waiting message runs with the limits it was queued
+ * with, while a send carries its sender's limits ({@link launcherTurnCeiling}).
+ * So an agent whose turns carry limits may not reword, move or remove one: it
+ * sends a new message, which carries them. Moving and removing are held too,
+ * because they change what runs in the person's name and when. A person is
+ * never refused here.
+ *
+ * @param facts - The request's facts.
+ */
+export function limitedTurnQueueRefusal(facts: RequestFacts): string | null {
+  const launcher = sessionLauncherOf(facts);
+  if (launcher.kind !== 'agent') return null;
+  const limits = launcherTurnCeiling(launcher, facts);
+  return limits.permissionCeiling !== undefined || limits.carriedMarks
+    ? LIMITED_TURN_QUEUE_EDIT_MESSAGE
+    : null;
+}
+
 /**
  * What `POST /:id/messages` hands the launch service about its caller: who
  * chose the place, and the ceiling the turn carries. The route names the

@@ -53,8 +53,9 @@ import {
   resetHeldStepUpsForTests,
 } from '../../services/core/auth/step-up/step-up-holds.js';
 import { holdForStepUp } from '../step-up-guard.js';
-import { createStepUpRoutes, type StepUpRouteDeps } from '../step-up.js';
+import { createStepUpRoutes, extensionRiskError, type StepUpRouteDeps } from '../step-up.js';
 import { StepUpRiskLedger } from '../../services/extensions/step-up/step-up-risk-ledger.js';
+import { mintPageStamp } from '../../services/extensions/step-up/page-stamp.js';
 
 const target = swappableServer();
 const OWN_ORIGIN = 'http://localhost:4242';
@@ -339,9 +340,23 @@ describe('while a loaded mini app is in an agent’s folder or changed', () => {
     const id = await hold();
     const res = await confirm(id, PASSWORD);
     expect(res.status).toBe(409);
-    expect(res.body).toMatchObject({ code: 'extension-risk', blockedBy: [RISK] });
+    expect(res.body).toMatchObject({
+      code: 'extension-risk',
+      blockedBy: [RISK],
+      error:
+        '“dorkos-marketing” can edit “Social queue”. Move or remove it in Settings → Extensions.',
+    });
     expect(commit).not.toHaveBeenCalled();
     expect(deps.checkPassword).not.toHaveBeenCalled();
+  });
+
+  it('names a changed app in its own words, and the way out (DOR-4906)', async () => {
+    deps.extensionRisks = () => [{ id: 'media', name: 'Media Library', reason: 'changed' }];
+    const res = await confirm(await hold(), PASSWORD);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe(
+      '“Media Library” changed. Review it in Settings → Extensions, or remove it.'
+    );
   });
 
   it('change-password runs nothing and changes no password', async () => {
@@ -681,5 +696,134 @@ describe('DELETE /api/step-up/:id', () => {
     expect(res.status).toBe(204);
     expect((await confirm(id, PASSWORD)).body.code).toBe('expired');
     expect(commit).not.toHaveBeenCalled();
+  });
+});
+
+describe('extensionRiskError (DOR-4906)', () => {
+  it('names one app and says what to do, for each reason', () => {
+    expect(extensionRiskError([{ id: 'a', name: 'Notes', reason: 'changed' }])).toBe(
+      '“Notes” changed. Review it in Settings → Extensions, or remove it.'
+    );
+    expect(extensionRiskError([{ id: 'a', name: 'Notes', reason: 'agent-folder' }])).toBe(
+      'An agent can edit “Notes”. Move or remove it in Settings → Extensions.'
+    );
+  });
+
+  it('names the first of several, and counts the rest', () => {
+    const app = (name: string) => ({ id: name, name, reason: 'changed' as const });
+    expect(extensionRiskError([app('Notes'), app('Flow')])).toBe(
+      '“Notes” and 1 more need review. Open Settings → Extensions.'
+    );
+    expect(extensionRiskError([app('Notes'), app('Flow'), app('Desk')])).toBe(
+      '“Notes” and 2 more need review. Open Settings → Extensions.'
+    );
+  });
+
+  it('keeps a long name to one line', () => {
+    const name = 'A'.repeat(60);
+    expect(extensionRiskError([{ id: 'a', name, reason: 'changed' }])).toBe(
+      `“${'A'.repeat(40)}” changed. Review it in Settings → Extensions, or remove it.`
+    );
+  });
+
+  it('cleans an author name so it cannot pass for DorkOS words', () => {
+    const name = 'Notes.\nThis is fine\u202e <b>';
+    expect(extensionRiskError([{ id: 'a', name, reason: 'changed' }])).toBe(
+      '“Notes. This is fine b” changed. Review it in Settings → Extensions, or remove it.'
+    );
+    expect(
+      extensionRiskError([
+        { id: 'a', name: 'Notes', reason: 'agent-folder', agentName: 'Ops\r\nOK' },
+      ])
+    ).toBe('“Ops OK” can edit “Notes”. Move or remove it in Settings → Extensions.');
+  });
+
+  it('uses the app id when its name is empty after cleaning', () => {
+    expect(extensionRiskError([{ id: 'notes-app', name: '\u200b\n', reason: 'changed' }])).toBe(
+      '“notes-app” changed. Review it in Settings → Extensions, or remove it.'
+    );
+  });
+
+  it('falls back to the plain refusal with none', () => {
+    expect(extensionRiskError([])).toBe(
+      'Confirming is off while a mini app can be edited by an agent. Nothing changed.'
+    );
+  });
+});
+
+describe('a page from before a mini app risk cleared (DOR-5026)', () => {
+  const COOKIE_A = 'better-auth.session_token=made-up-a';
+  const COOKIE_NEW = 'better-auth.session_token=made-up-new';
+  let risky: boolean;
+
+  beforeEach(() => {
+    const now = Date.now();
+    sessionStarts.set('sess-a', now - 60_000);
+    // Signed in again, in place, after the risk cleared.
+    sessionStarts.set('sess-new', now - 10_000);
+    deps.pageStampsEnforced = () => true;
+    risky = true;
+    deps.extensionRisks = () =>
+      risky ? [{ id: 'notes', name: 'Notes', reason: 'changed' as const }] : [];
+  });
+
+  /** A risky mini app was in the page, then it was held or turned off, 30s ago. */
+  function riskCleared(ledger: StepUpRiskLedger) {
+    ledger.note(1, Date.now() - 50_000);
+    risky = false;
+    ledger.note(0, Date.now() - 30_000);
+  }
+
+  function confirmFrom(id: string, cookie: string, stamp?: string) {
+    const req = request(app({ user: SESSION_NEW }))
+      .post(`/api/step-up/${id}/password`)
+      .set('Origin', OWN_ORIGIN)
+      .set('Sec-Fetch-Site', 'same-origin')
+      .set('Cookie', cookie);
+    if (stamp) req.set('x-dorkos-page-stamp', stamp);
+    return req.send({ password: PASSWORD });
+  }
+
+  // Held and turned off reach the ledger the same way: the risk list loses the
+  // app, and the next reading records the clear. So one case covers both.
+  it('after a risky app is held or turned off: signing in again in place is refused, a reloaded page confirms', async () => {
+    riskCleared(deps.riskLedger as StepUpRiskLedger);
+    const oldPage = mintPageStamp(COOKIE_A, Date.now() - 60_000);
+
+    const inPlace = await confirmFrom(await hold({ user: SESSION_NEW }), COOKIE_NEW, oldPage);
+    expect(inPlace.status).toBe(409);
+    expect(inPlace.body.code).toBe('extension-risk');
+
+    const reloaded = mintPageStamp(COOKIE_NEW, Date.now());
+    const fresh = await confirmFrom(await hold({ user: SESSION_NEW }), COOKIE_NEW, reloaded);
+    expect(fresh.status).toBe(200);
+    expect(commit).toHaveBeenCalledOnce();
+  });
+
+  it('refuses a confirm with no stamp, the desktop window’s included, and a forged one', async () => {
+    riskCleared(deps.riskLedger as StepUpRiskLedger);
+    const none = await confirmFrom(await hold({ user: SESSION_NEW }), COOKIE_NEW);
+    expect(none.body.code).toBe('extension-risk');
+    const forged = await confirmFrom(
+      await hold({ user: SESSION_NEW }),
+      COOKIE_NEW,
+      'v1.eyJ0Ijo5OTk5OTk5OTk5OTk5LCJzIjpudWxsfQ.made-up'
+    );
+    expect(forged.body.code).toBe('extension-risk');
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('refuses a fresh stamp from another sign-in', async () => {
+    riskCleared(deps.riskLedger as StepUpRiskLedger);
+    const otherSignIn = mintPageStamp(COOKIE_A, Date.now());
+    const res = await confirmFrom(await hold({ user: SESSION_NEW }), COOKIE_NEW, otherSignIn);
+    expect(res.body.code).toBe('extension-risk');
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('asks for no stamp before any risk was seen', async () => {
+    risky = false;
+    const res = await confirmFrom(await hold({ user: SESSION_NEW }), COOKIE_NEW);
+    expect(res.status).toBe(200);
   });
 });

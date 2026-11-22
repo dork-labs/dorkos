@@ -29,6 +29,10 @@ type Why =
   | 'restricted-media';
 
 const REVIEWED: Record<string, { why: Why; note: string }> = {
+  'http/client-files.ts': {
+    why: 'fixed-server-text',
+    note: 'The built shell from disk plus a server-signed page stamp meta tag; base64url and dots only (DOR-5026).',
+  },
   'routes/profile.ts': {
     why: 'restricted-media',
     note: 'AvatarStore accepts only sniffed raster images; the route sends nosniff and inline.',

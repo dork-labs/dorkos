@@ -34,6 +34,7 @@
 import { Hono, type Context } from 'hono';
 
 import {
+  PAGE_STAMP_HEADER,
   StepUpChangePasswordBodySchema,
   StepUpPasswordBodySchema,
   type HeldStepUpView,
@@ -42,6 +43,7 @@ import {
   type StepUpPasswordUnavailable,
   type StepUpRefusalCode,
 } from '@dorkos/shared/step-up';
+import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -59,6 +61,10 @@ import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { presentsProgramCredential } from '../lib/caller-authority.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import { currentStepUpExtensionRisks } from '../services/extensions/step-up/step-up-extension-risk.js';
+import {
+  pageMayHoldRiskyCode,
+  pageStampsEnforced,
+} from '../services/extensions/step-up/page-stamp.js';
 import {
   stepUpRiskLedger,
   type StepUpRiskLedger,
@@ -86,7 +92,8 @@ import {
 const MAX_PASSWORD_LENGTH = 128;
 
 /** Why a browser that may still hold a cleared mini app's code is refused. */
-const CLEARED_RISK_ERROR = 'A mini app has run since you signed in. Sign in again to confirm.';
+const CLEARED_RISK_ERROR =
+  'A mini app ran after this page opened. Sign in again, then try once more.';
 
 /** What the routes read, injectable for tests. */
 export interface StepUpRouteDeps {
@@ -106,6 +113,8 @@ export interface StepUpRouteDeps {
   riskLedger?: Pick<StepUpRiskLedger, 'note' | 'mayHoldRiskyCode'>;
   /** When a browser session started, in ms, or null when unknown. */
   sessionStartedAt?: (userId: string, sessionId: string) => Promise<number | null>;
+  /** Whether confirms must carry a page stamp (DOR-5026); not when absent. */
+  pageStampsEnforced?: () => boolean;
   /** Raise one notice when a remote hold takes its last wrong password. */
   remoteFailure?: (entry: HeldStepUp, facts: RequestFacts) => Promise<void>;
 }
@@ -135,6 +144,7 @@ const liveDeps: StepUpRouteDeps = {
     const auth = getAuth();
     return auth ? signInStartedAt(auth, userId, sessionId) : null;
   },
+  pageStampsEnforced,
 };
 
 /**
@@ -173,6 +183,31 @@ const REFUSALS: Record<StepUpRefusalCode, { status: 400 | 403 | 404 | 409 | 429;
       error: 'That confirmation was for a different request. Confirm this one.',
     },
   };
+
+/**
+ * Why confirming is off, naming the mini app and the way out (DOR-4906).
+ * The names are the app author's, so each is cleaned to one short line and
+ * set off in quotes: it can never read as a sentence DorkOS wrote.
+ *
+ * @param risks - The loaded mini apps that keep step-up off; at least one.
+ */
+export function extensionRiskError(risks: readonly StepUpExtensionRisk[]): string {
+  const [risk] = risks;
+  if (!risk) return REFUSALS['extension-risk'].error;
+  const name = quoted(risk.name) ?? quoted(risk.id) ?? 'A mini app';
+  if (risks.length > 1) {
+    return `${name} and ${risks.length - 1} more need review. Open Settings → Extensions.`;
+  }
+  return risk.reason === 'agent-folder'
+    ? `${quoted(risk.agentName ?? '') ?? 'An agent'} can edit ${name}. Move or remove it in Settings → Extensions.`
+    : `${name} changed. Review it in Settings → Extensions, or remove it.`;
+}
+
+/** An author's name cleaned to one line of at most 40 characters, in quotes; none when empty. */
+function quoted(raw: string): string | undefined {
+  const clean = sanitizeIdentity(raw, 40);
+  return clean === undefined ? undefined : `“${clean}”`;
+}
 
 /**
  * Build the routes mounted at `/api/step-up`.
@@ -283,25 +318,37 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
   }
 
   /**
-   * Whether this browser session started before a risky mini app's risk
-   * cleared. Judged by the session's own start, from the server's records,
-   * never by anything the request says.
+   * Whether this browser session, or the page asking, started before a risky
+   * mini app's risk cleared. The session's start comes from the server's
+   * records, the page's from a stamp only the server can sign (DOR-5026).
    */
   async function mayHoldRiskyCode(c: Context<ApiEnv>): Promise<boolean> {
     if (!deps.riskLedger) return false;
-    const user = honoRequestFacts(c).user;
+    const facts = honoRequestFacts(c);
+    const user = facts.user;
     const startedAt =
       user?.sessionId && deps.sessionStartedAt
         ? await deps.sessionStartedAt(user.userId, user.sessionId).catch(() => null)
         : null;
-    return deps.riskLedger.mayHoldRiskyCode(startedAt);
+    return pageMayHoldRiskyCode({
+      ledger: deps.riskLedger,
+      enforced: deps.pageStampsEnforced?.() ?? false,
+      stamp: facts.headers[PAGE_STAMP_HEADER],
+      cookie: facts.headers.cookie,
+      sessionStartedAt: startedAt,
+    });
   }
 
   /** The refusal for `unavailable`, naming the extensions when they are why. */
   function refuseUnavailable(c: Context<ApiEnv>, unavailable: StepUpPasswordUnavailable): Response {
     if (unavailable !== 'extension-risk') return refuse(c, unavailable);
     const risks = blockedBy();
-    if (risks.length > 0) return refuse(c, unavailable, { blockedBy: risks });
+    if (risks.length > 0) {
+      return c.json(
+        { ...errorBody(extensionRiskError(risks), 'extension-risk'), blockedBy: risks },
+        REFUSALS['extension-risk'].status
+      );
+    }
     return c.json(
       { ...errorBody(CLEARED_RISK_ERROR, 'extension-risk'), blockedBy: [] },
       REFUSALS['extension-risk'].status

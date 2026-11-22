@@ -13,6 +13,8 @@ import { tmpdir } from 'os';
 import path from 'path';
 import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
 import type { SessionSettings } from '@dorkos/shared/types';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
 
 /** What `session_metadata` holds for the session under test — `null` = no row. */
 let storedSettings: SessionSettings | null = null;
@@ -26,6 +28,9 @@ vi.mock('../../core/runtime-registry.js', () => ({
     computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getSessionSettings: () => readSettings(),
+    // A chat with no recorded agent, so the no-agent path is real rather than a
+    // swallowed TypeError (DOR-5057).
+    getSessionAgentPath: async () => null,
     has: (type: string) => registered[type] !== undefined,
     // The real `get` THROWS on an unregistered type — it does not answer
     // `undefined`. The double used to be gentler than the thing it stands in
@@ -77,6 +82,9 @@ vi.mock('../../../lib/logger.js', () => ({
 }));
 
 const { createTurnExecutionSettingsResolver } = await import('../turn-execution-settings.js');
+const { setSessionAgentSources } = await import('../../core/agent-identity/session-agent.js');
+const { clearTestHomes, registerTestHomes } =
+  await import('../../core/agent-identity/__tests__/agent-home-fixture.js');
 
 /** An agent directory holding the manifest this test wrote. */
 let agentDir: string;
@@ -146,6 +154,63 @@ describe('createTurnExecutionSettingsResolver', () => {
     });
 
     expect(settings).toEqual({ model: 'opus' });
+  });
+
+  // DOR-5057: a turn addressed to a chat names no agent; the chat's own agent answers.
+  it("reads the chat's own agent when the turn names none", async () => {
+    await writeManifest({ model: 'claude-haiku-4-5' });
+    const { RuntimeRegistry } = await vi.importActual<
+      typeof import('../../core/runtime-registry.js')
+    >('../../core/runtime-registry.js');
+    const db = createTestDb();
+    const registry = new RuntimeRegistry();
+    registry.setDb(db);
+    registry.register(new FakeAgentRuntime('claude-code') as never);
+    // The CLI's shape: a folder, no agent.
+    await registry.persistSessionRuntime('chat-1', 'claude-code', { kind: 'interactive' });
+    registerTestHomes([agentDir]);
+    setSessionAgentSources({ db, liveCwd: (id) => (id === 'chat-1' ? agentDir : undefined) });
+    try {
+      const settings = await createTurnExecutionSettingsResolver()({
+        runtimeType: 'claude-code',
+        sessionId: 'chat-1',
+      });
+      expect(settings).toEqual({ model: 'claude-haiku-4-5' });
+    } finally {
+      setSessionAgentSources(undefined);
+      clearTestHomes();
+    }
+  });
+
+  it("keeps the agent the relay resolved from the subject over the chat's own", async () => {
+    await writeManifest({ model: 'claude-haiku-4-5' });
+    const other = await mkdtemp(path.join(tmpdir(), 'dorkos-relay-other-'));
+    await mkdir(path.join(other, '.dork'), { recursive: true });
+    await writeFile(
+      path.join(other, '.dork', 'agent.json'),
+      JSON.stringify({
+        id: 'rio',
+        name: 'Rio',
+        runtime: 'claude-code',
+        model: 'claude-opus-4-1',
+        registeredAt: '2026-08-18T10:00:00.000Z',
+        registeredBy: 'test',
+      })
+    );
+    registerTestHomes([agentDir, other]);
+    setSessionAgentSources({ db: createTestDb(), liveCwd: () => other });
+    try {
+      const settings = await createTurnExecutionSettingsResolver()({
+        runtimeType: 'claude-code',
+        sessionId: 'chat-1',
+        agentDirectory: agentDir,
+      });
+      expect(settings).toEqual({ model: 'claude-haiku-4-5' });
+    } finally {
+      setSessionAgentSources(undefined);
+      clearTestHomes();
+      await rm(other, { recursive: true, force: true });
+    }
   });
 
   it('asks for nothing when nothing is configured anywhere', async () => {
