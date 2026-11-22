@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(tasks): an unchanged instructions file never caps a scheduled task (DOR-5060)'
+  - 'fix(shared): export TaskFileReview from the types entry (DOR-5060)'
 ---
 
 ### Fixed
