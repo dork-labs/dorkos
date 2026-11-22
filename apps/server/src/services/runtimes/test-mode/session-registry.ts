@@ -112,9 +112,8 @@ export class TestModeSessionRegistry {
   recordMessage(sessionId: string, content: string, patch: TrackedSessionPatch = {}): void {
     const session = this.upsert(sessionId, patch);
     const preview = toPreview(shownToPerson(content));
-    const derived = deriveSessionTitle(content) || preview;
-    // A greeting kickoff derives nothing, so the person's own first message titles it.
-    if (session.title === '' && derived) session.title = this.labelTitle(derived);
+    if (session.title === '')
+      session.title = this.labelTitle(deriveSessionTitle(content) || preview);
     session.lastMessagePreview = preview;
     session.updatedAt = new Date().toISOString();
     this.emit({ type: 'session_upserted', session: { ...session } });
