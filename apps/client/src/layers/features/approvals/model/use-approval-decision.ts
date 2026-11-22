@@ -7,7 +7,7 @@ import type { PendingApproval, ApprovalAnswer } from '@dorkos/shared/approval-sc
 import { useTransport } from '@/layers/shared/model';
 import { PENDING_APPROVALS_QUERY_KEY } from '@/layers/entities/attention';
 import { permissionKeys } from '@/layers/entities/permissions';
-import { describeDecisionRefusal } from '@/layers/shared/lib';
+import { STEP_UP_NOT_ALLOWED_MESSAGE, describeDecisionRefusal } from '@/layers/shared/lib';
 
 /**
  * Allow a pending approval: once, or always for this agent and this action
@@ -54,8 +54,12 @@ export function useGrantApproval() {
     },
     onError: (error, variables) => {
       const code = (error as { code?: unknown } | null)?.code;
-      // The sheet already explained a cancelled or refused confirmation.
-      if (code === STEP_UP_REQUIRED_CODE) return;
+      // "Confirm it's you" closed unconfirmed: said calmly, not as a failure,
+      // so the card never reads as if the yes landed (DOR-4909).
+      if (code === STEP_UP_REQUIRED_CODE) {
+        toast(STEP_UP_NOT_ALLOWED_MESSAGE);
+        return;
+      }
       // A paid run the monthly limit stopped says so on its own card (DOR-4204).
       if (code === 'SPEND_LIMIT') return;
       toast.error(describeDecisionRefusal(error, variables.answer === 'always').message);

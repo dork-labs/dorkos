@@ -97,7 +97,7 @@ describe('the hosted Codex proof receipt', () => {
     );
     expect(workflow.match(/sudo apparmor_parser/g)).toHaveLength(1);
     expect(workflow).toContain(
-      'needs: [test-shard, test-binary, community-pg, community-packaged, codex-sandbox]'
+      '[test-shard-count, test-shard, test-binary, community-pg, community-packaged, codex-sandbox]'
     );
     expect(workflow).toContain('needs.codex-sandbox.result');
     // Both shard legs exclude every binary suite, these included (DOR-4190).

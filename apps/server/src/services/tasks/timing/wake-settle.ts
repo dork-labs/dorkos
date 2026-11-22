@@ -24,6 +24,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import {
   awakeTimeout,
   getAwakeClock,
+  justWokeFromSleep,
   pausableAwakeTimeout,
   type AwakeClock,
 } from '@dorkos/shared/awake-clock';
@@ -39,6 +40,11 @@ export const WAKE_SETTLE_MS = 2 * 60 * 1000;
 /** Holds scheduled fires until the computer has settled after a wake. */
 export class WakeSettle {
   private readonly pending = new Set<unknown>();
+  /**
+   * Set by {@link stop}, for good. A run that ends while the scheduler drains
+   * can still hand over a retry after sleep (DOR-3286); it must not start one.
+   */
+  private stopped = false;
 
   /**
    * Settle fires on one clock.
@@ -58,6 +64,7 @@ export class WakeSettle {
    * @param name - The task's name, for the log line if `fire` rejects.
    */
   run(fire: (firedAt: Date) => Promise<unknown> | void, name: string): void {
+    if (this.stopped) return;
     const wokeAt = this.clock.lastWakeAt();
     const wait = wokeAt === null ? 0 : wokeAt + WAKE_SETTLE_MS - this.clock.now();
     if (wait <= 0) {
@@ -73,8 +80,9 @@ export class WakeSettle {
     this.pending.add(handle);
   }
 
-  /** Drop every waiting fire. */
+  /** Drop every waiting fire, and take no more. */
   stop(): void {
+    this.stopped = true;
     for (const handle of this.pending) this.clock.timers.clearTimeout(handle);
     this.pending.clear();
   }
@@ -102,6 +110,11 @@ export interface RunDeadline {
    * waits to start (`pauseWhileWaitingToStart`, DOR-4576).
    */
   observe(event: StreamEvent): void;
+  /**
+   * Whether the computer slept since the run started and has just woken, so a
+   * failure now is put down to the sleep (`justWokeFromSleep`, DOR-3286).
+   */
+  justWoke(): boolean;
 }
 
 /**
@@ -123,8 +136,16 @@ export function runDeadline(
   operator: AbortSignal,
   onWaiting: (message: string | null) => void = () => {}
 ): RunDeadline {
+  const sleptAtStart = clock.sleptMs();
+  const justWoke = (): boolean => justWokeFromSleep(clock, sleptAtStart);
   if (!maxRuntime) {
-    return { signal: operator, timedOut: () => false, cancel: () => {}, observe: () => {} };
+    return {
+      signal: operator,
+      timedOut: () => false,
+      cancel: () => {},
+      observe: () => {},
+      justWoke,
+    };
   }
   const limit = new AbortController();
   const expire = () =>
@@ -143,5 +164,6 @@ export function runDeadline(
       cancelCap();
     },
     observe: pauseWhileWaitingToStart(timer, onWaiting),
+    justWoke,
   };
 }

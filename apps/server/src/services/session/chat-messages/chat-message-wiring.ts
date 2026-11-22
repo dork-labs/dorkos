@@ -59,6 +59,9 @@ import {
 } from './chat-message-current.js';
 import { setChatMessageStore, type ChatMessageStore } from './chat-message-store.js';
 import { stampHistory } from './chat-message-stamps.js';
+import { setChatReportBack } from './chat-message-current.js';
+import { reportTargetFromStore } from './report-back/report-target.js';
+import { randomUUID } from 'node:crypto';
 import { ChatReportBack, type RoomSeatReport } from './chat-report-back.js';
 import type { ChatReadDeps } from './chat-read.js';
 import { notifyUndeliveredReport } from './report-undelivered.js';
@@ -385,33 +388,9 @@ export function describeAsk(interaction: PendingInteractionDTO): string {
 }
 
 /** How many carry-overs and moves a report follows before it gives up. */
-const CARRY_DEPTH = 10;
-
-/**
- * The parent a chat reports to, or null when it does not report: the chat
- * that started it, found past any account moves on either side. A chat
- * carried to another account reports for the chat it replaced, to that
- * chat's starter; and a parent that was carried reports onward to the chat
- * it was carried to, not to the one on the exhausted account.
- *
- * @param sessionId - The chat whose turn ended.
- */
+/** The server-recorded parent, including verified account carries on either side. */
 export function reportTargetOf(sessionId: string): { parentSessionId: string } | null {
-  const startedBy = getSessionStartedByStore();
-  let record = startedBy?.get(sessionId) ?? null;
-  for (let i = 0; record?.carried && record.startedBySessionId && i < CARRY_DEPTH; i += 1) {
-    record = startedBy?.get(record.startedBySessionId) ?? null;
-  }
-  if (!record || record.kind !== 'chat' || !record.reportBack || !record.startedBySessionId) {
-    return null;
-  }
-  let parent = record.startedBySessionId;
-  for (let i = 0; i < CARRY_DEPTH; i += 1) {
-    const next = startedBy?.carriedSuccessorOf(parent);
-    if (!next) break;
-    parent = next;
-  }
-  return { parentSessionId: parent };
+  return reportTargetFromStore(getSessionStartedByStore(), sessionId);
 }
 
 /**
@@ -458,6 +437,7 @@ export function wireChatReportBack(
   store: ChatMessageStore
 ): () => void {
   const reportBack = new ChatReportBack({
+    outbox: store.handoffOutbox,
     service,
     store,
     reportTargetOf: (sessionId) => reportTargetOf(sessionId),
@@ -473,20 +453,15 @@ export function wireChatReportBack(
     statusOf: (sessionId) => peekProjector(sessionId)?.getStatus() ?? null,
     history: chatHistoryOf,
     toRoomSeat: (parentSessionId, report) => deliverToRoomSeat(parentSessionId, report),
-    onUndelivered: (report) => {
-      void notifyUndeliveredReport(report, {
+    onUndelivered: (report) =>
+      notifyUndeliveredReport(report, {
         titleOf: chatTitleOf,
         agentPathOf: (id) => runtimeRegistry.getSessionAgentPath(id),
         agentIdOf: resolveAgentIdForPath,
         notify,
-      }).catch((err: unknown) =>
-        logger.warn('[chat report-back] the undelivered report card could not be raised', {
-          sessionId: report.sessionId,
-          ...logError(err),
-        })
-      );
-    },
+      }),
   });
+  setChatReportBack(reportBack);
   const stopStartup = wireSpinOffStartup(reportBack);
   // What each chat's open ask is about, kept from the interaction events so the
   // "needs the person" report can say it; a DorkOS capability hold has none.
@@ -513,6 +488,7 @@ export function wireChatReportBack(
   // Every way a chat starts waiting on the person — an approval, a question,
   // an MCP form, a DorkOS capability hold — moves its lifecycle to `blocked`.
   let waits = 0;
+  const waitEpoch = randomUUID();
   const offStatus = onProjectorStatusChange(({ sessionId, status }) => {
     // When each turn starts, so its report reads only the words it wrote.
     if (status.lifecycle === 'streaming' && !turnStarts.has(sessionId)) {
@@ -522,7 +498,7 @@ export function wireChatReportBack(
     waits += 1;
     void reportBack
       .onWaiting(sessionId, {
-        key: `${sessionId}:${waits}`,
+        key: `${sessionId}:${waitEpoch}:${waits}`,
         what: askWhat.get(sessionId) ?? 'It is waiting for the person to approve something.',
       })
       .catch((err: unknown) =>
@@ -533,6 +509,7 @@ export function wireChatReportBack(
       );
   });
   return () => {
+    reportBack.stop();
     stopStartup();
     offTurn();
     offAsk();

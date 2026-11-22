@@ -40,7 +40,7 @@ export function outsideTextHookMatcher(
         if (hookInput.hook_event_name !== 'PreToolUse') return {};
         if (!toolReadsOutsideText('claude-code', hookInput.tool_name)) return {};
         try {
-          markRunningTurnOutsider(sessionId(), agentPath ?? undefined);
+          markRunningTurnOutsider(sessionId(), agentPath ?? undefined, { kind: 'tool' });
           return {};
         } catch {
           return {

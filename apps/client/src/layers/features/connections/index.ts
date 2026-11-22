@@ -32,6 +32,8 @@ export { NeedsYou } from './ui/NeedsYou';
 export { SpendingBlock, SPENDING_SECTION } from './ui/spending/SpendingBlock';
 export type { SpendingBlockProps } from './ui/spending/SpendingBlock';
 export { isPaidToolkit } from './lib/paid-actions';
+export { WritesBackBlock, WRITES_BACK_LABEL } from './ui/writes-back/WritesBackBlock';
+export type { WritesBackBlockProps } from './ui/writes-back/WritesBackBlock';
 export { AgentRequestDialog } from './ui/AgentRequestDialog';
 export { ManagementReviewDialog } from './ui/ManagementReviewDialog';
 export { ConnectDialog } from './ui/ConnectDialog';

@@ -1,13 +1,7 @@
 import { useId } from 'react';
-import { TriangleAlert } from 'lucide-react';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import { Badge, Button, Checkbox, Label } from '@/layers/shared/ui';
-import {
-  heldAccess,
-  rankAgents,
-  VISIBLE_AGENT_LIMIT,
-  type CardDecision,
-} from '../../lib/access-card-selection';
+import { heldAccess, rankAgents, VISIBLE_AGENT_LIMIT } from '../../lib/access-card-selection';
 import { displayedAccessLevel } from '../../lib/access-level-offer';
 import { selectionsFromPreview } from '../../lib/reconciliation-selection';
 import { HELD_LABELS } from './access-labels';
@@ -25,8 +19,6 @@ interface AgentChecklistProps {
   picked: ReadonlySet<string>;
   /** Replace the ticked set. */
   setPicked: (next: Set<string>) => void;
-  /** What saving would do, so losses are said before Save. */
-  decision: CardDecision;
   /** Whether every agent is listed. */
   showAll: boolean;
   /** List every agent. */
@@ -35,8 +27,9 @@ interface AgentChecklistProps {
 
 /**
  * The page card's "Only agents you pick" answer: agents most relevant first,
- * each with what it holds today, and a plain line for every agent that would
- * lose access or lose write access on Save.
+ * each with what it holds today. A ticked agent that holds its own grant says
+ * so ("Own access"), so a pre-tick never reads like a default (DOR-4899). What
+ * Save would do is said once, in the card's result line above Save.
  *
  * Before "Show all", it lists the first few, every ticked agent, and every
  * agent that has access now, so unticking one never hides it from view.
@@ -48,7 +41,6 @@ export function AgentChecklist({
   systemAgentIds,
   picked,
   setPicked,
-  decision,
   showAll,
   setShowAll,
 }: AgentChecklistProps) {
@@ -63,8 +55,6 @@ export function AgentChecklist({
           picked.has(agent.agentId) ||
           heldAccess(current[agent.agentId]) !== 'none'
       );
-  const nameOf = (agentId: string) =>
-    preview.agents.find((agent) => agent.agentId === agentId)?.displayName;
 
   return (
     <fieldset className="space-y-1">
@@ -72,9 +62,7 @@ export function AgentChecklist({
       {visible.map((agent) => {
         const id = `${baseId}-${agent.agentId}`;
         const held = displayedAccessLevel(heldAccess(current[agent.agentId]), preview.candidates);
-        const loses =
-          decision.removedAgentIds.includes(agent.agentId) ||
-          decision.downgradedAgentIds.includes(agent.agentId);
+        const ownAccess = held !== 'none' && picked.has(agent.agentId);
         return (
           <div
             key={agent.agentId}
@@ -82,7 +70,7 @@ export function AgentChecklist({
           >
             <Checkbox
               id={id}
-              aria-describedby={loses ? `${id}-loss` : undefined}
+              aria-describedby={ownAccess ? `${id}-own` : undefined}
               checked={picked.has(agent.agentId)}
               onCheckedChange={(next) => {
                 const updated = new Set(picked);
@@ -91,9 +79,17 @@ export function AgentChecklist({
                 setPicked(updated);
               }}
             />
-            <Label htmlFor={id} className="min-w-0 flex-1 cursor-pointer py-2 font-normal">
-              <span className="truncate">{agent.displayName}</span>
-            </Label>
+            {/* The tag sits under the name, so a phone never cuts the name short. */}
+            <div className="flex min-w-0 flex-1 flex-col py-1.5">
+              <Label htmlFor={id} className="cursor-pointer py-0.5 font-normal">
+                <span className="truncate">{agent.displayName}</span>
+              </Label>
+              {ownAccess && (
+                <span id={`${id}-own`} className="text-muted-foreground text-xs">
+                  Own access
+                </span>
+              )}
+            </div>
             {held !== 'none' && (
               <Badge size="xs" variant="secondary" aria-label={`Now: ${HELD_LABELS[held]}`}>
                 {HELD_LABELS[held]}
@@ -107,30 +103,6 @@ export function AgentChecklist({
           Show all {ranked.length}
         </Button>
       )}
-      {/* Each loss line describes its agent's checkbox, and the region
-          announces a new one as it appears. */}
-      <div aria-live="polite" className="space-y-1">
-        {decision.removedAgentIds.map((agentId) => (
-          <p
-            key={agentId}
-            id={`${baseId}-${agentId}-loss`}
-            className="text-foreground flex items-start gap-1.5 px-2 text-xs"
-          >
-            <TriangleAlert className="text-status-warning-dot mt-0.5 size-3 shrink-0" aria-hidden />
-            {nameOf(agentId)} will lose access to {serviceName}.
-          </p>
-        ))}
-        {decision.downgradedAgentIds.map((agentId) => (
-          <p
-            key={agentId}
-            id={`${baseId}-${agentId}-loss`}
-            className="text-foreground flex items-start gap-1.5 px-2 text-xs"
-          >
-            <TriangleAlert className="text-status-warning-dot mt-0.5 size-3 shrink-0" aria-hidden />
-            {nameOf(agentId)} will lose write access.
-          </p>
-        ))}
-      </div>
     </fieldset>
   );
 }

@@ -64,7 +64,7 @@ export function AccessOutcome({
           <p data-testid="connector-access-outcome" className="text-sm font-medium">
             Access updated
           </p>
-          <p className="text-muted-foreground mt-1 text-sm">{savedDetail}</p>
+          <p className="text-muted-foreground mt-1 text-sm whitespace-pre-line">{savedDetail}</p>
         </div>
       </div>
     );

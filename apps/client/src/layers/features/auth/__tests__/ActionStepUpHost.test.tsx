@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { HeldStepUpView } from '@dorkos/shared/step-up';
 import {
@@ -24,6 +24,9 @@ const VIEW: HeldStepUpView = {
   methods: ['password'],
   triesLeft: 5,
 };
+
+/** What the Mac app's sheet says while the shell's own window asks (designer, DOR-4909). */
+const DESKTOP_SHEET_LINE = 'Finish in the “Confirm it’s you” window. Closing it changes nothing.';
 
 afterEach(() => {
   act(() => {
@@ -364,6 +367,25 @@ describe('ActionStepUpHost', () => {
     await expect(outcome).resolves.toEqual({ kind: 'not-confirmed' });
   });
 
+  it('shows a mini app’s name as plain text: its author picks it (DOR-4906)', async () => {
+    const name = '<img src="x" alt="planted">Notes';
+    heldWith(
+      {
+        ...VIEW,
+        methods: [],
+        passwordUnavailable: 'extension-risk',
+        blockedBy: [{ id: 'notes', name, reason: 'changed' }],
+      },
+      [200, { ok: true, status: 200, result: {} }]
+    );
+    render(<ActionStepUpHost />);
+    void ask();
+    expect(
+      await screen.findByText(`Confirming is off while ${name} has changed since you approved it.`)
+    ).toBeTruthy();
+    expect(screen.queryByAltText('planted')).toBeNull();
+  });
+
   it('after a mini app ran since sign-in, drops this hold and asks to sign in again', async () => {
     const fetchSpy = heldWith(
       { ...VIEW, methods: [], passwordUnavailable: 'extension-risk', blockedBy: [] },
@@ -431,14 +453,34 @@ describe('ActionStepUpHost', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
-    it('says where to confirm while the shell’s window is open', async () => {
+    // Purpose: on Nov 21 the owner lost the password window and nothing said
+    // where it was or what closing it did (DOR-4909).
+    it('names the shell’s window, and says closing it changes nothing', async () => {
       (window as { electronAPI?: unknown }).electronAPI = {
         confirmStepUp: () => new Promise(() => undefined),
       };
       render(<ActionStepUpHost />);
       void ask();
-      expect(await screen.findByText('Confirm in the window that just opened.')).toBeTruthy();
+      expect(await screen.findByText(DESKTOP_SHEET_LINE)).toBeTruthy();
       expect(screen.queryByLabelText('DorkOS password')).toBeNull();
+    });
+
+    it('ends unconfirmed when the shell’s window is closed, so the caller can say so', async () => {
+      let closeWindow: (outcome: { kind: 'not-confirmed' }) => void = () => undefined;
+      (window as { electronAPI?: unknown }).electronAPI = {
+        confirmStepUp: () =>
+          new Promise((resolve) => {
+            closeWindow = resolve;
+          }),
+      };
+      render(<ActionStepUpHost />);
+      // Its own id: the shell is asked once per held action, and the test above
+      // leaves its window open on `held-1`.
+      const outcome = ask('held-closed');
+      expect(await screen.findByText(DESKTOP_SHEET_LINE)).toBeTruthy();
+      act(() => closeWindow({ kind: 'not-confirmed' }));
+      await expect(outcome).resolves.toEqual({ kind: 'not-confirmed' });
+      await waitFor(() => expect(screen.queryByText(DESKTOP_SHEET_LINE)).toBeNull());
     });
 
     it('never falls back to a password field on an older app', async () => {

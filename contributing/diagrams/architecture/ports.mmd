@@ -1,21 +1,22 @@
 flowchart LR
   accTitle: DorkOS replaceable interfaces
-  accDescr: Each row names a caller, its port, and implementations. A port is a code boundary, not necessarily a network boundary. Dashed edges identify the unwired Buzz implementation and planned decision-model consumers; decision bridges themselves exist.
+  accDescr: Each row names a caller, its port, and implementations. A port is a code boundary, not necessarily a network boundary. Dashed edges identify the unregistered Buzz implementation and the computer-local runtime, which has no conformance suite. The decision ladder has two production callers since October: heartbeat triage and the space server's post checks.
   ui["React client"] --> transport{{"Transport"}}
   transport --> http["HttpTransport<br/>HTTP + WebSocket + Space SSE<br/>Hono"]
   dispatch["Session dispatcher"] --> agent{{"AgentRuntime"}}
-  agent --> runtimes["Claude Code / Codex SDKs<br/>OpenCode HTTP + SSE sidecar<br/>Doe in-process engine"]
+  agent --> runtimes["Claude Code SDK · Codex app-server<br/>OpenCode HTTP + SSE sidecar<br/>Doe in-process engine"]
+  agent -.->|"No conformance suite"| vm["computer-local<br/>OpenCode in a Lima VM · default off"]
   accounts["Account actions"] --> connector{{"ConnectorProvider"}}
   connector --> backends["Composio · Nango · raw MCP<br/>Managed Cloud backend"]
   rooms["Local registry / remote consumers"] --> community{{"CommunityAdapter"}}
-  community --> local["LocalCommunityAdapter<br/>Wraps local RoomService"]
-  community --> remote["RemoteCommunityAdapter<br/>Owner-qualified, lazy instance<br/>Pinned server + space UUID<br/>Qualified HTTP + SSE"]
-  community -.-> buzz["Buzz implementation<br/>Not wired"]
+  community --> local["LocalCommunityAdapter<br/>Wraps local RoomService<br/>The private space on a hub"]
+  community --> remote["RemoteCommunityAdapter<br/>Owner-qualified, lazy instance<br/>Pinned server + space UUID<br/>Qualified HTTP + SSE · availability report"]
+  community -.-> buzz["Buzz implementation<br/>Read-only · not registered"]
   notes["Agent memory"] --> memory{{"MemoryProvider"}}
-  memory --> files["Built-in MEMORY.md store<br/>Optional registered backends"]
+  memory --> files["Built-in MEMORY.md + notes files<br/>Optional registered backends"]
   relay["Relay message bus"] --> messaging{{"RelayAdapter"}}
   messaging --> channels["Messaging platforms / agent delivery<br/>Protocol depends on implementation"]
-  future["Planned triage / moderation consumers"] -.->|"Not wired"| decision{{"DecisionModel"}}
-  decision --> bridges["Rules · OpenAI-compatible · Jev<br/>Recommendation, not authority"]
+  beats["Heartbeat triage · space post checks"] --> decision{{"DecisionModel"}}
+  decision --> bridges["Rules · OpenAI-compatible · Jev<br/>Recommendation, not authority<br/>Paid tiers behind a person's yes or a flag"]
   classDef port fill:#e7f1eb,stroke:#427a55,color:#183f26
   class transport,agent,connector,community,memory,messaging,decision port

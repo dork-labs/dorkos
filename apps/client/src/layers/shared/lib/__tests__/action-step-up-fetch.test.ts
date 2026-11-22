@@ -89,6 +89,21 @@ describe('personAwareFetch and a held action', () => {
     expect(base).toHaveBeenCalledTimes(1);
   });
 
+  // Purpose: the server's "Confirm it’s you to do this." was shown by every
+  // caller after the sheet had closed, reading as an order rather than "nothing
+  // changed" (DOR-4909). The code and held action stay, so callers still know.
+  it('says nothing changed once the person cancels, keeping the code', async () => {
+    const base = vi.fn(async () => held('held-1'));
+    stops.push(answerWith({ kind: 'not-confirmed' }).stop);
+    const res = await personAwareFetch(base, ORIGIN)('/api/x', { method: 'POST', body: '{}' });
+    expect(await res.json()).toEqual({
+      error: 'Not confirmed. Nothing changed.',
+      code: STEP_UP_REQUIRED_CODE,
+      heldActionId: 'held-1',
+      expiresAt: '2026-10-30T12:02:00.000Z',
+    });
+  });
+
   it('asks for the action again after it expired, which holds it afresh', async () => {
     const base = vi
       .fn<() => Promise<Response>>()

@@ -431,6 +431,18 @@ jobs:
       - name: Arm-door fixtures
         run: bash scripts/test-arm-door.sh
 
+      # QA's real-data gate (DOR-4904), shared by the arm script and arm-door:
+      # a config or migration change that slips past QA, and an ordinary one
+      # held for a check it doesn't need, are both pinned.
+      - name: QA real-data gate fixtures
+        run: bash scripts/test-qa-real-data.sh
+
+      # The designer's sign-off gate (DOR-4904), shared the same way: a screen
+      # change that slips past the designer, and a non-visual one held for
+      # shots, are both pinned.
+      - name: Design sign-off gate fixtures
+        run: bash scripts/test-design-ok.sh
+
       # The other decision merge-tail makes on the same tick: whether to
       # re-request a review that failed. Its stakes run the opposite way to the
       # arming gate's — the expensive bug is a RETRY that fires when it should

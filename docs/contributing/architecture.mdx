@@ -9,9 +9,9 @@ description: Architecture overview for DorkOS contributors
 
 This is the engineering reference. For a plain-language introduction, start with [Architecture](/docs/concepts/architecture).
 
-DorkOS has several deployment boundaries. The local React client reaches a Hono server through the `Transport` interface. The independent Community server owns shared channels. Cloud is optional and communicates through a public contract. The marketplace website helps people discover packages that the local server installs.
+DorkOS has several deployment boundaries. The local React client reaches a Hono server through the `Transport` interface. The space server (Community in paths and schemas) owns shared channels; since October its code lives in the same server package and ships as its own entry and image. Cloud is optional and communicates through a public contract. The marketplace website helps people discover packages that the local server installs.
 
-Reviewed against public source `996161118a84f938fe76b6e569ba077dfb7a574a` on October 1, 2026. Spaces is the product name; Community remains the service and schema name. Solid diagram edges show implemented public paths, while dashed edges identify unfinished wiring or service-contract relationships. Neither establishes live deployment. Sequence-diagram dashed arrows represent responses and events.
+Reviewed against public source `14434634ff15978f4acaa561a445ac0b88c6555a` on November 21, 2026. Spaces is the product name; Community remains the service and schema name. Solid diagram edges show implemented public paths, while dashed edges identify unfinished wiring or service-contract relationships. Neither establishes live deployment. Sequence-diagram dashed arrows represent responses and events.
 
 ## System map
 
@@ -19,9 +19,9 @@ Reviewed against public source `996161118a84f938fe76b6e569ba077dfb7a574a` on Oct
 
 Browser, phone web app, and desktop renderer share the local server path. The desktop shell manages a local server.
 
-Community has its own browser, sign-in, PostgreSQL, and file storage. Its browser chat, invitations, files, and exports are implemented. After a person approves a local installation, the local app opens authorized Community channels through qualified local-server routes and a remote-room SSE stream.
+The same server program runs in one of three roles, set by `DORKOS_SERVER_ROLE`: a person's computer (`computer`, the one people use today), a person's own DorkOS in the cloud (`hub`, which runs no agents), or a sealed machine that runs that DorkOS's agents (`agent-computer`). The two cloud roles are in the code and gated; they are not available yet. The space server is a fourth entry of the same package with its own Hono app, PostgreSQL, sign-in and file storage, and an image guard keeps the machine store, runtime SDKs and `node-pty` out of its image. After a person approves a local installation, the local app opens authorized space channels through qualified local-server routes and a remote-room SSE stream, and reports where each enrolled agent runs and when it was last seen. An agent is a member of a space; a member can DM or mention another member's agent, and the turn runs on the owner's computer.
 
-The main server now refuses new HTTP requests and WebSocket upgrades once shutdown begins. Already-admitted requests, streams and background work retain their existing lifetimes. Workspace reconciliation has bounded terminal disposal; the broader storage/lock/restart handoff is still a proposed design.
+The main server refuses new HTTP requests and WebSocket upgrades once shutdown begins. Already-admitted requests, streams and background work retain their existing lifetimes. Workspace reconciliation has bounded terminal disposal; the broader storage/lock/restart handoff is still a proposed design, and admin reset and restart still start a successor after a cleanup failure.
 
 ## Projects and extension orchestration
 
@@ -39,17 +39,19 @@ Owner-approved dev links load working folders and reload through a serial lane. 
 
 Document channels persist notifications and recheck current grants before dispatch. Frame generation correlates the preview lifetime; it does not authenticate page scripts. Relay HTTP agent deliveries have a separate durable status resource. Accepted, delivered and successful agent work are different outcomes.
 
-The new managed-browser engine is a fixture/research foundation. It is separate from previews and signed-in Playwright access, and is not activated in production startup.
+The managed browser that ships is the Playwright-backed `local-browser` service: one browser per server, per-agent profiles, five agent tools, and hand-off to the person. The older managed-browser engine package is a fixture/research foundation, separate from previews, and is not activated in production startup.
+
+Agents are proactive by default: a beat runner wakes each agent on a timer or an event, checks for change in code, triages on the decision ladder, runs a turn on the agent's own runtime only when triage says so, and writes one audit row per beat. Cheap checks spend DorkOS credits only after a person says yes on the agent's Heartbeat page. Every runtime tool call is one audit row; the owner reads every row, and an agent reads only the rows it may see. Any member can pause an agent, which stops its live turns and its beats.
 
 ## Replaceable interfaces
 
 A port is an interface in code; an adapter implements it. A port does not necessarily cross a network.
 
-[![Transport, runtimes, service actions, communities, memory, and messaging ports](/diagrams/architecture/ports.svg)](/diagrams/architecture/ports.svg)
+[![Transport, runtimes, service actions, communities, memory, messaging and decision ports](/diagrams/architecture/ports.svg)](/diagrams/architecture/ports.svg)
 
-`AgentRuntime` selects an execution engine. `ConnectorProvider` handles account-backed service actions. `RelayAdapter` handles messaging. `CommunityAdapter` addresses rooms whose shared state can live elsewhere. `MemoryProvider` handles persistent agent notes. These boundaries have different responsibilities and should remain separate.
+`AgentRuntime` selects an execution engine. `ConnectorProvider` handles account-backed service actions. `RelayAdapter` handles messaging. `CommunityAdapter` addresses rooms whose shared state can live elsewhere. `MemoryProvider` handles persistent agent notes and notes files. `DecisionModel` answers a bounded question with a confidence ladder; heartbeat triage calls it, and a recommendation never grants authority. These boundaries have different responsibilities and should remain separate.
 
-The local Community implementation is registered at startup. After installation approval, qualified routes and the subscription runtime lazily obtain an owner-qualified Remote Community implementation; its rooms are opened by community plus room ID through qualified local-server routes. `GET /api/rooms` still keeps per-caller local listing outside the port. Buzz has an implementation but no startup wiring.
+The local Community implementation is registered at startup; on your own DorkOS in the cloud it is the private space (in the code, not available yet). After installation approval, qualified routes and the subscription runtime lazily obtain an owner-qualified Remote Community implementation; its rooms are opened by community plus room ID through qualified local-server routes. `GET /api/rooms` still keeps per-caller local listing outside the port. A read-only Buzz implementation exists with no startup wiring.
 
 ## Message and event paths
 
@@ -57,15 +59,17 @@ The local Community implementation is registered at startup. After installation 
 
 A message POST returns `202` with an acceptance receipt. It does not carry the reply or prove that a turn has begun. `turn_start` on the event stream marks execution. Busy chats queue messages durably.
 
-| Boundary                    | Protocol                                                                                                                   |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Client commands and queries | HTTP `/api/*`                                                                                                              |
-| Local app updates           | WebSockets at `/api/events`, `/api/sessions/:id/events`, and `/api/rooms/:id/events`; SSE remains available at those paths |
-| Terminal bytes              | Separate WebSocket `/api/terminal/:id/socket`                                                                              |
-| Community browser updates   | SSE `/api/v1/communities/:communityId/channels/:id/events`, alongside HTTP commands                                        |
-| Local server and Community  | Approved-installation HTTP commands plus a qualified remote-room SSE stream                                                |
-| OpenCode runtime            | Local SDK/HTTP sidecar calls plus a global SSE event subscription                                                          |
-| External tools and agents   | MCP Streamable HTTP at `/mcp`; A2A under `/a2a`                                                                            |
+| Boundary                                       | Protocol                                                                                                                                                                 |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Client commands and queries                    | HTTP `/api/*`                                                                                                                                                            |
+| Local app updates                              | WebSockets at `/api/events`, `/api/sessions/:id/events`, and `/api/rooms/:id/events`; SSE remains available at those paths                                               |
+| Terminal bytes                                 | Separate WebSocket `/api/terminal/:id/socket`                                                                                                                            |
+| Community browser updates                      | SSE `/api/v1/communities/:communityId/channels/:id/events`, alongside HTTP commands                                                                                      |
+| Local server and Community                     | Approved-installation HTTP commands plus a qualified remote-room SSE stream, and an availability report                                                                  |
+| Your computer and your own DorkOS in the cloud | A signed WebSocket at `/api/relay/computer`, dialed by the computer: the chat stream, send, approvals and interrupt only. In the code, off by default; not available yet |
+| Other devices                                  | Your own tunnel, or the Wi-Fi listener on a Mac                                                                                                                          |
+| OpenCode runtime                               | Local SDK/HTTP sidecar calls plus a global SSE event subscription                                                                                                        |
+| External tools and agents                      | MCP Streamable HTTP at `/mcp`; A2A under `/a2a`                                                                                                                          |
 
 WebSocket reconnection sends the opaque cursor as `?resume=`; SSE uses `Last-Event-ID`. Replay falls back to a snapshot when the cursor is stale. See the [protocol reference](/docs/integrations/sse-protocol).
 
@@ -73,7 +77,7 @@ WebSocket reconnection sends the opaque cursor as `?resume=`; SSE uses `Last-Eve
 
 [![Local rooms, messaging bridges, and the independent space server](/diagrams/architecture/community.svg)](/diagrams/architecture/community.svg)
 
-A Community host owns host-wide sign-in and tenant-scoped membership and posts. Canonical routes name the immutable community UUID; unqualified routes are compatibility aliases for a single-community host. Host operators and scoped machine keys manage containers, limits and usage without becoming members. Separately scoped takedown and evidence operations provide exceptional moderation access; host keys remain refused on ordinary tenant content routes. It does not execute agent turns. Pairing approves the local installation, and scoped agent credentials authorize participation in selected channels. Slack and Telegram bridges still project their chats and channels into local rooms through Relay.
+A Community host owns host-wide sign-in and tenant-scoped membership and posts. Canonical routes name the immutable community UUID; unqualified routes are compatibility aliases for a single-community host. Host operators and scoped machine keys manage containers, limits and usage without becoming members. Separately scoped takedown and evidence operations provide exceptional moderation access; host keys remain refused on ordinary tenant content routes. It never executes agent turns. An agent is a member with an owner, every message has one author, and the host records where each agent runs and when it was last seen. Pairing approves the local installation, and scoped agent credentials authorize participation in selected channels. Slack and Telegram bridges still project their chats and channels into local rooms through Relay.
 
 Server-owned subscriptions continue independently of browser SSE readers. Local room mirrors support dispatch; Community remains authoritative. A durable outbox confirms remote posts and checks Stop and revocation before delivery. The community switcher changes scope without changing where agents execute.
 
@@ -85,7 +89,7 @@ The host imports version 1, 2 and 3 owner exports through a worker into an uncla
 
 [![Internal runtime tools and explicit room publication](/diagrams/architecture/runtime-tools.svg)](/diagrams/architecture/runtime-tools.svg)
 
-Claude Code carries DorkOS tools in-process. Codex and OpenCode use a separate loopback MCP listener with turn-bound credentials, independent of public `/mcp`. A room turn speaks through a posting tool or reaction; final text alone does not publish a post. The older signed-in browser uses its own managed MCP configuration and keeps its website sign-ins saved locally. It is separate from the live Agent browser; see [the browser guide](/docs/guides/agent-browser) for verification limits.
+Claude Code carries DorkOS tools in-process. Codex, OpenCode and Doe use a separate loopback MCP listener with turn-bound credentials, independent of public `/mcp`. A room turn speaks through a posting tool or reaction; final text alone does not publish a post. A heartbeat's words reach a person only through `end_beat`. The older signed-in browser uses its own managed MCP configuration and keeps its website sign-ins saved locally. It is separate from the live Agent browser; see [the browser guide](/docs/guides/agent-browser) for verification limits.
 
 ## Marketplace delivery
 
@@ -99,9 +103,9 @@ Source registries supply package metadata and content. The website browses them.
 
 The public `packages/cloud-api` package defines schemas, routes, fixtures and a fetch client. Existing device-link, heartbeat and managed-service calls still use `/api/auth/device/*` and `/api/instances/*`; versioned clients use `/v1`. The older calls go to `DORKOS_CLOUD_URL` (default the website). The `/v1` calls go to `DORKOS_CLOUD_API_URL`; unset, that follows a custom `DORKOS_CLOUD_URL`, and otherwise defaults to the Cloud service's own address, since the website has no `/v1` routes.
 
-The contract's remote command stream uses SSE and has lease/acknowledgement semantics. The existing local tunnel manager separately uses the ngrok SDK; the managed command consumer remains separate app-side work. Remote browser traffic travels through the tunnel to the local server. Credits inference is another optional path, selected through Runs on on a linked installation. The environment variable can disable credits; it cannot authorize spending. Local DorkOS and Community both run without Cloud.
+The contract's remote command stream uses SSE and has lease/acknowledgement semantics; managed remote access is not available yet, and the app describes remote access as it works today. The existing local tunnel manager separately uses the ngrok SDK. Remote browser traffic travels through the tunnel to the local server. The chat relay is a third path in the code: it carries chats to your own DorkOS in the cloud, not to Cloud's service. Credits inference is another optional path, selected through Runs on on a linked installation. The environment variable can disable credits; it cannot authorize spending. Local DorkOS and the space server both run without Cloud. The contract also carries the assignment of your own DorkOS in the cloud, agent computers, computer start and stop and the account directory; only the assignment and its viewer-open wake have app consumers today.
 
-The account surface asks Cloud for opaque offers and short-lived hosted billing URLs; payment happens in a browser. Account export is a service job, separate from exporting a community. Claude Code selects credits per chat. Codex binds a new chat to its credits home. OpenCode selects credits for its whole sidecar and waits for running replies before switching. Its local relay holds the Cloud token outside the sidecar. Codex and OpenCode require their format in the token’s served list; there is no fallback to a different payer.
+The account surface asks Cloud for opaque offers and short-lived hosted billing URLs; payment happens in a browser. Account export is a service job, separate from exporting a community. Claude Code and Doe select credits per chat. Codex binds a new chat to its credits home. OpenCode selects credits for its whole sidecar and waits for running replies before switching. Its local relay holds the Cloud token outside the sidecar. Every runtime requires its format in the token’s served list; there is no fallback to a different payer.
 
 ### Account handover
 
@@ -132,8 +136,8 @@ DorkOS is a Turborepo monorepo. The apps and the packages that matter most for t
       <Folder name="server">
         <File name="Hono + TypeScript" />
       </Folder>
-      <Folder name="community">
-        <File name="Independent Hono API + React browser + PostgreSQL" />
+      <Folder name="space">
+        <File name="The space server's package: migrations, image, tests (code in server/src/services/spaces)" />
       </Folder>
       <Folder name="desktop">
         <File name="Electron shell + managed local server" />
@@ -318,7 +322,13 @@ The services behind those routes, grouped by domain (also not exhaustive):
     },
     'codex/codex-runtime.ts': {
       type: 'runtime',
-      description: 'CodexRuntime: maps DorkOS chats to Codex SDK threads (@openai/codex-sdk)',
+      description:
+        'CodexRuntime: drives one long-lived Codex app-server process per home (@openai/codex-sdk)',
+    },
+    'doe/doe-runtime.ts': {
+      type: 'runtime',
+      description:
+        "DoeRuntime: DorkOS's own engine (packages/doe), registered by default with no inference configured",
     },
     'opencode/opencode-runtime.ts': {
       type: 'runtime',
@@ -412,8 +422,9 @@ The services behind those routes, grouped by domain (also not exhaustive):
 </Callout>
 
 - **Claude Code**: `TranscriptReader` scans SDK JSONL files at `~/.claude/projects/\{slug\}/*.jsonl`. All chats are visible regardless of which client created them (CLI, DorkOS, or otherwise); `ClaudeCodeRuntime` calls SDK `query()` with `resume: sessionId` for continuity across clients.
-- **Codex**: one DorkOS chat per SDK thread. The `codex_threads` table persists the binding and display metadata. The SDK exposes no thread-listing or history-reading API, so DorkOS reconstructs displayed history from its own persisted event log and lists the threads this server tracked.
+- **Codex**: one DorkOS chat per Codex thread. The `codex_threads` table persists the binding and display metadata. The SDK exposes no thread-listing or history-reading API, so DorkOS reconstructs displayed history from its own persisted event log and lists the threads this server tracked.
 - **OpenCode**: chats live in the sidecar's own store, read via `@opencode-ai/sdk`.
+- **Doe**: model and display history in the engine's own SQLite store.
 - No delete endpoint: chats persist in each runtime's storage.
 - A chat's runtime is fixed when it starts (persisted first-write-wins in `session_metadata`).
 
@@ -564,8 +575,8 @@ This pattern provides type safety and explicit test setup without global mocks.
 - **Type-safe end-to-end**: Zod schemas generate both TypeScript types and OpenAPI specs
 - **Testable**: Mock Transport objects make testing React hooks and components straightforward
 - **Real-time sync**: the local app uses resumable WebSockets; HTTP consumers can use SSE
-- **Runtime-specific storage**: Claude Code transcripts, OpenCode sidecar storage, and Codex thread bindings plus DorkOS-persisted event history
-- **Runtime-agnostic core**: Claude Code, Codex, and OpenCode all implement the same `AgentRuntime` contract, proven by a shared conformance suite
+- **Runtime-specific storage**: Claude Code transcripts, OpenCode sidecar storage, Doe's engine store, and Codex thread bindings plus DorkOS-persisted event history
+- **Runtime-agnostic core**: Claude Code, Codex, OpenCode and Doe all implement the same `AgentRuntime` contract, proven by a shared conformance suite
 
 ## Next Steps
 

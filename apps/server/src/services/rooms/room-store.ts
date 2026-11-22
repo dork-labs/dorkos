@@ -1,3 +1,4 @@
+import { HandoffOutboxStore } from './handoff/outbox/handoff-outbox-store.js';
 /**
  * Drizzle CRUD over the five room tables.
  *
@@ -60,23 +61,11 @@ import {
   type NewRoom,
   type NewRoomEntry,
   type ThreadAggregateRow,
+  type TopLevelWindow,
 } from './room-rows.js';
 import { dmMemberKeyFor } from './manage/room-dm-key.js';
 
-/**
- * The bounds of one read of a channel's top level, shared by the read that
- * LISTS it and the one that COUNTS it (DOR-1207).
- */
-export interface TopLevelWindow {
-  /** Return entries with `seq` strictly above this — the caller's floor. */
-  afterSeq: number;
-  /** And with `seq` at or below this — the triggering entry's own position. */
-  throughSeq: number;
-  /** Drop this author's own entries; the turn reports them separately. */
-  excludeAuthorId: string;
-  /** Drop one entry by id — the thread root, quoted to the model already. */
-  excludeEntryId: string;
-}
+export type { TopLevelWindow } from './room-rows.js';
 
 /**
  * The predicate both top-level reads run, written once.
@@ -200,7 +189,10 @@ export class RoomStore {
    */
   readonly listReads: RoomListReads;
 
+  /** Durable public sources on this store's exact database connection. */
+  readonly handoffOutbox: HandoffOutboxStore;
   constructor(private readonly db: Db) {
+    this.handoffOutbox = new HandoffOutboxStore(db);
     this.sessionLedger = new RoomSessionLedger(db);
     this.departedSeats = new DepartedSeatStore(db);
     this.listReads = new RoomListReads(db);

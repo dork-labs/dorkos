@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseRuns, pulseSchedules, type Db } from '@dorkos/db';
 import { eq } from 'drizzle-orm';
+import { sleptDuringRunError } from '@dorkos/shared/schedule-notice-copy';
 import {
   healthOf,
   HEALTHY,
@@ -88,6 +89,21 @@ describe('healthOf', () => {
       'signin_needed'
     );
   });
+
+  it('leaves out runs the computer’s sleep broke, so they never make a streak (DOR-3286)', () => {
+    const slept = { error: sleptDuringRunError() };
+    // A run broken by sleep, then its retry broken the same way: not failing.
+    expect(healthOf([run('r2', 'failed', slept), run('r1', 'failed', slept)])).toEqual(HEALTHY);
+    // Nor does one sit between two real failures and break their streak.
+    const after = new Date(Date.parse(STREAKS_COUNTED_FROM) + 60_000).toISOString();
+    const later = new Date(Date.parse(STREAKS_COUNTED_FROM) + 120_000).toISOString();
+    const health = healthOf([
+      run('r3', 'failed', { error: 'x', startedAt: later }),
+      run('r2', 'failed', { ...slept, startedAt: later }),
+      run('r1', 'failed', { error: 'y', startedAt: after }),
+    ]);
+    expect(health).toMatchObject({ state: 'failing', streak: 2, recentStreak: 2, lastRunId: 'r3' });
+  });
 });
 
 describe('the recent streak (DOR-4127)', () => {
@@ -159,6 +175,17 @@ describe('scheduleHealth', () => {
     const health = scheduleHealth(db);
     expect(health.get('s1')).toMatchObject({ state: 'failing', streak: 1, lastRunId: 'a1' });
     expect(health.get('s2')).toEqual(HEALTHY);
+  });
+
+  it('starts a new failure streak after recovery when runs share a start time', () => {
+    const startedAt = '2026-11-13T01:00:00.000Z';
+    // A ULID's random suffix can sort earlier runs ahead of later ones.
+    insert('r4', 's1', 'failed', startedAt);
+    insert('r3', 's1', 'failed', startedAt);
+    insert('r2', 's1', 'completed', startedAt);
+    insert('r1', 's1', 'failed', startedAt);
+
+    expect(scheduleHealth(db).get('s1')).toMatchObject({ streak: 1, lastRunId: 'r1' });
   });
 
   it('counts two failures after the schedule last changed', () => {

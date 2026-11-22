@@ -8,7 +8,6 @@ import {
   agentHeldAccess,
   heldAccess,
   type CardAccessLevel,
-  type CardDecision,
   type WhoCanUse,
 } from '../../lib/access-card-selection';
 import { displayedAccessLevel, requestedWriteOffer } from '../../lib/access-level-offer';
@@ -29,7 +28,6 @@ export function AccessEditor({
   setPicked,
   who,
   setWho,
-  decision,
   level,
   setLevel,
   showAll,
@@ -42,7 +40,6 @@ export function AccessEditor({
   setPicked: (next: Set<string>) => void;
   who: WhoCanUse;
   setWho: (next: WhoCanUse) => void;
-  decision: CardDecision;
   level: CardAccessLevel | null;
   setLevel: (next: CardAccessLevel) => void;
   showAll: boolean;
@@ -104,12 +101,22 @@ export function AccessEditor({
         systemAgentIds={systemAgentIds}
         picked={picked}
         setPicked={setPicked}
-        decision={decision}
         showAll={showAll}
         setShowAll={setShowAll}
       />
     );
   }
+
+  // Leaving "Every agent" ends that share, but an agent with its own grant keeps
+  // it while ticked. Said once, under the choice, so a pre-tick isn't a surprise.
+  const keepsOwnAccess =
+    props.mode === 'page' &&
+    who === 'picked' &&
+    preview.everyAgent.available &&
+    heldAccess(preview.everyAgent) !== 'none' &&
+    preview.agents.some(
+      (agent) => picked.has(agent.agentId) && heldAccess(current[agent.agentId]) !== 'none'
+    );
 
   const agentMissing =
     props.mode === 'agent' && !preview.agents.some((agent) => agent.agentId === props.agentId);
@@ -123,6 +130,14 @@ export function AccessEditor({
           onChange={setWho}
           everyAgentAvailable={preview.everyAgent.available}
         />
+      )}
+      {keepsOwnAccess && (
+        <p
+          data-testid="own-access-switch-note"
+          className="text-muted-foreground -mt-2 px-2 text-xs"
+        >
+          Ticked agents have their own access and keep it. Untick them to stop them too.
+        </p>
       )}
       {props.mode === 'agent' && props.request && (
         <RequestedAccess

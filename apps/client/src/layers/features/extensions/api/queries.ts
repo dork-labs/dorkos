@@ -50,9 +50,20 @@ export function useEnableExtension() {
         // person bar on this route (DOR-1507) answers 403 with a message that
         // says what DorkOS did not do and who can do it; a bare number would
         // throw that away and leave "403" on screen.
-        const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
-        throw new Error(
-          body.message ?? body.error ?? `Couldn’t turn on ${id}. The server answered ${res.status}.`
+        const body = (await res.json().catch(() => ({}))) as {
+          message?: string;
+          error?: string;
+          code?: string;
+        };
+        // The code rides along, so a cancelled "Confirm it's you" is told
+        // apart from a failure and said once (DOR-4909).
+        throw Object.assign(
+          new Error(
+            body.message ??
+              body.error ??
+              `Couldn’t turn on ${id}. The server answered ${res.status}.`
+          ),
+          { code: body.code }
         );
       }
       return res.json() as Promise<ExtensionActionResponse>;
@@ -121,7 +132,9 @@ export class RunApprovalError extends Error {
   constructor(
     message: string,
     /** True when the extension changed since the card was drawn. */
-    readonly stale: boolean
+    readonly stale: boolean,
+    /** The server's refusal code, e.g. `step_up_required` (DOR-4909). */
+    readonly code?: string
   ) {
     super(message);
   }
@@ -175,7 +188,8 @@ export function useSetExtensionRunApproval(approve: boolean) {
         const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
         throw new RunApprovalError(
           body.error ?? `Couldn’t update ${id}. The server answered ${res.status}.`,
-          body.code === STALE_APPROVAL_CODE
+          body.code === STALE_APPROVAL_CODE,
+          body.code
         );
       }
       return res.json() as Promise<ExtensionApprovalResponse>;

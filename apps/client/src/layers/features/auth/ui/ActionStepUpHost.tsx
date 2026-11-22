@@ -82,8 +82,10 @@ function DesktopStepUpSheet({ heldActionId }: { heldActionId: string }) {
         <AlertDialogHeader className="text-left">
           <AlertDialogTitle>Confirm it’s you</AlertDialogTitle>
           <AlertDialogDescription>
+            {/* Name the window and what closing it does: a lost window once
+                read as a yes that never landed (DOR-4909). */}
             {confirm
-              ? 'Confirm in the window that just opened.'
+              ? 'Finish in the “Confirm it’s you” window. Closing it changes nothing.'
               : 'Update the DorkOS app to confirm this.'}
           </AlertDialogDescription>
         </AlertDialogHeader>

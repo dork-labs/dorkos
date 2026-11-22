@@ -3160,6 +3160,86 @@
         ],
         "additionalProperties": false
       },
+      "ConnectorWritesBack": {
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "writesBackUnasked": {
+            "type": "boolean"
+          },
+          "writesBackAttestedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "supported": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connectionId",
+          "writesBackUnasked",
+          "writesBackAttestedAt",
+          "supported"
+        ],
+        "additionalProperties": false
+      },
+      "ConnectorWritesBackChange": {
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "writesBackUnasked": {
+            "type": "boolean"
+          },
+          "writesBackAttestedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "supported": {
+            "type": "boolean"
+          },
+          "changed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connectionId",
+          "writesBackUnasked",
+          "writesBackAttestedAt",
+          "supported",
+          "changed"
+        ],
+        "additionalProperties": false
+      },
+      "ConnectorWritesBackChangeRequest": {
+        "type": "object",
+        "properties": {
+          "writesBackUnasked": {
+            "type": "boolean"
+          },
+          "confirmsNoOutsideSync": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "writesBackUnasked"
+        ],
+        "additionalProperties": false
+      },
       "MiniAppAccessList": {
         "type": "object",
         "properties": {
@@ -33081,6 +33161,190 @@
           },
           "409": {
             "description": "Access changed since (`UNDO_STALE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/connections/{connectionId}/writes-back": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Whether agents may write back to an app they only read",
+        "description": "Owner only. On: an agent whose turn read only this app may make a change back in it without asking. Deletions, sends and changes in any other app still ask.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The switch, and when the person confirmed it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorWritesBack"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such app account here, or it belongs to someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Let agents write back to an app they only read, or stop it",
+        "description": "Owner only; no agent or program can set it. Turning it on needs `confirmsNoOutsideSync`: DorkOS cannot see whether the app copies what it holds to another place on its own, so the person confirms it does not, and the time is kept. Turning it off answers at once.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorWritesBackChangeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the change did",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorWritesBackChange"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is invalid, or turns it on without the confirmation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "No such app account here, or it belongs to someone else (`connection_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The switch is not offered for this app, because its changes can reach other people (`writes_back_unsupported_app`)",
             "content": {
               "application/json": {
                 "schema": {

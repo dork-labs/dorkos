@@ -1,8 +1,8 @@
 import type { Room } from '@dorkos/shared/room-schemas';
 import type { AsideResult } from '../room-trigger/aside.js';
 
-/** Shared copy never forwards raw failure diagnostics, paths or account details. */
-export function declineReason(room: Room | null, result: AsideResult | null): string {
+/** Fixed wording for every decline except one the seat explained in its own words. */
+function fixedReason(room: Room | null, result: AsideResult | null): string | undefined {
   if (room === null || room.archived) return 'the room is archived.';
   if (result?.why === 'deadline') return 'it waited too long to start. Send the post again.';
   if (result?.failure?.refusal !== undefined) {
@@ -21,8 +21,23 @@ export function declineReason(room: Room | null, result: AsideResult | null): st
   if (result.why === 'budget') return 'the room is out of automatic turns for now.';
   if (result.outcome === 'refused') return "it couldn't take a turn there.";
   if (result.replyOutsider) return 'it read words from outside your team. Its chat says why.';
-  const said = result.text?.trim();
-  if (!said) return "it didn't say why. Ask in the room.";
+  if (!result.text?.trim()) return "it didn't say why. Ask in the room.";
+  return undefined;
+}
+
+/** Shared copy never forwards raw failure diagnostics, paths or account details. */
+export function declineReason(room: Room | null, result: AsideResult | null): string {
+  const fixed = fixedReason(room, result);
+  if (fixed !== undefined) return fixed;
+  const said = result!.text!.trim();
   const max = 280;
   return said.length > max ? `${said.slice(0, max - 1).trimEnd()}…` : said;
+}
+
+/**
+ * The reason a private notice carries into the drafting chat. That chat wakes with its own
+ * marks, not the seat's, so the seat's own reply never rides along: the status has it.
+ */
+export function noticeReason(room: Room | null, result: AsideResult | null): string {
+  return fixedReason(room, result) ?? 'it chose not to post. Its hand-off status has its reply.';
 }

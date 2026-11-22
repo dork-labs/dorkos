@@ -10,8 +10,11 @@
  *   is narrowed to the set a copy that now runs separately declares.
  * - {@link pinPathOnlyApprovals} (DOR-3068): an approval that named a folder
  *   but not its files is pinned, once, to the files it finds.
- * - {@link settleLegacyApprovals} (DOR-3068): after the first scan, whatever
- *   those two left unbound or unpinned is never pinned later.
+ * - {@link backfillSlotlessApprovals} (DOR-4891): an approval that recorded no
+ *   places gets, once, the ones its unchanged approved files declare
+ *   (`slots-backfill.ts`).
+ * - {@link settleLegacyApprovals} (DOR-3068, DOR-4891): after the first scan,
+ *   whatever those left unbound, unpinned or without places stays so.
  *
  * @module services/extensions/pin/extension-approval-upkeep
  */
@@ -24,6 +27,7 @@ import { logger } from '../../../lib/logger.js';
 import { approvedSourceOf, isApprovedCopy, namesThisCopy } from '../extension-load-policy.js';
 import { isPathOnlyApproval } from './extension-path-trust.js';
 import { declaredSet } from '../isolation/permission-coverage.js';
+import { backfillSlotlessApprovals, digestsBeforeScan } from './slots-backfill.js';
 
 /**
  * Bind each approval given before approvals recorded their copy to the one copy
@@ -182,7 +186,11 @@ export function pinPathOnlyApprovals(records: readonly ExtensionRecord[]): strin
 
 /**
  * Every scan's bookkeeping on older approvals, in order: bind the unsourced
- * ones, ratchet full-access ones down, and pin path-only ones to their files.
+ * ones, ratchet full-access ones down, pin path-only ones to their files, and
+ * record the places of ones from before places were. The places come last, so
+ * they read the set the ratchet settled, but only a digest stored before the
+ * scan began counts for them: a pin written here a moment earlier names files
+ * nobody approved (DOR-4891).
  *
  * @param records - The records this scan produced.
  * @param shadowed - The copies newer ones shadow, which a pin may also name.
@@ -193,22 +201,28 @@ export function upkeepApprovals(
   shadowed: readonly ExtensionRecord[],
   dorkHome: string
 ): void {
+  const pinnedBefore = digestsBeforeScan();
   bindUnsourcedApprovals(records, dorkHome);
   ratchetFullAccessApprovals(records);
   pinPathOnlyApprovals([...records, ...shadowed]);
+  backfillSlotlessApprovals(records, pinnedBefore);
 }
 
 /**
- * End the one chance older approvals get (DOR-3068). The '0.126.1' config
- * migration marks approvals written before approvals named content
+ * End the one chance older approvals get (DOR-3068, DOR-4891). The '0.126.1'
+ * config migration marks approvals written before approvals named content
  * (`legacyUnsourced`, `legacyPathOnly`); the first scan after start binds and
  * pins the ones whose copy it finds. Anything still marked afterwards had no
  * copy then, so a folder that appears later at that name never inherits the
- * old yes: the marks are cleared and such an approval waits for a person.
+ * old yes: the marks are cleared and such an approval waits for a person. The
+ * '0.140.0' migration's list of approvals with no places (`legacySlotless`)
+ * goes the same way: whatever the first scan did not give places keeps asking.
  *
- * Called once per start, after the first scan. Writes only when a mark is left.
+ * Called once per start, after the first scan, and only once it succeeded: a
+ * scan that throws leaves every mark for the next start. Writes only when a
+ * mark is left.
  *
- * @returns The ids whose marks were cleared.
+ * @returns The ids whose content marks were cleared.
  */
 export function settleLegacyApprovals(): string[] {
   const before = configManager.get('extensions');
@@ -221,9 +235,11 @@ export function settleLegacyApprovals(): string[] {
     settled[id] = rest;
     cleared.add(id);
   }
-  if (cleared.size === 0 && before.legacyUnsourced === undefined) return [];
+  const slotlessListed = before.legacySlotless !== undefined;
+  if (cleared.size === 0 && before.legacyUnsourced === undefined && !slotlessListed) return [];
   const next = { ...before, approvedSources: { ...sources, ...settled } };
   delete next.legacyUnsourced;
+  delete next.legacySlotless;
   configManager.set('extensions', next);
   logConfigWrite(
     'ending the first-scan pin for earlier extension approvals',

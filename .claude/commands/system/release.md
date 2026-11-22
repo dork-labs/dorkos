@@ -525,6 +525,8 @@ gh pr create --title "chore(release): vX.Y.Z" --label skip-changelog --body "Rel
 gh pr merge --auto <n>
 ```
 
+The version-bump PR has no CI test run (`tests: false`), so arm.sh won't count CI as green. Run local `pnpm verify` via heavy.sh at the PR head (release row first) and arm on that proof. No PM waiver.
+
 **Do NOT tag yet** — the queue squashes, so the tag must go on the merged SHA.
 Two traps while the PR is in flight: blog images must use **relative** paths
 (`/product/archive/vX.Y.Z/…`) because the archive directory is in this very PR

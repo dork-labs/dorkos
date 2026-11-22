@@ -38,10 +38,12 @@
  * guaranteed to ever happen: if the runner dies, nothing finalizes the row and
  * an unreaped entry would hold a cap slot for the life of the process. The
  * deadline is the run's own `maxRuntime` plus a margin — past it, whoever was
- * executing the run has either finished it or is gone.
+ * executing the run has either finished it or is gone. It counts awake time,
+ * as the runner's own deadline does (DOR-3286).
  *
  * @module services/tasks/run-accounting
  */
+import { getAwakeClock, type AwakeClock } from '@dorkos/shared/awake-clock';
 import type { TaskStore } from './task-store.js';
 import { isTerminalRunStatus } from './lifecycle/run-statuses.js';
 import { createTaggedLogger } from '../../lib/logger.js';
@@ -74,8 +76,10 @@ type ActiveRun =
     }
   | {
       kind: 'relay';
-      /** Epoch ms after which this slot is given back unconditionally. */
-      expiresAt: number;
+      /** Awake ms after which this slot is given back unconditionally. */
+      ttl: number;
+      /** When the slot was taken, and the sleep seen by then. */
+      from: { at: number; slept: number };
     };
 
 /**
@@ -100,8 +104,13 @@ export class RunAccounting {
    * Build an empty registry.
    *
    * @param store - Read-only here; used to ask whether a relay run has ended.
+   * @param clock - Sees the computer sleep, so a relay slot's deadline counts
+   *   awake time as the run's own does (DOR-3286).
    */
-  constructor(private readonly store: Pick<TaskStore, 'getRun'>) {}
+  constructor(
+    private readonly store: Pick<TaskStore, 'getRun'>,
+    private readonly clock: AwakeClock = getAwakeClock()
+  ) {}
 
   /** Keep a manual run stoppable until a dispatch path takes ownership, including failed preparation. */
   async prepare(runId: string, work: () => Promise<void>): Promise<void> {
@@ -141,7 +150,8 @@ export class RunAccounting {
     // And the longest wait to start, since the run's own limit counts only after it.
     const ttl =
       (maxRuntimeMs || RELAY_SLOT_DEFAULT_TTL_MS) + RUN_START_WAIT_MS + RELAY_SLOT_GRACE_MS;
-    this.runs.set(runId, { kind: 'relay', expiresAt: Date.now() + ttl });
+    const from = { at: this.clock.now(), slept: this.clock.sleptMs() };
+    this.runs.set(runId, { kind: 'relay', ttl, from });
   }
 
   /** Give back a run's slot. */
@@ -281,7 +291,8 @@ export class RunAccounting {
    * process wrote that ending.
    */
   private reapRelayRuns(): void {
-    const now = Date.now();
+    const now = this.clock.now();
+    const slept = this.clock.sleptMs();
     for (const [id, run] of this.runs) {
       if (run.kind !== 'relay') continue;
       const row = this.store.getRun(id);
@@ -289,7 +300,9 @@ export class RunAccounting {
         this.runs.delete(id);
         continue;
       }
-      if (now >= run.expiresAt) {
+      // Awake time only: the runner's own deadline does not count sleep, so a
+      // slot that did would be given back on wake under a run still going.
+      if (now - run.from.at - (slept - run.from.slept) >= run.ttl) {
         // Deliberately does NOT touch the row: this process does not know that
         // the run failed, only that it has stopped waiting for it. The row is
         // left for whoever owns it, and for the crash sweep on the next boot.
