@@ -78,7 +78,7 @@ import { applyDirectoryGrants, applyPersonOnlyDataDeny } from './directory-grant
 import { applyBrowserToolDeny, mcpToolHookMatchers } from '../tool-gate/mcp-tool-guards.js';
 import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
 import { heldRuntimeNotice } from '../folder-settings/held-runtime-notice.js';
-import { applyLaunchExtensionsDeny } from '../folder-settings/agent-extensions-deny.js';
+import { applyLaunchHeldFolderDeny } from '../folder-settings/dev-link-deny.js';
 import { IN_SESSION_TOOL_PREFIX, loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { env } from '../../../../env.js';
 import {
@@ -109,7 +109,7 @@ import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
 import { protectedFileMatcher } from '../tool-gate/protected-file-hook.js';
-import { ownExtensionsMatcher } from '../tool-gate/own-extensions-hook.js';
+import { heldFolderMatchers } from '../tool-gate/dev-link-hook.js';
 import { turnReadRoots } from '../tool-gate/held-turn-reads.js';
 import { shellGuardMatcher } from '../shell-guard/shell-guard-launch.js';
 import { createNeverAskHook, turnOutsideChecks } from '../tool-gate/never-ask-hook.js';
@@ -738,7 +738,8 @@ export async function resolveLaunch(args: {
   });
   // And every other agent's mini apps, whose server edits run on their author's
   // trust (DOR-3068); a marked or ceilinged turn is kept out of its own too.
-  applyLaunchExtensionsDeny(sdkOptions, {
+  // A held turn is kept out of every dev-linked folder too, whose edits run with no click (DOR-4896).
+  await applyLaunchHeldFolderDeny(sdkOptions, {
     session,
     sessionId,
     agentHome: turnAgentPath ?? undefined,
@@ -854,9 +855,9 @@ export async function resolveLaunch(args: {
         cwd: effectiveCwd,
         ...(turnAgentPath ? { agentPath: turnAgentPath } : {}),
       }),
-      // A held turn's own mini apps folder (DOR-4851): the deny rule's refusal, with the rule
-      // and the route that works named.
-      ownExtensionsMatcher(session, { sessionId, cwd: effectiveCwd, agentHome: turnAgentPath }),
+      // A held turn's own mini apps folder (DOR-4851) and every dev-linked folder (DOR-4896):
+      // the deny rules' refusal, with the rule and, for mini apps, the route that works named.
+      ...heldFolderMatchers(session, { sessionId, cwd: effectiveCwd, agentHome: turnAgentPath }),
       // The shell's route to protected files (DOR-3300): reads ask below Full,
       // writes to any agent's setup files are refused at every level.
       shellGuardMatcher(session, {

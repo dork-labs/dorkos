@@ -4,6 +4,10 @@ import {
   isReservedRuntimeEnvName,
 } from '@dorkos/shared/config-schema';
 import {
+  TELEMETRY_DISABLE_ENV_VARS,
+  isTelemetryDisabledByEnv,
+} from '@dorkos/shared/telemetry-consent';
+import {
   BASELINE_ENV_NAMES,
   RUNTIME_ENV_PROFILES,
   CUSTOM_CLAUDE_MODES,
@@ -120,6 +124,25 @@ export function flowIdentityEnv(
   return { FLOW_RUNTIME: runtime, FLOW_HARNESS: 'dorkos' };
 }
 
+/**
+ * What every runtime child is told when the parent has `DO_NOT_TRACK` or
+ * `DORKOS_TELEMETRY_DISABLED` on: the cross-tool convention, and Claude Code's
+ * own names for its telemetry and its crash reports. What each runtime does
+ * with them is up to that runtime.
+ */
+const RUNTIME_TELEMETRY_OFF_ENV = {
+  DO_NOT_TRACK: '1',
+  DISABLE_TELEMETRY: '1',
+  DISABLE_ERROR_REPORTING: '1',
+} as const;
+
+/** Whether the parent turns telemetry off, read with the platform's name matching. */
+function parentDisablesTelemetry(input: RuntimeEnvironmentInput): boolean {
+  return isTelemetryDisabledByEnv(
+    Object.fromEntries(TELEMETRY_DISABLE_ENV_VARS.map((name) => [name, parentValue(input, name)]))
+  );
+}
+
 /** Project a complete environment, validate internal overrides, and never mutate or log inputs. */
 export function projectRuntimeEnvironment(input: RuntimeEnvironmentInput): Record<string, string> {
   const inherit = RuntimeInheritedEnvNamesSchema.parse(input.inherit ?? []);
@@ -149,5 +172,12 @@ export function projectRuntimeEnvironment(input: RuntimeEnvironmentInput): Recor
     if (value === undefined) delete result[name];
     else result[name] = value;
   }
+  // Set last, so no inherited value or override can turn telemetry back on.
+  if (parentDisablesTelemetry(input))
+    for (const [name, value] of Object.entries(RUNTIME_TELEMETRY_OFF_ENV)) {
+      if (windows)
+        for (const key of Object.keys(result)) if (key.toUpperCase() === name) delete result[key];
+      result[name] = value;
+    }
   return result;
 }

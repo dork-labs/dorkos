@@ -110,15 +110,18 @@ import { feedProjector } from './session-event-normalizer.js';
 import { settleOpenTurnBefore } from './settle-open-turn.js';
 import { createCanonicalRekey } from './turn-identity/canonical-rekey.js';
 import { assembleAdditionalContext, appendDocEventsContext } from './context-assembler.js';
-import { restoreContextWarning } from './agent-compaction/context-warning.js';
 import { takeContextWarningForTurn } from './agent-compaction/context-warning-for-turn.js';
-import { restoreTurnCutoff, takeTurnCutoff } from './turn-cutoff/turn-cutoff.js';
+import { takeTurnCutoff } from './turn-cutoff/turn-cutoff.js';
 import { agentPathOfTurn } from './agent-compaction/compaction-permission.js';
 import { turnAgentOf } from '../core/agent-identity/index.js';
-import { holdStagedContext, takeStagedContext } from './staged-context-store.js';
 import { uiTurnFacts } from './browser-seat/ui-turn-facts.js';
 import { withStallGuard } from './stall-guard.js';
 import { awaitDispatchDecision } from './launch/dispatch-decision.js';
+import { dispatchOptions, joinProtectedHandoffCarry } from './launch/dispatch-options.js';
+import { DispatchContextCleanup } from './launch/dispatch-context-cleanup.js';
+import { runPrepareLaunch } from './launch/prepare-turn-launch.js';
+import { noteRoomTurnWords } from '../core/turn-power/turn-levels.js';
+import type { AsideCarry } from '../rooms/room-trigger/aside.js';
 import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
 import { logError, logger } from '../../lib/logger.js';
@@ -694,28 +697,6 @@ export interface TriggerTurnResult {
 }
 
 /**
- * Run a turn's {@link TriggerTurnOpts.prepareLaunch}, never letting it fail the
- * turn: a rejection is logged and the turn launches as it was accepted.
- *
- * @param prepare - The caller's launch-time step.
- * @param sessionId - For the log line.
- */
-async function runPrepareLaunch(
-  prepare: NonNullable<TriggerTurnOpts['prepareLaunch']>,
-  sessionId: string
-): Promise<Partial<Pick<TriggerTurnOpts, 'roomContext'>>> {
-  try {
-    return await prepare();
-  } catch (err) {
-    logger.warn('[turn] launch preparation failed; starting the turn as it was accepted', {
-      sessionId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return {};
-  }
-}
-
-/**
  * Acquire the lock, start a detached turn feeding the projector, and resolve the
  * canonical session id for the 202 response. The returned promise settles as
  * soon as the lock is taken and the canonical id is known (or the timeout
@@ -730,7 +711,7 @@ async function runPrepareLaunch(
  * has always been — "your turn is running; watch `/events`" — with an accurate
  * canonical id and a real 409 still available if the lock is gone by then.
  * Resolving the 202 at enqueue time instead would have to invent a third answer
- * for a turn that later fails to acquire, and would tell the cockpit its queue
+ * for a turn that later fails to acquire, and would tell the app its queue
  * had drained while the messages were still lined up server-side, which is how
  * a person loses the chance to edit one. The cost is an HTTP request held open
  * for the wait, bounded by `queueWaitMs` — see the module doc's "Known bounds".
@@ -855,9 +836,12 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   // unguarded, one throwing context assembly would hold the lock to its TTL and
   // wedge every later turn this client sends to this session (DOR-1088).
   // Hoisted so the catch below can hand back a note this attempt took.
-  let owedWarning: number | null = null;
-  let owedCutoff: ReturnType<typeof takeTurnCutoff> = null;
-  let settleNewSince: (delivered?: boolean) => void = () => {};
+  const dispatchContext = new DispatchContextCleanup({
+    sessionId,
+    turnKey: () => turnKey,
+    release: releaseOnce,
+    endSpan: () => turnSpan.end(),
+  });
   try {
     // Launch-time preparation, under this turn's write lock — so no other turn
     // on this session is running — see `prepareLaunch`. Its result replaces the
@@ -896,42 +880,32 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // deadline to stay under.
     await settleOpenTurnBefore(sessionId, projector, deps, SESSIONS.STRANDED_TURN_SETTLE_MS);
     let dispatchContent = content;
+    let handoffCarry: AsideCarry | undefined;
+    let preparedPrivateMessage: PreparedPrivateSessionMessage | undefined;
     if (opts.privateReceiptId !== undefined) {
       if (!deps.preparePrivateMessage || !deps.claimPrivateMessage) {
         throw new Error('Protected session-message preflight is not configured.');
       }
       privatePreflightStarted = true;
-      const prepared = await deps.preparePrivateMessage(opts.privateReceiptId);
+      preparedPrivateMessage = await deps.preparePrivateMessage(opts.privateReceiptId);
       if (opts.privateDispatchSignal?.aborted) {
-        releaseOnce();
-        turnSpan.end();
+        dispatchContext.cleanup();
         return { accepted: false, suspended: true };
       }
-      const claimed = deps.claimPrivateMessage(opts.privateReceiptId, prepared, sessionId);
-      if (claimed.deferred === true) {
-        releaseOnce();
-        turnSpan.end();
-        return {
-          accepted: false,
-          deferred: { reason: claimed.reason, nextEligibleAt: claimed.nextEligibleAt },
-        };
-      }
-      privateDispatchClaimed = true;
-      dispatchContent = claimed.content;
-      if (claimed.docEvents) appendDocEventsContext(additionalContext, claimed.docEvents);
     }
     // Fold in any context a person STAGED for a runtime that cannot append to
     // its own transcript (the fold-into-next fallback, task 4.2). Taken — not
     // peeked — so each note rides exactly this one dispatch; the ordinary case
     // holds nothing and pays a single map lookup. A native-staging runtime never
-    // fills this hold, so its dispatches are untouched.
-    const staged = takeStagedContext(sessionId);
-    additionalContext.push(...staged);
+    // fills this hold, so its dispatches are untouched. Taken after a protected
+    // claim below, so a claim that defers or fails leaves the notes untouched;
+    // they still go here, ahead of the notes that follow.
+    const stagedAt = additionalContext.length;
     // The one-time note that this conversation has filled past the early-warning
     // line (DOR-2732), owed by the turn that crossed it and taken here so it
     // rides exactly this dispatch. A command intent never reaches this path, so
     // a compaction run carries no note of its own.
-    owedWarning = await takeContextWarningForTurn(
+    dispatchContext.owedWarning = await takeContextWarningForTurn(
       additionalContext,
       turnKey,
       deps.getCapabilities(),
@@ -939,11 +913,15 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     );
     // The note that DorkOS, not a person, ended the last turn (DOR-3307): the
     // runtime's own record of that cutoff says "interrupted by user".
-    owedCutoff = takeTurnCutoff(turnKey);
-    if (owedCutoff !== null) {
-      additionalContext.push({ kind: 'turn_cutoff', scope: 'per-turn', data: owedCutoff });
+    dispatchContext.owedCutoff = takeTurnCutoff(turnKey);
+    if (dispatchContext.owedCutoff !== null) {
+      additionalContext.push({
+        kind: 'turn_cutoff',
+        scope: 'per-turn',
+        data: dispatchContext.owedCutoff,
+      });
     }
-    settleNewSince = await takeNewSinceForTurn(additionalContext, cwd, opts);
+    dispatchContext.settleNewSince = await takeNewSinceForTurn(additionalContext, cwd, opts);
     // **What the `ui` verbs need to know about this turn, bound runtime-neutrally**
     // (spec `canvas-agent-seat` §5). `control_ui` and `get_ui_state` answer about
     // the ROOM when a room triggered the turn and about the session otherwise,
@@ -962,75 +940,65 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // A runtime that can tell, before the turn is shown, that starting it would
     // end the agent's background work answers the handshake first (spec
     // `warm-process-lifecycle` D2, DOR-2065). Not offered to a protected
-    // message: its claim above is final, and nothing here could undo it.
+    // message: its final claim below cannot be undone by a runtime handshake.
+    // ALL awaited context assembly is complete. Protected authority is claimed ONCE here;
+    // no await or external/native effect may intervene before the actual sendMessage call below.
+    if (opts.privateReceiptId !== undefined) {
+      if (!deps.claimPrivateMessage || !preparedPrivateMessage)
+        throw new Error('Protected session-message final preflight is not configured.');
+      if (opts.privateDispatchSignal?.aborted) {
+        dispatchContext.cleanup();
+        return { accepted: false, suspended: true };
+      }
+      const claimed = deps.claimPrivateMessage(
+        opts.privateReceiptId,
+        preparedPrivateMessage,
+        sessionId
+      );
+      if (claimed.deferred === true) {
+        dispatchContext.cleanup();
+        return {
+          accepted: false,
+          deferred: { reason: claimed.reason, nextEligibleAt: claimed.nextEligibleAt },
+        };
+      }
+      privateDispatchClaimed = true;
+      dispatchContent = claimed.content;
+      handoffCarry = joinProtectedHandoffCarry(opts, claimed.roomHandoffCarry);
+      if (claimed.docEvents) appendDocEventsContext(additionalContext, claimed.docEvents);
+    }
+    // Synchronous: nothing may run between the claim above and the send below.
+    dispatchContext.takeStaged(additionalContext, stagedAt);
+    if (handoffCarry?.outsideWords) noteRoomTurnWords(sessionId, true);
     const offerHold = deps.answersDispatchHold === true && opts.privateReceiptId === undefined;
-    const send = (dispatchHold?: DispatchHoldHandshake): AsyncGenerator<StreamEvent> =>
-      deps.sendMessage(sessionId, dispatchContent, {
-        ...(opts.turnStarter !== undefined ? { turnStarter: opts.turnStarter } : {}),
-        // Conditional, on the same idiom as the three below it. A turn with no
-        // opinion about its directory must hand the runtime NO cwd, not a `cwd`
-        // key holding `undefined`: the session route takes care not to stamp one
-        // (`routes/sessions.ts`, the `default` rung), and an unconditional key
-        // here quietly undid that one layer down. Every runtime already reads
-        // this as `!== undefined`, so nothing downstream changes behavior.
-        ...(cwd !== undefined ? { cwd } : {}),
-        additionalContext,
-        // **Unconditional, `undefined` included.** A runtime that honours this
-        // has to be able to CLEAR it: a marker set on a room turn and never
-        // cleared would make every later direct turn in that session write to a
-        // channel, so a person's own `open_canvas` would land in a room they are
-        // not looking at. Absent-versus-undefined is not a distinction any
-        // runtime draws here, and passing it always is what makes the clearing
-        // path exist at all.
-        roomTurn,
-        ...(opts.forAgent !== undefined ? { forAgent: opts.forAgent } : {}),
-        ...(systemPromptAppend !== undefined ? { systemPromptAppend } : {}),
-        ...(additionalDirectories !== undefined ? { additionalDirectories } : {}),
-        ...(accountHint !== undefined ? { accountHint } : {}),
-        ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
-        // A protected message comes from a server-owned source, never a person typing, so nobody is watching this turn
-        // for an approval card and it must not hold for one (spec
-        // `agent-permissions` D6). The card still reaches the inbox, and the
-        // verdict wakes the session.
-        ...(opts.privateReceiptId !== undefined || opts.unattended === true
-          ? { unattendedApprovals: true }
-          : {}),
-        ...(opts.unattended === true ? { unattended: true } : {}),
-        // Where the turn happens, for its context record only: a beat's chat and
-        // a to-do's run are named by the client id their launchers dispatch under.
-        ...(clientId === 'heartbeat' ? { contextPlace: 'heartbeat' as const } : {}),
-        ...(clientId === 'todos' ? { contextPlace: 'task' as const } : {}),
-        ...settings,
-        // After `settings`, and it cannot collide with it: that type has no
-        // permission key. See the field's docblock for why it is not in there.
-        ...(opts.newSessionPermissionMode !== undefined
-          ? { permissionMode: opts.newSessionPermissionMode }
-          : {}),
-        ...(opts.permissionCeiling !== undefined
-          ? { permissionCeiling: opts.permissionCeiling }
-          : {}),
-        ...(opts.continuationHold ? { continuationHold: true as const } : {}),
-        ...(opts.carriedMarks?.outsider === true
-          ? { carriedMarks: { outsider: true as const } }
-          : {}),
-        ...(dispatchHold !== undefined ? { dispatchHold } : {}),
-      });
+    const send = (dispatchHold?: DispatchHoldHandshake): AsyncGenerator<StreamEvent> => {
+      // A thrown or partially consumed invocation is ambiguous: never requeue staged notes after this boundary.
+      dispatchContext.runtimeAttempted = true;
+      return deps.sendMessage(
+        sessionId,
+        dispatchContent,
+        dispatchOptions(opts, additionalContext, {
+          cwd,
+          roomTurn,
+          systemPromptAppend,
+          additionalDirectories,
+          accountHint,
+          clientId,
+          settings,
+          handoffCarry,
+          dispatchHold,
+        })
+      );
+    };
     let source: AsyncIterable<StreamEvent>;
     if (!offerHold) {
       source = send();
     } else {
       const decision = await awaitDispatchDecision(send);
       if ('held' in decision) {
-        // No turn was shown and none will be: hand back everything this
-        // attempt took, so the next attempt finds it where it was.
-        for (const entry of staged)
-          holdStagedContext(sessionId, entry.data.text, crypto.randomUUID());
-        if (owedWarning !== null) restoreContextWarning(turnKey, owedWarning);
-        if (owedCutoff !== null) restoreTurnCutoff(turnKey, owedCutoff);
-        settleNewSince();
-        uiTurnFacts.endTurn(turnKey);
-        releaseOnce();
-        turnSpan.end();
+        // Positive runtime handshake proves no turn used these notes.
+        dispatchContext.runtimeAttempted = false;
+        dispatchContext.cleanup();
         return { accepted: false, held: decision.held };
       }
       source = decision.stream;
@@ -1100,7 +1068,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         return opts.onError?.(err);
       })
       .finally(() => {
-        settleNewSince(watched.started || watched.settledAs()[0] === 'ok');
+        dispatchContext.settleNewSince(watched.started || watched.settledAs()[0] === 'ok');
         turnSpan.setAttr(ATTR.EVENT_COUNT, eventCount);
         turnSpan.end();
         releaseOnce();
@@ -1127,14 +1095,15 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // The turn runs to completion in the background; the request does not await it.
     void turn;
   } catch (err) {
-    // A note this attempt took rides the next turn instead of being lost with it.
-    if (owedWarning !== null) restoreContextWarning(turnKey, owedWarning);
-    if (owedCutoff !== null) restoreTurnCutoff(turnKey, owedCutoff);
-    settleNewSince();
-    // No turn was launched, so nothing downstream will ever settle. Give the
-    // lock and the queue slot back here or this session is wedged for this
-    // client until the lock's TTL — and the queue, which has no TTL, forever.
-    releaseOnce();
+    try {
+      dispatchContext.cleanup();
+    } catch (cleanupError) {
+      // Keep the primary body/authority error while making cleanup failure visible.
+      logger.warn('[trigger-turn] pre-effect cleanup failed', {
+        sessionId,
+        ...logError(cleanupError),
+      });
+    }
     if (privateDispatchClaimed && opts.privateReceiptId !== undefined) {
       deps.markPrivateOutcomeUnknown?.(opts.privateReceiptId, 'runtime_effect_not_observed');
     } else if (

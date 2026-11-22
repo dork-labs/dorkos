@@ -75,7 +75,7 @@ import type {
   RoomDetail,
   FindMemberRoomsFilter,
 } from './manage/room-member-directory.js';
-import type { RoomPostInput } from './messages/room-posting.js';
+import type { RoomPostInput, RoomPosting } from './messages/room-posting.js';
 import type { RoomSignalListener } from './service/room-publisher.js';
 import type { AddMemberInput } from './room-roster.js';
 import type {
@@ -160,6 +160,11 @@ export class RoomService {
 
   /** Build the private inbox over the same consolidated stores and publisher as this room service. */
   readonly createSeatMessages: RoomSeatMessageFactory;
+
+  /** Close hand-off admission and owned waits; private receipt cleanup has its own owner. */
+  dispose(): void {
+    this.handoffs.stop();
+  }
 
   /** The live subscription source behind `GET /api/rooms/:id/events`. */
   readonly stream: RoomBroadcaster;
@@ -488,16 +493,10 @@ export class RoomService {
   /** Post because the agent decided to. See {@link RoomPosting.postFromTool}. */
   postFromTool(
     roomId: string,
-    input: {
-      authorId: string;
-      text: string;
-      replyTo?: string;
-      attachmentIds?: readonly string[];
-      callerSessionId?: string;
-      callerAgentVerified?: boolean;
-    }
+    input: Parameters<RoomPosting['postFromTool']>[1],
+    postBind?: Parameters<RoomPosting['postFromTool']>[2]
   ): PostedEntry {
-    return this.parts.posting.postFromTool(roomId, input);
+    return this.parts.posting.postFromTool(roomId, input, postBind);
   }
   /** A page of one room's history for a member. See {@link RoomReads.readHistory}. */
   readHistory(

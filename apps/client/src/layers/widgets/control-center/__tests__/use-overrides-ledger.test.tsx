@@ -34,7 +34,15 @@ vi.mock('@/layers/entities/runtime', () => ({
   useRuntimeCapabilities: () => useRuntimeCapabilities(),
   getRuntimeDescriptor: (runtime: string) => getRuntimeDescriptor(runtime),
 }));
-vi.mock('@/layers/entities/session', () => ({ useSessions: () => useSessions() }));
+vi.mock('@/layers/entities/session', async () => ({
+  useSessions: () => useSessions(),
+  // The real title rule, so a row names a chat the way every other surface does.
+  sessionDisplayTitle: (
+    await vi.importActual<typeof import('@/layers/entities/session/lib/session-display-title')>(
+      '@/layers/entities/session/lib/session-display-title'
+    )
+  ).sessionDisplayTitle,
+}));
 vi.mock('@/layers/entities/tasks', () => ({
   useTasks: () => useTasks(),
   useTasksEnabled: () => useTasksEnabled(),

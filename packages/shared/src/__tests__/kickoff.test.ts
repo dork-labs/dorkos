@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { wrapKickoff, isKickoffEnvelope, filterKickoffHistory, KICKOFF_TAG } from '../kickoff.js';
+import {
+  wrapKickoff,
+  isKickoffEnvelope,
+  filterKickoffHistory,
+  KICKOFF_TAG,
+  sessionShownToPerson,
+  shownToPerson,
+  titleShownToPerson,
+} from '../kickoff.js';
 
 const ENVELOPE = wrapKickoff('introduce yourself from SOUL.md');
 
@@ -98,5 +106,40 @@ describe('filterKickoffHistory — the suppression seam', () => {
     expect(filterKickoffHistory([])).toEqual([]);
     const assistantOnly = [msg('assistant', ENVELOPE)];
     expect(filterKickoffHistory(assistantOnly)).toBe(assistantOnly);
+  });
+});
+
+describe('shownToPerson (DOR-4976)', () => {
+  it('reads a greeting kickoff as empty and leaves anything else alone', () => {
+    expect(shownToPerson(ENVELOPE)).toBe('');
+    expect(shownToPerson('Fix the build')).toBe('Fix the build');
+    expect(shownToPerson('what is <dork-kickoff> for')).toBe('what is <dork-kickoff> for');
+  });
+});
+
+describe('titleShownToPerson (DOR-4976)', () => {
+  it('blanks a title carrying any DorkOS markup, opening or closing', () => {
+    expect(titleShownToPerson('<dork-kickoff>')).toBe('');
+    expect(titleShownToPerson('</dork-kickoff>')).toBe('');
+    expect(titleShownToPerson('<dork-some-future-tag> hello')).toBe('');
+  });
+
+  it('keeps a real title and reads a missing one as empty', () => {
+    expect(titleShownToPerson('Fix the build')).toBe('Fix the build');
+    expect(titleShownToPerson('A <b>bold</b> idea')).toBe('A <b>bold</b> idea');
+    expect(titleShownToPerson(undefined)).toBe('');
+    expect(titleShownToPerson(null)).toBe('');
+  });
+});
+
+describe('sessionShownToPerson (DOR-4976)', () => {
+  it('blanks a stored markup title and preview, keeping everything else', () => {
+    const stored = { id: 'chat', title: '<dork-kickoff>', lastMessagePreview: '<dork-kickoff>' };
+    expect(sessionShownToPerson(stored)).toEqual({ id: 'chat', title: '', lastMessagePreview: '' });
+    expect(stored.title).toBe('<dork-kickoff>');
+  });
+
+  it('leaves a missing preview missing', () => {
+    expect(sessionShownToPerson({ title: 'Fix the build' })).toEqual({ title: 'Fix the build' });
   });
 });

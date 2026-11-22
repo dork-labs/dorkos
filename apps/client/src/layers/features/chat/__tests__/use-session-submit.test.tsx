@@ -1329,6 +1329,44 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(result.current.messages.some((m) => m.role === 'user')).toBe(false);
   });
 
+  it('lists a new agent’s greeting chat as "New chat", never a "Chat …" placeholder (DOR-4976)', async () => {
+    const kickoff = wrapKickoff('introduce yourself from SOUL.md');
+    useAgentBirthStore.getState().register('s-kick', {
+      name: 'aurora',
+      displayName: 'Aurora',
+      agentId: 'agent_aurora',
+      bornAt: '2026-07-20T00:00:00.000Z',
+      path: '/test/cwd',
+      runtime: 'claude-code',
+      kickoffMessage: kickoff,
+    });
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    });
+    // Every title the placeholder row is written with; a later list refetch may replace it.
+    const placeholderTitles: string[] = [];
+    queryClient.getQueryCache().subscribe(() => {
+      const row = queryClient
+        .getQueryData<{ id: string; title: string }[]>(sessionKeys.list('/test/cwd'))
+        ?.find((session) => session.id === 's-kick');
+      if (row) placeholderTitles.push(row.title);
+    });
+
+    renderHook(() => useChatSession('s-kick'), {
+      wrapper: createWrapper(transport, queryClient),
+    });
+
+    await waitFor(() =>
+      expect(postMessage).toHaveBeenCalledWith('s-kick', kickoff, '/test/cwd', expect.any(Object))
+    );
+    expect(placeholderTitles.length).toBeGreaterThan(0);
+    expect(new Set(placeholderTitles)).toEqual(new Set(['']));
+  });
+
   it('the trigger watchdog follows a post-202 rekey and clears the MIGRATED latch', async () => {
     // Real failure mode (NF-2 review follow-up): the 202 returns the request
     // UUID (the common Claude path), so the watchdog latches that id — but the

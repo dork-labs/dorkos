@@ -313,6 +313,14 @@ jobs:
       - name: Merge-guard hook fixtures
         run: bash scripts/test-merge-guard.sh
 
+      # heavy-command-guard sends a raw heavy command typed into a bare Claude
+      # Code session (a whole vitest suite, playwright test, turbo build) into
+      # DorkOS's load gate through `pnpm heavy` (DOR-4209). Same parser as the
+      # guards above. Its ALLOW half matters most: a one-file vitest run and the
+      # wrappers that already join the gate must keep working. Node only.
+      - name: Heavy-command guard fixtures
+        run: bash scripts/test-heavy-command-guard.sh
+
       # Opening a PR is code, not prose (2026-11-20: a brief said "open with
       # hold", the arm script refused hold and never lifted it, and 19 PRs sat
       # for 9 hours). open-pr.sh holds the rules (cap, computed labels,

@@ -210,7 +210,7 @@ The marketplace has one package type: the plugin. A plugin lists what it contain
 
 ### Everything is programmable
 
-With the right key, a person or an agent can control all of a DorkOS, on a laptop or remote, through a CLI, an SDK and API, and GraphQL queries over everything with live subscriptions to any event. Each account has its own API keys, kept in its own vault, limited to its access level, never shared, rotated by the account and expiring by policy. MCP stays as the way agents get started: getting their keys and doing core tasks. **Roadmap.**
+With the right key, a person or an agent can control all of a DorkOS, on a laptop or remote, through a CLI, an SDK and API, and GraphQL queries over everything with live subscriptions to any event. Each account has its own API keys, kept in its own vault, limited to its access level, never shared, rotated by the account and expiring by policy. MCP stays as the way agents get started: getting their keys and doing core tasks. DorkOS will also keep the links between things: which chat started which chat, which chat opened a pull request, which ticket an agent is working on. You will be able to see a chat's family tree and every pull request an agent made. Every way of reading DorkOS, the API, the CLI, MCP and later GraphQL, will come from one description, so they always agree. **Roadmap.**
 
 ### Decision models as first-line support
 

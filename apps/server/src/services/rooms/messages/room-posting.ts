@@ -1,3 +1,4 @@
+import type { DbTransaction } from '@dorkos/db';
 /**
  * Posting into a room: the guarded write a person or an agent reaches, the
  * agent's own `post_to_room`, and the files a post may carry.
@@ -125,7 +126,8 @@ export class RoomPosting {
     roomId: string,
     input: RoomPostInput,
     authorLevel?: PostAuthorBound,
-    carryWordsFrom?: readonly (string | null | undefined)[]
+    carryWordsFrom?: readonly (string | null | undefined)[],
+    postBind?: (entryId: string, tx: DbTransaction, seq: number) => void
   ): PostedEntry {
     const room = this.visibility.requireVisibleRoom(roomId, input.authorId);
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
@@ -141,7 +143,8 @@ export class RoomPosting {
     return this.writer.writePost(room, input, undefined, {
       ...(authorLevel !== undefined ? { authorLevel } : {}),
       ...(carryWordsFrom ? { carryWordsFrom } : {}),
-      bind: (entryId, tx) => {
+      bind: (entryId, tx, seq) => {
+        postBind?.(entryId, tx, seq);
         const bound = this.attachments.bind(roomId, attachmentIds, entryId, tx);
         // **Asserted, not assumed.** `bind` re-checks `entry_id IS NULL`, so a
         // file that another post claimed between resolution and here simply
@@ -243,7 +246,8 @@ export class RoomPosting {
        * agent's with an unknown level (DOR-3107), not as a stranger's.
        */
       callerAgentVerified?: boolean;
-    }
+    },
+    postBind?: (entryId: string, tx: DbTransaction, seq: number) => void
   ): PostedEntry {
     const room = this.visibility.requireVisibleRoom(roomId, input.authorId);
     // The turn this post is being made from inside, when there is one. Read
@@ -318,7 +322,8 @@ export class RoomPosting {
       },
       authorLevel,
       // Outside words this agent's chats had read go on with the post (DOR-4023).
-      vouching
+      vouching,
+      postBind
     );
     this.triggers.noteDeliberatePost(roomId, input.authorId);
     return entry;

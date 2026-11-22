@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { titleShownToPerson } from '@dorkos/shared/kickoff';
 import { siteName } from '@dorkos/shared/site-name';
 import {
   ArrowRight,
@@ -227,7 +228,7 @@ export function BrowserMenu({
               description={chatLine(chat)}
               onSelect={() => onOpenChat?.(chat.sessionId)}
             >
-              {chat.chatTitle || 'Untitled chat'}
+              {titleShownToPerson(chat.chatTitle) || 'Untitled chat'}
             </ResponsiveDropdownMenuItem>
           ))}
         </div>
@@ -245,7 +246,9 @@ export function BrowserMenu({
                 onSelect={() => onOpenChat?.(chat.sessionId)}
                 className="flex-col items-start gap-0"
               >
-                <span className="max-w-64 truncate">{chat.chatTitle || 'Untitled chat'}</span>
+                <span className="max-w-64 truncate">
+                  {titleShownToPerson(chat.chatTitle) || 'Untitled chat'}
+                </span>
                 <span className="text-muted-foreground text-3xs">{chatLine(chat)}</span>
               </DropdownMenuItem>
             ))}

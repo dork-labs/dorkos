@@ -171,8 +171,9 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
   }
 
   /**
-   * Drop this held action and sign in again. The call that asked goes again
-   * afterwards and is held afresh in the new session; this one never moves there.
+   * Drop this held action and sign in again. The page then reloads, since a
+   * confirm counts only from a page loaded after the risk cleared (DOR-5026);
+   * the person asks again from there, and this action never moves over.
    */
   function signInAgain() {
     if (pending) return;
@@ -449,7 +450,7 @@ function ExtensionRiskBody({
     return (
       <div className="space-y-4">
         <p role="status" className="text-sm">
-          A mini app has run since you signed in. Sign in again to confirm.
+          A mini app ran after this page opened. Sign in again, then try once more.
         </p>
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button

@@ -28,8 +28,10 @@ import type { ApiEnv } from '../../../http/api-chain.js';
 import { registerExtensionRestartRoute } from '../../../routes/extensions-restart.js';
 import {
   approvedSourceOf,
+  isApprovedByOrigin,
   isApprovedCopy,
   isFromTrustedSource,
+  sharesApprovedOrigin,
   mayRunExtensionCode,
   describeExtensionLoadRefusal,
   EXTENSION_NOT_APPROVED_CODE,
@@ -990,6 +992,7 @@ describe('the refusal code is stable', () => {
 
 describe('approval by trusted origin, and trusted sources (spec flow-multiproject §9)', () => {
   const ORIGIN = { plugin: 'flow', source: 'dork-labs/marketplace' };
+  const APPROVED_FILES = 'sha256:approved-files';
   const approvedA = {
     approvedToRun: ['flow'],
     approvedSources: {
@@ -997,6 +1000,7 @@ describe('approval by trusted origin, and trusted sources (spec flow-multiprojec
         path: '/work/a/.dork/plugins/flow/.dork/extensions/flow',
         plugin: 'flow',
         origin: ORIGIN,
+        digest: APPROVED_FILES,
       },
     },
   };
@@ -1006,10 +1010,33 @@ describe('approval by trusted origin, and trusted sources (spec flow-multiprojec
     path: '/work/b/.dork/plugins/flow/.dork/extensions/flow',
     sourcePlugin: 'flow',
     manifest: { id: 'flow', name: 'Flow', version: '1.0.0' },
+    currentDigest: APPROVED_FILES,
   };
 
-  it('approves another copy that provably shares the approved origin', () => {
+  it('approves another copy that provably shares the approved origin and files', () => {
     expect(isApprovedCopy({ ...copyB, trustedOrigin: ORIGIN }, approvedA)).toBe(true);
+  });
+
+  it('never carries a yes to a copy from the same origin with other files (DOR-4895)', () => {
+    const newer = {
+      ...copyB,
+      trustedOrigin: ORIGIN,
+      manifest: { ...copyB.manifest, version: '1.2.0' },
+      currentDigest: 'sha256:new-version-files',
+    };
+    expect(isApprovedByOrigin(newer, approvedA)).toBe(false);
+    expect(mayRunExtensionCode(newer, approvedA)).toBe(false);
+    // Unread files match nothing, and a yes that named no files carries to none.
+    expect(isApprovedCopy({ ...newer, currentDigest: undefined }, approvedA)).toBe(false);
+    const { digest: _files, ...unpinnedSource } = approvedA.approvedSources.flow;
+    const unpinned = { ...approvedA, approvedSources: { flow: unpinnedSource } };
+    expect(isApprovedCopy({ ...copyB, trustedOrigin: ORIGIN }, unpinned)).toBe(false);
+  });
+
+  it('still names the origin a newer copy shares, so its card can say what it adds', () => {
+    const newer = { ...copyB, trustedOrigin: ORIGIN, currentDigest: 'sha256:new-version-files' };
+    expect(sharesApprovedOrigin(newer, approvedA)).toBe(true);
+    expect(sharesApprovedOrigin(copyB, approvedA)).toBe(false);
   });
 
   it('does not approve a copy with no trusted origin, or another one', () => {

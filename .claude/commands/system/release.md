@@ -565,7 +565,7 @@ owns the name `main`. Publish from a throwaway clone whose `main` is the tag
 git clone --shared <main-checkout> <scratch-dir> && cd <scratch-dir>
 git remote set-url origin https://github.com/dork-labs/dorkos.git && git fetch origin
 git checkout main && git reset --hard vX.Y.Z && git branch --set-upstream-to=origin/main main
-pnpm install --frozen-lockfile && TMPDIR=$(realpath "$TMPDIR") pnpm run publish:cli
+pnpm install --frozen-lockfile && TMPDIR=$(realpath "$TMPDIR") DORKOS_QA_GO_LEDGER=<QA's GO-LEDGER.md> pnpm run publish:cli
 ```
 
 This only works while the tag's commit is on `main`. `publish:cli` asks GitHub
@@ -580,9 +580,15 @@ After the queue lands the PR:
 
 ```bash
 git -C <main-checkout> pull --ff-only
-git tag -a vX.Y.Z -m "Release vX.Y.Z" <merged-squash-sha>
-git push origin vX.Y.Z
+DORKOS_QA_GO_LEDGER=<QA's GO-LEDGER.md> pnpm release:tag X.Y.Z <merged-squash-sha>
 ```
+
+`release:tag` tags only the exact tree QA said GO on (DOR-5050). It reads QA's ledger
+from the path you name (`--qa-go-ledger <path>` or `DORKOS_QA_GO_LEDGER`; there is no
+default), and refuses unless QA's **last** row for X.Y.Z is a GO, names a full SHA and a
+rows file that exists, and that SHA's tree equals the merged commit's tree. It also
+refuses a commit whose `VERSION` is not X.Y.Z and a tag that already exists. A refusal
+names the SHA: send it to QA and wait for a fresh GO line. Never tag by hand.
 
 Then check whether any PR merged **behind** the release commit, leaving its
 fragment stranded (its fix is inside the tag but its fragment sits in
@@ -599,10 +605,22 @@ section via a small follow-up PR (this happened on v0.62.0, fixed in #1118).
 ### 6.10: Publish to npm (after the merge, never before)
 
 ```bash
+export DORKOS_QA_GO_LEDGER=<QA's GO-LEDGER.md>
 pnpm run publish:cli
 pnpm run publish:cloud-api
 pnpm run publish:connector-providers
 ```
+
+All three run the same QA-GO check as `release:tag` against the tag's exact commit
+before anything is built or published, and refuse without a PASS. The two package
+publishes also refuse unless HEAD is the `vX.Y.Z` tag.
+
+**Release-branch path (DOR-4638, not live until the `release/*` ruleset exists).** A
+release cut on `release/vX.Y.Z` is published by the Release Publish workflow on GitHub,
+which cannot read QA's ledger. Start it only with
+`DORKOS_QA_GO_LEDGER=<QA's GO-LEDGER.md> pnpm release:dispatch X.Y.Z <expected-sha> <qa-pin-sha>`:
+it runs the same QA-GO check on the exact expected tip before it dispatches the workflow.
+Never dispatch it with a bare `gh workflow run`.
 
 `publish:cli` now resolves the exact merged version tag and same-source Mac native artifact before npm publication. It first uses the trusted repository’s actual default `main` branch and exact GitHub commit comparison to prove the tagged HEAD has merged; a clean local tag alone is insufficient. It refreshes that proof before dispatch, download, build and publication or packing. It starts the manually dispatched Browser Native Release Artifact workflow at that tag if no original run exists, joins an existing in-progress run, and refuses a failed run without retrying it. It downloads the successful original run's artifact and verifies the manifest's GitHub attestation against the exact repository, release tag, source commit and signer workflow. The CLI's normal `prepublishOnly` build then imports those verified observer bytes and binds them to its own CLI and worker files; pnpm's normal publication and git checks remain in place. GitHub CLI authentication and artifact/attestation read access are prerequisites beside the existing npm sign-in.
 

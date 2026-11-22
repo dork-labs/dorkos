@@ -466,7 +466,7 @@ export class RoomSystemPosts {
   postServiceNotification(
     roomId: string,
     entryId: string,
-    text: string,
+    text: string | RoomEntryBody,
     within: (tx: DbTransaction) => void,
     bind: (tx: DbTransaction, seq: number) => void
   ): RoomEntry {
@@ -478,7 +478,7 @@ export class RoomSystemPosts {
         id: entryId,
         authorId: this.authors.system().id,
         kind: 'notice',
-        body: { text },
+        body: typeof text === 'string' ? { text } : text,
         mentions: [],
         mentionSpans: [],
         sessionId: null,

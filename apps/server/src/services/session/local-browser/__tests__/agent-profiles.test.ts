@@ -10,7 +10,7 @@ function fixture() {
     profiles,
     resolveSessionRuntime: async () => ({ type: 'test', bound: true }),
     guardsOf: () => ({ protectedPaths: true as const }),
-    getSessionAgentPath: async (id: string) => `/agents/${id}`,
+    sessionAgent: async (id: string) => `/agents/${id}`,
     agentIdAtPath: (folder: string) => folder.split('/').at(-1),
     realFolder: (folder: string) => folder,
   };
@@ -77,7 +77,7 @@ describe('agent browser profile choice', () => {
       profiles,
       resolveSessionRuntime: async () => ({ type: 'test', bound: true }),
       guardsOf: () => ({ protectedPaths: true }),
-      getSessionAgentPath: async () => null,
+      sessionAgent: async () => undefined,
       agentIdAtPath: () => undefined,
       realFolder: () => undefined,
       agentName: () => undefined,

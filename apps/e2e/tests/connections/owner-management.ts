@@ -48,6 +48,10 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
       page,
       request,
     }) => {
+      // Four full page loads (Connections, the review deep link, the profile
+      // twice) at about 7s each on a queue runner: about 32s of work against the
+      // 30s default, so it timed out at the finish line under load (DOR-5056).
+      test.setTimeout(60_000);
       const connectionId = await harness.connectWorkAccountViaApi(request);
       const seeded = await seedAgent(request, harness.apiUrl);
       const preview = await previewConnection(request, harness.apiUrl, connectionId);

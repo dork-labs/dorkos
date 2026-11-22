@@ -16,6 +16,7 @@ import {
   folderSettingsFiles,
   routesOrPays,
 } from '../credits-launch.js';
+import { projectRuntimeEnvironment } from '../../../shared/runtime-environment.js';
 
 describe('the process env of a credits turn', () => {
   it('keeps the baseline, DorkOS’s own names and the git hardening, and nothing else', () => {
@@ -54,6 +55,24 @@ describe('the process env of a credits turn', () => {
         'ANTHROPIC_AUTH_TOKEN',
       ].sort()
     );
+  });
+
+  it('keeps the telemetry-off names a DO_NOT_TRACK server projects (DOR-4990)', () => {
+    const projected = projectRuntimeEnvironment({
+      parent: { PATH: '/bin', DORKOS_TELEMETRY_DISABLED: '1' },
+      runtime: 'claude-code',
+      purpose: 'turn',
+      platform: 'linux',
+    });
+    const env = creditsProcessEnv(projected, {
+      ANTHROPIC_BASE_URL: 'http://credits',
+      ANTHROPIC_AUTH_TOKEN: 'tok',
+    });
+    expect(env).toMatchObject({
+      DO_NOT_TRACK: '1',
+      DISABLE_TELEMETRY: '1',
+      DISABLE_ERROR_REPORTING: '1',
+    });
   });
 
   it('keeps the person’s inherit list, minus every name that routes or pays', () => {

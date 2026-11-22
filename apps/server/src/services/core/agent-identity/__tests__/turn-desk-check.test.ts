@@ -70,6 +70,25 @@ describe('createTurnDeskCheck', () => {
     ).resolves.toContain('different agent');
   });
 
+  it('refuses when the session’s agent cannot be read, whatever the payload names', async () => {
+    // A failed read is not "nobody's": trusting `forAgent` then lets a sender pick (DOR-5038).
+    registerTestHomes([a, b], { roomsDir });
+    const unreadable = createTurnDeskCheck({
+      sessionAgentPath: async () => {
+        throw new Error('database is locked');
+      },
+      placementOf: async (agentPath) => ({ cwd: agentPath, rung: 'agent-home' }),
+    });
+
+    await expect(
+      unreadable({ cwd: a, agentDirectory: undefined, forAgent: a, sessionKey: 's' })
+    ).resolves.toContain('could not be read');
+    // The relay's own resolved agent needs no read, so it still answers.
+    await expect(
+      unreadable({ cwd: b, agentDirectory: b, forAgent: undefined, sessionKey: 's' })
+    ).resolves.toBeNull();
+  });
+
   it('refuses a turn that names no agent but stands in an agent`s folder or a room', async () => {
     registerTestHomes([a, b], { roomsDir });
 

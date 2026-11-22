@@ -26,9 +26,21 @@ export interface ReportUndeliveredPayloads {
     /** The agent that owns the spin-off, when known. */
     agentId?: string;
     /** Why the report went. */
-    reason: 'finished' | 'failed' | 'stopped' | 'limit' | 'needs-you' | 'holding' | 'never-started';
+    reason:
+      | 'finished'
+      | 'failed'
+      | 'stopped'
+      | 'limit'
+      | 'needs-you'
+      | 'holding'
+      | 'never-started'
+      | 'started-late';
     /** ISO time when report-back gave up. */
     at: string;
+    /** Stable outbox identity and ambiguous-delivery wording. */
+    reportId?: string;
+    deliveryUnknown?: boolean;
+    recoveryUnavailable?: boolean;
   };
 }
 
@@ -51,10 +63,20 @@ export const REPORT_UNDELIVERED_ENTRIES: {
       sessionId: p.sessionId,
       ...(p.agentId ? { agentId: p.agentId } : {}),
     }),
-    title: (p) => `A report from ${p.sessionLabel} didn't arrive`,
-    body: () => 'It never reached the chat that started it. Open the chat to read it.',
+    title: (p) =>
+      p.recoveryUnavailable
+        ? 'Report recovery unavailable'
+        : p.deliveryUnknown
+          ? `A report from ${p.sessionLabel} needs checking`
+          : `A report from ${p.sessionLabel} didn't arrive`,
+    body: (p) =>
+      p.recoveryUnavailable
+        ? 'This report can’t resume after a restart. Open the chat to check it.'
+        : p.deliveryUnknown
+          ? 'Delivery couldn’t be confirmed. Open the chat to read the report.'
+          : 'It never reached the chat that started it. Open the chat to read it.',
     actions: () => OPEN_CHAT_ACTION,
-    dedupeKey: (p) => `report-undelivered:${p.sessionId}:${p.at}`,
+    dedupeKey: (p) => `report-undelivered:${p.reportId ?? `${p.sessionId}:${p.at}`}`,
     relay: 'never',
   },
 };

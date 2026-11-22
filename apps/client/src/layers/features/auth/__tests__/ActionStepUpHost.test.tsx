@@ -367,6 +367,25 @@ describe('ActionStepUpHost', () => {
     await expect(outcome).resolves.toEqual({ kind: 'not-confirmed' });
   });
 
+  it('shows a mini app’s name as plain text: its author picks it (DOR-4906)', async () => {
+    const name = '<img src="x" alt="planted">Notes';
+    heldWith(
+      {
+        ...VIEW,
+        methods: [],
+        passwordUnavailable: 'extension-risk',
+        blockedBy: [{ id: 'notes', name, reason: 'changed' }],
+      },
+      [200, { ok: true, status: 200, result: {} }]
+    );
+    render(<ActionStepUpHost />);
+    void ask();
+    expect(
+      await screen.findByText(`Confirming is off while ${name} has changed since you approved it.`)
+    ).toBeTruthy();
+    expect(screen.queryByAltText('planted')).toBeNull();
+  });
+
   it('after a mini app ran since sign-in, drops this hold and asks to sign in again', async () => {
     const fetchSpy = heldWith(
       { ...VIEW, methods: [], passwordUnavailable: 'extension-risk', blockedBy: [] },
@@ -375,7 +394,9 @@ describe('ActionStepUpHost', () => {
     render(<ActionStepUpHost />);
     const outcome = ask();
     expect(
-      await screen.findByText('A mini app has run since you signed in. Sign in again to confirm.')
+      await screen.findByText(
+        'A mini app ran after this page opened. Sign in again, then try once more.'
+      )
     ).toBeTruthy();
     expect(screen.queryByLabelText('DorkOS password')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Sign in again' }));

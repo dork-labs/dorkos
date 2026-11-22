@@ -13,7 +13,7 @@ const ID = '01M66Q5GH0CX6W6HZPRTHM27CB';
 type Call = { url: string; init: RequestInit };
 
 /** A server answering by method and path suffix. */
-function server(answers: Record<string, [number, unknown]>) {
+function server(answers: Record<string, [number, unknown]>, pageStamp: string | null = null) {
   const calls: Call[] = [];
   const fetch = vi.fn(async (url: string, init: RequestInit) => {
     calls.push({ url, init });
@@ -28,6 +28,7 @@ function server(answers: Record<string, [number, unknown]>) {
     origin: ORIGIN,
     fetch,
     personProof: () => 'proof-1',
+    pageStamp: async () => pageStamp,
   });
   return { confirmation, calls };
 }
@@ -58,6 +59,25 @@ describe('StepUpConfirmation', () => {
     // Without it Chromium sends `Sec-Fetch-Site: none`, which the read refuses.
     expect(headers.Origin).toBe(ORIGIN);
     expect(headers['Content-Type']).toBeUndefined();
+    expect(headers['x-dorkos-page-stamp']).toBeUndefined();
+  });
+
+  it('sends the app window’s page stamp on every call, reads and writes (DOR-5026)', async () => {
+    const { confirmation, calls } = server(
+      {
+        'GET /': [200, { ...VIEW, methods: ['password'] }],
+        'POST /password': [200, { ok: true, status: 200, result: {} }],
+      },
+      'v1.made-up.stamp'
+    );
+    await confirmation.view();
+    await confirmation.submit({ kind: 'password', password: 'pw' });
+    expect(calls).toHaveLength(2);
+    for (const { init } of calls) {
+      expect((init.headers as Record<string, string>)['x-dorkos-page-stamp']).toBe(
+        'v1.made-up.stamp'
+      );
+    }
   });
 
   it('passes on the mini apps that keep confirming off, in the sheet’s words', async () => {
@@ -88,6 +108,25 @@ describe('StepUpConfirmation', () => {
         'Confirming is off while Social queue can be edited by dorkos-marketing.',
         'Confirming is off while Notes has changed since you approved it.',
       ],
+    });
+  });
+
+  it('passes a mini app’s name on as plain text, markup and all (DOR-4906)', async () => {
+    const name = '<img src="x" alt="planted">Notes';
+    const { confirmation } = server({
+      'GET /': [
+        200,
+        {
+          ...VIEW,
+          methods: [],
+          passwordUnavailable: 'extension-risk',
+          blockedBy: [{ id: 'n', name, reason: 'changed' }],
+        },
+      ],
+    });
+    // The window shows it with textContent (`preload/step-up.ts`), never as HTML.
+    expect(await confirmation.view()).toMatchObject({
+      blockedLines: [`Confirming is off while ${name} has changed since you approved it.`],
     });
   });
 
@@ -173,6 +212,7 @@ describe('StepUpConfirmation', () => {
     const confirmation = new StepUpConfirmation(ID, {
       origin: ORIGIN,
       personProof: () => null,
+      pageStamp: async () => null,
       fetch: async (url, init) => {
         calls.push({ url, init });
         if (init.method === 'POST') {
