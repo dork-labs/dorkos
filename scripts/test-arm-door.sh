@@ -41,10 +41,19 @@ base() {
       checkRuns: ([run(1; "typecheck"), run(2; "test"), run(3; "lint"), run(4; "no-fragment-under-skip-label")]
                   + [range(1; 7) as $k | run(10 + $k; "test-shard (\($k)/6)")]),
       required: ["typecheck", "test", "lint", "no-fragment-under-skip-label"],
-      files: [{filename: "apps/client/src/a.ts"}],
-      changedFiles: 1
+      files: [{filename: "apps/server/src/a.ts"}],
+      changedFiles: 1,
+      labels: ["review:deep", "security-reviewed"],
+      qaLabelEvents: [],
+      patches: "@@FILE@@ apps/server/src/a.ts\n@@ -1 +1 @@\n+const a = 1;\n",
+      title: "fix(server): a made-up change",
+      designLabelEvents: []
     }'
 }
+# The same PR, but it changes a screen: the designer's gate applies (DOR-4904).
+UI='.files = [{filename: "apps/client/src/layers/features/x/ui/X.tsx"}]'
+# The same PR, but it adds a migration: QA's real-data gate applies (DOR-4904).
+MIG='.files = [{filename: "packages/db/drizzle/0198_x.sql"}] | .patches = "@@FILE@@ packages/db/drizzle/0198_x.sql\n+ALTER TABLE x ADD y;\n"'
 stamp() { # state proof
   printf '{"id":9,"context":"arm-record","state":"%s","created_at":"2026-11-18T12:00:00Z","description":"armed by dorkos-2 session 0d4a1afe proof=%s"}' "$1" "$2"
 }
@@ -104,6 +113,58 @@ check "a withdrawn stamp gives no proof"           "PULL no-proof" ".checkRuns =
 check "an unknown stamp proof gives none"          "PULL no-proof" ".checkRuns = [] | .statuses += [$(stamp success anything)]"
 check "both gates missing: both named"             "PULL no-security-label,no-proof" '.labelEvents = [] | .checkRuns = []'
 
+# Gate 3: QA's real-data label after the head, for config and migration paths (DOR-4904: #4096
+# went in without the arm script and merged without it). The rule is scripts/qa-real-data.sh, the
+# one the arm script runs. The head time is the same one gate 1 uses.
+check "migration, no qa-real-data: pull"           "PULL no-qa-label" "$MIG"
+check "migration, label before the head: pull"     "PULL qa-label-older-than-head" "$MIG"' | .labels += ["qa-real-data"] | .qaLabelEvents = ["2026-11-18T09:00:00Z"]'
+check "label after commit, before GitHub saw it"   "PULL qa-label-older-than-head" "$MIG"' | .labels += ["qa-real-data"] | .qaLabelEvents = ["2026-11-18T10:00:10Z"]'
+check "migration, label after the head: keep"      "KEEP gates-met proof=ci-green stamp=no" "$MIG"' | .labels += ["qa-real-data"] | .qaLabelEvents = ["2026-11-18T09:00:00Z", "2026-11-18T11:30:00Z"]'
+check "label taken off since: pull"                "PULL no-qa-label" "$MIG"' | .qaLabelEvents = ["2026-11-18T11:30:00Z"]'
+check "no config or migration path: unaffected"    "KEEP gates-met proof=ci-green stamp=no" '.qaLabelEvents = ["2026-11-18T09:00:00Z"]'
+check "config path, test file only: unaffected"    "KEEP gates-met proof=ci-green stamp=no" '.files = [{filename: "packages/shared/src/config-schema/__tests__/a.test.ts"}]'
+check "config-manager.ts, no label: pull"          "PULL no-qa-label" '.files = [{filename: "apps/server/src/services/core/config-manager.ts"}]'
+check "ledger write anywhere, no label: pull"      "PULL no-qa-label" '.patches = "@@FILE@@ apps/server/src/a.ts\n+  tx.insert(connectorApplicationMigrations)\n"'
+check "no patch for a big file, no label: pull"    "PULL no-qa-label" '.patches = "@@FILE@@ apps/server/src/a.ts\n@@NOPATCH@@ apps/server/src/a.ts\n"'
+check "a stale label on any PR is held to it"      "PULL qa-label-older-than-head" '.labels += ["qa-real-data"] | .qaLabelEvents = ["2026-11-18T09:00:00Z"]'
+check "a stamp doesn't stand in for QA"            "PULL no-qa-label" "$MIG | .statuses += [$(stamp success local-verify)]"
+check "every missing gate is named"                "PULL no-security-label,no-proof,no-qa-label" "$MIG"' | .labelEvents = [] | .checkRuns = []'
+check "no seen time, QA label after commit: keep"  "KEEP unreadable headSeenAt" "$MIG"' | del(.headSeenAt) | .labels += ["qa-real-data"] | .qaLabelEvents = ["2026-11-18T10:00:10Z"]'
+check "no seen time, QA label before commit: pull" "PULL qa-label-older-than-head" "$MIG"' | del(.headSeenAt) | .labelEvents = ["2026-11-18T10:00:10Z"] | .labels += ["qa-real-data"] | .qaLabelEvents = ["2026-11-18T09:00:00Z"]'
+check "labels unreadable"                          "KEEP unreadable labels" "$MIG | .labels = null"
+check "QA label events unreadable"                 "KEEP unreadable qaLabelEvents" "$MIG | .qaLabelEvents = null"
+check "patches unreadable"                         "KEEP unreadable patches" '.patches = null'
+# A QA read failure must not hide the other gates' pulls.
+check "patches unreadable, no Security label: pull" "PULL no-security-label" '.patches = null | .labelEvents = []'
+check "labels unreadable, no proof: pull"          "PULL no-proof" '.labels = null | .checkRuns = []'
+check "label on, no event: pull"                   "PULL no-qa-label" "$MIG"' | .labels += ["qa-real-data"]'
+# #4096 as it was queued (file list from GitHub; QA's label added 15:58:45Z, removed 16:01:53Z).
+check "#4096 replayed: pull"                       "PULL no-qa-label" '.headCommittedAt = "2026-11-21T17:40:00Z" | .headSeenAt = "2026-11-21T17:41:00Z" | .labelEvents = ["2026-11-21T17:53:53Z"] | .qaLabelEvents = ["2026-11-21T15:58:45Z"] | .labels = ["review:deep", "security-reviewed", "security-deep-reviewed"] | .files = ([
+  "apps/server/src/routes/config-step-up-paths.ts",
+  "apps/server/src/services/core/__tests__/config-manager.test.ts",
+  "apps/server/src/services/core/config-migrations/index.ts",
+  "apps/server/src/services/core/config-migrations/v0-90-onward.ts",
+  "apps/server/src/services/extensions/pin/slots-backfill.ts",
+  "changelog/unreleased/261119-035509-dor-4282-app-places.md",
+  "packages/shared/src/config-schema/tooling.ts"] | map({filename: .})) | .changedFiles = 7 | .patches = ([.files[].filename] | map("@@FILE@@ \(.)\n+x\n") | join(""))'
+
+# Gate 4: the designer's design-ok after the head, for user-visible paths or needs-design
+# (DOR-4904). The rule is scripts/design-ok.sh, the one the arm script runs.
+check "UI path, no design-ok: pull"                "PULL no-design-ok" "$UI"
+check "UI path, design-ok before the head: pull"   "PULL design-ok-older-than-head" "$UI"' | .labels += ["design-ok"] | .designLabelEvents = ["2026-11-18T09:00:00Z"]'
+check "UI path, design-ok after the head: keep"    "KEEP gates-met proof=ci-green stamp=no" "$UI"' | .labels += ["design-ok"] | .designLabelEvents = ["2026-11-18T11:30:00Z"]'
+check "design-ok taken off since: pull"            "PULL no-design-ok" "$UI"' | .designLabelEvents = ["2026-11-18T11:30:00Z"]'
+check "packages/ui, no design-ok: pull"            "PULL no-design-ok" '.files = [{filename: "packages/ui/src/button.tsx"}]'
+check "needs-design on server code: pull"          "PULL no-design-ok" '.labels += ["needs-design"]'
+check "UI test file only: unaffected"              "KEEP gates-met proof=ci-green stamp=no" '.files = [{filename: "apps/client/src/layers/features/x/__tests__/X.test.tsx"}]'
+check "Dev Playground only: unaffected"            "KEEP gates-met proof=ci-green stamp=no" '.files = [{filename: "apps/client/src/dev/sections/X.tsx"}]'
+check "release PR touching UI: unaffected"         "KEEP gates-met proof=ci-green stamp=no" "$UI"' | .title = "chore(release): v0.140.0"'
+check "UI and migration, neither label: both"      "PULL no-qa-label,no-design-ok" '.files = [{filename: "apps/client/src/a.tsx"}, {filename: "packages/db/drizzle/0198_x.sql"}] | .changedFiles = 2'
+check "no seen time, design-ok after commit: keep" "KEEP unreadable headSeenAt" "$UI"' | del(.headSeenAt) | .labels += ["design-ok"] | .designLabelEvents = ["2026-11-18T10:00:10Z"]'
+check "design label events unreadable"             "KEEP unreadable designLabelEvents" "$UI | .designLabelEvents = null"
+check "title unreadable"                           "KEEP unreadable title" "$UI | .title = null"
+check "title unreadable, no Security label: pull"  "PULL no-security-label" '.title = null | .labelEvents = []'
+
 # Never jam the queue: anything unreadable keeps the entry.
 check "file list short of the count"               "KEEP unreadable files" '.changedFiles = 3000'
 check "no required list"                           "KEEP unreadable required" '.required = []'
@@ -120,6 +181,24 @@ if grep -qF "<!-- arm-door pull head=$H -->" <<<"$note" && grep -qF "never added
   pass=$(( pass + 1 ))
 else
   fail=$(( fail + 1 )); echo "FAIL  pull note names exactly what is missing"
+fi
+note=$(bash "$door" comment pull 4096 "$H" no-qa-label)
+if grep -qF "qa-real-data" <<<"$note" && grep -qF "config or migration" <<<"$note" && ! grep -qF "older than this commit" <<<"$note" && ! grep -qF "never added" <<<"$note"; then
+  pass=$(( pass + 1 ))
+else
+  fail=$(( fail + 1 )); echo "FAIL  pull note names a missing QA label alone"
+fi
+note=$(bash "$door" comment pull 4096 "$H" qa-label-older-than-head)
+if grep -qF "\`qa-real-data\` label is older than this commit" <<<"$note"; then
+  pass=$(( pass + 1 ))
+else
+  fail=$(( fail + 1 )); echo "FAIL  pull note names a stale QA label"
+fi
+note=$(bash "$door" comment pull 4096 "$H" no-design-ok,design-ok-older-than-head)
+if grep -qF "\`design-ok\` label is not on it" <<<"$note" && grep -qF "\`design-ok\` label is older than this commit" <<<"$note" && ! grep -qF "qa-real-data" <<<"$note"; then
+  pass=$(( pass + 1 ))
+else
+  fail=$(( fail + 1 )); echo "FAIL  pull note names the design reasons"
 fi
 note=$(bash "$door" comment unarmed 3913 "$H" proof=ci-green)
 if grep -qF "<!-- arm-door unarmed head=$H -->" <<<"$note" && grep -qF "stays in the queue" <<<"$note"; then

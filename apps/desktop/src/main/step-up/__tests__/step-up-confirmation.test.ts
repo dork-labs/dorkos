@@ -91,6 +91,25 @@ describe('StepUpConfirmation', () => {
     });
   });
 
+  it('passes a mini app’s name on as plain text, markup and all (DOR-4906)', async () => {
+    const name = '<img src="x" alt="planted">Notes';
+    const { confirmation } = server({
+      'GET /': [
+        200,
+        {
+          ...VIEW,
+          methods: [],
+          passwordUnavailable: 'extension-risk',
+          blockedBy: [{ id: 'n', name, reason: 'changed' }],
+        },
+      ],
+    });
+    // The window shows it with textContent (`preload/step-up.ts`), never as HTML.
+    expect(await confirmation.view()).toMatchObject({
+      blockedLines: [`Confirming is off while ${name} has changed since you approved it.`],
+    });
+  });
+
   it('passes on why no password is offered', async () => {
     const { confirmation } = server({
       'GET /': [200, { ...VIEW, methods: [], passwordUnavailable: 'insecure-connection' }],

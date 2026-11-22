@@ -41,7 +41,7 @@ const handoffStatusCapability = defineCapability({
     return answering(
       () => {
         caller = callerAuthor(rooms, context);
-        return rooms.handoffs.outcomes.read(input.handoffId, caller.id);
+        return rooms.handoffs.status(input.handoffId, caller.id);
       },
       () => isOwnerCaller(caller)
     );

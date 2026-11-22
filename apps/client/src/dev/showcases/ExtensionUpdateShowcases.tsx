@@ -1,11 +1,14 @@
 /**
  * The Inbox card for an app update, drawn with the real `ExtensionApprovalList`
- * and made-up apps: one update that adds powers, each marked new, and one
- * that only changed files (DOR-4504).
+ * and made-up apps: one update that adds powers, each marked new, one that
+ * only changed files (DOR-4504), and a first run whose Allow ended on
+ * "Confirm it's you" closed without confirming (DOR-4909).
  *
  * @module dev/showcases/ExtensionUpdateShowcases
  */
+import { useEffect } from 'react';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
+import { useAllowNotConfirmedStore } from '@/layers/entities/extension';
 import { ExtensionApprovalList } from '@/layers/widgets/inbox-bell';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -60,8 +63,27 @@ const FILES_ONLY: PendingExtensionApproval = {
   changedFiles: ['index.ts'],
 };
 
+/** A made-up first run, shown after its Allow ended on "Confirm it's you" closed unconfirmed. */
+const NOT_CONFIRMED: PendingExtensionApproval = {
+  ...NOTES_UPDATE,
+  id: 'sample-desk',
+  name: 'Desk',
+  version: '1.0.0',
+  path: '/home/sample/.dork/extensions/sample-desk',
+  why: 'You added Desk. It shows your day at a glance. It runs as you.',
+  added: null,
+  changedFiles: null,
+  updatedFrom: null,
+};
+
 /** An app update in the Inbox: one that adds powers, and one that adds none. */
 export function ExtensionUpdateShowcases() {
+  // The card as it reads after a cancelled "Confirm it's you" (DOR-4909).
+  useEffect(() => {
+    const store = useAllowNotConfirmedStore.getState();
+    store.remember(NOT_CONFIRMED.id, NOT_CONFIRMED.version);
+    return () => store.forget(NOT_CONFIRMED.id);
+  }, []);
   return (
     <PlaygroundSection
       title="Extension update card"
@@ -86,6 +108,16 @@ export function ExtensionUpdateShowcases() {
           className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2"
         >
           <ExtensionApprovalList approvals={[FILES_ONLY]} onOpenSettings={() => {}} />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>After Allow, when “Confirm it’s you” closed without confirming</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div
+          data-testid="extension-allow-not-confirmed"
+          className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2"
+        >
+          <ExtensionApprovalList approvals={[NOT_CONFIRMED]} onOpenSettings={() => {}} />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>

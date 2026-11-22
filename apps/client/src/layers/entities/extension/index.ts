@@ -12,7 +12,12 @@
  *
  * @module entities/extension
  */
-export { EXTENSION_TRUST_COPY, extensionConsentCopy } from './lib/consent-copy';
+export {
+  ALLOW_NOT_CONFIRMED_COPY,
+  EXTENSION_TRUST_COPY,
+  TURN_ON_NOT_CONFIRMED_COPY,
+  extensionConsentCopy,
+} from './lib/consent-copy';
 export {
   AGENT_TOOL_TIER_LABEL,
   agentGiftsFromApproval,
@@ -41,6 +46,11 @@ export {
   type ExtensionPermissionView,
 } from './lib/permission-lines';
 export { useSeenBeforeStaleStore, useAddedSinceSeen } from './model/seen-before-stale-store';
+export {
+  useAllowNotConfirmed,
+  useAllowNotConfirmedStore,
+  useAllowsNotConfirmed,
+} from './model/allow-not-confirmed-store';
 export {
   ACCESS_FACT_LINE_KEYS,
   approvalChangeLine,

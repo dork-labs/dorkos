@@ -219,6 +219,8 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     holds: { holds: connectorHolds },
     spending: { spending: connectorSpending, activity: activityService },
     accessChanges: { ...connectorOwnerBoundary, narrowing: connectorAccessNarrowing, db },
+    // A person's per-app switch; never reachable by an agent (DOR-4794).
+    writesBack: { ...connectorOwnerBoundary, db, activity: activityService },
     // Read at request time: the extension manager starts after these routes.
     miniAppAccess: {
       access: () => miniAppAccessFor(() => refs.extensionManager?.listRecords() ?? []),
@@ -723,7 +725,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   useStepUpRiskLedgerFile(path.join(dorkHome, 'step-up', 'risk-ledger.json'));
   setStepUpExtensionRiskInputs(() => ({
     records: refs.extensionManager?.listRecords() ?? [],
-    approvals: configManager.get('extensions')?.approvedSources ?? {},
+    extensions: configManager.get('extensions') ?? { approvedToRun: [], approvedSources: {} },
     agents: (refs.meshCore?.listWithPaths() ?? []).map((agent) => ({
       path: agent.projectPath,
       name: agent.displayName ?? agent.name,

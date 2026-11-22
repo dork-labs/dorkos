@@ -4,10 +4,17 @@
  * `handedOff: true`, then silence. Driven through the real registry, service and dispatcher, like
  * `room-handoff.test.ts`; only the turn runner stands in.
  */
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { mockInterruptReceipt } from '@dorkos/test-utils';
 import { composeRegistry, type CapabilityRegistry } from '../../core/capabilities/index.js';
+import {
+  initPermissionGate,
+  resetPermissionGate,
+} from '../../core/capabilities/permission-enforcement.js';
 import type { AgentIdentity } from '../../core/agent-identity/index.js';
 import { HANDOFF_WAIT_MAX_MS } from '../handoff/room-handoff.js';
 import { roomsDomain } from '../room-capabilities.js';
@@ -19,8 +26,10 @@ import {
   agentLookupFor,
   createRoomHarness,
   roomVoice,
+  type RoomHarness,
   type ScriptedTurnRunner,
 } from './room-test-harness.js';
+import { recordFixturePublicSource } from './durable-handoff-fixture.js';
 
 vi.mock('../../core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../core/auth/index.js')>()),
@@ -60,6 +69,8 @@ interface HandoffStatus {
 }
 
 describe('reading a hand-off by its id', () => {
+  let temporaryHome: string;
+  let harness: RoomHarness;
   let service: RoomService;
   let store: RoomStore;
   let registry: CapabilityRegistry;
@@ -89,7 +100,11 @@ describe('reading a hand-off by its id', () => {
     };
   }
 
-  function invoke(id: string, input: Record<string, unknown>, sessionId: string, as = 'bo') {
+  async function invoke(id: string, input: Record<string, unknown>, sessionId: string, as = 'bo') {
+    // A hand-off is admitted only from a real recorded turn of a known chat (DOR-3816).
+    if (id === 'rooms.post') {
+      await recordFixturePublicSource(harness, sessionId, `/agents/${as}`, input.roomId as string);
+    }
     return registry.invoke(id, input, {
       identity: identityOf(as),
       sessionId,
@@ -120,15 +135,22 @@ describe('reading a hand-off by its id', () => {
   }
 
   beforeEach(() => {
+    temporaryHome = mkdtempSync(join(tmpdir(), 'room-handoff-status-'));
+    vi.stubEnv('DORK_HOME', temporaryHome);
+    initPermissionGate({
+      readConfig: () => ({ preset: 'trusted', defaults: { areas: {}, actions: {} } }),
+      readAgentPermissions: async () => undefined,
+    });
     resetFreshnessForTests();
     runtimeHolds = false;
     seatTurn = seatPosts;
-    const harness = createRoomHarness({
+    harness = createRoomHarness({
       agents,
       runner: runner(),
       operatorName: () => 'Dorian',
     });
     ({ service, store, human } = harness);
+    service.handoffs.initializeDurable(() => {});
     registry = composeRegistry([roomsDomain], {
       logger: { debug() {}, info() {}, warn() {}, error() {} },
       roomDeps: { rooms: service },
@@ -145,8 +167,15 @@ describe('reading a hand-off by its id', () => {
   afterEach(async () => {
     vi.restoreAllMocks();
     runtimeHolds = false;
-    await service.triggersIdle();
-    await service.handoffs.idle();
+    try {
+      await service.triggersIdle();
+      await service.handoffs.idle();
+    } finally {
+      resetPermissionGate();
+      vi.unstubAllEnvs();
+      harness.db.$client.close();
+      rmSync(temporaryHome, { recursive: true, force: true });
+    }
   });
 
   it('idle seat: the hand-off starts its turn and ends posted, with the entry', async () => {
@@ -238,6 +267,8 @@ describe('reading a hand-off by its id', () => {
     const seen = await statusOf('no-such-hand-off');
 
     expect(seen.status).toBe('unknown');
-    expect(seen.reason).toMatch(/restart/);
+    // A hand-off now outlives a restart (DOR-3816), so the answer no longer blames one.
+    expect(seen.reason).toMatch(/No handoff of yours has that id/);
+    expect(seen.reason).not.toMatch(/restart/);
   });
 });

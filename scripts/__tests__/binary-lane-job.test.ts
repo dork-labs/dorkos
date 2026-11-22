@@ -301,7 +301,7 @@ describe('the job and the fan-in', () => {
   });
 
   it('the fan-in needs test-binary and fails on anything but success', () => {
-    expect(fanIn).toMatch(/^ {4}needs: \[[^\]]*\btest-binary\b[^\]]*\]$/m);
+    expect(fanIn).toMatch(/^ {4}needs:\s*\[[^\]]*\btest-binary\b[^\]]*\]$/m);
     expect(fanIn).toContain('result="${{ needs.test-binary.result }}"');
     expect(stepRun(fanIn, 'Require the binary CLI suites green')).toContain(
       '[ "$result" = "success" ]'

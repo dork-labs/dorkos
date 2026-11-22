@@ -40,5 +40,7 @@ describe('remote confirmation notice', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Sign it out' })).toBeEnabled());
     expect(screen.queryByText('Device signed out')).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // DOR-4909: it says nothing changed, calmly, rather than nothing at all.
+    expect(screen.getByRole('status')).toHaveTextContent('Not confirmed. Nothing changed.');
   });
 });

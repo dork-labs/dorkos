@@ -10,6 +10,7 @@ import { useId, useState } from 'react';
 import { Check, Puzzle } from 'lucide-react';
 import type { ApprovalAnswerContext } from '@dorkos/shared/step-up';
 import { ApprovalAnswerNote, Button, Spinner } from '@/layers/shared/ui';
+import { ALLOW_NOT_CONFIRMED_COPY } from '@/layers/entities/extension';
 import { PLACES_GROUP_VISIBLE, newPlacesLine, reaskKeyOf } from '../lib/places-reask';
 import type { PlacesGroupRow } from '../model/use-places-reask-group';
 
@@ -27,6 +28,8 @@ export interface PlacesReaskCardProps {
   answerContext?: ApprovalAnswerContext;
   /** Start with every row shown, as if "Show N more" was pressed. */
   defaultExpanded?: boolean;
+  /** The apps whose last Allow ended on "Confirm it's you" closed unconfirmed (DOR-4909). */
+  notConfirmed?: Readonly<Record<string, string>>;
 }
 
 /** One app's row: its name, the places it now names, and its two answers. */
@@ -35,7 +38,11 @@ function PlacesRow({
   onAllow,
   onNotNow,
   pending,
-}: { row: PlacesGroupRow } & Pick<PlacesReaskCardProps, 'onAllow' | 'onNotNow' | 'pending'>) {
+  notConfirmed,
+}: { row: PlacesGroupRow; notConfirmed: boolean } & Pick<
+  PlacesReaskCardProps,
+  'onAllow' | 'onNotNow' | 'pending'
+>) {
   const { approval, answer } = row;
   const busy = pending !== null;
   const working = pending?.id === approval.id ? pending.action : null;
@@ -66,6 +73,15 @@ function PlacesRow({
           <Check aria-hidden className="text-status-success-fg ml-1 inline size-3" />
         )}
       </p>
+      {/* Its own line, right above its two answers (designer, DOR-4909). */}
+      {answer === null && notConfirmed && (
+        <p
+          role="status"
+          className="text-status-warning-fg basis-full text-xs leading-snug font-medium"
+        >
+          {ALLOW_NOT_CONFIRMED_COPY}
+        </p>
+      )}
       {answer === null && (
         <span className="flex shrink-0 items-center gap-1.5">
           <Button
@@ -112,6 +128,7 @@ export function PlacesReaskCard({
   pending,
   answerContext,
   defaultExpanded = false,
+  notConfirmed = {},
 }: PlacesReaskCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const titleId = useId();
@@ -147,6 +164,7 @@ export function PlacesReaskCard({
                 onAllow={onAllow}
                 onNotNow={onNotNow}
                 pending={pending}
+                notConfirmed={notConfirmed[row.approval.id] === row.approval.version}
               />
             ))}
           </ul>

@@ -3576,8 +3576,9 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read. DOR-4188
-    // lowered it by retiring three keys the upgrade floor left as no-ops.
-    expect(Object.keys(bodies)).toHaveLength(54);
+    // lowered it by retiring three keys the upgrade floor left as no-ops;
+    // DOR-4891 raised it by one ('0.140.0', which never reaches the helper).
+    expect(Object.keys(bodies)).toHaveLength(55);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

@@ -6,6 +6,9 @@
  * agent out. The left-out agent keeps only the access given to it by name;
  * the share, now and as it changes later, no longer reaches it.
  *
+ * Also the other per-app choice only a person makes about what agents may do there: whether an
+ * agent that only read an app may write back to it without asking (DOR-4794).
+ *
  * @module shared/connector-exclusion-schemas
  */
 import { z } from 'zod';
@@ -146,3 +149,59 @@ export const ConnectorAgentApprovalSchema = z
   .openapi('ConnectorAgentApproval');
 /** Another agent's approval of a request for Read, as the request's owner sees it. */
 export type ConnectorAgentApproval = z.infer<typeof ConnectorAgentApprovalSchema>;
+
+/**
+ * Whether an agent whose turn read only this connected app may write back to it without asking
+ * (DOR-4794). Off until a person turns it on. Deletions and anything sent elsewhere still ask.
+ */
+export const ConnectorWritesBackSchema = z
+  .object({
+    connectionId: z.string().min(1),
+    /** On: a write back to this app, in a turn that read only this app, runs without a card. */
+    writesBackUnasked: z.boolean(),
+    /**
+     * When the person turned it on and confirmed the app does not copy what it holds somewhere
+     * else on its own (DorkOS can't see an app's own syncs). Null while it is off.
+     */
+    writesBackAttestedAt: z.string().datetime().nullable(),
+    /**
+     * Whether DorkOS offers the switch for this app: only apps whose changes stay inside the
+     * team's own workspace (Linear today). An app whose writes are sends never gets it.
+     */
+    supported: z.boolean(),
+  })
+  .strict()
+  .openapi('ConnectorWritesBack');
+/** Whether an agent may write back to a connected app it only read, without asking. */
+export type ConnectorWritesBack = z.infer<typeof ConnectorWritesBackSchema>;
+
+/**
+ * Turning writes back on or off for one connected app. Turning it on needs the person's
+ * confirmation that the app copies nothing it holds to another place on its own.
+ */
+export const ConnectorWritesBackChangeRequestSchema = z
+  .object({
+    writesBackUnasked: z.boolean(),
+    /** Required, and `true`, to turn it on. Ignored when turning it off. */
+    confirmsNoOutsideSync: z.literal(true).optional(),
+  })
+  .strict()
+  .refine((body) => !body.writesBackUnasked || body.confirmsNoOutsideSync === true, {
+    message: 'Confirm the app copies nothing to another place on its own before turning this on.',
+    path: ['confirmsNoOutsideSync'],
+  })
+  .openapi('ConnectorWritesBackChangeRequest');
+/** Turning writes back on or off for one connected app. */
+export type ConnectorWritesBackChangeRequest = z.infer<
+  typeof ConnectorWritesBackChangeRequestSchema
+>;
+
+/** What turning writes back on or off did. */
+export const ConnectorWritesBackChangeSchema = ConnectorWritesBackSchema.extend({
+  /** False when it already was in that state. */
+  changed: z.boolean(),
+})
+  .strict()
+  .openapi('ConnectorWritesBackChange');
+/** What turning writes back on or off did. */
+export type ConnectorWritesBackChange = z.infer<typeof ConnectorWritesBackChangeSchema>;

@@ -241,7 +241,7 @@ export class ConnectorExecutionAuthorizationService {
 
   /** Produce the authenticated preflight result consumed by the registry tier gate. */
   async preflight(input: PrepareConnectorExecutionInput): Promise<CapabilityPreflightResult> {
-    return preflightResultOf(await this.prepare(input));
+    return preflightResultOf(await this.prepare(input), this.db);
   }
 
   /** Resolve the immutable capability id for a program target without accepting a caller override. */

@@ -113,6 +113,83 @@ export function countWhileRunning(
 const readMarks = new Map<string, { key: string; token: { readonly marks: TurnMarks } } | null>();
 
 /**
+ * Where a mid-turn read's outside text came from (DOR-4794): one connected account, by its
+ * connection id, or a kind of source that is never one account's (`tool` is a runtime's own tool
+ * that reads outside text: a web page or another MCP server). Kept in memory beside the read
+ * record only. The stored marks (a turn's level, a post's `turn_marks`) stay bare, so a mark
+ * carried into another turn or across a restart has no source, and keeps today's ask.
+ */
+export type ReadMarkSource =
+  | { readonly kind: 'connector'; readonly connectionId: string }
+  | { readonly kind: 'room' | 'chat' | 'tool' | 'dorkos-tool' | 'memory' | 'unknown' };
+
+/** The source of a read that names none: never one connected account's, so it always asks. */
+export const UNKNOWN_READ_SOURCE: ReadMarkSource = Object.freeze({ kind: 'unknown' });
+
+/** Session (by its first id) → every distinct source its read record holds, oldest first. */
+const readSources = new Map<string, ReadMarkSource[]>();
+
+/** One key per distinct source, so a source read twice is kept once. */
+function sourceKey(source: ReadMarkSource): string {
+  return source.kind === 'connector' ? `connector:${source.connectionId}` : source.kind;
+}
+
+/** Add a source to a session's read record, once. */
+function noteReadSource(sessionId: string, source: ReadMarkSource): void {
+  const sources = readSources.get(sessionId) ?? [];
+  if (!sources.some((kept) => sourceKey(kept) === sourceKey(source))) sources.push(source);
+  readSources.set(sessionId, sources);
+}
+
+/** How many sessions with an unsourced mark are remembered; the oldest is forgotten first. */
+const UNSOURCED_MAX = 10_000;
+
+/**
+ * Sessions (by first id) whose level took an outsider mark no read explains: one carried from
+ * another conversation (a moved room seat, a level aliased across conversations). Kept until the
+ * read record ends ({@link endReadMark}), so no turn start can wash it out.
+ */
+const unsourced = new Set<string>();
+
+/**
+ * Record that a session's level took an outsider mark from somewhere no read names (DOR-4794,
+ * Security's ruling): its sources gain an unknown one, so the turn never passes for one app's
+ * words. There is deliberately no source kind for a carried mark: unknown is the only answer.
+ *
+ * @param sessionId - The session the mark landed on, by its first id.
+ */
+export function noteUnsourcedMark(sessionId: string): void {
+  unsourced.delete(sessionId);
+  unsourced.add(sessionId);
+  if (unsourced.size > UNSOURCED_MAX) unsourced.delete(unsourced.values().next().value as string);
+  noteReadSource(sessionId, UNKNOWN_READ_SOURCE);
+}
+
+/**
+ * Start a turn's sources afresh (DOR-4794). A read record an earlier turn left keeps marking this
+ * one (DOR-4515), but which app it came from is that turn's to know: here it counts as unknown,
+ * so it never passes for one app's words even when the turn's own start reads clean. So does a
+ * mark no read explains ({@link noteUnsourcedMark}).
+ *
+ * @param sessionId - The session starting a turn, by its first id.
+ */
+export function startTurnReadSources(sessionId: string): void {
+  if (readMarks.has(sessionId) || unsourced.has(sessionId)) {
+    readSources.set(sessionId, [UNKNOWN_READ_SOURCE]);
+  } else readSources.delete(sessionId);
+}
+
+/**
+ * Every source the session's read record holds in its current turn (DOR-4794). Empty when the
+ * turn read nothing, which is not the same as clean: a turn can start marked with no read at all.
+ *
+ * @param sessionId - The session, by its first id.
+ */
+export function readSourcesOf(sessionId: string): readonly ReadMarkSource[] {
+  return readSources.get(sessionId) ?? [];
+}
+
+/**
  * Record that a session's running turn read outside text mid-turn (DOR-3969), and count it
  * against its agent for callers that know the agent but not the session (external `/mcp`,
  * path-trust). The agent-wide entry marks the agent's other running turns too: more marked, never
@@ -122,9 +199,16 @@ const readMarks = new Map<string, { key: string; token: { readonly marks: TurnMa
  *
  * @param sessionId - The session whose turn read outside text.
  * @param agentPath - The agent's home, from its verified identity.
+ * @param source - Where the text came from (DOR-4794); a caller that names none is unknown.
  */
-export function noteReadMark(sessionId: string, agentPath: string | undefined): void {
+export function noteReadMark(
+  sessionId: string,
+  agentPath: string | undefined,
+  source: ReadMarkSource = UNKNOWN_READ_SOURCE
+): void {
   noteEverRead(sessionId);
+  // Every read adds its source, the first and each later one, before the early return below.
+  noteReadSource(sessionId, source);
   if (readMarks.has(sessionId)) return;
   const key = agentPath !== undefined ? homeKey(agentPath) : undefined;
   if (key === undefined) {
@@ -182,6 +266,8 @@ export function sessionReadOutsideText(sessionId: string): boolean {
 export function endReadMark(sessionId: string): void {
   const entry = readMarks.get(sessionId);
   readMarks.delete(sessionId);
+  readSources.delete(sessionId);
+  unsourced.delete(sessionId);
   if (!entry) return;
   // The read-marked turn is over: path trust asks whether one ran since a moment, not only now.
   noteEnded(entry.key, entry.token.marks);
@@ -226,5 +312,7 @@ export function resetLiveOutsiderTurns(): void {
   running.clear();
   lastEnded.clear();
   readMarks.clear();
+  readSources.clear();
+  unsourced.clear();
   everRead.clear();
 }

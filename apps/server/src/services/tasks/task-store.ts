@@ -391,8 +391,15 @@ export class TaskStore {
 
   // === Run CRUD ===
 
-  /** Create a new run record. Returns the created run. */
-  createRun(taskId: string, trigger: TaskRunTrigger): TaskRun {
+  /**
+   * Create a new run record. Returns the created run.
+   *
+   * @param taskId - The task being run.
+   * @param trigger - What started it.
+   * @param scheduledFor - The occurrence it stands for, when that is not now: a
+   *   scheduled run tried again after the computer's sleep broke it (DOR-3286).
+   */
+  createRun(taskId: string, trigger: TaskRunTrigger, scheduledFor?: string | null): TaskRun {
     const id = ulid();
     const now = new Date().toISOString();
 
@@ -405,6 +412,7 @@ export class TaskStore {
         startedAt: now,
         trigger,
         createdAt: now,
+        ...(scheduledFor ? { scheduledFor } : {}),
       })
       .run();
 

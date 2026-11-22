@@ -8,6 +8,7 @@ import { Puzzle } from 'lucide-react';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import {
   ACCESS_FACT_LINE_KEYS,
+  ALLOW_NOT_CONFIRMED_COPY,
   EXTENSION_TRUST_COPY,
   ExtensionAccessFacts,
   ExtensionAgentGifts,
@@ -20,6 +21,7 @@ import {
   isChangedSinceAllowed,
   permissionViewFromApproval,
   useAddedSinceSeen,
+  useAllowsNotConfirmed,
   useExtensionApprovalActions,
   type ApproveExtensionInput,
   type ExtensionAnswerInput,
@@ -185,6 +187,9 @@ export function ExtensionApprovalList({
 }: ExtensionApprovalListProps) {
   const answerContext = useConfig().data?.approvalAnswerContext;
   const { approve, dismiss, pending } = useExtensionApprovalActions();
+  // An Allow that ended on "Confirm it's you" closed unconfirmed says so on
+  // its row, so the card never looks as if nothing happened (DOR-4909).
+  const notConfirmed = useAllowsNotConfirmed();
   // Two or more apps asking only because they now say where they show share
   // one card (DOR-4282); one alone, or one that also wants more, keeps its own.
   const group = usePlacesReaskGroup(approvals, focusId);
@@ -196,6 +201,7 @@ export function ExtensionApprovalList({
         <PlacesReaskCard
           rows={group.rows}
           pending={pending}
+          notConfirmed={notConfirmed}
           answerContext={answerContext}
           // The row collapses as it is answered, so the card keeps its shape
           // while the answer is sent; a refusal puts the row back (DOR-4282).
@@ -243,6 +249,9 @@ export function ExtensionApprovalList({
                 requestCode={approval.requestCode}
                 answerContext={answerContext}
                 why={words.why}
+                {...(notConfirmed[approval.id] === approval.version
+                  ? { answerNotice: ALLOW_NOT_CONFIRMED_COPY }
+                  : {})}
                 // What it gives agents, on the row itself, so it is read before the
                 // yes; each tool and its tier is in the ⓘ panel (DOR-2685).
                 {...(giftsLine ? { meta: giftsLine } : {})}

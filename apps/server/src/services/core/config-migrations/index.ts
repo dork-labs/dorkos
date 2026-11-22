@@ -74,6 +74,7 @@ import {
   seedMaxAgentChats,
   renameTodoPromiseActions,
   seedLoadGate,
+  markSlotlessApprovals,
 } from './v0-90-onward.js';
 
 /**
@@ -1175,4 +1176,12 @@ export const CONFIG_MIGRATIONS = {
   // `runtimes` section lacks it, and touches nothing else (DOR-4209). See
   // `seedLoadGate`.
   '0.139.0': seedLoadGate,
+  // v0.139.0 is the newest tag, so this opens 0.140.0. Frozen from merge;
+  // anything further opens `'0.141.0'`.
+  //
+  // Lists each approved extension id whose stored permission set records no
+  // places as `extensions.legacySlotless`, and touches nothing else
+  // (DOR-4891). Only a listed approval gets its places on the next scan. See
+  // `markSlotlessApprovals`.
+  '0.140.0': markSlotlessApprovals,
 } as const;

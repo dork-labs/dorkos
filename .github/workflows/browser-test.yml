@@ -164,17 +164,111 @@ permissions:
   contents: read
 
 jobs:
+  # THE TEXT-ONLY LANE (DOR-4834). scripts/text-only-scope.mjs, run from the
+  # base commit, decides whether this change only rewrites strings, comments
+  # and Markdown; the step below says how. Its `browser` output is `full` for
+  # every other change (and for any failure to decide), `specs` when browser
+  # specs quote a changed string's old text, `none` when none does. Only a
+  # pull request can get `specs` or `none`: on `specs` browser-smoke runs
+  # exactly those specs on one runner, on `none` it does not run, and the
+  # browser-test fan-in accepts that. A merge queue build always answers
+  # `full`, so browser-shard and first-run run the whole suite as before.
+  text-only-scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      browser: ${{ steps.textonly.outputs.browser || 'full' }}
+      specs: ${{ steps.textonly.outputs.specs || '[]' }}
+    steps:
+      - name: A canary run is against main
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ -z "$EVENT" ] || [ -z "$REF" ]; then
+            echo "::error title=The main canary runs against main only::EVENT or REF is empty, so this cannot be shown to be a safe run. Refusing rather than assuming it is not a canary."
+            exit 1
+          fi
+          if [ "$EVENT" != 'schedule' ] && [ "$EVENT" != 'workflow_dispatch' ]; then
+            echo "event '$EVENT' is not a canary event; nothing to check."
+            exit 0
+          fi
+          if [ "$REF" != 'refs/heads/main' ]; then
+            echo "::error title=The main canary runs against main only::this $EVENT run is on '$REF', not 'refs/heads/main'. Nothing was tested. Dispatch it with --ref main; a run on a branch would post this check on that branch's head, under the name of a required context."
+            exit 1
+          fi
+          echo "canary $EVENT run against $REF."
+      # Depth 2 so the test-merge commit's first parent is here to diff against.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      # THE TEXT-ONLY LANE (DOR-4834, ledger 261120-043306). Decides, from
+      # scripts/text-only-scope.mjs, whether this change only rewrites strings,
+      # comments and Markdown, by comparing both sides' TypeScript syntax
+      # trees. When it does, ON A PULL REQUEST ONLY, the test sweep and the
+      # browser suites stand down and `vitest related` and the browser specs
+      # that quote the old text run instead; the required fan-ins read that as
+      # they read any green. No `if:`: every other event answers false without
+      # looking, a release pull request included, and so does the merge queue,
+      # which runs every shard and the whole browser suite exactly as for any
+      # other change: the queue is the safety net under a wrong "text only".
+      #
+      # The classifier and the security list it reads come from the BASE
+      # commit, never this checkout (Security, #3238), with the TypeScript the
+      # base pins installed beside that copy. A pull request diffs the
+      # test-merge commit against its first parent. Every failure answers
+      # false, which runs everything as before. Keep this block identical in
+      # test.yml and browser-test.yml.
+      - name: Decide whether this change only rewrites text
+        id: textonly
+        env:
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
+        run: |
+          set -uo pipefail
+          not_text_only() {
+            echo "not text only ($1); every suite runs"
+            printf 'text_only=false\nvitest_files=[]\nbrowser=full\nspecs=[]\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          case $EVENT in
+            pull_request)
+              if ! git rev-parse --verify --quiet 'HEAD^2' >/dev/null || ! base=$(git rev-parse --verify --quiet 'HEAD^1'); then
+                not_text_only 'no test-merge commit to diff'
+              fi
+              ;;
+            merge_group) not_text_only 'a merge queue build; the queue runs every suite' ;;
+            *) not_text_only "a $EVENT run" ;;
+          esac
+          lane=$RUNNER_TEMP/text-only
+          mkdir -p "$lane"
+          git archive "$base" scripts/text-only-scope.mjs .github/scripts .github/workflows/security-gate.yml | tar -x -C "$lane" ||
+            not_text_only 'the base commit has no scripts/text-only-scope.mjs'
+          version=$(git cat-file blob "$base:package.json" | jq -er '.devDependencies.typescript') ||
+            not_text_only 'the base package.json pins no typescript'
+          npm install --silent --no-save --no-package-lock --no-audit --no-fund --prefix "$lane" "typescript@$version" ||
+            not_text_only 'typescript did not install'
+          node "$lane/scripts/text-only-scope.mjs" "$base" HEAD > "$lane/outputs" || not_text_only 'the classifier failed'
+          reason=$(sed -n 's/^reason=//p' "$lane/outputs")
+          [ -n "$reason" ] || not_text_only 'the classifier printed no answer'
+          grep -qx 'text_only=true' "$lane/outputs" || not_text_only "$reason"
+          echo "::notice title=Text-only lane::$reason. The test sweep and the browser suites stand down; vitest related and the specs that quote the old text run instead."
+          cat "$lane/outputs" >> "$GITHUB_OUTPUT"
+
   # Four PR-only shards, no marketing-site leg and no real-model integration
   # opt-in. Reuse the suite's projects, isolation, caches and one CI retry.
+  # A text-only pull request (DOR-4834) runs here on one runner, with only the
+  # specs that quote its old text; see text-only-scope. Never in the queue.
   browser-smoke:
     name: browser-smoke (${{ matrix.shard }}/${{ strategy.job-total }})
-    if: ${{ github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/') }}
+    needs: [text-only-scope]
+    if: ${{ github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/') && needs.text-only-scope.outputs.browser != 'none' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: ${{ fromJSON(needs.text-only-scope.outputs.browser == 'specs' && '[1]' || '[1, 2, 3, 4]') }}
     env:
       NODE_ENV: development
       E2E_SITE: '0'
@@ -265,9 +359,23 @@ jobs:
         run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client
       # An inner deadline flushes reports before the step/job backstops.
       # Fail early on cascading regressions; every failure blocks on PRs.
+      # A text-only change runs the specs that quote its old text instead, with
+      # the site leg on, since a quoted spec may be a site spec.
       - name: Run the PR smoke specs
         timeout-minutes: 28
-        run: pnpm --filter @dorkos/e2e run e2e --grep @smoke --shard=${{ matrix.shard }}/${{ strategy.job-total }} --global-timeout=1500000 --max-failures=5
+        env:
+          BROWSER: ${{ needs.text-only-scope.outputs.browser }}
+          SPECS: ${{ needs.text-only-scope.outputs.specs }}
+        run: |
+          set -euo pipefail
+          if [ "$BROWSER" != specs ]; then
+            pnpm --filter @dorkos/e2e run e2e --grep @smoke --shard=${{ matrix.shard }}/${{ strategy.job-total }} --global-timeout=1500000 --max-failures=5
+            exit 0
+          fi
+          mapfile -t specs < <(jq -er '.[]' <<<"$SPECS")
+          [ ${#specs[@]} -gt 0 ] || { echo '::error::the text-only lane named no spec to run'; exit 1; }
+          echo "text-only change: running the ${#specs[@]} spec(s) that quote its old text: ${specs[*]}"
+          E2E_SITE=1 pnpm --filter @dorkos/e2e run e2e "${specs[@]}" --global-timeout=1500000 --max-failures=5
       - name: Refuse an empty smoke shard
         run: |
           node --input-type=module -e '
@@ -292,6 +400,7 @@ jobs:
   browser-shard:
     name: browser-shard (${{ matrix.shard }}/${{ strategy.job-total }})
     # Full suite off PRs; browser-smoke supplies the PR-time browser verdict.
+    # The text-only lane (DOR-4834) never reaches it: it is a pull-request lane.
     if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
     # Pinned, every job in this file: `ubuntu-latest` moved to 26.04 on
     # 2026-10-27, and the same tree that passed on 24.04 timed out on six specs
@@ -1114,7 +1223,7 @@ jobs:
   # every ubuntu-latest image) and the uploaded shard reports. That is why it
   # costs seconds rather than re-paying the setup once more.
   browser-test:
-    needs: [browser-smoke, browser-shard, first-run]
+    needs: [text-only-scope, browser-smoke, browser-shard, first-run]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     # Nothing here waits on anything slow. Ten minutes is a backstop against a
@@ -1160,10 +1269,20 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
+      # The text-only decision gates browser-smoke on a pull request, so a run
+      # where it did not finish has nothing this job can trust. Checked in the
+      # script, so this required job never skips it. On every other event it
+      # answers `full` without looking and the full suite never waits on it.
+      - name: Refuse a run whose text-only decision did not finish
+        env:
+          RESULT: ${{ needs.text-only-scope.result }}
+        run: |
+          echo "text-only-scope result: $RESULT"
+          [ "$RESULT" = success ] || { echo "::error::text-only-scope reported '$RESULT', so which browser jobs had to run is unknown."; exit 1; }
       # The always() fan-in must inspect the PR dependency explicitly: skipped
       # or cancelled smoke is not a successful queue-entry check.
       - name: Refuse a PR whose smoke specs did not pass
-        if: ${{ github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/') && needs.browser-smoke.result != 'success' }}
+        if: ${{ github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/') && needs.text-only-scope.outputs.browser != 'none' && needs.browser-smoke.result != 'success' }}
         run: |
           echo "::error::the PR smoke specs did not pass — browser-smoke reported '${{ needs.browser-smoke.result }}'. Open its shard jobs and browser-smoke-results-* artifacts."
           exit 1

@@ -38,6 +38,7 @@ export async function prepareFailedHandoffSeat(
       !!room &&
       !room.archived &&
       !!member &&
+      input.validateTarget?.() !== false &&
       claim?.dispatchId === input.dispatchId &&
       !self.wasHalted(input.dispatchId) &&
       self.deps.store.getRoomSession(input.room.id, input.authorId) === old &&
@@ -69,6 +70,7 @@ export async function prepareFailedHandoffSeat(
     logRecoveredHandoff(input.handoffTrace);
   }
   self.noteSessionBound(input.room.id, input.authorId, moved.newSessionId);
+  input.onSeatRecovered?.(old, moved.newSessionId);
   const displayName =
     self.deps.authors.getMany([input.authorId]).get(input.authorId)?.displayName ?? 'An agent';
   announceMove(self, input.room, input.entry, { authorId: input.authorId, displayName }, moved);

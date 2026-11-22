@@ -48,6 +48,7 @@ import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
 import { QUERY_TIMING } from './constants';
 import { addBreadcrumb } from './breadcrumbs';
 import { awayFromTheComputerSentence } from './server-sentence';
+import { STEP_UP_NOT_CONFIRMED_MESSAGE } from './action-step-up-signal';
 
 /**
  * Open the feedback dialog as a bug report from an error toast's "Report" action.
@@ -164,9 +165,19 @@ export function createQueryClientConfig(): QueryClientConfig {
         if (mutation.meta?.suppressErrorToast) return;
         // "Confirm it's you" closed without confirming (DOR-3234): the person
         // chose not to, and nothing changed, so it is not a failure to report.
-        if ((error as Error & { code?: unknown }).code === STEP_UP_REQUIRED_CODE) return;
+        // A change that reports through this toast (it names an `errorLabel`)
+        // still says nothing changed, calmly and with no Report action: saying
+        // nothing left the control looking as if the change went through
+        // (DOR-4909). One with no label, or one that shows it inline, says it
+        // in its own words, so it is never said twice.
         const isShownInline = mutation.meta?.isShownInline as
           ((error: Error) => boolean) | undefined;
+        if ((error as Error & { code?: unknown }).code === STEP_UP_REQUIRED_CODE) {
+          if (typeof mutation.meta?.errorLabel === 'string' && !isShownInline?.(error)) {
+            toast(STEP_UP_NOT_CONFIRMED_MESSAGE);
+          }
+          return;
+        }
         if (isShownInline?.(error)) return;
         // `errorLabel` names the action in the user's terms; the server's own
         // sentence says why. The authored line is the HEADLINE and the raw text

@@ -1,6 +1,6 @@
 import type { PlaygroundSection } from '../playground-registry';
 import { FEATURE_BROWSER_SECTIONS } from './features-browser-sections';
-import { SPENDING_SECTIONS } from './spending-sections';
+import { SPENDING_SECTIONS, WRITES_BACK_SECTIONS } from './spending-sections';
 
 /**
  * Sections for the Home, Inbox & Approvals page: the surfaces a person
@@ -129,7 +129,23 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     title: 'Extension update card',
     page: 'home-inbox',
     category: 'Inbox',
-    keywords: ['extension', 'update', 'new power', 'files changed', 'approval', 're-ask'],
+    keywords: [
+      'extension',
+      'update',
+      'new power',
+      'files changed',
+      'approval',
+      're-ask',
+      'not confirmed',
+    ],
+  },
+  // StepUpCancelShowcases
+  {
+    id: 'step-up-not-confirmed',
+    title: 'Step-up not confirmed',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: ['step-up', 'confirm', 'cancel', 'mac app', 'password window', 'toast'],
   },
   // PlacesReaskShowcases
   {
@@ -295,6 +311,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     keywords: ['to-do', 'todo', 'check', 'due', 'overdue', 'declined', 'limited', 'undo'],
   },
   ...SPENDING_SECTIONS,
+  ...WRITES_BACK_SECTIONS,
   // ConnectionsShowcases
   {
     id: 'approw',
