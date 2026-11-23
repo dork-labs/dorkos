@@ -11,6 +11,7 @@ import { agentLookupFor, createRoomHarness, outcomeRunner } from './room-test-ha
 
 const agents = agentLookupFor({
   '/agents/bo': { name: 'bo', displayName: 'Bo', responseMode: 'mention-only' },
+  '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'mention-only' },
 });
 const opened: Array<ReturnType<typeof createRoomHarness>> = [];
 const closed = new Set<ReturnType<typeof createRoomHarness>>();
@@ -28,7 +29,8 @@ function fixture(id: string) {
   });
   opened.push(h);
   const room = h.service.createRoom(
-    { kind: 'channel', title: id, members: [], agentPaths: ['/agents/bo'] },
+    // Ana, the sender, is a member: only members start private messages (DOR-4547).
+    { kind: 'channel', title: id, members: [], agentPaths: ['/agents/bo', '/agents/ana'] },
     h.human
   );
   const author = h.authors.resolveAgent('/agents/bo', 'Bo').id;

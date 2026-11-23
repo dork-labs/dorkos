@@ -38,6 +38,20 @@ export function renderSeatMessage(row: NewChatMessage): string {
   ).replace(/^([^\S\r\n]*)\//gmu, '$1\u200b/');
 }
 
+/** Server line after an answer, so the header's "use chat_send to answer" does not apply to it. */
+const ANSWER_NOTE = '\n(This answers a message you sent. It needs no private reply.)';
+
+/**
+ * One message as its batch shows it: an answer carries a server line saying it needs no
+ * private reply, since a reply to an answer is refused (DOR-4547).
+ *
+ * @param rendered - The defused, fenced message from {@link renderSeatMessage}.
+ * @param answer - Whether the committed receipt answers something this seat sent.
+ */
+export function seatBatchEntry(rendered: string, answer: boolean): string {
+  return answer ? rendered + ANSWER_NOTE : rendered;
+}
+
 /** Complete prompt; separators and all framing participate in the batch bound. */
 export function seatMessageBatch(messages: readonly string[]): string {
   return HEADER + messages.join('\n\n');
@@ -69,5 +83,5 @@ export function seatMessageNotice(sender: string, receiver: string): string {
       .split(/\s+/u)
       .slice(0, 3)
       .join(' ');
-  return `${name(sender)} messaged ${name(receiver)}'s chat in this room.`;
+  return `${name(sender)} sent ${name(receiver)} a private message.`;
 }

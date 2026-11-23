@@ -128,6 +128,7 @@ export async function sendChatMessage(options: SendOptions): Promise<ChatSendRec
         row: rowInput,
         rendered: renderSeatMessage(rowInput),
         carried: seatCarryOf(rowInput),
+        askAnswered: seatTarget.askAnswered,
       });
     } catch (error) {
       if (error instanceof ChatMessageError) throw error;

@@ -29,6 +29,8 @@ export interface SeatMessageAdmission {
   row: NewChatMessage;
   rendered: string;
   carried: AsideCarry;
+  /** The send named this seat's message, which already had its answer (DOR-4547). */
+  askAnswered?: boolean;
 }
 
 /** One capacity-owned receipt; its original wait deadline survives retries. */
