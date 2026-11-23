@@ -111,7 +111,9 @@ export const ROOM_EVENT_PREFIX = 'room_';
 /**
  * The other event names that must name an audience, as keys. The one list both
  * halves read: {@link ScopedEventLiteral} for typed calls, and
- * {@link requiresAudience} for calls the types cannot see.
+ * {@link requiresAudience} for calls the types cannot see. An in-process
+ * listener hears these whatever their audience, so it must never forward one
+ * ({@link EventFanOut.subscribe}, contract 3).
  */
 export const SCOPED_EXACT_EVENTS = { read_cursor: true } as const;
 
@@ -214,7 +216,7 @@ class EventFanOut {
    * only: these consumers are the server itself, not callers, so there is no
    * principal to ask about and nothing an audience could mean here.
    *
-   * **Two contracts a listener owes, both easy to violate by accident:**
+   * **Three contracts a listener owes, all easy to violate by accident:**
    *
    * 1. **Treat `data` as read-only.** Listeners run BEFORE the HTTP fan-out and
    *    are handed the caller's own object, not a copy and not the JSON. A
@@ -229,6 +231,11 @@ class EventFanOut {
    *    it projects the room before fanning out. That is fine at this size, and
    *    it is written down so the second subscriber has to decide rather than
    *    discover. Work that is not cheap belongs on a queue the listener owns.
+   * 3. **Never forward an event of {@link SCOPED_EXACT_EVENTS} outward.** A
+   *    listener hears a `read_cursor` whatever its audience, so passing one on
+   *    to any reader (a stream, a bridge, another process) skips the audience
+   *    that scoped it. `room-event-audiences.test.ts` fails when a listener's
+   *    file names one.
    *
    * @param listener - Called synchronously for every broadcast.
    * @returns An unsubscribe function. Idempotent.

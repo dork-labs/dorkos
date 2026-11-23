@@ -732,6 +732,78 @@ describe('a report with a long error or question still reaches its parent (DOR-3
       `${pad(REPORT_TEXT_MAX - 2)}😀…`
     );
   });
+
+  // A character a person sees as one can be several code points: a joined emoji, or a letter
+  // and its accent. A cut keeps it whole or drops it whole.
+  it('never splits a joined emoji or an accented letter where the detail is cut', () => {
+    const pad = (n: number) => 'x'.repeat(n);
+    const tail = 'tail'.repeat(REPORT_DETAIL_MAX);
+    const family = '👨‍👩‍👧';
+    expect(detailOf(composeReport('failed', '', `${pad(KEPT - 3)}${family}${tail}`))).toBe(
+      `${pad(KEPT - 3)}${CUT}`
+    );
+    expect(detailOf(composeReport('failed', '', `${pad(KEPT - 1)}é${tail}`))).toBe(
+      `${pad(KEPT - 1)}${CUT}`
+    );
+    expect(detailOf(composeReport('failed', '', `${pad(KEPT - 2)}é${tail}`))).toBe(
+      `${pad(KEPT - 2)}é${CUT}`
+    );
+  });
+
+  it('never splits a joined emoji where the last message is cut', () => {
+    const pad = (n: number) => 'x'.repeat(n);
+    const replyOf = (report: string) => report.split('\n\n')[1]!;
+    const family = '👨‍👩‍👧';
+    expect(replyOf(composeReport('finished', `${pad(REPORT_TEXT_MAX - 3)}${family}tail`))).toBe(
+      `${pad(REPORT_TEXT_MAX - 3)}…`
+    );
+  });
+
+  // A cut inside a code block would leave the rest of the report, the cue included, read as code.
+  describe('a cut inside a code block closes it', () => {
+    const fences = (s: string) => s.split('\n').filter((line) => /^ {0,3}(`{3,}|~{3,})/.test(line));
+
+    it('closes the block a cut detail leaves open, within the limit, and cuts once', () => {
+      const detail = `Error:\n\`\`\`\n${'at frame\n'.repeat(CHAT_MESSAGE_MAX)}`;
+      const saved = cutReportDetail(detail);
+      expect(saved.length).toBeLessThanOrEqual(REPORT_DETAIL_MAX);
+      expect(saved.length).toBeGreaterThan(REPORT_DETAIL_MAX - 10);
+      expect(saved.endsWith(`\n\`\`\`\n${CUT}`)).toBe(true);
+      expect(saved).not.toContain('\n\n');
+      expect(fences(saved)).toHaveLength(2);
+      expect(cutReportDetail(saved)).toBe(saved);
+    });
+
+    it('closes a longer or tilde block with its own marker', () => {
+      for (const fence of ['````', '~~~']) {
+        const saved = cutReportDetail(`${fence}sh\n${'echo x\n'.repeat(CHAT_MESSAGE_MAX)}`);
+        expect(saved.endsWith(`\n${fence}\n${CUT}`)).toBe(true);
+        expect(saved.length).toBeLessThanOrEqual(REPORT_DETAIL_MAX);
+      }
+    });
+
+    it('adds nothing when every block closed before the cut', () => {
+      const detail = `\`\`\`\nshort\n\`\`\`\n${'plain words '.repeat(CHAT_MESSAGE_MAX)}`;
+      const saved = cutReportDetail(detail);
+      expect(fences(saved)).toHaveLength(2);
+      expect(saved).toBe(`${detail.slice(0, KEPT)}${CUT}`);
+    });
+
+    // A line like ```npm test``` is inline code, not a block: a closer after it would open one.
+    it('adds nothing after inline code that starts a line with backticks', () => {
+      const detail = `\`\`\`npm test\`\`\` failed:\n${'plain words '.repeat(CHAT_MESSAGE_MAX)}`;
+      expect(cutReportDetail(detail)).toBe(`${detail.slice(0, KEPT)}${CUT}`);
+    });
+
+    it('closes the block a cut last message leaves open', () => {
+      const replyOf = (report: string) => report.split('\n\n')[1]!;
+      const reply = replyOf(
+        composeReport('finished', `\`\`\`ts\n${'x\n'.repeat(REPORT_TEXT_MAX)}`)
+      );
+      expect(reply.endsWith('\n```\n…')).toBe(true);
+      expect(fences(reply)).toHaveLength(2);
+    });
+  });
 });
 
 describe('the review findings (DOR-2790 PR 2)', () => {

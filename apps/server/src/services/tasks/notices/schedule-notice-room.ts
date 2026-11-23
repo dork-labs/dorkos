@@ -29,8 +29,14 @@ export function scheduleNoticeRoom(deps: ScheduleNoticeRoomDeps) {
       const authorId =
         owner.authorId ??
         (owner.path ? deps.authors.resolveAgent(owner.path, owner.name).id : null);
+      // A seat's old chat, reopened after the seat moved, speaks for the room only about a
+      // schedule proposed by then; one proposed there later is that chat's (DOR-3753).
+      const proposedAt = Date.parse(task.createdAt);
       const seat = task.proposedBySessionId
-        ? deps.rooms.handoffs.reports.seatOf(task.proposedBySessionId)
+        ? deps.rooms.handoffs.reports.seatAsOf(
+            task.proposedBySessionId,
+            Number.isNaN(proposedAt) ? undefined : proposedAt
+          )
         : null;
       if (seat && authorId) {
         const room = deps.store.getRoom(seat.roomId);

@@ -8,6 +8,7 @@ import {
   SessionStartedByStore,
   setSessionStartedByStore,
 } from '../../origin/session-started-by-store.js';
+import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { setRoomSeatReports } from '../chat-message-current.js';
 import { deliverToRoomSeat, reportTargetOf } from '../chat-message-wiring.js';
 
@@ -161,6 +162,48 @@ describe('deliverToRoomSeat (DOR-3488)', () => {
       },
     });
     await expect(deliverToRoomSeat('seat', report)).rejects.toThrow('did not reach');
+  });
+
+  // DOR-3753: the id a report names can be a seat's old chat, which refuses a spin-off started
+  // after the move, while the id that chat is known by now is a seat that takes it.
+  it('tries the id the chat is known by now when the id it was named by refuses', async () => {
+    vi.spyOn(runtimeRegistry, 'resolveForSession').mockResolvedValue({
+      getInternalSessionId: (id: string) => (id === 'named' ? 'known-now' : undefined),
+    } as never);
+    const deliver = vi.fn((seat: string, _report: unknown, onSettled?: (ran: boolean) => void) => {
+      if (seat !== 'known-now') return false;
+      onSettled?.(true);
+      return true;
+    });
+    setRoomSeatReports({
+      seatOf: () => ({ roomId: 'r', authorId: 'a' }),
+      holdsSeat: (id) => id === 'known-now',
+      deliver,
+    });
+    try {
+      await expect(deliverToRoomSeat('named', report)).resolves.toBe(true);
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expect(deliver.mock.calls.map(([seat]) => seat)).toEqual(['named', 'known-now']);
+  });
+
+  it('tries one id once when the chat is known by the id it was named by', async () => {
+    vi.spyOn(runtimeRegistry, 'resolveForSession').mockResolvedValue({
+      getInternalSessionId: () => undefined,
+    } as never);
+    const deliver = vi.fn(() => false);
+    setRoomSeatReports({
+      seatOf: () => ({ roomId: 'r', authorId: 'a' }),
+      holdsSeat: () => false,
+      deliver,
+    });
+    try {
+      await expect(deliverToRoomSeat('old-seat', report)).resolves.toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expect(deliver).toHaveBeenCalledTimes(1);
   });
 
   it('is false for a chat that is no room’s seat, or before the rooms boot', async () => {

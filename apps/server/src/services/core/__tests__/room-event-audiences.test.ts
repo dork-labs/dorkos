@@ -5,7 +5,12 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { eventFanOut, requiresAudience, type FanOutClient } from '../event-fan-out.js';
+import {
+  SCOPED_EXACT_EVENTS,
+  eventFanOut,
+  requiresAudience,
+  type FanOutClient,
+} from '../event-fan-out.js';
 import { roomAudience } from '../../rooms/service/room-audience.js';
 
 vi.mock('../auth/index.js', () => ({ readOwnerAccount: () => ({ id: 'owner' }) }));
@@ -136,6 +141,40 @@ describe('every room_* event and read_cursor', () => {
     eventFanOut.broadcast('room_updated', { roomId: 'room' }, roomAudience('room', rooms));
     expect(removed).not.toHaveBeenCalled();
   });
+});
+
+// An in-process listener hears every broadcast, addressed or not (`EventFanOut.subscribe`), so
+// one that picked out a read cursor could hand it to readers its audience never named. No
+// listener may name one: a new one that needs to must first carry the audience with it.
+it('no in-process listener picks out a read cursor', () => {
+  const scoped = Object.keys(SCOPED_EXACT_EVENTS);
+  const listeners = sources(sourceRoot).flatMap((path) => {
+    const source = ts.createSourceFile(
+      path,
+      readFileSync(path, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true
+    );
+    let subscribes = false;
+    const named = new Set<string>();
+    function visit(node: ts.Node): void {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === 'subscribe' &&
+        node.expression.expression.getText(source) === 'eventFanOut'
+      )
+        subscribes = true;
+      if (ts.isStringLiteralLike(node) && scoped.includes(node.text)) named.add(node.text);
+      ts.forEachChild(node, visit);
+    }
+    visit(source);
+    return subscribes ? [{ path: path.slice(sourceRoot.length + 1), named: [...named] }] : [];
+  });
+  expect(listeners.map(({ path }) => path)).toContain(
+    'services/communities/local/local-community-adapter.ts'
+  );
+  expect(listeners.filter(({ named }) => named.length > 0)).toEqual([]);
 });
 
 it('requires room and dynamic audiences at compile time in both APIs', () => {

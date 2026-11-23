@@ -405,7 +405,7 @@ export function reportTargetOf(sessionId: string): { parentSessionId: string } |
  *
  * @param parentSessionId - The chat the spin-off reports to.
  * @param report - The report.
- * @returns True when the seat's turn ran; false when it is no room's seat.
+ * @returns True when the seat's turn ran; false when neither id is a seat that takes it.
  * @throws Error when it is a seat and the report did not reach it.
  */
 export async function deliverToRoomSeat(
@@ -415,19 +415,22 @@ export async function deliverToRoomSeat(
   const seats = getRoomSeatReports();
   if (!seats) return false;
   const canonical = await canonicalChatId(parentSessionId).catch(() => parentSessionId);
-  const seat = [parentSessionId, canonical].find((id) => seats.seatOf(id) !== null);
-  if (seat === undefined) return false;
+  // Both ids are tried in turn: the first can be a seat's old chat that refuses this report.
+  const candidates = [...new Set([parentSessionId, canonical])].filter(
+    (id) => seats.seatOf(id) !== null
+  );
+  if (candidates.length === 0) return false;
   const fromTitle = await chatTitleOf(report.fromSessionId);
   // A seat that moved checks this against the move (DOR-3753): only the server's record, set
   // last so no start a caller handed in survives.
   const startedAt = reportStartedAtFromStore(getSessionStartedByStore(), report.fromSessionId);
   const sent = { ...report, fromTitle, startedAt: startedAt ?? undefined };
   return new Promise<boolean>((resolve, reject) => {
-    const taken = seats.deliver(seat, sent, (ran) => {
+    const settled = (ran: boolean) => {
       if (ran) resolve(true);
       else reject(new Error('The report did not reach the room seat.'));
-    });
-    if (!taken) resolve(false);
+    };
+    if (!candidates.some((seat) => seats.deliver(seat, sent, settled))) resolve(false);
   });
 }
 
