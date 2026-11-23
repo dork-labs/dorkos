@@ -88,8 +88,10 @@ export { lastTurnText } from './report-back/report-text.js';
 export { reasonOf } from './report-back/report-reason.js';
 export { spinOffBriefing } from './spin-off-briefing.js';
 export {
+  REPORT_DETAIL_MAX,
   REPORT_TEXT_MAX,
   composeReport,
+  cutReportDetail,
   type ReportNotice,
   type ReportReason,
 } from './report-back/report-words.js';

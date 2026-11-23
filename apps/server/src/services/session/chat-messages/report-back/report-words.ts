@@ -52,12 +52,25 @@ export const SUMMARY: Record<ReportNotice, string> = {
   holding: 'Still working',
 };
 
-/** A detail cut to {@link REPORT_DETAIL_MAX}, never splitting a character made of two code units. */
-function cutDetail(detail: string): string {
-  let end = REPORT_DETAIL_MAX - 1;
-  const last = detail.charCodeAt(end - 1);
-  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
-  return `${detail.slice(0, end)}…`;
+/** What a cut detail ends with, inside {@link REPORT_DETAIL_MAX}. */
+const DETAIL_CUT = '… (Details cut short.)';
+
+/** At most `max` code units of `s`, never splitting a character made of two. */
+function cutAt(s: string, max: number): string {
+  const end = max > 0 && /[\uD800-\uDBFF]/.test(s.charAt(max - 1)) ? max - 1 : max;
+  return s.slice(0, end);
+}
+
+/**
+ * A detail cut to {@link REPORT_DETAIL_MAX}, saying so; one that fits comes
+ * back as it is. Cutting twice changes nothing, so a detail the outbox saved
+ * already cut reads the same when its report is sent after a restart.
+ *
+ * @param detail - The error, startup reason or question a report carries.
+ */
+export function cutReportDetail(detail: string): string {
+  if (detail.length <= REPORT_DETAIL_MAX) return detail;
+  return `${cutAt(detail, REPORT_DETAIL_MAX - DETAIL_CUT.length)}${DETAIL_CUT}`;
 }
 
 /**
@@ -69,13 +82,11 @@ function cutDetail(detail: string): string {
  */
 export function composeReport(reason: ReportNotice, text: string, detail?: string): string {
   const parts = [STATUS_LINE[reason]];
-  const detailCut = detail !== undefined && detail.length > REPORT_DETAIL_MAX;
-  if (detail) parts.push(detailCut ? cutDetail(detail) : detail);
+  if (detail) parts.push(cutReportDetail(detail));
   if (text) {
     const cut = text.length > REPORT_TEXT_MAX;
-    parts.push(cut ? `${text.slice(0, REPORT_TEXT_MAX)}…` : text);
+    parts.push(cut ? `${cutAt(text, REPORT_TEXT_MAX)}…` : text);
     if (cut) parts.push('(Cut short. Read the rest with chat_read.)');
   }
-  if (detailCut) parts.push('Details shortened. Use chat_read to inspect the chat.');
   return parts.join('\n\n');
 }
