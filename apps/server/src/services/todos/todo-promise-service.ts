@@ -58,6 +58,7 @@ export {
   type TodoPromiseObserver,
   type LastTodoWake,
 } from './todo-promise-types.js';
+import { withWordMarks } from './todo-word-marks.js';
 import { TODO_ESTIMATES, wakeMoments } from './timing/todo-wake-plan.js';
 import {
   TODO_LIST_LIMIT,
@@ -391,6 +392,11 @@ export class TodoPromiseService {
     // On an agent's own promise only a change of state reaches what the next wake acts on. On a
     // to-do somebody gave, every change counts: no edit may keep `person` without proof.
     if (!isOwnPromise(row) || change.state !== row.state) this.lowerFloor(row, actor);
+    // Words written on an agent's own promise keep their marks, whatever its state does; its power
+    // stays (Security, DOR-4666). Re-read, so the floor just written above is not undone.
+    if (isOwnPromise(row) && (change.note !== undefined || change.delivered !== undefined)) {
+      this.lowerFloor(this.store.get(row.id) ?? row, actor, true);
+    }
     return result;
   }
 
@@ -430,11 +436,15 @@ export class TodoPromiseService {
    * alone, since no words of theirs reach the wake. Any other row counts every actor at their own
    * authority, and a person counts as `person` only with proof, or with no owner account to prove
    * (the same rule as adding one).
+   *
+   * `wordsOnly` (DOR-4666): words written on the row (a note, a delivered link) merge their marks
+   * and leave its authority alone, a person's included (outside unless proven).
    */
-  private lowerFloor(row: AgentTodoRow, actor: TodoPromiseActor): void {
-    if (isOwnPromise(row) && actor.kind === 'person') return;
-    const floor =
-      actor.kind === 'agent' && isOwnPromise(row)
+  private lowerFloor(row: AgentTodoRow, actor: TodoPromiseActor, wordsOnly = false): void {
+    if (isOwnPromise(row) && actor.kind === 'person' && !wordsOnly) return;
+    const floor = wordsOnly
+      ? { authority: row.authority, authorityMarks: withWordMarks(row.authorityMarks, actor) }
+      : actor.kind === 'agent' && isOwnPromise(row)
         ? {
             authority: writeAuthority(
               lowerAuthority(

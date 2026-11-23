@@ -31,6 +31,14 @@
  * both as "its to-dos"; the row's words name both. The caps (5 a day to people, the turn caps)
  * still bound what an allowed call may do.
  *
+ * ## Which calls mark the turn
+ *
+ * Each tool marks its own caller's turn (`self` in DORKOS_TOOL_READS, DOR-4666), and only when a
+ * to-do it hands back carries outside words: a stranger made or changed it, or it was made from a
+ * stranger's post (its stored marks hold the outsider mark). The team's and the person's own
+ * to-dos hand on nothing, so a turn that only makes, keeps and reads those stays clean, and its
+ * next send does not ask. Before, every call marked the turn.
+ *
  * @module services/todos/todo-capabilities
  */
 import { z } from 'zod';
@@ -55,6 +63,7 @@ import { TodoPromiseError, PERSON_ASSIGNER } from './todo-promise-service.js';
 import type { TodoActor } from './todo-authority.js';
 import type { TodoAssignee, TodoParent, TodoService, TodoSource } from './todo-service.js';
 import { titleIsFromSource, type TodoSourceFacts } from './todo-source.js';
+import { markTurnIfOutside } from './todo-word-marks.js';
 import { changeToTell, type TodoChangeNotice } from './notice/todo-recipient-notice.js';
 
 /** The MCP tool names. */
@@ -82,6 +91,8 @@ declare module '../core/capabilities/capability-definition.js' {
       promiseOf?(id: string): TodoPromise | undefined;
       /** Tell whoever a promise was made to; the same hook `todo_promise_update` uses. */
       tellRecipient?: (notice: TodoChangeNotice) => Promise<void>;
+      /** Whether a to-do's stored words came from outside the team (DOR-4666). */
+      carriesOutsideWords?(id: string): boolean;
     };
   }
 }
@@ -174,6 +185,15 @@ function writingCall(
     marked: hasMarks(marks),
     parent: todoDeps.parentOf(context.sessionId),
   };
+}
+
+/** Mark the caller's turn when a to-do it gets back carries outside words (DOR-4666). */
+function markIfOutside(
+  todoDeps: NonNullable<CapabilityDeps['todoDeps']>,
+  context: CapabilityHandlerContext,
+  ids: readonly string[]
+): void {
+  markTurnIfOutside(context, ids, todoDeps.carriesOutsideWords);
 }
 
 /** Run a to-do tool, answering a refusal the service raised. */
@@ -281,7 +301,7 @@ export const todosDomain: CapabilityDomain = {
           };
           roomId = facts.roomId;
         }
-        return answer(() => ({
+        const made = answer(() => ({
           ok: true as const,
           todo: todoDeps.todos.create(
             call.actor,
@@ -297,6 +317,9 @@ export const todosDomain: CapabilityDomain = {
             call.parent
           ),
         }));
+        // A to-do made from a stranger's post hands their words back (DOR-4666).
+        if (made.ok) markIfOutside(todoDeps, context, [made.todo.id]);
+        return made;
       },
     }),
     defineCapability({
@@ -348,6 +371,8 @@ export const todosDomain: CapabilityDomain = {
             call.parent
           ),
         }));
+        // The row it hands back may be one a stranger wrote (DOR-4666).
+        if (result.ok) markIfOutside(todoDeps, context, [result.todo.id]);
         // A move, drop or keep through this tool is told the same way (DOR-3034).
         const after = result.ok ? todoDeps.promiseOf?.(id) : undefined;
         const change = after ? changeToTell(before, after) : null;
@@ -385,13 +410,20 @@ export const todosDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
-      invoke: async (deps, input) => {
-        const { todos } = requireTodoDeps(deps).todos.list({
+      invoke: async (deps, input, context) => {
+        const todoDeps = requireTodoDeps(deps);
+        const { todos } = todoDeps.todos.list({
           view: input.view ?? 'everyone',
           ...(input.agentId ? { agentId: input.agentId } : {}),
           ...(input.showDone ? { showDone: true } : {}),
           limit: input.limit ?? 50,
         });
+        // A stranger's to-do in the list hands their words on; the team's alone do not (DOR-4666).
+        markIfOutside(
+          todoDeps,
+          context,
+          todos.map((todo) => todo.id)
+        );
         return { todos };
       },
     }),
