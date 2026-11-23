@@ -102,7 +102,7 @@ The qualified local attachment route uses a raw `application/octet-stream` envel
 
 ## Start and verify
 
-Set all required `COMMUNITY_*` variables from [`apps/space/README.md`](../apps/space/README.md). [`src/config.ts`](../apps/server/src/services/spaces/config.ts) validates configuration before migrations or listening. Build and unit tests import code without deployment secrets. [`src/migrate.ts`](../apps/server/src/services/spaces/migrate.ts) applies numbered SQL migrations under a PostgreSQL advisory lock.
+Set all required `COMMUNITY_*` variables from [`apps/space/README.md`](../apps/space/README.md). [`apps/server/src/services/spaces/config.ts`](../apps/server/src/services/spaces/config.ts) validates configuration before migrations or listening. Build and unit tests import code without deployment secrets. [`apps/server/src/services/spaces/migrate.ts`](../apps/server/src/services/spaces/migrate.ts) applies numbered SQL migrations under a PostgreSQL advisory lock.
 
 ```sh
 pnpm dev:community

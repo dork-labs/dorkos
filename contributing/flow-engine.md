@@ -16,8 +16,9 @@ the plugin itself.
 > guide points at them, it does not duplicate them.
 >
 > - `plugins/flow/README.md` (in `dork-labs/marketplace`): the operator manual
->   (stages, modes, gates, the adapter, the server dependency).
-> - `plugins/flow/SPEC.md`: the contract (stage model, the `PMClient` promotion
+>   (stages, modes, gates, the adapter, the server dependency). The longer
+>   manual pages are `plugins/flow/docs/*.mdx`.
+> - `plugins/flow/docs/SPEC.md`: the contract (stage model, the `PMClient` promotion
 >   surface, the `FlowRun` record, the typed engine, the config schema).
 > - [`specs/flow-plugin-extraction/02-specification.md`](../specs/flow-plugin-extraction/02-specification.md):
 >   the extraction spec (why flow left dorkos and how dorkos consumes it).
@@ -25,23 +26,27 @@ the plugin itself.
 ## How dorkos consumes flow
 
 dorkos uses `/flow` heavily for its own daily development, so it dogfoods the
-external plugin. The interim path (ADR-0299) is Claude Code's `--plugin-dir`:
+external plugin. Install it from the DorkOS Marketplace at **project scope**
+(the app's Marketplace page, or `dorkos marketplace install flow --project <repo>`).
+It lands in `<repo>/.dork/plugins/flow/`, and Harness Sync projects it into
+`.claude/commands/flow/` and `.claude/skills/flow__*` (ADR 260706-192819), so
+`/flow:*` works in DorkOS sessions and in the bare `claude` CLI alike. Without the
+plugin installed, `/flow:*` does not exist: there is no in-repo fallback.
+
+For a one-off session against a local marketplace checkout (for example, to try
+a change to the plugin before it is published), Claude Code's `--plugin-dir` still
+works:
 
 ```bash
-# Clone dork-labs/marketplace first; <marketplace-checkout> is your local clone.
+# <marketplace-checkout> is your local clone of dork-labs/marketplace.
 claude --plugin-dir <marketplace-checkout>/plugins/flow
 ```
 
-This loads the plugin's commands, skills, and Stop hook into the session. There is
-**nothing to build or install**: the engine ships as runnable TypeScript (see
-below), so a local clone of the marketplace repo is all you need. Every flow
-command is namespaced under `/flow:` (`/flow:flow` is the orchestrator;
-`/flow:capture`, `/flow:specify`, `/flow:execute`, and so on are the stages).
-
-The blessed dev loop (the documented `--plugin-dir` install, install provenance,
-and a `dorkos contribute` round-trip) is tracked as DOR-172 (blocked by DOR-146 +
-DOR-148). Until those land, `--plugin-dir` against a local checkout is the
-sanctioned dogfood.
+There is **nothing to build**: the engine ships as runnable TypeScript (see
+below). Every flow command is namespaced under `/flow:` (`/flow:flow` is the
+orchestrator; `/flow:capture`, `/flow:specify`, `/flow:execute`, and so on are
+the stages). On skill-only runtimes (Codex, OpenCode and DorkOS's own runtime) the same commands
+arrive as `flow-command-*` skills.
 
 There is no `@dorkos/flow` workspace package in dorkos anymore, and no esbuild
 build. If you find a stale reference to `packages/flow/` or `@dorkos/flow` in
@@ -60,17 +65,17 @@ git. Keep them. The plugin's own `config/CONFIG.md` explains the split, and
 The whole engine is one self-contained plugin. Everything below is **in
 `dork-labs/marketplace`, `plugins/flow/`**, not in dorkos:
 
-| Concern                                 | Location (under `plugins/flow/`)     |
-| --------------------------------------- | ------------------------------------ |
-| Manual / contract / charter docs        | `README.md`, `SPEC.md`, `CHARTER.md` |
-| Namespaced trigger commands             | `commands/*.md` (`flow.md` + stages) |
-| Stage skills (gerund) + the adapter     | `skills/`                            |
-| Templates (records/docs/pr.md)          | `templates/`                         |
-| Adapters (the v1 `linear-adapter`)      | `adapters/`                          |
-| **The runnable engine (oracles + zod)** | `scripts/*.ts`                       |
-| Engine tests                            | `engine-tests/*.test.ts`             |
-| Plugin config + generated JSON schema   | `config/`                            |
-| The Stop hook                           | `hooks/`                             |
+| Concern                                 | Location (under `plugins/flow/`)                             |
+| --------------------------------------- | ------------------------------------------------------------ |
+| Manual / contract / charter docs        | `README.md`, `docs/SPEC.md`, `docs/CHARTER.md`, `docs/*.mdx` |
+| Namespaced trigger commands             | `commands/*.md` (`flow.md` + stages)                         |
+| Stage skills (gerund) + the adapter     | `skills/`                                                    |
+| Templates (records/docs/pr.md)          | `templates/`                                                 |
+| Adapters (the v1 `linear-adapter`)      | `adapters/`                                                  |
+| **The runnable engine (oracles + zod)** | `scripts/*.ts`                                               |
+| Engine tests                            | `engine-tests/*.test.ts`                                     |
+| Plugin config + generated JSON schema   | `config/`                                                    |
+| The Stop hook                           | `hooks/`                                                     |
 
 The Pulse autonomous tick ships **in the plugin** as the `skills/flow-drain/`
 skill carrying `cron` + `enabled: false`; it is inert in v1 and does not depend on
@@ -117,7 +122,7 @@ inside the plugin:
 cd <marketplace-checkout>/plugins/flow
 npm install                 # dev deps only (zod, tsx, vitest, ajv); the shipped runtime needs none
 npm run generate:schema     # regenerates config.schema.json
-npm test                    # the engine oracle suite (726 tests)
+npm test                    # the engine oracle suite
 ```
 
 The schema mirrors the spec's load-bearing decisions (`planApproval: false`,
@@ -136,7 +141,7 @@ an adapter-doc-completeness test lives in the plugin's `engine-tests/`.
 When you add or change a stage skill, keep it PM-agnostic: speak `WorkItem` +
 verbs, let the adapter own the projection onto the tracker's labels and states.
 A future P5 server build promotes this prose contract into the typed
-`interface PMClient` documented in the plugin's `SPEC.md`.
+`interface PMClient` documented in the plugin's `docs/SPEC.md`.
 
 ## Templates
 
@@ -175,15 +180,17 @@ therefore wrong outside autonomous mode, and the gap is invisible because
 everything upstream of the merge looks complete.
 
 That misreading is what left six green, reviewed, armed pull requests unmerged
-for up to nine hours on 2026-07-28. What closes it in the non-autonomous path is
-`merge-tail.yml` in this repo, which arms auto-merge on finished pull requests
-independently of the plugin (ADR 260728-112203). The two do not conflict: the
-plugin's ladder still owns the merge tail whenever the autonomous loop is on.
+for up to nine hours on 2026-07-28. In this repo, outside the autonomous loop,
+an agent arms a finished pull request only through `arm.sh`, which runs every gate
+first, and the merge queue lands it (ADR 260728-112203). `merge-tail.yml`, which
+once armed finished PRs on a schedule, is off since 2026-11-18. See
+[CI Pipeline Guide → Arming](ci.md#arming-armsh-the-doors-and-merge-tail-off).
+The plugin's ladder still owns the merge tail whenever the autonomous loop is on.
 
 ## The backlog groom (`/flow:groom`)
 
 `/flow:groom` is the whole-tracker corrective sweep: it audits every open issue
-against the fourteen groom invariants, closes shipped/duplicate/junk work with
+against the groom invariants, closes shipped/duplicate/junk work with
 cited evidence (behind a human gate), reconciles projects with the repo's real
 programme structure, applies the `agent/ready` gate honestly, and proves the
 result with a before/after run of the dispatch oracle. `/flow:groom check` is
@@ -192,12 +199,12 @@ loop's starvation message now names it), after a large programme lands, or
 before enabling autonomous mode.
 
 The invariants are code, not prose: `plugins/flow/scripts/audit-backlog.ts` in
-the plugin (GRM-1..14, same dependency-free harness contract as
+the plugin (the `GRM-*` invariants, same dependency-free harness contract as
 `validate-adapter.ts`), with engine tests that seed one violation per invariant
 and assert the verdict goes red. The Linear-specific mechanics (the
 `getBacklogSnapshot()` verb, the Duplicate-state trap, the bulk-write traps)
-live in the `linear-adapter` skill, where all tracker I/O belongs. A monthly
-scheduled check-mode seat (`skills/flow-groom/`, `enabled: false`) ships beside
+live in the `linear-adapter` skill, where all tracker I/O belongs. A weekly
+scheduled check-mode seat (`skills/flow-groom/`, Mondays at 09:00, `enabled: false`) ships beside
 `flow-drain` for whenever autonomy is switched on.
 
 The process was extracted from the 2026-08-03 tracker reorganization, which
@@ -209,7 +216,7 @@ into noise.
 ## Testing
 
 The engine oracles are unit-tested in `plugins/flow/engine-tests/` (Vitest,
-table-driven; 726 tests). Run the suite from inside the plugin:
+table-driven). Run the suite from inside the plugin:
 
 ```bash
 cd <marketplace-checkout>/plugins/flow
@@ -219,6 +226,6 @@ npm test
 
 The most load-bearing suites are the calibration ladder, dispatch ranking +
 eligibility, `classifyOwnership`, the recovery ladder, the auto-merge recovery
-ladder, and the config-schema round-trip; see the plugin's `SPEC.md` Testing
+ladder, and the config-schema round-trip; see the plugin's `docs/SPEC.md` Testing
 Strategy for the intent behind each. Adapter behavior is tested at the
 prose-contract level (doc-completeness) since the verbs are not yet code.

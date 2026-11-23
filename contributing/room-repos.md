@@ -18,37 +18,37 @@ stand at home). Decisions: `260829-115621`, `260829-115622`, `260829-115623`, `2
 
 ## Key Files
 
-| Concept                              | Location                                                               |
-| ------------------------------------ | ---------------------------------------------------------------------- |
-| Sidecar schema, caps, mode union     | `packages/shared/src/room-repo.ts`                                     |
-| Files API request/response schemas   | `packages/shared/src/room-files.ts`                                    |
-| Enable / repair / home lifecycle     | `apps/server/src/services/rooms/repo/room-repo-service.ts`             |
-| Sidecar + cache store (file-first)   | `apps/server/src/services/rooms/repo/room-repo-store.ts`               |
-| Cache reconciler (5-min sweep)       | `apps/server/src/services/rooms/repo/room-repo-reconciler.ts`          |
-| All raw git, hardened                | `apps/server/src/services/rooms/repo/room-repo-git.ts`                 |
-| Per-room serialized write queue      | `apps/server/src/services/rooms/repo/room-repo-mutex.ts`               |
-| Worktree create / status / reap      | `apps/server/src/services/rooms/repo/room-worktree-manager.ts`         |
-| Merge contract + `room_repo_status`  | `apps/server/src/services/rooms/repo/room-merge-service.ts`            |
-| Read-only listing and file content   | `apps/server/src/services/rooms/repo/room-files.ts`                    |
-| People's file operations             | `apps/server/src/services/rooms/repo/room-file-editor.ts`              |
-| Change sets: checks, commit, undo    | `apps/server/src/services/rooms/repo/room-file-ops.ts`                 |
-| A person's change → room entry text  | `apps/server/src/services/rooms/repo/room-file-change-text.ts`         |
-| Dirty-main detection                 | `apps/server/src/services/rooms/repo/room-main-checkout.ts`            |
-| `ROOM.md` → prompt block             | `apps/server/src/services/rooms/repo/room-conventions.ts`              |
-| `ROOM.md` seed template              | `apps/server/src/services/rooms/repo/room-md.ts`                       |
-| Live config reader                   | `apps/server/src/services/rooms/repo/room-repo-config.ts`              |
-| HTTP routes                          | `apps/server/src/routes/rooms.ts`                                      |
-| Refusal → HTTP status map            | `apps/server/src/routes/room-error-response.ts`                        |
-| Agent tools (`rooms` domain)         | `apps/server/src/services/rooms/room-capabilities.ts`                  |
-| Where a room turn stands, its grants | `apps/server/src/services/rooms/repo/room-turn-place.ts`               |
-| Turn-start refresh + "what moved"    | `apps/server/src/services/rooms/repo/room-worktree-refresh.ts`         |
-| App-resumed room session placement   | `apps/server/src/services/workspace/room-session-place.ts`             |
-| Context-block files section          | `apps/server/src/services/runtimes/shared/room-context-block.ts`       |
-| Its refresh lines                    | `apps/server/src/services/runtimes/shared/room-files-refresh-lines.ts` |
-| Unified explorer (sessions + rooms)  | `apps/client/src/layers/features/file-explorer/`                       |
-| Agent-facing how-to                  | `packages/operating-skills/src/skills/working-in-room-repos.ts`        |
-| Cache table + migration              | `packages/db/src/schema/rooms.ts`, `packages/db/drizzle/0081_*.sql`    |
-| Config schema                        | `packages/shared/src/config-schema.ts` (`rooms.repo`)                  |
+| Concept                              | Location                                                                                                      |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Sidecar schema, caps, mode union     | `packages/shared/src/room-repo.ts`                                                                            |
+| Files API request/response schemas   | `packages/shared/src/room-files.ts`                                                                           |
+| Enable / repair / home lifecycle     | `apps/server/src/services/rooms/repo/room-repo-service.ts`                                                    |
+| Sidecar + cache store (file-first)   | `apps/server/src/services/rooms/repo/room-repo-store.ts`                                                      |
+| Cache reconciler (5-min sweep)       | `apps/server/src/services/rooms/repo/room-repo-reconciler.ts`                                                 |
+| All raw git, hardened                | `apps/server/src/services/rooms/repo/room-repo-git.ts`                                                        |
+| Per-room serialized write queue      | `apps/server/src/services/rooms/repo/room-repo-mutex.ts`                                                      |
+| Worktree create / status / reap      | `apps/server/src/services/rooms/repo/room-worktree-manager.ts`                                                |
+| Merge contract + `room_repo_status`  | `apps/server/src/services/rooms/repo/room-merge-service.ts`                                                   |
+| Read-only listing and file content   | `apps/server/src/services/rooms/repo/room-files.ts`                                                           |
+| People's file operations             | `apps/server/src/services/rooms/repo/room-file-editor.ts`                                                     |
+| Change sets: checks, commit, undo    | `apps/server/src/services/rooms/repo/room-file-ops.ts`                                                        |
+| A person's change → room entry text  | `apps/server/src/services/rooms/repo/room-file-change-text.ts`                                                |
+| Dirty-main detection                 | `apps/server/src/services/rooms/repo/room-main-checkout.ts`                                                   |
+| `ROOM.md` → prompt block             | `apps/server/src/services/rooms/repo/room-conventions.ts`                                                     |
+| `ROOM.md` seed template              | `apps/server/src/services/rooms/repo/room-md.ts`                                                              |
+| Live config reader                   | `apps/server/src/services/rooms/repo/room-repo-config.ts`                                                     |
+| HTTP routes                          | `apps/server/src/routes/rooms.ts`; files (`/api/rooms/:id/files/*`) in `apps/server/src/routes/room-files.ts` |
+| Refusal → HTTP status map            | `apps/server/src/routes/room-error-response.ts`                                                               |
+| Agent tools (`rooms` domain)         | `apps/server/src/services/rooms/room-capabilities.ts`                                                         |
+| Where a room turn stands, its grants | `apps/server/src/services/rooms/repo/room-turn-place.ts`                                                      |
+| Turn-start refresh + "what moved"    | `apps/server/src/services/rooms/repo/room-worktree-refresh.ts`                                                |
+| App-resumed room session placement   | `apps/server/src/services/workspace/room-session-place.ts`                                                    |
+| Context-block files section          | `apps/server/src/services/runtimes/shared/room-context-block.ts`                                              |
+| Its refresh lines                    | `apps/server/src/services/runtimes/shared/room-files-refresh-lines.ts`                                        |
+| Unified explorer (sessions + rooms)  | `apps/client/src/layers/features/file-explorer/`                                                              |
+| Agent-facing how-to                  | `packages/operating-skills/src/skills/working-in-room-repos.ts`                                               |
+| Cache table + migration              | `packages/db/src/schema/rooms.ts`, `packages/db/drizzle/0081_*.sql`                                           |
+| Config schema                        | `packages/shared/src/config-schema/rooms.ts` (`rooms.repo`)                                                   |
 
 ## On-disk layout
 
@@ -280,8 +280,9 @@ Adding a rewriting verb to that module would make this paragraph false; do not.
 A member agent may give its room a repo (DOR-3468, reversing the old owner-only rule on Dorian's
 call). The setup commit, the room notice and Activity all carry the agent's name, never the
 operator's. It opens nothing else: merging someone else's copy (`room-merge-service.ts`) and repairing
-`repo/` (`repairMainCheckout`) stay owner-only, `rooms.repo.enabled` stays a person's switch, and a
-teammate's turn cannot reach the tool (`teammate-tier.ts` refuses what it doesn't list).
+`repo/` (`repairMainCheckout`) stay owner-only, and `rooms.repo.enabled` stays a person's switch.
+Like every agent tool, these run at the agent's own permission level, whoever wrote the message
+that started the turn (DOR-3440 removed the separate teammate tier).
 
 **Name tools by their ending in any prompt copy.** Each runtime prefixes tool names differently, so
 `room-context-block.ts` says "the tool whose name ends in `merge_to_room_main`". Pinned by
@@ -475,8 +476,9 @@ Read `specs/project-rooms/02-specification.md` §3.11 before changing anything h
 **Two of the three caps freeze; one does not.** `maxFileBytes` and `maxRepoBytes` are **copied onto
 each room's `room-repo.json` at creation**, so a room keeps the bounds it was made under and a later
 config change cannot retroactively make existing contents illegal. Config seeds those two; the
-sidecar remembers them. `maxRoomMdBytes` is read **live** every turn (`index.ts` wires
-`RoomConventions`'s `maxRoomMdBytes()` to `readRoomRepoConfig()`, never to the sidecar), because it
+sidecar remembers them. `maxRoomMdBytes` is read **live** every turn
+(`apps/server/src/startup/steps/rooms.ts` wires `RoomConventions`'s `maxRoomMdBytes()` to
+`readRoomRepoConfig()`, never to the sidecar), because it
 bounds what a turn may carry rather than what a room may contain.
 
 `enabled` plus the three caps are `PROTECTIVE_CARRYOVERS`: an off switch and three tightened ceilings

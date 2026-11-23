@@ -6,24 +6,24 @@ DorkOS has one identity core — [Better Auth](https://better-auth.com) — embe
 
 ## Key Files
 
-| Concept                                    | Location                                                    |
-| ------------------------------------------ | ----------------------------------------------------------- |
-| Local Better Auth instance                 | `apps/server/src/services/core/auth/index.ts`               |
-| Session gate (the request gate)            | `apps/server/src/services/core/auth/session-gate.ts`        |
-| Who the owner is                           | `apps/server/src/services/core/auth/accounts.ts`            |
-| Which author id the owner IS               | `apps/server/src/routes/room-caller.ts`                     |
-| Exposure guard (tunnel / bind)             | `apps/server/src/services/core/auth/exposure-guard.ts`      |
-| Legacy MCP key seeding                     | `apps/server/src/services/core/auth/seed-legacy-mcp-key.ts` |
-| One-time reset token (DOR-1707)            | `apps/server/src/services/core/auth/reset-token.ts`         |
-| MCP auth middleware (4-tier)               | `apps/server/src/middleware/mcp-auth.ts`                    |
-| Trusted-origin resolver (CSRF)             | `apps/server/src/lib/trusted-origins.ts`                    |
-| Auth SQLite schema                         | `packages/db/src/schema/auth.ts`                            |
-| `auth.enabled` + `cloud.*` config          | `packages/shared/src/config-schema.ts`                      |
-| Config migrations (0.49–0.51)              | `apps/server/src/services/core/config-manager.ts`           |
-| CLI `dorkos auth <enable\|reset-password>` | `packages/cli/src/commands/auth-dispatcher.ts`              |
-| Client auth slice                          | `apps/client/src/layers/features/auth/`                     |
-| Cloud Better Auth instance (P2)            | `apps/site/src/lib/auth.ts`                                 |
-| Cloud device-link client (P2)              | `apps/server/src/services/core/auth/cloud-link.ts`          |
+| Concept                                    | Location                                                                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local Better Auth instance                 | `apps/server/src/services/core/auth/index.ts`                                                                                                           |
+| Session gate (the request gate)            | `apps/server/src/services/core/auth/session-gate.ts`                                                                                                    |
+| Who the owner is                           | `apps/server/src/services/core/auth/accounts.ts`                                                                                                        |
+| Which author id the owner IS               | `apps/server/src/routes/room-caller.ts`                                                                                                                 |
+| Exposure guard (tunnel / bind)             | `apps/server/src/services/core/auth/exposure-guard.ts`                                                                                                  |
+| Legacy MCP key seeding                     | `apps/server/src/services/core/auth/seed-legacy-mcp-key.ts`                                                                                             |
+| One-time reset token (DOR-1707)            | `apps/server/src/services/core/auth/reset-token.ts`                                                                                                     |
+| MCP auth middleware (4-tier)               | `apps/server/src/middleware/mcp-auth.ts`                                                                                                                |
+| Trusted-origin resolver (CSRF)             | `apps/server/src/lib/trusted-origins.ts`                                                                                                                |
+| Auth SQLite schema                         | `packages/db/src/schema/auth.ts`                                                                                                                        |
+| `auth.enabled` + `cloud.*` config          | `packages/shared/src/config-schema.ts`                                                                                                                  |
+| Config migrations + upgrade floor          | `apps/server/src/services/core/config-migrations/`, `apps/server/src/services/core/config/upgrade-floor.ts` (the 0.49–0.51 auth migrations are retired) |
+| CLI `dorkos auth <enable\|reset-password>` | `packages/cli/src/commands/auth-dispatcher.ts`                                                                                                          |
+| Client auth slice                          | `apps/client/src/layers/features/auth/`                                                                                                                 |
+| Cloud Better Auth instance (P2)            | `apps/site/src/lib/auth.ts`                                                                                                                             |
+| Cloud device-link client (P2)              | `apps/server/src/services/core/auth/cloud-link.ts`                                                                                                      |
 
 ## When to Use What
 
