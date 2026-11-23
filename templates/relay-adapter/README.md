@@ -2,13 +2,17 @@
 
 A minimal working template for a custom DorkOS relay adapter.
 
+`@dorkos/relay` is not published to npm (the template depends on it as
+`workspace:*`), so build and test your adapter inside a DorkOS checkout, in a
+directory the pnpm workspace includes (`packages/*`).
+
 ## Quick Start
 
 1. **Copy this template** into a new directory:
 
    ```bash
-   cp -r templates/relay-adapter my-org/dorkos-relay-my-adapter
-   cd my-org/dorkos-relay-my-adapter
+   cp -r templates/relay-adapter packages/dorkos-relay-my-adapter
+   cd packages/dorkos-relay-my-adapter
    ```
 
 2. **Rename** `MyAdapter` to your adapter name everywhere:
@@ -49,7 +53,7 @@ A minimal working template for a custom DorkOS relay adapter.
 
    All compliance tests should pass before publishing.
 
-6. **Configure in DorkOS** by adding an entry to `~/.dork/adapters.json`:
+6. **Configure in DorkOS** by adding an entry to `~/.dork/relay/adapters.json`:
 
    ```json
    {
@@ -64,7 +68,9 @@ A minimal working template for a custom DorkOS relay adapter.
    }
    ```
 
-   Never commit `adapters.json` — it contains secrets.
+   Never commit `adapters.json`: it can hold secrets. To load a local build
+   instead of an npm package, use `"plugin": { "path": "..." }`, an absolute
+   path or one relative to `~/.dork/relay/`.
 
 ## Publishing
 

@@ -37,14 +37,16 @@ DorkOS is pre-1.0 and moves fast. Only the **latest published release** receives
 npm install -g dorkos@latest
 ```
 
+Updating straight to the latest release is supported from any of the 20 minor versions before it.
+
 ## The trust model, in plain words
 
 Some things that might look like bugs are how DorkOS is designed to work. Knowing the model helps you tell a real vulnerability from expected behavior:
 
 - **DorkOS runs on your machine and trusts your machine.** By default there is no login and it listens on localhost only. Anything already running as your user can talk to it. That is the same trust level you give any other developer tool you run.
-- **Exposing DorkOS beyond localhost requires login.** Starting a tunnel or binding to a public network interface will not work until you turn on an owner account. This is enforced, not advisory.
+- **Exposing DorkOS beyond localhost requires login.** Starting a tunnel or binding to a public network interface will not work until you turn on an owner account. This is enforced, not advisory. The one exception is the official Docker image, which opts out because the container controls its own network; create the owner account before you expose it.
 - **Running an agent means trusting it with your computer.** Agents can read and write files and run commands within the boundary you set. Installing a marketplace package runs its code. Only install packages you trust.
-- **You bring your own AI keys.** Your prompts and code go straight to the model vendor you chose, under their terms. DorkOS keeps no copy.
+- **You bring your own AI keys.** Your prompts and code go straight to the model vendor you chose, under their terms. DorkOS keeps no copy. The exception is if you choose to run on DorkOS credits: then your requests go through DorkOS Cloud on their way to the model.
 
 For the full picture, see the [threat model](https://dorkos.ai/docs/self-hosting/threat-model) and [Securing your instance](https://dorkos.ai/docs/self-hosting/securing-your-instance).
 

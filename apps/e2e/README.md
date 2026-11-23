@@ -1,6 +1,6 @@
 # @dorkos/e2e — Playwright browser tests
 
-End-to-end browser tests for the DorkOS cockpit and the marketing site.
+End-to-end browser tests for the DorkOS app and the marketing site.
 
 For how to write and maintain tests, use the `browser-testing` skill and read
 `GOTCHAS.md`. This file covers how to _run_ the suite, especially in an isolated
@@ -8,15 +8,23 @@ environment (a worktree, or any machine whose default ports are busy).
 
 ## Projects
 
-- `chromium` — the cockpit suite. Runs every spec except the `chat-mock*.spec.ts` files
-  (and the site specs — `marketplace.spec.ts`, `features.spec.ts` — unless the
-  site leg is enabled; see below).
+- `chromium` — the cockpit suite. Runs every spec except the ones the test-mode
+  and production projects below own, `tests/production/`, and the site specs
+  (`marketplace.spec.ts`, `features.spec.ts`) unless the site leg is enabled;
+  see below. Its `testIgnore` list must name every file a test-mode project
+  claims, or that file's turns would bill a real model here.
 - `chromium-mock` — the `chat-mock*.spec.ts` files only, one at a time, against a
   `TestModeRuntime` server (no real Claude API calls).
 - `chromium-connections` — `tests/connections/`, also against the test-mode
   server: its `DORKOS_TEST_RUNTIME` gate is what makes the scripted
   `test-connector` provider exist, so these specs can walk the real save-key →
   connect → attach flow with no vendor anywhere.
+- `chromium-streams`, `chromium-browser-driving`, `chromium-team-room`,
+  `chromium-rooms-agents`, `chromium-bridge`, `chromium-extension-seams` — more
+  test-mode projects, each for specs that would start a real, billable turn on
+  the cockpit leg or that share test-mode state and need their own worker
+  limit. `testMatch` on each project in `playwright.config.ts` lists its files,
+  and the comment above it says why it is separate.
 - `chromium-production` — `tests/production/`, and the only project whose
   baseURL is the server's own port rather than a Vite one. It is how a browser
   here ever sees the shipped `Content-Security-Policy`; see below.
@@ -54,10 +62,11 @@ this suite reads the `DORKOS_COCKPIT_*` names.
 All three API legs boot with a `DORK_HOME` under `/tmp`, keyed by that leg's port,
 deleted before every boot:
 
-| Leg                    | `DORK_HOME`                    |
-| ---------------------- | ------------------------------ |
-| API server             | `/tmp/dorkos-cockpit-<port>`   |
-| API server (test-mode) | `/tmp/dorkos-test-mode-<port>` |
+| Leg                     | `DORK_HOME`                     |
+| ----------------------- | ------------------------------- |
+| API server              | `/tmp/dorkos-cockpit-<port>`    |
+| API server (test-mode)  | `/tmp/dorkos-test-mode-<port>`  |
+| API server (production) | `/tmp/dorkos-production-<port>` |
 
 So a run cannot reach your data, and cannot inherit yesterday's rows. The cockpit
 leg used to have no `DORK_HOME` of its own, which meant it resolved the server's
@@ -252,12 +261,12 @@ Either way the suite needs no new project and no new server leg.
 
 ## The suite turns on the features it tests
 
-`DORKOS_TASKS_ENABLED` and `DORKOS_RELAY_ENABLED` are off by default in the
-server, and the Tasks and Relay dialogs render a "start DorkOS with…"
-placeholder instead of the real panel when they are. The `API server` leg sets
-both, so the specs assert the real thing. Do not rely on your own `.env` for
-this — it is untracked, so it would make "does this spec pass" a property of
-your machine.
+Outside `NODE_ENV=production`, scheduled tasks never fire on their own unless
+`DORKOS_TASKS_ENABLED` is set, and Relay follows the stored `relay.enabled`
+setting unless `DORKOS_RELAY_ENABLED` overrides it. The `API server` leg sets
+both to `true` (the test-mode leg sets `DORKOS_RELAY_ENABLED`), so the specs
+never depend on either default. Do not rely on your own `.env` for this — it is
+untracked, so it would make "does this spec pass" a property of your machine.
 
 ## Isolated run recipe
 
@@ -330,8 +339,10 @@ any of them watched. Tests never edit source, so nothing is lost by not watching
 
 A whole run takes about 58 minutes (about 5 of boot, 53 of tests), so
 `.github/workflows/browser-test.yml` cuts it six ways (`playwright test
---shard=i/6`) and runs the sixths side by side, in the merge queue. A queue
-build shows seven checks, not one:
+--shard=i/6`) and runs the sixths side by side, in the merge queue and the
+`main` canary. A pull request runs only the `@smoke` subset, on four
+`browser-smoke` shards with no marketing-site leg. A queue build shows seven
+checks, not one:
 
 - **`browser-shard (1/6)` to `(6/6)`** — a sixth of the tests each. Each
   one boots every webServer leg its projects might need, because a shard does not
