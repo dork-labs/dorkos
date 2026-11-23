@@ -23,13 +23,7 @@ import { useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
-import {
-  appRoutes,
-  extensionPageHref,
-  newSessionTarget,
-  reportClientError,
-  toSession,
-} from '@/layers/shared/lib';
+import { appRoutes, extensionPageHref, reportClientError, toSession } from '@/layers/shared/lib';
 import { useProfileDeepLink, useTransport } from '@/layers/shared/model';
 import { disambiguateDisplayNames, useResolvedAgents } from '@/layers/entities/agent';
 import {
@@ -396,7 +390,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       useInteractionStore.getState().recordOpened('agent', agentPath);
       // The Direct chat, or for anyone but the owner the agent's latest chat
       // with them: one rule, shared with every other door (`agentChatTarget`).
-      void agentChatTarget({ queryClient, transport }, agentPath)
+      void agentChatTarget({ queryClient, transport }, agentPath, { isStillWanted })
         .then(async (target) => {
           if (target && isStillWanted()) await navigate(target);
         })

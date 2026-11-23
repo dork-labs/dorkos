@@ -34,14 +34,11 @@
  *
  * @module services/runtimes/opencode/events/model-wait-liveness
  */
+import type { OpenCodeTurnEvent } from '../tool-turn/host-events.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { MODEL_WAIT_LIVENESS_INTERVAL_MS } from '../runtime-constants.js';
 import type { OpenCodePartState } from './part-event-mapper.js';
-import {
-  mapOpenCodeTurn,
-  type OpenCodeEventContext,
-  type OpenCodeWireEvent,
-} from './event-mapper.js';
+import { mapOpenCodeTurn, type OpenCodeEventContext } from './event-mapper.js';
 
 /** Race sentinel: the interval passed with no source event. */
 const TICK = Symbol('model-wait-tick');
@@ -113,7 +110,7 @@ export async function* withModelWaitLiveness(
  * @param ctx - The turn's mapping context (mutated by the mapper).
  */
 export function mapLiveOpenCodeTurn(
-  events: AsyncIterable<OpenCodeWireEvent>,
+  events: AsyncIterable<OpenCodeTurnEvent>,
   ctx: OpenCodeEventContext
 ): AsyncGenerator<StreamEvent> {
   return withModelWaitLiveness(mapOpenCodeTurn(events, ctx), ctx);

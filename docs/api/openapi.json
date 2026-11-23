@@ -24953,6 +24953,201 @@
         "operationId": "sessionLocations.create"
       }
     },
+    "/api/session-locations/{id}/chats": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Acknowledge a new chat in a saved folder",
+        "description": "Allocates a fresh chat id for a person’s own saved folder. The acknowledgement starts no turn and sets no runtime or settings.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Acknowledged chat id and its saved folder reference.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sessionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "launchRef": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "required": [
+                    "sessionId",
+                    "launchRef"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid chat allocation request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller, request origin or filesystem boundary refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Saved folder not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The issued chat id was already in use.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-locations/chats": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Acknowledge a new chat with a registered agent",
+        "description": "Reserves a chat id without starting a turn or setting a runtime.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "registered-agent"
+                    ]
+                  },
+                  "agentId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "ULID assigned at registration"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "agentId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Acknowledged chat id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sessionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "required": [
+                    "sessionId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid chat allocation request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller or request origin refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Registered agent not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The issued chat id was already in use.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session-locations/{id}": {
       "get": {
         "tags": [

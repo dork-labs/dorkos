@@ -294,17 +294,25 @@ describe('session resolution for an agent this window has never opened', () => {
   });
 
   it('still starts a fresh conversation for an agent that genuinely has none', async () => {
-    // The half of the behaviour that must survive the fix: first run has to keep
-    // working, and it is the only case where minting an id is the right answer.
+    const sessionId = 'babd069c-b5d6-4616-addb-0df82a8337a9';
+    const launchRef = '2c110db5-b5ac-4db2-9328-151e9cf00ba1';
     const { queryClient, transport, listSessions } = createPerDirectoryHarness({});
+    vi.mocked(transport.createSessionLocation).mockResolvedValue({ id: launchRef });
+    vi.mocked(transport.allocateSession).mockResolvedValue({ sessionId, launchRef });
 
     const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
 
-    expect(resolved?.isNew).toBe(true);
-    expect(resolved?.sessionId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-    );
+    expect(resolved).toEqual({ isNew: true, cwd: OTHER_CWD });
     expect(listSessions).toHaveBeenCalledWith(OTHER_CWD);
+    expect(transport.createSessionLocation).not.toHaveBeenCalled();
+    expect(transport.allocateSession).not.toHaveBeenCalled();
+
+    expect(await loaderRedirectSession({ queryClient, transport }, OTHER_CWD)).toBe(sessionId);
+    expect(transport.createSessionLocation).toHaveBeenCalledExactlyOnceWith(OTHER_CWD);
+    expect(transport.allocateSession).toHaveBeenCalledExactlyOnceWith({
+      kind: 'location',
+      launchRef,
+    });
   });
 
   it('asks once and reuses the answer, so switching back is free', async () => {

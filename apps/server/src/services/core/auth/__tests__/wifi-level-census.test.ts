@@ -48,6 +48,8 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/uploads',
     'POST /api/canvas/docs/:id/events',
     'POST /api/session-locations',
+    'POST /api/session-locations/:id/chats',
+    'POST /api/session-locations/chats',
   ],
   'Rooms: talking in a room and running it, the same chat level': [
     'POST /api/rooms',

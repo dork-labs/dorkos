@@ -1,6 +1,5 @@
-import { notifySessionLookupFailed } from '../../lib/resolve-session-for-cwd';
 import { beginSessionNavigation } from '../../lib/session-navigation-intent';
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
 import { useAppStore, useAppTabsStore, useTransport } from '@/layers/shared/model';
@@ -13,6 +12,7 @@ import {
   newSessionTarget,
   reportClientError,
 } from '@/layers/shared/lib';
+import { toast } from 'sonner';
 
 /** Open a fresh conversation in the chosen directory, preserving an optional seed. */
 export function useStartNewSession(): (dir?: string, options?: StartNewSessionOptions) => void {
@@ -21,28 +21,36 @@ export function useStartNewSession(): (dir?: string, options?: StartNewSessionOp
   const transport = useTransport();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const setPendingRuntime = useAppStore((s) => s.setPendingRuntime);
+  const pending = useRef<{ key: string; isStillWanted: () => boolean } | null>(null);
 
   return useCallback(
     (dir?: string, options?: StartNewSessionOptions) => {
-      // Taken at the click: the fresh chat waits on the server, and a person
-      // who opened something else meanwhile must not be pulled into it
-      // (DOR-4622).
-      const isStillWanted = beginSessionNavigation(readLocation);
-      const target = dir ?? selectedCwd ?? undefined;
-      const session = crypto.randomUUID();
-      if (options?.runtime) setPendingRuntime({ sessionId: session, type: options.runtime });
-      void newSessionTarget(transport, {
-        dir: target,
-        session,
-        seed: options?.seed,
-        runtime: options?.runtime,
-      })
-        .then((target) => (isStillWanted() ? navigate(target) : undefined))
+      const { agentId, prompt, seed, runtime } = options ?? {};
+      const targetDir = agentId ? undefined : (dir ?? selectedCwd ?? undefined);
+      const key = JSON.stringify([targetDir, agentId, prompt, seed, runtime]);
+      const current = pending.current;
+      if (current?.key === key && current.isStillWanted()) return;
+
+      const request = { key, isStillWanted: beginSessionNavigation(readLocation) };
+      pending.current = request;
+      void newSessionTarget(
+        transport,
+        { dir: targetDir, agentId, prompt, seed, runtime },
+        { isStillWanted: request.isStillWanted }
+      )
+        .then((target) => {
+          if (!request.isStillWanted()) return;
+          if (runtime) setPendingRuntime({ sessionId: target.search.session, type: runtime });
+          return navigate(target);
+        })
         .catch((error) => {
           reportClientError(transport, error);
           // An abandoned start does not explain itself (the use-directory-state
           // ordering); the report above still goes out.
-          if (isStillWanted()) notifySessionLookupFailed(selectedCwd);
+          if (request.isStillWanted()) toast.error('Couldn’t open a new chat.');
+        })
+        .finally(() => {
+          if (pending.current === request) pending.current = null;
         });
     },
     [navigate, readLocation, selectedCwd, setPendingRuntime, transport]
@@ -51,6 +59,10 @@ export function useStartNewSession(): (dir?: string, options?: StartNewSessionOp
 
 /** Extras a caller can put on the fresh conversation's address. */
 export interface StartNewSessionOptions {
+  /** Exact registered agent to open a new chat with. */
+  agentId?: string;
+  /** Text placed in the composer after navigation. */
+  prompt?: string;
   /**
    * The `?seed=` launch param (BC-48). Background the first turn carries — never
    * text, and never anything the caller has not enumerated in the route schema.
@@ -82,7 +94,7 @@ interface SetSessionIdPushOptions {
 
 /**
  * A rename of the chat on screen: REPLACES the current history entry instead of
- * pushing one. Used for the create-on-first-message client-UUID → canonical-id
+ * pushing one. Used for the first-message acknowledged-draft → canonical-id
  * rekey so the canonical URL silently supersedes the optimistic one (no extra
  * Back step).
  */
@@ -139,6 +151,9 @@ export function useSessionId(): [
   const navigate = useNavigate();
   const readLocation = useLiveLocation();
   const transport = useTransport();
+  const pendingDraft = useRef<{ from: string | undefined; isStillWanted: () => boolean } | null>(
+    null
+  );
 
   // Stable reference — navigate from TanStack Router is already stable.
   const setSessionId = useCallback(
@@ -152,23 +167,33 @@ export function useSessionId(): [
         if (id) renameInBackgroundTabs(options.from, id);
         return;
       }
-      if (id && options?.draft) {
+      if (options?.draft) {
+        const current = pendingDraft.current;
+        if (current && current.from === options.continuedFrom && current.isStillWanted()) return;
         // Taken at the call, checked after the server answers (DOR-4622).
         const isStillWanted = beginSessionNavigation(readLocation);
+        const request = { from: options.continuedFrom, isStillWanted };
+        pendingDraft.current = request;
         const cwd =
           getSessionRouteContext(search.session ?? '')?.cwd ??
           useAppStore.getState().selectedCwd ??
           undefined;
-        void newSessionTarget(transport, {
-          session: id,
-          dir: cwd,
-          runtime: getSessionRouteContext(search.session ?? '')?.runtime ?? search.runtime,
-          continuedFrom: options.continuedFrom,
-        })
+        void newSessionTarget(
+          transport,
+          {
+            dir: cwd,
+            runtime: getSessionRouteContext(search.session ?? '')?.runtime ?? search.runtime,
+            continuedFrom: options.continuedFrom,
+          },
+          { isStillWanted }
+        )
           .then((target) => (isStillWanted() ? navigate(target) : undefined))
           .catch((error) => {
             reportClientError(transport, error);
-            if (isStillWanted()) notifySessionLookupFailed(cwd ?? null);
+            if (isStillWanted()) toast.error('Couldn’t open a new chat.');
+          })
+          .finally(() => {
+            if (pendingDraft.current === request) pendingDraft.current = null;
           });
         return;
       }
@@ -192,7 +217,7 @@ export function useSessionId(): [
           // Launch params belong to the session they were aimed at, and this is
           // the setter that changes which session that is — so they are dropped
           // here for the same reason `continuedFrom` is, and one worse
-          // consequence. `/clear` calls this with a fresh uuid; a `?prompt=` and
+          // consequence. A `?prompt=` and
           // `?send=1` that rode `...prev` forward landed on a session that was
           // empty by construction, where they typed and SENT themselves. The
           // hook that consumes them spends them on every outcome now, so this is

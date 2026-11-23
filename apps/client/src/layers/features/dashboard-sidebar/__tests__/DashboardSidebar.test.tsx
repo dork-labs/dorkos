@@ -212,6 +212,7 @@ const mockTransport = {
   // An agent row's door: its Direct chat (rule S12), opened as a new chat would be.
   openDirectChat: vi.fn(),
   createSessionLocation: vi.fn().mockResolvedValue({ id: 'test-location' }),
+  allocateSession: vi.fn().mockResolvedValue({ sessionId: 'sidebar-chat' }),
   // Read only while a case switches to-dos on (DOR-3088).
   listTodos: vi.fn(() => Promise.resolve({ todos: [], doneCount: 0, badge: 2 })),
 };

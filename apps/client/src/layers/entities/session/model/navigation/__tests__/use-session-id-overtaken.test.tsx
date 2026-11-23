@@ -23,7 +23,7 @@
  * having a location to be wrong about.
  */
 import { createContext, useContext, type ReactNode } from 'react';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import {
   createMemoryHistory,
@@ -249,6 +249,36 @@ describe('fresh chats started asynchronously (DOR-4622)', () => {
     expect(harness.readSearch().launchRef).toBeUndefined();
   });
 
+  it('opens the acknowledged continuation without sending a message', async () => {
+    const acknowledgement = deferred<{ sessionId: string }>();
+    const transport = createMockTransport({
+      allocateSession: vi.fn(() => acknowledgement.promise),
+    });
+    const harness = buildHarness('/session?session=A&runtime=codex&prompt=old&send=1', transport);
+    const { result } = renderHook(() => useSessionId(), { wrapper: harness.Wrapper });
+    await waitFor(() => expect(result.current[0]).toBe('A'));
+
+    act(() => {
+      result.current[1](null, { draft: true, continuedFrom: 'A' });
+      result.current[1](null, { draft: true, continuedFrom: 'A' });
+    });
+    await settle();
+    expect(transport.allocateSession).toHaveBeenCalledTimes(1);
+    expect(harness.readSearch().session).toBe('A');
+    acknowledgement.resolve({ sessionId: 'continued-chat' });
+    await settle();
+
+    expect(harness.readSearch()).toMatchObject({
+      session: 'continued-chat',
+      draft: '1',
+      continuedFrom: 'A',
+      runtime: 'codex',
+    });
+    expect(harness.readSearch().prompt).toBeUndefined();
+    expect(harness.readSearch().send).toBeUndefined();
+    expect(transport.postMessage).not.toHaveBeenCalled();
+  });
+
   it('the draft setter stays quiet when the person moved on before the server answered', async () => {
     const location = deferred<{ id: string }>();
     const transport = createMockTransport({ createSessionLocation: () => location.promise });
@@ -258,7 +288,7 @@ describe('fresh chats started asynchronously (DOR-4622)', () => {
     await waitFor(() => expect(result.current[0]).toBe('A'));
 
     act(() => {
-      result.current[1]('fresh-uuid', { draft: true });
+      result.current[1](null, { draft: true, continuedFrom: 'A' });
     });
     await harness.goTo('/session?session=B');
     location.resolve({ id: 'loc-1' });

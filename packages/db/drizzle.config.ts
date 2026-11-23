@@ -25,6 +25,7 @@ export default defineConfig({
     './src/schema/session/session-started-by.ts',
     './src/schema/session/session-locations.ts',
     './src/schema/session/session-birth-allocations.ts',
+    './src/schema/session/session-draft-sources.ts',
     './src/schema/session/session-native-bindings.ts',
     './src/schema/session/session-touches.ts',
     './src/schema/session/turn-context.ts',
