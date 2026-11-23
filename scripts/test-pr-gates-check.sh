@@ -90,7 +90,11 @@ check 'a missing Security label fails' 1 "$rc"
 check 'it explains the reason' yes "$(has "$out" 'Security has not added security-reviewed')"
 check 'it does not list no-proof' no "$(has "$out" 'no-proof')"
 run decide 'PULL design-ok-older-than-head'
-check 'a stale design-ok fails' 1 "$rc"
+check 'a stale design-ok no longer blocks (Security-only, DOR-5119)' 0 "$rc"
+check 'it still notes it for the daily sweep' yes "$(has "$out" 'daily sweep')"
+run decide 'PULL no-security-label,no-qa-label,no-proof'
+check 'Security still blocks beside a QA note' 1 "$rc"
+check 'the QA reason is only a note' yes "$(has "$out" 'Note (not a merge gate; the daily sweep picks it up): no-qa-label')"
 run decide 'KEEP unreadable headSeenAt'
 check 'an unreadable verdict fails closed with exit 2' 2 "$rc"
 run decide 'something else'
@@ -122,8 +126,8 @@ check 'a label between the commit and when this PR got it: fails' 1 "$rc"
 reset_fixtures
 echo '[{"name":"needs-design"}]' >"$fx/labels"
 run run 12
-check 'needs-design with no design-ok: fails' 1 "$rc"
-check 'and names the design gate' yes "$(has "$out" 'no-design-ok')"
+check 'needs-design with no design-ok: passes (not a merge gate)' 0 "$rc"
+check 'and notes the design gate' yes "$(has "$out" 'no-design-ok')"
 
 reset_fixtures
 echo '[{"name":"needs-design"},{"name":"design-ok"}]' >"$fx/labels"
@@ -171,8 +175,8 @@ echo '[]' >"$fx/events"
 echo '[{"name":"needs-design"}]' >"$fx/labels"
 echo "[$(sv success 'github-actions[bot]' 2026-11-23T10:10:00Z)]" >"$fx/statuses"
 run run 12
-check 'a cloud pass does not stand in for design-ok' 1 "$rc"
-check 'and names the design gate' yes "$(has "$out" 'no-design-ok')"
+check 'needs-design with only a cloud pass: passes' 0 "$rc"
+check 'and notes the design gate' yes "$(has "$out" 'no-design-ok')"
 
 for f in pull commit runs statuses checkruns events labels files; do
   reset_fixtures

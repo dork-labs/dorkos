@@ -264,12 +264,12 @@ gates:
   # --- security-verdict.yml ---
   - id: wf.security-verdict.security-verdict
     source: .github/workflows/security-verdict.yml
-    purpose: Advisory; after each Claude review run, posts a security-verdict commit status that is success only when the review's Security lens posted a pass for that exact head (DOR-5099). Compared with the local Security review before it becomes required.
+    purpose: After each Claude review run, posts a security-verdict commit status that is success only when the review's Security lens posted a pass for that exact head (DOR-5099), then re-runs that head's pr-gates after a pass (DOR-5119).
 
   # --- pr-gates.yml ---
   - id: wf.pr-gates.pr-gates
     source: .github/workflows/pr-gates.yml
-    purpose: Fails while the head lacks a sign-off arm-door would pull it for (security-reviewed after the head, qa-real-data and design-ok where needed), so auto-merge waits for them (DOR-5107). Advisory until added to the ruleset.
+    purpose: Fails while the head lacks Security's sign-off (security-reviewed after the head, or a passing cloud security-verdict), so auto-merge waits for it (DOR-5107, DOR-5119). QA and design labels are notes for the daily sweep, not gates.
 
   # --- hold-reason.yml ---
   - id: wf.hold-reason.hold-reason

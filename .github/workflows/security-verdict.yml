@@ -31,6 +31,8 @@ permissions:
   pull-requests: read
   issues: read
   statuses: write
+  # Only to re-run this head's pr-gates run after a pass (see the last step).
+  actions: write
 
 concurrency:
   group: security-verdict-${{ github.event.workflow_run.head_sha }}
@@ -59,6 +61,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Post the Security lens verdict for the reviewed head
+        id: post
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -86,3 +89,24 @@ jobs:
             -f state="$state" -f context=security-verdict \
             -f description="$desc" -f target_url="$RUN_URL" >/dev/null
           echo "Posted security-verdict: $state on #$pr at ${HEAD_SHA:0:7}"
+          echo "state=$state" >>"$GITHUB_OUTPUT"
+
+      # pr-gates (a required check, DOR-5119) reads this status, but it runs on
+      # PR events, usually before the review finishes. After a pass, re-run this
+      # head's newest finished pr-gates run so auto-merge can go ahead without a
+      # push. A re-run keeps the run on the PR's head. Best effort: a failure
+      # here only warns, and the next push or label re-runs pr-gates anyway.
+      - name: Re-run pr-gates for this head
+        if: steps.post.outputs.state == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          id=$(gh api "repos/$REPO/actions/workflows/pr-gates.yml/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=20" \
+            --jq '[.workflow_runs[] | select(.status == "completed")] | sort_by(.created_at) | last | .id // empty') || id=
+          if [ -z "$id" ]; then
+            echo "::notice::No finished pr-gates run for ${HEAD_SHA:0:7}; one still running will read the status itself."
+            exit 0
+          fi
+          gh run rerun "$id" --repo "$REPO" || echo "::warning::could not re-run pr-gates run $id"

@@ -1,16 +1,16 @@
 name: pr-gates
 
-# Fails while a sign-off gate is missing at the PR's head (DOR-5107's
-# prerequisite, under DOR-5098: every merge gate in the cloud, then auto-merge at
-# PR open).
+# Fails while Security's sign-off is missing at the PR's head (DOR-5107, DOR-5119,
+# under DOR-5098: every merge gate in the cloud, then auto-merge at PR open).
 #
-# The gates are the ones arm-door enforces on queue entries, decided by the same
-# code (scripts/arm-door.sh with qa-real-data.sh and design-ok.sh):
-#   - Security's `security-reviewed` label, added at or after the head;
-#   - QA's `qa-real-data` where the PR touches config or migration code;
-#   - the designer's `design-ok` where the PR changes something a person sees.
-# arm-door's verify-proof reason is dropped: the other required checks are the
-# proof. scripts/pr-gates-check.sh has the rest.
+# Security signs off with its `security-reviewed` label added at or after the
+# head, or the cloud Security lens's passing `security-verdict` status
+# (security-verdict.yml, which re-runs this check after a pass). The decision is
+# arm-door's code (scripts/arm-door.sh with qa-real-data.sh and design-ok.sh), but
+# QA's `qa-real-data` and the designer's `design-ok` are printed as notes only:
+# no local agent reviews an open PR, and QA and the designer sweep each day's
+# merges instead (Dorian, Nov 23). arm-door's verify-proof reason is dropped:
+# the other required checks are the proof. scripts/pr-gates-check.sh has the rest.
 #
 # Why on the PR: arm-door asks this only once a PR is in the queue, and takes it
 # back out. Once PRs turn on auto-merge when they open, GitHub queues a PR as
@@ -18,8 +18,8 @@ name: pr-gates
 # check, or every PR would be queued and bounced. With `pr-gates` required,
 # auto-merge simply waits; adding the label re-runs this check.
 #
-# It lands advisory. Dorian adds `pr-gates` to the ruleset's required checks
-# (ci/required-checks.json) once it has reported on PRs and queue entries.
+# It is a required check (ci/required-checks.json), so open-pr.sh turns on
+# auto-merge when a PR opens.
 #
 # Read-only token. It checks out main's copy of its scripts (the queue's base on
 # a merge group), never the PR's. No job-level `if:` and no path filter: a
