@@ -349,12 +349,33 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     });
   }
 
+  /**
+   * Whether the asking page is from before the named stale reasons (DOR-5086):
+   * every page this server sends carries a stamp, and such a page sends it on
+   * each step-up call. A page left open across the update has none, and its
+   * code reads only `extension-risk` with an empty list, whose "Sign in again"
+   * reloads it. So it is answered in that shape, with `stale` naming the
+   * reason beside it. A script sends none either, and gets the same.
+   */
+  function fromOlderPage(c: Context<ApiEnv>): boolean {
+    return honoRequestFacts(c).headers[PAGE_STAMP_HEADER] === undefined;
+  }
+
   /** The refusal for `unavailable`, naming the extensions when they are why. */
   function refuseUnavailable(
     c: Context<ApiEnv>,
     unavailable: StepUpPasswordUnavailable,
     risks: readonly StepUpExtensionRisk[]
   ): Response {
+    if (unavailable === 'stale-sign-in' || unavailable === 'stale-page') {
+      const { status, error } = REFUSALS[unavailable];
+      return c.json(
+        fromOlderPage(c)
+          ? { ...errorBody(error, 'extension-risk'), blockedBy: [], stale: unavailable }
+          : { ...errorBody(error, unavailable), stale: unavailable },
+        status
+      );
+    }
     if (unavailable !== 'extension-risk') return refuse(c, unavailable);
     return c.json(
       { ...errorBody(extensionRiskError(risks), 'extension-risk'), blockedBy: risks },
@@ -443,6 +464,10 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     const entry = heldOrRefusal(c);
     if (entry instanceof Response) return entry;
     const { unavailable, risks } = await passwordUnavailable(c);
+    const stale =
+      unavailable === 'stale-sign-in' || unavailable === 'stale-page' ? unavailable : undefined;
+    // A page from before the named reasons reads only `extension-risk` (see fromOlderPage).
+    const shown = stale && fromOlderPage(c) ? 'extension-risk' : unavailable;
     const view: HeldStepUpView = {
       heldActionId: entry.statement.heldActionId,
       requestCode: requestCodeForHash(entry.statement.inputSha256),
@@ -453,8 +478,9 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
       ...(entry.warnings.length > 0 ? { warnings: [...entry.warnings] } : {}),
       expiresAt: entry.statement.expiresAt,
       methods: unavailable ? [] : ['password'],
-      ...(unavailable ? { passwordUnavailable: unavailable } : {}),
-      ...(unavailable === 'extension-risk' ? { blockedBy: [...risks] } : {}),
+      ...(shown ? { passwordUnavailable: shown } : {}),
+      ...(shown === 'extension-risk' ? { blockedBy: [...risks] } : {}),
+      ...(stale ? { stale } : {}),
       triesLeft: entry.triesLeft,
     };
     return c.json(view);

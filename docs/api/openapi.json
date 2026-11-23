@@ -108796,6 +108796,13 @@
                         ]
                       }
                     },
+                    "stale": {
+                      "type": "string",
+                      "enum": [
+                        "stale-sign-in",
+                        "stale-page"
+                      ]
+                    },
                     "triesLeft": {
                       "type": "integer",
                       "minimum": 0

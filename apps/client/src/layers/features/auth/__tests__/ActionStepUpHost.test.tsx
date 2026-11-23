@@ -473,6 +473,71 @@ describe('ActionStepUpHost', () => {
       expect(draft.value).toBe('A half-written made-up message');
     });
 
+    it('reopens the same held action on the reloaded page', async () => {
+      const id = '01M83PFTJC1PT56MGDM44ZXQ7W';
+      heldWith({ ...STALE, heldActionId: id }, [200, {}]);
+      const navigate = vi.fn();
+      render(<ActionStepUpHost navigate={navigate} />);
+      void ask(id);
+      await waitFor(() => expect(navigate).toHaveBeenCalledOnce());
+      act(() => finishActionStepUp(id, { kind: 'not-confirmed' }));
+      // The fresh page reads the address it was loaded with.
+      const replaceState = vi.fn();
+      let opened = false;
+      act(() => {
+        opened = openActionStepUpFromLink(
+          { href: String(navigate.mock.calls[0]?.[0]) },
+          { replaceState, state: null }
+        );
+      });
+      expect(opened).toBe(true);
+      expect(getActionStepUpShowing()).toBe(id);
+      expect(String(replaceState.mock.calls[0]?.[2])).not.toContain('confirm=');
+    });
+
+    it('never reloads by itself while another confirm waits behind this one', async () => {
+      heldWith(STALE, [200, {}]);
+      const navigate = vi.fn();
+      render(<ActionStepUpHost navigate={navigate} />);
+      void ask('held-1');
+      void ask('held-2');
+      expect(await screen.findByText(STALE_LINE)).toBeVisible();
+      await pastTheReload();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('shows the Reload body when the password step is refused as too old', async () => {
+      heldWith(VIEW, [409, { code: 'stale-page', error: STALE_LINE, stale: 'stale-page' }]);
+      const navigate = vi.fn();
+      render(<ActionStepUpHost navigate={navigate} />);
+      void ask();
+      await confirmWith('correct horse battery');
+      expect(await screen.findByText(STALE_LINE)).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Reload' })).toBeVisible();
+      expect(screen.queryByLabelText('DorkOS password')).toBeNull();
+    });
+
+    it('reads the named reason first, in the shape a page with no stamp gets', async () => {
+      heldWith(
+        {
+          ...VIEW,
+          methods: [],
+          passwordUnavailable: 'extension-risk',
+          blockedBy: [],
+          stale: 'stale-sign-in',
+        },
+        [200, {}]
+      );
+      render(<ActionStepUpHost />);
+      void ask();
+      expect(
+        await screen.findByText(
+          'Something changed after you signed in. Sign in again, then try once more.'
+        )
+      ).toBeVisible();
+      expect(screen.queryByRole('button', { name: 'How to fix' })).toBeNull();
+    });
+
     it('never reloads for a mini app that is really there: it stays named', async () => {
       heldWith(
         {

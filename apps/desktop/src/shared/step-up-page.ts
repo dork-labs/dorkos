@@ -39,6 +39,9 @@ export const STEP_UP_WINDOW_CLOSE_CHANNEL = 'step-up-window:close';
 /** The window's preload asks the shell to close it so the person can sign in again. */
 export const STEP_UP_WINDOW_SIGN_IN_CHANNEL = 'step-up-window:sign-in-again';
 
+/** The window's Reload button: the app's page loads afresh and asks again (DOR-5086). */
+export const STEP_UP_WINDOW_RELOAD_CHANNEL = 'step-up-window:reload';
+
 /** What the window shows: the server's own words. */
 export interface StepUpWindowView {
   reason: string;
@@ -73,4 +76,6 @@ export type StepUpWindowOutcome =
   | { kind: 'not-confirmed' }
   | { kind: 'ask-again'; reason?: 'different-request' }
   /** A mini app ran since this sign-in: the app signs in again, then asks afresh. */
-  | { kind: 'sign-in-again' };
+  | { kind: 'sign-in-again' }
+  /** The app's page is older than a change: it reloads and reopens this same action. */
+  | { kind: 'reload' };

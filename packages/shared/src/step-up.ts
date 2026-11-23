@@ -300,6 +300,12 @@ export const HeldStepUpViewSchema = z.object({
   passwordUnavailable: StepUpPasswordUnavailableSchema.optional(),
   /** For `extension-risk`: the extensions to fix first, in Settings → Extensions. */
   blockedBy: z.array(StepUpExtensionRiskSchema).optional(),
+  /**
+   * When the confirm comes from before the last mini app risk cleared: which
+   * part is too old (DOR-5086). Always set then, even where a page from before
+   * this field is answered with `extension-risk` and an empty `blockedBy`.
+   */
+  stale: z.enum(['stale-sign-in', 'stale-page']).optional(),
   /** Wrong passwords left before the held action is dropped. */
   triesLeft: z.number().int().min(0),
 });

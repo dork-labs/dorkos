@@ -18,6 +18,7 @@ import {
   getActionStepUpAfterExpiry,
   getActionStepUpAfterDifferent,
   getActionStepUpShowing,
+  getActionStepUpWaiting,
   noteStepUpReload,
   reloadToConfirm,
   stepUpReloadedFor,
@@ -128,6 +129,15 @@ type Stage =
   | { kind: 'change'; view: HeldStepUpView; minLength: number }
   | { kind: 'ended'; message: string };
 
+/**
+ * Why the password isn't offered: the named stale reason first (DOR-5086),
+ * since a page without a stamp (the dev server's) is answered in the older
+ * `extension-risk` shape with `stale` beside it.
+ */
+function reasonOf(view: HeldStepUpView): HeldStepUpView['passwordUnavailable'] {
+  return view.stale ?? view.passwordUnavailable;
+}
+
 /** Load this page afresh and reopen `heldActionId` there (DOR-5086). */
 function reloadPage(heldActionId: string, navigate?: (url: string) => void): void {
   reloadToConfirm(
@@ -172,11 +182,15 @@ function ActionStepUpSheet({
       if (!live) return;
       // Too old a page to confirm from (DOR-5086): reload once, by itself, and
       // reopen this same held action there. Only when nothing typed would be
-      // lost, and never twice for one action, so a page still refused after
-      // its reload stops on the Reload button instead of looping.
+      // lost and no other confirm waits behind this one (only this one
+      // reopens), and never twice for one action, so a page still refused
+      // after its reload stops on the Reload button instead of looping. The
+      // call that asked here ends with the page; once confirmed there, the
+      // server runs the action all the same.
       if (
         read.ok &&
-        read.view.passwordUnavailable === 'stale-page' &&
+        reasonOf(read.view) === 'stale-page' &&
+        getActionStepUpWaiting() === 1 &&
         !stepUpReloadedFor(heldActionId) &&
         !hasUnsavedWork() &&
         noteStepUpReload(heldActionId)
@@ -271,6 +285,14 @@ function ActionStepUpSheet({
       });
       return;
     }
+    // Refused as too old while the sheet was open: the same body the read shows.
+    if (result.reason === 'stale-page' || result.reason === 'stale-sign-in') {
+      setStage({
+        kind: 'password',
+        view: { ...stage.view, methods: [], passwordUnavailable: result.reason },
+      });
+      return;
+    }
     if (result.reason === 'too-many-attempts') {
       setWaitUntil(Date.now() + (result.retryAfterSeconds ?? 60) * 1000);
     }
@@ -294,6 +316,7 @@ function ActionStepUpSheet({
 
   const waiting = waitUntil !== null;
   const view = stage.kind === 'password' || stage.kind === 'change' ? stage.view : null;
+  const unavailable = view ? reasonOf(view) : undefined;
 
   return (
     <AlertDialog open onOpenChange={(next) => !next && cancel()}>
@@ -347,13 +370,13 @@ function ActionStepUpSheet({
         </AlertDialogHeader>
         {stage.kind === 'reloading' ? null : stage.kind === 'ended' ? (
           <EndedBody message={stage.message} onClose={cancel} />
-        ) : view?.passwordUnavailable === 'insecure-connection' ? (
+        ) : unavailable === 'insecure-connection' ? (
           <EndedBody message="Confirm this on the computer running DorkOS." onClose={cancel} />
-        ) : view?.passwordUnavailable === 'extension-risk' ? (
-          <ExtensionRiskBody risks={view.blockedBy ?? []} onClose={cancel} />
-        ) : view?.passwordUnavailable === 'stale-sign-in' ? (
+        ) : unavailable === 'extension-risk' ? (
+          <ExtensionRiskBody risks={view?.blockedBy ?? []} onClose={cancel} />
+        ) : unavailable === 'stale-sign-in' ? (
           <StaleSignInBody onClose={cancel} onSignInAgain={signInAgain} />
-        ) : view?.passwordUnavailable === 'stale-page' ? (
+        ) : unavailable === 'stale-page' ? (
           <StalePageBody
             onClose={cancel}
             onReload={() => {
@@ -361,8 +384,8 @@ function ActionStepUpSheet({
               reloadPage(heldActionId, navigate);
             }}
           />
-        ) : view?.passwordUnavailable === 'no-password' ? (
-          <NoPasswordBody onClose={cancel} remote={view.answeringRemotely} />
+        ) : unavailable === 'no-password' ? (
+          <NoPasswordBody onClose={cancel} remote={view?.answeringRemotely} />
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             {stage.kind === 'change' && (

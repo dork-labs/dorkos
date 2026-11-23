@@ -401,13 +401,20 @@ describe('while a loaded mini app is in an agent’s folder or changed', () => {
     deps.extensionRisks = () => [];
     const res = await confirm(id, PASSWORD);
     expect(res.status).toBe(409);
-    // Named for what it is, never an empty list of mini apps (DOR-5086).
-    expect(res.body.code).toBe('stale-sign-in');
-    expect(res.body).not.toHaveProperty('blockedBy');
+    // Named for what it is (DOR-5086). With no page stamp, in the shape a page
+    // from before the names reads, whose "Sign in again" reloads it.
+    expect(res.body).toMatchObject({
+      code: 'extension-risk',
+      blockedBy: [],
+      stale: 'stale-sign-in',
+    });
     expect(res.body.error).toMatch(/Sign in again/);
     const view = await request(app({ user: SESSION_A })).get(`/api/step-up/${id}`);
-    expect(view.body.passwordUnavailable).toBe('stale-sign-in');
-    expect(view.body).not.toHaveProperty('blockedBy');
+    expect(view.body).toMatchObject({
+      passwordUnavailable: 'extension-risk',
+      blockedBy: [],
+      stale: 'stale-sign-in',
+    });
     expect(commit).not.toHaveBeenCalled();
     expect(deps.checkPassword).not.toHaveBeenCalled();
   });
@@ -831,7 +838,7 @@ describe('a page from before a mini app risk cleared (DOR-5026)', () => {
   it('refuses a confirm with no stamp, the desktop window’s included, and a forged one', async () => {
     riskCleared(deps.riskLedger as StepUpRiskLedger);
     const none = await confirmFrom(await hold({ user: SESSION_NEW }), COOKIE_NEW);
-    expect(none.body.code).toBe('stale-page');
+    expect(none.body).toMatchObject({ code: 'extension-risk', stale: 'stale-page' });
     const forged = await confirmFrom(
       await hold({ user: SESSION_NEW }),
       COOKIE_NEW,
@@ -882,19 +889,44 @@ describe('a confirm on a ledger that opened with a clear, no mini app risk ever 
     return req.send({ password: PASSWORD });
   }
 
-  it('names a page with no stamp as a page to reload, never as a mini app', async () => {
+  it('names a page from before the clear as a page to reload, never as a mini app', async () => {
+    const id = await hold({ user: SESSION_NEW });
+    const oldPage = mintPageStamp(COOKIE, Date.now() - 120_000);
+    const view = await request(app({ user: SESSION_NEW }))
+      .get(`/api/step-up/${id}`)
+      .set('Cookie', COOKIE)
+      .set('x-dorkos-page-stamp', oldPage);
+    expect(view.body).toMatchObject({
+      methods: [],
+      passwordUnavailable: 'stale-page',
+      stale: 'stale-page',
+    });
+    expect(view.body).not.toHaveProperty('blockedBy');
+
+    const res = await confirmFrom(id, oldPage);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ code: 'stale-page', stale: 'stale-page' });
+    expect(res.body.error).toBe('This page opened before a change. Reload it, then try again.');
+    expect(res.body).not.toHaveProperty('blockedBy');
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('answers a page with no stamp (open across the update) in the shape it reads, naming why', async () => {
     const id = await hold({ user: SESSION_NEW });
     const view = await request(app({ user: SESSION_NEW }))
       .get(`/api/step-up/${id}`)
       .set('Cookie', COOKIE);
-    expect(view.body).toMatchObject({ methods: [], passwordUnavailable: 'stale-page' });
-    expect(view.body).not.toHaveProperty('blockedBy');
-
+    // The page's own code reads only this shape: its "Sign in again" reloads it.
+    expect(view.body).toMatchObject({
+      methods: [],
+      passwordUnavailable: 'extension-risk',
+      blockedBy: [],
+      stale: 'stale-page',
+    });
     const res = await confirmFrom(id);
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('stale-page');
+    expect(res.body).toMatchObject({ code: 'extension-risk', blockedBy: [], stale: 'stale-page' });
     expect(res.body.error).toBe('This page opened before a change. Reload it, then try again.');
-    expect(res.body).not.toHaveProperty('blockedBy');
     expect(commit).not.toHaveBeenCalled();
   });
 

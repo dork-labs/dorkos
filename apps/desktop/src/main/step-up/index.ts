@@ -30,6 +30,7 @@ import {
   STEP_UP_PAGE_FILE,
   STEP_UP_PRELOAD_FILE,
   STEP_UP_WINDOW_CLOSE_CHANNEL,
+  STEP_UP_WINDOW_RELOAD_CHANNEL,
   STEP_UP_WINDOW_SIGN_IN_CHANNEL,
   STEP_UP_WINDOW_SUBMIT_CHANNEL,
   STEP_UP_WINDOW_VIEW_CHANNEL,
@@ -178,6 +179,13 @@ export function registerStepUpWindow(deps: StepUpWindowDeps): void {
     const confirmation = confirmationOf(event);
     if (!confirmation) return;
     confirmation.signInAgain();
+    BrowserWindow.fromWebContents(event.sender)?.close();
+  });
+
+  ipcMain.handle(STEP_UP_WINDOW_RELOAD_CHANNEL, (event) => {
+    const confirmation = confirmationOf(event);
+    if (!confirmation) return;
+    confirmation.reload();
     BrowserWindow.fromWebContents(event.sender)?.close();
   });
 }

@@ -30,7 +30,12 @@ export type ActionStepUpOutcome =
    * A mini app ran since this sign-in: sign in again, then ask for the action
    * again, which holds it afresh in the new session (M1 on #3401).
    */
-  | { kind: 'sign-in-again' };
+  | { kind: 'sign-in-again' }
+  /**
+   * The page is older than a change (DOR-5086): reload it and reopen this same
+   * held action there. The Mac app's window asks for this; it stays held.
+   */
+  | { kind: 'reload' };
 
 /**
  * What a change says once "Confirm it's you" closed without confirming
@@ -223,6 +228,11 @@ export function finishActionStepUp(heldActionId: string, outcome: ActionStepUpOu
 /** The held action whose sheet is showing, or `null`. */
 export function getActionStepUpShowing(): string | null {
   return queue[0]?.heldActionId ?? null;
+}
+
+/** How many held actions wait for a sheet, the one showing included. */
+export function getActionStepUpWaiting(): number {
+  return queue.length;
 }
 
 /** Whether the sheet that is showing follows one that expired. */

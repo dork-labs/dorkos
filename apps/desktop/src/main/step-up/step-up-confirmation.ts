@@ -149,7 +149,10 @@ export class StepUpConfirmation {
     const notes = Array.isArray(body?.notes)
       ? body.notes.filter((note): note is string => typeof note === 'string')
       : [];
-    const unavailable = UNAVAILABLE.find((value) => value === body?.passwordUnavailable);
+    // The named stale reason first (DOR-5086): a page with no stamp gets the older shape beside it.
+    const unavailable = UNAVAILABLE.find(
+      (value) => value === (body?.stale ?? body?.passwordUnavailable)
+    );
     const blockedLines =
       unavailable === 'extension-risk' && Array.isArray(body?.blockedBy)
         ? body.blockedBy.flatMap(blockedLineOf)
@@ -249,6 +252,14 @@ export class StepUpConfirmation {
   }
 
   /**
+   * The person chose to reload the app's page, which is older than a change
+   * (DOR-5086). This held action stays held, so the fresh page reopens it.
+   */
+  reload(): void {
+    if (!this.confirmed) this.outcome = { kind: 'reload' };
+  }
+
+  /**
    * How it ended, for the app's page, once the window closed. A window closed
    * before confirming tells the server to drop the held action; one closed
    * while a password was being checked waits for that answer first, since the
@@ -256,7 +267,7 @@ export class StepUpConfirmation {
    */
   async finish(): Promise<StepUpWindowOutcome> {
     if (this.inFlight) await this.inFlight.catch(() => undefined);
-    if (!this.confirmed) {
+    if (!this.confirmed && this.outcome.kind !== 'reload') {
       await this.deps
         .fetch(this.url(), {
           method: 'DELETE',

@@ -65,6 +65,7 @@ export {
   getActionStepUpAfterExpiry,
   getActionStepUpAfterDifferent,
   getActionStepUpShowing,
+  getActionStepUpWaiting,
   noteStepUpReload,
   openActionStepUpFromLink,
   reloadToConfirm,
