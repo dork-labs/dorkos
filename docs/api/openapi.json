@@ -11694,6 +11694,9 @@
           "fileCap": {
             "$ref": "#/components/schemas/TaskFileCap"
           },
+          "fileReview": {
+            "$ref": "#/components/schemas/TaskFileReview"
+          },
           "quietHold": {
             "type": "boolean"
           },
@@ -12070,6 +12073,31 @@
         "required": [
           "at",
           "needsPerson",
+          "hash",
+          "previous",
+          "current"
+        ]
+      },
+      "TaskFileReview": {
+        "type": "object",
+        "properties": {
+          "hash": {
+            "type": "string"
+          },
+          "previous": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "current": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
           "hash",
           "previous",
           "current"
@@ -12521,6 +12549,31 @@
             "enum": [
               "dontAsk",
               null
+            ]
+          },
+          "cappedFile": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "path",
+              "from",
+              "to"
             ]
           },
           "outcome": {
@@ -51201,7 +51254,7 @@
           "Tasks"
         ],
         "summary": "Approve a schedule’s changed SKILL file",
-        "description": "Lifts the cap a change outside the task tools put on a schedule: its runs go back to its own mode instead of Never ask (DOR-3703). The body names the cap you saw and the file hash its diff showed (`capAt` and `hash`, from `fileCap`). Only a person can use it: an agent is refused. Answers 409 once the file changed since that diff.",
+        "description": "Lifts the cap a change outside the task tools put on a schedule: its runs go back to its own mode instead of Never ask (DOR-3703). The body names the cap you saw and the file hash its diff showed (`capAt` and `hash`, from `fileCap`). With no cap standing, it names the hash alone (from `fileReview`) and approves the file as it is now (DOR-5060). Only a person can use it: an agent is refused. Answers 409 once the file changed since that diff.",
         "parameters": [
           {
             "schema": {
@@ -51226,7 +51279,6 @@
                   }
                 },
                 "required": [
-                  "capAt",
                   "hash"
                 ]
               }
@@ -108707,7 +108759,9 @@
                       "enum": [
                         "insecure-connection",
                         "no-password",
-                        "extension-risk"
+                        "extension-risk",
+                        "stale-sign-in",
+                        "stale-page"
                       ]
                     },
                     "blockedBy": {
@@ -108741,6 +108795,13 @@
                           "reason"
                         ]
                       }
+                    },
+                    "stale": {
+                      "type": "string",
+                      "enum": [
+                        "stale-sign-in",
+                        "stale-page"
+                      ]
                     },
                     "triesLeft": {
                       "type": "integer",

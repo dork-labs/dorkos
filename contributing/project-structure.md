@@ -410,7 +410,7 @@ apps/server/src/
 │   │   └── session-bindings/     # Session ↔ room binding
 │   ├── communities/               # CommunityAdapter backends: local/ (this machine's SQLite rooms,
 │   │   │                          #   registered LOCAL_COMMUNITY) + remote-community aggregation
-│   ├── spaces/                    # Hosted space server, migrations and routes (apps/space package)
+│   ├── spaces/                    # Space server: the one space model (apps/space = image, migrations, tests)
 │   ├── connectors/                # Connections: connector accounts, agent-access requests/cleanup
 │   ├── marketplace/               # Package install/uninstall/update pipeline
 │   │   ├── installer/                # Orchestrator: staging, dispatch per kind, update, metadata

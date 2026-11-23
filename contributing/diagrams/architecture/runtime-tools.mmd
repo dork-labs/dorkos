@@ -1,14 +1,29 @@
 flowchart TB
   accTitle: Runtime execution and tool access
-  accDescr: The local server starts runtimes separately from providing tools. Claude Code calls DorkOS tools in process; agent-bound Codex, OpenCode and Doe turns use a loopback MCP listener with turn-bound credentials; the computer-local experiment reaches the same listener through a fixed-target bridge into its guest. Doe also assembles local engine tools. Room speech requires a tool action. External MCP has separate authentication. Every tool call writes one audit row.
-  dispatch["Local MessageDispatcher"] -->|"AgentRuntime"| claude["Claude Code"]
-  dispatch -->|"AgentRuntime"| other["Codex / OpenCode / Doe"]
-  dispatch -.->|"AgentRuntime · experiment"| vm["computer-local guest<br/>OpenCode in a Lima VM"]
-  claude -->|"In-process tool server"| tools["DorkOS capabilities<br/>Identity + authorization checks<br/>One audit row per call"]
-  other -->|"MCP Streamable HTTP<br/>Short-lived turn credential"| loopback["Loopback-only runtime listener"]
-  vm -.->|"Fixed-target MCP bridge<br/>Same turn-bound principal"| loopback
+  accDescr: The local server starts runtimes separately from providing tools. Claude Code calls DorkOS tools in process; agent-bound Codex, OpenCode and Doe turns use a loopback MCP listener with turn-bound credentials; the sealed-computer experiment reaches the same listener through a fixed-target bridge into its guest. Room speech requires a tool action. External MCP has separate authentication. Every tool call writes one audit row.
+
+  dispatch["<b>Message dispatcher</b>"]
+  claude["<b>Claude Code</b><br/><span class='d'>Tools in process</span>"]
+  other["<b>Codex · OpenCode · Doe</b><br/><span class='d'>Tools over loopback MCP</span>"]
+  vm["<b>Sealed computer guest</b><br/><span class='d'>Experiment · off by default</span>"]
+  loopback["<b>Loopback listener</b><br/><span class='d'>Short-lived, turn-bound credential</span>"]
+  tools["<b>DorkOS tools</b><br/><span class='d'>Identity and permission checks<br/>One audit row per call</span>"]
+  external["<b>Outside tool caller</b>"]
+  public["<b>Public MCP endpoint</b><br/><span class='d'>Its own authentication</span>"]
+  room["<b>Room post</b><br/><span class='d'>Only an explicit post or reaction<br/>Final text alone is not a post</span>"]
+  beat["<b>Heartbeat report</b><br/><span class='d'>Only through the end-of-beat tool<br/>Free text in a beat goes nowhere</span>"]
+
+  dispatch -->|"runtime"| claude
+  dispatch -->|"runtime"| other
+  dispatch -.->|"runtime · experiment"| vm
+  claude -->|"in process"| tools
+  other -->|"MCP over loopback"| loopback
+  vm -.->|"fixed-target bridge<br/><span class='d'>same turn-bound principal</span>"| loopback
   loopback --> tools
-  external["External tool caller"] -->|"Streamable HTTP /mcp<br/>Separate external authentication"| public["Public MCP endpoint"]
+  external -->|"MCP, Streamable HTTP"| public
   public --> tools
-  tools -->|"Explicit post or reaction"| room["Room publication<br/>Final text alone is not a post<br/>A turn may stay silent"]
-  tools -->|"end_beat only"| beat["A heartbeat's raises<br/>Free text in a beat goes nowhere"]
+  tools -->|"post or react"| room
+  tools -->|"end of beat"| beat
+
+  classDef external fill:#ffffff,stroke:#8a9bab,color:#3b4a58
+  class external external

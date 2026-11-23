@@ -5,17 +5,19 @@ import {
   agents,
   chatMessages,
   sessionMessageQueue,
-  sessionMetadata,
   and,
   eq,
   type Db,
 } from '@dorkos/db';
+import { sessionAgentOf } from '../../core/agent-identity/session-agent.js';
 import type { PausedAgentRef } from './agent-pause.js';
 
 /**
  * Record the waiting chat messages once per pause. This is a snapshot of the
  * held queue, not a counter rewritten as messages arrive: Activity and its audit
  * copy are append-only. The durable pause time also deduplicates after restart.
+ * A chat's agent is `session-agent`'s answer, so a chat started with only its
+ * agent's folder counts too (DOR-5038).
  *
  * @param db - The Activity and queue store
  * @param agent - The paused agent and durable pause time
@@ -35,18 +37,29 @@ export function recordPausedQueueActivity(db: Db, agent: PausedAgentRef): void {
       )
       .get();
     if (already) return;
+    const home = db
+      .select({ projectPath: agents.projectPath })
+      .from(agents)
+      .where(eq(agents.id, agent.id))
+      .get()?.projectPath;
+    if (!home) return;
+    // Every queued chat message, then each target chat's agent once: a chat with no recorded
+    // agent has nothing to join on. Queues are small and this runs once per pause.
+    const owners = new Map<string, string | undefined>();
+    const ownerOf = (sessionId: string): string | undefined => {
+      if (!owners.has(sessionId)) owners.set(sessionId, sessionAgentOf(db, sessionId));
+      return owners.get(sessionId);
+    };
     const held = db
       .select({
         chatId: chatMessages.fromSessionId,
         chatTitle: chatMessages.fromChatTitle,
-        sessionId: sessionMetadata.sessionId,
+        sessionId: sessionMessageQueue.sessionId,
       })
       .from(sessionMessageQueue)
       .innerJoin(chatMessages, eq(chatMessages.queueMessageId, sessionMessageQueue.id))
-      .innerJoin(sessionMetadata, eq(sessionMetadata.sessionId, sessionMessageQueue.sessionId))
-      .innerJoin(agents, eq(agents.projectPath, sessionMetadata.agentPath))
-      .where(eq(agents.id, agent.id))
-      .all();
+      .all()
+      .filter((message) => ownerOf(message.sessionId) === home);
     if (held.length === 0) return;
     const chats = new Set(held.map((message) => message.chatId)).size;
     const summary =

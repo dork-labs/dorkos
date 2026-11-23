@@ -205,6 +205,25 @@ describe('StepUpConfirmation', () => {
     expect(calls.some((call) => call.init.method === 'DELETE')).toBe(true);
   });
 
+  it('"Reload": keeps this held action, so the reloaded page reopens it (DOR-5086)', async () => {
+    const { confirmation, calls } = server({ 'DELETE /': [204, null] });
+    confirmation.reload();
+    expect(await confirmation.finish()).toEqual({ kind: 'reload' });
+    expect(calls.some((call) => call.init.method === 'DELETE')).toBe(false);
+  });
+
+  it.each([
+    ['a page too old', 'stale-page', { passwordUnavailable: 'stale-page', stale: 'stale-page' }],
+    [
+      'a sign-in too old, in the shape a stamp-less page gets',
+      'stale-sign-in',
+      { passwordUnavailable: 'extension-risk', blockedBy: [], stale: 'stale-sign-in' },
+    ],
+  ])('names %s and offers no password (DOR-5086)', async (_label, unavailable, shape) => {
+    const { confirmation } = server({ 'GET /': [200, { ...VIEW, methods: [], ...shape }] });
+    expect(await confirmation.view()).toEqual({ ...VIEW, unavailable });
+  });
+
   it('closed while the password is being checked: waits for the answer, and never cancels an action that ran', async () => {
     let answer!: () => void;
     const answered = new Promise<void>((resolve) => (answer = resolve));

@@ -40,6 +40,8 @@ describe('to-do routes', () => {
   let todos: TodoService;
   /** Whether the request proves the person; flipped per test. */
   let proven: boolean;
+  /** Whether the request is the owner's sign-in on a held Wi-Fi device (DOR-5070); flipped per test. */
+  let heldOwner: boolean;
   /** The to-do whose turn has run, for "Show work". */
   let workedOn: string | undefined;
 
@@ -54,6 +56,7 @@ describe('to-do routes', () => {
   beforeEach(() => {
     state.ownerId = null;
     proven = false;
+    heldOwner = false;
     db = createTestDb();
     promises = new TodoPromiseService({ store: new TodoPromiseStore(db) });
     todos = new TodoService({
@@ -70,6 +73,7 @@ describe('to-do routes', () => {
             todos,
             personProven: () => proven,
             ownerExists: () => state.ownerId !== null,
+            heldWifiOwner: () => heldOwner,
             workSessionOf: (todoId) => (todoId === workedOn ? 'session-work' : null),
             // The app's marker stands in for a window with no session while an owner exists.
             needsStepUp: (facts) =>
@@ -185,6 +189,56 @@ describe('to-do routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.state).toBe('kept');
       expect(power(id)).toEqual({ authority: 'runtime-default', marks: '{"outsider":true}' });
+    });
+  });
+
+  describe('the owner on a Wi-Fi device not let run agents (DOR-5070)', () => {
+    /** A to-do the proven person made, then the request becomes the held Wi-Fi owner. */
+    async function made(assignee: Record<string, string>, what = 'Call the bank'): Promise<string> {
+      state.ownerId = 'user_owner';
+      proven = true;
+      const res = await request(fixtureServer).post('/api/todos').send({ what, assignee });
+      expect(res.status).toBe(201);
+      proven = false;
+      heldOwner = true;
+      return res.body.id as string;
+    }
+
+    it('finishes and reopens a to-do assigned to the person, and leaves no person proof on it', async () => {
+      const id = await made({ kind: 'person', account: 'owner' });
+      const done = await request(fixtureServer).patch(`/api/todos/${id}`).send({ state: 'kept' });
+      expect(done.status).toBe(200);
+      expect(done.body.state).toBe('kept');
+      const reopened = await request(fixtureServer)
+        .patch(`/api/todos/${id}`)
+        .send({ state: 'open' });
+      expect(reopened.status).toBe(200);
+      // Touched from that device, the row no longer reads as the person's own word.
+      expect(power(id)).toEqual({ authority: 'runtime-default', marks: '{"outsider":true}' });
+    });
+
+    it('is refused on a to-do assigned to an agent', async () => {
+      const id = await made({ kind: 'agent', agentId: 'agent-ana' }, 'Run the deploy');
+      for (const change of [{ state: 'kept' }, { note: 'Done' }, { rank: 'a' }]) {
+        const res = await request(fixtureServer).patch(`/api/todos/${id}`).send(change);
+        expect(res.status, JSON.stringify(change)).toBe(403);
+        expect(res.body.code).toBe('NOT_YOURS');
+      }
+      expect(power(id)).toEqual({ authority: 'person', marks: '{}' });
+    });
+
+    it('is refused an edit to what an agent runs, or a reassignment', async () => {
+      const id = await made({ kind: 'agent', agentId: 'agent-ana' }, 'Run the deploy');
+      const edit = await request(fixtureServer)
+        .patch(`/api/todos/${id}`)
+        .send({ what: 'Run the deploy to production' });
+      expect(edit.status).toBe(403);
+      const mine = await made({ kind: 'person', account: 'owner' });
+      const handOff = await request(fixtureServer)
+        .patch(`/api/todos/${mine}`)
+        .send({ assignee: { kind: 'agent', agentId: 'agent-ana' } });
+      expect(handOff.status).toBe(403);
+      expect(power(id)).toEqual({ authority: 'person', marks: '{}' });
     });
   });
 

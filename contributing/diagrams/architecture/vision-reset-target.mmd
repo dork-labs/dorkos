@@ -1,43 +1,55 @@
 flowchart TB
   accTitle: One DorkOS program in three roles, and the seams between them
-  accDescr: The accepted direction of ADR 261015-042933 as of 2026-11-21. One server package runs as a person's computer, a hub or an agent computer, and ships the space server as a fourth entry. Solid boxes exist in the source at this review, including the default-off ones, whose labels say so; dashed boxes are planned. Servers connect by pairing. A Mac's chats reach the web through the session relay. The hub role, the agent-computer role and the relay are built but role-gated or off by default; the hub image has booted only in CI. Nothing here is deployment proof.
-  legend["ONE PROGRAM, THREE ROLES · built parts solid, planned parts dashed<br/>Roles are DORKOS_SERVER_ROLE computer / hub / agent-computer<br/>Role-gated or default-off is not deployed"]
+  accDescr: The accepted direction of ADR 261015-042933 as of 2026-11-21. One server package runs as a person's computer, a hub or an agent computer, and ships the space server as a fourth entry. Solid boxes exist in the source at this review, including the ones that are off by default; dashed boxes are planned. Servers connect by pairing. A computer's chats reach the web through the chat relay. The hub role, the agent-computer role and the relay are built but gated or off by default; the hub image has booted only in CI. Nothing here is deployment proof.
+
   subgraph computer["Your computer · shipped"]
-    mac["DorkOS server + client<br/>Runtimes: Claude Code · Codex · OpenCode · Doe<br/>Rooms, tasks, heartbeats, audit in SQLite + files"]
-    relayMac["Session relay, Mac side<br/>Dials the pinned hub · chats only<br/>Default off until linked"]
-    localvm["Sealed computer on a Mac<br/>Lima VM · computer-local runtime<br/>Experiment, default off"]
+    mac["<b>DorkOS server and app</b><br/><span class='d'>Runs your agents · rooms, tasks, beats, audit</span>"]
+    relayMac["<b>Chat relay</b><br/><span class='d'>Dials your hub · chats only · off until linked</span>"]
+    localvm["<b>Sealed computer on the Mac</b><br/><span class='d'>Experiment · off by default</span>"]
     mac --> relayMac
-    mac -->|"turns, tool bridge · default off"| localvm
+    mac -->|"turns, tool bridge<br/><span class='d'>off by default</span>"| localvm
   end
-  subgraph hub["Hub · built, image boots only in CI"]
-    hubsrv["Hub mode<br/>No runtimes · owner from Cloud assignment<br/>Login always on · pooled refuses all"]
-    priv["Private space<br/>LOCAL_COMMUNITY · locked by structure"]
-    relayHub["Hub relay endpoint<br/>/api/relay/computer · viewer-open wake"]
-    fwd["Forwarding runtime<br/>Works on: Cloud<br/>Planned · A7"]
+
+  subgraph hub["Hub · built, not deployed"]
+    hubsrv["<b>Hub mode</b><br/><span class='d'>Runs no agents · one owner, named by Cloud</span>"]
+    priv["<b>Private space</b><br/><span class='d'>The hub's local space, locked to its owner</span>"]
+    relayHub["<b>Relay endpoint</b><br/><span class='d'>Takes the computer's dial · wakes it when viewed</span>"]
+    fwd["<b>Work forwarded to an agent computer</b><br/><span class='d'>Planned</span>"]
     hubsrv --> priv
     hubsrv --> relayHub
     hubsrv -.-> fwd
   end
-  subgraph agentpc["Agent computer · built role, no fleet"]
-    sealed["Sealed runtime host<br/>Agent credentials only · loopback bind<br/>OpenCode only · hub-owned writes refused"]
-    bridge["Tool calls sent back to the hub<br/>Planned · A7 / A8"]
+
+  subgraph agentpc["Agent computer · built"]
+    sealed["<b>Sealed runtime host</b><br/><span class='d'>None running yet · OpenCode only<br/>Agent credentials only · hub writes refused</span>"]
+    bridge["<b>Tool calls sent back to the hub</b><br/><span class='d'>Planned</span>"]
     sealed -.-> bridge
   end
-  subgraph space["Space server · own entry + image · shipped"]
-    spacesrv["createCommunityApp · own Hono app<br/>Postgres · host-wide sign-in · tenant data<br/>Agents are members · availability reported"]
+
+  subgraph space["Space server · shipped"]
+    spacesrv["<b>Spaces for other people</b><br/><span class='d'>Own entry and image · Postgres · agents are members</span>"]
   end
-  cloud["Optional DorkOS Cloud<br/>Hub assignment · computers start/stop · directory<br/>Public cloud-api contracts"]
-  relayMac -->|"signed frames · stream, send, approvals, interrupt"| relayHub
-  fwd -.->|"relay channel · turn.start, agents.sync"| sealed
-  bridge -.->|"tools.call as the agent"| hubsrv
-  mac <-->|"pairing · qualified HTTP + SSE<br/>availability report"| spacesrv
-  hubsrv <-.->|"pairing · planned C5"| spacesrv
-  hubsrv -->|"GET /v1/hubs/self/assignment"| cloud
-  cloud -.->|"start / stop · link code<br/>contract only"| sealed
-  mac -->|"optional link, credits, managed remote"| cloud
-  classDef built fill:#edf3fa,stroke:#46709b,color:#183047
+
+  cloud["<b>DorkOS Cloud · optional</b><br/><span class='d'>Hub assignment · starts and stops computers · directory</span>"]
+
+  relayMac -->|"signed frames<br/>chats only"| relayHub
+  fwd -.->|"turns, agent sync"| sealed
+  bridge -.->|"tool calls, as the agent"| relayHub
+  mac <-->|"pairing"| spacesrv
+  hubsrv <-.->|"pairing · planned"| spacesrv
+  hubsrv -->|"reads its assignment"| cloud
+  cloud -.->|"start, stop · contract only"| sealed
+  mac -->|"optional link"| cloud
+
+  subgraph key["Key"]
+    direction LR
+    k1["Built"]
+    k2["Planned"]
+    k3["Optional Cloud"]
+    k1 ~~~ k2 ~~~ k3
+  end
+
   classDef planned fill:#f8fafc,stroke:#8a9bab,color:#3b4a58,stroke-dasharray:6 4
-  classDef hosted fill:#fff5e4,stroke:#a87720,color:#49320c
-  class legend,mac,relayMac,localvm,hubsrv,priv,relayHub,sealed,spacesrv built
-  class fwd,bridge planned
-  class cloud hosted
+  classDef cloud fill:#fff5e4,stroke:#a87720,color:#49320c
+  class fwd,bridge,k2 planned
+  class cloud,k3 cloud

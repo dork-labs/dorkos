@@ -49,10 +49,10 @@ export function createTasksMethods(baseUrl: string) {
       });
     },
 
-    approveTaskFile(taskId: string, capAt: string, hash: string): Promise<Task> {
+    approveTaskFile(taskId: string, capAt: string | null, hash: string): Promise<Task> {
       return fetchJSON<Task>(baseUrl, `/tasks/${taskId}/approve-file`, {
         method: 'POST',
-        body: JSON.stringify({ capAt, hash }),
+        body: JSON.stringify(capAt === null ? { hash } : { capAt, hash }),
       });
     },
 

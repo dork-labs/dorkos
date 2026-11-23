@@ -28,7 +28,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { parseCookies } from 'better-auth/cookies';
-import { PAGE_STAMP_META } from '@dorkos/shared/step-up';
+import { PAGE_STAMP_META, type StepUpStaleConfirm } from '@dorkos/shared/step-up';
 
 import { logger } from '../../../lib/logger.js';
 
@@ -201,7 +201,7 @@ export function pageStampMeta(stamp: string): string {
   return `<meta name="${PAGE_STAMP_META}" content="${stamp}">`;
 }
 
-/** What {@link pageMayHoldRiskyCode} reads. */
+/** What {@link staleConfirm} reads. */
 export interface PageRiskInputs {
   /** The risk ledger: whether code from before a time may still be risky. */
   ledger: { mayHoldRiskyCode: (startedAt: number | null) => boolean };
@@ -216,31 +216,35 @@ export interface PageRiskInputs {
 }
 
 /**
- * Whether the page asking to confirm may still hold a risky mini app's code
- * (Security's M1 on #3401, DOR-5026). Both have to be newer than the last
- * clear: the sign-in, as before, and the page itself, by its stamp.
+ * Why the page asking to confirm may still hold a risky mini app's code, or
+ * `undefined` when it cannot (Security's M1 on #3401, DOR-5026). Both have to
+ * be newer than the last clear: the sign-in, as before, and the page itself,
+ * by its stamp. Each answer names which one is too old (DOR-5086), so a
+ * refusal never reads as a mini app that is not there.
  *
  * Nothing changes until a risk has been seen. After that, a confirm with no
  * valid stamp, a stamp for another sign-in, or a signed-out stamp from before
  * this sign-in began is treated as a page from before the clear.
  *
  * @param inputs - See {@link PageRiskInputs}.
+ * @returns `stale-sign-in` when the sign-in began before the clear,
+ *   `stale-page` when the page can't show it loaded after it.
  */
-export function pageMayHoldRiskyCode(inputs: PageRiskInputs): boolean {
+export function staleConfirm(inputs: PageRiskInputs): StepUpStaleConfirm | undefined {
   const { ledger, sessionStartedAt } = inputs;
-  if (ledger.mayHoldRiskyCode(sessionStartedAt)) return true;
+  if (ledger.mayHoldRiskyCode(sessionStartedAt)) return 'stale-sign-in';
   // Without a server-sent page there is no stamp to ask for (the dev server).
-  if (!inputs.enforced) return false;
+  if (!inputs.enforced) return undefined;
   // No risk was ever seen, so no page can hold one.
-  if (!ledger.mayHoldRiskyCode(Number.NEGATIVE_INFINITY)) return false;
+  if (!ledger.mayHoldRiskyCode(Number.NEGATIVE_INFINITY)) return undefined;
   const stamp = readPageStamp(inputs.stamp);
-  if (!stamp) return true;
+  if (!stamp) return 'stale-page';
   if (stamp.session === null) {
     // Sent signed out: it counts only for a sign-in made on that page, later.
     // (A null start was already refused above once any risk was seen.)
-    if (sessionStartedAt === null || sessionStartedAt <= stamp.loadedAt) return true;
+    if (sessionStartedAt === null || sessionStartedAt <= stamp.loadedAt) return 'stale-page';
   } else if (stamp.session !== sessionFingerprint(inputs.cookie)) {
-    return true;
+    return 'stale-page';
   }
-  return ledger.mayHoldRiskyCode(stamp.loadedAt);
+  return ledger.mayHoldRiskyCode(stamp.loadedAt) ? 'stale-page' : undefined;
 }

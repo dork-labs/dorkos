@@ -114,7 +114,7 @@ const demoTeamRoom: ScenarioFn = async function* (_content, ctx, opts) {
       await ctx.delay(ORDER_POLL_MS);
     }
     await ctx.delay(REPLY_BEAT_MS);
-    const said = await sayInRoom(opts, reply.text);
+    const said = await sayInRoom(opts, ctx.sessionId, reply.text);
     // A refused post must not read as an answer: the turn fails, the room
     // reports it, and the capture's check of the conversation skips the shot.
     if (said !== true) {

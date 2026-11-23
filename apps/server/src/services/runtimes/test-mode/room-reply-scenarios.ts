@@ -101,7 +101,13 @@ function heldRoomTurn(say: string | null, finishRequested: FinishRequested): Sce
  * `answersEntryId`/`sessionId` pointers the claim fills in. That is the point of
  * calling the real thing.
  *
+ * **It names the turn's own session**, as the in-session MCP server does. The
+ * room's one-seat rule (DOR-3397) keys on it: without it a seat's post skipped
+ * the hand-off gate, so a hand-off it was answering never bound to its post and
+ * ended `declined` instead of `posted` (DOR-5032).
+ *
  * @param opts - The message options the runtime was called with.
+ * @param sessionId - The session this turn runs on (`ScenarioContext.sessionId`).
  * @param text - What to say.
  * @param attachments - Files to show with it, by path, relative to the turn's
  *   own working directory.
@@ -110,37 +116,68 @@ function heldRoomTurn(say: string | null, finishRequested: FinishRequested): Sce
  */
 export async function sayInRoom(
   opts: Parameters<ScenarioFn>[2],
+  sessionId: string,
   text: string,
   attachments?: readonly string[]
 ): Promise<true | false | string> {
   const roomTurn = opts?.roomTurn;
   if (!roomTurn) return false;
+  const author = getRoomService().authorRegistry.getById(roomTurn.authorId);
+  const agent = { agentPath: author?.naturalKey ?? '', displayName: author?.displayName ?? '' };
+  const input = { roomId: roomTurn.roomId, text, ...(attachments ? { attachments } : {}) };
+  try {
+    let result = await postAs(agent, sessionId, opts?.cwd, input);
+    // A script's words never depend on what it was shown, so a post held for
+    // messages that arrived meanwhile (DOR-3398) is always still fit: confirm.
+    // Only that hold: confirming anything else would repeat a refusal, or hand
+    // the same words to the seat twice.
+    if (result.posted === false && result.reason === 'new_messages') {
+      result = await postAs(agent, sessionId, opts?.cwd, { ...input, confirm: true });
+    }
+    return result.posted === true ? true : refusalOf(result);
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+/**
+ * Why a post that was not written did not land, in the room's own words.
+ *
+ * @param result - What `rooms.post` answered.
+ */
+function refusalOf(result: Record<string, unknown>): string {
+  if (result.handedOff === true) return 'handed off to the seat instead of posted';
+  const why = result.instruction ?? result.reason;
+  return typeof why === 'string' ? why : 'not posted';
+}
+
+/**
+ * Invoke the real `rooms.post` as one agent from one session, the way the
+ * in-session MCP server lands a `post_to_room` call.
+ *
+ * @param agent - Who is posting: the agent's home and name.
+ * @param sessionId - The session the call comes from.
+ * @param cwd - Where the turn stands, for attachments.
+ * @param input - The post.
+ * @returns What the capability answered.
+ */
+export async function postAs(
+  agent: { agentPath: string; displayName: string },
+  sessionId: string,
+  cwd: string | undefined,
+  input: { roomId: string; text: string; attachments?: readonly string[]; confirm?: boolean }
+): Promise<Record<string, unknown>> {
   const rooms = getRoomService();
-  const author = rooms.authorRegistry.getById(roomTurn.authorId);
   const registry = composeRegistry([roomsDomain], {
     logger: { debug() {}, info() {}, warn() {}, error() {} },
     roomDeps: { rooms },
   });
   const context = {
-    identity: {
-      agentPath: author?.naturalKey ?? '',
-      displayName: author?.displayName ?? '',
-      createdAt: new Date().toISOString(),
-    },
-    ...(opts?.cwd ? { cwd: opts.cwd } : {}),
+    identity: { ...agent, createdAt: new Date().toISOString() },
+    sessionId,
+    ...(cwd ? { cwd } : {}),
   };
-  const input = { roomId: roomTurn.roomId, text, ...(attachments ? { attachments } : {}) };
-  try {
-    const result = await registry.invoke('rooms.post', input, context);
-    // A script's words never depend on what it was shown, so a post held for
-    // messages that arrived meanwhile (DOR-3398) is always still fit: confirm.
-    if ((result as { posted?: boolean } | undefined)?.posted === false) {
-      await registry.invoke('rooms.post', { ...input, confirm: true }, context);
-    }
-    return true;
-  } catch (err) {
-    return err instanceof Error ? err.message : String(err);
-  }
+  return ((await registry.invoke('rooms.post', input, context)) ?? {}) as Record<string, unknown>;
 }
 
 /**
@@ -211,7 +248,7 @@ function roomReadsCanvas(finishRequested: FinishRequested): ScenarioFn {
     // like a send that was dropped, and a test waiting on the face would have no
     // way to tell a failed read from a slow one. Posted as well as narrated,
     // because the narration reaches nobody in the room.
-    await sayInRoom(opts, read);
+    await sayInRoom(opts, ctx.sessionId, read);
     yield { type: 'text_delta', data: { text: read } } as StreamEvent;
 
     for (let tick = 0; tick < HOLD_TICKS && !finishRequested() && !ctx.signal.aborted; tick += 1) {
@@ -288,7 +325,7 @@ function roomPostsAttachment(finishRequested: FinishRequested): ScenarioFn {
     let said = 'NO-ROOM-TURN';
     if (opts?.roomTurn && cwd) {
       await fs.writeFile(path.join(cwd, 'shot.png'), STRIPED_PNG);
-      const posted = await sayInRoom(opts, 'Here is what I saw.', ['shot.png']);
+      const posted = await sayInRoom(opts, ctx.sessionId, 'Here is what I saw.', ['shot.png']);
       said = posted === true ? 'POSTED-ATTACHMENT' : `POST-ATTACHMENT-FAILED: ${posted}`;
     }
     yield { type: 'text_delta', data: { text: said } } as StreamEvent;
@@ -319,7 +356,7 @@ export function roomReplyScenarios(finishRequested: FinishRequested): Record<str
     // reads the same `room_context` bag every runtime is handed, so "the next
     // turn is told" becomes something a browser or a curl can see rather than
     // something only a unit test can.
-    'rooms-report-canvas': async function* (_content, _ctx, opts) {
+    'rooms-report-canvas': async function* (_content, ctx, opts) {
       const room = (opts?.additionalContext ?? []).find((entry) => entry.kind === 'room_context');
       const titles =
         room?.kind === 'room_context'
@@ -333,11 +370,11 @@ export function roomReplyScenarios(finishRequested: FinishRequested): Record<str
         titles.length === 0
           ? 'CANVAS-IN-MY-CONTEXT: nothing'
           : `CANVAS-IN-MY-CONTEXT: ${titles.join(' | ')}`;
-      await sayInRoom(opts, said);
+      await sayInRoom(opts, ctx.sessionId, said);
       yield { type: 'text_delta', data: { text: said } } as StreamEvent;
       yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
     },
-    'rooms-open-canvas': async function* (_content, _ctx, opts) {
+    'rooms-open-canvas': async function* (_content, ctx, opts) {
       yield {
         type: 'session_status',
         data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
@@ -355,7 +392,7 @@ export function roomReplyScenarios(finishRequested: FinishRequested): Record<str
           },
         },
       } as StreamEvent;
-      await sayInRoom(opts, 'Put the plan on the canvas.');
+      await sayInRoom(opts, ctx.sessionId, 'Put the plan on the canvas.');
       yield { type: 'text_delta', data: { text: 'Put the plan on the canvas.' } } as StreamEvent;
       yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
     },
@@ -368,7 +405,7 @@ export function roomReplyScenarios(finishRequested: FinishRequested): Record<str
     // (spec `agent-home-desk` §5.6), exactly as `working-in-room-repos` teaches a
     // real agent: a relative path would name a file in the agent's own project.
     // So the scenario names the file inside the copy the turn was granted.
-    'rooms-open-diff': async function* (_content, _ctx, opts) {
+    'rooms-open-diff': async function* (_content, ctx, opts) {
       yield {
         type: 'session_status',
         data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
@@ -383,7 +420,7 @@ export function roomReplyScenarios(finishRequested: FinishRequested): Record<str
           },
         },
       } as StreamEvent;
-      await sayInRoom(opts, 'Put the diff on the canvas.');
+      await sayInRoom(opts, ctx.sessionId, 'Put the diff on the canvas.');
       yield { type: 'text_delta', data: { text: 'Put the diff on the canvas.' } } as StreamEvent;
       yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
     },

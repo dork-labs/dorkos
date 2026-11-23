@@ -2,6 +2,24 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261122-124821",
+      "slug": "one-dork-reference-ids-for-machines-addresses-for-people",
+      "title": "One dork: reference for every DorkOS thing: ids for machines, addresses for people",
+      "status": "proposed",
+      "created": "2026-11-22",
+      "extractedFrom": null,
+      "specSlug": "conversation-model",
+      "supersedes": null,
+      "amends": ["261017-211859"],
+      "affects": [
+        "packages/shared/src/handle.ts",
+        "packages/shared/src/session-link.ts",
+        "packages/cloud-api/src/seats.ts",
+        "packages/relay/src/lib/subjects.ts",
+        "apps/server/src/routes/a2a.ts"
+      ]
+    },
+    {
       "id": "261119-190201",
       "slug": "one-real-chrome-per-agent-two-views",
       "title": "One real Chrome per agent, two views",
@@ -7874,6 +7892,37 @@
         "packages/evals/src/runner/isolation/**",
         "scripts/harness-smoke/**"
       ]
+    },
+    {
+      "id": "261122-173853",
+      "slug": "one-space-model",
+      "title": "One space model on the space store; a space holds its members' data, a computer holds execution state; the private space becomes a tenant after launch",
+      "status": "accepted",
+      "created": "2026-11-22",
+      "extractedFrom": null,
+      "specSlug": "server-merge",
+      "amends": ["261018-124422"],
+      "affects": [
+        "apps/server/src/services/spaces/**",
+        "apps/server/src/services/rooms/**",
+        "apps/server/src/services/communities/**",
+        "apps/space/**",
+        "packages/shared/src/community-adapter.ts",
+        "packages/shared/src/community-wire.ts",
+        "packages/test-utils/src/community-conformance.ts"
+      ]
+    },
+    {
+      "id": "261122-161025",
+      "slug": "one-work-order-computed-from-linear",
+      "title": "Compute one work order from Linear with one function",
+      "status": "proposed",
+      "created": "2026-11-22",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": null,
+      "affects": ["contributing/prioritization.md", ".agents/flow/config.json"]
     }
   ]
 }
