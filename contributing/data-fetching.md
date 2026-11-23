@@ -451,21 +451,29 @@ export function useResolvedAgents(paths: string[]) {
 
 ## Session Entity: useModels
 
-Available models are fetched via `useModels()` in `entities/session/`. Models rarely change so the query uses a long `staleTime` (30 minutes):
+Available models are fetched via `useModels({ sessionId?, runtime?, account? })` in `entities/session/`. The catalog depends on the runtime, the session and who pays for it (a session on DorkOS credits sees only what credits serve), so the query is scoped by all of them. The query definition lives in `modelsQueryOptions`, shared by `useModels` and any batch reader (`useQueries`), so the key and fetcher cannot drift into two caches. Models rarely change, so `staleTime` is 30 minutes:
 
 ```typescript
 // apps/client/src/layers/entities/session/model/query/use-models.ts
-export function useModels() {
-  const transport = useTransport();
-  return useQuery<ModelOption[]>({
-    queryKey: ['models'],
-    queryFn: () => transport.getModels(),
+import { MODELS_KEY } from '@/layers/shared/lib';
+
+export function modelsQueryOptions(transport: Transport, opts?: ModelsQueryScope) {
+  const { sessionId, runtime, account, cwd } = opts ?? {};
+  return {
+    queryKey: [
+      ...MODELS_KEY,
+      runtime ?? null,
+      sessionId ?? null,
+      account ?? null,
+      cwd ?? null,
+    ] as const,
+    queryFn: () => transport.getModels({ sessionId, runtime, account, cwd }),
     staleTime: 30 * 60 * 1000,
-  });
+  };
 }
 ```
 
-The server delegates to `runtimeRegistry.getDefault().getSupportedModels()` via `GET /api/models`.
+`GET /api/models` (`routes/models.ts`) resolves `?runtime=` > `?sessionId=` > the registry default and returns that runtime's `getSupportedModels()`. Pass `runtime` for a session that has not started: the server has no row to resolve its `sessionId` against yet.
 
 ## Session Entity: useSubagents
 
@@ -473,17 +481,17 @@ Available subagents are fetched via `useSubagents()` in `entities/session/`. Sam
 
 ```typescript
 // apps/client/src/layers/entities/session/model/query/use-subagents.ts
-export function useSubagents() {
+export function useSubagents(sessionId?: string) {
   const transport = useTransport();
   return useQuery<SubagentInfo[]>({
-    queryKey: ['subagents'],
-    queryFn: () => transport.getSubagents(),
+    queryKey: ['subagents', sessionId ?? null],
+    queryFn: () => transport.getSubagents({ sessionId }),
     staleTime: 30 * 60 * 1000,
   });
 }
 ```
 
-The server delegates to `runtimeRegistry.getDefault().getSupportedSubagents()` via `GET /api/subagents`. Values are cached by `RuntimeCache` and refreshed on `reloadPlugins()`.
+`GET /api/subagents` (`routes/subagents.ts`) asks the runtime that owns `sessionId`, or the default runtime when there is none. Values are cached by `RuntimeCache` and refreshed on `reloadPlugins()`.
 
 ## Session Chat Store (Zustand)
 
