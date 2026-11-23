@@ -57,26 +57,39 @@ type AnsweredEntry = Pick<RoomEntry, 'id' | 'authorId'> & Pick<ReadEntry, 'body'
  *   that answered them, so a later raise asks (DOR-4144). A stamp, never a ceiling: it lowers
  *   nothing (Security M4).
  *
- * Both read the same messages ({@link contextEntryIds}), so neither counts the agent's own recent
- * posts: a noted chat's posts are kept with the outsider mark, and counting them would keep the
- * chat noted by what it wrote itself, turn after turn.
+ * Both read the messages {@link contextEntryIds} names, so neither counts the agent's own recent
+ * posts. The note also leaves out any shown message the turn's own agent wrote, which today can
+ * only be the opener of a thread it started: a noted chat's posts are kept with the outsider mark,
+ * so counting its own post would keep the chat noted by what it wrote itself, turn after turn,
+ * for as long as the thread is in use. The mark still counts that opener (DOR-4453).
  *
  * @param enabled - Whether `DORKOS_MARK_STRANGER_TURNS` is on.
  * @param deps - See {@link ShownMarkDeps}.
  * @param roomId - The room the turn runs in.
  * @param answered - The messages the turn answers; empty for an aside, which answers nothing.
  * @param context - The context built for this turn.
+ * @param selfAuthorId - The author id of the agent taking the turn.
  */
 export function marksForShown(
   enabled: boolean,
   deps: ShownMarkDeps,
   roomId: string,
   answered: readonly AnsweredEntry[],
-  context: RoomContextData
+  context: RoomContextData,
+  selfAuthorId: string
 ): { carriedOutsider?: true; outsideWords?: true } {
-  const read = [...answered, ...deps.store.listEntriesByIds(roomId, contextEntryIds(context))];
+  const shown = deps.store.listEntriesByIds(roomId, contextEntryIds(context));
+  const others = shown.filter((entry) => entry.authorId !== selfAuthorId);
   return {
-    ...strangerMarkForEntries(enabled, deps.authors, read, deps.isOwnerAuthor, roomId),
-    ...(answersOutsideWords(deps.authors, read, roomId) ? { outsideWords: true as const } : {}),
+    ...strangerMarkForEntries(
+      enabled,
+      deps.authors,
+      [...answered, ...shown],
+      deps.isOwnerAuthor,
+      roomId
+    ),
+    ...(answersOutsideWords(deps.authors, [...answered, ...others], roomId)
+      ? { outsideWords: true as const }
+      : {}),
   };
 }

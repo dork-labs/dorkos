@@ -289,8 +289,12 @@ describe('an aside shown outside words is marked too (DOR-4144)', () => {
  * outsider mark on their rows exactly as in production.
  *
  * @param clean - How many clean asks follow the stranger's.
+ * @param inThread - How many of those, first, are asked in a thread under Ana's reply to the
+ *   stranger, so that reply is shown to every one of them as the thread's opener. The owner first
+ *   posts five unaddressed lines at the top level, so a thread turn's channel glance (five lines,
+ *   falling back to ones already read) shows those and no longer the stranger's own line.
  */
-async function strangerThenCleanTurns(clean: number) {
+async function strangerThenCleanTurns(clean: number, inThread = 0) {
   const turns: RoomTurnRequest[] = [];
   const posts: string[] = [];
   let roomId = '';
@@ -322,14 +326,26 @@ async function strangerThenCleanTurns(clean: number) {
   );
   roomId = room.id;
   harness.service.addMember(room.id, harness.human, { authorId: stranger.id });
-  harness.service.post(room.id, { authorId: stranger.id, text: '@ana what ships today?' });
+  const strangerLine = harness.service.post(room.id, {
+    authorId: stranger.id,
+    text: '@ana what ships today?',
+  });
   await settleUntil(() => turns.length === 1, 'turn 1');
+  if (inThread > 0)
+    for (let n = 1; n <= 5; n += 1)
+      harness.service.post(room.id, { authorId: harness.human, text: `Launch note ${n}.` });
   for (let i = 2; i <= clean + 1; i += 1) {
-    harness.service.post(room.id, { authorId: harness.human, text: `@ana clean ask ${i}` });
+    harness.service.post(room.id, {
+      authorId: harness.human,
+      text: `@ana clean ask ${i}`,
+      ...(i - 1 <= inThread ? { replyTo: posts[0]! } : {}),
+    });
     await settleUntil(() => turns.length === i, `turn ${i}`);
   }
   return {
     turns,
+    strangerLineId: strangerLine.id,
+    replyIds: posts,
     postMarked: posts.map((id) => entryMarksOf(id, room.id)?.outsider === true),
     stillNoted: roomTurnReadOutsideWords(turns.at(-1)!.sessionId ?? 'shown-loop-ana'),
   };
@@ -345,6 +361,23 @@ describe('the note clears once the outside line is out of sight (DOR-4144)', () 
     // Every clean turn after it starts clean and writes clean posts.
     expect(turns.slice(1).map((turn) => turn.outsideWords ?? false)).toEqual(Array(7).fill(false));
     expect(postMarked.slice(1)).toEqual(Array(7).fill(false));
+    expect(stillNoted).toBe(false);
+  });
+
+  it('does not keep a chat noted through a thread under its own reply to a stranger', async () => {
+    const { turns, strangerLineId, replyIds, postMarked, stillNoted } =
+      await strangerThenCleanTurns(6, 5);
+    expect(turns).toHaveLength(7);
+    expect(turns[0]!.outsideWords).toBe(true);
+    expect(postMarked[0]).toBe(true);
+    // Turns 2-6 run in the thread and are shown Ana's marked reply as its opener, and nothing
+    // after turn 1 is shown the stranger's line itself.
+    for (const turn of turns.slice(1, 6))
+      expect(turn.roomContext.thread?.rootEntryId).toBe(replyIds[0]);
+    for (const turn of turns.slice(1))
+      expect(JSON.stringify(turn.roomContext)).not.toContain(strangerLineId);
+    expect(turns.slice(1).map((turn) => turn.outsideWords ?? false)).toEqual(Array(6).fill(false));
+    expect(postMarked.slice(1)).toEqual(Array(6).fill(false));
     expect(stillNoted).toBe(false);
   });
 });

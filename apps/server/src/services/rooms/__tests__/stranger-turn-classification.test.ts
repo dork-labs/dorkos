@@ -163,7 +163,7 @@ describe('a mini app post only in the ambient window the turn is shown (DOR-4587
   it('marks the turn with stranger marking off', () => {
     noteEntryMarks(shownPost.id, { outsider: true }, room);
     const answered = [{ id: 'entry-owner-ask', authorId: owner.id }];
-    expect(marksForShown(false, deps, room, answered, context)).toEqual({
+    expect(marksForShown(false, deps, room, answered, context, agent.id)).toEqual({
       carriedOutsider: true,
       outsideWords: true,
     });

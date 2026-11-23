@@ -140,7 +140,8 @@ export async function runOneInDispatch(
         self.deps,
         room.id,
         answered,
-        turnContext.context
+        turnContext.context,
+        target.authorId
       ),
       ...(answersUntrustedText(self.deps.authors, answered, room.id)
         ? { untrustedText: true as const }

@@ -291,7 +291,8 @@ export async function runAsideInDispatch(
       self.deps,
       room.id,
       [],
-      turnContext.context
+      turnContext.context,
+      authorId
     );
     const request: RoomTurnRequest = {
       room,
