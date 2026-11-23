@@ -79,8 +79,8 @@ Typing `/flow` with nothing after it acts as a router: tell it a stage, a piece 
     always requires you, no exceptions.
   </Step>
   <Step>
-    **Close it out.** Once you approve, `/flow:done` closes the item, files any follow-up work, and
-    cleans up. Then it looks for the next thing to do.
+    **Close it out.** Once the pull request merges, `/flow:done` closes the item, files any
+    follow-up work, and cleans up. Then it looks for the next thing to do.
   </Step>
 </Steps>
 
@@ -126,7 +126,7 @@ There's also an optional gate after DECOMPOSE (approving the plan before any cod
 <Callout type="info">
   You answer the review gate with `flow review <issue> --approve`, or send the work back with
   `--changes`. Approving approves the pull request and, by default, sets it to merge on its own once
-  its checks pass. If you merge a pull request yourself instead, run `/flow:done <issue>` to close
+  its checks pass. Once the pull request merges, whoever merged it, run `/flow:done <issue>` to close
   the item and clean up.
 </Callout>
 

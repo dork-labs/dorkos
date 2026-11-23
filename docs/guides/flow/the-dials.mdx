@@ -124,12 +124,16 @@ How aggressively the engine takes work on its own, under `autonomy` in `config.j
 | Dial                | What it does                                                      | Default       |
 | ------------------- | ----------------------------------------------------------------- | ------------- |
 | `parallel`          | How many items a drain works on at once. `0` means one at a time. | `0`           |
-| `host`              | Where chats run: `cli`, `cmux`, `dorkos`, or `auto` to pick one.  | `"auto"`      |
+| `host`\*            | Where chats run: `cli`, `cmux`, `dorkos`, or `auto` to pick one.  | `"auto"`      |
 | `maxLivePerAccount` | The most chats one account runs at once.                          | `2`           |
 | `maxLoadPerCpu`     | New chats wait while the computer is busier than this.            | `1.5`         |
 | `maxReviewRounds`   | Review rounds before the item stops and waits for you.            | `5`           |
-| `stallAfterMinutes` | Minutes without progress before a quiet chat is restarted.        | `60`          |
-| `permissionMode`    | How much each chat may do without asking.                         | `acceptEdits` |
+| `stallAfterMinutes` | Minutes without progress before flow steps in (see below).        | `60`          |
+| `permissionMode`\*  | How much each chat may do without asking.                         | `acceptEdits` |
+
+\* `host` and `permissionMode` are about your own computer, so they belong in `config.local.json`, not the shared `config.json`.
+
+When a chat makes no progress for `stallAfterMinutes`, flow acts: a chat that went away restarts once, a quiet or unreachable one stops and waits for you, and one already waiting on a person is listed as waiting.
 
 Each account flow may use has to join the rotation first; `flow accounts setup` walks you through it. See [Use all your accounts](/docs/guides/flow/use-all-your-accounts).
 
@@ -187,19 +191,21 @@ The `nudge` settings are the only way to get pinged outside your tracker. If you
 
 Each project has one more dial, and it isn't in any file in the repo. In DorkOS, open the project's Flow settings and pick **Ask me first**, **Tell me after** or **Just do it**. It decides who answers each kind of question flow runs into.
 
-| Kind of ask            | Ask me first  | Tell me after                                | Just do it                          |
-| ---------------------- | ------------- | -------------------------------------------- | ----------------------------------- |
-| Ship finished work     | asks you      | the reviewer agent approves, and you're told | the reviewer agent approves         |
-| Agent questions        | waits for you | the agent goes with its pick at the deadline | the agent picks and writes down why |
-| Retry and fix problems | asks you      | on its own, and you're told                  | on its own                          |
+| Kind of ask            | Ask me first   | Tell me after                                | Just do it                          |
+| ---------------------- | -------------- | -------------------------------------------- | ----------------------------------- |
+| Ship finished work     | asks you       | the reviewer agent approves, and you're told | the reviewer agent approves         |
+| Agent questions        | waits for you  | the agent goes with its pick at the deadline | the agent picks and writes down why |
+| Sort new ideas         | `/flow:triage` | `/flow:triage`                               | `/flow:triage`                      |
+| Retry and fix problems | asks you       | on its own, and you're told                  | on its own                          |
 
-Whatever you pick, someone checks. A question about secrets or spending always waits for you. **Customize** sets one kind apart from the rest. `flow autonomy` shows what's in force.
+Under every stop, the Flow panel never sorts new ideas on its own: run `/flow:triage`, or approve the separate daily `flow-triage` schedule. Whatever you pick, someone checks. A question about secrets or spending always waits for you. **Customize** sets one kind apart from the rest. `flow autonomy` shows what's in force.
 
 <Callout type="warn">
   **Where it starts depends on the project.** A new project starts at **Tell me after**, so its
   reviewer agent can ship work it reviewed clean. A project flow already worked in stays at **Ask me
-  first** until you choose, and so does any project flow runs without DorkOS. Check a new project's
-  setting before you leave it running.
+  first** until you choose, and so does any project flow runs without DorkOS. In those projects,
+  failing checks are still fixed on their own. Check a new project's setting before you leave it
+  running.
 </Callout>
 
 The dial lives in DorkOS, not in the repo, because it decides who checks the agents, and an agent can write any file in the checkout. Only a person can change it. By default, when the reviewer agent approves, flow still won't set the pull request to merge until a person has added the `security-reviewed` label to it.

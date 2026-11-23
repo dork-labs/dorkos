@@ -201,7 +201,7 @@ flow review DOR-201 --approve
 
 `flow` is the plugin's own command-line tool. It lives at `scripts/flow.ts` in the folder flow is installed in, so you can run it as `node --experimental-strip-types <flow-folder>/scripts/flow.ts review DOR-201 --approve`, or set up a short `flow` alias for that.
 
-Approving comments on the item and approves the pull request (unless you wrote it). By default it also sets the pull request to merge on its own once its checks pass, for exactly the version you approved. If the pull request changed since, it refuses. To send the work back instead, run `flow review DOR-201 --changes --note "what to fix"`. Nothing gets closed when you do that.
+Approving comments on the item and approves the pull request (unless you wrote it). By default it also sets the pull request to merge on its own once its checks pass, for exactly the version you approved. If the pull request changed since, it refuses. A pull request that touches security paths (such as package files or CI settings) also needs a person to add the `security-reviewed` label before flow sets it to merge. If flow can't tell which version you approved, it approves but sets nothing to merge and tells you to merge it yourself; pass `--head <commit>` to name it. To send the work back instead, run `flow review DOR-201 --changes --note "what to fix"`. Nothing gets closed when you do that.
 
 Run `flow review` yourself, from your own terminal or from DorkOS. It refuses when an agent tries to run it as you.
 

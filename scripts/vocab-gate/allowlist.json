@@ -873,6 +873,12 @@
       "reason": "DOR-2789. Source file path used as a TypeTable key; a code path, not prose."
     },
     {
+      "path": "docs/contributing/architecture.mdx",
+      "terms": ["session"],
+      "contains": "'session/browser-seat/ui-capabilities.ts': {",
+      "reason": "DOR-2789. Source file path used as a TypeTable key; a code path, not prose."
+    },
+    {
       "path": "docs/integrations/extensions.mdx",
       "terms": ["session"],
       "contains": "'session.started': {",
