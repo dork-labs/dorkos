@@ -3,7 +3,8 @@
  * what it shows (DOR-5086). A tab left open across the update to 0.141.0 runs
  * exactly this code, so the server's answer to it is tested against it.
  *
- * Copied from `v0.140.1`, logic unchanged, React and fetch removed:
+ * Copied from `v0.140.1`, React, fetch and schema parsing removed, and only the
+ * paths a refused or answered read takes (`expired` folds into `other`):
  * - `apps/client/src/layers/features/auth/model/confirm-action.ts` (`failureOf`,
  *   `readHeldAction`, lines 50-68 and 98-108)
  * - `apps/client/src/layers/features/auth/ui/ActionStepUpHost.tsx` (the read

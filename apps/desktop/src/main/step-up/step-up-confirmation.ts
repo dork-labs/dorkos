@@ -149,7 +149,7 @@ export class StepUpConfirmation {
     const notes = Array.isArray(body?.notes)
       ? body.notes.filter((note): note is string => typeof note === 'string')
       : [];
-    // The named stale reason first (DOR-5086): a page with no stamp gets the older shape beside it.
+    // The named stale reason first (DOR-5086): a call with no stamp may get the older shape beside it.
     const unavailable = UNAVAILABLE.find(
       (value) => value === (body?.stale ?? body?.passwordUnavailable)
     );

@@ -360,10 +360,12 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
    * Whether the asking page is from before the named stale reasons (DOR-5086):
    * every page this server sends carries a stamp, and such a page sends it on
    * each step-up call. A page left open across the update has none, and its
-   * code reads only `extension-risk` with an empty list, whose "Sign in again"
-   * reloads it. So it is answered in that shape, with `stale` naming the
-   * reason beside it. A script sends none either, and gets the same. It gives
-   * such a page nothing new: the same refusal, with only the label added.
+   * code reads only `extension-risk`. So it is answered in that shape, with
+   * `stale` naming the reason beside it: a refused confirm, and a
+   * `stale-sign-in` read, whose "Sign in again" signs in in place. Its read
+   * when the page itself is too old (`stale-page`) is refused instead, with
+   * words that say reload, since that sign-in alone never clears it. A script
+   * sends none either, and gets the same. None of it lets anything confirm.
    *
    * Since 0.141, remove in 0.143 (DOR-5089), once no supported page needs it.
    */
@@ -485,7 +487,8 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
         REFUSALS['extension-risk'].status
       );
     }
-    // A page from before the named reasons reads only `extension-risk` (see fromOlderPage).
+    // A page from before the named reasons reads only `extension-risk` (see fromOlderPage);
+    // only its `stale-sign-in` read gets here.
     const shown = stale && fromOlderPage(c) ? 'extension-risk' : unavailable;
     const view: HeldStepUpView = {
       heldActionId: entry.statement.heldActionId,

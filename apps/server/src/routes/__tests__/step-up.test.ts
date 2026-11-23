@@ -950,25 +950,26 @@ describe('a confirm on a ledger that opened with a clear, no mini app risk ever 
     ).toEqual({ kind: 'view', passwordUnavailable: 'extension-risk', blockedBy: [] });
   });
 
-  it.each([
-    ['a page this release sent', COOKIE],
-    // The Mac app's window sends the stamp of the app window's page (desktop step-up confirmation).
-    ['the Mac app', COOKIE],
-  ])('keeps the normal view for %s, which sends its page stamp', async (_label, cookie) => {
-    const id = await hold({ user: SESSION_NEW });
-    const read = (stamp: string) =>
-      request(app({ user: SESSION_NEW }))
-        .get(`/api/step-up/${id}`)
-        .set('Cookie', cookie)
-        .set('x-dorkos-page-stamp', stamp);
-    const old = await read(mintPageStamp(cookie, Date.now() - 120_000));
-    expect(old.status).toBe(200);
-    expect(old.body).toMatchObject({ passwordUnavailable: 'stale-page', stale: 'stale-page' });
-    const fresh = await read(mintPageStamp(cookie));
-    expect(fresh.status).toBe(200);
-    expect(fresh.body).toMatchObject({ methods: ['password'] });
-    expect(fresh.body).not.toHaveProperty('stale');
-  });
+  // The Mac app's window sends the app window's page stamp on every call
+  // (`apps/desktop/src/main/step-up/__tests__/step-up-confirmation.test.ts`), so it is this case too.
+  it.each([['a page this release sent, or the Mac app', COOKIE]])(
+    'keeps the normal view for %s: it sends its page stamp',
+    async (_label, cookie) => {
+      const id = await hold({ user: SESSION_NEW });
+      const read = (stamp: string) =>
+        request(app({ user: SESSION_NEW }))
+          .get(`/api/step-up/${id}`)
+          .set('Cookie', cookie)
+          .set('x-dorkos-page-stamp', stamp);
+      const old = await read(mintPageStamp(cookie, Date.now() - 120_000));
+      expect(old.status).toBe(200);
+      expect(old.body).toMatchObject({ passwordUnavailable: 'stale-page', stale: 'stale-page' });
+      const fresh = await read(mintPageStamp(cookie));
+      expect(fresh.status).toBe(200);
+      expect(fresh.body).toMatchObject({ methods: ['password'] });
+      expect(fresh.body).not.toHaveProperty('stale');
+    }
+  );
 
   it('confirms from a freshly loaded page of the same sign-in', async () => {
     const res = await confirmFrom(await hold({ user: SESSION_NEW }), mintPageStamp(COOKIE));
