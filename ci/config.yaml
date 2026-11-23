@@ -103,8 +103,8 @@ collect:
   # backfilled ledger entries (#1135, #1246, #1391) get live verdicts.
   backfill_from: '2026-08-12'
   # Queue builds a day whose test reports are downloaded for flaky-test-runs.
-  # Each costs about twelve requests (two listings, ten artifacts: six browser
-  # shards and four vitest shards).
+  # Each costs about eighteen requests (two listings, sixteen artifacts: six
+  # browser shards and ten vitest shards, ledger 261123-194400).
   artifact_builds_per_day: 10
   review_workflow: claude-code-review.yml
   # Playwright's JSON reporter counts flaky tests (failed, then passed on the

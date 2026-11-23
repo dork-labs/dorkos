@@ -122,7 +122,7 @@ describe('every test job builds with no test arguments, then runs --only', () =>
     [
       'test-shard',
       'Build what the suites import, once, with no test arguments',
-      "Run every package's test suite (shard ${{ matrix.shard }}/6)",
+      "Run every package's test suite (shard ${{ matrix.shard }}/${{ strategy.job-total }})",
     ],
     [
       'test-binary',

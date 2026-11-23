@@ -55,7 +55,9 @@ const data = {
 writeFileSync(new URL('./durations.json', import.meta.url), `${JSON.stringify(data, null, 2)}\n`);
 // Turbo runs packages serially. Balance each package independently, then sum
 // each runner's assigned work. This is serial test-work, NOT predicted wall time.
-const totals = Array(6).fill(0);
+// Ten, the queue's and the canary's shard count (test.yml's test-shard-count).
+const SHARDS = 10;
+const totals = Array(SHARDS).fill(0);
 const packages = [
   ...new Set(Object.keys(durations).map((key) => key.split('/').slice(0, 2).join('/'))),
 ];
@@ -63,7 +65,7 @@ for (const pkg of packages) {
   const items = Object.keys(durations)
     .filter((key) => key.startsWith(`${pkg}/`))
     .map((key) => ({ key }));
-  balance(items, 6, durations).forEach((bin, i) => (totals[i] += bin.ms));
+  balance(items, SHARDS, durations).forEach((bin, i) => (totals[i] += bin.ms));
 }
 console.log(
   `${Object.keys(durations).length} files from run ${sourceRun}; measured ${data.measuredAt}`

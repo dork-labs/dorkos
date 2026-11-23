@@ -291,7 +291,10 @@ describe('the shard step that names what the reporters found', () => {
     // the case below tests the PROPERTY instead — so any other way of
     // reintroducing the fail-open is caught too, and any other fix passes.
     expect(body.join('\n').trim(), 'the step has an empty `run:` block').not.toBe('');
-    return body.join('\n').replaceAll('${{ matrix.shard }}', '2');
+    return body
+      .join('\n')
+      .replaceAll('${{ matrix.shard }}', '2')
+      .replaceAll('${{ strategy.job-total }}', '10');
   }
 
   let stepDir: string;
@@ -381,7 +384,7 @@ describe('the shard step that names what the reporters found', () => {
     });
 
     expect(run.status, run.output).toBe(0);
-    expect(run.output).toContain('shard 2/6: no test needed a retry to pass.');
+    expect(run.output).toContain('shard 2/10: no test needed a retry to pass.');
     expect(run.output).not.toContain('::warning');
     expect(run.summary).toBe('');
   });
@@ -399,7 +402,7 @@ describe('the shard step that names what the reporters found', () => {
     expect(run.output).toContain(
       '::warning title=vitest test passed only on a retry::packages/relay/src/__tests__/watcher-manager.test.ts › watcher > emits (1 retry)'
     );
-    expect(run.summary).toContain('### Shard 2/6 — 1 test(s) only passed on a retry');
+    expect(run.summary).toContain('### Shard 2/10 — 1 test(s) only passed on a retry');
     expect(run.summary).toContain('DOR-1007');
   });
 
