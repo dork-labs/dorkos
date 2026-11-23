@@ -557,6 +557,8 @@ this block byte for byte, so it cannot drift quietly):
 - `db-check`
 - `openapi-fresh`
 - `fixtures`
+- `not-held`
+- `release-window`
 - Required workflow: dork-labs/dorkos, `.github/workflows/security-gate.yml` from `refs/heads/main` (organization rule; no bypass actors).
 <!-- ci-steward:required-checks:end -->
 <!-- prettier-ignore-end -->
