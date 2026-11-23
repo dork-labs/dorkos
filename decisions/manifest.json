@@ -7923,6 +7923,71 @@
       "supersedes": null,
       "amends": null,
       "affects": ["contributing/prioritization.md", ".agents/flow/config.json"]
+    },
+    {
+      "id": "261123-170830",
+      "slug": "http-api-is-a-projection-of-capabilities",
+      "title": "The HTTP API is a projection of capabilities; one generic mount serves it and the hand registry shrinks to zero",
+      "status": "accepted",
+      "created": "2026-11-23",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": ["260723-050219"],
+      "affects": [
+        "apps/server/src/services/core/capabilities/**",
+        "apps/server/src/routes/**",
+        "apps/server/src/http/**"
+      ]
+    },
+    {
+      "id": "261123-170831",
+      "slug": "one-error-contract-problem-json",
+      "title": "One error contract for DorkOS HTTP, RFC 9457 problem+json aligned with packages/cloud-api, switched with every caller in one change",
+      "status": "accepted",
+      "created": "2026-11-23",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": null,
+      "affects": [
+        "packages/shared/src/schemas.ts",
+        "packages/cloud-api/src/problem.ts",
+        "apps/server/src/routes/**",
+        "apps/server/src/middleware/error-handler.ts"
+      ]
+    },
+    {
+      "id": "261123-170832",
+      "slug": "api-stability-without-deprecation-periods",
+      "title": "Every API operation is stable, preview or internal; breaking changes land at once with every caller fixed, with no deprecation period",
+      "status": "accepted",
+      "created": "2026-11-23",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": null,
+      "affects": [
+        "apps/server/src/routes/**",
+        "apps/server/src/services/core/capabilities/**",
+        "docs/api/**"
+      ]
+    },
+    {
+      "id": "261123-170833",
+      "slug": "one-event-contract",
+      "title": "One event contract, a DorkOsEvent envelope and type union with seq and replay on every stateful stream; duplicate streams removed",
+      "status": "accepted",
+      "created": "2026-11-23",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": null,
+      "affects": [
+        "packages/shared/src/session-stream.ts",
+        "apps/server/src/routes/events.ts",
+        "docs/integrations/sse-protocol.mdx"
+      ]
     }
   ]
 }
