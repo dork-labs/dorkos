@@ -326,13 +326,15 @@ jobs:
       # for 9 hours). open-pr.sh holds the rules (cap, computed labels,
       # provenance, hold only with a reason), pr-create-guard refuses a bare
       # `gh pr create`, and hold-reason-check.sh is the advisory hold-reason
-      # workflow's decision. Stubbed `gh`, throwaway git repos, node for the
+      # workflow's decision. not-held-check.sh is the not-held check (DOR-5103),
+      # which fails while `hold` is on. Stubbed `gh`, throwaway git repos, node for the
       # guard and the security-path classifier.
-      - name: Open-PR script, PR-create guard and hold-reason fixtures
+      - name: Open-PR script, PR-create guard, hold-reason and not-held fixtures
         run: |
           bash scripts/test-pr-create-guard.sh
           bash scripts/test-open-pr.sh
           bash scripts/test-hold-reason-check.sh
+          bash scripts/test-not-held-check.sh
 
       # in-project.sh is the wrapper every working-tree hook in settings.json
       # runs through; it decides whether a hook runs at all once a session has

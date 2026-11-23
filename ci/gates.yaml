@@ -255,6 +255,11 @@ gates:
     source: .github/workflows/hold-reason.yml
     purpose: Advisory; flags a PR carrying the hold label with no comment starting hold, so every hold says why and who lifts it.
 
+  # --- not-held.yml ---
+  - id: wf.not-held.not-held
+    source: .github/workflows/not-held.yml
+    purpose: Fails while a PR or merge-queue entry carries the hold label, so a hold stops a merge by itself once PRs auto-merge at open (DOR-5103). Advisory until added to the ruleset.
+
   # --- scripts-test.yml ---
   - id: wf.scripts-test.fixtures
     source: .github/workflows/scripts-test.yml
