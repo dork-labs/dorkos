@@ -90,7 +90,11 @@ Here's the full list, in case you're scripting a deployment or writing a systemd
 
 <TypeTable
   type={{
-    ANTHROPIC_API_KEY: { type: 'string', description: 'Claude API key (required)' },
+    ANTHROPIC_API_KEY: {
+      type: 'string',
+      description:
+        'Claude API key. Not needed if this computer is already signed in to Claude Code, or if you connect AI another way in the app',
+    },
     DORKOS_PORT: { type: 'number', description: 'Server port', default: "'4242'" },
     DORKOS_HOST: {
       type: 'string',

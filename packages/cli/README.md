@@ -191,7 +191,8 @@ dorkos config                 # Show all settings
 dorkos config set <key> <val> # Change a setting
 dorkos init                   # Walk through setup step by step
 dorkos init --yes             # Accept all the defaults
-dorkos cleanup                # Remove all DorkOS data
+dorkos doctor                 # Check your setup and explain any problems
+dorkos cleanup                # Remove DorkOS data (asks before each step)
 ```
 
 ### Flags

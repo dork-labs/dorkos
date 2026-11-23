@@ -135,7 +135,7 @@ To undo it: turn the checkbox off (it takes effect on your next link), and remov
 Every time an agent finishes a turn, DorkOS knows a few plain facts about it: which model ran, how many tokens it used, how long it took, and what it cost. You can choose to share a short summary of those facts with us, so we can see how the different runtimes compare. Like crash reports, this is **off until you turn it on**.
 
 - It goes to dorkos.ai, the same place as everything else, and nowhere else.
-- Each turn sends one small summary: the model, the runtime (Claude Code, Codex, or OpenCode), the input and output token counts, the turn's time, and its cost.
+- Each turn sends one small summary: the model, the runtime (Claude Code, Codex, OpenCode, or DorkOS's own engine), the input and output token counts, the turn's time, and its cost.
 - It carries **no** prompt, **no** code, **no** file path, and **nothing** you or the agent said. It is counts and a model name, full stop.
 
 This is the same AI data DorkOS can already put on your own traces (see [observability](/docs/self-hosting/observability)). That side is always yours and never reaches us. This setting is the opposite direction: it, and only it, shares those counts with DorkOS, and only when you turn it on.
@@ -171,6 +171,12 @@ export DORKOS_TELEMETRY_DISABLED=1
 ```
 
 Either one on its own is enough. When a kill switch is set, no channel sends anything even if its config flag is `true`.
+
+The switches reach a little further than the channels on this page:
+
+- DorkOS stops checking for a newer version, both in the server and in the `dorkos` command. The Mac app's own updater still checks.
+- DorkOS asks the agent programs it starts (Claude Code, Codex and OpenCode) not to send their own usage data or error reports. It does this by passing `DO_NOT_TRACK=1`, `DISABLE_TELEMETRY=1` and `DISABLE_ERROR_REPORTING=1` to them.
+- On the Mac app, a switch you set in your shell's startup file (like `~/.zshrc`) counts too, even when you open the app from the Dock.
 
 ## See and change it from the command line
 
