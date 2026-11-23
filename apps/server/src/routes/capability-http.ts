@@ -20,7 +20,8 @@
  * every test, the route census sees it whatever started, and a collision with a
  * hand route fails when the app is built rather than on a request. The live
  * registry is read per request because it is composed and handed over during
- * boot; a capability whose domain did not start answers `404`, and a server
+ * boot; a capability whose domain did not start answers `404`
+ * ({@link NOT_ON_THIS_COMPUTER}), and a server
  * still starting answers `503`.
  *
  * ## Hand routes
@@ -62,6 +63,9 @@ export const HAND_SERVED_CAPABILITIES: Readonly<Record<string, string>> = Object
   'rooms.reseat': 'routes/room-reseat.ts; moves onto the mount with the rooms domain',
   'capabilities.list': 'routes/capabilities-catalog.ts; moves onto the mount with its page shape',
 });
+
+/** What a declared path answers when its capability did not start on this server. */
+export const NOT_ON_THIS_COMPUTER = "This isn't available on this computer.";
 
 /** A capability the mount serves: one that declares an `http` surface. */
 type ServedCapability = CapabilityDefinition & { surfaces: { http: HttpSurface } };
@@ -168,14 +172,20 @@ export function createCapabilityHttpRoutes(deps: CapabilityHttpDeps): Hono<ApiEn
     }
     claimed.set(key, capability.id);
     const served = capability as ServedCapability;
-    router.on(surface.method.toUpperCase(), path, (c) =>
-      dispatchCapability(c, {
-        registry: deps.registry(),
+    router.on(surface.method.toUpperCase(), path, (c) => {
+      const registry = deps.registry();
+      // The path is declared on every server, but its domain may not have
+      // started on this one (no mesh, say): not here, rather than "unknown".
+      if (registry && !registry.get(served.id)) {
+        return c.json({ error: NOT_ON_THIS_COMPUTER, code: 'UNKNOWN_CAPABILITY' }, 404);
+      }
+      return dispatchCapability(c, {
+        registry,
         id: served.id,
         input: requestInput(c, surface),
         ...(surface.success ? { success: surface.success } : {}),
-      })
-    );
+      });
+    });
   }
   return router;
 }

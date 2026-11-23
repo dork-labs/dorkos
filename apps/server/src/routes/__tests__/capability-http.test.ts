@@ -46,6 +46,7 @@ import type { ApiEnv } from '../../http/api-chain.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {
   HAND_SERVED_CAPABILITIES,
+  NOT_ON_THIS_COMPUTER,
   assertNoCapabilityRouteCollisions,
   createCapabilityHttpRoutes,
   mountedCapabilities,
@@ -114,8 +115,36 @@ describe('the mount', () => {
         .map((capability) => capability.id)
     );
     for (const id of Object.keys(HAND_SERVED_CAPABILITIES)) expect(declared.has(id)).toBe(true);
-    // The list may only shrink: an entry leaves with its hand route.
-    expect(Object.keys(HAND_SERVED_CAPABILITIES).length).toBeLessThanOrEqual(9);
+  });
+
+  // A ratchet: this list may only shrink. When a capability moves onto the
+  // mount, delete its hand route and its entry, and take it out of this list
+  // too. Never add one.
+  it('pins the hand-served list, which may only shrink', () => {
+    expect(Object.keys(HAND_SERVED_CAPABILITIES).sort()).toEqual([
+      'audit.account_timeline',
+      'audit.get',
+      'audit.query',
+      'audit.running_chats',
+      'audit.verify',
+      'capabilities.list',
+      'operator.activity_list',
+      'rooms.reseat',
+      'rooms.reseat_options',
+    ]);
+  });
+
+  it('answers 404 on a declared path whose capability did not start on this server', async () => {
+    const registry = composeRegistry([], { logger: noopLogger });
+    const res = await request(mount(registry, agentPauseDomain.capabilities)).get(
+      '/api/agents/pauses'
+    );
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({
+      error: NOT_ON_THIS_COMPUTER,
+      code: 'UNKNOWN_CAPABILITY',
+    });
+    expect(NOT_ON_THIS_COMPUTER).toBe("This isn't available on this computer.");
   });
 
   it('answers 503 while boot has not handed the registry over', async () => {

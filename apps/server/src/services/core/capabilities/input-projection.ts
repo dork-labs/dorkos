@@ -57,3 +57,29 @@ export function splitPathParams(
   const moved = carried.some((name) => name in shape);
   return { params: z.object(params), rest: moved ? z.object(rest) : input };
 }
+
+/**
+ * Refuse an HTTP surface whose input a caller could not send: a `get` or
+ * `delete` has no body, so when its surface names `query`, every input field
+ * must be either a path segment's or on that list.
+ *
+ * @param capability - The capability being composed.
+ * @throws Naming the fields no request could carry.
+ */
+export function assertHttpInputReachable(capability: CapabilityDefinition): void {
+  const http = capability.surfaces.http;
+  if (!http?.query || (http.method !== 'get' && http.method !== 'delete')) return;
+  const carried = [...http.path.matchAll(/\{([^}]+)\}/g)].map(
+    (match) => http.params?.[match[1]!] ?? match[1]!
+  );
+  const unreachable = Object.keys(capabilityInputObject(capability).shape).filter(
+    (field) => !carried.includes(field) && !http.query!.includes(field)
+  );
+  if (unreachable.length > 0) {
+    throw new Error(
+      `Capability registry: "${capability.id}" is ${http.method.toUpperCase()} ${http.path}, ` +
+        `which has no body, so no request can send ${unreachable.join(', ')}. ` +
+        'Put each in the path or in http.query.'
+    );
+  }
+}

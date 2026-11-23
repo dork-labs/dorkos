@@ -28,7 +28,10 @@ import type { OpenAPIRegistry, RouteConfig } from '@asteasolutions/zod-to-openap
 import type { z } from 'zod';
 import type { HttpSurface, HttpSuccessStatus } from '@dorkos/shared/capabilities';
 import type { CapabilityDefinition } from './capability-definition.js';
-import { registerInvokeOperation } from '../openapi/capabilities-invoke.js';
+import {
+  capabilityStandardResponses,
+  registerInvokeOperation,
+} from '../openapi/capabilities-invoke.js';
 import { capabilityInputObject, splitPathParams } from './input-projection.js';
 
 import type { CapabilityRegistry } from './registry.js';
@@ -96,7 +99,8 @@ function projectRequest(
 }
 
 /**
- * The documented success response of a capability's route.
+ * The documented responses of a capability's route: its success, and the
+ * dispatcher's standard ones beside it.
  *
  * @param capability - The capability.
  * @param status - The route's success status.
@@ -107,10 +111,12 @@ function projectSuccess(
   status: HttpSuccessStatus
 ): RouteConfig['responses'] {
   const description = `${capability.title} result`;
-  if (status === 204) return { 204: { description } };
-  return {
-    [status]: { description, content: { 'application/json': { schema: capability.output } } },
-  };
+  const success =
+    status === 204
+      ? { description }
+      : { description, content: { 'application/json': { schema: capability.output } } };
+  // A 202 success replaces the approval entry: both mean "accepted, not done".
+  return { ...capabilityStandardResponses(), [status]: success };
 }
 
 /**

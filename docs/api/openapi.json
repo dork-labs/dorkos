@@ -21205,6 +21205,43 @@
           "reason"
         ]
       },
+      "CapabilityApprovalRequired": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "approval_required"
+            ]
+          },
+          "capabilityId": {
+            "type": "string"
+          },
+          "approvalId": {
+            "type": "string",
+            "description": "The approval a person decides."
+          },
+          "approvalToken": {
+            "type": "string",
+            "description": "Send it back in the `X-DorkOS-Approval` header once a person allows the call."
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "capabilityId",
+          "approvalId",
+          "approvalToken",
+          "expiresAt",
+          "message"
+        ],
+        "additionalProperties": {}
+      },
       "ActorType": {
         "type": "string",
         "enum": [
@@ -106669,6 +106706,66 @@
                 "schema": {}
               }
             }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -106704,6 +106801,66 @@
                   "items": {
                     "$ref": "#/components/schemas/ManagedMcpServerView"
                   }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -106874,6 +107031,66 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -106922,6 +107139,66 @@
                   "items": {
                     "$ref": "#/components/schemas/ManagedMcpServer"
                   }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -107096,6 +107373,66 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       },
@@ -107142,6 +107479,66 @@
                   "items": {
                     "$ref": "#/components/schemas/ManagedMcpServer"
                   }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -107196,6 +107593,66 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -107244,6 +107701,66 @@
                   "items": {
                     "$ref": "#/components/schemas/ManagedMcpServer"
                   }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -107313,6 +107830,66 @@
                   "required": [
                     "ok"
                   ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -107400,6 +107977,66 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -107440,6 +108077,66 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
               }
             }
           }
@@ -107499,6 +108196,66 @@
                 "schema": {}
               }
             }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -107548,6 +108305,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuditVerifyResult"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -107658,6 +108475,66 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -107690,6 +108567,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuditGetResult"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -107788,6 +108725,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuditQueryResult"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -108048,6 +109045,66 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -108096,6 +109153,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentPauseResult"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -108150,6 +109267,66 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -108169,6 +109346,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentPauseList"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -108556,6 +109793,66 @@
                 }
               }
             }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -108616,41 +109913,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "string",
-                      "enum": [
-                        "approval_required"
-                      ]
-                    },
-                    "capabilityId": {
-                      "type": "string"
-                    },
-                    "approvalId": {
-                      "type": "string",
-                      "description": "The approval a person decides."
-                    },
-                    "approvalToken": {
-                      "type": "string",
-                      "description": "Send it back in the `X-DorkOS-Approval` header once a person allows the call."
-                    },
-                    "expiresAt": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "status",
-                    "capabilityId",
-                    "approvalId",
-                    "approvalToken",
-                    "expiresAt",
-                    "message"
-                  ],
-                  "additionalProperties": {}
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
                 }
               }
             }
@@ -108660,21 +109923,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "description": "What went wrong, in one sentence."
-                    },
-                    "code": {
-                      "type": "string",
-                      "description": "A stable code, e.g. `UNKNOWN_CAPABILITY`."
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": {}
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -108684,45 +109933,27 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "description": "What went wrong, in one sentence."
-                    },
-                    "code": {
-                      "type": "string",
-                      "description": "A stable code, e.g. `UNKNOWN_CAPABILITY`."
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": {}
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           },
           "404": {
-            "description": "No capability has that id, or the thing it names was not found",
+            "description": "Not available on this computer, or the thing it names was not found",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "description": "What went wrong, in one sentence."
-                    },
-                    "code": {
-                      "type": "string",
-                      "description": "A stable code, e.g. `UNKNOWN_CAPABILITY`."
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": {}
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -108732,21 +109963,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "description": "What went wrong, in one sentence."
-                    },
-                    "code": {
-                      "type": "string",
-                      "description": "A stable code, e.g. `UNKNOWN_CAPABILITY`."
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": {}
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

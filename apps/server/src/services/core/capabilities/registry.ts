@@ -17,6 +17,8 @@
  *
  * @module services/core/capabilities/registry
  */
+import { assertNarrowDeclarations } from './declarations/narrow-declarations.js';
+import { assertHttpInputReachable } from './input-projection.js';
 import { runAsAgent } from '../../audit/audit-trail.js';
 import { z } from 'zod';
 import {
@@ -238,22 +240,6 @@ export interface CapabilityPreflightResult {
    */
   readonly spend?: SpendPreflight;
 }
-
-/**
- * The only capabilities that may declare `cancelWindow`, the 60-second hold
- * that stands in for an approval card (spec `trusted-by-default-flip` §5.6).
- * `composeRegistry` refuses any other, so a new one is a reviewed edit here.
- */
-export const CANCEL_WINDOW_CAPABILITY_IDS: ReadonlySet<string> = new Set([
-  'connectors.execute_destructive',
-]);
-
-/**
- * The only capabilities that may declare `allowFromWifi`: actions that lower
- * an agent's power, which a person on Wi-Fi must be able to take.
- * `composeRegistry` refuses any other, so a new one is a reviewed edit here.
- */
-export const WIFI_ALLOWED_CAPABILITY_IDS: ReadonlySet<string> = new Set(['agent.pause']);
 
 /**
  * The hand-registered MCP tools one MCP server built, reachable by the request
@@ -610,17 +596,9 @@ export function composeRegistry(
         );
       }
 
-      // A cancel window lets an irreversible call run without a card; only the
-      // one action spec `trusted-by-default-flip` §5.6 designed it for may
-      // declare one (see `CANCEL_WINDOW_CAPABILITY_IDS`).
-      if (capability.cancelWindow && !CANCEL_WINDOW_CAPABILITY_IDS.has(id)) {
-        throw new Error(`Capability registry: "${id}" may not declare a cancel window.`);
-      }
-      // Only an action that lowers an agent's power may run from Wi-Fi (see
-      // `WIFI_ALLOWED_CAPABILITY_IDS`).
-      if (capability.allowFromWifi && !WIFI_ALLOWED_CAPABILITY_IDS.has(id)) {
-        throw new Error(`Capability registry: "${id}" may not run from a Wi-Fi sign-in.`);
-      }
+      // A cancel window or Wi-Fi reach lets a call skip a protection; only the
+      // reviewed ids may declare one (`declarations/narrow-declarations.ts`).
+      assertNarrowDeclarations(capability);
       if (!id.startsWith(`${domain.name}.`)) {
         throw new Error(
           `Capability registry: id "${id}" must be prefixed with its domain name "${domain.name}." (declared in domain "${domain.name}").`
@@ -641,6 +619,7 @@ export function composeRegistry(
         claim(cliVerbs, key, id, 'CLI verb');
       }
       if (surfaces.http) {
+        assertHttpInputReachable(capability);
         claim(
           httpRoutes,
           `${surfaces.http.method.toUpperCase()} ${surfaces.http.path}`,

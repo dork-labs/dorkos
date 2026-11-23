@@ -79,7 +79,7 @@ export const AGENT_COMPUTER_WRITES: ReadonlyMap<string, string> = new Map([
   // An agent's own promises, and stopping one.
   ['POST /api/agents/:id/todo-promises', 'records a to-do'],
   ['PATCH /api/todo-promises/:id', 'updates a to-do'],
-  ['POST /api/agents/:id/pause', 'pauses an agent; anyone may stop any agent'],
+  ['POST /api/agents/:agentId/pause', 'pauses an agent; anyone may stop any agent'],
   // Finding agents, and saying this one is alive.
   ['POST /api/agents/resolve', 'reads agents by path; a read sent as a POST'],
   ['POST /api/mesh/discover', 'lists agents on disk without registering them'],

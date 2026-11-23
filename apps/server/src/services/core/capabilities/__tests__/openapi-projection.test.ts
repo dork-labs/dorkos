@@ -186,8 +186,21 @@ describe('registerCapabilitiesInOpenApi', () => {
       '400',
       '403',
       '404',
+      '500',
       '503',
     ]);
+  });
+
+  it('documents the dispatcher’s standard responses on every projected operation', () => {
+    const doc = new OpenAPIRegistry();
+    registerCapabilitiesInOpenApi(composeRegistry([demoDomain], deps), doc);
+    const get = generate(doc).paths?.['/api/demo/things']?.get;
+    expect(Object.keys(get?.responses ?? {}).sort()).toEqual(
+      ['200', '202', '400', '403', '404', '500', '503'].sort()
+    );
+    expect(get?.responses?.['404']?.content?.['application/json']?.schema).toEqual({
+      $ref: '#/components/schemas/ErrorResponse',
+    });
   });
 
   it('reads a renamed path segment, a POST’s query fields and the success status from the surface', () => {
@@ -225,7 +238,8 @@ describe('registerCapabilitiesInOpenApi', () => {
     expect(
       Object.keys((body?.content['application/json']?.schema as { properties: object }).properties)
     ).toEqual(['tag']);
-    expect(Object.keys(post?.responses ?? {})).toEqual(['201']);
+    expect(Object.keys(post?.responses ?? {})).toContain('201');
+    expect(Object.keys(post?.responses ?? {})).not.toContain('200');
   });
 
   it('throws when a capability path collides with a hand-registered one', () => {
