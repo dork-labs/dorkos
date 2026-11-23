@@ -21,6 +21,20 @@ describe('problemBody', () => {
   });
 });
 
+describe('problemBody options', () => {
+  it('accepts only error statuses', () => {
+    // @ts-expect-error a problem never carries a success status
+    expect(() => problemBody('not_found', { status: 200 })).not.toThrow();
+    expect(problemBody('not_found', { status: 410 }).status).toBe(410);
+  });
+
+  it('rounds retryAfterMs up to a whole, non-negative number', () => {
+    expect(problemBody('rate_limited', { retryAfterMs: 1500.2 }).retryAfterMs).toBe(1501);
+    expect(problemBody('rate_limited', { retryAfterMs: -5 }).retryAfterMs).toBe(0);
+    expect(isProblem(problemBody('rate_limited', { retryAfterMs: 0.4 }))).toBe(true);
+  });
+});
+
 describe('problem', () => {
   it('answers with the problem media type, the status and a Retry-After', async () => {
     const app = new Hono();

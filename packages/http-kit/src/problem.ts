@@ -6,7 +6,11 @@
  * @module http-kit/problem
  */
 import type { Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type {
+  ClientErrorStatusCode,
+  ContentfulStatusCode,
+  ServerErrorStatusCode,
+} from 'hono/utils/http-status';
 import { z } from 'zod';
 import {
   PROBLEM_CODES,
@@ -17,17 +21,21 @@ import {
   type ProblemIssues,
 } from '@dorkos/shared/problem';
 
+/** A status a problem may carry: a client or server error, never a success. */
+export type ProblemStatus = ClientErrorStatusCode | ServerErrorStatusCode;
+
 /** What a sender may say about one occurrence, beyond its code. */
 export interface ProblemOptions {
   /** A longer explanation of this occurrence, safe to show a person. */
   detail?: string;
   /** The status, when this occurrence needs a different one than the code's default. */
-  status?: ContentfulStatusCode;
+  status?: ProblemStatus;
   /** An opaque identifier for this occurrence. */
   instance?: string;
   /**
-   * How long to wait before retrying. Also sent as a `Retry-After` header, in
-   * whole seconds rounded up.
+   * How long to wait before retrying. Rounded up to a whole, non-negative
+   * number of milliseconds, and also sent as a `Retry-After` header in whole
+   * seconds rounded up.
    */
   retryAfterMs?: number;
   /** What failed validation; {@link validationProblem} fills it. */
@@ -50,7 +58,9 @@ export function problemBody(code: ProblemCode, options: ProblemOptions = {}): Pr
     code,
     ...(options.detail === undefined ? {} : { detail: options.detail }),
     ...(options.instance === undefined ? {} : { instance: options.instance }),
-    ...(options.retryAfterMs === undefined ? {} : { retryAfterMs: options.retryAfterMs }),
+    ...(options.retryAfterMs === undefined
+      ? {}
+      : { retryAfterMs: Math.max(0, Math.ceil(options.retryAfterMs)) }),
     ...(options.issues === undefined ? {} : { issues: options.issues }),
   };
 }

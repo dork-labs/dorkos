@@ -74,7 +74,13 @@ export const PROBLEM_CODE_LIST = [
   // The state it met.
   { code: 'conflict', status: 409, title: 'Something changed. Try again.' },
   { code: 'session_locked', status: 409, title: 'This chat is busy with another reply.' },
-  { code: 'needs_approval', status: 409, title: 'This needs approval first.' },
+  /**
+   * Refused until a person approves. A refusal, so 403: the capability gate's
+   * `approval_required` is a held request (a `202` body), never a problem.
+   * `extensions-restart` answers this code with a `409` today; it moves to
+   * `403` when DOR-4979 switches the routes.
+   */
+  { code: 'needs_approval', status: 403, title: 'This needs approval first.' },
   { code: 'precondition_failed', status: 412, title: 'Something changed since you last looked.' },
   { code: 'rate_limited', status: 429, title: 'Too many requests. Try again shortly.' },
   // The server's own faults.
@@ -132,7 +138,12 @@ export function problemType(code: ProblemCode): string {
 /** The error document every failed API request is answered with. */
 export const ProblemSchema = z
   .object({
-    type: z.string().describe('A URI naming the problem type: `urn:dorkos:problem:<code>`.'),
+    type: z
+      .string()
+      .optional()
+      .describe(
+        'A URI naming the problem type: `urn:dorkos:problem:<code>`. Absent means `about:blank` (RFC 9457 §3.1.1), as in a DorkOS Cloud problem; this server always sends it.'
+      ),
     title: z.string().describe('A short, human-readable summary, safe to show a person.'),
     status: z
       .number()

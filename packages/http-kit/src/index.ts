@@ -26,4 +26,10 @@ export {
   type RefusedBodyRequest,
   type RequestBodyEnv,
 } from './request-body.js';
-export { problem, problemBody, validationProblem, type ProblemOptions } from './problem.js';
+export {
+  problem,
+  problemBody,
+  validationProblem,
+  type ProblemOptions,
+  type ProblemStatus,
+} from './problem.js';

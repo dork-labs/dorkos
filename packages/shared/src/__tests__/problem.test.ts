@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ProblemCodeSchema as CloudProblemCodeSchema } from '@dork-labs/cloud-api';
 import {
   PROBLEM_CODE_LIST,
   PROBLEM_CODES,
@@ -33,6 +34,34 @@ describe('PROBLEM_CODE_LIST', () => {
     );
     expect(ProblemCodeSchema.options.length).toBe(PROBLEM_CODE_LIST.length);
     expect(ProblemCodeSchema.safeParse('NOT_FOUND').success).toBe(false);
+  });
+});
+
+describe('agreement with the DorkOS Cloud contract', () => {
+  it('spells every code both lists hold the same way', () => {
+    const cloud = new Set<string>(CloudProblemCodeSchema.options);
+    const ours = PROBLEM_CODE_LIST.map((entry) => entry.code);
+    const shared = ours.filter((code) => cloud.has(code));
+    // A code that differs only in case or separators is a misspelling of a shared one.
+    const fold = (code: string) => code.toLowerCase().replace(/[^a-z]/g, '');
+    const cloudFolded = new Map([...cloud].map((code) => [fold(code), code]));
+    const misspelled = ours.filter((code) => !cloud.has(code) && cloudFolded.has(fold(code)));
+    expect(misspelled).toEqual([]);
+    expect(shared).toEqual(
+      expect.arrayContaining(['unauthenticated', 'forbidden', 'malformed_request', 'not_found'])
+    );
+  });
+
+  it('reads a Cloud-shaped problem, which has no type', () => {
+    expect(
+      isProblem({
+        code: 'rate_limited',
+        status: 429,
+        title: 'Slow down.',
+        retryAfterMs: 1000,
+        requiredPlanDisplayName: 'Any plan',
+      })
+    ).toBe(true);
   });
 });
 

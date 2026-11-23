@@ -1,3 +1,4 @@
+import { gzipSync } from 'node:zlib';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import {
@@ -49,6 +50,41 @@ describe('parseRequestBody', () => {
     const res = await post(`${base}/a`, JSON.stringify({ text: 'x'.repeat(100) }));
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ thrown: 'entity.too.large' });
+  });
+
+  it('throws malformed JSON to the error handler', async () => {
+    const base = await serve(echoApp());
+    const res = await post(`${base}/a`, '{"a":');
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ thrown: 'entity.parse.failed' });
+  });
+
+  it('refuses a top-level string, as strict mode does', async () => {
+    const base = await serve(echoApp());
+    const res = await post(`${base}/a`, '"just a string"');
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ thrown: 'entity.parse.failed' });
+  });
+
+  it('reads a chunked body with nothing in it as {}, not as no body', async () => {
+    const base = await serve(echoApp());
+    const res = await fetch(`${base}/a`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: new ReadableStream({ start: (controller) => controller.close() }),
+      duplex: 'half',
+    } as RequestInit);
+    expect(await res.json()).toEqual({ body: {} });
+  });
+
+  it('inflates a gzip body', async () => {
+    const base = await serve(echoApp());
+    const res = await fetch(`${base}/a`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'content-encoding': 'gzip' },
+      body: gzipSync('{"zipped":true}'),
+    });
+    expect(await res.json()).toEqual({ body: { zipped: true } });
   });
 
   it('runs a matching rule instead, and lets it answer its own refusal', async () => {
