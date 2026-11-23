@@ -174,7 +174,7 @@ Must happen deterministically at events? ► HOOK
 Project-wide context, every session? ────► AGENTS.md
 ```
 
-Naming: commands `verb`/`noun`; agents `domain-expert`; skills `verb-ing-noun` (gerund); rules `topic.md`; hooks `action-target`.
+Naming: commands `verb`/`noun`; agents `domain-expert`; skills `verb-ing-noun` (gerund preferred, not required; name must match its directory); rules `topic.md`; hooks `action-target`.
 
 ## Core Workflows
 
@@ -184,7 +184,7 @@ Naming: commands `verb`/`noun`; agents `domain-expert`; skills `verb-ing-noun` (
 
 **Browsing third-party sites signed in** (as the operator, never with a password): the agent browser, `dorkos browser login|status|forget` + Playwright MCP `--isolated --storage-state`. How-to and the parallel-session trap: `contributing/browser-verification.md` § The agent browser. DorkOS agents get the same guidance from the seeded `using-the-agent-browser` operating skill.
 
-**Harness maintenance**: `/system:ask` (how do I…), `/system:learn` (experiment, then codify), `/system:update` (add/change a process), `/system:review` (audit for staleness/consistency/Opus-fit), `/system:release` (release + harness-maintenance phase).
+**Harness maintenance**: `/system:ask` (how do I…), `/system:learn` (experiment, then codify), `/system:update` (add/change a process), `/system:review` (audit for bloat, staleness, consistency and current-model fit), `/system:release` (release + harness-maintenance phase).
 
 **Parallel execution**: fan out independent work as multiple Agent calls in one message; `run_in_background: true` for long tasks (completion notifies automatically). Patterns, decision framework and the landing playbook: the `orchestrating-parallel-work` skill.
 
@@ -220,7 +220,7 @@ Naming: commands `verb`/`noun`; agents `domain-expert`; skills `verb-ing-noun` (
 ### Adding a New Skill
 
 1. Shared (cross-harness) → create `.agents/skills/[skill-name]/SKILL.md` + symlink at `.claude/skills/[skill-name]`; Claude-only → create directly in `.claude/skills/`.
-2. Gerund name; description must state concrete trigger conditions ("Use when …") — it is the retrieval index.
+2. Gerund name preferred, matching its directory; description must state concrete trigger conditions ("Use when …") — it is the retrieval index.
 3. Keep SKILL.md under 500 lines; push detail to reference files (one level deep).
 4. Document in this README under Skills.
 
@@ -256,7 +256,7 @@ Naming: commands `verb`/`noun`; agents `domain-expert`; skills `verb-ing-noun` (
 
 ### Review Cycle
 
-Run `/system:review` periodically (and after multi-component changes): it checks inventory counts, broken/phantom references, frontmatter validity, ADR drift, staleness vs code, and Opus-fit.
+Run `/system:review` periodically (and after multi-component changes): it checks size budgets (including the 32 KiB Codex cap on `AGENTS.md`), what an agent could discover itself, rules that belong in hooks, inventory counts, broken or phantom references, skill-spec conformance, ADR drift, and staleness against the code. Evidence: `research/20261123_harness-instruction-files-best-practices.md`.
 
 ## Troubleshooting
 
