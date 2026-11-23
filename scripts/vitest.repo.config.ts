@@ -72,6 +72,7 @@ export const REPO_WIDE_SUITES = [
   '__tests__/playwright-apt-debs.test.ts',
   // Reads test.yml, browser-test.yml, docs-openapi-check.yml,
   // release-branch-contents.yml and changelog-fragment-check.yml (DOR-4639).
+  '__tests__/pr-related-step.test.ts',
   '__tests__/release-branch-ci.test.ts',
   // The guard over these two lists. It reads only scripts/, but a new suite
   // can land from any PR, so it must run in the queue too (DOR-4224).
