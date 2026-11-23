@@ -67,9 +67,15 @@
 # THE FILES, all in the order folder: `DORKOS_HEAVY_ORDER_DIR`, else
 # `load-gate/` in the DorkOS data folder (`$DORK_HOME`, else `~/.dork`), the
 # same folder whose `config.json` holds the gate's settings. It is made (mode
-# 700) on first use. Only the order file is yours to write by hand.
+# 700) on first use. Write the order file with this script's commands
+# (--insert, --move, --remove; scripts/lib/heavy-order-write.sh), never by hand
+# (DOR-5079): a hand rewrite is how other chats' labels were lost on 2026-11-22.
 #   heavy-order          one label per line; blank lines are ignored, and each
 #                        line is compared trimmed
+#   heavy-order.lock.d   the lock every write takes
+#   heavy-order.log      written here: one tab-separated line per write
+#   heavy-order.sum      written here: the sha256 of the last managed write,
+#                        so a hand edit is named on the next one
 #   heavy-order.top      written here: the top label and since when it has
 #                        been idle
 #   heavy-claims/        written here: one file per live top-of-line run
@@ -135,19 +141,73 @@ order_lock() {
 }
 order_unlock() { rmdir "$ORDER_LOCK" 2>/dev/null; return 0; }
 
+# The order file's sha256, or nothing when it is absent.
+order_hash() {
+  [ -f "$1" ] || return 0
+  { shasum -a 256 "$1" 2>/dev/null || sha256sum "$1" 2>/dev/null; } | awk 'NR == 1 { print $1 }'
+}
+
+# Store the hash of a write this script made, so a later write can tell a hand
+# edit from its own (DOR-5079).
+order_sum_store() {
+  local h
+  h=$(order_hash "$ORDER_FILE")
+  printf '%s\n' "${h:-absent}" >"$ORDER_SUM" 2>/dev/null
+  return 0
+}
+
+# Who asked: the parent's process NAME and pid, never its command line.
+order_caller() {
+  local c
+  c=$(ps -o comm= -p "$PPID" 2>/dev/null | sed 's#.*/##')
+  printf '%s[%s]' "${c:-?}" "$PPID"
+}
+
+# One audit line in heavy-order.log: UTC time, op, label, detail, caller,
+# reason, tab-separated, with no tab or newline inside a field.
+order_log() {
+  local f out='' op=$1 label=$2 detail=$3 reason=${4:-}
+  for f in "$(date -u +%FT%TZ)" "$op" "$label" "$detail" "${ORDER_CALLER:-$(order_caller)}" "$reason"; do
+    f=$(printf '%s' "$f" | tr '\t\n\r' '   ')
+    out="${out:+$out	}$f"
+  done
+  printf '%s\n' "$out" >>"$ORDER_LOG" 2>/dev/null
+  return 0
+}
+
+# Say so when the file was changed outside these commands since their last
+# write; with $1 = log, record it too. The write still goes ahead.
+order_external_check() {
+  local stored cur
+  [ -f "$ORDER_SUM" ] || return 0
+  stored=$(cat "$ORDER_SUM" 2>/dev/null)
+  cur=$(order_hash "$ORDER_FILE")
+  cur=${cur:-absent}
+  [ "$stored" = "$cur" ] && return 0
+  echo "[heavy] order: heavy-order was changed outside heavy-run-lock.sh since its last managed write. Use --insert/--move/--remove instead of editing it." >&2
+  [ "${1:-}" = log ] && order_log "external-edit-detected" "-" "stored=${stored:0:12} current=${cur:0:12}" ""
+  return 0
+}
+
 # Rewrite the order file through a temp file and a rename, so a reader never
 # sees half of it. $@ is awk's arguments (options, then the program).
 order_rewrite() {
   local tmp="$ORDER_FILE.tmp.$$"
-  awk "$@" "$ORDER_FILE" >"$tmp" && mv -f -- "$tmp" "$ORDER_FILE"
+  awk "$@" "$ORDER_FILE" >"$tmp" && mv -f -- "$tmp" "$ORDER_FILE" && order_sum_store
   rm -f -- "$tmp"
 }
 
-# Remove the first line equal (trimmed) to $1. Other lines keep their exact text.
+# Remove the first line equal (trimmed) to $1, logged as `done` (a run leaving
+# the line). Other lines keep their exact text.
 # shellcheck disable=SC2016 # awk programs, not shell expansions
 order_pop() {
+  local pos
   [ -f "$ORDER_FILE" ] || return 0
+  pos=$(awk -v l="$1" '{ t = $0; gsub(/^[ \t]+|[ \t]+$/, "", t) } NF { n++ } t == l { print n; exit }' "$ORDER_FILE")
+  [ -n "$pos" ] || return 0
+  order_external_check log
   order_rewrite -v l="$1" '{ t = $0; gsub(/^[ \t]+|[ \t]+$/, "", t) } !done && t == l { done = 1; next } 1'
+  order_log "done" "$1" "was #$pos" ""
 }
 
 # Swap the top non-blank line with the next non-blank one: "down one place".
@@ -241,7 +301,9 @@ order_rotate_stale() {
   second=$(order_second)
   # Alone in line: there is nobody to let past, so it stays.
   [ -n "$second" ] || return 0
+  order_external_check log
   order_move_top_down
+  order_log "stale-move" "$top" "below '$second'" "no live run for $((now - state_since))s"
   since=$(date -r "$state_since" '+%Y-%m-%d %H:%M %Z' 2>/dev/null || echo "epoch $state_since")
   note="- $(date '+%Y-%m-%d %H:%M %Z') (heavy-run-lock, DOR-4901): moved '$top' down one place, below '$second'. Reason: top of line since $since with no live run for $((now - state_since))s. Not deleted."
   printf '%s\n' "$note" >>"$NOTES_FILE" 2>/dev/null
@@ -257,7 +319,13 @@ order_rotate_stale() {
 
 # Set up the order layer's paths for order folder $1.
 order_init() {
+  # Read by heavy-order-write.sh (its test-only fault hook checks the folder).
+  # shellcheck disable=SC2034
+  ORDER_DIR="$1"
   ORDER_FILE="$1/heavy-order"
+  ORDER_LOG="$1/heavy-order.log"
+  ORDER_SUM="$1/heavy-order.sum"
+  ORDER_CALLER=''
   ORDER_LOCK="$1/heavy-order.lock.d"
   TOP_STATE="$1/heavy-order.top"
   CLAIMS_DIR="$1/heavy-claims"
