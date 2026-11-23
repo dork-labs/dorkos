@@ -594,7 +594,7 @@
     },
     {
       "guide": "ci.md",
-      "description": "The CI pipeline for agents: required checks (ruleset only), local ratchets, sharding, the merge queue, merge-tail, the admin-merge guard, and CI Steward (ledger, census, deadlock invariant, fence)",
+      "description": "The CI pipeline for agents: required checks (ruleset only), local ratchets, sharding, the merge queue, arming (arm.sh, the queue doors), the admin-merge guard, and CI Steward (ledger, census, deadlock invariant, fence)",
       "patterns": [
         ".github/workflows/",
         "lefthook.yml",
@@ -900,7 +900,7 @@
     },
     {
       "doc": "docs/guides/agent-browser.mdx",
-      "description": "Live local browser: two choices, saved sign-ins, Pause, included Playwright, platform limits, and legacy CLI tools",
+      "description": "Agent browsers: one signed-out browser per agent, sharing your own browser, Pause, included Playwright, platform limits, and legacy CLI tools",
       "patterns": [
         "local-browser",
         "use-panel-views",
@@ -1296,7 +1296,7 @@
     },
     {
       "doc": "docs/guides/flow/turning-on-autonomy.mdx",
-      "description": "The three ways to let `/flow` reach a review gate on its own",
+      "description": "The ways to let `/flow` run on its own, and how much it does without asking",
       "patterns": [
         "contributing/flow-engine.md",
         "apps/e2e/tests/flow/"
@@ -1304,7 +1304,7 @@
     },
     {
       "doc": "docs/guides/flow/the-dials.mdx",
-      "description": "Every `/flow` config knob, its default, and when to turn it",
+      "description": "The common `/flow` settings, their defaults, and when to turn them",
       "patterns": [
         "contributing/flow-engine.md",
         "apps/e2e/tests/flow/"
