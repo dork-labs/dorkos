@@ -15,7 +15,13 @@ npm install @dork-labs/cloud-api zod
 ```ts
 // Schemas, types and route paths. No network code, so you can validate
 // a payload without pulling in a client.
-import { EntitlementsSchema, ProblemSchema, V1_ROUTES, v1Path } from '@dork-labs/cloud-api';
+import {
+  EntitlementsSchema,
+  ProblemSchema,
+  SeatSchema,
+  V1_ROUTES,
+  v1Path,
+} from '@dork-labs/cloud-api';
 
 // The thin fetch client. No Node-only import, so a CLI, a server and a
 // browser can all use it.
@@ -745,7 +751,7 @@ or as an exact pin your own release process bumps.
 
 ## Dependencies
 
-`zod` is a **peer dependency** (`^4.6.2`), so a consumer that already has it gets one copy rather
+`zod` is a **peer dependency** (`^4.6.6`), so a consumer that already has it gets one copy rather
 than two — two copies mean two answers to `instanceof`, and schemas that silently stop
 recognising each other. The range names the lowest version actually built and tested against,
 not the whole major: this package uses `z.iso.datetime` and Zod 4's `.def` internals, and a range
