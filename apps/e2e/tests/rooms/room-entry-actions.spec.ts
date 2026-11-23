@@ -69,12 +69,14 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(toolbar).toHaveCSS('opacity', '1');
 
     // The action set, read off the accessibility tree rather than off icons.
-    // Seven: three quick reactions and the picker, then the commands — and this
+    // Eight: three quick reactions and the picker, then the commands — and this
     // message is the reader's own, so it does not offer to mention them, the
     // same way the mention picker leaves the reader out. It DOES offer their
     // profile: a person's roster row is their author row, so the id is always
-    // resolvable for a human, including the reader (DOR-1251).
-    await expect(toolbar.getByRole('button')).toHaveCount(7);
+    // resolvable for a human, including the reader (DOR-1251). It also offers
+    // to make a to-do from the message, since to-dos are on by default
+    // (DOR-5071).
+    await expect(toolbar.getByRole('button')).toHaveCount(8);
     // Three quick reactions, counted rather than named: which three they are is
     // the reader's own history across every room on this shared server, so a
     // sibling spec's reaction changes them (see `GOTCHAS.md`).
@@ -83,6 +85,7 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(toolbar.getByRole('button', { name: 'Reply in thread' })).toBeVisible();
     await expect(toolbar.getByRole('button', { name: 'Copy text' })).toBeVisible();
     await expect(toolbar.getByRole('button', { name: 'View profile' })).toBeVisible();
+    await expect(toolbar.getByRole('button', { name: 'Make a to-do' })).toBeVisible();
   });
 
   test('the toolbar encloses the buttons it is drawn around', async ({
@@ -337,6 +340,7 @@ test.describe('Rooms — every message gets a menu', () => {
       'Reply in thread',
       'Copy text',
       'View profile',
+      'Make a to-do',
     ]);
 
     await menu.getByRole('menuitem', { name: 'Reply in thread' }).click();
