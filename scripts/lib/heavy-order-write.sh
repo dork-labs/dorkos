@@ -4,6 +4,7 @@
 #
 #   bash scripts/heavy-run-lock.sh --list
 #   bash scripts/heavy-run-lock.sh --insert <label> [--after <l> | --before <l> | --at <N> | --top]
+#                                  (no position: where the label's ticket ranks; heavy-order-rank.sh)
 #   bash scripts/heavy-run-lock.sh --move <label> (--after <l> | --before <l> | --at <N> | --top)
 #   bash scripts/heavy-run-lock.sh --remove <label> --reason "<why>"
 #   bash scripts/heavy-run-lock.sh --done <label>
@@ -62,6 +63,7 @@ usage: heavy-run-lock.sh --label <label> [--tests] <command...>
        heavy-run-lock.sh --list
        heavy-run-lock.sh --status
        heavy-run-lock.sh --insert <label> [--after <label> | --before <label> | --at <N> | --top]
+                         (no position: release rows first, else where the label's DOR-id ranks)
        heavy-run-lock.sh --move <label> (--after <label> | --before <label> | --at <N> | --top)
        heavy-run-lock.sh --remove <label> --reason "<text>"
        heavy-run-lock.sh --done <label>
@@ -114,7 +116,7 @@ order_test_corrupt() {
 order_write_locked() {
   local op=$1 label=$2 mode=$3 anchor=$4 reason=$5
   local old="$ORDER_FILE.old.$$" cand="$ORDER_FILE.tmp.$$" exp="$ORDER_FILE.exp.$$"
-  local n lost extra detail pos rc=0
+  local n lost extra detail pos rc=0 note=''
   order_external_check log
   if [ -f "$ORDER_FILE" ]; then
     awk '{ gsub(/^[ \t]+|[ \t]+$/, "") } NF' "$ORDER_FILE" >"$old" || return 2
@@ -141,6 +143,19 @@ order_write_locked() {
       fi
       ;;
   esac
+  # DOR-5065: an --insert with no position goes where its ticket ranks
+  # (scripts/lib/heavy-order-rank.sh), placed against the line as it is now.
+  if [ "$rc" = 0 ] && [ "$mode" = rank ]; then
+    order_rank_place "$label" "$old"
+    # shellcheck disable=SC2154 # set by order_rank_place
+    note=$r_note
+    if [ -n "$r_at" ]; then
+      mode='at'
+      anchor=$r_at
+    else
+      mode=end
+    fi
+  fi
   if [ "$rc" = 0 ]; then
     case "$mode" in
       after | before)
@@ -210,10 +225,19 @@ order_write_locked() {
   fi
   order_sum_store
   case "$mode" in after | before) detail="$mode '$anchor'" ;; at) detail="at $anchor" ;; *) detail=$mode ;; esac
+  # Who chose the place: the work order, or a person (a --move, or an
+  # --insert that named its position). A person's moves are what DOR-5065
+  # counts in this log.
+  if [ -n "$note" ]; then
+    detail="by rank: $note"
+  elif [ "$op" = move ] || { [ "$op" = insert ] && [ "$mode" != end ]; }; then
+    detail="by hand: $detail"
+  fi
   case "$op" in remove | done) detail="was #$(order_pos "$label" "$old")" ;; esac
   pos=$(order_pos "$label" "$ORDER_FILE")
   [ -n "$pos" ] && detail="$detail -> #$pos"
   order_log "$op" "$label" "$detail" "$reason"
+  ORDER_PLACE_NOTE=$note
   rm -f -- "$old" "$exp" "$old.s" "$cand.s"
   return 0
 }
@@ -238,7 +262,17 @@ order_list() {
     echo "[heavy] order: (empty: no order)"
     return 0
   fi
-  awk '{ gsub(/^[ \t]+|[ \t]+$/, "") } NF { printf "%3d  %s\n", ++n, $0 }' "$ORDER_FILE"
+  # The rank column (DOR-5065): one flow call for the whole line, and only
+  # when some label names a ticket.
+  local l n=0
+  grep -qiE 'dor-[0-9]+' "$ORDER_FILE" && order_ranks_load
+  while IFS= read -r l; do
+    n=$((n + 1))
+    printf '%3d  %-9s  %s\n' "$n" "$(order_rank_column "$l")" "$l"
+  done < <(order_lines)
+  [ "${ORDER_RANKS_STATE:-}" = off ] && echo "[heavy] order: no ranks: $ORDER_RANKS_WHY"
+  [ -n "${ORDER_RANKS_OLD:-}" ] && echo "[heavy] order: $ORDER_RANKS_OLD"
+  return 0
 }
 
 # Parse a position from "$@": sets o_mode / o_anchor. $1 is required|optional.
@@ -304,12 +338,18 @@ order_command() {
       order_parse_pos required "$@" || { order_usage; return 2; }
     else
       order_parse_pos optional "$@" || { order_usage; return 2; }
+      # No position: the work order decides (DOR-5065). The ranks are fetched
+      # here, before the lock, so a slow tracker holds no other writer up.
+      if [ "$o_mode" = end ]; then
+        o_mode=rank
+        [ -n "$(order_ticket_of "$label")" ] && ! order_is_release "$label" && order_ranks_load
+      fi
     fi
     order_write "$op" "$label" "$o_mode" "$o_anchor" ''
     rc=$?
   fi
   if [ "$rc" = 0 ]; then
-    echo "[heavy] order: $op '$label' done"
+    echo "[heavy] order: $op '$label' done${ORDER_PLACE_NOTE:+ (by rank: $ORDER_PLACE_NOTE)}"
     order_list
   fi
   return "$rc"
