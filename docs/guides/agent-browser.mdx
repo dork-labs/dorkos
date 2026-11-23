@@ -20,17 +20,23 @@ It uses Google Chrome if you have it, and Chromium if not.
 
 If your agent stops because a site needs you, a card appears in the chat.
 It says the site needs you to sign in, or wants a person to continue.
-The card offers **Open sign-in window**. It opens a plain sign-in window just for you, in your normal colours.
+
+When a site needs you to sign in, the card offers **Open sign-in window**. It opens a plain sign-in window just for you, in your normal colours.
 Sign in there, then press **Done signing in** on the card. On a Mac, closing that window isn't enough, because Chrome keeps running.
 Your agent then returns to the same page and carries on in its own window.
-That sign-in stays in this agent’s browser.
+That sign-in stays in this agent’s browser, unless you shared yours (see below).
 Anything you had typed into a form on that page is lost, so check it before you hand it back.
+This hasn't been tested on an installed Mac app yet.
+
+When a site wants a check only a person can do, like a bot check, the card leads with **Show window**.
+Do the check in your agent’s window, then press **Continue** to hand it back.
+If the check turns out to want a password, use **Sign in instead** on the card rather than typing it in the agent’s window.
 
 These windows open on the computer running DorkOS and need a graphical desktop.
 
 ## Your own browser
 
-The browser in the app is yours. Open **Browser** outside an agent’s chat and it is named **Your browser**.
+Open **Browser** outside an agent’s chat and you get **Your browser**, which is for you.
 Agents can’t use it unless you share it. Choose where it opens:
 
 - **In DorkOS** opens the page inside the desktop app’s right panel. Its saved sign-ins are separate
@@ -42,15 +48,17 @@ Some sites open an extra sign-in window. Finish signing in there, then close it.
 
 ## Share your browser with an agent
 
-Sometimes an agent needs a site you are already signed in to. Only you can lend it your browser,
+Sometimes an agent needs a site you are already signed in to. Only you can lend it **Your browser**,
 and only by hand. In the agent’s chat, the panel says **This agent has its own browser.**
-Press **Share yours**. DorkOS asks you to confirm: the agent will use your own Chrome window and every
-site you’re signed in to there. Press **Share browser** to agree.
-Sign-ins from the browser inside the app are never copied.
+Press **Share yours**. DorkOS asks you to confirm: the agent will use the **Your browser** window
+(the one that opens **In its own window**) and every site you’re signed in to there.
+Press **Share browser** to agree. DorkOS may also ask you to confirm it’s you.
+Sign-ins from the **In DorkOS** view inside the desktop app are never shared.
 
 - **Stop sharing** works at any time. The agent loses access before its next step.
-- If the agent is replying to someone from outside your team, sharing waits until that reply ends.
-- Work that someone outside your team started can never use your browser, even after you shared it.
+- If the agent is in the middle of a turn that read text from outside your team, like a web page or
+  someone else’s message, sharing waits until that turn ends.
+- A chat that someone outside your team started can never use your browser.
 - Nothing an agent or a web page says can open the sharing question. Only your click in the panel can.
 
 ## One chat at a time

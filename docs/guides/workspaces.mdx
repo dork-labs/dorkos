@@ -134,7 +134,7 @@ An agent can have a standing workspace. Add a `workspace` setting to its `.dork/
 }
 ```
 
-`source` is the repository the agent's copy is made from. `provider` (`"worktree"` or `"clone"`) is optional and falls back to `workspaces.defaultProvider`. From then on, work DorkOS starts for the agent without naming a folder happens in its own copy of that repository: its scheduled runs, and messages that reach it from a chat app like Telegram or Slack. DorkOS makes the copy the first time it is needed. A chat you open in the app still runs in the folder the app picked for it. Give several agents the same `source` and each gets a copy of its own. A clone, or a source whose `.dork/workspace.json` runs setup hooks, may wait for your OK before it is made.
+`source` is the repository the agent's copy is made from. `provider` (`"worktree"` or `"clone"`) is optional and falls back to `workspace.defaultProvider`. From then on, work DorkOS starts for the agent without naming a folder happens in its own copy of that repository: its scheduled runs, its heartbeat check-ins, and messages that reach it from a chat app like Telegram or Slack. DorkOS makes the copy the first time it is needed. A chat you open in the app still runs in the folder the app picked for it. Give several agents the same `source` and each gets a copy of its own. A clone, or a source whose `.dork/workspace.json` runs setup hooks, may wait for your OK before it is made.
 
 The setting has three modes:
 
