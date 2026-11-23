@@ -449,6 +449,13 @@ jobs:
       - name: Arm-door fixtures
         run: bash scripts/test-arm-door.sh
 
+      # pr-gates-check.sh runs arm-door's decision on the pull request (minus
+      # the verify-proof reason), so auto-merge can wait for the sign-offs
+      # (DOR-5107). End to end through the real arm-door.sh, qa-real-data.sh and
+      # design-ok.sh, with a stubbed `gh`.
+      - name: PR-gates fixtures
+        run: bash scripts/test-pr-gates-check.sh
+
       # QA's real-data gate (DOR-4904), shared by the arm script and arm-door:
       # a config or migration change that slips past QA, and an ordinary one
       # held for a check it doesn't need, are both pinned.
