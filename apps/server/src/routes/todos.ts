@@ -1,6 +1,6 @@
 /**
- * The to-do routes (DOR-3088): list, make and change to-dos at `/api/todos`. Mounted only behind
- * `DORKOS_TODOS_ENABLED` until v1 is complete.
+ * The to-do routes (DOR-3088): list, make and change to-dos at `/api/todos`. Mounted while
+ * `DORKOS_TODOS_ENABLED` is on, which it is by default (DOR-5071).
  *
  * ## Who is asking
  *

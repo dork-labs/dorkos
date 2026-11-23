@@ -161,8 +161,8 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     sessionDomain,
     chatDomain,
     todoPromisesDomain,
-    // Hidden behind `DORKOS_TODOS_ENABLED` until To-dos ship (DOR-3088), so the generated docs do
-    // not describe tools nobody can call.
+    // Left out when `DORKOS_TODOS_ENABLED` is set to false (on by default since DOR-5071), so the
+    // generated docs do not describe tools nobody can call.
     ...(env.DORKOS_TODOS_ENABLED ? [todosDomain] : []),
     workQueueDomain,
     workClaimDomain,

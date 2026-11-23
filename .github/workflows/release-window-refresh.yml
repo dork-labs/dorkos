@@ -1,0 +1,75 @@
+name: release-window-refresh
+
+# Re-runs failed `release-window` checks once the window is open again
+# (DOR-5102). GitHub raises no event when the MERGE_FREEZE variable is cleared
+# or when a version reaches npm, so a PR that went red during a freeze or a
+# release would stay red, and auto-merge would wait for ever.
+#
+# When the window is open (no freeze, main's VERSION on npm; see
+# scripts/release-window-check.sh `open`), it re-runs the latest
+# `release-window` run of each open PR's head when that run failed
+# (`rerun-list`). When the window is closed it does nothing.
+#
+# Triggers: after a release publish finishes, after every push to main, by
+# hand (`gh workflow run release-window-refresh.yml`, right after clearing
+# MERGE_FREEZE), and every 15 minutes as a backstop. GitHub delays scheduled
+# runs by hours at times, so the schedule is only the backstop.
+#
+# Not a required check. Its only write is re-running workflow runs; it checks
+# out main's copy of its script.
+
+on:
+  workflow_run:
+    workflows: [Release Publish]
+    types: [completed]
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '7-59/15 * * * *'
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: release-window-refresh
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/release-window-check.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Re-run release-window checks that failed while the window was closed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          MERGE_FREEZE: ${{ vars.MERGE_FREEZE }}
+        run: |
+          if ! bash scripts/release-window-check.sh open; then
+            echo "The window is closed; nothing to re-run."
+            exit 0
+          fi
+          work=$(mktemp -d)
+          gh run list --repo "$REPO" --workflow release-window.yml --event pull_request --limit 200 \
+            --json databaseId,headSha,conclusion,createdAt > "$work/runs.json"
+          gh pr list --repo "$REPO" --state open --limit 200 \
+            --json headRefOid --jq '.[].headRefOid' > "$work/heads.txt"
+          ids=$(bash scripts/release-window-check.sh rerun-list "$work/runs.json" "$work/heads.txt")
+          n=0
+          for id in $ids; do
+            gh run rerun "$id" --repo "$REPO" && n=$((n + 1)) || echo "::warning::could not re-run $id"
+          done
+          echo "Re-ran $n release-window run(s)."

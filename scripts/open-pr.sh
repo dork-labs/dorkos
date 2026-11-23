@@ -43,7 +43,20 @@
 #      is posted straight after as a one-line comment, `hold: <reason>`, which
 #      the hold-reason workflow looks for. Without `--hold` the PR never gets
 #      `hold`, from here or from `--extra-label`.
-#   Then it prints the PR URL, the head SHA and the labels GitHub reports.
+#   5. Auto-merge (DOR-5107, under DOR-5098): `gh pr merge --auto`, so the PR
+#      merges as soon as every required check is green, with nobody arming it.
+#      Only when it is safe, decided here in code:
+#        - not a draft (open a draft when you only want CI feedback), and not
+#          opened with `--hold`;
+#        - main's ci/required-checks.json (read from $OPEN_PR_BASE, never the
+#          branch's copy) already requires `not-held`, `release-window` and
+#          `pr-gates`. Those make a hold, a freeze or release, and a missing
+#          Security, QA or design sign-off block the merge by themselves. Until
+#          the ruleset requires them, the PR opens without auto-merge, exactly
+#          as before, so this switches itself on when they become required.
+#      The strategy flag is left off: the merge queue owns it.
+#   Then it prints the PR URL, the head SHA, the labels GitHub reports, and
+#   whether auto-merge is on.
 #
 # `--extra-label` adds any other label, but never `hold` or another hold label
 # (`do-not-merge`, `wip`, `blocked`), never a gate label someone else owns
@@ -273,6 +286,28 @@ create=("$GH" pr create --base main --head "$branch" --title "$title" --body-fil
 [ "$draft" = 1 ] && create+=(--draft)
 for label in "${labels[@]}"; do create+=(--label "$label"); done
 
+# --- 5. Auto-merge, decided before anything is opened. -----------------------
+AUTO_MERGE_GATES=(not-held release-window pr-gates)
+auto_merge=0
+if [ "$draft" = 1 ]; then
+  auto_why="off: a draft (mark it ready, then gh pr merge --auto <n>)"
+elif [ "$hold_given" = 1 ]; then
+  auto_why="off: opened with --hold; whoever lifts the hold turns it on"
+elif ! required_json=$(git show "$BASE:ci/required-checks.json" 2>/dev/null); then
+  auto_why="off: $BASE has no ci/required-checks.json"
+else
+  absent=""
+  for gate in "${AUTO_MERGE_GATES[@]}"; do
+    jq -e --arg g "$gate" '.contexts | index($g)' >/dev/null 2>&1 <<<"$required_json" || absent="$absent $gate"
+  done
+  if [ -n "$absent" ]; then
+    auto_why="off: main does not require$absent yet, so a hold, freeze or missing sign-off would not stop a merge"
+  else
+    auto_merge=1
+    auto_why="on: merges when every required check is green"
+  fi
+fi
+
 joined=$(IFS=,; echo "${labels[*]}")
 if [ "$dry_run" = 1 ]; then
   echo "labels: $joined"
@@ -283,6 +318,8 @@ if [ "$dry_run" = 1 ]; then
   echo "head: $head_sha ($branch)"
   echo "would run: $(printf '%q ' "${create[@]}")"
   [ "$hold_given" = 1 ] && echo "would run: $(printf '%q ' "$GH" pr comment "<new PR>" --body "hold: $hold_reason")"
+  echo "auto-merge: $auto_why"
+  [ "$auto_merge" = 1 ] && echo "would run: $(printf '%q ' "$GH" pr merge "<new PR>" --auto)"
   exit 0
 fi
 
@@ -312,3 +349,9 @@ for label in "${labels[@]}"; do
 done
 [ -z "$missing" ] || die 3 "opened $url, but GitHub does not show:$missing (does the label exist?)"
 [ "$gh_head" = "$head_sha" ] || die 3 "opened $url at $gh_head, not the local HEAD $head_sha"
+
+if [ "$auto_merge" = 1 ]; then
+  "$GH" pr merge "$url" --auto >/dev/null ||
+    die 3 "opened $url, but could not turn on auto-merge. Turn it on now: gh pr merge --auto $url"
+fi
+echo "auto-merge: $auto_why"

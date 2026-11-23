@@ -68,8 +68,10 @@ export function personSessionRefusal(): MiddlewareHandler<ApiEnv> {
 }
 
 /**
- * Before a chat message from the app at this computer, ask for the owner's
- * step-up when no session proves the person yet (DOR-3330).
+ * Before a chat message or a widget action from the app at this computer, ask
+ * for the owner's step-up when no session proves the person yet (DOR-3330,
+ * DOR-5071: the two routes share this one guard, so a click and a typed
+ * message are never treated differently).
  *
  * Without the person's session a message runs as agent work, and agent work
  * is readable by every agent, which the owner's own chat must never be. So

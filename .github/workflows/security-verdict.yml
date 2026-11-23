@@ -1,0 +1,88 @@
+name: security-verdict
+
+# The Security lens's check (DOR-5099, under DOR-5098: every merge gate in the
+# cloud). claude-code-review.yml's reviewer also reviews each PR as DorkOS
+# Security, using main's ci/security/review-lens.md, and posts one fixed-shape
+# verdict through `review-gh.sh security-verdict`, stamped with the head it
+# reviewed. When that review run finishes, this workflow reads the verdict, as
+# data, with scripts/security-verdict-check.sh, and posts a `security-verdict`
+# commit status on the head: success only on a bot's `pass` for that exact head;
+# failure on `fail`, or when the head got no verdict.
+#
+# WHY A SEPARATE WORKFLOW, ON `workflow_run`. The review workflow keeps its one
+# job: its run conclusion feeds the review-completes SLO and the re-dispatch
+# gate, and an advisory red here must not read as a failed review. And a
+# `workflow_run` workflow always runs the DEFAULT BRANCH's copy of this file, so
+# a PR cannot edit the check that judges it.
+#
+# ADVISORY. It is not a required check. For a comparison period the local
+# Security agent keeps reviewing, and the two verdicts are compared on the same
+# heads before this becomes required (org rule, DOR-5101). It holds no secret.
+# Its only write is the commit status. Findings are never posted: this
+# repository is public.
+
+on:
+  workflow_run:
+    workflows: [claude-code-review]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  statuses: write
+
+concurrency:
+  group: security-verdict-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  security-verdict:
+    # A skipped or cancelled review (a no-op label, a superseded run) judged
+    # nothing, so it says nothing either way. Only same-repo PR runs carry the
+    # PR in the payload; a manual dispatch is read by hand.
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion != 'skipped' &&
+      github.event.workflow_run.conclusion != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/security-verdict-check.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Post the Security lens verdict for the reviewed head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PRS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::unexpected head '$HEAD_SHA'"; exit 1; }
+          pr=$(jq -r --arg h "$HEAD_SHA" '[.[] | select(.head.sha == $h) | .number] | first // empty' <<<"$PRS")
+          if ! [[ "$pr" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::notice::No same-repo pull request for $HEAD_SHA in this review run; nothing to post."
+            exit 0
+          fi
+          rc=0
+          out=$(bash scripts/security-verdict-check.sh "$pr" "$HEAD_SHA" 2>&1) || rc=$?
+          echo "$out"
+          case "$rc" in
+            0) state=success ;;
+            1) state=failure ;;
+            *) state=error ;;
+          esac
+          # A status description is at most 140 characters.
+          desc=$(head -n 1 <<<"$out" | cut -c1-140)
+          gh api --method POST "repos/$REPO/statuses/$HEAD_SHA" \
+            -f state="$state" -f context=security-verdict \
+            -f description="$desc" -f target_url="$RUN_URL" >/dev/null
+          echo "Posted security-verdict: $state on #$pr at ${HEAD_SHA:0:7}"

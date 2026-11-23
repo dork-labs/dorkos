@@ -46,6 +46,7 @@ import { readQuery } from '../http/request-query.js';
 import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logError, logger } from '../lib/logger.js';
+import { askForPersonBeforeChat } from '../http/person-session-refusal.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { askEntitlement, type AskSubject } from '../services/session/asks/ask-entitlement.js';
 import type { RoomBindingsPort, SessionOriginResolvers } from '../services/session/index.js';
@@ -653,7 +654,10 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   // clicked in, so running it against whatever a later turn leaves behind is not
   // the same action. A click after that turn ENDED is accepted, even while the
   // runtime finishes closing the stream (DOR-1239). See the handler's module doc.
-  router.post('/:id/ui-action', sessionUiActionHandler);
+  // A click is a chat message too, so it asks for the owner's step-up exactly as `/messages`
+  // does (DOR-5071): without it, an unproven click into a Direct chat ran at the stranger's
+  // bound with no step-up offered.
+  router.post('/:id/ui-action', askForPersonBeforeChat(), sessionUiActionHandler);
 
   // POST /api/sessions/:id/command-intents/:intent — Runtime-fulfilled command
   // intent (currently `compact`), DOR-109. The handler lives in
