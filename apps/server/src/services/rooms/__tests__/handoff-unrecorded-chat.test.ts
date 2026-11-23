@@ -67,6 +67,7 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
         const draft = draftIn(request.prompt);
         if (draft === undefined) {
           // An ordinary room turn: it holds the seat while a test keeps it busy (DOR-5087).
+          state.seatTaken?.();
           await state.seatBusy;
           return { sessionId, text: null };
         }
@@ -93,6 +94,8 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
     afterAdmission?: () => string | null;
     /** While pending, an ordinary turn of the seat stays running. */
     seatBusy?: Promise<void>;
+    /** Called once an ordinary turn holds the seat. */
+    seatTaken?: () => void;
   } = {};
   /** An override of the folder the runtime reports for the source chat. */
   const live: { override?: string | null } = {};
@@ -162,6 +165,7 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
     state.whileSeatRuns = undefined;
     state.afterAdmission = undefined;
     state.seatBusy = undefined;
+    state.seatTaken = undefined;
     live.override = undefined;
     const permission = await import('../../core/capabilities/permission-enforcement.js');
     permission.initPermissionGate({
@@ -318,9 +322,10 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
   async function queuedHandoff(): Promise<PostResult> {
     let free!: () => void;
     state.seatBusy = new Promise<void>((resolve) => (free = resolve));
+    const taken = new Promise<void>((resolve) => (state.seatTaken = resolve));
     const human = store.listEntries(room.id, { limit: 1 })[0]!.authorId;
     service.post(room.id, { authorId: human, text: '@juno hold this turn' });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await taken;
     const answer = await launchFolderChat(juno);
     expect(answer).toMatchObject({ posted: false, handedOff: true });
     expect(store.handoffOutbox.readOwned(answer.handoffId!, junoId)?.state).toBe('queued');
@@ -344,8 +349,12 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
     expect(prepared.content).toBe('Juno shared it in #launch.');
   });
 
-  it('never posts a queued hand-off whose chat now stands in another agent’s home', async () => {
-    state.afterAdmission = () => otherHome;
+  it.each([
+    ['another agent’s home', () => otherHome],
+    ['a folder that is no agent’s', () => join(dorkHome, 'scratch')],
+    ['a folder the resolver refuses', () => GHOST_WORKSPACE],
+  ])('never posts a queued hand-off whose chat now stands in %s', async (_label, folder) => {
+    state.afterAdmission = folder;
     const answer = await queuedHandoff();
     expect(store.handoffOutbox.readOwned(answer.handoffId!, junoId)?.state).toBe('declined');
     expect(
