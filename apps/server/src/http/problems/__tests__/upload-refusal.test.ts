@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { problemBody } from '@dorkos/http-kit';
+import { UploadTypeRefusedError } from '../../../services/core/upload-handler.js';
 import { UploadLimitError } from '../../uploads.js';
 import { uploadRefusalProblem } from '../upload-refusal.js';
 
@@ -28,11 +29,19 @@ describe('uploadRefusalProblem', () => {
     expect(res.body).toEqual(problemBody('malformed_request', { detail: 'Too many files' }));
   });
 
-  it('answers a body the parser could not read 400 malformed_request', async () => {
-    const res = await answer(new Error('Unexpected end of form'));
+  it('answers a body the parser could not read with a fixed sentence, never its words', async () => {
+    const res = await answer(new Error('EACCES: permission denied, open /Users/someone/x'));
     expect(res.status).toBe(400);
     expect(res.body).toEqual(
-      problemBody('malformed_request', { detail: 'Unexpected end of form' })
+      problemBody('malformed_request', {
+        detail: 'That upload couldn’t be read. Send it again as one complete form.',
+      })
     );
+  });
+
+  it('answers a refused file type 415 unsupported_media_type', async () => {
+    const res = await answer(new UploadTypeRefusedError('text/html'));
+    expect(res.status).toBe(415);
+    expect(res.body.code).toBe('unsupported_media_type');
   });
 });

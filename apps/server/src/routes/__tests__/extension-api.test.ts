@@ -172,7 +172,9 @@ describe('/api/ext/:id/*', () => {
     ]) {
       const res = await request(fixtureServer).get(`/api/ext/my-ext${path}`);
       expect(res.status).toBe(500);
-      expect(res.body).toMatchObject({ code: 'internal_error', status: 500, detail: message });
+      expect(res.body).toMatchObject({ code: 'internal_error', status: 500 });
+      // The exception's own words never reach the wire (they are logged).
+      expect(JSON.stringify(res.body)).not.toContain(message);
     }
   });
 

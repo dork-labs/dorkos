@@ -32,6 +32,7 @@ vi.mock('../../lib/logger.js', () => ({
 }));
 
 import { createApiApp } from '../api-chain.js';
+import { MCP_MAX_REQUEST_BODY_BYTES } from '../../services/core/capabilities/mcp-input/limits.js';
 import { readJsonBody, type BodyRule, problemBody } from '@dorkos/http-kit';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { initAuditTrail, resetAuditTrail } from '../../services/audit/audit-trail.js';
@@ -60,6 +61,7 @@ function buildApp() {
   });
   app.post('/api/large/echo', (c) => c.json({ size: JSON.stringify(readJsonBody(c)).length }));
   app.post('/api/normal/echo', (c) => c.json({ body: readJsonBody(c, { emptyAs: {} }) }));
+  app.post('/mcp/echo', (c) => c.json({ size: JSON.stringify(readJsonBody(c)).length }));
   return app;
 }
 
@@ -126,6 +128,27 @@ describe('path-scoped body rules', () => {
     expect(res.body).toEqual(
       problemBody('request_too_large', { detail: 'That is too large to send in one request.' })
     );
+  });
+
+  it('pin both limits together: 1 MB on the app, the MCP cap on /mcp, to the byte', async () => {
+    // A JSON body of exactly `bytes` bytes.
+    const exactly = (bytes: number) => JSON.stringify({ pad: 'x'.repeat(bytes - 10) });
+    expect(exactly(10 + 5).length).toBe(15);
+    const post = (path: string, body: string) =>
+      request(server)
+        .post(path)
+        .set('Host', LOOPBACK)
+        .set('Content-Type', 'application/json')
+        .send(body);
+
+    const APP_LIMIT = 1024 * 1024;
+    expect((await post('/api/normal/echo', exactly(APP_LIMIT))).status).toBe(200);
+    expect((await post('/api/normal/echo', exactly(APP_LIMIT + 1))).status).toBe(413);
+
+    expect((await post('/mcp/echo', exactly(MCP_MAX_REQUEST_BODY_BYTES))).status).toBe(200);
+    const over = await post('/mcp/echo', exactly(MCP_MAX_REQUEST_BODY_BYTES + 1));
+    expect(over.status).toBe(413);
+    expect(over.body.code).toBe('request_too_large');
   });
 
   it('read a request with no body as what the route asks for', async () => {

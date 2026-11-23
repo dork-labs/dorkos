@@ -530,6 +530,7 @@ exports[`errors > answers a route that throws a not-an-error error the same way 
   "audit": [],
   "body": {
     "code": "internal_error",
+    "detail": "DorkOS hit an error. It’s in the server log.",
     "status": 500,
     "title": "DorkOS hit an error on its side.",
     "type": "urn:dorkos:problem:internal_error",
@@ -554,7 +555,7 @@ exports[`errors > answers a route that throws a plain error the same way 1`] = `
   "audit": [],
   "body": {
     "code": "internal_error",
-    "detail": "the probe broke",
+    "detail": "DorkOS hit an error. It’s in the server log.",
     "status": 500,
     "title": "DorkOS hit an error on its side.",
     "type": "urn:dorkos:problem:internal_error",

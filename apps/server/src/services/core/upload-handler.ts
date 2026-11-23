@@ -53,10 +53,23 @@ class UploadHandler {
       filter: (file) => {
         if (config.allowedTypes.includes('*/*')) return undefined;
         if (config.allowedTypes.includes(file.mimetype)) return undefined;
-        return new Error(`File type not allowed: ${file.mimetype}`);
+        return new UploadTypeRefusedError(file.mimetype);
       },
       disk: { directory: this.getUploadDir(cwd), filename: sanitizeFilename },
     };
+  }
+}
+
+/** The upload type filter's refusal: a file whose type the upload config does not allow. */
+export class UploadTypeRefusedError extends Error {
+  /**
+   * A refusal for one file.
+   *
+   * @param mimetype - The type the client declared for it.
+   */
+  constructor(readonly mimetype: string) {
+    super(`File type not allowed: ${mimetype}`);
+    this.name = 'UploadTypeRefusedError';
   }
 }
 

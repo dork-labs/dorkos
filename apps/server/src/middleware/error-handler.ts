@@ -1,7 +1,7 @@
 import { BoundaryError } from '../lib/boundary.js';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { logger } from '../lib/logger.js';
-import { OriginRefusedError } from '../http/cors-policy.js';
+import { OriginRefusedError, originRefusedSentence } from '../http/cors-policy.js';
 import {
   AmbiguousSessionError,
   SessionDiscoveryUnavailableError,
@@ -51,8 +51,8 @@ export function logRequestError(err: Error, method: string, sentPath: string): v
  * How an error no route handled is answered: which status, and which problem
  * document (`application/problem+json`, DOR-4979).
  *
- * One mapping for every route, so they all fail the same way. A server fault's
- * own message rides as `detail` outside production only.
+ * One mapping for every route, so they all fail the same way. Every `detail`
+ * is a fixed sentence written here, never an exception's message or stack.
  *
  * @param err - The error.
  * @returns The status and body to answer with.
@@ -87,19 +87,21 @@ export function errorReply(err: Error): ErrorReply {
     if (err.code === 'NULL_BYTE') {
       return reply('invalid_request', { detail: 'That path has a character paths can’t hold.' });
     }
-    return reply('forbidden', { detail: err.message });
+    return reply('forbidden', { detail: 'DorkOS isn’t allowed to open that path.' });
   }
 
   if (err instanceof OriginRefusedError) {
-    return reply('origin_not_allowed', { detail: err.message });
+    return reply('origin_not_allowed', { detail: originRefusedSentence(err.origin) });
   }
 
   if (err instanceof SessionDiscoveryUnavailableError) {
-    return reply('temporarily_unavailable', { detail: err.message });
+    return reply('temporarily_unavailable', {
+      detail: 'Chat history is temporarily unavailable. Try again.',
+    });
   }
 
   if (err instanceof AmbiguousSessionError) {
-    return reply('conflict', { detail: err.message });
+    return reply('conflict', { detail: 'This chat ID matches multiple chats.' });
   }
 
   if (err instanceof RuntimeNotRegisteredError) {
@@ -121,9 +123,10 @@ export function errorReply(err: Error): ErrorReply {
       : undefined;
   if (bodyRefusal) return reply(bodyRefusal.code, { detail: bodyRefusal.detail });
 
-  // eslint-disable-next-line no-restricted-syntax -- must read dynamically; env.ts parses once at import and tests mutate NODE_ENV at runtime
-  const isDev = process.env.NODE_ENV !== 'production';
-  return reply('internal_error', isDev && err.message ? { detail: err.message } : {});
+  // Never the exception's own words, in any environment: a message can carry a
+  // path, a query or a secret, and a stack never belongs on the wire. The
+  // chain's `onError` has already logged it (`logRequestError`).
+  return reply('internal_error', { detail: 'DorkOS hit an error. It’s in the server log.' });
 }
 
 /** The `body-parser` refusals the chain answers as the caller's mistake, by its `type`. */

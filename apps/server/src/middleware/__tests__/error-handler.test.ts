@@ -92,21 +92,27 @@ describe('errorReply and logRequestError', () => {
     });
   });
 
-  it('returns 500 with error message', () => {
+  it('answers 500 with a fixed sentence, never the error’s message or stack', () => {
     const error = new Error('Something broke');
 
     const reply = errorReply(error);
 
     expect(reply.status).toBe(500);
-    expect(reply.body).toEqual(problemBody('internal_error', { detail: 'Something broke' }));
+    expect(reply.body).toEqual(
+      problemBody('internal_error', { detail: 'DorkOS hit an error. It’s in the server log.' })
+    );
+    expect(JSON.stringify(reply.body)).not.toContain('Something broke');
+    expect(JSON.stringify(reply.body)).not.toContain('at ');
   });
 
-  it('says only the title for an empty message', () => {
+  it('says the same fixed sentence for an empty message', () => {
     const error = new Error('');
 
     const reply = errorReply(error);
 
-    expect(reply.body).toEqual(problemBody('internal_error'));
+    expect(reply.body).toEqual(
+      problemBody('internal_error', { detail: 'DorkOS hit an error. It’s in the server log.' })
+    );
   });
 
   it('answers a body that never fit with 413 and a code, not 500', () => {
@@ -177,7 +183,7 @@ describe('errorReply and logRequestError', () => {
     const denied = errorReply(new BoundaryError('Permission denied', 'PERMISSION_DENIED'));
     expect(denied).toEqual({
       status: 403,
-      body: problemBody('forbidden', { detail: 'Permission denied' }),
+      body: problemBody('forbidden', { detail: 'DorkOS isn’t allowed to open that path.' }),
     });
   });
 

@@ -98,11 +98,20 @@ export class OriginRefusedError extends Error {
   readonly status = 403;
 
   constructor(readonly origin: string | undefined) {
-    super(
-      `This instance does not answer to pages from "${origin}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`
-    );
+    super(originRefusedSentence(origin));
     this.name = 'OriginRefusedError';
   }
+}
+
+/**
+ * The sentence a refused origin is told: fixed words around the `Origin` the
+ * page sent, so the person running DorkOS knows which address to allow.
+ *
+ * @param origin - The refused `Origin` header.
+ * @returns The sentence.
+ */
+export function originRefusedSentence(origin: string | undefined): string {
+  return `This instance does not answer to pages from "${origin}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`;
 }
 
 /**

@@ -787,8 +787,10 @@ contractSuite('file, diff, upload and profile groups', [
     headers: MULTIPART,
     body: multipart([{ field: 'files', filename: 'p.png', type: 'image/png', content: 'png' }]),
     expect: {
-      status: 400,
-      body: problemBody('malformed_request', { detail: 'File type not allowed: image/png' }),
+      status: 415,
+      body: problemBody('unsupported_media_type', {
+        detail: 'That type of file isn’t allowed in uploads.',
+      }),
     },
   },
   {
@@ -799,7 +801,9 @@ contractSuite('file, diff, upload and profile groups', [
     body: 'nothing',
     expect: {
       status: 400,
-      body: problemBody('malformed_request', { detail: 'Multipart: Boundary not found' }),
+      body: problemBody('malformed_request', {
+        detail: 'That upload couldn’t be read. Send it again as one complete form.',
+      }),
     },
   },
   {
@@ -812,7 +816,9 @@ contractSuite('file, diff, upload and profile groups', [
     }),
     expect: {
       status: 400,
-      body: problemBody('malformed_request', { detail: 'Unexpected end of form' }),
+      body: problemBody('malformed_request', {
+        detail: 'That upload couldn’t be read. Send it again as one complete form.',
+      }),
     },
   },
   {
@@ -823,7 +829,9 @@ contractSuite('file, diff, upload and profile groups', [
     body: '',
     expect: {
       status: 400,
-      body: problemBody('malformed_request', { detail: 'Unexpected end of form' }),
+      body: problemBody('malformed_request', {
+        detail: 'That upload couldn’t be read. Send it again as one complete form.',
+      }),
     },
   },
   {

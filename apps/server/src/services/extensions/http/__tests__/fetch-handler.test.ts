@@ -267,7 +267,8 @@ describe('an extension served with a fetch handler', () => {
     const res = await request(server).get('/api/ext/my-ext/anything');
 
     expect(res.status).toBe(500);
-    expect(res.body).toMatchObject({ code: 'internal_error', detail: 'the handler broke' });
+    expect(res.body).toMatchObject({ code: 'internal_error' });
+    expect(JSON.stringify(res.body)).not.toContain('the handler broke');
   });
 
   it('answers a handler that answers with no Response with the chain’s error', async () => {
@@ -276,7 +277,8 @@ describe('an extension served with a fetch handler', () => {
     const res = await request(server).get('/api/ext/my-ext/anything');
 
     expect(res.status).toBe(500);
-    expect(res.body.detail).toBe('My Extension answered with something that is not a Response.');
+    expect(res.body.code).toBe('internal_error');
+    expect(res.body.detail).not.toContain('My Extension');
   });
 });
 

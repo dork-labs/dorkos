@@ -813,7 +813,9 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
       path: `/api/ext/${ROUTED}/boom`,
       expect: {
         status: 500,
-        body: problemBody('internal_error', { detail: 'the extension route broke' }),
+        body: problemBody('internal_error', {
+          detail: 'DorkOS hit an error. It’s in the server log.',
+        }),
         schema: thrown,
       },
     });
@@ -821,12 +823,19 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
       path: `/api/ext/${ROUTED}/boom-later`,
       expect: {
         status: 500,
-        body: problemBody('internal_error', { detail: 'the extension route broke later' }),
+        body: problemBody('internal_error', {
+          detail: 'DorkOS hit an error. It’s in the server log.',
+        }),
       },
     });
     await check(server, {
       path: `/api/ext/${ROUTED}/handed-on`,
-      expect: { status: 500, body: problemBody('internal_error', { detail: 'handed on' }) },
+      expect: {
+        status: 500,
+        body: problemBody('internal_error', {
+          detail: 'DorkOS hit an error. It’s in the server log.',
+        }),
+      },
     });
     await check(server, { path: '/api/health', expect: { status: 200 } });
   });
@@ -1290,7 +1299,9 @@ describe('contract: an extension served with a fetch handler (login off)', () =>
       path: `/api/ext/${FETCHED}/boom`,
       expect: {
         status: 500,
-        body: problemBody('internal_error', { detail: 'the fetch handler broke' }),
+        body: problemBody('internal_error', {
+          detail: 'DorkOS hit an error. It’s in the server log.',
+        }),
       },
     });
     await check(server, { path: '/api/health', expect: { status: 200 } });

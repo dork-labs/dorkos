@@ -872,7 +872,9 @@ contractSuite('the session routes, login off, nothing started', [
     expect: {
       status: 400,
       headers: PROBLEM_TYPE,
-      body: problemBody('malformed_request', { detail: 'Unexpected end of form' }),
+      body: problemBody('malformed_request', {
+        detail: 'That upload couldn’t be read. Send it again as one complete form.',
+      }),
     },
   },
   {
@@ -884,7 +886,9 @@ contractSuite('the session routes, login off, nothing started', [
     expect: {
       status: 400,
       headers: PROBLEM_TYPE,
-      body: problemBody('malformed_request', { detail: 'Multipart: Boundary not found' }),
+      body: problemBody('malformed_request', {
+        detail: 'That upload couldn’t be read. Send it again as one complete form.',
+      }),
     },
   },
 

@@ -34,27 +34,33 @@ describe('errorReply production mode', () => {
     const reply = errorReply(error);
 
     expect(reply.status).toBe(500);
-    expect(reply.body).toEqual(problemBody('internal_error'));
+    expect(reply.body).toEqual(
+      problemBody('internal_error', { detail: 'DorkOS hit an error. It’s in the server log.' })
+    );
   });
 
-  it('includes err.message in development mode', () => {
+  it('keeps err.message off the wire in development mode too', () => {
     process.env.NODE_ENV = 'development';
     const error = new Error('Something broke');
 
     const reply = errorReply(error);
 
     expect(reply.status).toBe(500);
-    expect(reply.body).toEqual(problemBody('internal_error', { detail: 'Something broke' }));
+    expect(reply.body).toEqual(
+      problemBody('internal_error', { detail: 'DorkOS hit an error. It’s in the server log.' })
+    );
   });
 
-  it('includes err.message when NODE_ENV is undefined', () => {
+  it('keeps err.message off the wire when NODE_ENV is undefined', () => {
     delete process.env.NODE_ENV;
     const error = new Error('Debug info visible');
 
     const reply = errorReply(error);
 
     expect(reply.status).toBe(500);
-    expect(reply.body).toEqual(problemBody('internal_error', { detail: 'Debug info visible' }));
+    expect(reply.body).toEqual(
+      problemBody('internal_error', { detail: 'DorkOS hit an error. It’s in the server log.' })
+    );
   });
 
   it('returns generic message in production even with detailed error', () => {
@@ -63,6 +69,8 @@ describe('errorReply production mode', () => {
 
     const reply = errorReply(error);
 
-    expect(reply.body).toEqual(problemBody('internal_error'));
+    expect(reply.body).toEqual(
+      problemBody('internal_error', { detail: 'DorkOS hit an error. It’s in the server log.' })
+    );
   });
 });
