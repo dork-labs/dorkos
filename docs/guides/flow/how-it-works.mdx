@@ -26,9 +26,9 @@ The whole engine is four ideas stacked:
     A normalized <code>TrackerEvent</code> stream from a swappable transport. Events are triggers,
     not truth.
   </Card>
-  <Card title="The linear-adapter seam">
+  <Card title="The tracker-adapter seam">
     Every tracker call confined to one skill. The engine package stays pure: no fs, no network, no
-    Linear strings.
+    tracker strings.
   </Card>
 </Cards>
 
@@ -53,7 +53,7 @@ inbound signal ─▶ InboundTransport ─▶ TrackerEvent[] ─▶ reconciler (
                                               calls a pure decision oracle
                                                               │
                                                               ▼
-                                              acts via the linear-adapter (claim, comment, transition, …)
+                                              acts via the tracker adapter (claim, comment, transition, …)
 ```
 
 The adapter is the only thing that touches the tracker, at both ends: it produces the inbox the transport reads, and it executes the side effects a reconciler decides on. Everything between is pure and tracker-agnostic.
@@ -167,7 +167,7 @@ for (const { reconciler, config } of orderedByResolvedPriority) {
 
 ### The `loops` config block: the extension seam
 
-The registry is driven by a `loops` block in the engine's `config.json`, keyed by reconciler id. This is the resolved default set:
+The registry is driven by a `loops` block in `.agents/flow/config.json`, keyed by reconciler id. This is the resolved default set:
 
 ```json
 "loops": {
@@ -232,7 +232,7 @@ interface InboundTransport {
 <Step>advance the watermark to the newest consumed `occurredAt` and return it to persist.</Step>
 </Steps>
 
-Because the watermark is exclusive and advances to the newest entry, a second `poll(watermark)` over the same snapshot returns `[]`: no event is ever re-emitted, and the cursor (persisted in the run record) keeps the stream gap-free across restarts.
+Because the watermark is exclusive and advances to the newest entry, a second `poll(watermark)` over the same snapshot returns `[]`: no event is ever re-emitted, and the cursor (persisted in `.dork/flow/inbox-watermark.json`) keeps the stream gap-free across restarts.
 
 <Callout type="info">
   **Poll now, webhook deferred, honestly.** v1 ships `PollingTransport` and the
@@ -269,29 +269,32 @@ The **checkpoint is the git commit plus the chat's JSONL transcript**, never eph
 This is what the recovery reconciler reads each tick: it lists `agent/claimed` + `started` + not-`needs-input` items, pairs each with its `FlowRun` plus a liveness probe, and hands the pair to `recoverOrphan` for the verdict.
 
 <Callout type="warn">
-  v1 carries `attemptCount` and `workerPid` for single-machine liveness. The concurrent-safe fields
-  (`heartbeatAt`, a fencing token, atomic multi-claim, a stall-detector) are the P5 server residue.
-  v1 stays `concurrency: sequential`, WIP-1; multi-writer concurrency is not built here.
+  v1 carries `attemptCount` and `workerPid` for single-machine liveness. The scheduled tick and
+  `/flow auto` stay sequential, WIP-capped. Running several items at once is `flow drain --parallel
+  N` (`drain.parallel`): one supervisor per project, held by a pid lock at `.dork/flow/drain.lock`,
+  starts one worktree and session per item and restarts a session that goes quiet for
+  `drain.stallAfterMinutes`. What is not built is multi-writer safety across machines: fencing
+  tokens and atomic multi-claim between independent drains.
 </Callout>
 
-## The linear-adapter seam: the engine stays pure
+## The tracker-adapter seam: the engine stays pure
 
-Every fact so far has pointed at one rule (charter G8): **all tracker I/O is confined to the `linear-adapter` skill.** The flow engine contains zero tracker strings: no `mcp__linear__*`, no Composio call, no Linear field name. A grep guard enforces it across the engine, the drain task, and the loop hook.
+Every fact so far has pointed at one rule (charter G8): **all tracker I/O is confined to the tracker adapter**: the shipped `linear-adapter` skill, or the one `/flow:init` generated into your project at `.agents/flow/adapters/<tracker>/`, whichever tracker your config names. Outside the shipped adapter the plugin contains zero tracker strings: no tracker MCP tool name, no CLI invocation, no tracker-specific field name. A grep guard enforces it across the skills, the commands, the engine scripts, and the loop hook.
 
 This confinement is what makes everything above pure and portable:
 
-- The **oracles** see only the normalized `WorkItem`, never a Linear issue.
+- The **oracles** see only the normalized `WorkItem`, never a tracker-native issue.
 - The **transport** wraps the adapter's `getInbox` as an injected reader, never calling the tracker itself.
 - The **`FlowRun` store** injects its fs seam, never importing `fs`.
 - The **reconcilers** decide via an oracle, then act by naming an adapter verb (`claim`, `comment`, `transition`, `needsInput`); they never embed a tracker call.
 
-In v1 the adapter is realized as a documented **prose contract** (the skill owns the MCP / Composio calls and normalizes every tracker into the `WorkItem` shape). The agnosticism win ("all tracker I/O in one place") is real today with no new infrastructure. The typed `interface PMClient` documented in the flow contract (the plugin's `SPEC.md`) is what the P5 server promotes that prose into: same verbs, same normalization, now executable code.
+In v1 the adapter is realized as a documented **prose contract** (the skill owns the MCP / Composio calls and normalizes every tracker into the `WorkItem` shape). The agnosticism win ("all tracker I/O in one place") is real today with no new infrastructure. The typed `interface PMClient` documented in the flow contract (the plugin's `docs/SPEC.md`) is what the P5 server promotes that prose into: same verbs, same normalization, now executable code.
 
 <Callout type="info">
   This is why the agnosticism is testable rather than aspirational. The generic layer is
-  mechanically prevented from knowing it is talking to Linear, so swapping in a second tracker is
-  implementing one adapter, not editing the engine. The one seam is the single audit surface for
-  every tracker side effect.
+  mechanically prevented from knowing which tracker it is talking to, so swapping in a second
+  tracker is implementing one adapter, not editing the engine. The one seam is the single audit
+  surface for every tracker side effect.
 </Callout>
 
 ## v1 is typed plus prose-driven; the server promotes it unchanged
@@ -300,7 +303,8 @@ The honest summary of the boundary:
 
 - **Real and running in v1.** The manual stages and the terminal drain follow the registry order by reading the prose. Readiness is produced at TRIAGE and DECOMPOSE; starvation is detected and surfaced; parked questions route on an identity-appropriate channel and resume by polling; `FlowRun` recovery resumes a crashed run; `/flow:status`, `/flow:pause`, and `/flow:resume` give observability and override; the calibration floor is non-trimmable.
 - **Typed and tested, but not yet self-driving.** The reconciler registry, the scheduler (`runTick`), the `TrackerEvent` seam, and `PollingTransport` are landed contracts. They are the **promotion surface**: the P5 server build calls these same contracts unchanged.
-- **Deferred to the P5 server.** The always-on scheduler that calls `runTick` on a timer unattended; atomic concurrency (fencing, heartbeat, atomic multi-claim, stall-detection); approval detection + auto-merge **execution** (the decision oracle `evaluateAutoMerge` exists; the detect-and-fire that runs it unattended does not); the webhook transport; Linear Agent Accounts as the two-account backend.
+- **Also running now, outside the registry.** `flow review` answers the review gate: approving approves the PR and, with `gates.review.mergeOnApproval` on (the default), arms auto-merge on exactly the reviewed commit, refusing if the head moved or a guard fails. In DorkOS a per-project dial can let the reviewer agent run that approval itself. `flow drain --parallel N` carries several items at once.
+- **Deferred to the P5 server.** The always-on scheduler that calls `runTick` on a timer unattended; multi-writer concurrency across machines (fencing tokens, atomic multi-claim); the webhook transport; Linear Agent Accounts as the two-account backend.
 
 The throughline: every contract that exists in v1 today (the config schema, the adapter verbs, the `FlowRun` record, the typed oracles, and now the registry + scheduler + event seam) graduates into the server build without a rewrite. The server is additive. It is what calls these contracts on a timer, not a reimplementation of them.
 
@@ -308,7 +312,7 @@ The throughline: every contract that exists in v1 today (the config schema, the 
 
 <Cards>
   <Card title="The dials" href="/docs/guides/flow/the-dials">
-    Every config block in the engine's `config.json`, what it controls, and its default.
+    Every config block in `.agents/flow/config.json`, what it controls, and its default.
   </Card>
   <Card title="Turning on autonomy" href="/docs/guides/flow/turning-on-autonomy">
     What the autonomous loop does, what it asks you, and where it parks.

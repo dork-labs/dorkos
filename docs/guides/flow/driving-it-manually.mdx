@@ -23,7 +23,7 @@ Here's the whole loop in three commands:
 ```bash
 /flow:capture add keyboard shortcuts to the chat list
 /flow:triage DOR-201
-/flow DOR-201   # repeat until it reaches REVIEW, then merge and run /flow:done
+/flow DOR-201   # repeat until it reaches REVIEW, then approve it and run /flow:done
 ```
 
 That's the entire idea. The rest of this guide walks through each stage, then covers status, pause, and resume.
@@ -93,8 +93,11 @@ Each `/flow:<stage>` command is a thin trigger over a **skill**, a self-containe
 | `/flow:status`    | (observe) | Show every item in flight, every question waiting on you, and why each decision was made.                                                             |
 | `/flow:pause`     | (control) | Stop every running mode at once.                                                                                                                      |
 | `/flow:resume`    | (control) | Lift the pause and let work flow again.                                                                                                               |
+| `/flow:init`      | (setup)   | First-time setup: pick your tracker, set up its adapter, and write the config.                                                                        |
+| `/flow:groom`     | (upkeep)  | Check the whole backlog and fix what's off. `/flow:groom check` only reports.                                                                         |
+| `/flow:self-test` | (upkeep)  | Check this install in a few seconds and report anything broken.                                                                                       |
 
-There is no `/flow:review`. REVIEW is the human gate: the engine stops and waits for you.
+There is no `/flow:review`. REVIEW is the human gate: the engine stops and waits. You answer it with the `flow review` command, shown in the walkthrough below.
 
 ## A worked walkthrough
 
@@ -190,11 +193,21 @@ VERIFY runs the part of the app that changed, gathers proof it works, opens the 
 
 ### Review (the human gate)
 
-The engine stops here. There's no command: you review the pull request yourself, the one gate no robot gets to skip yet.
+The engine stops here and waits for you to review the pull request. When you're happy, ship it:
 
-<Callout type="warn">
-  In this version, `/flow` doesn't detect your approval on its own. Once you approve the pull
-  request, you merge it yourself, then run the next command below.
+```bash
+flow review DOR-201 --approve
+```
+
+`flow` is the plugin's own command-line tool. It lives at `scripts/flow.ts` in the folder flow is installed in, so you can run it as `node --experimental-strip-types <flow-folder>/scripts/flow.ts review DOR-201 --approve`, or set up a short `flow` alias for that.
+
+Approving comments on the item and approves the pull request (unless you wrote it). By default it also sets the pull request to merge on its own once its checks pass, for exactly the version you approved. If the pull request changed since, it refuses. To send the work back instead, run `flow review DOR-201 --changes --note "what to fix"`. Nothing gets closed when you do that.
+
+Run `flow review` yourself, from your own terminal or from DorkOS. It refuses when an agent tries to run it as you.
+
+<Callout type="info">
+  If you'd rather merge by hand, turn off `gates.review.mergeOnApproval` (see [The
+  dials](/docs/guides/flow/the-dials)), merge it yourself, then run the next command below.
 </Callout>
 
 </Step>
@@ -225,11 +238,7 @@ Three commands sit outside the spine. They let you see what's happening and take
 /flow:status
 ```
 
-Shows one screen with everything you'd otherwise have to dig for: every claimed or in-progress item (with its worktree, branch, and chat), every question waiting on your reply, and the reasoning behind each automatic decision. Reach for it whenever you want to know where things stand.
-
-<Callout type="info">
-  A screenshot of real `/flow:status` output belongs here to show what this looks like in practice.
-</Callout>
+Shows one screen with everything you'd otherwise have to dig for: every claimed or in-progress item (with its worktree, branch, and chat), every question waiting on your reply, whether the loop is paused, and this project's flow schedules. Add an item id to see just that item. Reach for it whenever you want to know where things stand.
 
 ### `/flow:pause` and `/flow:resume`
 
@@ -237,9 +246,12 @@ Shows one screen with everything you'd otherwise have to dig for: every claimed 
 /flow:pause
 # ... work on something else, or step in by hand ...
 /flow:resume
+/flow:pause for 1 hour     # ends on its own at that time
+/flow:pause until 9am
+/flow:pause DOR-201        # pause just this one item
 ```
 
-`/flow:pause` stops every mode from one place, manual and automatic alike. It exists for exactly one reason: handing work to a schedule should never mean losing the wheel. `/flow:resume` lifts the pause. To turn off or reprioritize one part of the automatic loop instead of stopping everything, edit the `loops` setting in config rather than pausing (see [The dials](/docs/guides/flow/the-dials)).
+`/flow:pause` stops every automatic mode from one place. It exists for exactly one reason: handing work to a schedule should never mean losing the wheel. The stage commands in this guide still work while it's on: a pause stops the loop, never you. `/flow:resume` lifts the pause. A pause with an end (`for 1 hour`, `until 9am`) ends on its own at that time, even with DorkOS closed. Give an item id to pause just that item. To turn off or reprioritize one part of the automatic loop instead of stopping everything, edit the `loops` setting in config rather than pausing (see [The dials](/docs/guides/flow/the-dials)).
 
 ## Which command should I use?
 
@@ -254,7 +266,7 @@ Shows one screen with everything you'd otherwise have to dig for: every claimed 
     Pick **Continue the queue** from bare `/flow`. It claims the next item, carries it to its gate, and stops. No draining, no loop.
   </Card>
   <Card title="Drain the whole ready queue by hand">
-    Use `/flow auto`. It works through the queue one item at a time from your terminal, no server needed, carrying each to its review gate.
+    Use `/flow auto`. It works through the queue one item at a time from your terminal, no server needed, carrying each to its review gate. To work on several at once, see `flow drain --parallel` in [The dials](/docs/guides/flow/the-dials).
   </Card>
 </Cards>
 
@@ -267,10 +279,10 @@ Manual driving and the automatic, scheduled version are not different engines. T
 | **Trigger**       | You type a command   | A scheduled check claims an item           |
 | **Scope per run** | One stage, then stop | One item, carried to its gate              |
 | **Questions**     | Arrive as you go     | Posted as a comment, resumed on your reply |
-| **Server**        | Not required         | Required (hosts the watcher and scheduler) |
+| **Scheduler**     | None needed          | DorkOS Schedules, or a scheduler of yours  |
 | **What runs**     | The stage skills     | The same stage skills                      |
 
-The terminal drain, `/flow auto`, sits between the two: automatic in spirit, since it carries items to their gates without asking you at every step, but server-free, since you're the one who started it and it runs in your terminal. A continuously running, unattended version of this is planned for a future release but isn't built yet.
+The terminal drain, `/flow auto`, sits between the two: automatic in spirit, since it carries items to their gates without asking you at every step, but server-free, since you're the one who started it and it runs in your terminal. The scheduled version runs unattended, one item per run. A single always-on process that runs the loop nonstop isn't built yet.
 
 <Callout type="info">
   When `/flow auto` empties the ready queue but other work is sitting behind it waiting to be

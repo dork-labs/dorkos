@@ -1,6 +1,6 @@
 ---
 title: The dials
-description: Every /flow config knob in one place, what it does, its default, and when to turn it.
+description: The /flow settings you're most likely to change, what each does, its default, and when to turn it.
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
@@ -11,13 +11,13 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 `/flow` ships with sane defaults. Out of the box, it already runs the loop the way it's meant to: safe, sequential, and asking before anything risky. You don't need to touch anything on this page to use `/flow`.
 
-Come here when you want to change one specific thing, like turning on the autonomous loop or getting pinged when a question is waiting on you. Every dial below is a real, working setting: nothing here is a wish-list item.
+Come here when you want to change one specific thing, like turning on the autonomous loop or getting pinged when a question is waiting on you. This page covers the settings most people reach for. The full list, with every block and its default, is the `config.schema.json` file that ships with the plugin.
 
 ## Quick win: turn on the autonomous loop
 
 By default, `/flow` only runs when you type a command. Letting it work on its own schedule (a "tick" that claims one ready item and carries it forward) takes one step: approve it.
 
-Open the **Schedules** tab on Home, find `flow-drain`, and approve it. Approving is the only step that matters: it arms the schedule and switches it on together, in one action.
+Open **Schedules** in DorkOS, find `flow-drain`, and approve it. Approving is the only step that matters: it arms the schedule and switches it on together, in one action.
 
 flow-drain ships with its `schedule:` block set to `enabled: false` in `.dork/plugins/flow/skills/flow-drain/SKILL.md`. That flag is just the file's starting point, not something you need to hand-edit: DorkOS never arms a schedule from the file alone, and approving it flips `enabled` to `true` for you regardless of what the file says. (flow 0.6.0 and later ships the `schedule:` block shown below. If your copy lists `cron` and `enabled` flat at the top instead, it is an older install: update the plugin from the Marketplace.)
 
@@ -31,8 +31,8 @@ schedule:
 
 <Callout type="warn">
   Autonomous mode also needs a **running DorkOS server**. That's what actually fires the schedule.
-  Manual `/flow` commands don't need the server running at all. If you want to turn it back off in a
-  hurry, `/flow:pause` flips this same flag for you.
+  Manual `/flow` commands don't need the server running at all. If you want to stop it in a hurry,
+  run `/flow:pause`: it stops every scheduled run in this project until you run `/flow:resume`.
 </Callout>
 
 Everything past this point is reference material: the full list of dials, grouped by what they control. Skim the headings and stop wherever you've found what you needed.
@@ -41,13 +41,14 @@ Everything past this point is reference material: the full list of dials, groupe
 
 ### Where the dials live
 
-Almost every setting lives in `config.json`, with a second file beside it for what belongs to your machine alone. The autonomous schedule is the one exception:
+Almost every setting lives in `config.json`, with a second file beside it for what belongs to your machine alone. Two things live elsewhere: the schedule, and how much flow does on its own.
 
 | File                                                                | Owns                                                                                                                     | Validated by                                         |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
 | `.agents/flow/config.json`                                          | The engine's rulebook: autonomy, eligibility, involvement, gates, loops, ingestion. Commit it: it is your team's policy. | `config.schema.json` (linked at the top of the file) |
 | `.agents/flow/config.local.json`                                    | This machine's tracker account and overrides. Git ignores it, so it never leaves your computer.                          | Checked with `config.json` once the two are combined |
-| `.dork/plugins/flow/skills/flow-drain/SKILL.md` (`schedule:` block) | The Pulse schedule: when the autonomous tick fires, and whether it fires at all.                                         | The Pulse task loader                                |
+| `.dork/plugins/flow/skills/flow-drain/SKILL.md` (`schedule:` block) | The schedule's starting defaults. You change the real timing on the **Schedules** page, not in this file.                | DorkOS's Schedules page                              |
+| DorkOS, per project (the project's Flow settings)                   | [How much it does on its own](#how-much-it-does-on-its-own). Only a person can change it.                                | DorkOS                                               |
 
 That schema file isn't just documentation: it's enforced. If you type a value that isn't on the allowed list, or set a number below the floor `/flow` requires, the file fails to load instead of quietly misbehaving. Most code editors also read the schema reference at the top of `config.json` and give you autocomplete and inline errors as you type, the same way editors validate a `package.json`.
 
@@ -58,14 +59,18 @@ That schema file isn't just documentation: it's enforced. If you type a value th
 
 <Callout type="warn">
   A few dials below describe a schedule (`priority`, `intervalMs`) that a future always-on process
-  will run unattended. Today, the Pulse cron (see the Cadence section) walks the loops in that same
-  priority order once per tick, but nothing fires them independently in the background yet. Each
-  such dial is flagged where it appears.
+  will run unattended. Today, each scheduled run (see the Cadence section) walks the loops in that
+  same priority order once per tick, but nothing fires them independently in the background yet.
+  Each such dial is flagged where it appears.
 </Callout>
 
-### Cadence: the Pulse schedule
+### Cadence: the scheduled run
 
-Autonomous mode runs on DorkOS Pulse, a file-based scheduler. Its timing lives in the `schedule:` block of `.dork/plugins/flow/skills/flow-drain/SKILL.md`, not in `config.json`. That block is also what makes the file a scheduled task at all. Remove it and the same file is a plain skill.
+Autonomous mode runs on DorkOS's **Schedules**. The plugin ships its starting timing in the `schedule:` block of `.dork/plugins/flow/skills/flow-drain/SKILL.md`, not in `config.json`. That block is also what makes the file a scheduled task at all.
+
+To change how often it runs, open `flow-drain` on the **Schedules** page and edit its time. DorkOS keeps your timing on its side, so a plugin update never undoes it. The row then says **Your timing**, and **Reset to the package's default** puts flow's own timing back. Don't edit the file itself: the next plugin update replaces it.
+
+Not using DorkOS? Any scheduler you run yourself (a `cron` line, a scheduled CI job) can start one `/flow continue` run per fire. Its own entry sets the timing.
 
 ```yaml
 ---
@@ -80,20 +85,19 @@ schedule:
 ---
 ```
 
-| Dial                   | What it does                                                        | Default                        | When to change                                                |
-| ---------------------- | ------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------- |
-| `schedule.enabled`     | Whether the autonomous tick fires at all.                           | `false`                        | Set `true` to turn on the loop (it's off until you opt in).   |
-| `schedule.cron`        | When each tick fires. One tick claims and carries one item forward. | `0 * * * *` (top of each hour) | Tighten for a busier queue; loosen to ease up on the tracker. |
-| `schedule.timezone`    | The timezone the schedule is evaluated in.                          | `America/Los_Angeles`          | Match your working hours.                                     |
-| `schedule.max-runtime` | Hard ceiling on how long a single tick may run.                     | `2h`                           | Raise for large items; lower to fail fast.                    |
-| `schedule.permissions` | How much the unattended chat is allowed to do without asking.       | `acceptEdits`                  | Tighten for a more cautious unattended posture.               |
+| Field                  | What it does                                                        | Default                        | To change it                                              |
+| ---------------------- | ------------------------------------------------------------------- | ------------------------------ | --------------------------------------------------------- |
+| `schedule.enabled`     | The starting switch. Installing never turns the run on.             | `false`                        | Leave it. Approving on the Schedules page switches it on. |
+| `schedule.cron`        | When each tick fires. One tick claims and carries one item forward. | `0 * * * *` (top of each hour) | Edit the time on the Schedules page, not in this file.    |
+| `schedule.timezone`    | The timezone the schedule is evaluated in.                          | `America/Los_Angeles`          | Edit it on the Schedules page, not in this file.          |
+| `schedule.max-runtime` | Hard ceiling on how long a single tick may run.                     | `2h`                           | The plugin's choice. An edit here is undone by an update. |
+| `schedule.permissions` | How much the unattended chat is allowed to do without asking.       | `acceptEdits`                  | The plugin's choice. An edit here is undone by an update. |
 
 <Callout type="warn">
   The schedule ships `schedule.enabled: false`, and that flag is your intent, not your permission. A
   schedule DorkOS finds in a file still waits on the **Schedules** page for you to approve it,
   `true` or not. Autonomous mode also needs a **running DorkOS server** (it hosts the scheduler);
-  manual `/flow` doesn't. `/flow:pause` flips this same flag to halt the whole schedule from one
-  place.
+  manual `/flow` doesn't. `/flow:pause` halts every scheduled run in the project from one place.
 </Callout>
 
 ### Autonomy
@@ -103,15 +107,31 @@ How aggressively the engine takes work on its own, under `autonomy` in `config.j
 | Dial                | What it does                                                        | Default        | Notes                                                                 |
 | ------------------- | ------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------- |
 | `default`           | Whether `/flow` runs all the way to a gate, or one stage at a time. | `"auto"`       | `"auto"` drains the ready queue; `"manual"` runs one stage and stops. |
-| `concurrency`       | Work on one item at a time, or several at once.                     | `"sequential"` | Today it's always sequential. `"parallel"` is reserved for later.     |
+| `concurrency`       | Reserved for a later build.                                         | `"sequential"` | Has no effect today. To run several items at once, see Drain below.   |
 | `wipCap.global`     | Max items in flight across all projects at once.                    | `2`            | The ceiling on total concurrent work.                                 |
 | `wipCap.perProject` | Max items in flight for a single project.                           | `1`            | Keeps one project from hogging the loop.                              |
-| `seat`              | Which autonomous runner hosts the loop.                             | `"pulse"`      | `"pulse"` is the only option today; more are planned.                 |
+| `seat`              | Which autonomous runner hosts the loop.                             | `"pulse"`      | `"pulse"` (DorkOS Schedules) is the only value the file accepts.      |
 
 <Callout type="info">
-  Setting `concurrency: "parallel"` is accepted, but it does nothing yet: today's engine always
-  processes one item at a time. Leave it `"sequential"` for now.
+  Setting `concurrency: "parallel"` is accepted, but it does nothing: the scheduled run and `/flow
+  auto` always take one item at a time. Running several at once is the `drain` block below.
 </Callout>
+
+### Drain: several items at once
+
+`flow drain --parallel 3` works on three ready items at the same time. Each gets its own copy of the project (a worktree) and its own agent session, spread across the accounts you allow. A separate reviewer agent reads every push, and a pull request opens only after a clean review. These settings live under `drain`:
+
+| Dial                | What it does                                                        | Default       |
+| ------------------- | ------------------------------------------------------------------- | ------------- |
+| `parallel`          | How many items a drain works on at once. `0` means one at a time.   | `0`           |
+| `host`              | Where sessions run: `cli`, `cmux`, `dorkos`, or `auto` to pick one. | `"auto"`      |
+| `maxLivePerAccount` | The most sessions one account runs at once.                         | `2`           |
+| `maxLoadPerCpu`     | New sessions wait while the computer is busier than this.           | `1.5`         |
+| `maxReviewRounds`   | Review rounds before the item stops and waits for you.              | `5`           |
+| `stallAfterMinutes` | Minutes without progress before a quiet session is restarted.       | `60`          |
+| `permissionMode`    | How much each session may do without asking.                        | `acceptEdits` |
+
+Each account flow may use has to join the rotation first; `flow accounts setup` walks you through it. See [Use all your accounts](/docs/guides/flow/use-all-your-accounts).
 
 ### Eligibility
 
@@ -163,6 +183,27 @@ The `comms` setting is the one that shapes tone day to day. The engine reads whe
 
 The `nudge` settings are the only way to get pinged outside your tracker. If you're the only person on the account (the common setup), a parked question otherwise shows up only as a tracker comment and an `agent/needs-input` label, easy to miss. Turning on `nudge.relay` or `nudge.telegram` adds a real notification so a stuck question doesn't sit there unnoticed.
 
+### How much it does on its own
+
+Each project has one more dial, and it isn't in any file in the repo. In DorkOS, open the project's Flow settings and pick **Ask me first**, **Tell me after** or **Just do it**. It decides who answers each kind of question flow runs into.
+
+| Kind of ask            | Ask me first  | Tell me after                                | Just do it                          |
+| ---------------------- | ------------- | -------------------------------------------- | ----------------------------------- |
+| Ship finished work     | asks you      | the reviewer agent approves, and you're told | the reviewer agent approves         |
+| Agent questions        | waits for you | the agent goes with its pick at the deadline | the agent picks and writes down why |
+| Retry and fix problems | asks you      | on its own, and you're told                  | on its own                          |
+
+Whatever you pick, someone checks. A question about secrets or spending always waits for you. **Customize** sets one kind apart from the rest. `flow autonomy` shows what's in force.
+
+<Callout type="warn">
+  **Where it starts depends on the project.** A new project starts at **Tell me after**, so its
+  reviewer agent can ship work it reviewed clean. A project flow already worked in stays at **Ask me
+  first** until you choose, and so does any project flow runs without DorkOS. Check a new project's
+  setting before you leave it running.
+</Callout>
+
+The dial lives in DorkOS, not in the repo, because it decides who checks the agents, and an agent can write any file in the checkout. Only a person can change it. By default, when the reviewer agent approves, flow still won't set the pull request to merge until a person has added the `security-reviewed` label to it.
+
 ### Gates
 
 The checkpoints between stages, under `gates`:
@@ -172,12 +213,14 @@ The checkpoints between stages, under `gates`:
 | `planApproval`                       | Stop after DECOMPOSE for your sign-off before EXECUTE starts.  | `false`   | Off by default, so DECOMPOSE flows straight into EXECUTE. Turn on for a checkpoint. |
 | `review.requireCiGreen`              | Require green CI before the review gate clears.                | `true`    | Part of the review gate, which is **always on**.                                    |
 | `review.reapproveOnFunctionalChange` | Ask for a fresh approval if the change shifts after review.    | `true`    | Stops a stale approval from covering a diff that's since changed.                   |
+| `review.mergeOnApproval`             | Approving at the review gate also sets the PR to merge.        | `true`    | Turn off if you'd rather press merge yourself.                                      |
 | `circuitBreaker.estimateMultiplier`  | Trip a stop if actual work runs N times over the estimate.     | `2`       | Lower to catch runaway items sooner.                                                |
 | `circuitBreaker.tokenBudget`         | Hard token ceiling for a single item before the breaker trips. | `2000000` | Raise for large items; lower to cap spend.                                          |
 
 <Callout type="info">
-  The **human-review gate** (after VERIFY) is always on. There's no setting that turns it off. The
-  **plan-approval gate** (after DECOMPOSE) is the one you toggle, and it's off by default.
+  The **review gate** (after VERIFY) is always on. There's no setting that turns it off. Who answers
+  it is [How much it does on its own](#how-much-it-does-on-its-own). The **plan-approval gate**
+  (after DECOMPOSE) is the one you toggle, and it's off by default.
 </Callout>
 
 ### Loops
@@ -201,9 +244,9 @@ The order isn't arbitrary: recovery goes first because losing in-flight work is 
 
 <Callout type="warn">
   These `priority` and `intervalMs` values describe a schedule for a future always-on process that
-  fires each loop independently. Today, the Pulse tick (see Cadence above) runs the whole set in
-  priority order once per scheduled cron fire, in the same order shown here. The `intervalMs`
-  numbers are already set to the cadence that future process will use.
+  fires each loop independently. Today, each scheduled run (see Cadence above) runs the whole set in
+  priority order once per fire, in the same order shown here. The `intervalMs` numbers are already
+  set to the cadence that future process will use.
 </Callout>
 
 ### Ingestion
@@ -222,25 +265,28 @@ How updates from your tracker reach the engine, under `ingestion`:
 
 ## Which dial should I touch?
 
-| If you want to...                            | Turn this                                                                                                                         |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Turn the autonomous loop on                  | `.dork/plugins/flow/skills/flow-drain/SKILL.md` `schedule.enabled: true`, then approve it on the Schedules page (server required) |
-| Make the autonomous tick fire more often     | Same file's `schedule.cron` field                                                                                                 |
-| Run more than one item at a time             | Not yet possible; today it's always `autonomy.concurrency: "sequential"`                                                          |
-| Cap how much work is in flight               | `autonomy.wipCap.global` / `wipCap.perProject`                                                                                    |
-| Get pinged when a question is waiting on you | `involvement.nudge.relay` / `nudge.telegram`                                                                                      |
-| Require sign-off on the plan before EXECUTE  | `gates.planApproval: true`                                                                                                        |
-| Cap spend per item                           | `gates.circuitBreaker.tokenBudget`                                                                                                |
-| Make replies resume faster                   | `loops.inbox.intervalMs` (lower it)                                                                                               |
-| Ease up on tracker reads                     | `ingestion.pollIntervalMs` (raise it)                                                                                             |
-| Turn a loop off                              | `loops.<id>.enabled: false`                                                                                                       |
-| Change which loop wins when two collide      | `loops.<id>.priority`                                                                                                             |
+| If you want to...                            | Turn this                                                                          |
+| -------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Turn the autonomous loop on                  | Approve `flow-drain` on the Schedules page, which switches it on (server required) |
+| Stop it for a while                          | `/flow:pause` (and `/flow:resume` to lift it)                                      |
+| Make the autonomous tick fire more often     | Edit `flow-drain`'s time on the Schedules page                                     |
+| Run more than one item at a time             | `flow drain --parallel <n>`, or `drain.parallel`                                   |
+| Let the reviewer agent ship clean work       | The project's **How much it does on its own** setting in DorkOS                    |
+| Merge by hand after you approve              | `gates.review.mergeOnApproval: false`                                              |
+| Cap how much work is in flight               | `autonomy.wipCap.global` / `wipCap.perProject`                                     |
+| Get pinged when a question is waiting on you | `involvement.nudge.relay` / `nudge.telegram`                                       |
+| Require sign-off on the plan before EXECUTE  | `gates.planApproval: true`                                                         |
+| Cap spend per item                           | `gates.circuitBreaker.tokenBudget`                                                 |
+| Make replies resume faster                   | `loops.inbox.intervalMs` (lower it)                                                |
+| Ease up on tracker reads                     | `ingestion.pollIntervalMs` (raise it)                                              |
+| Turn a loop off                              | `loops.<id>.enabled: false`                                                        |
+| Change which loop wins when two collide      | `loops.<id>.priority`                                                              |
 
 ## Next steps
 
 <Cards>
   <Card title="Turning on autonomy" href="/docs/guides/flow/turning-on-autonomy">
-    The full walkthrough for enabling the Pulse loop, with the server dependency spelled out.
+    The full walkthrough for turning on the scheduled loop, with the server dependency spelled out.
   </Card>
   <Card title="How it works" href="/docs/guides/flow/how-it-works">
     What these loops and the inbound event system actually do under the hood.

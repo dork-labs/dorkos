@@ -1,6 +1,6 @@
 ---
 title: Publishing a package
-description: Build an agent, plugin, skill pack, or adapter and share it through the DorkOS Marketplace.
+description: Build an agent, plugin, skill pack, adapter, or Shape and share it through the DorkOS Marketplace.
 ---
 
 import { Cards, Card } from 'fumadocs-ui/components/card';
@@ -15,14 +15,15 @@ A DorkOS package is a folder with a manifest and some content: skills, hooks, co
 
 ## What you can publish
 
-Every package is exactly one of four types:
+Every package is exactly one of five types:
 
 - **Agent** - a reusable agent identity: a persona, suggested traits, and starter skills or tasks.
 - **Plugin** - a Claude Code extension: slash commands, hooks, and DorkOS UI extensions (sidebar widgets, sections on the Activity tab, and the like).
 - **Skill pack** - a bundle of `SKILL.md` files that teach an agent how to do something, with no commands or hooks attached.
 - **Adapter** - a bridge to an external system, like a relay transport for a chat platform or a mesh discovery backend.
+- **Shape** - a ready-made setup for the whole workspace: a layout, the extensions it needs, a suggested agent, and schedules. See [Shapes](/docs/marketplace/shapes).
 
-Pick the type based on what the package actually does. Defining an agent's identity means `agent`. Adding commands or UI means `plugin`. Just teaching a skill means `skill-pack`. Bridging an outside service means `adapter`.
+Pick the type based on what the package actually does. Defining an agent's identity means `agent`. Adding commands or UI means `plugin`. Just teaching a skill means `skill-pack`. Bridging an outside service means `adapter`. Setting up a whole workspace for one job means `shape`.
 
 <Callout type="warn" title="Claude Code compatibility, honestly">
   DorkOS packages are built to be a superset of Claude Code plugins: the registry format and
@@ -43,7 +44,7 @@ Every package needs a `.dork/manifest.json`. This is the file DorkOS reads to kn
   "schemaVersion": 1,
   "name": "my-package", // kebab-case, must match the folder name
   "version": "1.0.0", // semver: MAJOR.MINOR.PATCH
-  "type": "plugin", // "agent" | "plugin" | "skill-pack" | "adapter"
+  "type": "plugin", // "agent" | "plugin" | "skill-pack" | "adapter" | "shape"
   "description": "What it does, one to two sentences.",
   "displayName": "My Package", // optional, shown instead of `name` in the UI
   "author": "Your Name",
@@ -71,6 +72,7 @@ Each type adds its own fields on top of the base manifest:
 - **`agent`** adds `agentDefaults`: an optional `persona` string describing the agent, a `capabilities` list, and `traits` (each scored 1 to 5): `verbosity`, `autonomy`, `chaos`, `creativity`, `humor`, and `spice`.
 - **`adapter`** adds `adapterType`, required: a short identifier for what it bridges to, like `"matrix"` or `"slack"`.
 - **`skill-pack`** adds nothing. The manifest is the whole story.
+- **`shape`** adds what the setup applies: `activates` (extensions to turn on), `extensions` (extensions bundled in the package), `layout`, `agents` (each one offered, never created for you), `schedules` and `connections`. `dorkos package init --type shape` writes a starter that already passes validation.
 
 Packages of every type except `agent` also need a `.claude-plugin/plugin.json`, the manifest Claude Code itself reads:
 
@@ -157,7 +159,7 @@ Files written:
   - README.md
 ```
 
-`--type` accepts `agent`, `plugin`, `skill-pack`, or `adapter` (defaults to `plugin` if you leave it out). A few more flags:
+`--type` accepts `agent`, `plugin`, `skill-pack`, `adapter`, or `shape` (defaults to `plugin` if you leave it out). A few more flags:
 
 ```bash
 dorkos package init my-adapter \

@@ -13,7 +13,7 @@ You used to run nine different commands (`/pm`, `/ideate`, `/spec:*`, `/linear:*
 
 Throughout this guide, "you" and "the operator" mean the same person: whoever is driving the loop. That's you.
 
-`/flow` also doesn't care which project-tracking tool you use (we call this **PM-agnostic**, short for "project management-agnostic"). It talks to your tracker through one narrow connector, so the same commands work no matter which tracker sits behind them. Today that tracker is Linear.
+`/flow` also doesn't care which project-tracking tool you use (we call this **PM-agnostic**, short for "project management-agnostic"). It talks to your tracker through one small piece of code made for that tracker, so the same commands work no matter which tracker sits behind them. Linear support comes built in. For another tracker, `/flow:init` writes that piece for you and checks that it works.
 
 <Callout type="info">
   `/flow` is the single place that knows "where work is." Your tracker, your specs, and your labels
@@ -116,26 +116,25 @@ The stages above are the same either way. What changes is who presses the button
 
 ## What always needs you
 
-Two things pull a human in, and neither can be turned off:
+Two checks always happen, and neither can be turned off:
 
-- **A safety floor.** No matter how confident `/flow` is, it stops before anything irreversible or destructive, anything that faces the outside world, anything touching secrets or spending money, or anything that changes the scope of the work. You can't disable this.
-- **The review gate.** After VERIFY, every piece of work lands as a pull request with evidence, and waits for you. Nothing merges on its own.
+- **A safety floor.** No matter how confident `/flow` is, it stops before anything irreversible or destructive, anything that faces the outside world, anything touching secrets or spending money, or anything that changes the scope of the work. Someone always checks these. Anything about secrets or spending always waits for you.
+- **The review gate.** After VERIFY, every piece of work lands as a pull request with evidence, and waits to be checked. Without DorkOS, that's always you. In DorkOS, a per-project setting decides whether a separate reviewer agent may ship work it reviewed clean (see [The dials](/docs/guides/flow/the-dials#how-much-it-does-on-its-own)). Nothing ships that nobody checked.
 
 There's also an optional gate after DECOMPOSE (approving the plan before any code gets written), but it's off by default: `/flow` goes straight from planning into building, and shows you its planning assumptions at the review gate instead.
 
-<Callout type="warn">
-  Right now `/flow` parks at the review gate but can't yet tell when you've approved the pull
-  request. Merge it yourself, then run `/flow:done <issue>` to close the item and clean up. Detecting
-  your approval and merging automatically is planned for a future release.
+<Callout type="info">
+  You answer the review gate with `flow review <issue> --approve`, or send the work back with
+  `--changes`. Approving approves the pull request and, by default, sets it to merge on its own once
+  its checks pass. If you merge a pull request yourself instead, run `/flow:done <issue>` to close
+  the item and clean up.
 </Callout>
 
 ## What works today
 
-`/flow` today is tested and reliable for the parts described above, run either by hand or as a one-time queue drain from your terminal. An always-on version that runs continuously and unattended, with no one starting each drain, is still being built. A few specific things aren't here yet:
+`/flow` today works for the parts described above: by hand, as a queue drain from your terminal, or as a scheduled run in DorkOS. `flow drain --parallel 3` can also work on three items at once, each in its own copy of the project. A few things aren't here yet:
 
-- Running continuously, unattended, with nobody starting each pass.
-- Handling more than one piece of work safely at the same time (v1 works through the queue one item at a time).
-- Detecting your pull-request approval and merging automatically (today you merge, then run `/flow:done`).
+- One always-on process that runs the loop nonstop. Today each scheduled run starts fresh, does its work, and ends.
 - Receiving tracker updates the instant they happen, instead of checking periodically.
 - A dedicated Linear identity built specifically for agents.
 
