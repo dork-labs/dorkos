@@ -11,10 +11,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   mintPageStamp,
-  pageMayHoldRiskyCode,
   pageStampMeta,
   readPageStamp,
   sessionFingerprint,
+  staleConfirm,
   usePageStampKeyFile,
   wantsPageStamp,
 } from '../page-stamp.js';
@@ -121,7 +121,7 @@ describe('sessionFingerprint', () => {
   });
 });
 
-describe('pageMayHoldRiskyCode', () => {
+describe('staleConfirm', () => {
   /** A ledger whose risk cleared at 5_000: a mini app was held or turned off. */
   function cleared(): StepUpRiskLedger {
     const ledger = new StepUpRiskLedger();
@@ -135,46 +135,50 @@ describe('pageMayHoldRiskyCode', () => {
     cookie: string | undefined,
     sessionStartedAt: number | null,
     enforced = true
-  ) => pageMayHoldRiskyCode({ ledger, enforced, stamp, cookie, sessionStartedAt });
+  ) => staleConfirm({ ledger, enforced, stamp, cookie, sessionStartedAt });
 
   it('asks for nothing before a risk was ever seen', () => {
-    expect(ask(new StepUpRiskLedger(), undefined, SIGNED_IN_A, 1_000)).toBe(false);
+    expect(ask(new StepUpRiskLedger(), undefined, SIGNED_IN_A, 1_000)).toBeUndefined();
   });
 
   it('after a clear, refuses a page with no stamp or a forged one', () => {
-    expect(ask(cleared(), undefined, SIGNED_IN_B, 6_000)).toBe(true);
-    expect(ask(cleared(), 'v1.made-up.stamp', SIGNED_IN_B, 6_000)).toBe(true);
+    expect(ask(cleared(), undefined, SIGNED_IN_B, 6_000)).toBe('stale-page');
+    expect(ask(cleared(), 'v1.made-up.stamp', SIGNED_IN_B, 6_000)).toBe('stale-page');
   });
 
   it('refuses a page loaded before the clear, even after signing in again in place', () => {
     // Loaded at 1_000 signed in as A; the risk cleared at 5_000; signed in again as B at 6_000.
     const old = mintPageStamp(SIGNED_IN_A, 1_000);
-    expect(ask(cleared(), old, SIGNED_IN_B, 6_000)).toBe(true);
+    expect(ask(cleared(), old, SIGNED_IN_B, 6_000)).toBe('stale-page');
     // Same sign-in, still the old page.
-    expect(ask(cleared(), old, SIGNED_IN_A, 6_000)).toBe(true);
+    expect(ask(cleared(), old, SIGNED_IN_A, 6_000)).toBe('stale-page');
   });
 
   it('allows a page loaded after the clear, under the same sign-in', () => {
-    expect(ask(cleared(), mintPageStamp(SIGNED_IN_B, 7_000), SIGNED_IN_B, 6_000)).toBe(false);
+    expect(ask(cleared(), mintPageStamp(SIGNED_IN_B, 7_000), SIGNED_IN_B, 6_000)).toBeUndefined();
   });
 
   it('refuses a fresh stamp carried into another sign-in', () => {
-    expect(ask(cleared(), mintPageStamp(SIGNED_IN_A, 7_000), SIGNED_IN_B, 6_000)).toBe(true);
+    expect(ask(cleared(), mintPageStamp(SIGNED_IN_A, 7_000), SIGNED_IN_B, 6_000)).toBe(
+      'stale-page'
+    );
   });
 
   it('takes a signed-out stamp only for a sign-in made after the page loaded', () => {
     const signedOut = mintPageStamp(undefined, 7_000);
-    expect(ask(cleared(), signedOut, SIGNED_IN_B, 8_000)).toBe(false);
-    expect(ask(cleared(), signedOut, SIGNED_IN_B, 6_000)).toBe(true);
-    expect(ask(cleared(), signedOut, SIGNED_IN_B, null)).toBe(true);
+    expect(ask(cleared(), signedOut, SIGNED_IN_B, 8_000)).toBeUndefined();
+    expect(ask(cleared(), signedOut, SIGNED_IN_B, 6_000)).toBe('stale-page');
+    expect(ask(cleared(), signedOut, SIGNED_IN_B, null)).toBe('stale-sign-in');
   });
 
   it('still refuses a sign-in from before the clear, whatever the page', () => {
-    expect(ask(cleared(), mintPageStamp(SIGNED_IN_A, 7_000), SIGNED_IN_A, 1_000)).toBe(true);
+    expect(ask(cleared(), mintPageStamp(SIGNED_IN_A, 7_000), SIGNED_IN_A, 1_000)).toBe(
+      'stale-sign-in'
+    );
   });
 
   it('keeps the sign-in check alone when this server sends no page (the dev server)', () => {
-    expect(ask(cleared(), undefined, SIGNED_IN_B, 6_000, false)).toBe(false);
-    expect(ask(cleared(), undefined, SIGNED_IN_B, 1_000, false)).toBe(true);
+    expect(ask(cleared(), undefined, SIGNED_IN_B, 6_000, false)).toBeUndefined();
+    expect(ask(cleared(), undefined, SIGNED_IN_B, 1_000, false)).toBe('stale-sign-in');
   });
 });

@@ -42,6 +42,7 @@ import {
   type StepUpExtensionRisk,
   type StepUpPasswordUnavailable,
   type StepUpRefusalCode,
+  type StepUpStaleConfirm,
 } from '@dorkos/shared/step-up';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 
@@ -61,10 +62,7 @@ import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { presentsProgramCredential } from '../lib/caller-authority.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import { currentStepUpExtensionRisks } from '../services/extensions/step-up/step-up-extension-risk.js';
-import {
-  pageMayHoldRiskyCode,
-  pageStampsEnforced,
-} from '../services/extensions/step-up/page-stamp.js';
+import { pageStampsEnforced, staleConfirm } from '../services/extensions/step-up/page-stamp.js';
 import {
   stepUpRiskLedger,
   type StepUpRiskLedger,
@@ -91,9 +89,12 @@ import {
 /** The longest password Better Auth stores. */
 const MAX_PASSWORD_LENGTH = 128;
 
-/** Why a browser that may still hold a cleared mini app's code is refused. */
-const CLEARED_RISK_ERROR =
-  'A mini app ran after this page opened. Sign in again, then try once more.';
+/**
+ * What a page from before 0.141.0 shows when it is too old to confirm from
+ * (DOR-5086). Its sheet shows a refused read's own words; this one says how out.
+ * Since 0.141, remove in 0.143 with `fromOlderPage` (DOR-5089).
+ */
+const OLDER_PAGE_RELOAD_ERROR = 'DorkOS changed after this page opened. Reload it, then try again.';
 
 /** What the routes read, injectable for tests. */
 export interface StepUpRouteDeps {
@@ -175,6 +176,14 @@ const REFUSALS: Record<StepUpRefusalCode, { status: 400 | 403 | 404 | 409 | 429;
     'extension-risk': {
       status: 409,
       error: 'Confirming is off while a mini app can be edited by an agent. Nothing changed.',
+    },
+    'stale-sign-in': {
+      status: 409,
+      error: 'Something changed after you signed in. Sign in again, then try once more.',
+    },
+    'stale-page': {
+      status: 409,
+      error: 'This page opened before a change. Reload it, then try again.',
     },
     'not-a-person': { status: 403, error: 'Only you can confirm this, in the DorkOS app.' },
     'not-your-action': { status: 403, error: 'Confirm this in the window that asked.' },
@@ -296,18 +305,26 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     return entry;
   }
 
-  /** Why this caller may not confirm by password, if it may not. */
-  async function passwordUnavailable(
-    c: Context<ApiEnv>
-  ): Promise<StepUpPasswordUnavailable | undefined> {
-    if (!passwordMayCross(honoRequestFacts(c))) return 'insecure-connection';
-    if (!deps.ownerId()) return 'no-password';
+  /**
+   * Why this caller may not confirm by password, if it may not, with the mini
+   * apps that are why. `risks` is never empty for `extension-risk`, so a
+   * refusal always names what blocks it (DOR-5086).
+   */
+  async function passwordUnavailable(c: Context<ApiEnv>): Promise<{
+    unavailable?: StepUpPasswordUnavailable;
+    risks: readonly StepUpExtensionRisk[];
+  }> {
+    if (!passwordMayCross(honoRequestFacts(c)))
+      return { unavailable: 'insecure-connection', risks: [] };
+    if (!deps.ownerId()) return { unavailable: 'no-password', risks: [] };
     // Code an agent can rewrite runs in the app's page: it could draw a
     // look-alike sheet and read the password (Security, Must 3).
-    if (blockedBy().length > 0) return 'extension-risk';
+    const risks = blockedBy();
+    if (risks.length > 0) return { unavailable: 'extension-risk', risks };
     // Its code may still run in a page this browser opened before the risk
     // cleared, since nothing reloads that page (Security, M1 on #3401).
-    return (await mayHoldRiskyCode(c)) ? 'extension-risk' : undefined;
+    const stale = await mayHoldRiskyCode(c);
+    return stale ? { unavailable: stale, risks: [] } : { risks: [] };
   }
 
   /** The loaded extensions that keep step-up off, read fresh and noted on each request. */
@@ -319,18 +336,18 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
 
   /**
    * Whether this browser session, or the page asking, started before a risky
-   * mini app's risk cleared. The session's start comes from the server's
-   * records, the page's from a stamp only the server can sign (DOR-5026).
+   * mini app's risk cleared, and which. The session's start comes from the
+   * server's records, the page's from a stamp only the server can sign (DOR-5026).
    */
-  async function mayHoldRiskyCode(c: Context<ApiEnv>): Promise<boolean> {
-    if (!deps.riskLedger) return false;
+  async function mayHoldRiskyCode(c: Context<ApiEnv>): Promise<StepUpStaleConfirm | undefined> {
+    if (!deps.riskLedger) return undefined;
     const facts = honoRequestFacts(c);
     const user = facts.user;
     const startedAt =
       user?.sessionId && deps.sessionStartedAt
         ? await deps.sessionStartedAt(user.userId, user.sessionId).catch(() => null)
         : null;
-    return pageMayHoldRiskyCode({
+    return staleConfirm({
       ledger: deps.riskLedger,
       enforced: deps.pageStampsEnforced?.() ?? false,
       stamp: facts.headers[PAGE_STAMP_HEADER],
@@ -339,18 +356,41 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     });
   }
 
+  /**
+   * Whether the asking page is from before the named stale reasons (DOR-5086):
+   * every page this server sends carries a stamp, and such a page sends it on
+   * each step-up call. A page left open across the update has none, and its
+   * code reads only `extension-risk`. So it is answered in that shape, with
+   * `stale` naming the reason beside it: a refused confirm, and a
+   * `stale-sign-in` read, whose "Sign in again" signs in in place. Its read
+   * when the page itself is too old (`stale-page`) is refused instead, with
+   * words that say reload, since that sign-in alone never clears it. A script
+   * sends none either, and gets the same. None of it lets anything confirm.
+   *
+   * Since 0.141, remove in 0.143 (DOR-5089), once no supported page needs it.
+   */
+  function fromOlderPage(c: Context<ApiEnv>): boolean {
+    return honoRequestFacts(c).headers[PAGE_STAMP_HEADER] === undefined;
+  }
+
   /** The refusal for `unavailable`, naming the extensions when they are why. */
-  function refuseUnavailable(c: Context<ApiEnv>, unavailable: StepUpPasswordUnavailable): Response {
-    if (unavailable !== 'extension-risk') return refuse(c, unavailable);
-    const risks = blockedBy();
-    if (risks.length > 0) {
+  function refuseUnavailable(
+    c: Context<ApiEnv>,
+    unavailable: StepUpPasswordUnavailable,
+    risks: readonly StepUpExtensionRisk[]
+  ): Response {
+    if (unavailable === 'stale-sign-in' || unavailable === 'stale-page') {
+      const { status, error } = REFUSALS[unavailable];
       return c.json(
-        { ...errorBody(extensionRiskError(risks), 'extension-risk'), blockedBy: risks },
-        REFUSALS['extension-risk'].status
+        fromOlderPage(c)
+          ? { ...errorBody(error, 'extension-risk'), blockedBy: [], stale: unavailable }
+          : { ...errorBody(error, unavailable), stale: unavailable },
+        status
       );
     }
+    if (unavailable !== 'extension-risk') return refuse(c, unavailable);
     return c.json(
-      { ...errorBody(CLEARED_RISK_ERROR, 'extension-risk'), blockedBy: [] },
+      { ...errorBody(extensionRiskError(risks), 'extension-risk'), blockedBy: risks },
       REFUSALS['extension-risk'].status
     );
   }
@@ -435,7 +475,21 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     if (callerRefusal) return callerRefusal;
     const entry = heldOrRefusal(c);
     if (entry instanceof Response) return entry;
-    const unavailable = await passwordUnavailable(c);
+    const { unavailable, risks } = await passwordUnavailable(c);
+    const stale =
+      unavailable === 'stale-sign-in' || unavailable === 'stale-page' ? unavailable : undefined;
+    // A page from before the named reasons, too old to confirm from: its sheet shows a
+    // refused read's own words with only Close. A 200 view would show its "Sign in again",
+    // which signs in without reloading and lands here again (DOR-5086).
+    if (stale === 'stale-page' && fromOlderPage(c)) {
+      return c.json(
+        { ...errorBody(OLDER_PAGE_RELOAD_ERROR, 'extension-risk'), stale },
+        REFUSALS['extension-risk'].status
+      );
+    }
+    // A page from before the named reasons reads only `extension-risk` (see fromOlderPage);
+    // only its `stale-sign-in` read gets here.
+    const shown = stale && fromOlderPage(c) ? 'extension-risk' : unavailable;
     const view: HeldStepUpView = {
       heldActionId: entry.statement.heldActionId,
       requestCode: requestCodeForHash(entry.statement.inputSha256),
@@ -446,8 +500,9 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
       ...(entry.warnings.length > 0 ? { warnings: [...entry.warnings] } : {}),
       expiresAt: entry.statement.expiresAt,
       methods: unavailable ? [] : ['password'],
-      ...(unavailable ? { passwordUnavailable: unavailable } : {}),
-      ...(unavailable === 'extension-risk' ? { blockedBy: [...blockedBy()] } : {}),
+      ...(shown ? { passwordUnavailable: shown } : {}),
+      ...(shown === 'extension-risk' ? { blockedBy: [...risks] } : {}),
+      ...(stale ? { stale } : {}),
       triesLeft: entry.triesLeft,
     };
     return c.json(view);
@@ -458,8 +513,8 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     if (callerRefusal) return callerRefusal;
     const entry = heldOrRefusal(c);
     if (entry instanceof Response) return entry;
-    const unavailable = await passwordUnavailable(c);
-    if (unavailable) return refuseUnavailable(c, unavailable);
+    const { unavailable, risks } = await passwordUnavailable(c);
+    if (unavailable) return refuseUnavailable(c, unavailable, risks);
     const parsed = StepUpPasswordBodySchema.safeParse(readJsonBody(c));
     const password = parsed.success ? parsed.data.password : undefined;
     const passwordRefusal = await refusePassword(c, entry, password);
@@ -479,8 +534,8 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     if (callerRefusal) return callerRefusal;
     const entry = heldOrRefusal(c);
     if (entry instanceof Response) return entry;
-    const unavailable = await passwordUnavailable(c);
-    if (unavailable) return refuseUnavailable(c, unavailable);
+    const { unavailable, risks } = await passwordUnavailable(c);
+    if (unavailable) return refuseUnavailable(c, unavailable, risks);
     const parsed = StepUpChangePasswordBodySchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
       return c.json(errorBody('Enter your password.', 'wrong-password'), 400);

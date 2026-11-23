@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
-import { activityEvents, agents, sessionMetadata } from '@dorkos/db';
+import { afterEach, describe, expect, it } from 'vitest';
+import { activityEvents, agents, sessionMetadata, sessionNativeBindings } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
+import {
+  clearTestHomes,
+  registerTestHomes,
+} from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { ChatMessageStore } from '../../../session/chat-messages/chat-message-store.js';
 import { MessageQueueStore } from '../../../session/message-queue-store.js';
 import { recordPausedQueueActivity } from '../paused-queue-activity.js';
@@ -27,13 +31,22 @@ function world() {
       createdAt: AGENT.pausedAt,
     })
     .run();
+  /** A chat launched with only a folder: no agent recorded, its folder stored (DOR-5038). */
+  function bindByFolder(sessionId: string, cwd: string) {
+    db.insert(sessionMetadata)
+      .values({ sessionId, agentPath: null, runtime: 'claude-code', createdAt: AGENT.pausedAt })
+      .run();
+    db.insert(sessionNativeBindings)
+      .values({ sessionId, runtime: 'claude-code', cwd, createdAt: AGENT.pausedAt })
+      .run();
+  }
   const messages = new ChatMessageStore(db);
   const queue = new MessageQueueStore(db);
-  function send(id: string, chat: string, title: string) {
-    queue.enqueue({ id, sessionId: 'target', clientId: 'chat:' + chat, content: 'Keep this' });
+  function send(id: string, chat: string, title: string, to = 'target') {
+    queue.enqueue({ id, sessionId: to, clientId: 'chat:' + chat, content: 'Keep this' });
     messages.insert({
       id: 'message-' + id,
-      toSessionId: 'target',
+      toSessionId: to,
       fromSessionId: chat,
       fromAgentPath: '/demo/atlas',
       fromAgentId: 'atlas',
@@ -50,10 +63,25 @@ function world() {
       replyToId: null,
     });
   }
-  return { db, send, queue };
+  return { db, send, queue, bindByFolder };
 }
 
 describe('Activity for messages held by a pause', () => {
+  afterEach(() => clearTestHomes());
+
+  it('counts a chat started with only the agent’s folder, and not one in a stranger’s', () => {
+    registerTestHomes(['/demo/scout']);
+    const { db, send, bindByFolder } = world();
+    bindByFolder('by-folder', '/demo/scout');
+    bindByFolder('elsewhere', '/work/project');
+    send('one', 'planning', 'Planning', 'by-folder');
+    send('two', 'review', 'Review', 'elsewhere');
+    recordPausedQueueActivity(db, AGENT);
+    expect(db.select().from(activityEvents).all()[0]?.summary).toBe(
+      'Scout was paused, so 1 message from Planning is held.'
+    );
+  });
+
   it('names one message and its sending chat, once for that pause', () => {
     const { db, send } = world();
     send('one', 'planning', 'Planning');

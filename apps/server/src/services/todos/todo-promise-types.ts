@@ -51,9 +51,10 @@ export type TodoPromiseActor =
   | {
       kind: 'person';
       /**
-       * True only for a request carrying the owner's own session cookie (`personProof`). A person
-       * who did not prove it writes the stranger bound, never `person` authority, unless the
-       * install has no owner account (`ownerless`).
+       * True only for a request carrying the owner's own session cookie and not held by the Wi-Fi
+       * hold (`personProof`). A person who did not prove it writes the stranger bound, never
+       * `person` authority, unless the install has no owner account (`ownerless`). The owner on a
+       * held Wi-Fi device gets no allowance here: an agent's promise is its own ledger (DOR-5070).
        */
       proven?: boolean;
       /**

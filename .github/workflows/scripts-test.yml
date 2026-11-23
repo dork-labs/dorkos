@@ -626,6 +626,14 @@ jobs:
       - name: Credential-free environment scrub fixtures
         run: bash scripts/test-run-credential-free.sh
 
+      # ci-memory-watch.sh (DOR-4813) reports credential-free-build's memory
+      # peak, which the ledger's revert rule reads. The first draft picked the
+      # sample with the most swap (`swap_used_mb=` also ends in `used_mb=`).
+      # Hermetic: a made-up sample log in a temp dir, so it runs the same on
+      # macOS and Linux and never reads the runner's real memory.
+      - name: Runner memory watch fixtures
+        run: bash scripts/test-ci-memory-watch.sh
+
       # test-watch-prs.sh pins watch-prs.sh's classify() vocabulary AND (as of
       # DOR-1630) a probe-seam tier that drives its real `gh pr checks`
       # collection path against a stubbed `gh`. Before DOR-1630 nothing

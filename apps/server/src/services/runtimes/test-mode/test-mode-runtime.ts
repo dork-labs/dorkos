@@ -439,6 +439,14 @@ export class TestModeRuntime implements AgentRuntime {
     return this.registry.get(id);
   }
 
+  /**
+   * The folder this runtime is running the chat in, from its own tracked sessions, as Claude
+   * Code answers it: so a chat started with only a folder resolves its agent (DOR-5035).
+   */
+  getSessionCwd(sessionId: string): string | undefined {
+    return this.registry.get(sessionId)?.cwd;
+  }
+
   /** Discover tracked identities without falling back to another scripted runtime. */
   async findSession(id: string): Promise<Session | null> {
     return this.registry.get(id);

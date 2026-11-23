@@ -10,9 +10,10 @@
  *   session cookie (`personProof`). A window of the app with no session yet is asked for the
  *   owner's step-up (`401 person_session_required`) before anything is written, so the person's
  *   own to-dos never drop to the stranger bound by accident. Any other caller (a program on this
- *   computer) writes as an unproven person: the stranger bound, shown on the to-do. Only on an
- *   install with no owner account may it finish, reopen, note or reorder a to-do assigned to the
- *   person; it changes nothing else (`todo-policy`).
+ *   computer, or the owner on a Wi-Fi device not let run agents, DOR-5070) writes as an unproven
+ *   person: the stranger bound, shown on the to-do. Only on an install with no owner account, or
+ *   from the owner's own Wi-Fi sign-in, may it finish, reopen, note or reorder a to-do assigned to
+ *   the person; it changes nothing else (`todo-policy`).
  *
  * @module routes/todos
  */
@@ -51,6 +52,11 @@ export interface TodoRouterDeps {
   personProven(facts: RequestFacts): boolean;
   /** Whether this install has an owner account; when it doesn't, nobody can be proven. */
   ownerExists(): boolean;
+  /**
+   * Whether an unproven request is the owner's sign-in on a Wi-Fi device the Wi-Fi hold holds
+   * (`heldWifiOwner`, DOR-5070). Absent reads as no.
+   */
+  heldWifiOwner?(facts: RequestFacts): boolean;
   /** Whether an unproven request is an app window to ask for the step-up ({@link todoNeedsStepUp}). */
   needsStepUp(facts: RequestFacts): boolean;
   /** The chat a to-do's latest turn ran in, or null; none when turns aren't wired. */
@@ -124,10 +130,11 @@ function personActor(
       ),
     };
   }
+  // The owner on a Wi-Fi device not let run agents gets the no-owner allowance and nothing more:
+  // tend their own to-dos, never mint `person` authority (DOR-5070, Security's option 1).
+  const allowance = !deps.ownerExists() || deps.heldWifiOwner?.(facts) === true;
   return {
-    actor: proven
-      ? { kind: 'person', proven }
-      : { kind: 'person', proven, ownerless: !deps.ownerExists() },
+    actor: proven ? { kind: 'person', proven } : { kind: 'person', proven, ownerless: allowance },
   };
 }
 

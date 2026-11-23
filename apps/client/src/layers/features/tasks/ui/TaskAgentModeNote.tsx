@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui/button';
 import {
+  HiddenCharacterText,
   ResponsiveDialog,
   ResponsiveDialogBody,
   ResponsiveDialogContent,
@@ -125,14 +126,19 @@ function FileCapReview({ task, review, capAt, open, onOpenChange }: FileCapRevie
   const lines = review.current == null ? [] : fileDiff(review.previous ?? null, review.current);
   const firstChange = lines.findIndex((line) => line.kind !== 'same');
   const changes = diffChangeCount(lines);
+  // Nothing approved to compare with, so every line reads as added.
+  const firstReview = review.previous == null && lines.length > 0;
+  const taskName = task.displayName ?? task.name;
   const hash = review.hash;
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       {/* Clicks inside never reach the task row behind the dialog. */}
       {/* Sized to its content; a long diff scrolls in the body while Cancel and
-          Approve stay pinned at the bottom. */}
+          Approve stay pinned at the bottom. `min-h-0` drops the centred
+          dialog's half-screen floor, which left empty space under a short diff. */}
       <ResponsiveDialogContent
         className="flex max-h-[85vh] flex-col sm:w-fit sm:max-w-2xl"
+        desktopProps={{ className: 'min-h-0' }}
         onClick={(e) => e.stopPropagation()}
         data-slot="task-file-cap-review"
       >
@@ -148,15 +154,30 @@ function FileCapReview({ task, review, capAt, open, onOpenChange }: FileCapRevie
               </span>
             )}
           </ResponsiveDialogTitle>
-          <ResponsiveDialogDescription data-slot="task-file-cap-review-body">
-            {task.displayName ?? task.name}.{' '}
+          {/* The task's name is whole and quoted, wrapping when long: a name with commas still reads as one name. */}
+          <ResponsiveDialogDescription
+            data-slot="task-file-cap-review-body"
+            className="break-words"
+          >
             {capAt === null
-              ? 'Approving lets its runs go at'
-              : 'Approving lifts the cap, so its runs go back to'}{' '}
-            {backTo}.
+              ? `Approving lets “${taskName}” run at ${backTo}.`
+              : `Approving lifts the cap, so “${taskName}” runs at ${backTo}.`}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
-        <ResponsiveDialogBody data-slot="task-file-cap-review-scroll" className="min-h-0">
+        {/* `alignWithHeader`: the diff's left edge lines up with the title. */}
+        <ResponsiveDialogBody
+          data-slot="task-file-cap-review-scroll"
+          alignWithHeader
+          className="min-h-0"
+        >
+          {firstReview && (
+            <p
+              data-slot="task-file-cap-first-review"
+              className="text-muted-foreground mb-2 text-xs"
+            >
+              No approved copy was kept, so the whole file shows.
+            </p>
+          )}
           {lines.length > 0 ? (
             <pre
               data-slot="task-file-cap-diff"
@@ -176,8 +197,9 @@ function FileCapReview({ task, review, capAt, open, onOpenChange }: FileCapRevie
                   )}
                 >
                   {line.kind === 'added' ? '+ ' : line.kind === 'removed' ? '− ' : '  '}
-                  {/* Hidden characters shown, as on the approval card (DOR-5060). */}
-                  {revealHiddenCharacters(line.text)}
+                  {/* Hidden characters shown as chips, as on the approval card
+                      (DOR-5060, DOR-5075). */}
+                  <HiddenCharacterText text={line.text} />
                 </div>
               ))}
             </pre>

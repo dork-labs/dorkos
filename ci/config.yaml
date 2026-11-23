@@ -451,3 +451,18 @@ local:
   heavy_test_max_load: 16
   heavy_load_wait_seconds: 600
   heavy_load_poll_seconds: 30
+  # THE SECOND IN THE ORDER LINE (DOR-5073; scripts/lib/heavy-order.sh). A
+  # labelled run on the order file's second line may start beside the top only
+  # while ALL of these hold: swap used under heavy_second_swap_max_mb, free
+  # memory (macOS `memory_pressure -Q`) at least heavy_second_free_min_pct,
+  # swap grown at most heavy_second_swap_growth_max_mb since the newest
+  # reading 10 to 30 minutes old, the 5-minute load under heavy_second_max_load, and free disk at
+  # least heavy_second_disk_min_gb (twice the usual floor: two jobs fill the
+  # disk twice as fast). Every number is copied unchanged from the
+  # coordinator's live order script, whose two-at-once rule Dorian OK'd on
+  # 2026-11-22. Change them only with a ledger entry.
+  heavy_second_swap_max_mb: 12288
+  heavy_second_free_min_pct: 40
+  heavy_second_swap_growth_max_mb: 512
+  heavy_second_max_load: 16
+  heavy_second_disk_min_gb: 50

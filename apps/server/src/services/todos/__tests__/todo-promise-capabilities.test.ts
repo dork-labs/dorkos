@@ -14,9 +14,11 @@ import type { AgentIdentity } from '../../core/agent-identity/agent-identity-ser
 import { todoPromisesDomain } from '../todo-promise-capabilities.js';
 import { TodoPromiseService } from '../todo-promise-service.js';
 import { TodoPromiseStore } from '../todo-promise-store.js';
+import { rowCarriesOutsideWords } from '../todo-authority.js';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import { resetLiveOutsiderTurns } from '../../core/turn-power/live-outsider-turns.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 
 vi.mock('../../../lib/logger.js', () => ({
@@ -120,11 +122,18 @@ describe('to-dos domain', () => {
       todoPromiseDeps: {
         service,
         agentIdForPath: (agentPath: string) => AGENT_IDS[agentPath],
+        carriesOutsideWords: (id: string) =>
+          rowCarriesOutsideWords(db.select().from(todos).where(eq(todos.id, id)).get()),
       },
     } as unknown as CapabilityDeps;
   });
 
-  afterEach(() => service.stop());
+  afterEach(() => {
+    service.stop();
+    // A promise tool now marks the agent's running turn when a row holds outside words (DOR-4666),
+    // and that record is kept per agent until its chat's next turn, so clear it between cases.
+    resetLiveOutsiderTurns();
+  });
 
   it('declares the three tools in the To-dos area (DOR-3936)', () => {
     expect(

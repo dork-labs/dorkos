@@ -65,8 +65,12 @@ export {
   getActionStepUpAfterExpiry,
   getActionStepUpAfterDifferent,
   getActionStepUpShowing,
+  getActionStepUpWaiting,
+  noteStepUpReload,
   openActionStepUpFromLink,
+  reloadToConfirm,
   requestActionStepUp,
+  stepUpReloadedFor,
   subscribeActionStepUp,
   type ActionStepUpOutcome,
 } from './action-step-up-signal';

@@ -96,10 +96,6 @@ const ALLOWED: Record<string, { count: number; why: string }> = {
     count: 1,
     why: 'source vs destination of a recovery; the insert copies no agent, so NULL stays NULL',
   },
-  'services/session/chat-messages/chat-message-wiring.ts': {
-    count: 1,
-    why: 'a display name lookup by the recorded agent; NULL shows none (slice C)',
-  },
   'services/session/local-browser/profile-access.ts': {
     count: 1,
     why: 'the same chat now vs when its browser opened, both from chatFactsOf; a lost folder refuses',
@@ -199,9 +195,10 @@ describe('the chat agent census', () => {
     ).toHaveLength(6);
   });
 
-  // DOR-5038: these read a chat's agent only through session-agent. Their wiring has no test
-  // of its own, so the recorded-only read coming back here fails this instead.
+  // DOR-5038: these read a chat's agent only through session-agent. Most of this wiring has no
+  // test of its own, so the recorded-only read coming back here fails this instead.
   it.each([
+    'services/heartbeats/gatherers/open-work-reader.ts',
     'services/relay/adapter-factory.ts',
     'services/session/fleet/carry-over.ts',
     'services/session/local-browser/outside-turn.ts',
@@ -211,6 +208,20 @@ describe('the chat agent census', () => {
     const code = codeOnly(fs.readFileSync(path.join(SRC, file), 'utf8'));
     expect(code).not.toContain('getSessionAgentPath(');
     expect(code).toMatch(/\b(?:sessionAgentById|sessionAgentOf|chatFactsOf)\(?/);
+  });
+
+  // chat_read's description names the chat's agent (DOR-5038, slice C). The rest of the file
+  // still reads the recorded agent for report-back routing, so only this block is pinned.
+  it('chat_read names the chat’s agent through session-agent', () => {
+    const code = codeOnly(
+      fs.readFileSync(
+        path.join(SRC, 'services/session/chat-messages/chat-message-wiring.ts'),
+        'utf8'
+      )
+    );
+    const describe = code.slice(code.indexOf('describe: async'), code.indexOf('search: async'));
+    expect(describe).toContain('sessionAgentById(');
+    expect(describe).not.toContain('getSessionAgentPath(');
   });
 
   it('gives every listed file a reason', () => {

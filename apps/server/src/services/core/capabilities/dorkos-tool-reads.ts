@@ -109,6 +109,15 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'audit.running_chats': 'self',
   // An opened note marks when a line of it was saved while reading outside words.
   'memory.read': 'self',
+  // Every to-do tool marks when a to-do it hands back carries a stranger's words, never for the
+  // team's own, through one check (DOR-4666, `todos/todo-word-marks.ts`). `todos.*` are behind
+  // `DORKOS_TODOS_ENABLED`.
+  'todos.add': 'self',
+  'todos.update': 'self',
+  'todos.list': 'self',
+  'todo_promises.add': 'self',
+  'todo_promises.update': 'self',
+  'todo_promises.list': 'self',
   'connectors.execute_read': 'self',
   // ── Marks when a listed entry came from a third-party package ──────────────
   'marketplace.list_installed': anyInstalledFromOutside,
@@ -171,9 +180,6 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'session.compact': 'local',
   'chat.send': 'local',
   'chat.stop': 'local',
-  'todo_promises.add': 'local',
-  'todo_promises.update': 'local',
-  'todo_promises.list': 'local',
   'work-queue.add': 'local',
   'work-queue.remove': 'local',
   'work-queue.list': 'local',

@@ -11,10 +11,12 @@
  * it in now; both are server-held, never a caller's claim. Read-side only:
  * nothing is written back. So a chat with no stored folder names nobody once
  * its runtime no longer holds it (a restart, an idle reclaim), and checks that
- * read it then refuse rather than guess. One exception: a hand-off's end notice
- * lets the witness checked at admission stand for an unknown agent (DOR-5040).
- * Claiming and running the hand-off still refuse one, so a chat dropped before
- * its seat runs has the hand-off declined, and hears that it ended unposted.
+ * read it then refuse rather than guess. One exception: once a hand-off was
+ * admitted, the witness checked at admission stands for an unknown agent when
+ * its seat claims it, before its turn runs, and for its end notice (DOR-5040,
+ * DOR-5087), so a hand-off queued across a restart still posts. Admission
+ * itself refuses an unknown agent, and every check refuses another agent's
+ * folder, nobody's folder and a refused one.
  *
  * One limit, on purpose (DOR-5057): a relay-created chat with no recorded agent
  * and no stored folder runs where its first turn's desk-checked folder put it,

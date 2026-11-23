@@ -66,10 +66,17 @@ CHECK="${CHECK:-$repo_root/scripts/heavy-run-lock.sh}"
 unset CI DORKOS_HEAVY_SLOT_HELD DORKOS_HEAVY_LOCK DORKOS_HEAVY_WAIT_SECONDS DORKOS_HEAVY_SLOTS \
   DORKOS_HEAVY_MAX_LOAD DORKOS_HEAVY_TEST_MAX_LOAD DORKOS_IGNORE_LOAD DORKOS_HEAVY_LOAD_WAIT_SECONDS DORKOS_HEAVY_LOAD_POLL_SECONDS \
   CI_STEWARD_TIMINGS_FILE CI_STEWARD_RUN_ID DORKOS_HEAVY_ORDER_DIR DORKOS_HEAVY_LABEL \
-  DORKOS_HEAVY_ORDER_STALE_SECONDS DORKOS_LOAD_GATE_IN_TURN DORKOS_HEAVY_NOTIFY
+  DORKOS_HEAVY_ORDER_LOCK_WAIT DORKOS_HEAVY_ORDER_TEST_CORRUPT \
+  DORKOS_HEAVY_ORDER_STALE_SECONDS DORKOS_LOAD_GATE_IN_TURN DORKOS_HEAVY_NOTIFY \
+  DORKOS_HEAVY_SECOND_SWAP_MAX_MB DORKOS_HEAVY_SECOND_FREE_MIN_PCT DORKOS_HEAVY_SECOND_SWAP_GROWTH_MAX_MB \
+  DORKOS_HEAVY_SECOND_MAX_LOAD DORKOS_HEAVY_SECOND_DISK_MIN_GB
 # This machine's real load must never decide a case: a busy host would make
 # every --job case below wait out the load bound. The load cases set their own.
 export DORKOS_HEAVY_LOADAVG_CMD='echo 0.00'
+# Nor its real memory, load or disk: by default the reading is unreadable, so a
+# second label in line waits exactly as it did before DOR-5073. The DOR-5073
+# cases set their own.
+export DORKOS_HEAVY_MACHINE_CMD='false'
 # These cases are about this lock alone. A --job also waits in the app's line
 # for heavy jobs (DOR-4209), whose folder is this machine's real one; that line
 # has its own suite, scripts/test-load-gate-turn.sh, over a throwaway folder.
@@ -964,6 +971,386 @@ sleep 3
 stale_env "$coord" "$locks" bash "$CHECK" --status >/dev/null 2>&1
 check_eq 'a lone idle top is not moved' 'lonely' "$(cat "$coord/heavy-order")"
 if [ -e "$coord/heavy-order-notes.md" ]; then not_ok 'a note was written for a lone top'; else ok 'and no note is written'; fi
+
+echo ""
+echo "== the second label may start beside the top while the machine is healthy (DOR-5073) =="
+
+# The machine is faked: DORKOS_HEAVY_MACHINE_CMD prints "<swap MB> <free %>
+# <5-minute load> <free disk GB>", and a swap sample from 700 s ago is planted
+# so the growth check has something to measure against. 12 GB is 12288 MB, so
+# 11.9 / 12.0 / 12.1 GB are 12185.6 / 12288 / 12390.4.
+memf="$work/machine"
+mem_env() { order_env "$1" "$2" DORKOS_HEAVY_MACHINE_CMD="cat $memf" "${@:3}"; }
+# try_label <label> <reading> [<swap MB 700 s ago> | none] [<age of that sample, s>]
+# runs <label> against a fresh top/second/third line, leaving "<exit>:<output>"
+# in $out. By default the old sample has the same swap, so growth is 0.
+try_label() {
+  local old=${3:-} age=${4:-700}
+  coord=$(new_coord)
+  locks=$(new_locks)
+  printf 'top-job\nsecond-job\nthird-job\n' >"$coord/heavy-order"
+  printf '%s\n' "$2" >"$memf"
+  [ -n "$old" ] || old=$(printf '%s' "$2" | awk '{ print $1 }')
+  [ "$old" = none ] || [ -z "$old" ] || printf '%s %s\n' "$(($(date +%s) - age))" "$old" >"$coord/heavy-swap-samples"
+  out=$(mem_env "$coord" "$locks" bash "$CHECK" --label "$1" bash -c "echo $1-ran" 2>&1)
+  out="$?:$out"
+}
+starts() { check_contains "$1" '0:' "${out:0:2}"; }
+refused() { check_contains "$1" '75:' "${out:0:3}"; }
+
+try_label second-job '12185.6 41 1.0 200'
+starts 'a healthy machine: the second starts'
+check_contains 'its command ran' 'second-job-ran' "$out"
+check_contains 'it says why it may start' "may start beside 'top-job'" "$out"
+check_eq 'it left the line when it ended; the top keeps its place' \
+  "$(printf 'top-job\nthird-job')" "$(cat "$coord/heavy-order")"
+
+# Swap used: under 12288 MB.
+try_label second-job '12288 41 1.0 200'
+refused 'swap 12.0 GB: the second is refused'
+check_contains 'and told why' 'swap used is 12288 MB, at or over 12288 MB' "$out"
+check_contains 'and who is next' "Next is 'top-job'" "$out"
+check_contains 'and that it may try again soon' 'Try again in a few minutes' "$out"
+check_lacks 'and runs nothing' 'second-job-ran' "$out"
+try_label second-job '12390.4 41 1.0 200'
+refused 'swap 12.1 GB: the second is refused'
+
+# Free memory: at least 40%.
+try_label second-job '0 39 1.0 200'
+refused 'free 39%: the second is refused'
+check_contains 'and told why' 'free memory is 39%, under 40%' "$out"
+try_label second-job '0 40 1.0 200'
+starts 'free 40%: the second starts'
+try_label second-job '0 41 1.0 200'
+starts 'free 41%: the second starts'
+try_label second-job '12390.4 39 1.0 200'
+refused 'both over (12.1 GB, 39%): the second is refused'
+try_label second-job '12185.6 40 1.0 200'
+starts 'both just inside (11.9 GB, 40%): the second starts'
+try_label second-job '12185.6 39 1.0 200'
+refused 'swap fine but free 39%: the second is refused'
+try_label second-job '12288 40 1.0 200'
+refused 'free fine but swap 12.0 GB: the second is refused'
+
+# Swap growth: at most 512 MB over 10 minutes.
+try_label second-job '1512 50 1.0 200' 1000
+starts 'swap grew 512 MB: the second starts'
+try_label second-job '1513 50 1.0 200' 1000
+refused 'swap grew 513 MB: the second is refused'
+check_contains 'and told why' 'swap grew from 1000 to 1513 MB' "$out"
+try_label second-job '1511.5 50 1.0 200' 1000
+starts 'swap grew 511.5 MB: the second starts'
+try_label second-job '1000 50 1.0 200' none
+refused 'no swap sample from 10 minutes ago: the second is refused'
+check_contains 'and told one was just taken' 'one was just taken' "$out"
+check_eq 'and the sample is recorded' 1 "$(awk 'END { print NR }' "$coord/heavy-swap-samples")"
+try_label second-job '1000 50 1.0 200' 1000 300
+refused 'a sample only 5 minutes old: the second is refused'
+try_label second-job '1000 50 1.0 200' 1000 2000
+refused 'a sample over 30 minutes old: the second is refused'
+try_label second-job '1000 50 1.0 200' 1000 1700
+starts 'a sample 28 minutes old: the second starts'
+
+# 5-minute load: under 16.
+try_label second-job '0 50 15.99 200'
+starts 'load 15.99: the second starts'
+try_label second-job '0 50 16 200'
+refused 'load 16: the second is refused'
+check_contains 'and told why' 'the 5-minute load is 16, at or over 16' "$out"
+try_label second-job '0 50 16.01 200'
+refused 'load 16.01: the second is refused'
+
+# Free disk: at least 50 GB.
+try_label second-job '0 50 1.0 49.99'
+refused 'disk 49.99 GB: the second is refused'
+check_contains 'and told why' 'free disk is 49.99 GB, under 50 GB' "$out"
+try_label second-job '0 50 1.0 50'
+starts 'disk 50 GB: the second starts'
+try_label second-job '0 50 1.0 50.01'
+starts 'disk 50.01 GB: the second starts'
+
+# A reading that cannot be had, or makes no sense, counts as unhealthy.
+try_label second-job '' none
+refused 'no reading: the second is refused'
+check_contains 'and told it could not be read' 'could not all be read' "$out"
+try_label second-job '0 50 1.0' none
+refused 'a reading missing the disk: the second is refused'
+try_label second-job 'lots 50 1.0 200' none
+refused 'a malformed reading: the second is refused'
+try_label second-job '-5 50 1.0 200' none
+refused 'a negative reading: the second is refused'
+try_label second-job '1e3 50 1.0 200' none
+refused 'an exponent reading: the second is refused'
+# A limit that is not a number refuses rather than turning into 0.
+coord=$(new_coord)
+locks=$(new_locks)
+printf 'top-job\nsecond-job\n' >"$coord/heavy-order"
+printf '0 50 1.0 200\n' >"$memf"
+printf '%s 0\n' "$(($(date +%s) - 700))" >"$coord/heavy-swap-samples"
+out=$(mem_env "$coord" "$locks" DORKOS_HEAVY_SECOND_DISK_MIN_GB=lots bash "$CHECK" --label second-job bash -c 'echo x' 2>&1)
+check_eq 'a limit that is not a number refuses the second' 75 "$?"
+check_contains 'and says so' 'is not a number' "$out"
+
+# The top always may start; the third never does.
+try_label top-job '99999 0 99 0' none
+starts 'the top starts however bad the machine is'
+check_contains 'its command ran' 'top-job-ran' "$out"
+try_label third-job '0 100 0 999'
+refused 'the third never starts, however healthy the machine is'
+check_lacks 'and runs nothing' 'third-job-ran' "$out"
+check_lacks 'and is not told about the machine' 'REFUSE (machine)' "$out"
+
+# Two at once: the second starts while the top is running.
+coord=$(new_coord)
+locks=$(new_locks)
+printf 'top-job\nsecond-job\n' >"$coord/heavy-order"
+printf '0 100 0 999\n' >"$memf"
+printf '%s 0\n' "$(($(date +%s) - 700))" >"$coord/heavy-swap-samples"
+mem_env "$coord" "$locks" bash "$CHECK" --label 'top-job' sleep 30 >/dev/null 2>&1 &
+holder=$!
+own_pids+=("$holder")
+await_locked "$locks" 1 || not_ok 'top-job never took a slot'
+out=$(mem_env "$coord" "$locks" bash "$CHECK" --label 'second-job' bash -c 'echo beside-ran' 2>&1)
+check_eq 'the second runs while the top runs' 0 "$?"
+check_contains 'its command ran' 'beside-ran' "$out"
+check_eq 'the running top keeps its place' 'top-job' "$(awk 'NF' "$coord/heavy-order")"
+signal_tree KILL "$holder"
+wait "$holder" 2>/dev/null
+
+# A second starting beside an idle top does not restart the top's idle clock,
+# so an idle top still moves down on time. Wide margins: without the guard the
+# clock restarts at the second's exit, 2 s in, so a 6 s bound would not be
+# reached until 8 s; this checks at 7 s.
+coord=$(new_coord)
+locks=$(new_locks)
+printf 'idle-top\nsecond-job\nthird-job\n' >"$coord/heavy-order"
+printf '0 100 0 999\n' >"$memf"
+printf '%s 0\n' "$(($(date +%s) - 700))" >"$coord/heavy-swap-samples"
+mem_env "$coord" "$locks" DORKOS_HEAVY_ORDER_STALE_SECONDS=6 bash "$CHECK" --status >/dev/null 2>&1
+sleep 2
+out=$(mem_env "$coord" "$locks" DORKOS_HEAVY_ORDER_STALE_SECONDS=6 bash "$CHECK" --label 'second-job' bash -c 'echo ok' 2>&1)
+check_contains 'the second ran beside the idle top' 'may start beside' "$out"
+sleep 5
+mem_env "$coord" "$locks" DORKOS_HEAVY_ORDER_STALE_SECONDS=6 bash "$CHECK" --status >/dev/null 2>&1
+check_eq 'the idle top moved down on its own clock' \
+  "$(printf 'third-job\nidle-top')" "$(awk 'NF' "$coord/heavy-order")"
+
+echo ""
+echo "== the order line takes commands, never a hand edit (DOR-5079) =="
+
+# Each command, with its exit code first, as "rc:output".
+ord() { local c=$1 l=$2; shift 2; out=$(order_env "$c" "$l" bash "$CHECK" "$@" 2>&1); echo "$?:$out"; }
+# The same, with one VAR=value setting for the run.
+ordv() { local c=$1 l=$2 v=$3; shift 3; out=$(order_env "$c" "$l" "$v" bash "$CHECK" "$@" 2>&1); echo "$?:$out"; }
+line_of() { awk 'NF' "$1/heavy-order" | tr '\n' '|'; }
+
+coord=$(new_coord)
+locks=$(new_locks)
+check_contains '--list on an empty line says so' '0:[heavy] order: (empty: no order)' "$(ord "$coord" "$locks" --list)"
+check_contains '--insert adds at the end' "0:[heavy] order: insert 'alpha' done" "$(ord "$coord" "$locks" --insert alpha)"
+ord "$coord" "$locks" --insert beta >/dev/null
+check_contains '--insert --top goes first' '  1  gamma' "$(ord "$coord" "$locks" --insert gamma --top)"
+ord "$coord" "$locks" --insert delta --after gamma >/dev/null
+ord "$coord" "$locks" --insert eps --before beta >/dev/null
+ord "$coord" "$locks" --insert zeta --at 2 >/dev/null
+check_eq 'after, before and --at place the label' 'gamma|zeta|delta|alpha|eps|beta|' "$(line_of "$coord")"
+check_contains '--list numbers the line' '  6  beta' "$(ord "$coord" "$locks" --list)"
+
+# A duplicate insert, an unknown label, a bad anchor: refused (2), nothing changed.
+before=$(line_of "$coord")
+r=$(ord "$coord" "$locks" --insert beta)
+check_contains 'a duplicate insert is refused (2)' "2:[heavy] REFUSE (order): 'beta' is already in the line (#6); use --move" "$r"
+r=$(ord "$coord" "$locks" --move nobody --top)
+check_contains 'moving an unknown label is refused (2)' "2:[heavy] REFUSE (order): 'nobody' is not in the line" "$r"
+r=$(ord "$coord" "$locks" --remove nobody --reason 'made-up')
+check_contains 'removing an unknown label is refused (2)' "2:" "$r"
+r=$(ord "$coord" "$locks" --insert omega --after nobody)
+check_contains 'an anchor not in the line is refused (2)' "anchor 'nobody' is not in the line" "$r"
+r=$(ord "$coord" "$locks" --move beta --after beta)
+check_contains 'a label placed after itself is refused' "cannot be placed after itself" "$r"
+r=$(ord "$coord" "$locks" --insert omega --at 9)
+check_contains '--at out of range is refused' '--at 9 is out of range (1..7)' "$r"
+r=$(ord "$coord" "$locks" --move beta)
+check_contains '--move needs a position' '2:[heavy] usage: a position is required' "$r"
+r=$(ord "$coord" "$locks" --insert omega --sideways)
+check_contains 'an unknown position is a usage error' "unknown position '--sideways'" "$r"
+r=$(ord "$coord" "$locks" --insert 'bad\label')
+check_contains 'a label outside the allowed set is refused (2)' '2:[heavy] REFUSE (label)' "$r"
+r=$(ord "$coord" "$locks" --label 'bad;label' bash -c 'echo ran')
+check_contains 'a run with a bad label is refused (2) and runs nothing' '2:[heavy] REFUSE (label)' "$r"
+r=$(ord "$coord" "$locks" --insert 'two  spaces')
+check_contains 'a label with two spaces in a row is refused (it could never leave)' '2:[heavy] REFUSE (label)' "$r"
+r=$(ord "$coord" "$locks" --insert omega --at 99999999999999999999999)
+check_contains 'an --at too big for a number is refused, as live does' '2:[heavy] REFUSE (order): --at' "$r"
+r=$(ord "$coord" "$locks" --remove beta)
+check_contains '--remove needs --reason' '2:[heavy] REFUSE (order): --remove needs --reason' "$r"
+check_eq 'none of the refusals changed the line' "$before" "$(line_of "$coord")"
+
+r=$(ord "$coord" "$locks" --move beta --top)
+check_contains '--move --top moves it first' '  1  beta' "$r"
+r=$(ord "$coord" "$locks" --remove eps --reason 'made-up: no longer needed')
+check_eq '--remove with a reason drops it' 'beta|gamma|zeta|delta|alpha|' "$(line_of "$coord")"
+check_contains 'and the reason is in the log' 'made-up: no longer needed' "$(cat "$coord/heavy-order.log")"
+r=$(ord "$coord" "$locks" --done never-there)
+check_contains '--done on an unknown label is a no-op (0)' "0:[heavy] order: popped 'never-there'" "$r"
+check_contains 'and is logged as not in line' 'not-in-line (no change)' "$(cat "$coord/heavy-order.log")"
+r=$(ord "$coord" "$locks" --done alpha)
+check_contains '--done leaves the line' "next is 'beta'" "$r"
+check_eq 'only that label left' 'beta|gamma|zeta|delta|' "$(line_of "$coord")"
+check_eq 'every write is one log line, refusals none' 10 "$(wc -l <"$coord/heavy-order.log" | tr -d ' ')"
+r=$(ord "$coord" "$locks" --help)
+check_contains '--help prints the usage (2)' '2:usage: heavy-run-lock.sh --label' "$r"
+
+# A hand edit is said out loud and logged; the write still goes ahead.
+printf 'hand-added\n' >>"$coord/heavy-order"
+r=$(ord "$coord" "$locks" --insert theta)
+check_contains 'a hand edit is noticed' 'was changed outside heavy-run-lock.sh' "$r"
+check_contains 'and the write still went ahead' "insert 'theta' done" "$r"
+check_contains 'and it is logged' 'external-edit-detected' "$(cat "$coord/heavy-order.log")"
+r=$(ord "$coord" "$locks" --list)
+check_lacks 'a managed write leaves no warning behind' 'changed outside' "$r"
+
+# The verify: a write that would lose or gain a label writes nothing (3).
+before=$(line_of "$coord")
+r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_TEST_CORRUPT=drop-first --insert iota)
+check_contains 'a write that would lose a label is refused (3)' '3:[heavy] REFUSE (order verify)' "$r"
+check_contains 'and names what would be lost' "would be LOST: 'beta'" "$r"
+r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_TEST_CORRUPT=dup-last --move beta --at 2)
+check_contains 'a write that would duplicate a label is refused (3)' 'would be ADDED/DUPLICATED' "$r"
+check_eq 'and nothing was written' "$before" "$(line_of "$coord")"
+
+# The lock is a kernel flock on heavy-order.lock (DOR-5082). hold_order_lock
+# <coord> <seconds> holds it from another process, the way a slow writer
+# would, until `<coord>/release` appears or the seconds run out, and returns
+# once it is held; the holder's pid is in $holder.
+hold_order_lock() {
+  rm -f -- "$1/held" "$1/release"
+  # shellcheck disable=SC2016 # a perl program, not a shell expansion
+  perl -MFcntl=:flock -e '
+    open(my $f, ">>", $ARGV[0]) or exit 1;
+    flock($f, LOCK_EX) or exit 1;
+    open(my $r, ">", $ARGV[2]) or exit 1;
+    close $r;
+    for (1 .. $ARGV[1] * 20) {
+      last if -e $ARGV[3];
+      select(undef, undef, undef, 0.05);
+    }' "$1/heavy-order.lock" "$2" "$1/held" "$1/release" &
+  holder=$!
+  own_pids+=("$holder")
+  for _ in $(seq 1 100); do
+    [ -f "$1/held" ] && return 0
+    sleep 0.05
+  done
+  return 1
+}
+
+# A held lock refuses a write in time (4) and changes nothing.
+hold_order_lock "$coord" 60 || not_ok 'the test holder never took the order lock'
+started=$(date +%s)
+r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_LOCK_WAIT=1 --insert kappa)
+check_contains 'a held lock refuses the write (4)' '4:[heavy] order: lock busy for 1s, nothing changed' "$r"
+check_le 'within its wait' 3 "$(($(date +%s) - started))"
+r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_LOCK_WAIT=1 --done beta)
+check_eq 'a --done that cannot lock exits 4' 4 "${r%%:*}"
+check_contains 'and says so loudly' "[heavy] ORDER POP FAILED" "$r"
+check_eq 'and the label is still in line' "$before" "$(line_of "$coord")"
+# A holder that dies, however it dies, lets go at once: nothing waits for a
+# lock to look old, so nothing can take over a live one.
+kill -KILL "$holder" 2>/dev/null
+wait "$holder" 2>/dev/null
+r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_LOCK_WAIT=1 --insert kappa)
+check_contains 'a holder killed with SIGKILL frees the lock at once' "0:[heavy] order: insert 'kappa' done" "$r"
+# An old lock folder from the mkdir lock this replaced means nothing now.
+mkdir "$coord/heavy-order.lock.d"
+r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_LOCK_WAIT=1 --insert lambda)
+check_contains 'an old heavy-order.lock.d folder blocks nothing' "0:[heavy] order: insert 'lambda' done" "$r"
+
+# A slow write keeps every other writer out until it ends (DOR-5082): two
+# writers that arrive while the lock is held both wait, then both land.
+coord=$(new_coord)
+locks=$(new_locks)
+ord "$coord" "$locks" --insert first >/dev/null
+hold_order_lock "$coord" 60 || not_ok 'the test holder never took the order lock'
+order_env "$coord" "$locks" bash "$CHECK" --insert waiter-1 >/dev/null 2>&1 &
+w1=$!
+order_env "$coord" "$locks" bash "$CHECK" --insert waiter-2 >/dev/null 2>&1 &
+w2=$!
+own_pids+=("$w1" "$w2")
+sleep 1
+check_eq 'no writer gets in while a slow write holds the lock' 'first|' "$(line_of "$coord")"
+# Still running means still waiting: the check above saw writers held off,
+# not writers that had yet to start.
+if kill -0 "$w1" 2>/dev/null && kill -0 "$w2" 2>/dev/null; then
+  ok 'both writers are still waiting for it'
+else
+  not_ok 'both writers are still waiting for it'
+fi
+touch "$coord/release"
+wait "$holder" 2>/dev/null
+wait "$w1"
+c1=$?
+wait "$w2"
+c2=$?
+check_eq 'both waiting writers finish once it lets go' '0 0' "$c1 $c2"
+check_eq 'and both land' 'first|waiter-1|waiter-2|' "$(awk 'NF' "$coord/heavy-order" | LC_ALL=C sort | tr '\n' '|')"
+
+# Concurrent writes all land: none lost, none doubled.
+coord=$(new_coord)
+locks=$(new_locks)
+pids=()
+for i in 1 2 3 4 5 6 7 8; do
+  order_env "$coord" "$locks" bash "$CHECK" --insert "job-$i" >/dev/null 2>&1 &
+  pids+=("$!")
+done
+codes=''
+for p in "${pids[@]}"; do
+  wait "$p"
+  codes="$codes $?"
+done
+# Every exit code, so a writer that failed is told apart from one that was lost.
+check_eq 'every concurrent insert exits 0' ' 0 0 0 0 0 0 0 0' "$codes"
+check_eq 'eight concurrent inserts all land' 8 "$(awk 'NF' "$coord/heavy-order" | sort -u | wc -l | tr -d ' ')"
+check_eq 'and none is doubled' 8 "$(awk 'NF' "$coord/heavy-order" | wc -l | tr -d ' ')"
+
+# Writes while a top row is running: a release row jumps in behind it, the
+# running top can be moved past or removed, and its own end changes nothing else.
+coord=$(new_coord)
+locks=$(new_locks)
+ord "$coord" "$locks" --insert running-job >/dev/null
+ord "$coord" "$locks" --insert waiting-job >/dev/null
+order_env "$coord" "$locks" bash "$CHECK" --label 'running-job' sleep 30 >/dev/null 2>&1 &
+holder=$!
+own_pids+=("$holder")
+await_locked "$locks" 1 || not_ok 'running-job never took a slot'
+ord "$coord" "$locks" --insert 'release v9.9.9 QA gate' --after running-job >/dev/null
+check_eq 'a release row goes in right behind the running job' \
+  'running-job|release v9.9.9 QA gate|waiting-job|' "$(line_of "$coord")"
+ord "$coord" "$locks" --move waiting-job --top >/dev/null
+check_eq 'a row can move to the top while another runs' \
+  'waiting-job|running-job|release v9.9.9 QA gate|' "$(line_of "$coord")"
+r=$(ord "$coord" "$locks" --remove running-job --reason 'made-up: superseded')
+check_contains 'the running row can be removed, with a reason' "remove 'running-job' done" "$r"
+signal_tree TERM "$holder"
+wait "$holder" 2>/dev/null
+check_eq 'the removed job ending changes nothing else' 'waiting-job|release v9.9.9 QA gate|' "$(line_of "$coord")"
+r=$(ord "$coord" "$locks" --list)
+check_lacks 'and a run leaving the line leaves no hand-edit warning' 'changed outside' "$r"
+
+# A labelled run leaving the line keeps the stored hash in step, and logs it.
+coord=$(new_coord)
+locks=$(new_locks)
+ord "$coord" "$locks" --insert solo >/dev/null
+ord "$coord" "$locks" --insert after-solo >/dev/null
+order_env "$coord" "$locks" bash "$CHECK" --label solo bash -c 'true' >/dev/null 2>&1
+check_eq 'the run left the line' 'after-solo|' "$(line_of "$coord")"
+check_contains 'the run'"'"'s leaving is logged' "	done	solo	was #1" "$(cat "$coord/heavy-order.log")"
+r=$(ord "$coord" "$locks" --insert next)
+check_lacks 'and the next write sees no hand edit' 'changed outside' "$r"
+
+# The old script's run form, `<label> -- <command>`, still works after --label.
+r=$(ord "$coord" "$locks" --label after-solo -- bash -c 'echo dashdash-ran')
+check_contains 'a -- after --label <label> is taken, and the command runs' '0:' "${r:0:2}"
+check_contains 'the command after -- ran' 'dashdash-ran' "$r"
 
 echo ""
 printf '%s passed, %s failed\n' "$pass" "$fail"
