@@ -108560,6 +108560,200 @@
         }
       }
     },
+    "/api/capabilities/{id}/invoke": {
+      "post": {
+        "operationId": "capabilities.invoke",
+        "tags": [
+          "Capabilities"
+        ],
+        "summary": "Run any capability by id",
+        "description": "Runs one capability with the body as its input, through the same permission check, audit record and approval as its MCP tool, its CLI verb and its own REST path. `GET /api/capabilities/catalog` lists the ids and each input schema. A call that needs a person answers 202; retry it with the same body and the `X-DorkOS-Approval` header once they allow it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The capability id, e.g. `agent.pause`."
+            },
+            "required": true,
+            "description": "The capability id, e.g. `agent.pause`.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The approval token from an earlier 202, on the retry."
+            },
+            "required": false,
+            "description": "The approval token from an earlier 202, on the retry.",
+            "name": "x-dorkos-approval",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": {},
+                "description": "The capability's input; empty means `{}`."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The capability's result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "approval_required"
+                      ]
+                    },
+                    "capabilityId": {
+                      "type": "string"
+                    },
+                    "approvalId": {
+                      "type": "string",
+                      "description": "The approval a person decides."
+                    },
+                    "approvalToken": {
+                      "type": "string",
+                      "description": "Send it back in the `X-DorkOS-Approval` header once a person allows the call."
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "capabilityId",
+                    "approvalId",
+                    "approvalToken",
+                    "expiresAt",
+                    "message"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "What went wrong, in one sentence."
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "A stable code, e.g. `UNKNOWN_CAPABILITY`."
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "What went wrong, in one sentence."
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "A stable code, e.g. `UNKNOWN_CAPABILITY`."
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No capability has that id, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "What went wrong, in one sentence."
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "A stable code, e.g. `UNKNOWN_CAPABILITY`."
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "What went wrong, in one sentence."
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "A stable code, e.g. `UNKNOWN_CAPABILITY`."
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/extension-decisions": {
       "get": {
         "tags": [

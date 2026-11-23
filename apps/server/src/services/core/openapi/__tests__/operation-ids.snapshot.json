@@ -253,6 +253,7 @@
   "POST /api/canvas/docs/{id}/routes/{routeId}/revoke": "canvas.revokeDocsRoutes",
   "POST /api/canvas/docs/{id}/work/{batchId}/clear": "canvas.clearDocsWork",
   "POST /api/canvas/docs/{id}/work/{batchId}/replay": "canvas.createDocsWorkReplay",
+  "POST /api/capabilities/{id}/invoke": "capabilities.invoke",
   "POST /api/cloud/account/deletion": "cloud.createAccountDeletion",
   "POST /api/cloud/account/export": "cloud.exportAccount",
   "POST /api/cloud/billing/{page}": "cloud.createBilling",

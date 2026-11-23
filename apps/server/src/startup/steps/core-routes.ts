@@ -702,11 +702,6 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   if (env.DORKOS_TODOS_ENABLED) deps.todos = todoPromises.todoRouteDeps;
   // An agent's work queue, for a person (DOR-3462).
   deps.workQueue = workQueue.routeDeps;
-  // Pause an agent everywhere, and lift it (spec `audit-trail` PR5). Served by
-  // the Hono app, beside the agents group under `/api/agents`; the registry is
-  // read lazily because it is composed after the routes are handed over.
-  deps.agentPause = { registry: () => refs.capabilityRegistry };
-  mountedRouters.push('agent-pause');
   // What every agent is told, and what one agent will be told, for a person
   // (spec `context-viewer` phase 3). Read only.
   deps.agentInstructions = {

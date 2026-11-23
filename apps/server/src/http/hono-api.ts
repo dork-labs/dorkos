@@ -40,7 +40,6 @@ import {
 import { createA2aRoutes, type A2aRouteDeps } from '../routes/a2a.js';
 import { createActivityRoutes } from '../routes/activity.js';
 import { createAdminRoutes, type AdminDeps } from '../routes/admin.js';
-import { createAgentPauseRoutes, type AgentPauseRouterDeps } from '../routes/agent-pause.js';
 import {
   createAgentInstructionsRoutes,
   type AgentInstructionsRouterDeps,
@@ -59,6 +58,11 @@ import capabilitiesRoutes from '../routes/capabilities.js';
 import cloudRoutes from '../routes/cloud.js';
 import { createCapabilitiesCatalogRoutes } from '../routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js';
+import {
+  assertNoCapabilityRouteCollisions,
+  createCapabilityHttpRoutes,
+  mountedCapabilities,
+} from '../routes/capability-http.js';
 import commandRoutes from '../routes/commands.js';
 import { createCommunityConnectionsRoutes } from '../routes/community-connections.js';
 import configRoutes from '../routes/config.js';
@@ -220,8 +224,6 @@ export interface ComposedGroupDeps {
   extensions?: Omit<ExtensionsRouterDeps, 'activity'>;
   /** What agents may do (`/api/permissions*`, `/api/agents/:id/permissions`). */
   permissions?: PermissionsRouterDeps;
-  /** Pausing an agent everywhere (`/api/agents/pauses`, `/api/agents/:id/{pause,resume}`). */
-  agentPause?: AgentPauseRouterDeps;
   /** What every agent is told, and what one agent will be told (spec `context-viewer`). */
   agentInstructions?: AgentInstructionsRouterDeps;
   /** The operator's photo and name (`/api/profile`). */
@@ -540,11 +542,21 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
       })
     );
   }
-  // These two are mounted on all of `/api`, because their paths span several
-  // prefixes. Their groups register only their own concrete paths, so mounting them at `/api` claims
-  // nothing else: every other path still reaches its group or the `/api` 404.
+  // These are mounted on all of `/api` (or `/`), because their paths span
+  // several prefixes. Each registers only its own concrete paths, so the mount
+  // claims nothing else: every other path still reaches its group or the `/api` 404.
   if (deps.permissions) app.route('/api', createPermissionsRoutes(deps.permissions));
-  if (deps.agentPause) app.route('/api', createAgentPauseRoutes(deps.agentPause));
+  // Every capability's own REST path (`/api/agents/pauses`,
+  // `/api/agents/:agentId/mcp-servers`, …), built from the declarations; each
+  // request reads the registry boot handed over (ADR 261123-170830).
+  const capabilityRoutes = mountedCapabilities();
+  app.route(
+    '/',
+    createCapabilityHttpRoutes({
+      registry: () => deps.capabilities,
+      capabilities: capabilityRoutes,
+    })
+  );
   if (deps.agentInstructions) {
     app.route('/api', createAgentInstructionsRoutes(deps.agentInstructions));
   }
@@ -646,6 +658,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.mcp) app.route('/mcp', createMcpRoutes(deps.mcp));
   // Its routes carry their whole paths, two of them outside `/a2a`.
   if (deps.a2a) app.route('/', createA2aRoutes(deps.a2a));
+  assertNoCapabilityRouteCollisions(app, capabilityRoutes);
   return app;
 }
 
