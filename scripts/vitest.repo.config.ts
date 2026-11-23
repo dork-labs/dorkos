@@ -70,6 +70,7 @@ export const REPO_WIDE_SUITES = [
   // Walks every shipped app and package for network senders (DOR-4990).
   '__tests__/outbound-census.test.ts',
   '__tests__/playwright-apt-debs.test.ts',
+  '__tests__/pr-related-step.test.ts',
   // Reads test.yml, browser-test.yml, docs-openapi-check.yml,
   // release-branch-contents.yml and changelog-fragment-check.yml (DOR-4639).
   '__tests__/release-branch-ci.test.ts',
