@@ -6,6 +6,7 @@ export const LABEL_RERUN_CONTEXTS = [
   'security-gate',
   'fragment-present',
   'no-fragment-under-skip-label',
+  'not-held',
 ];
 
 const PASSED_CHECK_CONCLUSIONS = new Set(['success', 'neutral', 'skipped']);
