@@ -51,9 +51,11 @@ When Claude wants to use a tool (writing a file, running a command, editing code
 </Steps>
 
 <Callout type="info">
-  Tool approvals have a **10-minute timeout**. If you don't respond, the tool call is automatically
-  denied and Claude continues with a different approach. The countdown timer is synchronized with
-  the server clock, so switching tabs or briefly losing connection won't cause drift.
+  A tool approval counts down for **10 minutes**. If you don't answer by then, the agent keeps
+  waiting, and you can still answer the card. After **4 hours** with no answer, the tool call is
+  denied and Claude carries on another way. The countdown follows the server clock, so switching
+  tabs or briefly losing connection won't throw it off. See [Answer your agents from
+  anywhere](/docs/concepts/answering-agents#when-nobody-answers).
 </Callout>
 
 If you deny a tool call, you can explain why in your next message or ask Claude to try a different approach.
@@ -65,10 +67,10 @@ Each tool approval card shows a shield icon whose color reflects the risk level 
 | Risk   | Color | Tools                                                      |
 | ------ | ----- | ---------------------------------------------------------- |
 | High   | Red   | `Bash`, `Write`, `Edit`, `NotebookEdit`                    |
-| Medium | Amber | `WebFetch`, `WebSearch`, unknown MCP tools (`mcp__*`)      |
+| Medium | Amber | Unknown MCP tools (`mcp__*`)                               |
 | Low    | Gray  | All other tools (read-only operations, DorkOS agent tools) |
 
-High-risk tools can modify the filesystem or execute shell commands. Medium-risk tools have external side effects or come from third-party MCP servers. Low-risk tools are read-only.
+High-risk tools can modify the filesystem or execute shell commands. Medium-risk tools come from third-party MCP servers. Low-risk tools are read-only.
 
 ## Auto-Approved Tools
 
@@ -154,15 +156,16 @@ Your answers are injected into the tool's input. Claude continues with your sele
 
 Each session has a trust setting — one dial with three stops — that decides how much Claude may do before it checks with you. You can change it at any time from the session's permission picker:
 
-- **Ask first**: Claude prompts before it edits a file or runs a command. Read-only and agent tools are still auto-approved. This is where every session starts.
+- **Ask first**: Claude prompts before it edits a file or runs a command. Read-only and agent tools are still auto-approved. This is where a new conversation starts on the **Careful** preset.
 - **Act**: Claude edits files and runs routine commands on its own, and only stops to ask about the risky ones.
-- **Full autonomy**: every tool approval prompt inside the session is skipped. The session stops pausing for your approval on each tool call — though the agent still asks when something genuinely needs your call, and still follows anything you have told it to check with you about.
+- **Full autonomy**: every tool approval prompt inside the session is skipped. The session stops pausing for your approval on each tool call. The agent still asks when something genuinely needs your call, and still follows anything you have told it to check with you about. This is where a new conversation starts on the **Trusted** preset, which is the default.
 
 <Callout type="warn">
   Full autonomy turns off the approval prompts inside the session, so the agent edits files and runs
   commands without stopping for your OK each time. Nothing waits on an approval tap — the agent
   still asks when something genuinely needs your call, but it will not halt each action for you to
-  confirm. Only use it in isolated environments where you trust the agent completely.
+  confirm. Everything it does is still written to the [audit trail](/docs/guides/audit-trail), so
+  you can check afterwards. Switch to Ask first for work you want to approve step by step.
 </Callout>
 
 Plan mode is a separate toggle next to the composer, not a stop on the dial: it puts the session in read-only planning — Claude can investigate and propose a plan but cannot execute tools — and you switch it on for a stretch of work rather than leaving a session parked at it.
@@ -223,7 +226,7 @@ After you confirm, the rest of that session runs in auto mode: no approval promp
 
 ### File Operations
 
-`Write` and `Edit` tool calls appear when Claude modifies your files. These are classified as **high risk** and always require approval in default mode. Check the file paths carefully. Claude should be working in the right location.
+`Write` and `Edit` tool calls appear when Claude modifies your files. These are classified as **high risk** and always require approval at Ask first. Check the file paths carefully. Claude should be working in the right location.
 
 ### Command Execution
 
@@ -240,7 +243,7 @@ Tools from MCP servers (prefixed with `mcp__`) are classified as **medium risk**
 
 ### Web Access
 
-`WebFetch` and `WebSearch` calls access the internet and are classified as **medium risk**. Review the URLs or search queries before approving.
+`WebFetch` and `WebSearch` calls read pages and search results from the internet. They never change anything, so they run without a card, like the other read-only tools.
 
 ## Tips
 

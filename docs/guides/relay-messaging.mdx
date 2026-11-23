@@ -38,11 +38,11 @@ Relay is already on by default, so there's nothing to install. Here's the fastes
 <Steps>
 <Step>
 
-**Confirm Relay is running.** Start DorkOS and look for this in the startup log:
+**Confirm Relay is running.** Start DorkOS and look for these lines in the startup log:
 
 ```
-DorkOS server listening on port 4242
-Relay message bus enabled
+[Relay] RelayCore initialized (dataDir: …)
+[DorkOS] server running on http://localhost:4242
 ```
 
 The examples below use port 4242, the default. If yours is different, swap it in. **Settings → Advanced → Server** shows your address and copies it for you, which is the quickest way to check in the [desktop app](/docs/getting-started/desktop-app).
@@ -204,7 +204,7 @@ Relay carries messages between DorkOS and the outside: your Telegram and Slack c
 
 Along the way, a message passes through a few checks: is the subject valid, is the sender allowed to send it, is it within its rate limit and budget. If delivery to a recipient keeps failing, Relay's circuit breaker (a safety switch that stops sending to something that's clearly broken) pauses deliveries to it rather than retrying forever. Anything that can't be delivered lands in the dead letter queue, and the full path a message took is recorded so you can look it up later (see [Tracing](#message-tracing) below).
 
-When Relay is on, it also takes over how chat messages are delivered. Instead of `POST /api/sessions/:id/messages` calling the agent SDK directly, the message is published to `relay.agent.{sessionId}` and DorkOS's Claude Code side picks it up from there. That means every chat message gets Relay's tracing, budgets, and retry handling for free.
+Your chats in the DorkOS app don't travel over Relay. A message you type goes straight to the agent, whether Relay is on or off.
 
 ### Enabling and disabling Relay
 
@@ -221,8 +221,9 @@ The response includes `relay.enabled: true` when Relay is active.
 <Callout type="info">
   To turn Relay off, switch off **Agent messaging** in Settings › Advanced › Tools and restart
   DorkOS. If `DORKOS_RELAY_ENABLED` is set, it decides instead of the switch. With Relay off, its
-  routes return 404 and chat messaging falls back to calling the agent SDK directly. Your message
-  history and search index stay on disk, so turning Relay back on later doesn't lose anything.
+  routes return 404. Your chats in the app keep working, because they never went through Relay. Your
+  message history and search index stay on disk, so turning Relay back on later doesn't lose
+  anything.
 </Callout>
 
 ### Budget constraints
@@ -238,11 +239,13 @@ curl -X POST http://localhost:4242/api/relay/messages \
     "from": "relay.human.console.my-client",
     "budget": {
       "maxHops": 3,
-      "ttlMs": 300000,
+      "ttl": 1798761600000,
       "callBudgetRemaining": 50
     }
   }'
 ```
+
+`ttl` is the moment the message expires, not a length of time. Write it as milliseconds since January 1, 1970 (what `Date.now()` returns in JavaScript). The example above is midnight UTC on January 1, 2027. For "five minutes from now", send `Date.now() + 300000`. A number like `300000` on its own means a moment in 1970, so the message arrives already expired.
 
 <Callout type="warn">
   If you leave budget fields out, Relay uses defaults: 5 maximum hops, a 1-hour time-to-live, and 10
@@ -287,7 +290,7 @@ agent slot busy, say — doesn't count against you: the allowance is given back.
 
 ## Built-in adapters
 
-Adapters connect external platforms to Relay's subject system. DorkOS ships with five, configured through `~/.dork/relay/adapters.json`.
+Adapters connect external platforms to Relay's subject system. DorkOS ships with four, configured through `~/.dork/relay/adapters.json`.
 
 ### Claude Code adapter
 

@@ -11,7 +11,7 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 DorkOS can give every task its own private copy of your repo. Ask for one workspace for issue `DOR-84` and another for `DOR-91`, and each gets its own folder, its own dev-server ports, and its own uncommitted changes. Neither can step on the other.
 
-That folder is called a **workspace**. Today, workspaces are created on request: a tool or script asks the server for one (the [API](#api-reference) below), and DorkOS provisions it. Nothing in the DorkOS app creates them on its own yet. If you never ask for one, chats run in whatever folder they always did.
+That folder is called a **workspace**. There are two ways to get one today. You can set an agent to work in its own workspace, and DorkOS makes it the first time the agent needs it (see [Giving an agent its own workspace](#giving-an-agent-its-own-workspace)). Or a tool or script asks the server for one (the [API](#api-reference) below). There is no button in the app for it yet. If you do neither, chats run in whatever folder they always did.
 
 ## Quick look: what you'll see
 
@@ -123,9 +123,30 @@ Every workspace has a stable identity and a provisioned checkout:
 
 The `projectKey` + `key` pair is unique, so asking for the same unit of work twice returns the **same** workspace rather than provisioning a duplicate.
 
+### Giving an agent its own workspace
+
+An agent can have a standing workspace. Add a `workspace` setting to its `.dork/agent.json`:
+
+```json title=".dork/agent.json"
+{
+  "name": "backend-bot",
+  "workspace": { "mode": "managed", "source": "/home/user/projects/core" }
+}
+```
+
+`source` is the repository the agent's copy is made from. `provider` (`"worktree"` or `"clone"`) is optional and falls back to `workspaces.defaultProvider`. From then on, work DorkOS starts for the agent without naming a folder happens in its own copy of that repository: its scheduled runs, and messages that reach it from a chat app like Telegram or Slack. DorkOS makes the copy the first time it is needed. A chat you open in the app still runs in the folder the app picked for it. Give several agents the same `source` and each gets a copy of its own. A clone, or a source whose `.dork/workspace.json` runs setup hooks, may wait for your OK before it is made.
+
+The setting has three modes:
+
+- `home`: the agent works in its own folder, the one holding `.dork/agent.json`. This is what an agent with no `workspace` setting does.
+- `managed`: the agent works in a workspace made from `source`. If DorkOS can't make it, the turn still runs, in the agent's own folder.
+- `none`: the agent works in the server's default folder.
+
+A message that names its own folder or `workspaceKey` still wins over this setting.
+
 ### Binding a chat to a workspace
 
-Binding is opt-in. Nothing in the DorkOS app sends a `workspaceKey` yet, so today binding happens only when you (or a tool you run) call the API directly. Here is the reference form.
+Binding is opt-in. The app doesn't send a `workspaceKey` with the messages you type, so to bind one chat you call the API directly. (An agent's own workspace setting, above, covers the work DorkOS starts for it.) Here is the reference form.
 
 When you send a message to a chat, include a `workspaceKey` (and optionally a `workspaceProvider`) and the server will ensure the workspace exists, provisioning it on first use, then run the turn with the workspace's checkout as the working directory and its port block injected into the environment:
 

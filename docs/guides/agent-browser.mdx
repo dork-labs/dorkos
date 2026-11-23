@@ -1,45 +1,57 @@
 ---
 title: Agent browser
-description: Share a live browser page with the agent in your current chat.
+description: Give each agent its own browser, and lend it yours when it needs your sign-ins.
 ---
 
-Open the **Agent browser** from the right panel’s **+** menu, where it is listed as **Browser**. Choose where the page opens.
-Your agent uses that same live page. You can click, type, and navigate while it works.
+Open the **Agent browser** from the right panel’s **+** menu, where it is listed as **Browser**.
+Each agent gets a browser of its own. It starts signed out and opens in its own Chrome window,
+apart from your usual tabs and from every other agent’s browser.
+You can click, type, and navigate in that window while the agent works.
 This is the Agent browser. The older signed-in browser uses a separate hidden page.
 
-## Choose a browser
+## Your agent’s browser
 
-**In DorkOS** opens the page inside the desktop app’s right panel.
-It is the desktop default. Its saved sign-ins are separate from your usual browser.
-Chrome extensions do not run inside this view. It stays in the right panel;
-it cannot pop out into a floating view.
-
-Some sites open an extra sign-in window. These windows are for you;
-your agent stays on the original page. Finish signing in, then close the extra window.
+In a chat with an agent, the panel names that agent’s browser, like **Scout · browser**.
+It says **This browser opens in its own window.** **Show window** brings the window to the front,
+and **Close browser** closes it. A window your agent is driving has an orange frame.
+DorkOS keeps its sign-ins when you close and reopen it.
+All of one agent’s chats share its sign-ins. Other agents never see them.
+It uses Google Chrome if you have it, and Chromium if not.
 
 If your agent stops because a site needs you, a card appears in the chat.
 It says the site needs you to sign in, or wants a person to continue.
-In the Mac app, the card offers **Open sign-in window**. It opens a plain sign-in window outside the panel.
+The card offers **Open sign-in window**. It opens a plain sign-in window just for you, in your normal colours.
 Sign in there, then press **Done signing in** on the card. On a Mac, closing that window isn't enough, because Chrome keeps running.
-Your agent then continues in its own window. Every agent that uses the Agent browser can use that sign-in.
-Only sign in to accounts you're happy for all of those agents to use.
-This hasn't been tested on an installed Mac app yet.
+Your agent then returns to the same page and carries on in its own window.
+That sign-in stays in this agent’s browser.
+Anything you had typed into a form on that page is lost, so check it before you hand it back.
 
-**In its own window** opens a visible browser window with separate saved sign-ins. It uses Google Chrome if you have it, and Chromium if not.
-A window your agent is driving has an orange frame. The sign-in window a card opens for you keeps your normal colours.
-DorkOS keeps those sign-ins when you close and reopen it. Your usual tabs stay separate.
-This is the default when you use the local npm-installed web app.
+These windows open on the computer running DorkOS and need a graphical desktop.
 
-If a site's bot check or sign-in wall blocks your agent, use the card in the chat.
-It opens the page in a separate Chrome window. Complete the check or sign in there, then hand it back.
-Your agent returns to the same page and carries on.
+## Your own browser
 
-These choices open pages on the computer running DorkOS and need a graphical desktop.
-The npm web app cannot put a native browser inside its page.
-Choose **In its own window**, or use the desktop app for **In DorkOS**.
+The browser in the app is yours. Open **Browser** outside an agent’s chat and it is named **Your browser**.
+Agents can’t use it unless you share it. Choose where it opens:
 
-Only the selected page is shared with the agent in your current direct chat.
-A browser opened from Rooms stays human-only.
+- **In DorkOS** opens the page inside the desktop app’s right panel. Its saved sign-ins are separate
+  from your usual browser. Chrome extensions do not run inside this view, and it can’t pop out into a
+  floating view. The npm web app can’t put a browser inside its page, so this choice needs the desktop app.
+- **In its own window** opens a visible browser window on the computer running DorkOS, with separate saved sign-ins.
+
+Some sites open an extra sign-in window. Finish signing in there, then close it.
+
+## Share your browser with an agent
+
+Sometimes an agent needs a site you are already signed in to. Only you can lend it your browser,
+and only by hand. In the agent’s chat, the panel says **This agent has its own browser.**
+Press **Share yours**. DorkOS asks you to confirm: the agent will use your own Chrome window and every
+site you’re signed in to there. Press **Share browser** to agree.
+Sign-ins from the browser inside the app are never copied.
+
+- **Stop sharing** works at any time. The agent loses access before its next step.
+- If the agent is replying to someone from outside your team, sharing waits until that reply ends.
+- Work that someone outside your team started can never use your browser, even after you shared it.
+- Nothing an agent or a web page says can open the sharing question. Only your click in the panel can.
 
 ## One chat at a time
 
@@ -60,15 +72,15 @@ An action already started may finish; pausing does not undo it.
 If you navigate or the page changes, the agent must read it again before acting.
 An uncertain action is never repeated automatically. Check what happened before continuing.
 
-Closing the panel hides the page. **Disconnect** ends sharing.
-Disconnect closes the browser opened by DorkOS. Its saved sign-ins are kept.
-If an agent is waiting on you in the browser, **Disconnect** also ends its task.
+Closing the panel hides the page. **Close browser**, in the browser’s **⋯** menu, closes the browser DorkOS opened.
+Its saved sign-ins are kept. The same menu lists the open tabs and lets you forget saved sign-ins.
+If an agent is waiting on you in the browser, closing it also ends that task.
 If the browser closes, choose **Reconnect** to open it again.
 
 ## DorkOS Cloud stays yours
 
 Agents can't open DorkOS Cloud or dorkos.ai in a browser DorkOS gives them.
-You can still open them yourself in the shared page.
+You can still open them yourself in your own browser.
 Your agent can't read or act on a page from either site.
 If it tries, or a link takes it there, it pauses. Choose **Resume agent** once you have moved on.
 
@@ -96,7 +108,7 @@ These choices are for DorkOS running on your computer.
 Existing custom browser servers and saved sign-ins are kept.
 The older **signed-in browser** uses Playwright MCP and a separate hidden page.
 It does not share the live page you view in the Agent browser.
-Use the **Agent browser** for the two live-page choices above. Existing custom tools remain in **Toolkit**.
+Use the **Agent browser** for live pages. Existing custom tools remain in **Toolkit**.
 The older `dorkos browser login`, `status` and `forget` commands still manage their saved sign-ins.
 Those saved files are separate from the Agent browser’s choices.
 The Mac app adds the `dorkos` command only when you ask: choose **Install** in **Settings › This computer › Terminal command**. Without it, use **Open sign-in window** on the card instead.
