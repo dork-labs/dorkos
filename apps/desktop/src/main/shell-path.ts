@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import { spawnSync } from 'node:child_process';
 import log from 'electron-log';
+import { TELEMETRY_DISABLE_ENV_VARS } from '@dorkos/shared/telemetry-consent';
 import { LOGIN_SHELL_PATH_MARKER } from '../shared/login-shell-path';
 
 /**
@@ -31,6 +32,11 @@ import { LOGIN_SHELL_PATH_MARKER } from '../shared/login-shell-path';
  *   otherwise stop the app from ever starting.
  * - **Never fatal.** Every failure path falls back to the inherited PATH and
  *   says why in the log. A worse PATH is a degraded app; no app is not.
+ *
+ * The same answer carries `DO_NOT_TRACK` and `DORKOS_TELEMETRY_DISABLED` when
+ * the shell exports them (DOR-4990), so a person who set one in `~/.zshrc`
+ * gets the same "send nothing" from the app as from a terminal. See
+ * {@link resolveChildTelemetryEnv}.
  *
  * Skipped entirely in dev (the terminal's PATH is already inherited, and asking
  * a shell would only add start-up latency to every `pnpm dev:desktop`) and on
@@ -80,6 +86,12 @@ const LOGGED_ENTRIES = 3;
  */
 let cachedShellPath: string | null | undefined;
 
+/**
+ * The login shell's whole `env` dump, from the same probe, or `null` when the
+ * shell printed none. Read only after {@link probeShellOnce}.
+ */
+let cachedShellDump: string | null = null;
+
 /** Split a PATH into its entries, dropping the empty ones a stray `:` leaves. */
 function splitPath(value: string): string[] {
   return value.split(':').filter((entry) => entry !== '');
@@ -100,24 +112,24 @@ function looksLikeAPath(value: string): boolean {
 }
 
 /**
- * Pull the PATH out of the marked `env` dump in everything the shell printed.
+ * Pull the marked `env` dump out of everything the shell printed.
  *
- * Two steps, and both are needed: the markers isolate the dump from whatever
- * the user's rc files printed around it, and the `PATH=` line is then found
- * inside that. A shell that never got as far as printing the dump — one that
- * rejected the flags, or died in an rc file — has no opening marker and lands
- * on `null` here rather than on a half-parsed answer.
+ * The markers isolate the dump from whatever the user's rc files printed
+ * around it; the `PATH=` line is then found inside that. A shell that never got
+ * as far as printing the dump — one that rejected the flags, or died in an rc
+ * file — has no opening marker and lands on `null` here rather than on a
+ * half-parsed answer.
  *
  * @param stdout - The shell's complete stdout.
- * @returns The exported PATH, or `null` when it is not there.
+ * @returns The dump between the markers, or `null` when it is not there.
  */
-function extractPathFromEnvDump(stdout: string): string | null {
+function extractEnvDump(stdout: string): string | null {
   const start = stdout.indexOf(LOGIN_SHELL_PATH_MARKER);
   if (start === -1) return null;
   const dumpStart = start + LOGIN_SHELL_PATH_MARKER.length;
   const end = stdout.indexOf(LOGIN_SHELL_PATH_MARKER, dumpStart);
   if (end === -1) return null;
-  return PATH_LINE.exec(stdout.slice(dumpStart, end))?.[1] ?? null;
+  return stdout.slice(dumpStart, end);
 }
 
 /**
@@ -164,7 +176,9 @@ function readLoginShellPath(): string | null {
   }
   if (result.status !== 0) return complain(`it exited with code ${String(result.status)}`);
 
-  const extracted = extractPathFromEnvDump(result.stdout ?? '');
+  cachedShellDump = extractEnvDump(result.stdout ?? '');
+  const extracted =
+    cachedShellDump === null ? null : (PATH_LINE.exec(cachedShellDump)?.[1] ?? null);
   if (extracted === null) return complain('it printed no PATH');
   if (!looksLikeAPath(extracted)) return complain('what it printed does not look like a PATH');
   return extracted;
@@ -201,17 +215,55 @@ function mergePaths(resolved: string, inherited: string | undefined): string {
 export function resolveChildPath(inheritedPath: string | undefined): string | undefined {
   if (!app.isPackaged || process.platform === 'win32') return inheritedPath;
 
-  if (cachedShellPath === undefined) {
-    cachedShellPath = readLoginShellPath();
-    if (cachedShellPath !== null) {
-      const entries = splitPath(cachedShellPath);
-      log.info(
-        `[server] Read ${entries.length} PATH entries from ${process.env.SHELL}, starting ` +
-          `${entries.slice(0, LOGGED_ENTRIES).join(', ')}`
-      );
-    }
-  }
+  const shellPath = probeShellOnce();
+  if (shellPath === null) return inheritedPath;
+  return mergePaths(shellPath, inheritedPath);
+}
 
-  if (cachedShellPath === null) return inheritedPath;
-  return mergePaths(cachedShellPath, inheritedPath);
+/**
+ * Ask the login shell once per process, and log what it said about PATH.
+ *
+ * @returns The login shell's PATH, or `null` if it could not be had.
+ */
+function probeShellOnce(): string | null {
+  if (cachedShellPath !== undefined) return cachedShellPath;
+  cachedShellPath = readLoginShellPath();
+  if (cachedShellPath !== null) {
+    const entries = splitPath(cachedShellPath);
+    log.info(
+      `[server] Read ${entries.length} PATH entries from ${process.env.SHELL}, starting ` +
+        `${entries.slice(0, LOGGED_ENTRIES).join(', ')}`
+    );
+  }
+  return cachedShellPath;
+}
+
+/**
+ * The telemetry switches (`DO_NOT_TRACK`, `DORKOS_TELEMETRY_DISABLED`) the
+ * login shell exports, for the server child (DOR-4990).
+ *
+ * A Finder launch never sees a variable set in `~/.zshrc`, so without this a
+ * person who set `DO_NOT_TRACK=1` there got it from a terminal DorkOS and not
+ * from the app. A name already in this process's environment is left to it;
+ * only names the shell sets, and this process does not, are returned. Uses the
+ * same single probe as {@link resolveChildPath} and, like it, is never fatal:
+ * no answer means an empty result.
+ *
+ * @param inherited - This process's own environment, as launched.
+ * @returns The switches to add to the child's environment; empty in dev, on
+ *   Windows, or when the shell gave no answer.
+ */
+export function resolveChildTelemetryEnv(
+  inherited: Readonly<Record<string, string | undefined>>
+): Record<string, string> {
+  if (!app.isPackaged || process.platform === 'win32') return {};
+  probeShellOnce();
+  const found: Record<string, string> = {};
+  if (cachedShellDump === null) return found;
+  for (const name of TELEMETRY_DISABLE_ENV_VARS) {
+    if (inherited[name] !== undefined) continue;
+    const value = new RegExp(`^${name}=(.*)$`, 'm').exec(cachedShellDump)?.[1];
+    if (value) found[name] = value;
+  }
+  return found;
 }

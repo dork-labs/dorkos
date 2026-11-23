@@ -1,6 +1,6 @@
 # DorkOS Roadmap
 
-> **Canon.** What is built, what ships before launch, what comes after, and what any public surface may claim. Part of the north-star set with [`VISION.md`](VISION.md), [`PRINCIPLES.md`](PRINCIPLES.md) and [`VOICE.md`](VOICE.md). Tickets are in Linear (team DOR), most of them under the parent DOR-2735. Each idea is told in full in [`dorkos-litepaper.md`](dorkos-litepaper.md).
+> **Canon.** What is built, what ships before launch, what comes after, and what any public surface may claim. Part of the north-star set with [`VISION.md`](VISION.md), [`PRINCIPLES.md`](PRINCIPLES.md) and [`VOICE.md`](VOICE.md). Tickets are in Linear (team DOR). The 2026-10 umbrella DOR-2735 was closed in the November 10 groom (the initiatives carry it now), so each item below names its own ticket, or says it has none. Each idea is told in full in [`dorkos-litepaper.md`](dorkos-litepaper.md).
 >
 > **Keep it true.** When something ships and passes its tests, the pull request that ships it moves it up here, in the order list and in the demo-claim gate.
 
@@ -35,17 +35,17 @@ A card is required for DorkOS's own AI; there are no free starter credits. There
 
 ## After launch, in order
 
-1. The rest of the server merge: the active-runner lease, and a Mac can host spaces, including as a team space's home. (DOR-2874, steps DOR-2883 and DOR-2884; step 7, DOR-2882, moved before launch; step 10, "one window", is replaced by the launch work above)
-2. Equal accounts: access levels, role and responsibilities on profiles, per-account API keys, agents creating agents. (DOR-2743)
-3. Everything programmable: a CLI, an SDK and API, GraphQL queries and live event subscriptions. (DOR-2754)
+1. The rest of the server merge: the active-runner lease, and a Mac can host spaces, including as a team space's home. Then your private space moves onto the same space model as every other space, one area at a time with agents last, so nothing is Mac-only by design; only your workspaces, the agent programs' own chat records and sign-ins, and running processes stay on the computer that runs the work (ADR `261122-173853`; gated on a measurement on a real Mac). (DOR-2874, steps DOR-2883 and DOR-2884; step 7, DOR-2882, moved before launch; step 10, "one window", is replaced by the launch work above)
+2. Equal accounts: access levels, role and responsibilities on profiles, per-account API keys, agents creating agents. (No live ticket: DOR-2743 was canceled in the November 10 groom.)
+3. Everything programmable: a CLI, an SDK and API, GraphQL queries and live event subscriptions. Since 2026-11-21 this rests on the work graph (the links between agents, chats and work items) and one rule: one source of truth, with every surface projected from it, read-only GraphQL last, and no raw database access. (DOR-4966 and DOR-4973; the earlier DOR-2754 was canceled on 2026-11-10)
 4. One message system: Relay folds into conversations, and anyone can message anyone in a space. (DOR-2744)
-5. Groups, projects, tasks and tiered goals (DOR-2755), plus the health check (DOR-2756).
-6. The built-in vault (DOR-2746), email and phone as account features (DOR-2747), and agents owning their own outside accounts (DOR-2757).
-7. One package type, the plugin (DOR-2758), and mini apps as a core skill every agent knows (DOR-2759).
-8. Agents with their own sealed computer on a Mac, behind a flag, and moving them to another DorkOS (DOR-2748; cloud agent computers ship at launch); publishing pages (DOR-2749).
+5. Groups, projects, tasks and tiered goals, plus the health check. (No live tickets: DOR-2755 and DOR-2756 were canceled on 2026-11-09.)
+6. The built-in vault and email and phone as account features (no live tickets: DOR-2746 and DOR-2747 were canceled in the November 10 groom), and agents owning their own outside accounts (DOR-2757).
+7. One package type, the plugin (DOR-2758), and mini apps as a core skill every agent knows (DOR-2759 was closed on 2026-11-13 as superseded: mini apps exist, and their remaining work lives in the mini-apps projects).
+8. Agents with their own sealed computer on a Mac, behind a flag, and moving them to another DorkOS (no live ticket: DOR-2748 was closed as a duplicate of DOR-2940 on 2026-11-10, and DOR-2940 is the launch-scope cloud agent computer); publishing pages (no live ticket: DOR-2749 was canceled in the November 10 groom).
 9. Live shared docs for people and agents. (DOR-2750)
 
-**Alongside, not in the order:** the rest of proactive agents after heartbeats (DOR-2788, with reports-to, the commitments list and the measures, is built): agent templates by type (lead, business doer, coder, taste, starter; coders wake on events only), the weekly review and a roll-up of measures across agents (canon §6.3); agents creating agents that report to them, asking first only when the new agent would get spending power (with DOR-2743); the loop watcher that replaces turn counting (DOR-2745; today's loop guards stay until it is ready); and removing the remaining agent friction and old permission machinery (DOR-2751).
+**Alongside, not in the order:** the rest of proactive agents after heartbeats (DOR-2788, with reports-to, the commitments list and the measures, is built): agent templates by type (lead, business doer, coder, taste, starter; coders wake on events only), the weekly review and a roll-up of measures across agents (canon §6.3); agents creating agents that report to them, asking first only when the new agent would get spending power (with the equal-accounts item above, whose ticket DOR-2743 was canceled); the loop watcher that replaces turn counting (DOR-2745; today's loop guards stay until it is ready); and removing the remaining agent friction and old permission machinery (DOR-2751).
 
 ## The demo-claim gate
 

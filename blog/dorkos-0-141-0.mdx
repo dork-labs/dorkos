@@ -1,0 +1,62 @@
+---
+title: DorkOS 0.141.0
+description: Confirm it's you says why it can't confirm and reloads an out-of-date page once, and agents learn to wait their turn when your computer is busy.
+date: 2026-11-23
+author: DorkOS Team
+category: release
+tags: [release, security, mini-apps, agents]
+---
+
+DorkOS 0.141.0 makes "Confirm it’s you" safer and clearer: it says why it can't confirm, and a page that's only out of date reloads itself once. Agents also learn to wait their turn when your computer is busy.
+
+## All Changes
+
+### Note for people upgrading
+
+- **If a DorkOS tab stayed open during the update, reload it.** Until you do, confirming something there says "DorkOS changed after this page opened. Reload it, then try again." (DOR-5026, DOR-5086)
+- If an agent's replies in a Telegram or Slack chat, or to another agent, switch model or account after you update, set the model and account on the agent itself. (DOR-5057)
+- With to-dos turned on: if you set To-dos to Ask or Blocked for an agent, that now covers all of its to-do tools. (DOR-3953)
+- Known issue: Flow can't ask you questions in the Inbox until you update it to its next version and allow Inbox cards.
+- In a room bridged to Telegram or Slack, your own phone's posts still count as someone else's for now, so agents can't use the Agent browser for those turns. Ask from a direct chat instead. (DOR-4453)
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- Codex in Docker doesn't work on Ubuntu or Debian yet, even with the new profile: their AppArmor rules block its sandbox. The chat says "Codex can’t run in this Docker setup yet". Leave AppArmor as it is, and use Claude Code or run DorkOS outside Docker for now. We're fixing it (DOR-4836).
+- On a Mac, Codex chats can't delete or move folders (rm -r, rmdir, mv). We're fixing it (DOR-4358).
+- Known issue: offline, OpenCode's first turn in a new folder can take about a minute. Online, the first turn waits about 10 seconds once. A fix is coming in a later release (DOR-4422).
+- Known issue: Codex won't start in a folder whose Git path has `* ? [ ] { }` in its name, like `site [old]`, or in a worktree whose Git folder is gone, at any level. Use another folder for now. We're fixing it (DOR-4542).
+
+### Added
+
+- Agents in DorkOS's own agents folder, and every new agent, now have a skill about the line their builds, test runs and installs wait in while your computer is busy. It knows which commands wait and which run at once, that a wait is a place in line and not a hang, and that a run refused because the computer was too busy should be tried again later, not reported as a failure. (DOR-4209)
+- The skill never works around the line. It tells you in one line when a wait is holding up urgent work, so you can let that job through from the Activity page. (DOR-4209)
+
+### Security
+
+- Hardened "Confirm it’s you". Once a mini app stops being a risk, because you turned it off, removed it or approved its change, a confirm counts only from a page DorkOS loaded after that, in the browser and in the Mac app. (DOR-5026)
+- The server log now records requests from other devices on your network, with each device's address, whether DorkOS accepted the request or not. It keeps up to 60 lines a minute per device, then a count of the rest. The line never includes a sign-in token, a cookie or a video link's key. (DOR-5042, DOR-4736)
+- An agent working under limits can't reword, move or remove a waiting message. It sends a new one instead. Your own edits work as before. (DOR-5039)
+- Hardened agent settings: an agent answering a Telegram or Slack chat, or another agent, reads its settings only from its own home. (DOR-5057)
+- Hardened approvals: more kinds of invisible characters in text you approve, like a scheduled task's instructions or a package's commands, show as visible codes, now on the scheduled task card too. (DOR-5060)
+- With to-dos turned on: to-dos changed from another device on your network follow the same limits as messages. From a device that isn't allowed to run agents, you can still check off, reopen, add a note to and reorder your own to-dos. (DOR-5070)
+- With to-dos turned on: blocking To-dos in an agent's permissions covers every to-do tool. (DOR-3953)
+
+### Fixed
+
+- **"Confirm it’s you" now says why it can't confirm.** When a mini app is the reason, it names the app and offers How to fix. (DOR-4906, DOR-5086)
+- When the page is only older than a change, it shows "Updating this page…", reloads once, and opens the same request again for your password. If you typed something on the page, or another request is waiting, it offers a Reload button instead, and says when reloading would clear what you typed. The Mac app's window has the same Reload button. (DOR-5086)
+- "Sign in again" on the "Confirm it’s you" sheet now reloads the page for you. Then click the button you were confirming again. (DOR-5026)
+- Scheduled tasks no longer lose their permissions when their instructions file hasn't changed. Extra spaces at line ends, line-ending style and extra blank lines outside code blocks no longer count as a change. A task that will be limited but has no way to clear it now has a Review file button, so you can approve the file as it is. (DOR-5060)
+- The Review file dialog fits its file, says plainly what approving does, and tells you when no approved copy was kept to compare. Hidden characters show as marked chips that typed text can't fake, and an emoji's color mark is no longer flagged as hidden. (DOR-5075)
+- With to-dos turned on, adding or reading your team's own to-dos no longer makes an agent ask before it sends through a connected app, and it can add several to-dos in one turn. A to-do holding a stranger's words still makes it ask first. (DOR-4666)
+- Chats started in an agent's folder from the command line now count as that agent's chats in more places. They take messages from other agents, keep their agent when they continue on another account after a usage limit, and can use the agent's saved browser profiles and sign-in account. Other chats see the agent's name, messages held for it while it's paused are counted, and the chats it starts count as its open work. (DOR-5038)
+- A room hand-off that was waiting its turn when DorkOS restarted now posts once the agent is free, and the chat that asked hears back once. (DOR-5087)
+- A Telegram or Slack chat now gets answers from its agent when that agent works in its own copy of a project or in the default folder. (DOR-5055)
+- A hand-off's end notice now still arrives after the chat it came from was closed in the background. (DOR-5040)
+
+### Going back
+
+0.141.0 adds no database or settings changes. To go back, install 0.140.1.
+
+- Pages confirm it's you as they did in 0.140.1. If one can't, reload it.
+- Agents keep the waiting-their-turn skill, but 0.140.1 doesn't update it.
+- With to-dos turned on, blocking To-dos no longer stops adding, changing or reading to-dos.
+- A scheduled task whose file only changed spacing may be limited again. Approve its file to clear it.

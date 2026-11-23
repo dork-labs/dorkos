@@ -35,6 +35,7 @@ import type {
   TextPart,
   ToolCallPart,
 } from '@dorkos/shared/types';
+import { titleShownToPerson } from '@dorkos/shared/kickoff';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import { mapMessageError } from '../events/history-error-part.js';
 // Direct module import, NOT the attachments barrel: the barrel re-exports the
@@ -216,7 +217,8 @@ export function unwrap<T>(
 function mapSession(session: OpenCodeSession, dorkosId: string): Session {
   return {
     id: dorkosId,
-    title: session.title,
+    // A title OpenCode made from a greeting kickoff shows as untitled (DOR-4976).
+    title: titleShownToPerson(session.title),
     createdAt: toIso(session.time.created),
     updatedAt: toIso(session.time.updated),
     // OpenCode has no per-session permission mode; 'default' matches the

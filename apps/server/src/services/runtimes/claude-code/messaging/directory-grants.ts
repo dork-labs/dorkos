@@ -162,6 +162,27 @@ export function writeDenyRules(target: string, kind: 'folder' | 'file'): string[
 }
 
 /**
+ * Add deny rules to a launch's settings, beside any rules already there, keeping everything
+ * else the settings object carries.
+ *
+ * @param sdkOptions - The launch options, mutated in place.
+ * @param rules - The rules to add; none leaves the options as they are.
+ */
+export function addLaunchDenyRules(sdkOptions: Options, rules: readonly string[]): void {
+  if (rules.length === 0) return;
+  const base =
+    typeof sdkOptions.settings === 'object' && sdkOptions.settings !== null
+      ? sdkOptions.settings
+      : {};
+  const permissions = ((base as { permissions?: PermissionSettings }).permissions ??
+    {}) as PermissionSettings;
+  sdkOptions.settings = {
+    ...base,
+    permissions: { ...permissions, deny: [...(permissions.deny ?? []), ...rules] },
+  } as Options['settings'];
+}
+
+/**
  * An absolute path as a rule spells it, escaped, with no trailing slash — or
  * `undefined` when no rule can name it exactly (see {@link writeDenyRules}).
  *
@@ -360,26 +381,13 @@ export function applyPersonOnlyDataDeny(
         `Move your DorkOS data folder to a path without those characters, then try again.`
     );
   }
-  const base =
-    typeof sdkOptions.settings === 'object' && sdkOptions.settings !== null
-      ? sdkOptions.settings
-      : {};
-  const permissions = ((base as { permissions?: PermissionSettings }).permissions ??
-    {}) as PermissionSettings;
-  sdkOptions.settings = {
-    ...base,
-    permissions: {
-      ...permissions,
-      deny: [
-        ...(permissions.deny ?? []),
-        ...folders.flatMap(readOnlyRules),
-        ...personOnlyFileRules(dorkHome, full),
-        ...agentHomesRulesFor(dorkHome, 'launch', chat?.ownFolderOpen ? chat.agentPath : undefined),
-        ...PROJECT_PLUGIN_DENY_RULES,
-        ...(full ? HOME_PERSON_ONLY_FULL_RULES : HOME_PERSON_ONLY_RULES),
-      ],
-    },
-  } as Options['settings'];
+  addLaunchDenyRules(sdkOptions, [
+    ...folders.flatMap(readOnlyRules),
+    ...personOnlyFileRules(dorkHome, full),
+    ...agentHomesRulesFor(dorkHome, 'launch', chat?.ownFolderOpen ? chat.agentPath : undefined),
+    ...PROJECT_PLUGIN_DENY_RULES,
+    ...(full ? HOME_PERSON_ONLY_FULL_RULES : HOME_PERSON_ONLY_RULES),
+  ]);
 }
 
 /**

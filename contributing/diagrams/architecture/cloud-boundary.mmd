@@ -1,36 +1,30 @@
 flowchart TB
   accTitle: The public boundary of DorkOS Cloud
-  accDescr: Optional local Cloud clients use HTTPS. Legacy app-side paths coexist with the versioned public contract. The versioned client resolves authenticated instance identity before minting scoped inference credentials under the same current link. A Runs on choice selects credits. Claude Code uses session launch configuration, Codex a separate conversation home, OpenCode a sidecar-wide local relay, and Doe a first-turn inference binding. The token served list gates request formats; the environment variable only disables credits. The managed remote consumer is built and off until its switch is set. The session relay is a third path that dials a hub, not Cloud. The existing tunnel is a separate route to the local server. Hub, computer and directory families are contracts; only hub assignment and the viewer-open wake have app consumers.
-  subgraph app["Open-source app · local machine"]
-    local["Local DorkOS server<br/>Runs without a Cloud link"]
-    legacy["Cloud link + managed services client<br/>Existing /api/auth and /api/instances calls"]
-    versioned["Versioned client<br/>@dork-labs/cloud-api/client<br/>Current credential / origin / generation"]
-    runtime["Runs on: credits + current link<br/>Claude Code: session · Codex: conversation<br/>OpenCode: sidecar via local credits relay<br/>Doe: first-turn source binding<br/>Format gated by token served list"]
-    remote["Managed remote consumer · built<br/>Command stream · leases / acks · journal<br/>Enrolment · edge proof · ingress<br/>Off until DORKOS_MANAGED_REMOTE"]
-    tunnel["Existing tunnel manager<br/>ngrok SDK · optional"]
-    relayMac["Session relay · built, default off<br/>Dials the pinned hub, not Cloud"]
+  accDescr: Optional local Cloud clients use HTTPS. An older link client and the versioned public client coexist and resolve different origins. The versioned client resolves authenticated instance identity before minting scoped inference credentials under the same current link. A Runs on choice selects credits; the minted token's served list gates each runtime's request format, and the environment variable can only disable credits. The managed remote consumer is built and off until its switch is set. The public contract is a schema package, not deployment proof. Remote-access paths are a separate view.
+
+  subgraph app["Open-source app · your computer"]
+    local["<b>Local DorkOS server</b><br/><span class='d'>Runs without a Cloud link</span>"]
+    legacy["<b>Link and managed-services client</b><br/><span class='d'>The older routes</span>"]
+    versioned["<b>Versioned client</b><br/><span class='d'>The public v1 contract · one captured credential</span>"]
+    credits["<b>Runs on: DorkOS credits</b><br/><span class='d'>A person's choice, per runtime<br/>Format gated by the token's served list</span>"]
+    remote["<b>Managed remote consumer</b><br/><span class='d'>Command stream · leases, acks, journal<br/>Built · off until switched on</span>"]
     local --> legacy
     local --> versioned
-    local --> runtime
+    local --> credits
     local --> remote
-    local --> tunnel
-    local --> relayMac
   end
-  control["Configured service origin<br/>Link: DORKOS_CLOUD_URL, defaults to website<br/>/v1: DORKOS_CLOUD_API_URL, defaults to the service<br/>Account handover is route-specific"]
-  inference["Inference endpoint<br/>URL + scoped token returned at runtime"]
-  contract["Public contract: packages/cloud-api<br/>Accounts · instances · managed services<br/>entitlements · seats · remote access · inference<br/>Spaces on DorkOS: start / claim / moves<br/>Hubs · agent computers · computers · directory"]
-  hubrole["A hub (same program, role hub)<br/>Reads its assignment · owner pin"]
-  edge["Tunnel service"]
-  browser["Remote browser"]
-  legacy -->|"HTTPS: link / heartbeat<br/>Managed actions / event pull + ack"| control
-  versioned -->|"HTTPS /v1 bearer auth<br/>Session identity → mint"| control
-  remote -->|"Command SSE + lease/ack<br/>when switched on"| control
-  contract -.->|"Wire schema, not deployment proof"| control
-  hubrole -->|"GET /v1/hubs/self/assignment"| control
-  relayMac -->|"Signed WebSocket frames"| hubrole
-  runtime -->|"Inference protocol over HTTPS<br/>when chosen and available"| inference
-  tunnel -->|"Outbound tunnel connection"| edge
-  browser -->|"HTTPS / WSS"| edge
-  edge -->|"Forward app traffic through tunnel"| local
-  community["Space server API · implemented<br/>Scoped keys · limits · usage<br/>The space server owns content and storage"]
-  control -.->|"Space-management contract · availability-dependent<br/>HTTPS server API; no database access"| community
+
+  control["<b>Cloud service origin</b><br/><span class='d'>One origin for link routes, one for v1</span>"]
+  inference["<b>Inference endpoint</b><br/><span class='d'>URL and scoped token minted per session</span>"]
+  contract["<b>Public contract package</b><br/><span class='d'>Schemas · routes · fixtures · fetch client</span>"]
+  spaceadmin["<b>Space server administration API</b><br/><span class='d'>Scoped keys · limits · usage · implemented</span>"]
+
+  legacy -->|"link, heartbeat<br/><span class='d'>managed actions, event pull and ack</span>"| control
+  versioned -->|"v1 with bearer<br/><span class='d'>identity first, then mint</span>"| control
+  remote -->|"command stream<br/><span class='d'>when switched on</span>"| control
+  credits -->|"inference over HTTPS<br/><span class='d'>when chosen and available</span>"| inference
+  contract -.->|"wire schema, not deployment proof"| control
+  control -.->|"space management<br/><span class='d'>contract only · no database access</span>"| spaceadmin
+
+  classDef cloud fill:#fff5e4,stroke:#a87720,color:#49320c
+  class control,inference cloud

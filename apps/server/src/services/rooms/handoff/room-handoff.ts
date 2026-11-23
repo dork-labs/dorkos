@@ -11,7 +11,12 @@ import {
   type HandoffOutcome,
 } from './handoff-presentation.js';
 export type { RoomHandoff, HandoffOrigin, HandoffOutcome } from './handoff-presentation.js';
-import { admitPublicHandoff, type HandoffDraftInput } from './handoff-admission.js';
+import {
+  admissionRefusalOf,
+  admitPublicHandoff,
+  logAdmissionRefusal,
+  type HandoffDraftInput,
+} from './handoff-admission.js';
 import { decodeHandoffEnvelope, joinHandoffCurrentCarry } from './handoff-envelope.js';
 import {
   flushOriginalRoomNotices,
@@ -252,16 +257,14 @@ export class RoomHandoffs {
       );
       return handoff;
     });
+    if (!admitted.accepted && admitted.why === 'invalid')
+      logAdmissionRefusal(input, admitted.error);
     if (!admitted.accepted)
       return {
         posted: false,
         handedOff: false,
         ...(admitted.why === 'invalid'
-          ? {
-              reason: 'admission-policy-unavailable',
-              instruction:
-                'DorkOS can’t tell what this turn may do yet. Start a new turn, then hand it off.',
-            }
+          ? admissionRefusalOf(admitted.error)
           : {
               reason:
                 admitted.why === 'capacity'

@@ -459,10 +459,10 @@ export async function handleAgentMessage(
   // looked for where the agent lives, and NOT at `effectiveCwd`. The two differ
   // exactly when a payload names its own working directory: that moves where
   // the turn runs, which is a fact about this message, and it must not silently
-  // re-decide who the answering agent is. Falls back to the payload's directory
-  // only when nothing resolved an agent at all, because a project directory is
-  // a better guess at a manifest than nothing.
-  const agentManifestDir = context?.agent?.directory ?? payloadCwd;
+  // re-decide who the answering agent is. Never the payload's directory, either:
+  // a checkout can carry a `.dork/agent.json` of its own. When the subject named
+  // no agent, the host reads the chat's own agent instead (DOR-5057).
+  const agentManifestDir = context?.agent?.directory;
 
   // What this turn runs on. Asked BEFORE `ensureSession`, because that call is
   // the only one that can answer it: the claude-code runtime reads
@@ -894,12 +894,13 @@ export async function handleAgentMessage(
   //   out. A `SQLITE_BUSY` here must not turn an answered turn into a failed
   //   delivery — what is lost is one attribution row, which the next turn on
   //   this conversation writes again.
-  if (deps.bindSessionRuntime && contentEventCount > 0) {
+  // With no agent the relay resolved, there is nobody to record (DOR-5057).
+  if (deps.bindSessionRuntime && contentEventCount > 0 && agentManifestDir) {
     try {
       await deps.bindSessionRuntime({
         sessionId: durableSessionKey,
         runtimeType: deps.runtimeType ?? deps.agentManager.type ?? 'claude-code',
-        ...(agentManifestDir ? { agentDirectory: agentManifestDir } : {}),
+        agentDirectory: agentManifestDir,
         from: envelope.from,
       });
     } catch (err) {
@@ -940,17 +941,18 @@ export async function handleAgentMessage(
 /**
  * Ask the host what this turn should run on, and never let the answer stop it.
  *
- * Three ways to get nothing, and all three mean the same thing — no preference,
- * so the runtime picks, which is what every relay turn did before this existed:
- * a host that wired no resolver, an agent whose directory is unknown, and a
- * lookup that threw. The last one is the reason this is a function rather than
+ * Two ways to get nothing, and both mean the same thing — no preference, so the
+ * runtime picks, which is what every relay turn did before this existed: a host
+ * that wired no resolver, and a lookup that threw. With no agent from the
+ * subject, the host reads the chat's own agent itself (DOR-5057). The last one is the reason this is a function rather than
  * an inline `await`: reading a manifest or a settings row can fail for reasons
  * that have nothing to do with the message, and a dropped agent-to-agent
  * message is a far worse outcome than a turn on the default model.
  *
  * @param deps - The handler's dependencies; the resolver is optional on them.
  * @param sessionId - The key this turn runs under (`ccaSessionKey`).
- * @param agentDirectory - Where the turn runs, which is where its manifest is.
+ * @param agentDirectory - The agent the relay resolved from the subject, whose
+ *   manifest this is; never the folder the turn runs in.
  * @param requestedAccount - The account the message asked a new conversation to
  *   launch on, for the host to allow or refuse.
  * @param log - Where a failed lookup is reported.

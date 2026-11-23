@@ -24,6 +24,7 @@ import {
   browserCallNamesFile,
   isWithheldBrowserTool,
 } from '@dorkos/shared/agent-browser';
+import { addLaunchDenyRules } from '../messaging/directory-grants.js';
 
 /** What the agent is told when it calls one anyway. */
 export const WITHHELD_BROWSER_TOOL_MESSAGE =
@@ -62,17 +63,7 @@ export function browserToolDenyRules(serverNames: Iterable<string>): string[] {
  * @param sdkOptions - The launch options, mutated in place.
  */
 export function applyBrowserToolDeny(sdkOptions: Options): void {
-  const rules = browserToolDenyRules(Object.keys(sdkOptions.mcpServers ?? {}));
-  if (rules.length === 0) return;
-  const base =
-    typeof sdkOptions.settings === 'object' && sdkOptions.settings !== null
-      ? sdkOptions.settings
-      : {};
-  const permissions = (base as { permissions?: { deny?: string[] } }).permissions ?? {};
-  sdkOptions.settings = {
-    ...base,
-    permissions: { ...permissions, deny: [...(permissions.deny ?? []), ...rules] },
-  } as Options['settings'];
+  addLaunchDenyRules(sdkOptions, browserToolDenyRules(Object.keys(sdkOptions.mcpServers ?? {})));
 }
 
 /** A pattern that matches `text` in any letter case, for a matcher the CLI reads case-sensitively. */

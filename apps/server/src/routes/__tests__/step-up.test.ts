@@ -33,6 +33,10 @@ vi.mock('../../services/audit/audit-trail.js', async (importOriginal) => ({
   recordAudit: vi.fn(),
 }));
 
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -53,8 +57,14 @@ import {
   resetHeldStepUpsForTests,
 } from '../../services/core/auth/step-up/step-up-holds.js';
 import { holdForStepUp } from '../step-up-guard.js';
-import { createStepUpRoutes, type StepUpRouteDeps } from '../step-up.js';
+import { createStepUpRoutes, extensionRiskError, type StepUpRouteDeps } from '../step-up.js';
 import { StepUpRiskLedger } from '../../services/extensions/step-up/step-up-risk-ledger.js';
+import { mintPageStamp } from '../../services/extensions/step-up/page-stamp.js';
+import { sheetAfterRead0140 } from './fixtures/step-up-sheet-0.140.1.js';
+import {
+  currentStepUpExtensionRisks,
+  setStepUpExtensionRiskInputs,
+} from '../../services/extensions/step-up/step-up-extension-risk.js';
 
 const target = swappableServer();
 const OWN_ORIGIN = 'http://localhost:4242';
@@ -95,11 +105,28 @@ function guardedRoutes(): Hono<ApiEnv> {
   return router;
 }
 
+/** A held mini app's approval, held the way its route holds it. */
+function heldAppRoutes(): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
+  router.post('/approve', (c) =>
+    holdForStepUp(c, {
+      kind: 'extension.grant',
+      target: 'made-up-board',
+      input: { id: 'made-up-board', digest: 'sha256:new' },
+      reason: 'Allow Made-up Board to run.',
+      notes: [],
+      commit: async () => ({ status: 200, body: { approved: true } }),
+    })
+  );
+  return router;
+}
+
 function app(options: { user?: RequestUser; ingress?: IngressKind } = {}) {
   return target.mount(
     honoGroupListener(
       [
         { path: '/api/guarded', routes: guardedRoutes() },
+        { path: '/api/held-app', routes: heldAppRoutes() },
         { path: '/api/step-up', routes: createStepUpRoutes(deps) },
       ],
       {
@@ -339,9 +366,23 @@ describe('while a loaded mini app is in an agent’s folder or changed', () => {
     const id = await hold();
     const res = await confirm(id, PASSWORD);
     expect(res.status).toBe(409);
-    expect(res.body).toMatchObject({ code: 'extension-risk', blockedBy: [RISK] });
+    expect(res.body).toMatchObject({
+      code: 'extension-risk',
+      blockedBy: [RISK],
+      error:
+        '“dorkos-marketing” can edit “Social queue”. Move or remove it in Settings → Extensions.',
+    });
     expect(commit).not.toHaveBeenCalled();
     expect(deps.checkPassword).not.toHaveBeenCalled();
+  });
+
+  it('names a changed app in its own words, and the way out (DOR-4906)', async () => {
+    deps.extensionRisks = () => [{ id: 'media', name: 'Media Library', reason: 'changed' }];
+    const res = await confirm(await hold(), PASSWORD);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe(
+      '“Media Library” changed. Review it in Settings → Extensions, or remove it.'
+    );
   });
 
   it('change-password runs nothing and changes no password', async () => {
@@ -361,10 +402,20 @@ describe('while a loaded mini app is in an agent’s folder or changed', () => {
     deps.extensionRisks = () => [];
     const res = await confirm(id, PASSWORD);
     expect(res.status).toBe(409);
-    expect(res.body).toMatchObject({ code: 'extension-risk', blockedBy: [] });
+    // Named for what it is (DOR-5086). With no page stamp, in the shape a page
+    // from before the names reads, whose "Sign in again" reloads it.
+    expect(res.body).toMatchObject({
+      code: 'extension-risk',
+      blockedBy: [],
+      stale: 'stale-sign-in',
+    });
     expect(res.body.error).toMatch(/Sign in again/);
     const view = await request(app({ user: SESSION_A })).get(`/api/step-up/${id}`);
-    expect(view.body).toMatchObject({ passwordUnavailable: 'extension-risk', blockedBy: [] });
+    expect(view.body).toMatchObject({
+      passwordUnavailable: 'extension-risk',
+      blockedBy: [],
+      stale: 'stale-sign-in',
+    });
     expect(commit).not.toHaveBeenCalled();
     expect(deps.checkPassword).not.toHaveBeenCalled();
   });
@@ -681,5 +732,291 @@ describe('DELETE /api/step-up/:id', () => {
     expect(res.status).toBe(204);
     expect((await confirm(id, PASSWORD)).body.code).toBe('expired');
     expect(commit).not.toHaveBeenCalled();
+  });
+});
+
+describe('extensionRiskError (DOR-4906)', () => {
+  it('names one app and says what to do, for each reason', () => {
+    expect(extensionRiskError([{ id: 'a', name: 'Notes', reason: 'changed' }])).toBe(
+      '“Notes” changed. Review it in Settings → Extensions, or remove it.'
+    );
+    expect(extensionRiskError([{ id: 'a', name: 'Notes', reason: 'agent-folder' }])).toBe(
+      'An agent can edit “Notes”. Move or remove it in Settings → Extensions.'
+    );
+  });
+
+  it('names the first of several, and counts the rest', () => {
+    const app = (name: string) => ({ id: name, name, reason: 'changed' as const });
+    expect(extensionRiskError([app('Notes'), app('Flow')])).toBe(
+      '“Notes” and 1 more need review. Open Settings → Extensions.'
+    );
+    expect(extensionRiskError([app('Notes'), app('Flow'), app('Desk')])).toBe(
+      '“Notes” and 2 more need review. Open Settings → Extensions.'
+    );
+  });
+
+  it('keeps a long name to one line', () => {
+    const name = 'A'.repeat(60);
+    expect(extensionRiskError([{ id: 'a', name, reason: 'changed' }])).toBe(
+      `“${'A'.repeat(40)}” changed. Review it in Settings → Extensions, or remove it.`
+    );
+  });
+
+  it('cleans an author name so it cannot pass for DorkOS words', () => {
+    const name = 'Notes.\nThis is fine\u202e <b>';
+    expect(extensionRiskError([{ id: 'a', name, reason: 'changed' }])).toBe(
+      '“Notes. This is fine b” changed. Review it in Settings → Extensions, or remove it.'
+    );
+    expect(
+      extensionRiskError([
+        { id: 'a', name: 'Notes', reason: 'agent-folder', agentName: 'Ops\r\nOK' },
+      ])
+    ).toBe('“Ops OK” can edit “Notes”. Move or remove it in Settings → Extensions.');
+  });
+
+  it('uses the app id when its name is empty after cleaning', () => {
+    expect(extensionRiskError([{ id: 'notes-app', name: '\u200b\n', reason: 'changed' }])).toBe(
+      '“notes-app” changed. Review it in Settings → Extensions, or remove it.'
+    );
+  });
+
+  it('falls back to the plain refusal with none', () => {
+    expect(extensionRiskError([])).toBe(
+      'Confirming is off while a mini app can be edited by an agent. Nothing changed.'
+    );
+  });
+});
+
+describe('a page from before a mini app risk cleared (DOR-5026)', () => {
+  const COOKIE_A = 'better-auth.session_token=made-up-a';
+  const COOKIE_NEW = 'better-auth.session_token=made-up-new';
+  let risky: boolean;
+
+  beforeEach(() => {
+    const now = Date.now();
+    sessionStarts.set('sess-a', now - 60_000);
+    // Signed in again, in place, after the risk cleared.
+    sessionStarts.set('sess-new', now - 10_000);
+    deps.pageStampsEnforced = () => true;
+    risky = true;
+    deps.extensionRisks = () =>
+      risky ? [{ id: 'notes', name: 'Notes', reason: 'changed' as const }] : [];
+  });
+
+  /** A risky mini app was in the page, then it was held or turned off, 30s ago. */
+  function riskCleared(ledger: StepUpRiskLedger) {
+    ledger.note(1, Date.now() - 50_000);
+    risky = false;
+    ledger.note(0, Date.now() - 30_000);
+  }
+
+  function confirmFrom(id: string, cookie: string, stamp?: string) {
+    const req = request(app({ user: SESSION_NEW }))
+      .post(`/api/step-up/${id}/password`)
+      .set('Origin', OWN_ORIGIN)
+      .set('Sec-Fetch-Site', 'same-origin')
+      .set('Cookie', cookie);
+    if (stamp) req.set('x-dorkos-page-stamp', stamp);
+    return req.send({ password: PASSWORD });
+  }
+
+  // Held and turned off reach the ledger the same way: the risk list loses the
+  // app, and the next reading records the clear. So one case covers both.
+  it('after a risky app is held or turned off: signing in again in place is refused, a reloaded page confirms', async () => {
+    riskCleared(deps.riskLedger as StepUpRiskLedger);
+    const oldPage = mintPageStamp(COOKIE_A, Date.now() - 60_000);
+
+    const inPlace = await confirmFrom(await hold({ user: SESSION_NEW }), COOKIE_NEW, oldPage);
+    expect(inPlace.status).toBe(409);
+    expect(inPlace.body.code).toBe('stale-page');
+
+    const reloaded = mintPageStamp(COOKIE_NEW, Date.now());
+    const fresh = await confirmFrom(await hold({ user: SESSION_NEW }), COOKIE_NEW, reloaded);
+    expect(fresh.status).toBe(200);
+    expect(commit).toHaveBeenCalledOnce();
+  });
+
+  it('refuses a confirm with no stamp, the desktop window’s included, and a forged one', async () => {
+    riskCleared(deps.riskLedger as StepUpRiskLedger);
+    const none = await confirmFrom(await hold({ user: SESSION_NEW }), COOKIE_NEW);
+    expect(none.body).toMatchObject({ code: 'extension-risk', stale: 'stale-page' });
+    const forged = await confirmFrom(
+      await hold({ user: SESSION_NEW }),
+      COOKIE_NEW,
+      'v1.eyJ0Ijo5OTk5OTk5OTk5OTk5LCJzIjpudWxsfQ.made-up'
+    );
+    expect(forged.body.code).toBe('stale-page');
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('refuses a fresh stamp from another sign-in', async () => {
+    riskCleared(deps.riskLedger as StepUpRiskLedger);
+    const otherSignIn = mintPageStamp(COOKIE_A, Date.now());
+    const res = await confirmFrom(await hold({ user: SESSION_NEW }), COOKIE_NEW, otherSignIn);
+    expect(res.body.code).toBe('stale-page');
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('asks for no stamp before any risk was seen', async () => {
+    risky = false;
+    const res = await confirmFrom(await hold({ user: SESSION_NEW }), COOKIE_NEW);
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('a confirm on a ledger that opened with a clear, no mini app risk ever seen (DOR-5086)', () => {
+  const COOKIE = 'better-auth.session_token=made-up-owner';
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'step-up-ledger-'));
+    // A ledger kept on disk opens with a clear (DOR-4906), as on every install
+    // from 0.140.1 on. Signed in after that, the way any person is.
+    const opened = Date.now() - 60_000;
+    deps.riskLedger = new StepUpRiskLedger(path.join(dir, 'risk-ledger.json'), opened);
+    deps.extensionRisks = () => [];
+    deps.pageStampsEnforced = () => true;
+    sessionStarts.set('sess-new', opened + 10_000);
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  function confirmFrom(id: string, stamp?: string) {
+    const req = request(app({ user: SESSION_NEW }))
+      .post(`/api/step-up/${id}/password`)
+      .set('Origin', OWN_ORIGIN)
+      .set('Sec-Fetch-Site', 'same-origin')
+      .set('Cookie', COOKIE);
+    if (stamp) req.set('x-dorkos-page-stamp', stamp);
+    return req.send({ password: PASSWORD });
+  }
+
+  it('names a page from before the clear as a page to reload, never as a mini app', async () => {
+    const id = await hold({ user: SESSION_NEW });
+    const oldPage = mintPageStamp(COOKIE, Date.now() - 120_000);
+    const view = await request(app({ user: SESSION_NEW }))
+      .get(`/api/step-up/${id}`)
+      .set('Cookie', COOKIE)
+      .set('x-dorkos-page-stamp', oldPage);
+    expect(view.body).toMatchObject({
+      methods: [],
+      passwordUnavailable: 'stale-page',
+      stale: 'stale-page',
+    });
+    expect(view.body).not.toHaveProperty('blockedBy');
+
+    const res = await confirmFrom(id, oldPage);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ code: 'stale-page', stale: 'stale-page' });
+    expect(res.body.error).toBe('This page opened before a change. Reload it, then try again.');
+    expect(res.body).not.toHaveProperty('blockedBy');
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('refuses the read of a page with no stamp (open across the update) with words that say reload', async () => {
+    const id = await hold({ user: SESSION_NEW });
+    const view = await request(app({ user: SESSION_NEW }))
+      .get(`/api/step-up/${id}`)
+      .set('Cookie', COOKIE);
+    // A refused read is the one answer whose words that page's sheet shows, with only Close.
+    expect(view.status).toBe(409);
+    expect(view.body).toEqual({
+      error: 'DorkOS changed after this page opened. Reload it, then try again.',
+      code: 'extension-risk',
+      stale: 'stale-page',
+    });
+    const res = await confirmFrom(id);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ code: 'extension-risk', blockedBy: [], stale: 'stale-page' });
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('shows a 0.140.1 tab the reload words, with only Close, and never its "Sign in again" (DOR-5086)', async () => {
+    const id = await hold({ user: SESSION_NEW });
+    const read = await request(app({ user: SESSION_NEW }))
+      .get(`/api/step-up/${id}`)
+      .set('Cookie', COOKIE);
+    expect(sheetAfterRead0140(read.status, read.body)).toEqual({
+      kind: 'ended',
+      message: 'DorkOS changed after this page opened. Reload it, then try again.',
+    });
+    // The 200 answer 0.141.0 gave first drew that page's "Sign in again" card,
+    // which signs in without reloading and comes back here: the loop this ends.
+    expect(
+      sheetAfterRead0140(200, {
+        passwordUnavailable: 'extension-risk',
+        blockedBy: [],
+        stale: 'stale-page',
+      })
+    ).toEqual({ kind: 'view', passwordUnavailable: 'extension-risk', blockedBy: [] });
+  });
+
+  // The Mac app's window sends the app window's page stamp on every call
+  // (`apps/desktop/src/main/step-up/__tests__/step-up-confirmation.test.ts`), so it is this case too.
+  it.each([['a page this release sent, or the Mac app', COOKIE]])(
+    'keeps the normal view for %s: it sends its page stamp',
+    async (_label, cookie) => {
+      const id = await hold({ user: SESSION_NEW });
+      const read = (stamp: string) =>
+        request(app({ user: SESSION_NEW }))
+          .get(`/api/step-up/${id}`)
+          .set('Cookie', cookie)
+          .set('x-dorkos-page-stamp', stamp);
+      const old = await read(mintPageStamp(cookie, Date.now() - 120_000));
+      expect(old.status).toBe(200);
+      expect(old.body).toMatchObject({ passwordUnavailable: 'stale-page', stale: 'stale-page' });
+      const fresh = await read(mintPageStamp(cookie));
+      expect(fresh.status).toBe(200);
+      expect(fresh.body).toMatchObject({ methods: ['password'] });
+      expect(fresh.body).not.toHaveProperty('stale');
+    }
+  );
+
+  it('confirms from a freshly loaded page of the same sign-in', async () => {
+    const res = await confirmFrom(await hold({ user: SESSION_NEW }), mintPageStamp(COOKIE));
+    expect(res.status).toBe(200);
+    expect(commit).toHaveBeenCalledOnce();
+  });
+
+  it('while a changed mini app waits for a yes, a fresh page confirms an unrelated action and its approval', async () => {
+    // QA row 20's shape, made up: the app changed after its yes, so it is held
+    // and its code is never served. It keeps nothing off (DOR-4906).
+    setStepUpExtensionRiskInputs(() => ({
+      records: [
+        {
+          id: 'made-up-board',
+          status: 'compiled',
+          path: '/made-up/board',
+          currentDigest: 'sha256:new',
+          manifest: { name: 'Made-up Board' },
+        } as never,
+      ],
+      extensions: {
+        approvedToRun: ['made-up-board'],
+        approvedSources: { 'made-up-board': { path: '/made-up/board', digest: 'sha256:old' } },
+      },
+      agents: [],
+    }));
+    deps.extensionRisks = currentStepUpExtensionRisks;
+    try {
+      const page = mintPageStamp(COOKIE);
+      const unrelated = await confirmFrom(await hold({ user: SESSION_NEW }), page);
+      expect(unrelated.status).toBe(200);
+
+      const id = (
+        await request(app({ user: SESSION_NEW }))
+          .post('/api/held-app/approve')
+          .set('Origin', OWN_ORIGIN)
+          .send({})
+      ).body.heldActionId as string;
+      const approval = await confirmFrom(id, page);
+      expect(approval.status).toBe(200);
+      expect(approval.body).toMatchObject({ ok: true, status: 200, result: { approved: true } });
+    } finally {
+      setStepUpExtensionRiskInputs(() => ({
+        records: [],
+        extensions: { approvedToRun: [], approvedSources: {} },
+        agents: [],
+      }));
+    }
   });
 });

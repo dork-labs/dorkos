@@ -14,6 +14,9 @@ describe('sessionDisplayTitle', () => {
     // A row written from a settings reply before the chat exists has no title
     // at all; the window title crashed on it (DOR-2820).
     ['missing', undefined],
+    // A chat titled from a greeting kickoff before DOR-4976, and any later tag.
+    ['kickoff-tag', '<dork-kickoff>'],
+    ['DorkOS-markup', 'Hello </dork-some-tag>'],
   ])('names a %s title "New chat"', (_, title) => {
     expect(sessionDisplayTitle(title)).toBe(UNTITLED_SESSION_LABEL);
   });

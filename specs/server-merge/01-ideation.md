@@ -13,6 +13,8 @@ status: ideation
 **Linear:** DOR-2874 (umbrella, parent DOR-2735)
 **Decision being carried out:** ADR [261006-235238](../../decisions/261006-235238-one-dorkos-server-in-every-size.md), moved before launch by Dorian on 2026-10-12
 
+> **Changed 2026-11-22 by ADR [`261122-173853`](../../decisions/261122-173853-one-space-model.md) (one space model).** Option C below is the line until launch, not the end state. The target is one model for a space, the space store's: a space holds its members' data (agents, conversations, rules, memory, schedules, connections, settings, documents, extensions), and only execution state (workspaces, runtime transcripts and sign-ins, running processes) stays on the computer that runs turns. After launch the private space becomes a tenant on the space store (PGlite on a Mac, once it passes its gates), domain by domain, agents last. Requirement 1's "agents never run on a space server" is kept as a hosting policy (the "runs agents" switch), and the wall is that a shared host never holds a member's credentials or a key to a member's computer. Requirement 6's "stored only on your Mac" holds until the private space moves.
+
 > **Changed 2026-10-15 by [`everything-is-a-space`](../everything-is-a-space/02-specification.md) (ADR `261015-042933`).** Launch moves to late January 2027 (then, the same day, to early February 2027: ADR `261015-125850`); December 8 is the Community Space soft launch. Requirement 11 changes: team spaces on DorkOS Cloud are in launch scope. Requirement 5 changes for Cloud team spaces (members sign in with a DorkOS account), and requirement 6 is met by the session relay into your own DorkOS in the cloud. The specification's banner lists what changes for the steps.
 
 ## 1) Intent and assumptions
@@ -104,9 +106,9 @@ So the specification puts those data and promise changes before launch, and the 
 | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A. Postgres everywhere                                      | The Mac runs Postgres too (embedded through PGlite, or a bundled server)                                                                                                                                 | Rejected **for now**: the local server's 4,200 synchronous query calls would all become async. Months, not weeks.                                                                                                   |
 | B. One layer over both                                      | Each query works on SQLite and Postgres (the Gitea way)                                                                                                                                                  | Rejected: the same async rewrite on the local side, and the space side is 1,150 hand-written Postgres queries using triggers, row locks and snapshot checks SQLite does not have. The two-database cost never ends. |
-| C. Two stores, split by what the data is about, one program | **Machine store** (SQLite) for what only exists where agents run: agents, sessions, runtimes, connections, this computer's rooms. **Space store** (Postgres) for spaces a server hosts for other people. | **Pick.** Nothing is rewritten before launch. Both stores exist and are tested.                                                                                                                                     |
+| C. Two stores, split by what the data is about, one program | **Machine store** (SQLite) for what only exists where agents run: agents, sessions, runtimes, connections, this computer's rooms. **Space store** (Postgres) for spaces a server hosts for other people. | **Pick.** Nothing is rewritten before launch. Both stores exist and are tested. _Since ADR `261122-173853`: the pre-launch line only; the machine store narrows to execution state after launch._                   |
 
-Later, for requirement 3 (a Mac grows into a team), the space store can run on the Mac through PGlite, an embedded Postgres in WebAssembly. The space code would then be the same everywhere. That needs a spike first; it is a step after launch.
+Later, for requirement 3 (a Mac grows into a team), the space store can run on the Mac through PGlite, an embedded Postgres in WebAssembly. The space code would then be the same everywhere. That needs a spike first; it is a step after launch. (ADR `261122-173853` gives it a second use: the private space moves onto that store as a tenant.)
 
 ### When to move the code
 
@@ -118,7 +120,7 @@ Later, for requirement 3 (a Mac grows into a team), the space store can run on t
 
 ### What "runs agents off" means
 
-A space host runs no agents today because `apps/community` has no runtime code at all; the package boundary is the guarantee. When the code moves into `apps/server` after launch, a build check keeps that guarantee: no runtime SDK and no `better-sqlite3` in the space host's image.
+A space host runs no agents today because `apps/community` has no runtime code at all; the package boundary is the guarantee. When the code moves into `apps/server` after launch, a build check keeps that guarantee: no runtime SDK and no `better-sqlite3` in the space host's image. (Since ADR `261122-173853` this is the hosted image's policy, not an architectural wall. The wall is that a shared host never holds a member's credentials or a key to a member's computer.)
 
 ## 6) Decisions
 

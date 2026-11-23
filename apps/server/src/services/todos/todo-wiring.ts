@@ -13,9 +13,10 @@ import { todoNeedsStepUp, type TodoRouterDeps } from '../../routes/todos.js';
 import type { CapabilityDeps } from '../core/capabilities/index.js';
 import type { RoomSessionPlacePort } from '../workspace/room-session-place.js';
 import { ownerAccountExists } from '../core/auth/gate-policy.js';
-import { personProof } from './caller.js';
+import { heldWifiOwner, personProof } from './caller.js';
 import { TodoPromiseService } from './todo-promise-service.js';
 import { TodoPromiseStore } from './todo-promise-store.js';
+import { rowCarriesOutsideWords } from './todo-authority.js';
 import { TodoService } from './todo-service.js';
 import { TodoStore } from './todo-store.js';
 import { TodoTurns } from './todo-turns.js';
@@ -157,6 +158,7 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
       personProven: personProof,
       // A failed lookup reads as an owner, so the no-owner allowance fails closed.
       ownerExists: ownerAccountExists,
+      heldWifiOwner,
       needsStepUp: todoNeedsStepUp,
       workSessionOf: (todoId) => todoTurns.lastSessionOf(todoId),
       readSource: (entryId) => readTodoSourceFacts(deps.db, entryId),
@@ -169,11 +171,13 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
       agentInRoom: (roomId, agentPath) => agentInRoom(deps.db, roomId, agentPath),
       promiseOf: (id) => service.get(id),
       tellRecipient,
+      carriesOutsideWords: (id) => rowCarriesOutsideWords(todoStore.get(id)),
     },
     capabilityDeps: {
       service,
       agentIdForPath,
       tellRecipient,
+      carriesOutsideWords: (id) => rowCarriesOutsideWords(todoStore.get(id)),
     },
     routeDeps: routerDeps,
     stop: () => {

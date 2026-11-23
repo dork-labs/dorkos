@@ -12,6 +12,7 @@ import {
   proveReleaseBranch,
   type ReleaseBranchRequest,
 } from './release-branch/proof.ts';
+import { checkQaGo, qaGoLedgerPath, takeQaGoLedgerFlag } from './release-gate/qa-go.ts';
 
 const workflow = 'browser-native-release-artifact.yml';
 // Reassigned only by a release-branch build's --root, so main's copy of this
@@ -225,7 +226,8 @@ function clean() {
  * then only prepares: the Release Publish workflow publishes what it packs. */
 export async function releaseCLI(
   publish: boolean,
-  branch?: { request: ReleaseBranchRequest; root: string | undefined }
+  branch?: { request: ReleaseBranchRequest; root: string | undefined },
+  qaGoLedger?: string
 ) {
   if (branch && publish)
     throw Error('A release-branch build only prepares; the Release Publish workflow publishes it.');
@@ -242,6 +244,16 @@ export async function releaseCLI(
     head,
     output('git', ['rev-parse', tag + '^{commit}'])
   );
+  // Publish only the exact tree QA said GO on, before anything is fetched or built (DOR-5050).
+  if (publish)
+    console.log(
+      checkQaGo({
+        ledgerPath: qaGoLedgerPath(qaGoLedger),
+        version: pkg.version,
+        target: head,
+        cwd: root,
+      })
+    );
   const repository = output('gh', [
     'repo',
     'view',
@@ -494,10 +506,10 @@ export async function releaseCLI(
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const branch = parseReleaseBranchArgs(process.argv.slice(2));
-  const args = branch ? branch.rest : process.argv.slice(2);
+  const { ledger, rest: args } = takeQaGoLedgerFlag(branch ? branch.rest : process.argv.slice(2));
   if (args.length > 1 || (args.length === 1 && args[0] !== '--publish'))
     throw Error('Use release:cli:prepare or the explicit publish:cli command.');
-  void releaseCLI(args[0] === '--publish', branch).catch((error: unknown) => {
+  void releaseCLI(args[0] === '--publish', branch, ledger).catch((error: unknown) => {
     console.error(error);
     process.exitCode = 1;
   });

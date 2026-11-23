@@ -404,6 +404,15 @@ describe('public handoff CURRENT-policy admission', () => {
       carriedOutsider: true,
     });
   });
+  it('a known chat with no recorded turn level is told to start a new turn', async () => {
+    const session = fresh();
+    seed(session);
+    const result = await call(session);
+    expect(JSON.stringify(result)).toContain('admission-policy-unavailable');
+    expect(JSON.stringify(result)).toContain('Start a new turn, then hand it off.');
+    await harness.service.handoffs.idle();
+    expect(runner.turns).toHaveLength(0);
+  });
   it('unknown verified session refuses before handoff queue, seat run or room write', async () => {
     const session = fresh();
     seed(session);
@@ -462,6 +471,9 @@ describe('public handoff CURRENT-policy admission', () => {
     await record(session);
     const result = await call(session);
     expect(JSON.stringify(result)).toContain('admission-policy-unavailable');
+    // The advice names what is missing, never "start a new turn", which cannot help (DOR-5035).
+    expect(JSON.stringify(result)).toContain('can’t confirm this chat is yours');
+    expect(JSON.stringify(result)).not.toContain('Start a new turn');
     expect(runner.turns).toHaveLength(0);
     expect(
       modules.admission.captureHandoffAdmission(harness.store, author(), session)

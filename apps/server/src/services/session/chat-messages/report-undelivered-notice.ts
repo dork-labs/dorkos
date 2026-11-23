@@ -26,7 +26,15 @@ export interface ReportUndeliveredPayloads {
     /** The agent that owns the spin-off, when known. */
     agentId?: string;
     /** Why the report went. */
-    reason: 'finished' | 'failed' | 'stopped' | 'limit' | 'needs-you' | 'holding' | 'never-started';
+    reason:
+      | 'finished'
+      | 'failed'
+      | 'stopped'
+      | 'limit'
+      | 'needs-you'
+      | 'holding'
+      | 'never-started'
+      | 'started-late';
     /** ISO time when report-back gave up. */
     at: string;
     /** Stable outbox identity and ambiguous-delivery wording. */

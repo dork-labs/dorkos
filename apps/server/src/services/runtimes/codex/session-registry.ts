@@ -28,6 +28,7 @@
  */
 import type { Session, PermissionModeId, EffortLevel } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
+import { sessionShownToPerson, shownToPerson, titleShownToPerson } from '@dorkos/shared/kickoff';
 import { deriveSessionTitle } from '../shared/derive-title.js';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 
@@ -97,7 +98,7 @@ export class CodexSessionRegistry {
   ): void {
     const { title, ...settings } = patch;
     const session = this.upsert(sessionId, settings);
-    const preview = toPreview(content);
+    const preview = titleShownToPerson(toPreview(shownToPerson(content)));
     // MessageOpts.title is only honored on the first turn (see AgentRuntime).
     if (session.title === '') session.title = title ?? (deriveSessionTitle(content) || preview);
     // "Tools are back" shows until the next message (DOR-4393). Null, not
@@ -156,7 +157,7 @@ export class CodexSessionRegistry {
   hydrate(sessions: Session[]): void {
     for (const session of sessions) {
       if (this.sessions.has(session.id)) continue;
-      const copy = { ...session };
+      const copy = sessionShownToPerson(session);
       this.sessions.set(session.id, copy);
       // Emit a copy: a queued list event must not observe later mutations.
       this.emit({ type: 'session_upserted', session: { ...copy } });
@@ -167,7 +168,7 @@ export class CodexSessionRegistry {
   adoptNative(session: Session): void {
     const current = this.sessions.get(session.id);
     const copy = {
-      ...session,
+      ...sessionShownToPerson(session),
       ...(current
         ? {
             permissionMode: current.permissionMode,

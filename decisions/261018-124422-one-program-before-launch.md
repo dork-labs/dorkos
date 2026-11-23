@@ -14,6 +14,8 @@ amends: [261006-235238, 261015-042933]
 
 Accepted (operator decision, #dorkos, 2026-10-18: "I want to make a big adjustment and make the two programs become one (server-merge step 7) BEFORE LAUNCH. I want to do that ASAP").
 
+**Amended by** [261122-173853](261122-173853-one-space-model.md) (one space model, 2026-11-22): step 7's placement stands and is the only placement. The space code stays in `apps/server/src/services/spaces`; `apps/space` keeps only the image, the migrations and the test tiers; an `apps/space` that owns source and a `packages/space` are retired. D2 stands in form (two stores, no layer over both) but its line moves: the machine store keeps execution state (workspaces, runtime transcripts and sign-ins, processes) and the space store holds space data, agents included. Step 9 gains a gate (a PGlite measurement on a real Mac) and a second use: after launch the private space becomes a tenant on the same store, domain by domain, agents last.
+
 **Amends** (each stays Accepted):
 
 - [261006-235238](261006-235238-one-dorkos-server-in-every-size.md): retires its after-launch order for the program merge. Step 7 ("one program") now lands before launch. Steps 8 (the active-runner lease) and 9 (a Mac can host spaces) stay after launch, in the same order.

@@ -45,6 +45,7 @@ import { holdApprovedSchedule, releaseSettledSchedule } from '../model/settling-
 import { useScheduleTestRun } from '../model/use-schedule-test-run';
 import { TestRunStrip } from './TestRunStrip';
 import { ScheduleOriginMarks } from './ScheduleOriginMarks';
+import { ScheduleReason } from './ScheduleReason';
 import type { ScheduleApprovalSurface } from './ScheduleApprovalReceipt';
 import { ScheduleApprovalActions } from './ScheduleApprovalActions';
 
@@ -315,6 +316,10 @@ function ScheduleApprovalContent({
       ? task.description
       : null;
   const reason = task.reason ?? fallbackReason;
+  // A reason that only repeats the prompt is not quoted where the prompt shows
+  // below it in full, with its hidden characters marked: the file-attesting
+  // cards. Elsewhere the prompt is folded, so the reason stays (DOR-5075).
+  const reasonRepeatsPrompt = reason?.trim() === task.prompt.trim();
   const changeLines = describeApprovalChanges(task.approvalChanges ?? []);
 
   /**
@@ -538,24 +543,11 @@ function ScheduleApprovalContent({
           </p>
         </AskCard.Detail>
 
-        {/* The agent's case, in its own words and in full. Never clamped: this is
-          the whole of what the operator is being asked to weigh.
-
-          For a schedule found in a file the words are DorkOS's own — why it is
-          waiting, or what is wrong with the file — so they are not dressed as a
-          quotation. Attributing our sentence to a proposer who does not exist
-          would be the small dishonesty that makes a person distrust the rest. */}
-        {reason && (!misplacedMode || !pinActions) && (
-          <p
-            data-slot="schedule-reason"
-            className={cn(
-              'text-foreground/90 border-border/60 min-w-0 border-l-2 pl-2.5 text-xs break-words',
-              !dorkosWrote && 'italic'
-            )}
-          >
-            {misplacedMode ? <ScheduleFileProblem /> : dorkosWrote ? reason : <>“{reason}”</>}
-          </p>
-        )}
+        {/* The agent's case, in full (`ScheduleReason`). */}
+        {reason &&
+          (misplacedMode ? !pinActions : !(reasonRepeatsPrompt && (attestsFile || pinActions))) && (
+            <ScheduleReason reason={reason} misplaced={misplacedMode} dorkosWrote={dorkosWrote} />
+          )}
 
         {task.originMarks && <ScheduleOriginMarks marks={task.originMarks} />}
 

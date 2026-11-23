@@ -14,6 +14,9 @@ vi.stubGlobal('fetch', mockFetch);
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 
+/** Every variable that switches the update check off. */
+const SWITCHES = ['DORKOS_UPDATE_CHECK_DISABLED', 'DO_NOT_TRACK', 'DORKOS_TELEMETRY_DISABLED'];
+
 describe('isNewer', () => {
   it('returns true when major is higher', () => {
     expect(isNewer('2.0.0', '1.0.0')).toBe(true);
@@ -45,10 +48,40 @@ describe('checkForUpdate', () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-02-16T12:00:00Z'));
+    // The switches below are read from the environment; start every test off.
+    for (const name of SWITCHES) vi.stubEnv(name, '');
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    ['DORKOS_UPDATE_CHECK_DISABLED', '1'],
+    ['DORKOS_UPDATE_CHECK_DISABLED', 'true'],
+    ['DO_NOT_TRACK', '1'],
+    ['DO_NOT_TRACK', 'true'],
+    ['DORKOS_TELEMETRY_DISABLED', '1'],
+    ['DORKOS_TELEMETRY_DISABLED', 'TRUE'],
+  ] as const)('honours %s=%s: no registry call, no cache read', async (name, value) => {
+    vi.stubEnv(name, value);
+    mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ version: '9.0.0' }) });
+
+    expect(await checkForUpdate('0.1.0')).toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(readFile).not.toHaveBeenCalled();
+  });
+
+  it.each(SWITCHES)('still checks when %s is 0', async (name) => {
+    vi.stubEnv(name, '0');
+    vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(mkdir).mockResolvedValue(undefined);
+    vi.mocked(writeFile).mockResolvedValue(undefined);
+    mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ version: '0.2.0' }) });
+
+    expect(await checkForUpdate('0.1.0')).toBe('0.2.0');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
   it('returns cached result when cache is fresh', async () => {

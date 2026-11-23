@@ -115,7 +115,7 @@ export function useApproveTaskFile() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ taskId, capAt, hash }: { taskId: string; capAt: string; hash: string }) =>
+    mutationFn: ({ taskId, capAt, hash }: { taskId: string; capAt: string | null; hash: string }) =>
       transport.approveTaskFile(taskId, capAt, hash),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...TASKS_KEY], exact: true });

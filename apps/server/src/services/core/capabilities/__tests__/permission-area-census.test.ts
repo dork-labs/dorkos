@@ -9,8 +9,12 @@
  * lands. Every area's membership is pinned by name: an action that silently
  * lost its area would move from "what the person set for that area" to
  * "reachable by every agent", and nothing else would notice.
+ *
+ * Flag-gated domains are counted too: the census turns their flags on, so a tool hidden behind
+ * one cannot land without an area and ship that way when the flag flips (DOR-3953).
  */
-import { describe, it, expect } from 'vitest';
+import { afterAll, describe, it, expect } from 'vitest';
+import { env } from '../../../../env.js';
 import { PERMISSION_AREA_IDS, isFloorArea } from '@dorkos/shared/permissions';
 
 import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
@@ -91,8 +95,16 @@ const EXPECTED_MEMBERS: Record<string, readonly string[]> = {
   ],
   // One action, an agent summarizing its own conversation (DOR-2732).
   own_chat: ['session.compact'],
-  // An agent's to-do promises (DOR-3936); before, they had no area.
-  todos: ['todo_promises.add', 'todo_promises.list', 'todo_promises.update'],
+  // An agent's to-do promises (DOR-3936), and the flag-gated to-dos that start another agent's
+  // turn (DOR-3953); before, each had no area.
+  todos: [
+    'todo_promises.add',
+    'todo_promises.list',
+    'todo_promises.update',
+    'todos.add',
+    'todos.list',
+    'todos.update',
+  ],
   // Chats messaging chats (spec `spin-off-chats`); the relay send, inbox and
   // endpoint tools retired for them.
   messages: [
@@ -147,8 +159,17 @@ const EXPECTED_MEMBERS: Record<string, readonly string[]> = {
   reach: [],
 };
 
+/** Flag-gated domains on, before `everyAction()` composes the registry at collection time. */
+const flags = env as { DORKOS_TODOS_ENABLED: boolean };
+const AMBIENT_TODOS = flags.DORKOS_TODOS_ENABLED;
+flags.DORKOS_TODOS_ENABLED = true;
+
 describe('permission-area census', () => {
   const actions = everyAction();
+
+  afterAll(() => {
+    flags.DORKOS_TODOS_ENABLED = AMBIENT_TODOS;
+  });
 
   it('counts a real population, so the rows below are not vacuous', () => {
     expect(actions.length).toBeGreaterThan(100);
@@ -159,6 +180,18 @@ describe('permission-area census', () => {
       .filter((a) => a.area === null && (!a.areaNote || a.areaNote.trim() === ''))
       .map((a) => a.id);
     expect(unexplained).toEqual([]);
+  });
+
+  it('counts the flag-gated to-do tools', () => {
+    const ids = actions.map((a) => a.id);
+    expect(ids).toEqual(expect.arrayContaining(['todos.add', 'todos.list', 'todos.update']));
+  });
+
+  it('puts every to-do tool in the To-dos area, so a new one cannot land outside it', () => {
+    const outside = actions
+      .filter((a) => /^todo/.test(a.id) && a.area !== 'todos')
+      .map((a) => `${a.id} -> ${a.area}`);
+    expect(outside).toEqual([]);
   });
 
   it('names only known areas', () => {

@@ -5,7 +5,7 @@
 import { eq } from 'drizzle-orm';
 import { pulseRuns, type Db } from '@dorkos/db';
 import type { TaskRun, TaskRunStatus, TaskRunOutcome } from '@dorkos/shared/types';
-import { refusedToolsColumnOf, type RunCap } from './run-cap-column.js';
+import { refusedToolsColumnOf, type RunCap, type RunCapFile } from './run-cap-column.js';
 
 /** Fields that can be updated on a run. */
 export interface RunUpdate {
@@ -23,6 +23,8 @@ export interface RunUpdate {
   refusedTools?: string[];
   /** The run runs capped, because its SKILL file changed (DOR-3703, M4). Never unset. */
   cappedAt?: RunCap;
+  /** The file that capped it and its two hashes (DOR-5060). Never unset. */
+  cappedFile?: RunCapFile;
   /** How much a `needs_attention` run got done (DOR-3123). */
   outcome?: TaskRunOutcome;
 }
@@ -43,7 +45,8 @@ export function updateRunRow(db: Db, id: string, existing: TaskRun, update: RunU
       // run's cap, once set, stays (DOR-3703, M4).
       refusedTools: refusedToolsColumnOf(
         update.refusedTools ?? existing.refusedTools,
-        update.cappedAt ?? existing.cappedAt
+        update.cappedAt ?? existing.cappedAt,
+        update.cappedFile ?? existing.cappedFile
       ),
       outcome: update.outcome ?? existing.outcome,
     })

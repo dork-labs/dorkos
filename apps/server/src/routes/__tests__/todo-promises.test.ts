@@ -139,6 +139,20 @@ describe('to-do routes', () => {
       expect(res.status).toBe(200);
       expect(power(made.id)).toEqual({ authority: 'runtime-default', marks: '{"outsider":true}' });
     });
+
+    it("marks an agent's own promise when an unproven request writes a note on it, and keeps its power (DOR-4666)", async () => {
+      const made = service.create('agent-ana', { what: 'Ship it' });
+      // As if made in a turn whose level was known: clean words (a turn with none is marked).
+      db.update(todos).set({ authorityMarks: '{}' }).where(eq(todos.id, made.id)).run();
+      const before = power(made.id)!;
+      expect(before.marks).toBe('{}');
+
+      const res = await request(fixtureServer)
+        .patch(`/api/todo-promises/${made.id}`)
+        .send({ state: 'kept', note: 'Made-up note from a program on this computer' });
+      expect(res.status).toBe(200);
+      expect(power(made.id)).toEqual({ authority: before.authority, marks: '{"outsider":true}' });
+    });
   });
 
   describe('on an install with no owner account (DOR-3832)', () => {

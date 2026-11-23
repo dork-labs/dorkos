@@ -35,8 +35,7 @@ export {
   CardFooter,
 } from './card';
 export type { CardProps } from './card';
-export { Checkbox } from './checkbox';
-export type { CheckboxProps } from './checkbox';
+export { Checkbox, type CheckboxProps } from './checkbox';
 export { DetailRow } from './detail-row';
 export type { DetailRowProps } from './detail-row';
 export { EmptyState, emptyStateIconVariants } from './empty-state';
@@ -162,6 +161,7 @@ export type {
   IdentityHoverCardDescriptor,
   IdentityHoverCardAgentInfo,
 } from './identity-hover-card';
+export { HiddenCharacterText, type HiddenCharacterTextProps } from './hidden-character-text';
 export { InlineCode } from './inline-code';
 export { Kbd } from './kbd';
 export { Label } from './label';

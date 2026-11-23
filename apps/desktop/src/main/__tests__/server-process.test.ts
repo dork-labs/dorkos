@@ -811,6 +811,51 @@ describe('what a packaged server child is told about the machine it runs on', ()
     expect(child.env.PATH).toBe(`${loginPath}:/usr/sbin:/sbin`);
   });
 
+  it.each([
+    ['DO_NOT_TRACK=1\n', { DO_NOT_TRACK: '1', DORKOS_TELEMETRY_DISABLED: undefined }],
+    [
+      'DORKOS_TELEMETRY_DISABLED=true\n',
+      { DO_NOT_TRACK: undefined, DORKOS_TELEMETRY_DISABLED: 'true' },
+    ],
+    ['', { DO_NOT_TRACK: undefined, DORKOS_TELEMETRY_DISABLED: undefined }],
+  ])('hands over the telemetry switch the login shell exports: %j', async (line, expected) => {
+    const { spawnSync } = await getChildProcessMock();
+    const { LOGIN_SHELL_PATH_MARKER } = await import('../../shared/login-shell-path');
+    const dump = `SHLVL=1\nPATH=/opt/homebrew/bin:/usr/bin\n${line}HOME=${home}\n`;
+    spawnSync.mockReturnValue({
+      status: 0,
+      signal: null,
+      stdout: `${LOGIN_SHELL_PATH_MARKER}${dump}${LOGIN_SHELL_PATH_MARKER}`,
+      stderr: '',
+    });
+    vi.stubEnv('SHELL', '/bin/zsh');
+    vi.stubEnv('DO_NOT_TRACK', undefined);
+    vi.stubEnv('DORKOS_TELEMETRY_DISABLED', undefined);
+
+    const child = await startPackagedServer();
+
+    expect(child.env.DO_NOT_TRACK).toBe(expected.DO_NOT_TRACK);
+    expect(child.env.DORKOS_TELEMETRY_DISABLED).toBe(expected.DORKOS_TELEMETRY_DISABLED);
+  });
+
+  it('keeps a telemetry switch the app was started with over the shell one', async () => {
+    const { spawnSync } = await getChildProcessMock();
+    const { LOGIN_SHELL_PATH_MARKER } = await import('../../shared/login-shell-path');
+    const dump = `PATH=/usr/bin\nDO_NOT_TRACK=1\n`;
+    spawnSync.mockReturnValue({
+      status: 0,
+      signal: null,
+      stdout: `${LOGIN_SHELL_PATH_MARKER}${dump}${LOGIN_SHELL_PATH_MARKER}`,
+      stderr: '',
+    });
+    vi.stubEnv('SHELL', '/bin/zsh');
+    vi.stubEnv('DO_NOT_TRACK', '0');
+
+    const child = await startPackagedServer();
+
+    expect(child.env.DO_NOT_TRACK).toBe('0');
+  });
+
   it('points the extension compiler at the unpacked esbuild binary', async () => {
     // esbuild finds its own binary by require.resolve, which inside a packaged
     // app answers with an app.asar path — and spawning one of those fails with

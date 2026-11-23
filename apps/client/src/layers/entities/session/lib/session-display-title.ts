@@ -1,3 +1,5 @@
+import { titleShownToPerson } from '@dorkos/shared/kickoff';
+
 /**
  * Fallback label for a session that has not derived a title yet.
  *
@@ -28,5 +30,7 @@ export const UNTITLED_SESSION_LABEL = 'New chat';
  * @param title - The session's raw title (may be empty, whitespace or missing)
  */
 export function sessionDisplayTitle(title: string | null | undefined): string {
-  return !title || title.trim() === '' ? UNTITLED_SESSION_LABEL : title;
+  // DorkOS markup (a title made from a greeting kickoff) reads as untitled (DOR-4976).
+  const shown = titleShownToPerson(title);
+  return shown.trim() === '' ? UNTITLED_SESSION_LABEL : shown;
 }

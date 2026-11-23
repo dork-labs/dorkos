@@ -11,7 +11,9 @@ vi.mock('../../../core/runtime-registry.js', () => ({
 
 vi.mock('../../../../lib/resolve-root.js', () => ({ DEFAULT_CWD: '/default/cwd' }));
 
+import { createTestDb } from '@dorkos/test-utils/db';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { setSessionAgentSources } from '../../../core/agent-identity/session-agent.js';
 import { resolveAccountRootForSession } from '../resolve-session-account.js';
 
 /** A claude-code runtime that can name a session's account. */
@@ -49,6 +51,26 @@ describe('resolveAccountRootForSession', () => {
     await resolveAccountRootForSession('session-1');
 
     expect(runtime.accountRootForSession).toHaveBeenCalledWith('session-1', '/default/cwd');
+  });
+
+  // DOR-5038: a chat started in a folder from the command line records no agent.
+  it('uses the folder the server holds for a chat that recorded no agent', async () => {
+    const runtime = accountAwareRuntime('/Users/x/.claude3');
+    vi.mocked(runtimeRegistry.resolveForSession).mockResolvedValue(runtime as never);
+    vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValue(null);
+    // The registry is stubbed in this file, so the chat's folder comes only from
+    // the live lookup; `session-agent.test.ts` covers the real bound chat.
+    setSessionAgentSources({
+      db: createTestDb(),
+      liveCwd: (id) => (id === 'session-1' ? '/work/project' : undefined),
+    });
+    try {
+      await resolveAccountRootForSession('session-1');
+    } finally {
+      setSessionAgentSources(undefined);
+    }
+
+    expect(runtime.accountRootForSession).toHaveBeenCalledWith('session-1', '/work/project');
   });
 
   it('answers "no pin" for a runtime with no account concept', async () => {

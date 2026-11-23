@@ -362,26 +362,46 @@ export function isApprovedByPath(copy: ExtensionCopy, approvals: ExtensionApprov
 }
 
 /**
- * Whether the approval stored for this id was given to a copy with a trusted
- * origin, and this copy provably shares it (spec `flow-multiproject` §9.1):
- * the same plugin, installed by this machine's installer from the same
+ * Whether the approval stored for this id was given to ANOTHER copy with a
+ * trusted origin, and this copy provably shares it (spec `flow-multiproject`
+ * §9.1): the same plugin, installed by this machine's installer from the same
  * `owner/repo`. A copy whose files merely claim that origin has no trusted
- * origin at all, so it never matches. Pure.
+ * origin at all, so it never matches. Says nothing about whether this copy's
+ * files are the ones approved; {@link isApprovedByOrigin} does. Pure.
+ *
+ * @param copy - The extension record in question.
+ * @param approvals - `config.extensions`, or the approval fields of it.
+ */
+export function sharesApprovedOrigin(copy: ExtensionCopy, approvals: ExtensionApprovals): boolean {
+  if (!approvals.approvedToRun.includes(copy.id)) return false;
+  const source = approvals.approvedSources?.[copy.id];
+  // The very copy the person approved is held to the files they approved
+  // (DOR-3068), by {@link isApprovedByPath}; its origin does not let an edit
+  // or an update past that.
+  if (source && isSameStoredCopy(copy, source)) return false;
+  const stored = source?.origin;
+  const own = copy.trustedOrigin;
+  return !!stored && !!own && stored.plugin === own.plugin && stored.source === own.source;
+}
+
+/**
+ * Whether another copy's approval covers this copy by origin: it shares the
+ * approved trusted origin ({@link sharesApprovedOrigin}) AND holds exactly the
+ * files the person approved. The origin says where the code came from, never
+ * that its next version is fine: a new version from the same repository is
+ * other files, so it waits for its own yes (DOR-4895). The same version in
+ * another project normally hashes the same (the digest leaves out DorkOS's own
+ * install records), so it still runs with nothing to click. Each
+ * such copy is also held to what the installer staged
+ * (`extension-trusted-origin.ts`). Pure.
  *
  * @param copy - The extension record in question.
  * @param approvals - `config.extensions`, or the approval fields of it.
  */
 export function isApprovedByOrigin(copy: ExtensionCopy, approvals: ExtensionApprovals): boolean {
-  if (!approvals.approvedToRun.includes(copy.id)) return false;
-  const source = approvals.approvedSources?.[copy.id];
-  // The very copy the person approved is held to the files they approved
-  // (DOR-3068), by {@link isApprovedByPath}; its origin does not let an edit
-  // or an update past that. Other copies from the same origin are held to
-  // what the installer staged (`extension-trusted-origin.ts`).
-  if (source && isSameStoredCopy(copy, source)) return false;
-  const stored = source?.origin;
-  const own = copy.trustedOrigin;
-  return !!stored && !!own && stored.plugin === own.plugin && stored.source === own.source;
+  if (!sharesApprovedOrigin(copy, approvals)) return false;
+  const approvedFiles = approvals.approvedSources?.[copy.id]?.digest;
+  return !!approvedFiles && approvedFiles === copy.currentDigest;
 }
 
 /**

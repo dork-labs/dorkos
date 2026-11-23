@@ -38,7 +38,7 @@ import {
 } from '@/layers/shared/model';
 import { useConfig } from '@/layers/entities/config';
 import { useRuntimeCapabilities, getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { useSessions } from '@/layers/entities/session';
+import { sessionDisplayTitle, useSessions } from '@/layers/entities/session';
 import { useTasks, useTasksEnabled } from '@/layers/entities/tasks';
 import { useBindings } from '@/layers/entities/binding';
 import { usePermissions, useResetAgentPermission } from '@/layers/entities/permissions';
@@ -178,7 +178,7 @@ export function useOverridesLedger(): OverridesLedger {
       rows.push({
         key: `session:${session.id}`,
         kind: 'session',
-        name: session.title || 'Untitled chat',
+        name: sessionDisplayTitle(session.title),
         detail: descriptor?.label ?? permissionModeLabel(session.permissionMode),
         onOpen: navigate
           ? openAndClose(() => navigate(toSession({ session: session.id, dir: session.cwd })))
