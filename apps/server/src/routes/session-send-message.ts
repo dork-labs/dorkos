@@ -6,7 +6,7 @@ import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { askForPersonBeforeChat } from '../http/person-session-refusal.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { errorBody, parseSessionId } from '../lib/route-utils.js';
 import {
   dispatchSessionMessage,
