@@ -100,10 +100,11 @@ name: browser-test
 # `pull_request.base.sha` nor `merge_group.base_sha`, so it has nothing to diff.
 #
 # A scheduled run reports on no PR and no queue build, so it can neither block
-# nor eject anything. The full reasoning, the cron slots and what their
-# coverage is actually worth given GitHub's throttling are in test.yml's
-# matching header; the crons here are the same four hours, offset by minutes so
-# the four canary workflows do not ask for runners in the same second.
+# nor eject anything. The full reasoning, the one daily slot (DOR-5114) and
+# what its coverage is actually worth given GitHub's throttling are in
+# test.yml's matching header; the cron here is the same hour, offset by
+# minutes so the four canary workflows do not ask for runners in the same
+# second.
 # PULL REQUESTS INTO A RELEASE BRANCH RUN THE FULL SWEEP (DOR-4639).
 #
 # Releases ship from `release/v<X.Y.Z>` branches cut from a QA-pinned main
@@ -130,7 +131,7 @@ on:
   pull_request:
   merge_group:
   schedule:
-    - cron: '41 0,5,10,21 * * *'
+    - cron: '41 0 * * *'
   workflow_dispatch:
     inputs:
       chromium_workers:
@@ -1490,7 +1491,7 @@ jobs:
     # a scheduled run against `main` HEAD carries neither
     # `pull_request.base.sha` nor `merge_group.base_sha` — the step below fails
     # loudly rather than certifying an unchecked tree, which is right on a PR
-    # and pointless four times a day. It is not a required context, so skipping
+    # and pointless once a day. It is not a required context, so skipping
     # it here blocks nothing.
     #
     # ENUMERATED POSITIVELY, where its siblings above use `!= 'pull_request'`.

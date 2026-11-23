@@ -226,49 +226,38 @@ name: test
 # is attached to no PR and to no queue build, and opens and arms nothing. The
 # worst a red canary can do is print a red run and a line in the daily report.
 #
-# WHAT FOUR CRONS A DAY ACTUALLY BUY, given GitHub's throttling.
+# ONE CRON A DAY (DOR-5114, ledger 261123-195020-canary-once-a-day). Until
+# 2026-11-23 there were four slots (00, 05, 10 and 21 UTC), and GitHub
+# delivered two of them a day (02:xx and 14:xx UTC on 2026-11-18..22). The
+# canary was also the only writer of main's build caches; build-cache.yml now
+# saves those after every merge. What is left for the canary is what the queue
+# cannot see on its own: drift with no code change (runner images, the npm
+# registry, date- and time-dependent tests), flake data and shard durations.
+# One round a day covers all three.
 #
-# THE EVIDENCE IS `evals.yml`, not merge-tail. merge-tail asks for a run every
-# ten minutes and gets about seven a day; the "162-minute median" often quoted
-# from it is the GAP BETWEEN DELIVERED RUNS, which is a statement about how
-# many requests GitHub drops, not about how late any one of them is. A canary
-# cron is low-frequency, and the right comparable is `evals.yml`'s `0 8 * * *`:
-# 57 runs, 100% DELIVERED, lateness p50 2.60 h, p90 5.61 h, max 11.88 h.
-#
-# Two consequences, and they pull in opposite directions:
-#
-#   * a low-frequency cron is not dropped. All four rounds arrive, so the
-#     canary does not quietly stop;
-#   * but each arrives hours late, and the delay is SHARED across the day's
-#     slots rather than drawn fresh for each, because it tracks how busy the
-#     Actions scheduler is. Four slots are therefore four correlated shots at a
-#     window, not four independent ones.
+# THE EVIDENCE FOR HOW LATE A CRON IS: `evals.yml`, not merge-tail. merge-tail
+# asks for a run every ten minutes and gets about seven a day; the "162-minute
+# median" often quoted from it is the GAP BETWEEN DELIVERED RUNS, which is a
+# statement about how many requests GitHub drops, not about how late any one of
+# them is. A canary cron is low-frequency, and the right comparable is
+# `evals.yml`'s `0 8 * * *`: 57 runs, 100% DELIVERED, lateness p50 2.60 h, p90
+# 5.61 h, max 11.88 h.
 #
 # So a cron here is a request, not an appointment, and NO cron schedule on this
-# repo can promise a run inside a named two-hour window. What these four buy:
+# repo can promise a run inside a named two-hour window. What one buys:
 #
-#   * a break on `main` is found in hours rather than days — nominal 6 h
-#     spacing, plus skew, plus the run itself;
-#   * the 00:00-02:00 UTC window, where the 09-20 bug lived, is hit on about
-#     one day in three. Over a week that is ~86% (empirical, NOT the 95% an
-#     independence assumption gives: lag-1 autocorrelation of the daily lateness
-#     is 0.754, and the longest measured blind streak is 12 days). Two weeks is
-#     the honest near-certainty.
+#   * drift on `main` found within about a day: 24 h spacing, plus up to about
+#     12 h of lateness, plus the run itself. ci/config.yaml's
+#     `canary_silent_hours` (40) allows for exactly that before it calls the
+#     canary stopped;
+#   * the 00:00-02:00 UTC window, where the 09-20 bug lived, is hit only on the
+#     days the round is close to on time. A real time-of-day bug is caught by
+#     repetition over weeks, not by an appointment; the queue builds that run
+#     in that window are the faster net.
 #
-# THE SLOTS ARE CHOSEN AGAINST THAT SKEW, not against the clock face. A run
-# fired at hour H lands near H+2.6 at the median, so `0` lands in the window
-# when close to on time and `21` lands in it at the median; `5` lands near
-# 07:36, inside the 07:00-11:00 trough where the queue is quietest, and `10`
-# fills the afternoon. Throttling only ever DELAYS a run, never advances it, so
-# an earlier slot is also a later one. Two of the four — `21:3x` and `00:3x` —
-# are nominally inside the queue's own busiest stretch, 17:00-02:00, and that
-# is unavoidable rather than an oversight: they are the pair that BRACKETS the
-# dark window, and the dark window sits inside the busy stretch. The other two
-# are deliberately outside it, one of them in the 07:00-11:00 trough.
-#
-# That is the coverage claim, and it is deliberately weaker than "we watch the
-# dark window". A real time-of-day bug is caught here by repetition over about
-# a fortnight, not by one appointment.
+# WHY 00 UTC. A run fired at 00:3x landed at 01:30-03:00 on recent days, in or
+# just after the dark window and as the queue's busiest stretch (17:00-02:00)
+# tails off. Throttling only ever DELAYS a run, never advances it.
 #
 # `workflow_dispatch` is the on-demand leg: run this whole suite against `main`
 # now, from the Actions tab or `gh workflow run test.yml --ref main`.
@@ -329,7 +318,7 @@ on:
   schedule:
     # Staggered by minute against its three sibling canaries, so four workflows
     # do not ask GitHub for runners in the same second.
-    - cron: '37 0,5,10,21 * * *'
+    - cron: '37 0 * * *'
   workflow_dispatch:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
