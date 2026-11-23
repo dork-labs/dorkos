@@ -1219,8 +1219,33 @@ r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_TEST_CORRUPT=dup-last --move beta 
 check_contains 'a write that would duplicate a label is refused (3)' 'would be ADDED/DUPLICATED' "$r"
 check_eq 'and nothing was written' "$before" "$(line_of "$coord")"
 
-# The lock: a held lock refuses a write in time (4) and changes nothing.
-mkdir "$coord/heavy-order.lock.d"
+# The lock is a kernel flock on heavy-order.lock (DOR-5082). hold_order_lock
+# <coord> <seconds> holds it from another process, the way a slow writer
+# would, until `<coord>/release` appears or the seconds run out, and returns
+# once it is held; the holder's pid is in $holder.
+hold_order_lock() {
+  rm -f -- "$1/held" "$1/release"
+  # shellcheck disable=SC2016 # a perl program, not a shell expansion
+  perl -MFcntl=:flock -e '
+    open(my $f, ">>", $ARGV[0]) or exit 1;
+    flock($f, LOCK_EX) or exit 1;
+    open(my $r, ">", $ARGV[2]) or exit 1;
+    close $r;
+    for (1 .. $ARGV[1] * 20) {
+      last if -e $ARGV[3];
+      select(undef, undef, undef, 0.05);
+    }' "$1/heavy-order.lock" "$2" "$1/held" "$1/release" &
+  holder=$!
+  own_pids+=("$holder")
+  for _ in $(seq 1 100); do
+    [ -f "$1/held" ] && return 0
+    sleep 0.05
+  done
+  return 1
+}
+
+# A held lock refuses a write in time (4) and changes nothing.
+hold_order_lock "$coord" 60 || not_ok 'the test holder never took the order lock'
 started=$(date +%s)
 r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_LOCK_WAIT=1 --insert kappa)
 check_contains 'a held lock refuses the write (4)' '4:[heavy] order: lock busy for 1s, nothing changed' "$r"
@@ -1229,10 +1254,45 @@ r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_LOCK_WAIT=1 --done beta)
 check_eq 'a --done that cannot lock exits 4' 4 "${r%%:*}"
 check_contains 'and says so loudly' "[heavy] ORDER POP FAILED" "$r"
 check_eq 'and the label is still in line' "$before" "$(line_of "$coord")"
-# A lock left by a writer that died (over 30 s old) is taken over.
-perl -e 'utime(time - 60, time - 60, $ARGV[0])' "$coord/heavy-order.lock.d"
+# A holder that dies, however it dies, lets go at once: nothing waits for a
+# lock to look old, so nothing can take over a live one.
+kill -KILL "$holder" 2>/dev/null
+wait "$holder" 2>/dev/null
 r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_LOCK_WAIT=1 --insert kappa)
-check_contains 'a dead writer'"'"'s lock is taken over' "0:[heavy] order: insert 'kappa' done" "$r"
+check_contains 'a holder killed with SIGKILL frees the lock at once' "0:[heavy] order: insert 'kappa' done" "$r"
+# An old lock folder from the mkdir lock this replaced means nothing now.
+mkdir "$coord/heavy-order.lock.d"
+r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_LOCK_WAIT=1 --insert lambda)
+check_contains 'an old heavy-order.lock.d folder blocks nothing' "0:[heavy] order: insert 'lambda' done" "$r"
+
+# A slow write keeps every other writer out until it ends (DOR-5082): two
+# writers that arrive while the lock is held both wait, then both land.
+coord=$(new_coord)
+locks=$(new_locks)
+ord "$coord" "$locks" --insert first >/dev/null
+hold_order_lock "$coord" 60 || not_ok 'the test holder never took the order lock'
+order_env "$coord" "$locks" bash "$CHECK" --insert waiter-1 >/dev/null 2>&1 &
+w1=$!
+order_env "$coord" "$locks" bash "$CHECK" --insert waiter-2 >/dev/null 2>&1 &
+w2=$!
+own_pids+=("$w1" "$w2")
+sleep 1
+check_eq 'no writer gets in while a slow write holds the lock' 'first|' "$(line_of "$coord")"
+# Still running means still waiting: the check above saw writers held off,
+# not writers that had yet to start.
+if kill -0 "$w1" 2>/dev/null && kill -0 "$w2" 2>/dev/null; then
+  ok 'both writers are still waiting for it'
+else
+  not_ok 'both writers are still waiting for it'
+fi
+touch "$coord/release"
+wait "$holder" 2>/dev/null
+wait "$w1"
+c1=$?
+wait "$w2"
+c2=$?
+check_eq 'both waiting writers finish once it lets go' '0 0' "$c1 $c2"
+check_eq 'and both land' 'first|waiter-1|waiter-2|' "$(awk 'NF' "$coord/heavy-order" | LC_ALL=C sort | tr '\n' '|')"
 
 # Concurrent writes all land: none lost, none doubled.
 coord=$(new_coord)
@@ -1242,7 +1302,13 @@ for i in 1 2 3 4 5 6 7 8; do
   order_env "$coord" "$locks" bash "$CHECK" --insert "job-$i" >/dev/null 2>&1 &
   pids+=("$!")
 done
-for p in "${pids[@]}"; do wait "$p"; done
+codes=''
+for p in "${pids[@]}"; do
+  wait "$p"
+  codes="$codes $?"
+done
+# Every exit code, so a writer that failed is told apart from one that was lost.
+check_eq 'every concurrent insert exits 0' ' 0 0 0 0 0 0 0 0' "$codes"
 check_eq 'eight concurrent inserts all land' 8 "$(awk 'NF' "$coord/heavy-order" | sort -u | wc -l | tr -d ' ')"
 check_eq 'and none is doubled' 8 "$(awk 'NF' "$coord/heavy-order" | wc -l | tr -d ' ')"
 

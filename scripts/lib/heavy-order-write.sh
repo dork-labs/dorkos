@@ -71,27 +71,19 @@ USAGE
 # Line number of the first line equal to $1 in file $2 (passed by ENVIRON: no escapes).
 order_pos() { L="$1" awk 'BEGIN { l = ENVIRON["L"] } $0 == l { print NR; exit }' "$2"; }
 
-# The write lock, strictly: the run path's mkdir lock, but a write that cannot
-# have it in time refuses (exit 4) rather than going ahead unlocked. A lock
-# older than 30 s belongs to a writer that died mid-write and is taken over, as
-# order_lock does.
+# The write lock, strictly: the run path's flock (order_flock), but a write
+# that cannot have it in time refuses (exit 4) rather than going ahead
+# unlocked. A writer that died let go of it when it died (DOR-5082).
 order_lock_strict() {
-  local wait="${DORKOS_HEAVY_ORDER_LOCK_WAIT:-30}" until age
+  local wait="${DORKOS_HEAVY_ORDER_LOCK_WAIT:-30}"
   case $wait in '' | *[!0-9]*) wait=30 ;; esac
-  until=$(($(date +%s) + wait))
-  while :; do
-    mkdir "$ORDER_LOCK" 2>/dev/null && return 0
-    age=$(file_age "$ORDER_LOCK")
-    if [ -n "$age" ] && [ "$age" -gt 30 ]; then
-      rmdir "$ORDER_LOCK" 2>/dev/null
-      continue
-    fi
-    if [ "$(date +%s)" -ge "$until" ]; then
-      echo "[heavy] order: lock busy for ${wait}s, nothing changed" >&2
-      return 4
-    fi
-    sleep 0.05
-  done
+  order_flock "$wait"
+  case $? in
+    0) return 0 ;;
+    1) echo "[heavy] order: lock busy for ${wait}s, nothing changed" >&2 ;;
+    *) echo "[heavy] order: no lock, nothing changed" >&2 ;;
+  esac
+  return 4
 }
 
 # Test-only fault injection, honoured only in a folder under the temp dir: the

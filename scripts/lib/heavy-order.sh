@@ -72,7 +72,10 @@
 # (DOR-5079): a hand rewrite is how other chats' labels were lost on 2026-11-22.
 #   heavy-order          one label per line; blank lines are ignored, and each
 #                        line is compared trimmed
-#   heavy-order.lock.d   the lock every write takes
+#   heavy-order.lock     the kernel lock every write takes (a perl flock, as
+#                        the coordinator's own uncommitted order script takes on
+#                        its heavy-order.lock). An old heavy-order.lock.d folder
+#                        is not looked at any more
 #   heavy-order.log      written here: one tab-separated line per write
 #   heavy-order.sum      written here: the sha256 of the last managed write,
 #                        so a hand edit is named on the next one
@@ -121,25 +124,65 @@ file_age() {
   perl -e 'my @s = stat($ARGV[0]) or exit 1; print time - $s[9]' "$1" 2>/dev/null
 }
 
-# Serialise every write to the order file and the state beside it. mkdir is
-# atomic; a lock older than 30 s belongs to a writer that died mid-write (a
-# write takes milliseconds), so it is taken over. Bounded: after 10 s the write
-# goes ahead unlocked rather than wedging every heavy run on the machine.
+# Serialise every write to the order file and the state beside it with an
+# exclusive flock on heavy-order.lock (DOR-5082). This shell opens the file on
+# descriptor 8 and a short perl takes the lock on that same open file, so the
+# lock lives as long as descriptor 8 stays open here: the kernel drops it when
+# this shell closes it or dies in any way, so there is no stale lock to take
+# over. (The mkdir lock this replaces took over any lock older than 30 s with
+# no owner check, so two waiting writers could both get in and lose a write.)
+# A child that outlives the lock must not inherit descriptor 8: see the `8>&-`
+# on the beater and the notifier. A caller's own descriptor 8, if it passed
+# one, is replaced here, so a labelled run's command does not receive it.
+#
+# The wait is a blocking flock under an alarm, so waiters queue in the kernel
+# rather than polling: none of them can lose every race and time out while
+# the others go round again.
+#
+# order_flock <seconds>: 0 once held, 1 when not had in time, 2 when the lock
+# file cannot be opened or locked at all (say a symlink, or no perl).
+order_flock() {
+  if [ -L "$ORDER_LOCK" ]; then
+    echo "[heavy] order: $ORDER_LOCK is a symlink; not locking through it." >&2
+    return 2
+  fi
+  { exec 8>>"$ORDER_LOCK"; } 2>/dev/null || return 2
+  # shellcheck disable=SC2016 # a perl program, not a shell expansion
+  perl -MFcntl=:flock -e '
+    open(my $fh, ">>&=", 8) or exit 2;
+    my $wait = $ARGV[0];
+    exit(flock($fh, LOCK_EX | LOCK_NB) ? 0 : 1) if $wait <= 0;
+    local $SIG{ALRM} = sub { exit 1 };
+    alarm $wait;
+    flock($fh, LOCK_EX) or exit 2;
+    alarm 0;
+    exit 0' "$1" 2>/dev/null
+  case $? in
+    0) return 0 ;;
+    1) exec 8>&-; return 1 ;;
+  esac
+  exec 8>&-
+  echo "[heavy] order: could not open or lock $ORDER_LOCK." >&2
+  return 2
+}
+
+# The run path's lock. Bounded: after 10 s the write goes ahead unlocked rather
+# than wedging every heavy run on the machine.
 order_lock() {
-  local age
-  for _ in $(seq 1 100); do
-    mkdir "$ORDER_LOCK" 2>/dev/null && return 0
-    age=$(file_age "$ORDER_LOCK")
-    if [ -n "$age" ] && [ "$age" -gt 30 ]; then
-      rmdir "$ORDER_LOCK" 2>/dev/null
-      continue
-    fi
-    sleep 0.1
-  done
-  echo "[heavy] order: the order file stayed locked for 10s; going ahead without the lock." >&2
+  order_flock 10
+  case $? in
+    0) return 0 ;;
+    1) echo "[heavy] order: the order file stayed locked for 10s; going ahead without the lock." >&2 ;;
+    *) echo "[heavy] order: going ahead without the lock." >&2 ;;
+  esac
   return 0
 }
-order_unlock() { rmdir "$ORDER_LOCK" 2>/dev/null; return 0; }
+# Closing descriptor 8 drops the lock. Closing it when it is not held is
+# harmless, so unlike the old `rmdir` this can never free another writer's lock.
+order_unlock() {
+  exec 8>&-
+  return 0
+}
 
 # The order file's sha256, or nothing when it is absent.
 order_hash() {
@@ -256,7 +299,7 @@ claim_take() {
         touch "$f.beat" 2>/dev/null
         sleep 30
       done
-    ) </dev/null >/dev/null 2>&1 &
+    ) </dev/null >/dev/null 2>&1 8>&- &
     ORDER_BEATER=$!
     # Out of the job table, so stopping it at the end prints no "Terminated".
     disown "$ORDER_BEATER" 2>/dev/null
@@ -312,7 +355,7 @@ order_rotate_stale() {
   # Run as `$DORKOS_HEAVY_NOTIFY <label> <note>`, in the background, its output
   # dropped. One program path, never a shell string: nothing here is eval'd.
   if [ -n "$NOTIFY_CMD" ] && [ -x "$NOTIFY_CMD" ]; then
-    "$NOTIFY_CMD" "$top" "$note" </dev/null >/dev/null 2>&1 &
+    "$NOTIFY_CMD" "$top" "$note" </dev/null >/dev/null 2>&1 8>&- &
   fi
   return 0
 }
@@ -326,7 +369,7 @@ order_init() {
   ORDER_LOG="$1/heavy-order.log"
   ORDER_SUM="$1/heavy-order.sum"
   ORDER_CALLER=''
-  ORDER_LOCK="$1/heavy-order.lock.d"
+  ORDER_LOCK="$1/heavy-order.lock"
   TOP_STATE="$1/heavy-order.top"
   CLAIMS_DIR="$1/heavy-claims"
   NOTES_FILE="$1/heavy-order-notes.md"
