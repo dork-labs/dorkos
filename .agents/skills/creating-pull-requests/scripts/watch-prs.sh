@@ -4,7 +4,8 @@
 # and fails again reports every turn).
 #
 # Usage:
-#   watch-prs.sh [--interval SECONDS] [--max-cycles N] [--once] PR [PR...]
+#   watch-prs.sh [--interval SECONDS] [--max-cycles N] [--once]
+#                [--exit-on-action | --no-exit-on-action] PR [PR...]
 #   watch-prs.sh --classify        # test seam: JSON snapshot on stdin -> event token
 #   watch-prs.sh --remedy TOKEN [PR]
 #                                  # test seam: print the remedy text the watch
@@ -25,6 +26,28 @@
 # "same state as last cycle", so pair it with --max-cycles / a timeout that
 # ANNOUNCES expiry: silence is never success. Exits 0 when every watched PR
 # is MERGED or CLOSED.
+#
+# Exit-on-action (DOR-2558). A harness tells an agent about a background
+# shell only when it exits, so a watcher that keeps looping after a PR needs
+# action writes its best line to a file nobody reads (#2333 and #2335 sat
+# ejected and conflicting for hours that way). With --exit-on-action, the
+# watcher finishes the cycle, so every PR still gets its line, then prints
+#   NEEDS ACTION: PR #n TOKEN[, PR #m TOKEN]. Act on each line above, ...
+# and exits 5 once any PR enters a state that needs a hand: EJECTED(...),
+# EJECTED_REPEAT(...), CONFLICTING, FAILING(...), CANCELLED(...),
+# AUTO_MERGE_OFF or WATCHER BLIND. Every other state waits on someone or
+# something else (a hold's owner, the queue, running checks), so the watch
+# goes on. It is ON by default when stdout is not a TTY (a background task,
+# a pipe, a Monitor) and OFF on a terminal; --no-exit-on-action keeps a
+# streaming watch off a TTY. Run it in the background, act on the line that
+# woke you, then launch it again: an ejection already seen at launch is not
+# reported twice, so a relaunch waits for the next change. A PR still in a
+# needs-action state at launch wakes you on the first cycle, so when the
+# action you chose is to wait (main is red too), leave that PR out of the
+# relaunch.
+#
+# Exit codes: 0 all settled; 2 usage; 3 --max-cycles expired; 4 `gh repo
+# view` failed; 5 a PR needs action (exit-on-action); 1 --probe saw ERR.
 #
 # Every remedy is load-aware on purpose. One push to a PR starts 19 to 25
 # Actions jobs against a 60-job pool shared by every agent, so no remedy here
@@ -63,9 +86,17 @@
 #                              included (merge-tail counts them the same way).
 #                              ",armed" means armed or queued: the queue does
 #                              not wait for threads, so it merges with them open
-#   UNARMED_CLEAN              green and unarmed; arm it yourself with
-#                              gh pr merge --auto (merge-tail runs only every
-#                              2-3 hours). Never merge it directly
+#   AUTO_MERGE_OFF             green with auto-merge off, so nothing will
+#                              merge it (UNARMED_CLEAN before DOR-2558). The
+#                              remedy reads main's ci/required-checks.json the
+#                              way scripts/open-pr.sh does: once main requires
+#                              not-held, release-window and pr-gates, turn
+#                              auto-merge back on (an ejection turns it off);
+#                              until then the maintainer merges, and nobody
+#                              arms by hand. Never merge it directly
+#   AUTO_MERGE_OFF(ejected,k)  the same, on a head the queue ejected k times
+#                              for failed checks: the ejection remedy decides
+#                              whether to re-arm, so this does not wake you
 #   QUEUED(pos)                entered the merge queue (informational)
 #   PENDING                    checks running / mergeability being computed;
 #                              UNKNOWN mergeStateStatus is retry-not-terminal
@@ -76,7 +107,7 @@
 #                              and says so instead of going quiet
 set -euo pipefail
 
-USAGE="usage: watch-prs.sh [--interval s] [--max-cycles n] [--once] PR... | --classify | --remedy TOKEN [PR] | --probe PR"
+USAGE="usage: watch-prs.sh [--interval s] [--max-cycles n] [--once] [--exit-on-action | --no-exit-on-action] PR... | --classify | --remedy TOKEN [PR] | --probe PR"
 usage() {
   printf '%s\n' "$USAGE"
 }
@@ -93,9 +124,11 @@ is_non_negative_integer() {
   [ ${#value} -lt 10 ] || { [ ${#value} -eq 10 ] && [[ "$value" < "2147483648" ]]; }
 }
 
+DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 INTERVAL=60
 MAX_CYCLES=0 # 0 = unbounded (caller supplies the timeout)
 ONCE=0
+EXIT_ON_ACTION="" # empty = decided below from whether stdout is a TTY
 CLASSIFY=0
 REMEDY=""
 PROBE=""
@@ -113,6 +146,8 @@ while [ $# -gt 0 ]; do
       MAX_CYCLES="$2"
       shift 2 ;;
     --once) ONCE=1; shift ;;
+    --exit-on-action) EXIT_ON_ACTION=1; shift ;;
+    --no-exit-on-action) EXIT_ON_ACTION=0; shift ;;
     -h | --help) usage; exit 0 ;;
     --classify) CLASSIFY=1; shift ;;
     --remedy)
@@ -129,6 +164,12 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# On by default exactly when nobody is watching the terminal: a background
+# task, a pipe or a Monitor reads stdout without a TTY.
+if [ -z "$EXIT_ON_ACTION" ]; then
+  if [ -t 1 ]; then EXIT_ON_ACTION=0; else EXIT_ON_ACTION=1; fi
+fi
+
 # Minutes in the queue past which a queued PR is reported stalled. The queue's
 # p90 from entry to merge is about 55 minutes and its check timeout is 120, so
 # 90 is well past normal and still before GitHub gives up on the entry.
@@ -136,6 +177,34 @@ STALL_MINUTES=90
 # Labels that stop merge-tail arming a PR. Mirror of HOLD_LABELS in
 # scripts/should-arm-automerge.sh; keep the two in step.
 HOLD_LABELS='["hold","do-not-merge","do not merge","wip","blocked"]'
+# The checks main must require before auto-merge is safe to turn on: they
+# make a hold, a freeze or a missing sign-off stop a merge by themselves.
+# Mirror of AUTO_MERGE_GATES in scripts/open-pr.sh; keep the two in step.
+AUTO_MERGE_GATES="not-held release-window pr-gates"
+
+# auto_merge_absent: the AUTO_MERGE_GATES that origin/main does not require
+# yet, read from the ci/required-checks.json of the repo this script lives
+# in, the same file open-pr.sh reads. Empty means auto-merge is live;
+# "unreadable" means the file could not be read, which is treated as not live.
+auto_merge_absent() {
+  local json gate absent=""
+  json=$(git -C "$DIR" show origin/main:ci/required-checks.json 2>/dev/null) || { printf 'unreadable'; return; }
+  for gate in $AUTO_MERGE_GATES; do
+    jq -e --arg g "$gate" '.contexts | index($g)' >/dev/null 2>&1 <<<"$json" || absent="$absent $gate"
+  done
+  printf '%s' "${absent# }"
+}
+
+# needs_action: the tokens exit-on-action stops for. Each asks the PR's
+# author (or whoever they report to) to do something now; the rest wait on
+# someone or something else, and waking an agent for them would teach it to
+# ignore the watcher.
+needs_action() {
+  case "$1" in
+    EJECTED* | CONFLICTING | FAILING* | CANCELLED* | AUTO_MERGE_OFF | WATCHER\ BLIND*) return 0 ;;
+  esac
+  return 1
+}
 
 # classify: pure state machine over one JSON snapshot. The network layer
 # below builds the same shape, so fixtures exercise the real decision path.
@@ -184,7 +253,13 @@ classify() {
     elif $heldBy != null then "HELD_BY_LABEL(\($heldBy))"
     elif (.unresolvedThreads // 0) > 0 and $armed then "UNRESOLVED_THREADS(\(.unresolvedThreads),armed)"
     elif (.unresolvedThreads // 0) > 0 then "UNRESOLVED_THREADS(\(.unresolvedThreads))"
-    elif .mergeState == "CLEAN" and (.autoMerge | not) and (.queued | not) then "UNARMED_CLEAN"
+    # An ejection turns auto-merge off. Once the queue ejected this head for
+    # failed checks, whether it goes back on is for the ejection remedy
+    # (read the job; never after a repeat), so this one does not say "turn it
+    # back on" and does not wake anyone a second time for the same ejection.
+    elif .mergeState == "CLEAN" and (.autoMerge | not) and (.queued | not) and ((.failedEjectionsSinceChange // 0) >= 1)
+      then "AUTO_MERGE_OFF(ejected,\(.failedEjectionsSinceChange))"
+    elif .mergeState == "CLEAN" and (.autoMerge | not) and (.queued | not) then "AUTO_MERGE_OFF"
     elif .queued then "QUEUED(\(.queuePos // "?"))"
     else "PENDING"
     end'
@@ -225,8 +300,17 @@ remedy() {
       text="Armed or queued: the queue does not wait for review threads, so this PR merges with them open. Address or resolve them now, or disarm while you work: gh pr merge --disable-auto $n." ;;
     UNRESOLVED_THREADS*)
       text="merge-tail will not arm this PR until every review thread is resolved, outdated ones included. Address or resolve them." ;;
-    UNARMED_CLEAN)
-      text="Green and unarmed. Arm it now: gh pr merge --auto $n. Arming is idempotent and safe; do not merge it directly. merge-tail would arm it too, but GitHub throttles its schedule to roughly every 2-3 hours." ;;
+    AUTO_MERGE_OFF\(ejected,*)
+      text="Auto-merge is off because the queue ejected this head for failed checks. Whether it goes back on is the ejection's call: read the failing job first, and never re-arm after the same job failed twice. A new commit clears this." ;;
+    AUTO_MERGE_OFF)
+      local absent
+      absent=$(auto_merge_absent)
+      if [ -z "$absent" ]; then
+        text="Green, but auto-merge is off, so nothing will merge it (an ejection from the queue turns it off). Turn it back on: gh pr merge --auto $n. That is safe because main requires not-held, release-window and pr-gates, so a hold, a freeze or a missing sign-off still stops the merge. Never merge it directly."
+      else
+        [ "$absent" = unreadable ] && absent="the auto-merge gates (origin/main:ci/required-checks.json is unreadable here)"
+        text="Green, and auto-merge is not live yet: main does not require $absent. Until it does, the maintainer merges it. Do not arm, queue or merge it yourself. Tell whoever you report to that it is ready, then stop watching it."
+      fi ;;
     WATCHER\ BLIND*)
       text="The watcher cannot read GitHub (auth, network or rate limit). Check gh auth status and gh api rate_limit, and look at the PR directly: gh pr checks $n." ;;
   esac
@@ -392,6 +476,7 @@ cycle=0
 while true; do
   cycle=$((cycle + 1))
   open=0
+  action="" # "PR #n TOKEN" for every PR that entered a needs-action state
   i=-1
   for pr in "${PRS[@]}"; do
     i=$((i + 1))
@@ -400,8 +485,10 @@ while true; do
       open=1
       ERR_CYCLES[i]=$((ERR_CYCLES[i] + 1))
       if [ "${ERR_CYCLES[i]}" -eq "$BLIND_AFTER" ]; then
-        report "$pr" " ->" "WATCHER BLIND(${ERR_CYCLES[i]} cycles)"
+        blind="WATCHER BLIND(${ERR_CYCLES[i]} cycles)"
+        report "$pr" " ->" "$blind"
         LAST[i]="WATCHER BLIND"
+        if needs_action "$blind"; then action="${action:+$action, }PR #$pr $blind"; fi
       fi
       continue
     fi
@@ -431,10 +518,15 @@ while true; do
           esac ;;
         *) report "$pr" " ->" "$cur" ;;
       esac
+      if needs_action "$cur"; then action="${action:+$action, }PR #$pr $cur"; fi
       LAST[i]=$cur
     fi
     case "$cur" in MERGED|CLOSED) : ;; *) open=1 ;; esac
   done
+  if [ "$EXIT_ON_ACTION" = 1 ] && [ -n "$action" ]; then
+    echo "NEEDS ACTION: $action. Act on each line above, then re-launch the watcher for any PR still open."
+    exit 5
+  fi
   [ "$open" = 0 ] && { echo "ALL WATCHED PRS SETTLED"; exit 0; }
   [ "$ONCE" = 1 ] && exit 0
   if [ "$MAX_CYCLES" -gt 0 ] && [ "$cycle" -ge "$MAX_CYCLES" ]; then

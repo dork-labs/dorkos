@@ -448,7 +448,9 @@ waiting for it; arming is idempotent and safe (one arming path arrives in phase 
 once main's `ci/required-checks.json` requires `not-held`, `release-window` and
 `pr-gates`. Those checks make a hold, a freeze or release, and a missing sign-off block
 the merge on their own. It never does this for a draft or a `--hold` PR, and it prints
-`auto-merge: on` or `auto-merge: off: <why>`. Until those checks are required, arm by hand:
+`auto-merge: on` or `auto-merge: off: <why>`. Until those checks are required, the
+maintainer merges: do not arm, queue or merge a PR by hand. Once they are, a PR whose
+auto-merge was turned off (an ejection does that) goes back on with:
 
 ```bash
 gh pr merge --auto <number>
@@ -604,12 +606,31 @@ the merge queue gates on. Chasing it burns the attention the actually-blocking c
 needs. Confirm the required set (the rules API command above), then act only on a
 **required** check that went red on **this** PR.
 
-**Do not write the watch loop from memory; run the tested one:**
+**Do not write the watch loop from memory; run the tested one, in the background:**
 
 ```bash
 .agents/skills/creating-pull-requests/scripts/watch-prs.sh --interval 120 <number> [<number>...]
-# pipe it into the Monitor tool for hands-free notification; --once for a single cycle
+# as a background task (run_in_background, or `&` with output to a file); --once for a single cycle
 ```
+
+**It exits when a PR needs you, so the exit is your wake-up.** A harness tells you about
+a background shell only when it exits. A watcher that kept looping after a PR went
+`EJECTED`, `CONFLICTING` or green-and-unmerged wrote the right next step to a file
+nobody read, and #2333 and #2335 sat ejected and conflicting for hours (DOR-2558). So
+when stdout is not a terminal, `watch-prs.sh` runs with `--exit-on-action`: it
+finishes the cycle, prints one `NEEDS ACTION: PR #n TOKEN, ...` line and exits 5 as
+soon as any PR is `EJECTED`, `EJECTED_REPEAT`, `CONFLICTING`, `FAILING`, `CANCELLED`,
+`AUTO_MERGE_OFF` or `WATCHER BLIND`. The lines above the summary carry each remedy.
+**Act on them, then launch the watcher again** for the PRs still open; an ejection
+it already saw at launch is not reported twice. A PR still in one of those states at
+launch wakes you on the first cycle, so when the action you chose is to wait (the same
+job is red on `main`), leave that PR out of the relaunch. Exit 0 means every PR merged or
+closed, and exit 3 means `--max-cycles` ran out. The other states (`HELD_BY_LABEL`,
+`UNRESOLVED_THREADS`, `STUCK_UNMERGEABLE`, `STALLED_IN_QUEUE`, `QUEUED`, `PENDING`)
+wait on someone or something else, so they print a line and the watch goes on. On a
+terminal it streams as before; `--no-exit-on-action` streams off a terminal too, for
+a Monitor that should keep reading. A Monitor alone is not enough: it can expire
+before a queue run ends, which takes 20 to 60 minutes or more.
 
 Every watcher on this machine spends the operator's one GraphQL budget (5,000 points
 an hour, shared with merge-tail), so poll no faster than you need: 120 seconds is
@@ -624,7 +645,7 @@ or close.
 It reports state **transitions** (never a once-per-PR "seen" flag that goes blind
 after the first event; a watcher written that way missed a check failure on
 2026-08-24). Each line that asks something of you ends in ` :: <remedy>`, the exact
-next step, so a Monitor-woken agent does not have to re-read this file. The
+next step, so an agent it wakes does not have to re-read this file. The
 vocabulary, the remedy text and the collector are pinned by
 `scripts/test-watch-prs.sh`; the header of `watch-prs.sh` is the reference. In
 precedence order:
@@ -641,7 +662,8 @@ precedence order:
 | `STALLED_IN_QUEUE(m)`             | Queued for 90 minutes or more (the queue's p90 is about 55)                                     | nobody on your branch      |
 | `HELD_BY_LABEL(l[,armed])`        | A hold label is on it; `,armed` means it was armed anyway and the queue does not read labels    | whoever set the label      |
 | `UNRESOLVED_THREADS(n[,armed])`   | Open threads, outdated included; `,armed` means it will merge with them open                    | you                        |
-| `UNARMED_CLEAN`                   | Green and unarmed                                                                               | merge-tail, within 10 min  |
+| `AUTO_MERGE_OFF`                  | Green with auto-merge off, so nothing will merge it (was `UNARMED_CLEAN`)                       | you, or the maintainer     |
+| `AUTO_MERGE_OFF(ejected,k)`       | The same, on a head the queue ejected k times for failed checks; does not wake you             | the ejection remedy        |
 | `QUEUED(pos)`, `PENDING`          | Informational                                                                                   | nobody                     |
 | `RECOVERED`                       | Healthy again after a red, cancelled, stuck, stalled or blind state                             | nobody                     |
 | `WATCHER BLIND(k cycles)`         | Its `gh` calls failed k cycles running (auth, network, rate limit)                              | you: `gh auth status`      |
@@ -651,8 +673,8 @@ retry-not-terminal (mergeability is computed async); checks attach to the head S
 so the rollup stays correct across reruns; `gh pr checks` never shows merge-group
 runs, so queue trouble is read from the queue entry and the timeline, not from check
 rows (the old `STALLED_IN_QUEUE` test counted check rows and could never fire); and a
-`hold` label beats "green and unarmed" (the old `UNARMED_CLEAN` remedy said to merge
-directly, which walked straight past a hold).
+`hold` label beats "green and unarmed" (the first green-and-unarmed remedy said to
+merge directly, which walked straight past a hold).
 
 On 2026-08-06 the v0.58.0 release PR sat `OPEN` with a red **required** `typecheck`
 (its prettier `--check` step — see the worktree gotcha below), while a
@@ -724,9 +746,12 @@ catch, which corrupts the numbers the pipeline is tuned by.
   once: a rerun replays the original merge commit, so it cannot pick up the fix.
 - **`CANCELLED`**: re-run the cancelled run once (`gh run rerun <run-id>`); merge-tail
   will not arm the PR while it stands.
-- **`UNARMED_CLEAN`**: arm it now with `gh pr merge --auto <n>`. Never merge it
-  directly. (Waiting for merge-tail made sense when it was believed to run every 10
-  minutes; it runs every 2-3 hours.)
+- **`AUTO_MERGE_OFF`**: the remedy reads main's `ci/required-checks.json` the way
+  `scripts/open-pr.sh` does. Once main requires `not-held`, `release-window` and
+  `pr-gates`, turn auto-merge back on with `gh pr merge --auto <n>`: those checks still
+  stop a held, frozen or unsigned PR. Until then, the maintainer merges it: do not arm,
+  queue or merge it yourself; say it is ready and stop watching it. Never merge it
+  directly either way.
 - **`HELD_BY_LABEL`**: not yours to lift unless you added the label.
 
 ### Clearing a STUCK_UNMERGEABLE queue entry
