@@ -48,6 +48,7 @@ import { ConnectorSubscriptionError } from '../services/connectors/events/subscr
 import { managedCloudErrorResponse } from './managed-cloud-error.js';
 import { CONNECTED_APPS, onlyRemovesAccess } from './connector-step-up.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
+import { PROGRAM_KEY_ROUTES as KEY } from '../services/connectors/principal/program-key-routes.js';
 import {
   migrationHealthGate,
   ownerRefusal,
@@ -268,7 +269,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     }
   });
 
-  router.get('/program/reviews/:reviewRequestId', async (c) => {
+  router.on(KEY.programReview.method, KEY.programReview.path, async (c) => {
     const requester = await resolveReviewRequester(c, deps);
     if (requester instanceof Response) return requester;
     if (requester.kind !== 'program') return programKeyRequired(c);

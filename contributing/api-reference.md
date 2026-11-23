@@ -47,9 +47,27 @@ Every operation in the document has an `operationId`. It is the name a generated
 
 - **A capability-projected path** uses its capability id (`audit.get`). The REST path and `POST /api/capabilities/:id/invoke` are two documented doors onto one capability definition, so they share its name. Capability ids keep their own style: snake_case words, and sometimes a group other than the path's (`audit.running_chats` on `GET /api/sessions/running`).
 - **A hand-set id wins.** Pass `operationId` to `registerPath` and the generator keeps it.
-- **Every other operation gets a derived id**, `${group}.${verb}${Resource}`, from its method and path. The rule and a table of examples are in the module doc of `services/core/openapi/operation-ids.ts`. In short: a path ending in a command word takes it as the verb (`POST /api/notifications/read-all` is `notifications.readAll`); a `GET` is `list` when its body is a list and `get` otherwise (`sessions.list`, `sessions.get`, `health.get`); `POST`, `PUT`/`PATCH` and `DELETE` are `create`, `update` and `delete` (`sessions.createMessages`).
+- **Every other operation gets a derived id**, `${group}.${verb}${Resource}`, from its method and the document's paths, never from a response schema, so adding a field to a body renames nothing. The rule and a table of examples are in the module doc of `services/core/openapi/operation-ids.ts`. In short: a last segment that is a command word is the verb (`POST /api/notifications/read-all` is `notifications.readAll`), and so is a hyphenated last segment led by one on any method but `GET` (`POST /api/auth/revoke-session` is `auth.revokeSession`); a `GET` is `list` on a collection path, one the document also has with a `{param}` added (`GET /api/sessions` beside `/api/sessions/{id}` is `sessions.list`), and `get` otherwise (`sessions.get`, `health.getDeep`); `POST`, `PUT`/`PATCH` and `DELETE` are `create`, `update` and `delete` (`sessions.createMessages`).
 
-Two operations whose ids match once lowercased with underscores removed (`x.foo_bar` and `x.fooBar`), derived or hand-set, make `pnpm docs:export-api` throw with both paths named. Fix it with a hand-set `operationId` on one of the two `registerPath` calls. `services/core/__tests__/export-openapi.test.ts` also checks that every operation has an id and that none repeats.
+**Every id is pinned.** `services/core/openapi/__tests__/operation-ids.snapshot.json` maps every `METHOD path` to its id, and `operation-ids-snapshot.test.ts` beside it fails with a line diff when any id changes, appears or goes. A new route changes it too, so commit the snapshot with the route. To accept a change on purpose:
+
+```bash
+pnpm vitest run apps/server/src/services/core/openapi/__tests__/operation-ids-snapshot.test.ts -u
+```
+
+Read the diff before you commit it: a changed line on an existing operation is an API change.
+
+**Collisions.** `assignOperationIds` throws while the document is generated when two operations' ids match once lowercased with underscores removed (`x.foo_bar` and `x.fooBar`), derived or hand-set, naming both paths, so `pnpm docs:export-api` and every test that generates the document fail. Fix it with a hand-set `operationId` on one of the two `registerPath` calls. `services/core/__tests__/export-openapi.test.ts` checks that every operation has an id and that no two are byte-identical; `services/core/openapi/__tests__/operation-ids.test.ts` checks the throw.
+
+## Security on operations
+
+The document declares two schemes, `sessionCookie` and `apiKey`, and a default of either one. Each operation that differs carries its own `security`, worked out by `services/core/openapi/security-schemes.ts` from the code that enforces it:
+
+- `security: []` for a path the session gate lets through with no credential (`isGateExemptPath` in `services/core/auth/gated-paths.ts`, which the gate itself calls): the health probe, the signed-token and ticket routes, a hub's link path, a computer's passkey return.
+- `sessionCookie` only for the Better Auth endpoints under `/api/auth/`: the gate lets them through, and Better Auth reads the signed-in person from the cookie.
+- `apiKey` only for the connector routes in `PROGRAM_KEY_ROUTES` (`services/connectors/principal/program-key-routes.ts`). The routers register those routes from that list, so a route added there is documented as key-only with no second edit.
+
+A `registerPath` call that sets `security` keeps it. A local install with "Ask for a password on this computer too" off takes calls from this computer with no credential; the `info.description` and both scheme descriptions say so. `X-DorkOS-Agent` is an identity header, not a credential, so it is not a scheme; `docs/api/index.mdx` describes it. `services/core/openapi/__tests__/security-schemes.test.ts` asks the real session gate about every documented operation and fails when the document calls a path open that the gate guards, or the reverse.
 
 The document's `info.version` is the product version: the running server's version at `/api/openapi.json`, and the repo `VERSION` in the committed `docs/api/openapi.json`. A release bumps `VERSION`, so the release PR regenerates the docs too (`.claude/commands/system/release.md`, Phase 6).
 

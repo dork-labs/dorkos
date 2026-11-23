@@ -382,17 +382,24 @@ function onlyVersionChanged(file: ReleaseBranchFile, version: string): boolean {
   }
 }
 
-/** Whether the API document changed only its `info.version`, to this release's version. */
+/**
+ * Whether the API document changed only its `info.version`, to this release's
+ * version. Compared as text, byte for byte: `after` must be `before` with the
+ * one `"version": "<old>"` that `info` holds (the document's first, since
+ * `info` follows `openapi`) rewritten, so even a reformatting is refused.
+ */
 function onlyApiVersionChanged(file: ReleaseBranchFile, version: string): boolean {
+  if (file.before === undefined || file.after === undefined) return false;
   try {
-    const before: unknown = JSON.parse(file.before ?? '');
-    const after: unknown = JSON.parse(file.after ?? '');
-    if (!isRecord(before) || !isRecord(after)) return false;
-    if (!isRecord(before.info) || !isRecord(after.info) || after.info.version !== version)
+    const before: unknown = JSON.parse(file.before);
+    if (!isRecord(before) || !isRecord(before.info) || typeof before.info.version !== 'string')
       return false;
-    const strip = (value: Record<string, unknown>) =>
-      JSON.stringify({ ...value, info: { ...(value.info as object), version: undefined } });
-    return strip(before) === strip(after);
+    const field = (value: string) => `"version": ${JSON.stringify(value)}`;
+    const expected = file.before.replace(field(before.info.version), field(version));
+    if (file.after !== expected) return false;
+    // The rewrite must have landed on `info`, not on an earlier field.
+    const after: unknown = JSON.parse(expected);
+    return isRecord(after) && isRecord(after.info) && after.info.version === version;
   } catch {
     return false;
   }

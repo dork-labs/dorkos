@@ -3,7 +3,7 @@
   "info": {
     "title": "DorkOS API",
     "version": "0.141.0",
-    "description": "The DorkOS server's HTTP and SSE API: sessions, agents, rooms, connections and the rest of the app, served on this computer."
+    "description": "The DorkOS server's HTTP and SSE API: sessions, agents, rooms, connections and the rest of the app, served on this computer. From this computer, an operation that takes the sign-in cookie or a personal API key needs neither while \"Ask for a password on this computer too\" is off, which is how DorkOS installs (`dorkos auth enable` turns it on). A request from another device always needs one. A call that another computer relays here is refused, and on a hub the owner signs in with their DorkOS account."
   },
   "servers": [
     {
@@ -11,7 +11,6 @@
     }
   ],
   "security": [
-    {},
     {
       "sessionCookie": []
     },
@@ -25,23 +24,12 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "__Secure-better-auth.session_token",
-        "description": "The sign-in cookie a browser gets when a person signs in to DorkOS. An installed DorkOS on port 4242 names it `__Secure-better-auth.session_token`. On any other port the prefix carries a suffix for its data folder (`better-auth-<hash>`), and a development server leaves off `__Secure-`. From this computer, most operations need nothing while \"Ask for a password on this computer too\" is off (`dorkos auth enable` turns it on). A few ask for a personal API key even there, such as running a connected app's action from a script. A request from another device needs this cookie or a personal API key. A call that another computer relays here is refused, and on a hub the owner signs in with their DorkOS account."
+        "description": "The sign-in cookie a browser gets when a person signs in to DorkOS. An installed DorkOS on port 4242 names it `__Secure-better-auth.session_token`. On any other port the prefix carries a suffix for its data folder (`better-auth-<hash>`), and a development server leaves off `__Secure-`. From this computer, an operation that takes the sign-in cookie or a personal API key needs neither while \"Ask for a password on this computer too\" is off, which is how DorkOS installs (`dorkos auth enable` turns it on). A request from another device always needs one."
       },
       "apiKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "A personal API key, sent as `Authorization: Bearer <key>`. Create one in DorkOS under Settings → Login & security → API keys, shown while you are signed in or \"Ask for a password on this computer too\" is on. The `dorkos` command line sends the key in `DORKOS_API_KEY`, or the one saved in `api-key` in its data folder."
-      },
-      "agentIdentity": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-DorkOS-Agent",
-        "description": "Names the agent making the call, with the token DorkOS gave that agent. It says who is calling and grants nothing: it never stands in for a sign-in. The request chain never refuses a call for leaving it out, or for a token it cannot match. Some routes decide on it: a route only a person may call refuses a caller that sends it, and room routes refuse a token they cannot verify. An agent computer (a DorkOS set up to run only agents) is the exception: there, every API call but its health check needs a live agent token."
-      },
-      "instanceToken": {
-        "type": "http",
-        "scheme": "bearer",
-        "description": "For `/mcp` and `/a2a`. The local MCP token this DorkOS made for itself, sent as `Authorization: Bearer <token>`. Find it in Settings → Advanced → Tools → Connect other apps to DorkOS. A caller at this computer that is not asked for a password may send it, and so may an agent on an agent computer. That same caller (never an agent computer) needs no token at all for MCP discovery and read-only MCP tools. A caller asked for a password sends a personal API key instead. A server started with `MCP_API_KEY` also takes that key here."
+        "description": "A personal API key, sent as `Authorization: Bearer <key>`. Create one in DorkOS under Settings → Login & security → API keys, shown while you are signed in or \"Ask for a password on this computer too\" is on. The `dorkos` command line sends the key in `DORKOS_API_KEY`, or the one saved in `api-key` in its data folder. A few operations take only a key, even from this computer, such as running a connected app's action from a script. From this computer, an operation that takes the sign-in cookie or a personal API key needs neither while \"Ask for a password on this computer too\" is off, which is how DorkOS installs (`dorkos auth enable` turns it on). A request from another device always needs one."
       }
     },
     "schemas": {
@@ -22580,7 +22568,12 @@
             "description": "The agent is not owned by this API key user."
           }
         },
-        "operationId": "connectors.listAccessibleSubscriptions"
+        "operationId": "connectors.getAccessibleSubscriptions",
+        "security": [
+          {
+            "apiKey": []
+          }
+        ]
       }
     },
     "/api/connectors/connections/{connectionId}/events/definitions": {
@@ -22716,7 +22709,7 @@
             "description": "Notifications are unavailable or the owner decision changed."
           }
         },
-        "operationId": "connectors.listConnectionsEventsDefinitions"
+        "operationId": "connectors.getConnectionsEventsDefinitions"
       }
     },
     "/api/connectors/connections/{connectionId}/events/subscriptions": {
@@ -23775,7 +23768,7 @@
             }
           }
         },
-        "operationId": "connectors.listSpending"
+        "operationId": "connectors.getSpending"
       }
     },
     "/api/connectors/spending/limit": {
@@ -24508,7 +24501,7 @@
             }
           }
         },
-        "operationId": "sessions.listLimitHistory"
+        "operationId": "sessions.getLimitHistory"
       }
     },
     "/api/session-locations": {
@@ -24700,7 +24693,7 @@
             }
           }
         },
-        "operationId": "projects.list"
+        "operationId": "projects.get"
       }
     },
     "/api/projects/resolve": {
@@ -24826,7 +24819,7 @@
             }
           }
         },
-        "operationId": "runtimes.listClaudeCodeAccountEligibility"
+        "operationId": "runtimes.getClaudeCodeAccountEligibility"
       }
     },
     "/api/runtimes/claude-code/project-accounts": {
@@ -25618,7 +25611,7 @@
             }
           }
         },
-        "operationId": "agents.listWorkQueue"
+        "operationId": "agents.getWorkQueue"
       },
       "patch": {
         "tags": [
@@ -26033,7 +26026,7 @@
             "description": "No agent with that id"
           }
         },
-        "operationId": "agents.listHeartbeat"
+        "operationId": "agents.getHeartbeat"
       }
     },
     "/api/heartbeats/triage-credits": {
@@ -26131,7 +26124,7 @@
             }
           }
         },
-        "operationId": "heartbeats.listWakersOff"
+        "operationId": "heartbeats.getWakersOff"
       }
     },
     "/api/onboarding/first-run": {
@@ -29579,7 +29572,7 @@
             }
           }
         },
-        "operationId": "canvas.listDocsFileSaves"
+        "operationId": "canvas.getDocsFileSaves"
       }
     },
     "/api/canvas/docs/{id}/file-saves/{eventId}/recover": {
@@ -30651,7 +30644,7 @@
             }
           }
         },
-        "operationId": "canvas.listDocsRoutes"
+        "operationId": "canvas.getDocsRoutes"
       }
     },
     "/api/canvas/docs/{id}/routes/{routeId}/review": {
@@ -32226,7 +32219,7 @@
             }
           }
         },
-        "operationId": "canvas.listDocsWork"
+        "operationId": "canvas.getDocsWork"
       }
     },
     "/api/canvas/docs/{id}/work/{batchId}/replay": {
@@ -33400,7 +33393,7 @@
             "description": "Not the owner at the app: an agent, a program or another site."
           }
         },
-        "operationId": "connectors.listMiniAppAccess"
+        "operationId": "connectors.getMiniAppAccess"
       }
     },
     "/api/connectors/mini-app-access/{approvalId}/revoke": {
@@ -34258,7 +34251,7 @@
             }
           }
         },
-        "operationId": "localBrowser.listState"
+        "operationId": "localBrowser.getState"
       }
     },
     "/api/local-browser/open": {
@@ -38056,7 +38049,7 @@
             }
           }
         },
-        "operationId": "localBrowser.listHandoffState"
+        "operationId": "localBrowser.getHandoffState"
       }
     },
     "/api/local-browser/sign-in": {
@@ -39963,7 +39956,7 @@
             }
           }
         },
-        "operationId": "hub.listComputersAgentsChats"
+        "operationId": "hub.getComputersAgentsChats"
       }
     },
     "/api/hub/computers/{computerId}/sessions/{sessionId}/stream": {
@@ -41404,7 +41397,8 @@
             }
           }
         },
-        "operationId": "hub.link"
+        "operationId": "hub.link",
+        "security": []
       }
     },
     "/api/session-relay/status": {
@@ -41597,7 +41591,7 @@
             }
           }
         },
-        "operationId": "sessionRelay.listPresence"
+        "operationId": "sessionRelay.getPresence"
       }
     },
     "/api/session-relay/devices": {
@@ -41690,7 +41684,7 @@
             }
           }
         },
-        "operationId": "sessionRelay.listDevices"
+        "operationId": "sessionRelay.getDevices"
       }
     },
     "/api/session-relay/presence/end": {
@@ -43567,7 +43561,8 @@
             }
           }
         },
-        "operationId": "sessionRelay.finishPasskeys"
+        "operationId": "sessionRelay.finishPasskeys",
+        "security": []
       }
     },
     "/api/session-relay/passkeys/{credentialId}": {
@@ -43962,7 +43957,7 @@
             }
           }
         },
-        "operationId": "documents.listIndex"
+        "operationId": "documents.getIndex"
       }
     },
     "/api/documents/resolve": {
@@ -44709,7 +44704,7 @@
             }
           }
         },
-        "operationId": "devices.listSignInRequests"
+        "operationId": "devices.getSignInRequests"
       }
     },
     "/api/devices/sign-in-requests/{id}/approve": {
@@ -45680,7 +45675,7 @@
             "description": "The request is refused"
           }
         },
-        "operationId": "runtimes.listClaudeCodeSignins"
+        "operationId": "runtimes.getClaudeCodeSignins"
       }
     },
     "/api/runtimes/claude-code/signins/organizations": {
@@ -46294,7 +46289,8 @@
             }
           }
         },
-        "operationId": "health.get"
+        "operationId": "health.get",
+        "security": []
       }
     },
     "/api/health/deep": {
@@ -46351,7 +46347,7 @@
             }
           }
         },
-        "operationId": "health.listDeep"
+        "operationId": "health.getDeep"
       }
     },
     "/api/sessions": {
@@ -46434,7 +46430,7 @@
             }
           }
         },
-        "operationId": "sessions.listPendingInteractions"
+        "operationId": "sessions.getPendingInteractions"
       }
     },
     "/api/sessions/recent": {
@@ -46488,7 +46484,7 @@
             }
           }
         },
-        "operationId": "sessions.listRecent"
+        "operationId": "sessions.getRecent"
       }
     },
     "/api/sessions/daily-counts": {
@@ -46533,7 +46529,7 @@
             }
           }
         },
-        "operationId": "sessions.listDailyCounts"
+        "operationId": "sessions.getDailyCounts"
       }
     },
     "/api/sessions/{id}": {
@@ -46731,7 +46727,7 @@
             }
           }
         },
-        "operationId": "sessions.listMessages"
+        "operationId": "sessions.getMessages"
       },
       "post": {
         "tags": [
@@ -49109,7 +49105,7 @@
             }
           }
         },
-        "operationId": "sessions.listTasks"
+        "operationId": "sessions.getTasks"
       }
     },
     "/api/sessions/{id}/opened": {
@@ -49233,7 +49229,7 @@
             }
           }
         },
-        "operationId": "sessions.listChatMessages"
+        "operationId": "sessions.getChatMessages"
       }
     },
     "/api/sessions/{id}/queue": {
@@ -50007,7 +50003,7 @@
             }
           }
         },
-        "operationId": "sessions.createSubmitAnswers"
+        "operationId": "sessions.submitAnswers"
       }
     },
     "/api/sessions/{id}/ui-action": {
@@ -50246,7 +50242,7 @@
             }
           }
         },
-        "operationId": "models.list"
+        "operationId": "models.get"
       }
     },
     "/api/runtimes/{runtime}/accounts/usage": {
@@ -50303,7 +50299,7 @@
             "description": "The usage store is not running yet"
           }
         },
-        "operationId": "runtimes.listAccountsUsage"
+        "operationId": "runtimes.getAccountsUsage"
       }
     },
     "/api/runtimes/claude-code/accounts/{id}/probe": {
@@ -50397,7 +50393,7 @@
             }
           }
         },
-        "operationId": "runtimes.listClaudeCodeAccountsFound"
+        "operationId": "runtimes.getClaudeCodeAccountsFound"
       }
     },
     "/api/runtimes/claude-code/accounts/found/dismiss": {
@@ -50747,7 +50743,7 @@
             }
           }
         },
-        "operationId": "directory.list"
+        "operationId": "directory.get"
       }
     },
     "/api/directory/default": {
@@ -50828,7 +50824,7 @@
             }
           }
         },
-        "operationId": "workbench.createSign"
+        "operationId": "workbench.sign"
       }
     },
     "/api/workbench/probe": {
@@ -50985,7 +50981,8 @@
             }
           }
         },
-        "operationId": "workbench.getServe"
+        "operationId": "workbench.getServe",
+        "security": []
       }
     },
     "/api/commands": {
@@ -51054,7 +51051,7 @@
             }
           }
         },
-        "operationId": "commands.list"
+        "operationId": "commands.get"
       }
     },
     "/api/tasks": {
@@ -51471,7 +51468,7 @@
             }
           }
         },
-        "operationId": "tasks.createUndoAgentMode"
+        "operationId": "tasks.undoAgentMode"
       }
     },
     "/api/tasks/{id}/approve-file": {
@@ -51602,7 +51599,7 @@
             }
           }
         },
-        "operationId": "tasks.createApproveFile"
+        "operationId": "tasks.approveFile"
       }
     },
     "/api/tasks/runs": {
@@ -52551,7 +52548,7 @@
             }
           }
         },
-        "operationId": "relay.listEndpointsInbox"
+        "operationId": "relay.getEndpointsInbox"
       }
     },
     "/api/relay/dead-letters": {
@@ -52599,7 +52596,7 @@
             }
           }
         },
-        "operationId": "relay.listDeadLetters"
+        "operationId": "relay.getDeadLetters"
       }
     },
     "/api/relay/metrics": {
@@ -53054,7 +53051,7 @@
             }
           }
         },
-        "operationId": "mesh.listTopology"
+        "operationId": "mesh.getTopology"
       }
     },
     "/api/mesh/topology/access": {
@@ -53185,7 +53182,7 @@
             }
           }
         },
-        "operationId": "mesh.listDenied"
+        "operationId": "mesh.getDenied"
       },
       "delete": {
         "tags": [
@@ -57705,7 +57702,7 @@
             }
           }
         },
-        "operationId": "marketplace.createPackagesCheckFiles"
+        "operationId": "marketplace.checkFilesPackages"
       }
     },
     "/api/marketplace/packages/{name}/keep-files": {
@@ -59106,7 +59103,7 @@
             }
           }
         },
-        "operationId": "marketplace.listUpdates"
+        "operationId": "marketplace.getUpdates"
       },
       "post": {
         "tags": [
@@ -60601,7 +60598,7 @@
             }
           }
         },
-        "operationId": "marketplace.listHeldBack"
+        "operationId": "marketplace.getHeldBack"
       }
     },
     "/api/marketplace/held-back/{name}/review": {
@@ -61107,7 +61104,7 @@
             }
           }
         },
-        "operationId": "marketplace.listDevLinks"
+        "operationId": "marketplace.getDevLinks"
       },
       "post": {
         "tags": [
@@ -62776,7 +62773,7 @@
             }
           }
         },
-        "operationId": "shapes.list"
+        "operationId": "shapes.get"
       }
     },
     "/api/shapes/{name}/apply": {
@@ -63153,7 +63150,7 @@
             }
           }
         },
-        "operationId": "connectors.listProviders"
+        "operationId": "connectors.getProviders"
       }
     },
     "/api/connectors/providers/{provider}/credential": {
@@ -64102,7 +64099,7 @@
             }
           }
         },
-        "operationId": "connectors.listCatalog"
+        "operationId": "connectors.getCatalog"
       }
     },
     "/api/connectors/catalog/logos/{serviceSlug}": {
@@ -67980,7 +67977,7 @@
             }
           }
         },
-        "operationId": "connectors.listAgentsConnections"
+        "operationId": "connectors.getAgentsConnections"
       }
     },
     "/api/connectors/every-agent-grants": {
@@ -68079,7 +68076,7 @@
             }
           }
         },
-        "operationId": "connectors.listEveryAgentGrants"
+        "operationId": "connectors.getEveryAgentGrants"
       }
     },
     "/api/connectors/sessions/{sessionId}/connections": {
@@ -81331,7 +81328,12 @@
             }
           }
         },
-        "operationId": "connectors.getProgramReviews"
+        "operationId": "connectors.getProgramReviews",
+        "security": [
+          {
+            "apiKey": []
+          }
+        ]
       }
     },
     "/api/connectors/reviews/{reviewRequestId}": {
@@ -93955,7 +93957,12 @@
             }
           }
         },
-        "operationId": "connectors.listAccessible"
+        "operationId": "connectors.getAccessible",
+        "security": [
+          {
+            "apiKey": []
+          }
+        ]
       }
     },
     "/api/connectors/accessible/{connectionId}/operations": {
@@ -94070,7 +94077,12 @@
             }
           }
         },
-        "operationId": "connectors.listAccessibleOperations"
+        "operationId": "connectors.getAccessibleOperations",
+        "security": [
+          {
+            "apiKey": []
+          }
+        ]
       }
     },
     "/api/connectors/executions": {
@@ -94277,7 +94289,12 @@
             }
           }
         },
-        "operationId": "connectors.createExecutions"
+        "operationId": "connectors.createExecutions",
+        "security": [
+          {
+            "apiKey": []
+          }
+        ]
       }
     },
     "/api/connectors/cli/executions": {
@@ -94484,7 +94501,12 @@
             }
           }
         },
-        "operationId": "connectors.createCliExecutions"
+        "operationId": "connectors.createCliExecutions",
+        "security": [
+          {
+            "apiKey": []
+          }
+        ]
       }
     },
     "/api/connectors/usage/agent": {
@@ -94644,7 +94666,12 @@
             }
           }
         },
-        "operationId": "connectors.listUsageAgent"
+        "operationId": "connectors.getUsageAgent",
+        "security": [
+          {
+            "apiKey": []
+          }
+        ]
       }
     },
     "/api/connectors/usage/operator": {
@@ -94804,7 +94831,7 @@
             }
           }
         },
-        "operationId": "connectors.listUsageOperator"
+        "operationId": "connectors.getUsageOperator"
       }
     },
     "/api/relay/bindings/{id}/move": {
@@ -94942,7 +94969,7 @@
             }
           }
         },
-        "operationId": "relay.listUnclaimedChats"
+        "operationId": "relay.getUnclaimedChats"
       }
     },
     "/api/relay/unclaimed-chats/{id}/claim": {
@@ -95144,7 +95171,7 @@
             }
           }
         },
-        "operationId": "approvals.listPending"
+        "operationId": "approvals.getPending"
       }
     },
     "/api/approvals/{id}/full-detail": {
@@ -95564,7 +95591,7 @@
             "description": "A person must read this history"
           }
         },
-        "operationId": "approvals.listDeclinedHooks"
+        "operationId": "approvals.getDeclinedHooks"
       }
     },
     "/api/approvals/{id}/ask-again": {
@@ -95642,7 +95669,7 @@
             }
           }
         },
-        "operationId": "extensions.listPendingApprovals"
+        "operationId": "extensions.getPendingApprovals"
       }
     },
     "/api/extensions/{id}/approve": {
@@ -95852,7 +95879,7 @@
             }
           }
         },
-        "operationId": "extensions.listTrustedSources"
+        "operationId": "extensions.getTrustedSources"
       },
       "post": {
         "tags": [
@@ -96051,7 +96078,7 @@
             }
           }
         },
-        "operationId": "permissions.list"
+        "operationId": "permissions.get"
       }
     },
     "/api/permissions/preset": {
@@ -96336,7 +96363,7 @@
             }
           }
         },
-        "operationId": "permissions.listHistory"
+        "operationId": "permissions.getHistory"
       }
     },
     "/api/agents/create": {
@@ -97238,7 +97265,7 @@
             }
           }
         },
-        "operationId": "agents.listPermissions"
+        "operationId": "agents.getPermissions"
       },
       "patch": {
         "tags": [
@@ -97591,7 +97618,7 @@
             }
           }
         },
-        "operationId": "rooms.listThreads"
+        "operationId": "rooms.getThreads"
       }
     },
     "/api/rooms/{id}": {
@@ -97766,7 +97793,7 @@
             }
           }
         },
-        "operationId": "rooms.listSessions"
+        "operationId": "rooms.getSessions"
       }
     },
     "/api/rooms/{id}/entries": {
@@ -97841,7 +97868,7 @@
             }
           }
         },
-        "operationId": "rooms.listEntries"
+        "operationId": "rooms.getEntries"
       },
       "post": {
         "tags": [
@@ -98999,7 +99026,7 @@
             }
           }
         },
-        "operationId": "rooms.listRepoStatus"
+        "operationId": "rooms.getRepoStatus"
       }
     },
     "/api/rooms/{id}/repo/merge": {
@@ -99266,7 +99293,7 @@
             }
           }
         },
-        "operationId": "rooms.listFiles"
+        "operationId": "rooms.getFiles"
       }
     },
     "/api/rooms/{id}/files/raw": {
@@ -103298,7 +103325,7 @@
             }
           }
         },
-        "operationId": "team.list"
+        "operationId": "team.get"
       }
     },
     "/api/team/{memberId}/rooms": {
@@ -103361,7 +103388,7 @@
             }
           }
         },
-        "operationId": "team.listRooms"
+        "operationId": "team.getRooms"
       }
     },
     "/api/search": {
@@ -103431,7 +103458,7 @@
             }
           }
         },
-        "operationId": "search.list"
+        "operationId": "search.get"
       }
     },
     "/api/profile": {
@@ -103868,7 +103895,7 @@
             }
           }
         },
-        "operationId": "harness.listStatus"
+        "operationId": "harness.getStatus"
       }
     },
     "/api/harness/sync": {
@@ -105456,7 +105483,7 @@
             }
           }
         },
-        "operationId": "notifications.list"
+        "operationId": "notifications.get"
       }
     },
     "/api/notifications/{id}/read": {
@@ -107728,7 +107755,7 @@
             }
           }
         },
-        "operationId": "extensionDecisions.list"
+        "operationId": "extensionDecisions.get"
       }
     },
     "/api/extension-decisions/{id}/action": {
@@ -108026,7 +108053,7 @@
             }
           }
         },
-        "operationId": "extensions.listDecisions"
+        "operationId": "extensions.getDecisions"
       }
     },
     "/api/extensions/{id}/decisions/{decisionId}/action": {
@@ -108396,7 +108423,7 @@
             }
           }
         },
-        "operationId": "extensions.createStartWork"
+        "operationId": "extensions.startWork"
       }
     },
     "/api/extensions/stale-approvals": {
@@ -108439,7 +108466,7 @@
             }
           }
         },
-        "operationId": "extensions.listStaleApprovals"
+        "operationId": "extensions.getStaleApprovals"
       }
     },
     "/api/extensions/{id}/remove": {
@@ -108647,7 +108674,7 @@
             }
           }
         },
-        "operationId": "extensions.listApprovalSets"
+        "operationId": "extensions.getApprovalSets"
       }
     },
     "/api/extensions/approve-set": {
@@ -108752,7 +108779,7 @@
             }
           }
         },
-        "operationId": "extensions.createApproveSet"
+        "operationId": "extensions.approveSet"
       }
     },
     "/api/extensions/{id}/media-tickets": {
@@ -108920,7 +108947,8 @@
             "description": "The app did not answer, or answered with another status"
           }
         },
-        "operationId": "extensions.getMedia"
+        "operationId": "extensions.getMedia",
+        "security": []
       }
     },
     "/api/config/backups": {
@@ -109637,7 +109665,12 @@
             }
           }
         },
-        "operationId": "auth.createApiKey"
+        "operationId": "auth.createApiKey",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
       }
     },
     "/api/auth/api-key/update": {
@@ -109709,7 +109742,12 @@
             }
           }
         },
-        "operationId": "auth.updateApiKey"
+        "operationId": "auth.updateApiKey",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
       }
     },
     "/api/auth/revoke-session": {
@@ -109788,7 +109826,12 @@
             }
           }
         },
-        "operationId": "auth.createRevokeSession"
+        "operationId": "auth.revokeSession",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
       }
     },
     "/api/auth/revoke-other-sessions": {
@@ -109860,7 +109903,12 @@
             }
           }
         },
-        "operationId": "auth.createRevokeOtherSessions"
+        "operationId": "auth.revokeOtherSessions",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
       }
     },
     "/api/auth/revoke-sessions": {
@@ -109932,7 +109980,12 @@
             }
           }
         },
-        "operationId": "auth.createRevokeSessions"
+        "operationId": "auth.revokeSessions",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
       }
     },
     "/api/remote-access/enrolment": {

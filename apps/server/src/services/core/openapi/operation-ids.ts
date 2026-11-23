@@ -14,8 +14,10 @@
  *    documented doors onto one capability definition. Capability ids keep
  *    their own style (snake_case words, and sometimes another group than the
  *    path's: `audit.running_chats` on `/api/sessions/running`).
- * 2. **Derived** from the method, the path and the response, for everything
- *    else, by {@link deriveOperationId}: `${group}.${verb}${Resource}`.
+ * 2. **Derived** from the method and the document's paths, for everything
+ *    else, by {@link deriveOperationId}: `${group}.${verb}${Resource}`. No
+ *    schema is ever read, so adding a field to a response never renames an
+ *    operation.
  *
  * ## The derivation rule
  *
@@ -26,32 +28,48 @@
  *   PascalCase, kept as written. No singular forms: there is no inflection
  *   library here.
  * - **verb**, in this order:
- *   1. the path ends in a command word ({@link COMMAND_WORDS}, or any word
+ *   1. the last segment is a command word ({@link COMMAND_WORDS}, or any word
  *      ending in `-all`): that word in camelCase, and it leaves the Resource
  *      (`/pause` → `pause`, `/read-all` → `readAll`, `/continue/cancel` →
  *      `cancelContinue`);
- *   2. `GET` → `get` when the path ends in a `{param}`; otherwise `list` when
- *      its `200` JSON body (one `$ref` resolved) is an array or has a top-level
- *      array property, else `get`;
- *   3. `POST` → `create`; `PUT` and `PATCH` → `update`; `DELETE` → `delete`;
+ *   2. on any method but `GET`, the last segment is hyphenated and its first
+ *      word is a command word: the whole segment in camelCase, and it leaves
+ *      the Resource (`/revoke-session` → `revokeSession`, `/start-work` →
+ *      `startWork`). {@link NAMED_SEGMENTS} lists the few such segments that
+ *      name a thing rather than an action (`/link-code`), which stay in the
+ *      Resource. A `GET` reads, so its last segment always names what it reads;
+ *   3. `GET` → `list` when the path is a collection: it does not end in a
+ *      `{param}`, and the document also has the same path with one `{param}`
+ *      segment added (`/api/sessions` beside `/api/sessions/{id}`); `get`
+ *      otherwise;
+ *   4. `POST` → `create`; `PUT` and `PATCH` → `update`; `DELETE` → `delete`;
  *      any other method → its name.
  *
  * | Method   | Path                                                    | operationId                                       |
  * | -------- | ------------------------------------------------------- | ------------------------------------------------- |
- * | `GET`    | `/api/sessions` (a list)                                | `sessions.list`                                   |
- * | `GET`    | `/api/sessions/{id}` (an item, whatever its body holds) | `sessions.get`                                    |
- * | `GET`    | `/api/sessions/{id}/messages` (a list)                  | `sessions.listMessages`                           |
- * | `GET`    | `/api/health` (one object)                              | `health.get`                                      |
- * | `GET`    | `/api/sessions/{id}/settings` (one object)              | `sessions.getSettings`                            |
+ * | `GET`    | `/api/sessions` (beside `/api/sessions/{id}`)           | `sessions.list`                                   |
+ * | `GET`    | `/api/sessions/{id}`                                    | `sessions.get`                                    |
+ * | `GET`    | `/api/health/deep` (no `/api/health/deep/{id}`)         | `health.getDeep`                                  |
+ * | `GET`    | `/api/sessions/{id}/settings`                           | `sessions.getSettings`                            |
  * | `POST`   | `/api/sessions`                                         | `sessions.create`                                 |
  * | `POST`   | `/api/sessions/{id}/messages`                           | `sessions.createMessages`                         |
  * | `POST`   | `/api/connectors/connections/{id}/events/subscriptions` | `connectors.createConnectionsEventsSubscriptions` |
  * | `POST`   | `/api/sessions/{id}/continue/cancel`                    | `sessions.cancelContinue`                         |
  * | `POST`   | `/api/agents/{id}/pause`                                | `agents.pause`                                    |
  * | `POST`   | `/api/notifications/read-all`                           | `notifications.readAll`                           |
+ * | `POST`   | `/api/auth/revoke-session`                              | `auth.revokeSession`                              |
+ * | `POST`   | `/api/hub/computers/link-code` (a named segment)        | `hub.createComputersLinkCode`                     |
  * | `PUT`    | `/api/work-queues/stop`                                 | `workQueues.stop`                                 |
  * | `PATCH`  | `/api/config`                                           | `config.update`                                   |
  * | `DELETE` | `/api/work-queues/{id}/items/{itemId}`                  | `workQueues.deleteItems`                          |
+ *
+ * ## Every id is pinned
+ *
+ * `__tests__/operation-ids.snapshot.json` maps every `METHOD path` in the
+ * generated document to its id, and `__tests__/operation-ids-snapshot.test.ts`
+ * fails with a diff when any id changes, appears or goes. Renaming one on
+ * purpose is `pnpm vitest run apps/server/src/services/core/openapi/__tests__/operation-ids-snapshot.test.ts -u`
+ * (`contributing/api-reference.md`).
  *
  * ## Collisions fail the export
  *
@@ -78,35 +96,39 @@ export const COMMAND_WORDS: ReadonlySet<string> = new Set(
     'open close archive restore sync test validate rebuild reload resolve claim release submit ' +
     'clear move copy link unlink accept decline retry requeue reorder verify probe sign-in ' +
     'sign-out invoke stream confirm revoke undo scan finish export apply upload preview ' +
-    'pause resume halt install fork merge trigger'
+    'pause resume halt install fork merge trigger sign'
   ).split(' ')
 );
 
-/** A schema, as far as this module reads one. */
-interface SchemaShape {
-  $ref?: string;
-  type?: string | string[];
-  properties?: Record<string, SchemaShape>;
-}
+/**
+ * Hyphenated segments whose first word is a command word but which name a
+ * thing, not an action: a `POST` to one creates that thing (rule 2 in the
+ * module doc).
+ */
+export const NAMED_SEGMENTS: ReadonlySet<string> = new Set([
+  'link-code',
+  'claim-link',
+  'stream-health',
+]);
 
 /** An operation, as far as this module reads one. */
 interface OperationShape {
   operationId?: string;
-  responses?: Record<string, { content?: Record<string, { schema?: SchemaShape }> }>;
 }
 
 /** The slice of a generated document this module reads and writes. */
 export interface OperationIdDocument {
   /** The document's paths, each mapping methods to operations. */
   paths?: Record<string, object | undefined>;
-  /** Its components, for resolving a response's `$ref`. */
-  components?: { schemas?: Record<string, unknown> };
 }
 
-/** What {@link deriveOperationId} knows about the operation besides its path. */
+/** What {@link deriveOperationId} knows about the operation besides its own path. */
 export interface DeriveOptions {
-  /** Whether its `200` JSON body is a list (see the module doc). */
-  returnsList?: boolean;
+  /**
+   * Whether the document also has this path with one `{param}` segment added
+   * (see {@link isCollectionPath}).
+   */
+  isCollection?: boolean;
 }
 
 /** Whether a path segment is a `{param}` placeholder. */
@@ -114,10 +136,12 @@ function isParam(segment: string): boolean {
   return segment.startsWith('{') && segment.endsWith('}');
 }
 
-/** Whether a static segment names an action. */
-function isCommandWord(segment: string): boolean {
+/** Whether a static segment names an action (rules 1 and 2 in the module doc). */
+function isCommandSegment(segment: string, method: string): boolean {
   const word = segment.toLowerCase();
-  return COMMAND_WORDS.has(word) || word.endsWith('-all');
+  if (COMMAND_WORDS.has(word) || word.endsWith('-all')) return true;
+  if (method === 'get' || NAMED_SEGMENTS.has(word) || !word.includes('-')) return false;
+  return COMMAND_WORDS.has(word.slice(0, word.indexOf('-')));
 }
 
 /** Split a segment into its words (`read-all` → `read`, `all`). */
@@ -142,8 +166,8 @@ function pascal(segments: readonly string[]): string {
 }
 
 /** The verb for a method with no command word, by the rule in the module doc. */
-function methodVerb(method: string, endsInParam: boolean, returnsList: boolean): string {
-  if (method === 'get') return !endsInParam && returnsList ? 'list' : 'get';
+function methodVerb(method: string, isCollection: boolean): string {
+  if (method === 'get') return isCollection ? 'list' : 'get';
   if (method === 'post') return 'create';
   if (method === 'put' || method === 'patch') return 'update';
   return method;
@@ -155,7 +179,7 @@ function methodVerb(method: string, endsInParam: boolean, returnsList: boolean):
  *
  * @param method - The HTTP method, any case.
  * @param path - The OpenAPI path, with `{param}` segments.
- * @param options - What else is known about the operation (see {@link DeriveOptions}).
+ * @param options - Whether the path is a collection (see {@link DeriveOptions}).
  * @returns The derived id, `${group}.${verb}${Resource}`.
  */
 export function deriveOperationId(
@@ -163,42 +187,34 @@ export function deriveOperationId(
   path: string,
   options: DeriveOptions = {}
 ): string {
+  const lowerMethod = method.toLowerCase();
   const segments = path.split('/').filter(Boolean);
   const [group = 'root', ...after] = segments[0] === 'api' ? segments.slice(1) : segments;
   const statics = after.filter((segment) => !isParam(segment));
   const last = after.at(-1);
-  if (last !== undefined && !isParam(last) && isCommandWord(last)) {
+  if (last !== undefined && !isParam(last) && isCommandSegment(last, lowerMethod)) {
     return `${camel(group)}.${camel(last)}${pascal(statics.slice(0, -1))}`;
   }
   const endsInParam = last !== undefined && isParam(last);
-  const verb = methodVerb(method.toLowerCase(), endsInParam, options.returnsList === true);
+  const verb = methodVerb(lowerMethod, !endsInParam && options.isCollection === true);
   return `${camel(group)}.${verb}${pascal(statics)}`;
 }
 
-/** Resolve one local `$ref` against the document's schemas. */
-function resolve(schema: SchemaShape | undefined, document: OperationIdDocument): SchemaShape {
-  const prefix = '#/components/schemas/';
-  if (!schema?.$ref?.startsWith(prefix)) return schema ?? {};
-  const target = document.components?.schemas?.[schema.$ref.slice(prefix.length)];
-  return (target as SchemaShape | undefined) ?? {};
-}
-
-/** Whether a schema's `type` is, or includes, `array`. */
-function isArray(schema: SchemaShape | undefined): boolean {
-  const type = schema?.type;
-  return Array.isArray(type) ? type.includes('array') : type === 'array';
-}
-
 /**
- * Whether an operation's `200` JSON body is a list: an array, or an object with
- * a top-level array property, after one `$ref` is resolved.
+ * Whether a path is a collection: some other path in the set is this one with
+ * one `{param}` segment added (`/api/sessions` beside `/api/sessions/{id}`).
  *
- * @param op - The operation.
- * @param document - The document, for its component schemas.
+ * @param path - The path to ask about.
+ * @param paths - Every path in the document.
  */
-function returnsList(op: OperationShape, document: OperationIdDocument): boolean {
-  const body = resolve(op.responses?.['200']?.content?.['application/json']?.schema, document);
-  return isArray(body) || Object.values(body.properties ?? {}).some(isArray);
+export function isCollectionPath(path: string, paths: ReadonlySet<string>): boolean {
+  const prefix = `${path.replace(/\/$/, '')}/`;
+  for (const other of paths) {
+    if (!other.startsWith(prefix)) continue;
+    const rest = other.slice(prefix.length);
+    if (!rest.includes('/') && isParam(rest)) return true;
+  }
+  return false;
 }
 
 /** The key two ids collide on: lowercased, underscores removed. */
@@ -223,6 +239,7 @@ export function assignOperationIds(document: OperationIdDocument): void {
     }
   }
 
+  const paths = new Set(Object.keys(document.paths ?? {}));
   const owners = new Map<string, { id: string; key: string }>();
   const claim = (id: string, key: string): void => {
     const other = owners.get(collisionKey(id));
@@ -240,7 +257,7 @@ export function assignOperationIds(document: OperationIdDocument): void {
   for (const { key, op } of operations) if (op.operationId) claim(op.operationId, key);
   for (const { key, method, path, op } of operations) {
     if (op.operationId) continue;
-    const id = deriveOperationId(method, path, { returnsList: returnsList(op, document) });
+    const id = deriveOperationId(method, path, { isCollection: isCollectionPath(path, paths) });
     claim(id, key);
     op.operationId = id;
   }

@@ -348,7 +348,7 @@ pnpm docs:export-api
 pnpm --filter @dorkos/site generate:api-docs
 ```
 
-Stage `docs/api/` with the rest of this phase (it is in the 6.8 `git add` list).
+Stage only `docs/api/openapi.json` with the rest of this phase (it is in the 6.8 `git add` list). The release-branch rule accepts that one file, changed only in its `info.version`; the generated pages under `docs/api/api/` do not change on a version bump.
 
 ### 6.3: Sync version to package.json files
 
@@ -523,7 +523,7 @@ cd .claude/worktrees/release-vX.Y.Z && pnpm install   # or the pre-push hook die
 # also stage apps/server/src/services/core/config-migrations/ and
 # apps/server/src/services/core/__tests__/merged-migration-hashes.ts (and
 # packages/shared/src/config-schema.ts if it was part of the drift).
-git add VERSION CHANGELOG.md docs/changelog.mdx docs/changelog-archive.mdx docs/api/ changelog/ packages/cli/package.json packages/cloud-api/package.json packages/connector-providers/package.json package.json apps/desktop/package.json blog/ apps/site/public/product/archive/vX.Y.Z/
+git add VERSION CHANGELOG.md docs/changelog.mdx docs/changelog-archive.mdx docs/api/openapi.json changelog/ packages/cli/package.json packages/cloud-api/package.json packages/connector-providers/package.json package.json apps/desktop/package.json blog/ apps/site/public/product/archive/vX.Y.Z/
 
 git commit -m "$(cat <<'EOF'
 chore(release): vX.Y.Z

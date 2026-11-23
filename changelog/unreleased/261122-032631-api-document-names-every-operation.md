@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(api): the OpenAPI document names every operation, declares how to sign in and tracks the product version (DOR-4980)'
+  - 'fix(api): operation ids come from paths alone, and each operation says what sign-in it takes (DOR-4980)'
 ---
 
 ### Added

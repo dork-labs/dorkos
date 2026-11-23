@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { assignOperationIds, deriveOperationId } from '../operation-ids.js';
+import { assignOperationIds, deriveOperationId, isCollectionPath } from '../operation-ids.js';
 
 describe('deriveOperationId', () => {
   it.each([
@@ -9,11 +9,25 @@ describe('deriveOperationId', () => {
     ['post', '/api/notifications/read-all', false, 'notifications.readAll'],
     ['put', '/api/work-queues/stop', false, 'workQueues.stop'],
     ['post', '/api/local-browser/sign-in', false, 'localBrowser.signIn'],
-    // GET: an item path is `get`; otherwise the response decides.
+    ['post', '/api/workbench/sign', false, 'workbench.sign'],
+    // A hyphenated last segment led by a command word is the verb too...
+    ['post', '/api/auth/revoke-session', false, 'auth.revokeSession'],
+    ['post', '/api/extensions/{id}/start-work', false, 'extensions.startWork'],
+    [
+      'post',
+      '/api/marketplace/packages/{name}/check-files',
+      false,
+      'marketplace.checkFilesPackages',
+    ],
+    // ...unless it is a named thing, or the method is GET (a GET reads what it names).
+    ['post', '/api/hub/computers/link-code', false, 'hub.createComputersLinkCode'],
+    ['get', '/api/runs/run-history', false, 'runs.getRunHistory'],
+    // GET: a collection path is `list`, anything else `get`.
     ['get', '/api/sessions', true, 'sessions.list'],
     ['get', '/api/sessions/{id}', true, 'sessions.get'],
-    ['get', '/api/sessions/{id}/messages', true, 'sessions.listMessages'],
+    ['get', '/api/sessions/{id}/messages', false, 'sessions.getMessages'],
     ['get', '/api/sessions/{id}/messages/{messageId}', false, 'sessions.getMessages'],
+    ['get', '/api/health/deep', false, 'health.getDeep'],
     ['get', '/api/health', false, 'health.get'],
     ['get', '/api/cloud/status', false, 'cloud.getStatus'],
     ['get', '/api/sessions/{id}/settings', false, 'sessions.getSettings'],
@@ -38,16 +52,29 @@ describe('deriveOperationId', () => {
       'runtimes.updateClaudeCodeAccountsNoAutoMove',
     ],
     ['delete', '/api/work-queues/{id}/items/{itemId}', false, 'workQueues.deleteItems'],
-  ] as const)('%s %s (list body: %s) → %s', (method, path, returnsList, id) => {
-    expect(deriveOperationId(method, path, { returnsList })).toBe(id);
+  ] as const)('%s %s (collection: %s) → %s', (method, path, isCollection, id) => {
+    expect(deriveOperationId(method, path, { isCollection })).toBe(id);
+  });
+});
+
+describe('isCollectionPath', () => {
+  const paths = new Set(['/api/sessions', '/api/sessions/{id}', '/api/a', '/api/a/{id}/x']);
+  it.each([
+    ['/api/sessions', true],
+    ['/api/sessions/', true],
+    ['/api/sessions/{id}', false],
+    // An item deeper down is not an item of this path.
+    ['/api/a', false],
+    ['/api/none', false],
+  ])('%s → %s', (path, expected) => {
+    expect(isCollectionPath(path, paths)).toBe(expected);
   });
 });
 
 /** A document of bare operations, keyed `path → method → operation`. */
-function document(paths: Record<string, Record<string, object>>, schemas = {}) {
-  return { paths, components: { schemas } } as {
+function document(paths: Record<string, Record<string, object>>) {
+  return { paths } as {
     paths: Record<string, Record<string, { operationId?: string }>>;
-    components: { schemas: Record<string, unknown> };
   };
 }
 
@@ -59,7 +86,7 @@ function answering(schema: object) {
 describe('assignOperationIds', () => {
   it('fills in a derived id on every operation that has none', () => {
     const doc = document({
-      '/api/sessions': { get: answering({ type: 'array' }), post: {} },
+      '/api/sessions': { get: {}, post: {} },
       '/api/sessions/{id}': { get: {}, delete: {} },
     });
     assignOperationIds(doc);
@@ -69,24 +96,15 @@ describe('assignOperationIds', () => {
     expect(doc.paths['/api/sessions/{id}']?.delete?.operationId).toBe('sessions.delete');
   });
 
-  it('reads list or get from the 200 body, one $ref deep', () => {
-    const doc = document(
-      {
-        '/api/a': { get: answering({ $ref: '#/components/schemas/Page' }) },
-        '/api/b': { get: answering({ $ref: '#/components/schemas/One' }) },
-        '/api/c': { get: answering({ type: ['array', 'null'] }) },
-        '/api/d': { get: {} },
-      },
-      {
-        Page: { type: 'object', properties: { items: { type: 'array' } } },
-        One: { type: 'object', properties: { name: { type: 'string' } } },
-      }
-    );
+  it('names a GET by the paths alone, never by its response body', () => {
+    const doc = document({
+      '/api/a': { get: answering({ type: 'array' }) },
+      '/api/b': { get: answering({ type: 'object', properties: { items: { type: 'array' } } }) },
+      '/api/b/{id}': { get: {} },
+    });
     assignOperationIds(doc);
-    expect(doc.paths['/api/a']?.get?.operationId).toBe('a.list');
-    expect(doc.paths['/api/b']?.get?.operationId).toBe('b.get');
-    expect(doc.paths['/api/c']?.get?.operationId).toBe('c.list');
-    expect(doc.paths['/api/d']?.get?.operationId).toBe('d.get');
+    expect(doc.paths['/api/a']?.get?.operationId).toBe('a.get');
+    expect(doc.paths['/api/b']?.get?.operationId).toBe('b.list');
   });
 
   it('keeps an id set by hand', () => {
@@ -107,7 +125,8 @@ describe('assignOperationIds', () => {
 
   it('throws when a derived id collides with a hand-set one, even when the hand-set one comes later', () => {
     const doc = document({
-      '/api/sessions': { get: answering({ type: 'array' }) },
+      '/api/sessions': { get: {} },
+      '/api/sessions/{id}': { get: {} },
       '/api/other': { get: { operationId: 'sessions.list' } },
     });
     expect(() => assignOperationIds(doc)).toThrow(/GET \/api\/other .* and GET \/api\/sessions/);

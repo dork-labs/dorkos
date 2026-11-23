@@ -33,7 +33,12 @@ import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-ope
 import { env } from '../../env.js';
 import { registerDomainOpenApi } from './openapi/domains.js';
 import { assignOperationIds } from './openapi/operation-ids.js';
-import { DOCUMENT_SECURITY, registerSecuritySchemes } from './openapi/security-schemes.js';
+import {
+  API_DESCRIPTION,
+  DOCUMENT_SECURITY,
+  assignOperationSecurity,
+  registerSecuritySchemes,
+} from './openapi/security-schemes.js';
 import { SERVER_VERSION } from '../../lib/version.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import { registerExtensionRemovalOpenApi } from '../extensions/removal/extension-removal-openapi.js';
@@ -8665,7 +8670,9 @@ export interface GenerateOpenAPISpecOptions {
 
 /**
  * Generate the full OpenAPI 3.1.0 document from registered paths and schemas,
- * with an `operationId` on every operation (`openapi/operation-ids.ts`).
+ * with an `operationId` on every operation (`openapi/operation-ids.ts`) and a
+ * `security` on each one that differs from the default
+ * (`openapi/security-schemes.ts`).
  *
  * @param options - See {@link GenerateOpenAPISpecOptions}.
  * @throws If two operations share an `operationId`.
@@ -8679,13 +8686,12 @@ export function generateOpenAPISpec(
     info: {
       title: 'DorkOS API',
       version: options.version ?? SERVER_VERSION,
-      description:
-        "The DorkOS server's HTTP and SSE API: sessions, agents, rooms, connections and the " +
-        'rest of the app, served on this computer.',
+      description: API_DESCRIPTION,
     },
     servers: [{ url: `http://localhost:${env.DORKOS_PORT}` }],
     security: DOCUMENT_SECURITY,
   });
   assignOperationIds(document);
+  assignOperationSecurity(document);
   return document;
 }

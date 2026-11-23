@@ -363,6 +363,30 @@ describe('cherry-pick rule', () => {
       ['info.version for another release', doc('1.2.2'), doc('1.2.4')],
       ['an unchanged info.version', doc('1.2.2'), doc('1.2.2', { paths: { '/api/x': {} } })],
       ['a document that is not JSON', doc('1.2.2'), '{'],
+      // Text, not parsed JSON: the same document reformatted is still a change.
+      ['a reformatted document', doc('1.2.2'), JSON.stringify(JSON.parse(doc('1.2.3')))],
+      [
+        'a reordered document',
+        doc('1.2.2'),
+        JSON.stringify(
+          { info: { title: 'Made-up API', version: '1.2.3' }, openapi: '3.1.0', paths: {} },
+          null,
+          2
+        ),
+      ],
+      [
+        'a moved version field',
+        JSON.stringify(
+          { openapi: '3.1.0', x: { version: '1.2.2' }, info: { version: '1.2.2' } },
+          null,
+          2
+        ),
+        JSON.stringify(
+          { openapi: '3.1.0', x: { version: '1.2.3' }, info: { version: '1.2.2' } },
+          null,
+          2
+        ),
+      ],
     ])('refuses %s', (_, before, after) => {
       expect(codeOf(withDoc(before, after))).toMatchObject({
         code: 'non-release-file',

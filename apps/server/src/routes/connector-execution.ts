@@ -37,6 +37,7 @@ import {
   type ConnectorEventAccessQueryService,
 } from '../services/connectors/events/access-query-service.js';
 import { managedCloudErrorResponse } from './managed-cloud-error.js';
+import { PROGRAM_KEY_ROUTES as KEY } from '../services/connectors/principal/program-key-routes.js';
 
 const AgentQuerySchema = z.object({ agentId: z.string().min(1) }).strict();
 const AgentUsageQuerySchema = z
@@ -229,7 +230,7 @@ export function createConnectorExecutionRoutes(deps: ConnectorExecutionRouterDep
       }
     };
 
-  router.get('/accessible', async (c) => {
+  router.on(KEY.accessible.method, KEY.accessible.path, async (c) => {
     const principal = await resolveProgramPrincipal(c, deps);
     if (principal instanceof Response) return principal;
     try {
@@ -240,7 +241,7 @@ export function createConnectorExecutionRoutes(deps: ConnectorExecutionRouterDep
     }
   });
 
-  router.get('/accessible/:connectionId/operations', async (c) => {
+  router.on(KEY.accessibleOperations.method, KEY.accessibleOperations.path, async (c) => {
     const principal = await resolveProgramPrincipal(c, deps);
     if (principal instanceof Response) return principal;
     try {
@@ -257,7 +258,7 @@ export function createConnectorExecutionRoutes(deps: ConnectorExecutionRouterDep
     }
   });
 
-  router.get('/accessible/subscriptions', async (c) => {
+  router.on(KEY.accessibleSubscriptions.method, KEY.accessibleSubscriptions.path, async (c) => {
     const principal = await resolveProgramPrincipal(c, deps);
     if (principal instanceof Response) return principal;
     try {
@@ -267,10 +268,10 @@ export function createConnectorExecutionRoutes(deps: ConnectorExecutionRouterDep
     }
   });
 
-  router.post('/executions', execute('rest'));
-  router.post('/cli/executions', execute('cli'));
+  router.on(KEY.executions.method, KEY.executions.path, execute('rest'));
+  router.on(KEY.cliExecutions.method, KEY.cliExecutions.path, execute('cli'));
 
-  router.get('/usage/agent', async (c) => {
+  router.on(KEY.agentUsage.method, KEY.agentUsage.path, async (c) => {
     const principal = await resolveProgramPrincipal(c, deps);
     if (principal instanceof Response) return principal;
     try {

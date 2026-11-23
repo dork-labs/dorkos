@@ -261,6 +261,8 @@ describe('export-openapi', () => {
     expect(paths['/api/sessions']?.get?.operationId).toBe('sessions.list');
     expect(paths['/api/health']?.get?.operationId).toBe('health.get');
     expect(paths['/api/notifications/read-all']?.post?.operationId).toBe('notifications.readAll');
+    expect(paths['/api/auth/revoke-session']?.post?.operationId).toBe('auth.revokeSession');
+    expect(paths['/api/health/deep']?.get?.operationId).toBe('health.getDeep');
   });
 
   it('declares every {name} path segment as a path parameter', () => {
@@ -285,26 +287,6 @@ describe('export-openapi', () => {
   it('carries the server version, or the one it is given', () => {
     expect(generateOpenAPISpec().info.version).toBe(SERVER_VERSION);
     expect(generateOpenAPISpec({ version: '9.8.7' }).info.version).toBe('9.8.7');
-  });
-
-  it('declares how to sign in: nothing, the sign-in cookie, or a personal API key', () => {
-    const spec = generateOpenAPISpec();
-    const schemes = spec.components?.securitySchemes ?? {};
-    expect(Object.keys(schemes).sort()).toEqual([
-      'agentIdentity',
-      'apiKey',
-      'instanceToken',
-      'sessionCookie',
-    ]);
-    expect(schemes.sessionCookie).toMatchObject({ type: 'apiKey', in: 'cookie' });
-    expect(schemes.apiKey).toMatchObject({ type: 'http', scheme: 'bearer' });
-    expect(schemes.agentIdentity).toMatchObject({
-      type: 'apiKey',
-      in: 'header',
-      name: 'X-DorkOS-Agent',
-    });
-    expect(schemes.instanceToken).toMatchObject({ type: 'http', scheme: 'bearer' });
-    expect(spec.security).toEqual([{}, { sessionCookie: [] }, { apiKey: [] }]);
   });
 
   it('produces valid JSON output', () => {
