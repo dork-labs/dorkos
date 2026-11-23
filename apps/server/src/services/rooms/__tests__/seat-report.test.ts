@@ -300,19 +300,34 @@ describe('a spin-off reports into the room seat that started it (DOR-3488)', () 
   });
 
   describe('a seat that moved to a fresh session (DOR-3720)', () => {
-    /** Move Bo's seat the way the mover does, and return both sessions. */
-    async function moved(): Promise<{ oldSeat: string; newSeat: string }> {
+    /**
+     * Move Bo's seat the way the mover does, and return both sessions, when the move was
+     * recorded, and a start time for a spin-off the old session started before it.
+     */
+    async function moved(): Promise<{
+      oldSeat: string;
+      newSeat: string;
+      movedAt: number;
+      startedAt: number;
+    }> {
       const oldSeat = await seat();
+      const startedAt = Date.now();
       const newSeat = 'new-seat-session';
       expect(store.rebindRoomSession(dorkos.id, bo, newSeat)).toBe(true);
       store.sessionLedger.recordSeatMove(oldSeat, dorkos.id, bo);
-      return { oldSeat, newSeat };
+      const movedAt = store.sessionLedger.seatMovedFrom(oldSeat)!.movedAt;
+      return { oldSeat, newSeat, movedAt, startedAt };
     }
 
-    it('a report to the old session reaches the seat on its new session', async () => {
-      const { oldSeat, newSeat } = await moved();
+    /** Let the clock pass, so two moves never share a millisecond. */
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 
-      expect(service.handoffs.reports.deliver(oldSeat, report('PR #12 is green.'))).toBe(true);
+    it('a report to the old session reaches the seat on its new session', async () => {
+      const { oldSeat, newSeat, startedAt } = await moved();
+
+      expect(
+        service.handoffs.reports.deliver(oldSeat, report('PR #12 is green.', { startedAt }))
+      ).toBe(true);
       await settle();
 
       const turns = reportTurns();
@@ -338,15 +353,108 @@ describe('a spin-off reports into the room seat that started it (DOR-3488)', () 
     });
 
     it('a stale old seat reaches the seat where it sits now, however many moves ago', async () => {
-      const { oldSeat, newSeat } = await moved();
+      const { oldSeat, newSeat, startedAt } = await moved();
       const newest = 'newest-seat-session';
       expect(store.rebindRoomSession(dorkos.id, bo, newest)).toBe(true);
       store.sessionLedger.recordSeatMove(newSeat, dorkos.id, bo);
 
-      service.handoffs.reports.deliver(oldSeat, report('late'));
+      service.handoffs.reports.deliver(oldSeat, report('late', { startedAt }));
       await settle();
 
       expect(reportTurns().map((turn) => turn.sessionId)).toEqual([newest]);
+    });
+
+    // DOR-3753: the old session stays a real chat a person can reopen. A spin-off started there
+    // after the move is that chat's work, not the seat's, so it must not wake the seat.
+    describe('only for spin-offs started at or before the move (DOR-3753)', () => {
+      it('refuses a spin-off the reopened old chat started after the move', async () => {
+        const { oldSeat, movedAt } = await moved();
+
+        expect(
+          service.handoffs.reports.deliver(oldSeat, report('after', { startedAt: movedAt + 1 }))
+        ).toBe(false);
+        await settle();
+
+        expect(reportTurns()).toEqual([]);
+        expect(bosPosts()).toEqual([]);
+      });
+
+      it('takes a spin-off started at the very moment of the move', async () => {
+        const { oldSeat, newSeat, movedAt } = await moved();
+
+        expect(
+          service.handoffs.reports.deliver(oldSeat, report('same', { startedAt: movedAt }))
+        ).toBe(true);
+        await settle();
+
+        expect(reportTurns().map((turn) => turn.sessionId)).toEqual([newSeat]);
+      });
+
+      it('refuses a spin-off with no recorded start, since nothing shows it predates the move', async () => {
+        const { oldSeat } = await moved();
+
+        expect(service.handoffs.reports.deliver(oldSeat, report('unknown'))).toBe(false);
+      });
+
+      it('leaves the seat’s current session alone, whenever its spin-off started', async () => {
+        const { newSeat, movedAt } = await moved();
+
+        expect(
+          service.handoffs.reports.deliver(newSeat, report('now', { startedAt: movedAt + 60_000 }))
+        ).toBe(true);
+        await settle();
+
+        expect(reportTurns().map((turn) => turn.sessionId)).toEqual([newSeat]);
+      });
+
+      it('refuses after a leave and rejoin, whether the spin-off started before or after', async () => {
+        const { oldSeat, movedAt, startedAt } = await moved();
+        store.removeMember(dorkos.id, bo);
+        store.addMember({
+          roomId: dorkos.id,
+          authorId: bo,
+          responseMode: 'mention-only',
+          joinedAt: new Date(movedAt + 60_000).toISOString(),
+        });
+
+        expect(service.handoffs.reports.deliver(oldSeat, report('before', { startedAt }))).toBe(
+          false
+        );
+        expect(
+          service.handoffs.reports.deliver(oldSeat, report('after', { startedAt: movedAt + 1 }))
+        ).toBe(false);
+        await settle();
+        expect(reportTurns()).toEqual([]);
+      });
+
+      it('after two moves, each old session answers only for spin-offs from its own time', async () => {
+        const { oldSeat, newSeat, movedAt: firstMove } = await moved();
+        await tick();
+        const between = Date.now();
+        await tick();
+        const newest = 'newest-seat-session';
+        expect(store.rebindRoomSession(dorkos.id, bo, newest)).toBe(true);
+        store.sessionLedger.recordSeatMove(newSeat, dorkos.id, bo);
+        const secondMove = store.sessionLedger.seatMovedFrom(newSeat)!.movedAt;
+        expect(firstMove < between && between < secondMove).toBe(true);
+
+        // The first session no longer held the seat once it moved.
+        expect(
+          service.handoffs.reports.deliver(oldSeat, report('from-a', { startedAt: between }))
+        ).toBe(false);
+        // The second session held it then, and its spin-off follows the seat to where it is now.
+        expect(
+          service.handoffs.reports.deliver(newSeat, report('from-b', { startedAt: between }))
+        ).toBe(true);
+        // Not once the seat moved on from it too.
+        expect(
+          service.handoffs.reports.deliver(newSeat, report('from-c', { startedAt: secondMove + 1 }))
+        ).toBe(false);
+        await settle();
+
+        expect(reportTurns().map((turn) => turn.sessionId)).toEqual([newest]);
+        expect(reportTurns()[0]!.prompt).toContain('from-b');
+      });
     });
 
     it('is gone once the agent leaves the room, and stays gone if it comes back', async () => {

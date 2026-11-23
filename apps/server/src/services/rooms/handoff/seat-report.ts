@@ -37,6 +37,7 @@ import type { AsideResult } from '../room-trigger/aside.js';
 import { roomStartAnchor } from '../room-trigger/room-start-anchor.js';
 import type { RoomCore } from '../service/room-core.js';
 import { carryFrom, withRoomMarks } from './seat-carry.js';
+import { spinOffPredatesMove } from './outbox/report-seat-scope.js';
 
 /** The longest a report waits for a busy seat before it gives up. */
 export const SEAT_REPORT_WAIT_MAX_MS = 60 * 60_000;
@@ -60,6 +61,12 @@ export interface SeatReport {
   text: string;
   /** The marks of the turn it speaks for, read when that turn ended (DOR-3720). */
   marks?: TurnMarks;
+  /**
+   * When the spin-off was first started (epoch ms), from the server's start record. A seat that
+   * moved takes a report only from a spin-off started at or before the move (DOR-3753); with no
+   * start, it takes none.
+   */
+  startedAt?: number;
 }
 
 /** The room and agent a seat answers for. */
@@ -97,10 +104,15 @@ export class RoomSeatReports {
    * @param sessionId - The chat.
    */
   seatOf(sessionId: string): SeatOf | null {
+    return this.resolveSeat(sessionId)?.seat ?? null;
+  }
+
+  /** {@link seatOf}, with when the seat moved off `sessionId` when it is a former seat. */
+  private resolveSeat(sessionId: string): { seat: SeatOf; movedAt?: number } | null {
     const binding = this.core.store.sessionLedger.bindingForSession(sessionId);
-    if (binding) return { roomId: binding.roomId, authorId: binding.authorId };
+    if (binding) return { seat: { roomId: binding.roomId, authorId: binding.authorId } };
     const claim = [...this.core.triggers.claimed.values()].find((c) => c.sessionId === sessionId);
-    if (claim) return { roomId: claim.roomId, authorId: claim.authorId };
+    if (claim) return { seat: { roomId: claim.roomId, authorId: claim.authorId } };
     return this.seatMovedFrom(sessionId);
   }
 
@@ -110,21 +122,22 @@ export class RoomSeatReports {
    * this session never held it. The agent's turn runs on the seat's session as it is now, so
    * however many moves came after, one row answers and nothing is walked.
    */
-  private seatMovedFrom(sessionId: string): SeatOf | null {
+  private seatMovedFrom(sessionId: string): { seat: SeatOf; movedAt: number } | null {
     const moved = this.core.store.sessionLedger.seatMovedFrom(sessionId);
     if (!moved) return null;
     const { movedAt, ...seat } = moved;
     const room = this.core.store.getRoom(seat.roomId);
     if (room === null || room.archived) return null;
     const member = this.core.store.getMember(seat.roomId, seat.authorId);
-    return member !== null && Date.parse(member.joinedAt) <= movedAt ? seat : null;
+    return member !== null && Date.parse(member.joinedAt) <= movedAt ? { seat, movedAt } : null;
   }
 
   /**
    * Deliver a spin-off's report to the seat that started it, as a turn there.
    *
    * Returns at once; the turn runs when the seat is free. False when `seatSessionId` is no room's
-   * seat, or the spin-off runs as a different agent, so the caller can try another way.
+   * seat, the spin-off runs as a different agent, or `seatSessionId` held the seat before it moved
+   * and the spin-off was not started by then, so the caller can try another way.
    *
    * @param seatSessionId - The seat the spin-off reports to.
    * @param report - The report.
@@ -132,8 +145,11 @@ export class RoomSeatReports {
    */
   deliver(seatSessionId: string, report: SeatReport, onSettled?: (ran: boolean) => void): boolean {
     if (this.stopped) return false;
-    const seat = this.seatOf(seatSessionId);
-    if (seat === null) return false;
+    const resolved = this.resolveSeat(seatSessionId);
+    if (resolved === null) return false;
+    const { seat, movedAt } = resolved;
+    // A former seat speaks only for spin-offs it started while it held the seat (DOR-3753).
+    if (movedAt !== undefined && !spinOffPredatesMove(report.startedAt, movedAt)) return false;
     // A seat starts spin-offs as its own agent; a report from any other agent is not one.
     if (this.core.authors.getById(seat.authorId)?.naturalKey !== report.fromAgentPath) return false;
     const key = agentKey(seat.roomId, seat.authorId);
