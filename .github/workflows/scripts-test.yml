@@ -294,6 +294,12 @@ jobs:
       - name: Reviewer shell-script fixtures
         run: bash scripts/test-review-classifier.sh
 
+      # security-verdict-check.sh reads the cloud Security lens verdict that
+      # review-gh.sh posts (DOR-5099): a bot's `pass` marker for the exact head,
+      # or red. Stubbed `gh`, bash and jq.
+      - name: Security verdict fixtures
+        run: bash scripts/test-security-verdict-check.sh
+
       - name: Git-guard hook fixtures
         run: bash scripts/test-git-guard.sh
 

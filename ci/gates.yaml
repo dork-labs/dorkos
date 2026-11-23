@@ -111,6 +111,9 @@ gates:
   - id: wf.claude-code-review.review
     source: .github/workflows/claude-code-review.yml
     purpose: Automated Claude review of a PR against REVIEW.md; a red result stops merge-tail from arming, and merge-tail re-requests the review up to three times per head SHA.
+  - id: wf.claude-code-review.security-verdict
+    source: .github/workflows/claude-code-review.yml
+    purpose: Advisory; green only when the review's Security lens posted a pass verdict for the exact head (DOR-5099). Compared with the local Security review before it becomes required.
 
   # --- claude.yml ---
   - id: wf.claude.claude
