@@ -59,7 +59,7 @@ export interface RuleSpec {
  * Every rule's treatment. `hand-registered-path` is advisory until the
  * capability HTTP mount (DOR-4978) merges: from then a new route is a
  * capability `http` surface, which the mount serves and the OpenAPI projection
- * documents, so the hand registry takes no new paths (ADR 261123-170830).
+ * documents, so the hand registry takes no new paths (ADR PR #4160).
  * Until it merges, a documented `registerPath` is the only way to add a route,
  * so blocking it would freeze the API rather than guard it.
  */
@@ -96,13 +96,13 @@ export const RULES: Record<RuleId, RuleSpec> = {
   'hand-registered-path': {
     // The DOR-4978 mount PR flips this to `blocking: true`.
     blocking: false,
-    fix: 'Declare the route as a capability `http` surface (served by the generic mount, documented by the projection), not a hand registerPath; advisory until DOR-4978 merges.',
+    fix: 'Advisory today. Once the capability mount (DOR-4978) merges, declare new routes as a capability `http` surface, not a hand registerPath.',
   },
 };
 
 /**
  * Static path segments that name an action rather than a resource. A path
- * ending in one is an RPC call dressed as REST; the resource it acts on
+ * with one in any static segment is an RPC call dressed as REST; the resource it acts on
  * should be the path, and the method the action. Any segment ending in `-all`
  * counts too ({@link isCommandWord}).
  */

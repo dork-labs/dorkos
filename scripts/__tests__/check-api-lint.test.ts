@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -363,6 +363,32 @@ describe('the ratchet', () => {
     expect(next['list-paging']).toEqual({});
   });
 
+  it('sets an advisory rule to its measured counts, up, down, added and removed', () => {
+    const next = lowered(
+      counts({ 'hand-registered-path': { 'a.ts': 7, 'b.ts': 1, 'new.ts': 2 } }),
+      {
+        'hand-registered-path': { 'a.ts': 6, 'b.ts': 3, 'gone.ts': 4 },
+      }
+    );
+    expect(next['hand-registered-path']).toEqual({ 'a.ts': 7, 'b.ts': 1, 'new.ts': 2 });
+  });
+
+  it('never judges a raised advisory entry against the base', () => {
+    expect(
+      raisedAgainst(
+        { 'hand-registered-path': { 'a.ts': 9, 'new.ts': 1 } },
+        { 'hand-registered-path': { 'a.ts': 2 } }
+      )
+    ).toEqual([]);
+  });
+
+  it('lets a stale entry pass in the merge queue, and only there', () => {
+    const stale = { kind: 'stale' as const, rule: 'verb-path' as const, unit: 'agents' };
+    expect(isBlocking(stale)).toBe(true);
+    expect(isBlocking(stale, true)).toBe(false);
+    expect(isBlocking({ kind: 'grew', rule: 'verb-path', unit: 'agents' }, true)).toBe(true);
+  });
+
   it('fails on a blocking rule or a shared id, never on an advisory rule', () => {
     expect(isBlocking({ kind: 'grew', rule: 'verb-path', unit: 'agents' })).toBe(true);
     expect(isBlocking({ kind: 'duplicate', rule: 'operation-id', unit: 'x' })).toBe(true);
@@ -402,6 +428,104 @@ describe('the command line', () => {
   });
 });
 
+describe('the command line on a scratch repo', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'api-lint-cli-'));
+  afterAll(() => rmSync(repo, { recursive: true, force: true }));
+  const git = (...args: string[]) =>
+    spawnSync('git', args, { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  const spec = join(repo, 'openapi.json');
+  const routes = join(repo, 'census.json');
+  const baselineFile = join(repo, BASELINE_PATH);
+  /** Two documented GETs whose paths end in a command word: verb-path agents 2. */
+  const twoVerbs = {
+    '/api/agents/sync': { get: op() },
+    '/api/agents/refresh': { get: op() },
+  };
+  const writeInputs = (paths: OpenApiDocument['paths']) => {
+    writeFileSync(spec, JSON.stringify(doc(paths)));
+    const served = Object.keys(paths).map((p) => `GET ${p}`);
+    writeFileSync(routes, JSON.stringify({ routes: served }));
+  };
+  const writeBaselineRules = (rules: Partial<Counts>) =>
+    writeFileSync(baselineFile, JSON.stringify({ $comment: 'test', rules }));
+  const readRules = () =>
+    (JSON.parse(readFileSync(baselineFile, 'utf8')) as { rules: Partial<Counts> }).rules;
+  const run = (...args: string[]) =>
+    spawnSync(
+      process.execPath,
+      [CLI, '--root', repo, '--spec', spec, '--census', routes, ...args],
+      {
+        encoding: 'utf8',
+      }
+    );
+
+  git('init', '-q');
+  git('config', 'user.email', 'test@example.com');
+  git('config', 'user.name', 'Test');
+  mkdirSync(dirname(baselineFile), { recursive: true });
+  writeInputs(twoVerbs);
+  writeBaselineRules({ 'verb-path': { agents: 2 } });
+  git('add', '-A');
+  git('commit', '-q', '-m', 'base');
+  const base = git('rev-parse', 'HEAD');
+
+  it('passes at the baseline', () => {
+    writeInputs(twoVerbs);
+    writeBaselineRules({ 'verb-path': { agents: 2 } });
+    expect(run('--base', base).status).toBe(0);
+  });
+
+  it('exits 1 when a count grew', () => {
+    writeInputs({ ...twoVerbs, '/api/agents/reset': { get: op() } });
+    writeBaselineRules({ 'verb-path': { agents: 2 } });
+    const result = run('--base', base);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('verb-path in agents: 3 (baseline 2)');
+  });
+
+  it('exits 1 when the baseline was raised by hand against --base', () => {
+    writeInputs({ ...twoVerbs, '/api/agents/reset': { get: op() } });
+    writeBaselineRules({ 'verb-path': { agents: 3 } });
+    const result = run('--base', base);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('baseline raised from 2 to 3');
+  });
+
+  it('exits 0 with only advisory notes', () => {
+    writeInputs(twoVerbs);
+    writeBaselineRules({ 'verb-path': { agents: 2 } });
+    mkdirSync(join(repo, 'apps/server/src'), { recursive: true });
+    writeFileSync(join(repo, 'apps/server/src/x-openapi.ts'), 'registry.registerPath({});\n');
+    try {
+      const result = run('--base', base);
+      expect(result.status).toBe(0);
+      expect(result.stderr).toContain(
+        'advisory: hand-registered-path in apps/server/src/x-openapi.ts'
+      );
+    } finally {
+      rmSync(join(repo, 'apps'), { recursive: true, force: true });
+    }
+  });
+
+  it('lowers the baseline with --update, then passes', () => {
+    writeInputs({ '/api/agents/sync': { get: op() } });
+    writeBaselineRules({ 'verb-path': { agents: 2 } });
+    expect(run('--base', base).status).toBe(1);
+    expect(run('--update').status).toBe(0);
+    expect(readRules()['verb-path']).toEqual({ agents: 1 });
+    expect(run('--base', base).status).toBe(0);
+  });
+
+  it('fails a stale entry on a PR, and only prints it with --queue', () => {
+    writeInputs({ '/api/agents/sync': { get: op() } });
+    writeBaselineRules({ 'verb-path': { agents: 2 } });
+    expect(run('--base', base).status).toBe(1);
+    const queued = run('--base', base, '--queue');
+    expect(queued.status).toBe(0);
+    expect(queued.stderr).toContain('advisory: verb-path in agents: down to 1 (baseline 2)');
+  });
+});
+
 // The gate in the queue is the workflow step in typecheck.yml (it also takes
 // --base); this test runs in the repo-wide scripts suite beside it.
 describe('the repo', () => {
@@ -418,7 +542,7 @@ describe('the repo', () => {
       expect(m.scanned.registryFiles).toBeGreaterThan(30);
       expect(duplicateFindings(m.duplicates)).toEqual([]);
       expect(
-        compare(m.counts, baseline).filter(isBlocking),
+        compare(m.counts, baseline).filter((f) => isBlocking(f)),
         'Fix the new finding, or after fixing some run `pnpm check:api-lint -- --update`.'
       ).toEqual([]);
     }

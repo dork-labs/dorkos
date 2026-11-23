@@ -3,7 +3,8 @@
  * may only get better, one rule and one route group at a time.
  *
  * WHY THIS EXISTS. The REST API review measured the API at `8c118b8d7f`: 0 of
- * 475 operations carried an `operationId`; 157 paths ended in a command word;
+ * 475 operations carried an `operationId`; 157 paths ended in a command word
+ * (the `verb-path` rule here counts a command word in any static segment);
  * 60 operations declared no error response and 387 error responses used an
  * inline shape beside the shared `ErrorResponse`; 91 of 113 list GETs were
  * unpaged; 273 served routes were missing from the document and 25 documented
@@ -33,16 +34,22 @@
  *   - new:       a rule found something in a group the baseline does not list;
  *   - stale:     a count fell and the baseline still says the old number. Run
  *                `--update`, which only lowers or removes entries, so the gain
- *                cannot be spent later;
- *   - raised:    with `--base <ref>`, an entry is higher than the base's or is
- *                new. A rule the base's baseline did not have at all is being
- *                introduced, and is not judged. The baseline is lowered by
+ *                cannot be spent later. With `--queue` (the merge queue) a
+ *                stale entry only prints: two queued PRs that each fix one
+ *                finding in a group and each lower its entry merge to a count
+ *                below the entry, and ejecting the second for that would punish
+ *                a fix. The next `--update` on any PR locks the drop in;
+ *   - raised:    with `--base <ref>`, a blocking rule's entry is higher than
+ *                the base's or is new. A rule the base's baseline did not have
+ *                at all is being introduced, and is not judged. The baseline is lowered by
  *                `--update`, never raised by hand.
  *
  * ADVISORY RULES. A rule whose `blocking` is false in `RULES` (rules.ts) is
- * measured, written to the baseline and lowered by `--update` like any other,
- * but its findings print as advisory lines and never set exit 1, and `--base`
- * does not refuse a rise on it. `hand-registered-path` is advisory until the
+ * measured and written to the baseline, but its findings print as advisory
+ * lines and never set exit 1, and `--base` does not judge its entries.
+ * `--update` sets its entries to the measured counts, up or down, so the
+ * baseline tracks reality and the rule does not go red the day it starts
+ * blocking. `hand-registered-path` is advisory until the
  * capability HTTP mount (DOR-4978) merges, which makes a capability `http`
  * surface the way to add a route; until then a documented `registerPath` is
  * the only way.
@@ -54,6 +61,7 @@
  *   pnpm check:api-lint                       check against the baseline
  *   pnpm check:api-lint -- --base <ref>       also refuse a raised baseline
  *   pnpm check:api-lint -- --update           lower and remove entries
+ *   pnpm check:api-lint -- --queue            a stale entry only prints (merge queue)
  *   pnpm check:api-lint -- --init             write the baseline from scratch
  *   pnpm check:api-lint -- --root <dir>       measure another tree
  *   pnpm check:api-lint -- --spec <path>      read another OpenAPI document
@@ -109,7 +117,10 @@ export interface Measurement {
   items: Record<RuleId, Items>;
   /** Shared operation id to the operations that carry it. */
   duplicates: Record<string, string[]>;
-  /** How much was read, so a run that read nothing cannot pass as clean. */
+  /**
+   * How much was read. The CLI neither prints nor checks it; the repo-wide
+   * test asserts on it, so a run that read nothing cannot pass that test.
+   */
   scanned: {
     /** Operations in the document. */
     operations: number;
@@ -148,12 +159,16 @@ const UPDATE = '`pnpm check:api-lint -- --update`';
 
 /**
  * Whether a finding fails the check. A shared operation id always does; any
- * other finding does only when its rule is blocking ({@link RULES}).
+ * other finding does only when its rule is blocking ({@link RULES}), and a
+ * stale entry does not in the merge queue.
  *
  * @param f - The finding.
+ * @param queue - Whether the run is in the merge queue (`--queue`).
  */
-export function isBlocking(f: Finding): boolean {
-  return f.kind === 'duplicate' || RULES[f.rule].blocking;
+export function isBlocking(f: Finding, queue = false): boolean {
+  if (f.kind === 'duplicate') return true;
+  if (queue && f.kind === 'stale') return false;
+  return RULES[f.rule].blocking;
 }
 
 function emptyCounts(): Counts {
@@ -272,7 +287,8 @@ export function compare(counts: Counts, baseline: Partial<Counts>): Finding[] {
 
 /**
  * Entries the baseline raised against its base: higher than before, or new.
- * A rule the base did not list at all is being introduced and is skipped.
+ * A rule the base did not list at all is being introduced and is skipped, and
+ * so is an advisory rule, whose entries `--update` raises on purpose.
  *
  * @param current - The baseline on this tree.
  * @param base - The baseline on the base tree.
@@ -281,7 +297,7 @@ export function raisedAgainst(current: Partial<Counts>, base: Partial<Counts>): 
   const findings: Finding[] = [];
   for (const rule of RULE_IDS) {
     const before = base[rule];
-    if (before === undefined) continue;
+    if (before === undefined || !RULES[rule].blocking) continue;
     for (const [unit, held] of Object.entries(current[rule] ?? {})) {
       const was = before[unit];
       if (was === undefined) findings.push({ kind: 'raised', rule, unit, count: held });
@@ -293,8 +309,9 @@ export function raisedAgainst(current: Partial<Counts>, base: Partial<Counts>): 
 }
 
 /**
- * The baseline after `--update`: every entry lowered to its count, entries at
- * zero removed, nothing raised and nothing added.
+ * The baseline after `--update`: every entry of a blocking rule lowered to its
+ * count, entries at zero removed, nothing raised and nothing added. An
+ * advisory rule's entries become the measured counts, up or down.
  *
  * @param counts - What {@link measure} found.
  * @param baseline - The committed baseline's rules.
@@ -302,6 +319,10 @@ export function raisedAgainst(current: Partial<Counts>, base: Partial<Counts>): 
 export function lowered(counts: Counts, baseline: Partial<Counts>): Counts {
   const next = emptyCounts();
   for (const rule of RULE_IDS) {
+    if (!RULES[rule].blocking) {
+      next[rule] = sortKeys({ ...counts[rule] });
+      continue;
+    }
     const kept: UnitCounts = {};
     for (const [unit, held] of Object.entries(baseline[rule] ?? {})) {
       const count = counts[rule][unit];
@@ -353,9 +374,9 @@ function printFinding(f: Finding, items: Record<RuleId, Items>, prefix: string):
  *
  * @returns 1 when any finding is blocking, else 0.
  */
-function report(findings: Finding[], items: Record<RuleId, Items>): number {
-  const blocking = findings.filter(isBlocking);
-  const advisory = findings.filter((f) => !isBlocking(f));
+function report(findings: Finding[], items: Record<RuleId, Items>, queue = false): number {
+  const blocking = findings.filter((f) => isBlocking(f, queue));
+  const advisory = findings.filter((f) => !isBlocking(f, queue));
   if (blocking.length) console.error(`api-lint: ${blocking.length} problem(s):`);
   for (const f of blocking) printFinding(f, items, '');
   if (advisory.length) console.error(`api-lint: ${advisory.length} advisory note(s), not failing:`);
@@ -403,7 +424,7 @@ function main(argv: string[]): number {
   if (argv.includes('--update')) {
     const next = lowered(m.counts, baseline);
     writeBaseline(root, next);
-    console.log(`api-lint: baseline lowered: ${totals(next)}`);
+    console.log(`api-lint: baseline updated: ${totals(next)}`);
     // Lowering never excuses growth, a new group or a shared id; say so rather than hide it.
     const left = [...hard, ...compare(m.counts, next).filter((f) => f.kind !== 'stale')];
     return left.length ? report(left, m.items) : 0;
@@ -412,7 +433,8 @@ function main(argv: string[]): number {
   const findings = [...hard, ...compare(m.counts, baseline)];
   const before = base ? baselineAt(root, base) : null;
   if (before) findings.push(...raisedAgainst(baseline, before));
-  const code = findings.length ? report(findings, m.items) : 0;
+  const queue = argv.includes('--queue');
+  const code = findings.length ? report(findings, m.items, queue) : 0;
   const verdict = findings.length ? 'passes, advisory notes only.' : 'clean, nothing added.';
   if (code === 0) console.log(`api-lint: ${verdict} ${totals(m.counts)}`);
   return code;
