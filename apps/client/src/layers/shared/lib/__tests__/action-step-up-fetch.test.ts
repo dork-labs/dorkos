@@ -263,6 +263,27 @@ describe('personAwareFetch and a held action', () => {
     expect(res.status).toBe(428);
   });
 
+  it('reloads to reopen the same hold when the Mac window asks for a fresh page (DOR-5086)', async () => {
+    const base = vi.fn<() => Promise<Response>>().mockResolvedValueOnce(held('held-1'));
+    const answer = answerWith({ kind: 'reload' });
+    stops.push(answer.stop);
+    const reload = vi.fn();
+    const reopen = vi.fn();
+    const res = await personAwareFetch(
+      base,
+      ORIGIN,
+      reload,
+      reopen
+    )('/api/x', {
+      method: 'POST',
+      body: '{}',
+    });
+    expect(reopen).toHaveBeenCalledWith('held-1');
+    expect(reload).not.toHaveBeenCalled();
+    expect(base).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(428);
+  });
+
   it('a sign-in cancelled after "Sign in again" sends nothing more', async () => {
     const base = vi.fn(async () => held('held-old'));
     const answer = answerWith({ kind: 'sign-in-again' });

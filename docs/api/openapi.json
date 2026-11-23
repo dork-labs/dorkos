@@ -108759,7 +108759,9 @@
                       "enum": [
                         "insecure-connection",
                         "no-password",
-                        "extension-risk"
+                        "extension-risk",
+                        "stale-sign-in",
+                        "stale-page"
                       ]
                     },
                     "blockedBy": {
@@ -108793,6 +108795,13 @@
                           "reason"
                         ]
                       }
+                    },
+                    "stale": {
+                      "type": "string",
+                      "enum": [
+                        "stale-sign-in",
+                        "stale-page"
+                      ]
                     },
                     "triesLeft": {
                       "type": "integer",

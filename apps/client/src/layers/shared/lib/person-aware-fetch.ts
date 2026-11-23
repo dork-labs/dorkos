@@ -22,7 +22,11 @@ import {
 } from '@dorkos/shared/person-session';
 import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
 
-import { STEP_UP_NOT_CONFIRMED_MESSAGE, requestActionStepUp } from './action-step-up-signal';
+import {
+  STEP_UP_NOT_CONFIRMED_MESSAGE,
+  reloadToConfirm,
+  requestActionStepUp,
+} from './action-step-up-signal';
 import { readPersonProof } from './person-proof-store';
 import { requestPersonStepUp } from './person-step-up-signal';
 
@@ -127,11 +131,13 @@ async function asksForPersonSession(res: Response): Promise<boolean> {
  * @param base - The `fetch` to wrap.
  * @param origin - This page's origin; calls anywhere else pass through untouched.
  * @param reload - Load this page afresh; the browser's own reload by default.
+ * @param reopen - Load this page afresh and reopen one held action there.
  */
 export function personAwareFetch(
   base: typeof fetch,
   origin: string,
-  reload: () => void = () => window.location.reload()
+  reload: () => void = () => window.location.reload(),
+  reopen: (heldActionId: string) => void = (id) => reloadToConfirm(id)
 ): typeof fetch {
   return async (input, init) => {
     const target = targetOf(input, origin);
@@ -168,6 +174,11 @@ export function personAwareFetch(
       // a confirm counts only from a page loaded after the risk cleared, which
       // the server checks by the page's own stamp (DOR-5026). The person asks
       // again from the new page.
+      // A page older than a change (DOR-5086): a fresh page reopens this same action.
+      if (outcome.kind === 'reload') {
+        reopen(held.id);
+        return notConfirmedResponse(held.refusal);
+      }
       if (outcome.kind === 'sign-in-again') {
         if (await requestPersonStepUp({ dismissible: true })) reload();
         return notConfirmedResponse(held.refusal);
