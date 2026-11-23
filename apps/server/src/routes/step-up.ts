@@ -355,7 +355,10 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
    * each step-up call. A page left open across the update has none, and its
    * code reads only `extension-risk` with an empty list, whose "Sign in again"
    * reloads it. So it is answered in that shape, with `stale` naming the
-   * reason beside it. A script sends none either, and gets the same.
+   * reason beside it. A script sends none either, and gets the same. It gives
+   * such a page nothing new: the same refusal, with only the label added.
+   *
+   * Since 0.141, remove in 0.143 (DOR-5089), once no supported page needs it.
    */
   function fromOlderPage(c: Context<ApiEnv>): boolean {
     return honoRequestFacts(c).headers[PAGE_STAMP_HEADER] === undefined;
