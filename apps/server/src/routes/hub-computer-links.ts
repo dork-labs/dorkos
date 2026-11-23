@@ -102,6 +102,8 @@ export function mountHubComputerLinkRoutes(
     const computerId = c.req.param('computerId');
     const name = deps.record(computerId)?.computerName;
     const removed = await deps.forget(computerId);
+    // An unknown computer answers the plain /api 404, so a caller cannot probe
+    // which computers this hub has linked.
     if (!removed) return apiNotFound(c);
     auditLinkChange({
       action: 'hub.relay.computer.unlink',

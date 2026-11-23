@@ -146,6 +146,22 @@ describe('fetchJSON', () => {
     expect(getAuthRequired()).toBe(true);
   });
 
+  it('flips the auth-required signal on the login gate’s 401 problem too', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          title: 'Sign in to DorkOS to continue.',
+          status: 401,
+          code: 'unauthenticated',
+        }),
+        { status: 401 }
+      )
+    );
+
+    await expect(fetchJSON(BASE_URL, '/api/sessions')).rejects.toThrow('Sign in');
+    expect(getAuthRequired()).toBe(true);
+  });
+
   it('remembers how the 401 says to sign in, and never steps back from DorkOS', async () => {
     const answer = (body: object) =>
       vi

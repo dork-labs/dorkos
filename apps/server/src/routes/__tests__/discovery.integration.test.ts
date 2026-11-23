@@ -355,7 +355,7 @@ describe('Discovery SSE Integration', () => {
       const res = await request(app).post('/api/discovery/scan').send({ maxDepth: 0 });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('malformed_request');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('returns 400 for maxDepth above 10', async () => {
@@ -363,7 +363,7 @@ describe('Discovery SSE Integration', () => {
       const res = await request(app).post('/api/discovery/scan').send({ maxDepth: 11 });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('malformed_request');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('returns JSON error body with details', async () => {
@@ -371,7 +371,7 @@ describe('Discovery SSE Integration', () => {
       const res = await request(app).post('/api/discovery/scan').send({ maxDepth: -1 });
 
       expect(res.status).toBe(400);
-      expect(res.body).toHaveProperty('code', 'malformed_request');
+      expect(res.body).toHaveProperty('code', 'invalid_request');
       expect(res.body).toHaveProperty('issues');
     });
 

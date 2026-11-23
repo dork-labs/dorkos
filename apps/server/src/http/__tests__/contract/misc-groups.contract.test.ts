@@ -65,7 +65,7 @@ const TOO_LARGE = problemBody('request_too_large', {
   detail: 'That is too large to send in one request.',
 });
 const VALIDATION_FAILED = z
-  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
   .loose();
 const UUID = '00000000-0000-4000-8000-000000000000';
 

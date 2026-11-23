@@ -124,7 +124,8 @@ describe('ProfilePanel — the photo', () => {
 
   it('maps each upload refusal to what to do about it', async () => {
     const cases: [string, RegExp][] = [
-      ['AVATAR_TOO_LARGE', /over 2 MB/i],
+      ['request_too_large', /over 2 MB/i],
+      ['malformed_request', /pick one photo/i],
       ['AVATAR_TYPE_UNSUPPORTED', /PNG, JPEG or WebP/i],
       ['AVATAR_MISSING', /came through/i],
       ['OPERATOR_ONLY', /only the person at the keyboard/i],

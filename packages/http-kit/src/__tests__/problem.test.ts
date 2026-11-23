@@ -2,7 +2,13 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
 import { PROBLEM_CONTENT_TYPE, isProblem } from '@dorkos/shared/problem';
-import { problem, problemBody, sendProblem, validationProblem } from '../problem.js';
+import {
+  problem,
+  problemBody,
+  sendProblem,
+  validationDetail,
+  validationProblem,
+} from '../problem.js';
 
 describe('problemBody', () => {
   it('takes the status and title from the code list', () => {
@@ -63,7 +69,7 @@ describe('sendProblem', () => {
 });
 
 describe('validationProblem', () => {
-  it('answers malformed_request with the flattened issues', async () => {
+  it('answers invalid_request with the flattened issues and a detail naming the first field', async () => {
     const schema = z.object({ name: z.string(), age: z.number() });
     const app = new Hono();
     app.post('/', (c) => {
@@ -72,9 +78,38 @@ describe('validationProblem', () => {
     });
     const res = await app.request('/', { method: 'POST' });
     expect(res.status).toBe(400);
-    const body = (await res.json()) as { code: string; issues: { fieldErrors: object } };
+    const body = (await res.json()) as {
+      code: string;
+      detail: string;
+      issues: { fieldErrors: object };
+    };
     expect(isProblem(body)).toBe(true);
-    expect(body.code).toBe('malformed_request');
+    expect(body.code).toBe('invalid_request');
+    expect(body.detail).toMatch(/^`name`: .+ \(and 1 more\)\.$/);
     expect(Object.keys(body.issues.fieldErrors).sort()).toEqual(['age', 'name']);
+  });
+});
+
+describe('validationDetail', () => {
+  it('names the first field, ending in one full stop', () => {
+    expect(validationDetail({ formErrors: [], fieldErrors: { name: ['Required'] } })).toBe(
+      '`name`: Required.'
+    );
+  });
+
+  it('counts the rest, and reads a whole-value message', () => {
+    expect(
+      validationDetail({ formErrors: ['Too short.'], fieldErrors: { a: ['Bad'], b: ['Worse'] } })
+    ).toBe('`a`: Bad (and 2 more).');
+    expect(validationDetail({ formErrors: ['Expected object'], fieldErrors: {} })).toBe(
+      'Expected object.'
+    );
+  });
+
+  it('keeps to fifteen words, and says nothing when nothing failed', () => {
+    const long = Array.from({ length: 30 }, (_, i) => `w${i}`).join(' ');
+    const detail = validationDetail({ formErrors: [long], fieldErrors: {} })!;
+    expect(detail.split(/\s+/).length).toBeLessThanOrEqual(15);
+    expect(validationDetail({ formErrors: [], fieldErrors: {} })).toBeUndefined();
   });
 });

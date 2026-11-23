@@ -32,7 +32,7 @@ const HOST_NOT_ALLOWED = {
   code: 'HOST_NOT_ALLOWED',
 };
 const VALIDATION_FAILED = z
-  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
   .loose();
 
 describe('contract: the terminal and heartbeat routes', () => {

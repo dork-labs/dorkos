@@ -30,7 +30,9 @@ export {
   problem,
   problemBody,
   sendProblem,
+  validationDetail,
   validationProblem,
+  validationProblemBody,
   type ProblemOptions,
   type ProblemStatus,
 } from './problem.js';

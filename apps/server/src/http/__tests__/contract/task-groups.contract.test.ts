@@ -107,7 +107,7 @@ const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const REQUESTER = { 'X-DorkOS-Approval': 'not-a-real-approval' };
 const UNKNOWN_ID = '01JZZZZZZZZZZZZZZZZZZZZZZZ';
 const VALIDATION_FAILED = z
-  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
   .loose();
 const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const TASK = TaskSchema.loose();
@@ -574,7 +574,7 @@ contractSuite(
       path: '/api/runtimes/claude-code/account-eligibility?project=',
       expect: {
         status: 400,
-        schema: z.object({ code: z.literal('malformed_request'), issues: z.unknown() }).loose(),
+        schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
       },
     },
     {
@@ -606,7 +606,7 @@ contractSuite(
       expect: {
         status: 400,
         schema: z
-          .object({ code: z.literal('malformed_request'), detail: z.string(), issues: z.unknown() })
+          .object({ code: z.literal('invalid_request'), detail: z.string(), issues: z.unknown() })
           .loose(),
       },
     },

@@ -45,7 +45,7 @@ import {
   stepUpAt,
   confirmSetupAnswer,
 } from './harness.js';
-import { problemBody } from '@dorkos/http-kit';
+import { problemBody, validationProblemBody } from '@dorkos/http-kit';
 
 /** The repository root: the composed server's directory boundary. */
 const REPO_ROOT = realpathSync(
@@ -147,11 +147,9 @@ contractSuite('the session routes, login off, nothing started', [
     expect: {
       status: 400,
       headers: PROBLEM_TYPE,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: [],
-          fieldErrors: { limit: ['Invalid input: expected number, received NaN'] },
-        },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { limit: ['Invalid input: expected number, received NaN'] },
       }),
     },
   },
@@ -184,7 +182,7 @@ contractSuite('the session routes, login off, nothing started', [
     expect: {
       status: 400,
       headers: PROBLEM_TYPE,
-      schema: z.object({ code: z.literal('malformed_request'), issues: z.unknown() }).loose(),
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {
@@ -202,7 +200,7 @@ contractSuite('the session routes, login off, nothing started', [
     expect: {
       status: 400,
       headers: PROBLEM_TYPE,
-      schema: z.object({ code: z.literal('malformed_request'), issues: z.unknown() }).loose(),
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {
@@ -642,11 +640,9 @@ contractSuite('the session routes, login off, nothing started', [
     expect: {
       status: 400,
       headers: PROBLEM_TYPE,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: [],
-          fieldErrors: { content: ['Invalid input: expected object, received undefined'] },
-        },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { content: ['Invalid input: expected object, received undefined'] },
       }),
     },
   },

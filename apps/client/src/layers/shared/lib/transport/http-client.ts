@@ -21,6 +21,12 @@ import { errorFromReading, readResponseError } from '../response-error';
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 /**
+ * The codes the app-wide login gate answers 401 with: today's, and the problem
+ * code it moves to under DOR-4979.
+ */
+const LOGIN_GATE_CODES = new Set(['AUTH_REQUIRED', 'unauthenticated']);
+
+/**
  * Perform the request and hand back the raw {@link Response}, throwing on
  * anything that is not OK.
  *
@@ -96,7 +102,7 @@ async function request(
     const body = (reading.body ?? {}) as { signInWith?: unknown };
     // A gated request without a valid credential (server task 1.2) flips the
     // app-wide auth-required state so the AuthGuard renders the login screen.
-    if (res.status === 401 && reading.code === 'AUTH_REQUIRED') {
+    if (res.status === 401 && LOGIN_GATE_CODES.has(reading.code ?? '')) {
       const named = body.signInWith;
       setSignInWith(named === 'dorkos' || named === 'wifi-code' ? named : 'password');
       setAuthRequired(true);

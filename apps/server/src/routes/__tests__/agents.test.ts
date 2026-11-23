@@ -300,7 +300,7 @@ describe('Agents Routes', () => {
       const res = await request(testServer).post('/api/agents/resolve').send({ paths: [] });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('malformed_request');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('returns 400 when paths is not an array', async () => {
@@ -309,7 +309,7 @@ describe('Agents Routes', () => {
         .send({ paths: 'not-an-array' });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('malformed_request');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('sets null for paths that fail boundary validation', async () => {
@@ -456,7 +456,7 @@ describe('Agents Routes', () => {
       const res = await request(testServer).post('/api/agents').send({});
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('malformed_request');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('validates boundary and returns 403 for out-of-bounds path', async () => {

@@ -90,14 +90,10 @@ const NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
 });
 const INTERNAL = z.object({ code: z.literal('internal_error') }).loose();
-const INVALID_QUERY = z
-  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
-  .loose();
-const INVALID_BODY = z
-  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
-  .loose();
+const INVALID_QUERY = z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose();
+const INVALID_BODY = z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose();
 const VALIDATION_FAILED = z
-  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
   .loose();
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };

@@ -153,9 +153,8 @@ function programErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
     return c.json({ error: error.message, code: error.code }, status);
   }
   if (error instanceof z.ZodError) {
-    return validationProblem(c, error, {
-      detail: 'This service call is invalid. Check the request and try again.',
-    });
+    // The detail names the first field and what it needs (`validationProblem`).
+    return validationProblem(c, error);
   }
   if (error instanceof CapabilityToolError) {
     const payload = error.payload;

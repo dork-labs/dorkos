@@ -94,7 +94,7 @@ const DECISION_AGENT_REFUSAL = {
     'DorkOS changed nothing. Only a person can answer this. Ask them to answer it in DorkOS.',
 };
 const VALIDATION_FAILED = z
-  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
   .loose();
 
 /** A push subscription body `POST /api/push/subscriptions` accepts. */
@@ -411,7 +411,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     path: '/api/extension-decisions?extensionId=a&extensionId=b',
     expect: {
       status: 400,
-      schema: z.object({ code: z.literal('malformed_request'), issues: z.unknown() }).loose(),
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {

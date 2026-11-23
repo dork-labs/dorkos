@@ -66,7 +66,7 @@ const REQUESTER = { 'X-DorkOS-Approval': 'not-a-real-approval' };
 const BOGUS_KEY = { authorization: 'Bearer not-a-real-key' };
 const FOREIGN_HOST = { host: 'evil.example' };
 const VALIDATION_FAILED = z
-  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
   .loose();
 const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
@@ -109,15 +109,15 @@ const NOTIFICATION_INVALID = {
 };
 const EXECUTION_INVALID = z
   .object({
-    code: z.literal('malformed_request'),
-    detail: z.literal('This service call is invalid. Check the request and try again.'),
+    code: z.literal('invalid_request'),
+    detail: z.string(),
     issues: z.object({ formErrors: z.array(z.string()), fieldErrors: z.unknown() }).strict(),
   })
   .loose();
 const RESOURCE_INVALID = z
   .object({
-    code: z.literal('malformed_request'),
-    detail: z.literal('This request is invalid. Check it and try again.'),
+    code: z.literal('invalid_request'),
+    detail: z.string(),
     issues: z.object({ formErrors: z.array(z.string()), fieldErrors: z.unknown() }).strict(),
   })
   .loose();

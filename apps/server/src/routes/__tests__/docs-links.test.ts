@@ -95,7 +95,7 @@ describe('GET /api/documents/index', () => {
   it('refuses a request with no cwd', async () => {
     const res = await getIndex(app(), null);
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ code: 'malformed_request' });
+    await expect(res.json()).resolves.toMatchObject({ code: 'invalid_request' });
   });
 
   it('refuses a cwd that is relative or not an existing folder', async () => {

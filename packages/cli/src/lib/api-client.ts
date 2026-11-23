@@ -62,9 +62,10 @@ export interface ApiErrorBody {
   /**
    * Discriminator on structured refusals that are not "errors" in the usual
    * sense — notably the capability tier gate's `denied` payload, which explains in
-   * plain words why an agent was not allowed to run something.
+   * plain words why an agent was not allowed to run something. A problem
+   * document's `status` is the HTTP status, a number.
    */
-  status?: string;
+  status?: string | number;
   /** Plain-language explanation carried by a structured refusal. */
   message?: string;
   /** Machine-readable error code, e.g. `AUTH_REQUIRED` from the login gate. */

@@ -168,8 +168,8 @@ describe('connector resource routes', () => {
 
     const invalid = await api().get('/api/connectors/catalog?unknown=private').expect(400);
     expect(invalid.body).toMatchObject({
-      code: 'malformed_request',
-      detail: 'This request is invalid. Check it and try again.',
+      code: 'invalid_request',
+      detail: 'Unrecognized key: "unknown".',
       issues: expect.any(Object),
     });
     expect(deps.query.catalog).toHaveBeenCalledTimes(1);

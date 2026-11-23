@@ -89,11 +89,11 @@ Every failed request on the API is answered with one shape: an [RFC 9457](https:
 
 ```json
 {
-  "type": "urn:dorkos:problem:malformed_request",
-  "title": "The request could not be read.",
+  "type": "urn:dorkos:problem:invalid_request",
+  "title": "The request didn’t pass its checks.",
   "status": 400,
-  "code": "malformed_request",
-  "detail": "Send the folder as `cwd`.",
+  "code": "invalid_request",
+  "detail": "`cwd`: Required.",
   "issues": { "formErrors": [], "fieldErrors": { "cwd": ["Required"] } }
 }
 ```
@@ -109,7 +109,7 @@ Every failed request on the API is answered with one shape: an [RFC 9457](https:
 | `retryAfterMs` | A transient failure only: how long to wait. Also sent as `Retry-After`.             |
 | `instance`     | Optional: an id for this occurrence, to quote in a report.                          |
 
-**The code list** is `PROBLEM_CODE_LIST` in `packages/shared/src/problem.ts`, each code with its default status and title. A code that is not on the list cannot be sent. Add one there (lower_snake, small and meaningful, never a rename) before you use it. The OpenAPI document carries the `Problem` schema, `ProblemCode`, and the answers the chain gives every route (`components.responses`: `ValidationProblem`, `NotFoundProblem`, `RequestTooLargeProblem`, `InternalErrorProblem`).
+**The code list** is `PROBLEM_CODE_LIST` in `packages/shared/src/problem.ts`, each code with its default status and title. A code that is not on the list cannot be sent. Add one there (lower_snake, small and meaningful, never a rename) before you use it. The OpenAPI document carries the `Problem` schema, `ProblemCode`, and the answers the chain gives every route (`components.responses`: `ValidationProblem`, `MalformedRequestProblem`, `NotFoundProblem`, `RequestTooLargeProblem`, `InternalErrorProblem`).
 
 **Sending one** (`@dorkos/http-kit`):
 
@@ -119,14 +119,14 @@ import { problem, validationProblem } from '@dorkos/http-kit';
 if (!agent) return problem(c, 'not_found', { detail: 'No agent is registered at that path.' });
 
 const parsed = Schema.safeParse(readJsonBody(c));
-if (!parsed.success) return validationProblem(c, parsed.error); // 400 malformed_request + issues
+if (!parsed.success) return validationProblem(c, parsed.error); // 400 invalid_request + detail + issues
 ```
 
-`problem()` takes the status and title from the list; pass `status` only when this occurrence needs a different one, and `retryAfterMs` for a transient failure. `detail` is for a person: write it with the `writing-for-humans` skill, and never put a path, a stack or a secret in it.
+`validationProblem` writes `detail` from the first failing field ("`name`: Required.", plus "(and N more)"); pass `detail` when the route can say what to send in plainer words. Two 400 codes, two meanings: `invalid_request` is a body that was read and failed its checks; `malformed_request` is a body that could not be read at all (the chain sends it). `problem()` takes the status and title from the list; pass `status` only when this occurrence needs a different one, and `retryAfterMs` for a transient failure. `detail` is for a person: write it with the `writing-for-humans` skill, and never put a path, a stack or a secret in it.
 
-**What the chain answers for you.** An error a route throws reaches the error handler (`middleware/error-handler.ts`): a body over the limit is `413 request_too_large`, broken JSON `400 malformed_request`, a body in an encoding or charset the parser cannot read `415 unsupported_media_type`, a path outside the boundary `403 outside_boundary`, and anything else `500 internal_error` (its message rides as `detail` outside production only). A path no route claims under `/api` is `404 not_found`; a route that must look like such a path answers `apiNotFound(c)` (`http/unclaimed.ts`). A multipart upload the parser refused is `uploadRefusalProblem(c, err)` (`http/problems/upload-refusal.ts`).
+**What the chain answers for you.** An error a route throws reaches the error handler (`middleware/error-handler.ts`): a body over the limit is `413 request_too_large`, broken JSON `400 malformed_request`, a body in an encoding or charset the parser cannot read `415 unsupported_media_type`, a path outside the boundary `403 outside_boundary`, a path with a NUL byte `400 invalid_request`, and anything else `500 internal_error` (its message rides as `detail` outside production only). A path no route claims under `/api` is `404 not_found`; a route that must look like such a path answers `apiNotFound(c)` (`http/unclaimed.ts`). A multipart upload the parser refused is `uploadRefusalProblem(c, err)` (`http/problems/upload-refusal.ts`).
 
-**Reading one.** Every client reads failures through `readErrorBody` in `@dorkos/shared/problem` (the web client through `shared/lib/response-error`, the CLI through `ApiError`, the desktop shell directly): `detail`, else `title`, as the message; `code` as the kind.
+**Reading one.** Every client reads failures through `readErrorBody` in `@dorkos/shared/problem` (the web client through `shared/lib/response-error`, the CLI through `ApiError`, the desktop shell directly): `detail`, else `title`, as the message; `code` as the kind. A surface that shows the server's own sentence in place of its own copy (`serverSentence`) takes `detail` only, never the generic `title`.
 
 **Never** `c.json({ error: '…' }, 4xx)`, `c.json({ error, details: z.flattenError(…) })` or a hand-built `{ error, code }` body in new code. Older routes still answer `{ error, code, details }`; they move to problem documents folder by folder under DOR-4979, and the readers keep reading both shapes until the last folder moves, when the old branch and the old shape are removed and a lint rule bans `c.json({ error })`.
 

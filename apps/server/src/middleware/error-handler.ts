@@ -80,9 +80,14 @@ export function errorReply(err: Error): ErrorReply {
   // (`runtimeDisplayName`) and stating the recovery is what makes them one
   // answer.
   if (err instanceof BoundaryError) {
-    return err.code === 'OUTSIDE_BOUNDARY'
-      ? reply('outside_boundary', { detail: 'This chat is outside the allowed directory.' })
-      : reply('forbidden', { detail: err.message });
+    if (err.code === 'OUTSIDE_BOUNDARY') {
+      return reply('outside_boundary', { detail: 'This chat is outside the allowed directory.' });
+    }
+    // A path with a NUL byte in it is a bad path, not a refusal of permission.
+    if (err.code === 'NULL_BYTE') {
+      return reply('invalid_request', { detail: 'That path has a character paths can’t hold.' });
+    }
+    return reply('forbidden', { detail: err.message });
   }
 
   if (err instanceof OriginRefusedError) {

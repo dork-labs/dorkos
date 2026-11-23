@@ -154,7 +154,7 @@ const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 /** A caller holding an approval token is the requester, never the person. */
 const REQUESTER = { 'X-DorkOS-Approval': 'not-a-real-approval' };
 const VALIDATION_FAILED = z
-  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
   .loose();
 const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const OUTSIDE_BOUNDARY = { error: 'Access denied: projectPath outside boundary' };

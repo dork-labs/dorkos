@@ -16,7 +16,11 @@ import { PROBLEM_CONTENT_TYPE, ProblemCodeSchema, ProblemSchema } from '@dorkos/
 const CHAIN_RESPONSES = [
   [
     'ValidationProblem',
-    '400 `malformed_request`: the body is not valid JSON, or the input failed its schema (`issues` says which field and why).',
+    '400 `invalid_request`: the input failed its schema. `detail` names the first field; `issues` lists them all.',
+  ],
+  [
+    'MalformedRequestProblem',
+    '400 `malformed_request`: the body could not be read (broken JSON, a cut-off form).',
   ],
   ['NotFoundProblem', '404 `not_found`: no API route at that path, or that method.'],
   ['RequestTooLargeProblem', '413 `request_too_large`: the body is over the request limit.'],

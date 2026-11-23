@@ -22,7 +22,7 @@ const createSchema = z.object({
 
 router.post('/', async (c) => {
   const result = createSchema.safeParse(readJsonBody(c));
-  if (!result.success) return validationProblem(c, result.error); // 400 malformed_request
+  if (!result.success) return validationProblem(c, result.error); // 400 invalid_request
 
   // Use result.data (typed and validated)
 });

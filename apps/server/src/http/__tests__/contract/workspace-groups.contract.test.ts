@@ -32,7 +32,7 @@ import { TemplateCatalogSchema } from '@dorkos/shared/template-catalog';
 import { HarnessStatusResponseSchema } from '@dorkos/shared/harness-schemas';
 import { WorktreeScanResultSchema } from '@dorkos/shared/workspace';
 import { contractSuite } from './harness.js';
-import { problemBody } from '@dorkos/http-kit';
+import { problemBody, validationProblemBody } from '@dorkos/http-kit';
 
 /** The repository root: the composed server's directory boundary. */
 const REPO_ROOT = realpathSync(
@@ -168,11 +168,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/directory?path=',
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: [],
-          fieldErrors: { path: ['Too small: expected string to have >=1 characters'] },
-        },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { path: ['Too small: expected string to have >=1 characters'] },
       }),
     },
   },
@@ -181,11 +179,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: `/api/directory?path=${q(REPO_ROOT)}&path=${q(REPO_ROOT)}`,
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: [],
-          fieldErrors: { path: ['Invalid input: expected string, received array'] },
-        },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { path: ['Invalid input: expected string, received array'] },
       }),
     },
   },
@@ -207,13 +203,11 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: {},
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: [],
-          fieldErrors: {
-            parentPath: ['Invalid input: expected string, received undefined'],
-            folderName: ['Invalid input: expected string, received undefined'],
-          },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: {
+          parentPath: ['Invalid input: expected string, received undefined'],
+          folderName: ['Invalid input: expected string, received undefined'],
         },
       }),
     },
@@ -224,11 +218,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/directory',
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: ['Invalid input: expected object, received undefined'],
-          fieldErrors: {},
-        },
+      body: validationProblemBody({
+        formErrors: ['Invalid input: expected object, received undefined'],
+        fieldErrors: {},
       }),
     },
   },
@@ -333,11 +325,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/git/status?dir=a&dir=b',
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: [],
-          fieldErrors: { dir: ['Invalid input: expected string, received array'] },
-        },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { dir: ['Invalid input: expected string, received array'] },
       }),
     },
   },
@@ -369,11 +359,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/workspaces?projectKey=a&projectKey=b',
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: [],
-          fieldErrors: { projectKey: ['Invalid input: expected string, received array'] },
-        },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { projectKey: ['Invalid input: expected string, received array'] },
       }),
     },
   },
@@ -392,11 +380,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/workspaces/resolve',
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: [],
-          fieldErrors: { path: ['Invalid input: expected string, received undefined'] },
-        },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { path: ['Invalid input: expected string, received undefined'] },
       }),
     },
   },
@@ -413,11 +399,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/workspaces/ports',
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: ['Invalid input: expected object, received undefined'],
-          fieldErrors: {},
-        },
+      body: validationProblemBody({
+        formErrors: ['Invalid input: expected object, received undefined'],
+        fieldErrors: {},
       }),
     },
   },
@@ -428,7 +412,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: {},
     expect: {
       status: 400,
-      schema: z.object({ code: z.literal('malformed_request'), issues: z.unknown() }).loose(),
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {
@@ -437,7 +421,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/workspaces',
     expect: {
       status: 400,
-      schema: z.object({ code: z.literal('malformed_request'), issues: z.unknown() }).loose(),
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {
@@ -464,11 +448,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { pinned: 'yes' },
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: [],
-          fieldErrors: { pinned: ['Invalid input: expected boolean, received string'] },
-        },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { pinned: ['Invalid input: expected boolean, received string'] },
       }),
     },
   },
@@ -484,12 +466,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/workspaces/no-such-workspace?approvedRemoveHooks=',
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: [],
-          fieldErrors: {
-            approvedRemoveHooks: ['Too small: expected string to have >=1 characters'],
-          },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: {
+          approvedRemoveHooks: ['Too small: expected string to have >=1 characters'],
         },
       }),
     },
@@ -543,11 +523,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/projects/resolve',
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: [],
-          fieldErrors: { cwd: ['Invalid input: expected string, received undefined'] },
-        },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { cwd: ['Invalid input: expected string, received undefined'] },
       }),
     },
   },
@@ -631,12 +609,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/read-cursors/channel/x',
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: [],
-          fieldErrors: {
-            kind: ['Invalid option: expected one of "room"|"session"|"inbox"|"room-thread"'],
-          },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: {
+          kind: ['Invalid option: expected one of "room"|"session"|"inbox"|"room-thread"'],
         },
       }),
     },
@@ -647,11 +623,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/read-cursors/session/contract-session',
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: ['Invalid input: expected object, received undefined'],
-          fieldErrors: {},
-        },
+      body: validationProblemBody({
+        formErrors: ['Invalid input: expected object, received undefined'],
+        fieldErrors: {},
       }),
     },
   },
@@ -662,11 +636,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { lastReadSeq: -1 },
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: [],
-          fieldErrors: { lastReadSeq: ['Too small: expected number to be >=0'] },
-        },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { lastReadSeq: ['Too small: expected number to be >=0'] },
       }),
     },
   },
@@ -849,7 +821,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/templates',
     expect: {
       status: 400,
-      schema: z.object({ code: z.literal('malformed_request'), issues: z.unknown() }).loose(),
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {
@@ -893,11 +865,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/harness/status',
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: [],
-          fieldErrors: { projectPath: ['Invalid input: expected string, received undefined'] },
-        },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { projectPath: ['Invalid input: expected string, received undefined'] },
       }),
     },
   },
@@ -906,11 +876,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/harness/status?projectPath=apps',
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: [],
-          fieldErrors: { projectPath: ['projectPath must be an absolute path'] },
-        },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { projectPath: ['projectPath must be an absolute path'] },
       }),
     },
   },
@@ -959,11 +927,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/harness/sync',
     expect: {
       status: 400,
-      body: problemBody('malformed_request', {
-        issues: {
-          formErrors: ['Invalid input: expected object, received undefined'],
-          fieldErrors: {},
-        },
+      body: validationProblemBody({
+        formErrors: ['Invalid input: expected object, received undefined'],
+        fieldErrors: {},
       }),
     },
   },
@@ -1079,7 +1045,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { captureCurrent: 'yes' },
     expect: {
       status: 400,
-      schema: z.object({ code: z.literal('malformed_request'), issues: z.unknown() }).loose(),
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {

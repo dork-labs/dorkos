@@ -65,7 +65,7 @@ const UNVERIFIED = {
 };
 const NO_SUCH_ROOM = z.object({ code: z.literal('ROOM_NOT_FOUND') }).loose();
 const VALIDATION_FAILED = z
-  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
   .loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
 const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();

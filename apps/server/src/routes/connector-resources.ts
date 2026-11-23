@@ -102,9 +102,8 @@ export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps
  */
 function resourceErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
   if (error instanceof ZodError) {
-    return validationProblem(c, error, {
-      detail: 'This request is invalid. Check it and try again.',
-    });
+    // The detail names the first field and what it needs (`validationProblem`).
+    return validationProblem(c, error);
   }
   if (error instanceof ConnectorAuthenticationFlowError) {
     const status =

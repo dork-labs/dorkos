@@ -68,7 +68,7 @@ const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 /** A ULID nothing in a fresh install has. */
 const UNKNOWN_ULID = '01JZZZZZZZZZZZZZZZZZZZZZZZ';
 const VALIDATION_FAILED = z
-  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
   .loose();
 const BOUNDARY_REFUSAL = z.object({ error: z.string(), code: z.string() }).strict();
 const NEEDS_APPROVAL = z.object({ error: z.string(), code: z.literal('NEEDS_APPROVAL') }).strict();

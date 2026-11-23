@@ -122,7 +122,7 @@ const CASES: ContractCase[] = [
     body: { cwd: 42 },
     expect: {
       status: 400,
-      schema: z.object({ code: z.literal('malformed_request'), issues: z.unknown() }).loose(),
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {
@@ -323,7 +323,7 @@ const CASES: ContractCase[] = [
     body: { value: '' },
     expect: {
       status: 400,
-      schema: z.object({ code: z.literal('malformed_request'), issues: z.unknown() }).loose(),
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {
@@ -344,7 +344,7 @@ const CASES: ContractCase[] = [
     body: { value: { nested: true } },
     expect: {
       status: 400,
-      schema: z.object({ code: z.literal('malformed_request'), issues: z.unknown() }).loose(),
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {

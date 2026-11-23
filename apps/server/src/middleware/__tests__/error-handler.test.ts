@@ -171,6 +171,9 @@ describe('errorReply and logRequestError', () => {
         detail: 'This chat is outside the allowed directory.',
       }),
     });
+    const nul = errorReply(new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE'));
+    expect(nul.status).toBe(400);
+    expect(nul.body.code).toBe('invalid_request');
     const denied = errorReply(new BoundaryError('Permission denied', 'PERMISSION_DENIED'));
     expect(denied).toEqual({
       status: 403,

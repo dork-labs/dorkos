@@ -142,7 +142,7 @@ describe('Template Routes', () => {
       const res = await request(fixtureServer).post('/api/templates').send({ id: 'incomplete' });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('malformed_request');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('returns 400 when id is empty string', async () => {

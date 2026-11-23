@@ -147,7 +147,7 @@ describe('POST /api/capabilities/:id/invoke', () => {
       .post('/api/capabilities/test.echo/invoke')
       .send({ msg: 123 });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('malformed_request');
+    expect(res.body.code).toBe('invalid_request');
     expect(res.body.issues).toBeDefined();
   });
 

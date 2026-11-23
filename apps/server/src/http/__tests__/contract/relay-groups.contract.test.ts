@@ -54,7 +54,7 @@ const NOT_FOUND = problemBody('not_found', {
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const FOREIGN_HOST = { host: 'evil.example' };
 const VALIDATION_FAILED = z
-  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
   .loose();
 const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
