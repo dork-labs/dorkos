@@ -4,7 +4,7 @@ import { UpdateSessionRequestSchema } from '@dorkos/shared/schemas';
 import type { Hono } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import { personOnlyModeChange } from '../http/person-session-refusal.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
