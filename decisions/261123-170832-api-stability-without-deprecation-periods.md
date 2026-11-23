@@ -26,7 +26,7 @@ We will mark every operation `x-stability: stable | preview | internal`, declare
 
 **There is no deprecation period.** An endpoint that changes or goes away is changed or removed in one change that fixes every caller in the repo (web client, CLI, desktop, extensions and `packages/extension-api`, MCP tools, site, e2e, docs and contributor guides). That change carries a changelog fragment that says plainly it is a breaking change and names the replacement. There are no `deprecated` flags on operations, no `Deprecation` or `Sunset` headers and no aliases.
 
-**The one exception** is the space server's frozen promises, which stay byte-identical. **The space server keeps its shape.** Its frozen promises (ADR 261018-124422 rule 2, spec `server-merge` D6) have no end date. They change only through D6's deliberate path: a PR of its own that updates the pinning tests and says so, agreed with Cloud first. Convergence with this ADR, if any, goes that way and no other.
+**The one exception** is the space server, which keeps its shape. Its frozen promises (ADR 261018-124422 rule 2, spec `server-merge` D6) have no end date. They change only through D6's deliberate path: a PR of its own that updates the pinning tests and says so, agreed with Cloud first. Convergence with this ADR, if any, goes that way and no other.
 
 The JSDoc `@deprecated since 0.x, remove in 0.y` rule still governs TypeScript exports; it does not apply to HTTP operations.
 
