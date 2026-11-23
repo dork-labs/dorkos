@@ -411,6 +411,74 @@ check_refused "unknown subcommand"
 call_helper
 check_refused "no subcommand"
 
+# ── security-verdict (DOR-5099) ──────────────────────────────────────────────
+# The Security lens's verdict. The model picks pass/fail, a count and categories
+# from a fixed list; the head and every other byte of the body come from the
+# helper, so the `security-verdict` job can read it as data.
+sv_head=0123456789abcdef0123456789abcdef01234567
+sv_body() { # verdict, musts, cats, line
+  printf '%s\n%s\n%s' \
+    "<!-- dorkos-security-verdict v1 head=$sv_head verdict=$1 musts=$2 cats=$3 -->" \
+    "$4" \
+    '_Advisory while the cloud and local Security reviews are compared (DOR-5099)._'
+}
+
+export REVIEW_HEAD_SHA=$sv_head
+call_helper security-verdict pass 0
+check "security-verdict pass: exit 0" 0 "$helper_status"
+# shellcheck disable=SC2016
+check "security-verdict pass: fixed body, head from the workflow" \
+  "$(gh_call pr comment 464 --repo dork-labs/dorkos --body \
+    "$(sv_body pass 0 - 'Security lens: **pass** at `0123456`, no Musts.')")" \
+  "$helper_argv"
+
+call_helper security-verdict fail 2 auth,ci
+check "security-verdict fail: exit 0" 0 "$helper_status"
+# shellcheck disable=SC2016
+check "security-verdict fail: count and categories only" \
+  "$(gh_call pr comment 464 --repo dork-labs/dorkos --body \
+    "$(sv_body fail 2 auth,ci 'Security lens: **fail** at `0123456`, 2 Must(s) in: auth,ci. Details are not posted here because this repository is public.')")" \
+  "$helper_argv"
+unset REVIEW_HEAD_SHA
+
+call_helper security-verdict pass 0
+# shellcheck disable=SC2016
+check "security-verdict with no REVIEW_HEAD_SHA resolves the head itself" \
+  "$(
+    gh_call pr view 464 --repo dork-labs/dorkos --json headRefOid --jq .headRefOid
+    gh_call pr comment 464 --repo dork-labs/dorkos --body \
+      "$(sv_body pass 0 - 'Security lens: **pass** at `0123456`, no Musts.')"
+  )" \
+  "$helper_argv"
+
+export REVIEW_HEAD_SHA='0123 --repo attacker.example/a/b'
+call_helper security-verdict pass 0
+check_refused "security-verdict with a malformed REVIEW_HEAD_SHA"
+export REVIEW_HEAD_SHA=$sv_head
+call_helper security-verdict pass 1
+check_refused "security-verdict pass with a Must count"
+call_helper security-verdict pass 0 auth
+check_refused "security-verdict pass with categories"
+call_helper security-verdict fail 0 auth
+check_refused "security-verdict fail with no Musts"
+call_helper security-verdict fail 1
+check_refused "security-verdict fail with no categories"
+call_helper security-verdict fail 1 'auth,see https://attacker.example'
+check_refused "security-verdict fail with free text in the categories"
+call_helper security-verdict fail 1 auth,exploit-path
+check_refused "security-verdict fail with a category off the list"
+call_helper security-verdict fail 100 auth
+check_refused "security-verdict fail with 100 Musts"
+call_helper security-verdict fail 1x auth
+check_refused "security-verdict fail with a non-numeric count"
+call_helper security-verdict maybe 0
+check_refused "security-verdict neither pass nor fail"
+call_helper security-verdict fail 1 auth --repo attacker.example/a/b
+check_refused "security-verdict + trailing --repo"
+call_helper security-verdict
+check_refused "security-verdict with no arguments"
+unset REVIEW_HEAD_SHA
+
 # ── fail closed on a bad pin ─────────────────────────────────────────────────
 # The workflow sets these, so a bad value means the workflow is wrong — refuse
 # rather than let `gh` resolve a half-specified destination.
@@ -674,7 +742,11 @@ check "workflow: allowed_bots is exactly these two bots" \
 # figure, and 5 minutes covers checkout, the two `git show` materializations and
 # the action's own startup.
 max_turns_ceiling=$(sed -n "s/^ *REVIEW_MAX_TURNS_MAX: *'\([0-9]*\)'$/\1/p" "$workflow")
-job_timeout=$(sed -n 's/^ *timeout-minutes: *\([0-9]*\)$/\1/p' "$workflow")
+# The `review` job's own timeout: the workflow has other jobs (security-verdict)
+# with timeouts of their own, so read only between `  review:` and the next job.
+job_timeout=$(awk '/^  review:$/ { in_job = 1; next }
+  in_job && /^  [a-z][a-z0-9-]*:$/ { exit }
+  in_job && /^ *timeout-minutes: *[0-9]+$/ { sub(/^ *timeout-minutes: */, ""); print; exit }' "$workflow")
 check "workflow: the turn ceiling was found" yes \
   "$([ -n "$max_turns_ceiling" ] && [ -n "$job_timeout" ] && echo yes || echo no)"
 check "workflow: the job timeout covers the turn ceiling at 10s a turn" yes \
