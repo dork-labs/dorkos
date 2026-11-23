@@ -88,7 +88,7 @@ const REQUESTER_CANNOT_DECIDE = {
 const UNKNOWN_APPROVAL = { error: 'No such approval', code: 'UNKNOWN_APPROVAL' };
 const ONLY_A_PERSON = 'Only a person can change permissions. Agents can ask the person.';
 const DECISION_AGENT_REFUSAL = problemBody('person_only', {
-  detail: 'DorkOS changed nothing. Only a person can answer this. Ask them to answer it in DorkOS.',
+  detail: 'DorkOS changed nothing. Only a person can answer this, in DorkOS.',
 });
 const PROBLEM_CODE = (code: string) =>
   z.object({ code: z.literal(code), detail: z.string() }).loose();
