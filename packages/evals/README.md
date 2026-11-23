@@ -59,7 +59,7 @@ bill, so it is worth knowing which is which:
 | -------------- | ---------------------------------------------------------------- | ----------------------------------- |
 | `core`         | the product suite: governance, operate, agents, the widget case  | yes, on `pnpm evals:local`          |
 | `smoke`        | the cheap subset: the harness self-test and the widget case      | only if you run it credentialed     |
-| `rooms`        | channels: ten free mechanism cases + 21 credentialed probes      | only the probes, and only on a tier |
+| `rooms`        | channels: ten free mechanism cases + 24 credentialed probes      | only the probes, and only on a tier |
 | `memory`       | agent memory across surfaces, five quarantined probes            | yes, credentialed                   |
 | `connector`    | connector routing, quarantined                                   | yes, credentialed                   |
 | `experimental` | quarantined probes: memory, most rooms probes, harness-gap cases | yes, credentialed                   |
@@ -199,12 +199,13 @@ channel does can be measured with no model at all.
   one turn charged once; Stop interrupts a running turn and the room says so
   exactly once. They read the room's own event stream and the `room_turn_spend`
   rows, so none of them can be satisfied by an agent that merely said something
-  plausible. The suite's other 21 cases appear in that run as
+  plausible. The suite's other 24 cases appear in that run as
   `skipped-wrong-tier` — see below.
-- **The 21 credentialed cases are quarantined, all but one**: the context-recall
-  probes X-01 to X-06 from `contributing/capabilities/chat.md` §7, restraint (an
-  engaged agent staying out of a conversation that is not about it), the
-  adversarial injection case A-15, and the reply-judgment cases in
+- **The 24 credentialed cases are quarantined, all but one**. Among them: the
+  context-recall probes X-01 to X-06 from `contributing/capabilities/chat.md` §7,
+  restraint (an engaged agent staying out of a conversation that is not about
+  it), the adversarial injection case A-15, `rooms-burst-answered-in-full`,
+  `rooms-files-edit-by-path`, and the 13 reply-judgment cases in
   `src/suite/rooms-judgment.ts`. The one that gates is
   `rooms-ack-only-reacts-not-replies` (A-06). X-07 (bridged rooms) and X-08 (after compaction) are NOT
   implemented, and `src/suite/rooms.ts` says why rather than shipping a case that

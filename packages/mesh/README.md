@@ -26,7 +26,8 @@ Single `.` barrel. Key pieces:
 ```ts
 import { unifiedScan, ClaudeCodeStrategy } from '@dorkos/mesh';
 
-// `registry` and `denialList` are the AgentRegistry and DenialList MeshCore already holds.
+// Build these with `new AgentRegistry(db)` and `new DenialList(db)`,
+// or pass any RegistryLike / DenialListLike.
 for await (const event of unifiedScan(
   { root: '/abs/projects' },
   [new ClaudeCodeStrategy()],
