@@ -4,6 +4,7 @@ covers:
   - 'fix(api): operation ids come from paths alone, and each operation says what sign-in it takes (DOR-4980)'
   - 'fix(api): a GET that pages by limit or cursor is named list (DOR-4980)'
   - 'fix(api): the hub link path is checked against a real hub gate, and pinning an id is documented (DOR-4980)'
+  - 'fix(api): the hub link description passes the vocabulary gate (DOR-4980)'
 ---
 
 ### Added
