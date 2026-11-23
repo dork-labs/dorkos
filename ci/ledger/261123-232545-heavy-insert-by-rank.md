@@ -17,9 +17,10 @@ where their ticket's place in the work order said: about 20 hand moves on
 
 Now `--insert <label>` with no position asks `flow order --json` (Flow 0.100.0+)
 once per command and puts a label naming a `DOR-` ticket in front of the first
-line whose ticket ranks lower (no ticket or no rank counts as lowest; a release
-row or a running line is never passed). Release rows (`rel-*`, `qa-gate-*`,
-`qa-row*`) go first, behind release rows already there and whatever is running.
+line whose ticket ranks lower (work in flight ranks ahead of every queued issue;
+no ticket or no rank counts as lowest; nothing goes at or above the last release
+row or running line). Release rows (`rel-*`, `qa-gate-*`, `qa-row*`) go right
+behind the last release row, and behind whatever is running there.
 A label with no ticket, or a ticket flow does not rank, goes to the end with a
 note. A real `flow order` pulls the whole backlog and took over two minutes on
 2026-11-23, so the ranks are kept in the order folder for 30 minutes and

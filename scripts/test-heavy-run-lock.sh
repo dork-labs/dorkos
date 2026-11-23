@@ -1159,12 +1159,12 @@ locks=$(new_locks)
 check_contains '--list on an empty line says so' '0:[heavy] order: (empty: no order)' "$(ord "$coord" "$locks" --list)"
 check_contains '--insert adds at the end' "0:[heavy] order: insert 'alpha' done" "$(ord "$coord" "$locks" --insert alpha)"
 ord "$coord" "$locks" --insert beta >/dev/null
-check_contains '--insert --top goes first' '  1  no ticket  gamma' "$(ord "$coord" "$locks" --insert gamma --top)"
+check_contains '--insert --top goes first' '  1  no ticket   gamma' "$(ord "$coord" "$locks" --insert gamma --top)"
 ord "$coord" "$locks" --insert delta --after gamma >/dev/null
 ord "$coord" "$locks" --insert eps --before beta >/dev/null
 ord "$coord" "$locks" --insert zeta --at 2 >/dev/null
 check_eq 'after, before and --at place the label' 'gamma|zeta|delta|alpha|eps|beta|' "$(line_of "$coord")"
-check_contains '--list numbers the line' '  6  no ticket  beta' "$(ord "$coord" "$locks" --list)"
+check_contains '--list numbers the line' '  6  no ticket   beta' "$(ord "$coord" "$locks" --list)"
 
 # A duplicate insert, an unknown label, a bad anchor: refused (2), nothing changed.
 before=$(line_of "$coord")
@@ -1197,7 +1197,7 @@ check_contains '--remove needs --reason' '2:[heavy] REFUSE (order): --remove nee
 check_eq 'none of the refusals changed the line' "$before" "$(line_of "$coord")"
 
 r=$(ord "$coord" "$locks" --move beta --top)
-check_contains '--move --top moves it first' '  1  no ticket  beta' "$r"
+check_contains '--move --top moves it first' '  1  no ticket   beta' "$r"
 r=$(ord "$coord" "$locks" --remove eps --reason 'made-up: no longer needed')
 check_eq '--remove with a reason drops it' 'beta|gamma|zeta|delta|alpha|' "$(line_of "$coord")"
 check_contains 'and the reason is in the log' 'made-up: no longer needed' "$(cat "$coord/heavy-order.log")"
@@ -1364,8 +1364,9 @@ check_contains 'the command after -- ran' 'dashdash-ran' "$r"
 
 echo "== an --insert with no position goes where its ticket ranks (DOR-5065) =="
 # A fake flow: records each call, then prints the fixture, fails, hangs or
-# prints junk as FLOW_MODE says. Ranks: DOR-1 1, DOR-10 2, DOR-20 3, DOR-30 4,
-# DOR-40 5; DOR-99 held (unranked); anything else is not an open item.
+# prints junk as FLOW_MODE says. In flight: DOR-50, then DOR-60. Ranks: DOR-1
+# 1, DOR-10 2, DOR-20 3, DOR-30 4, DOR-40 5; DOR-99 held (unranked); anything
+# else is not an open item.
 flow_bin="$work/fake-flow"
 cat >"$flow_bin" <<'FLOW'
 #!/usr/bin/env bash
@@ -1381,7 +1382,8 @@ cat <<'JSON'
  {"place":1,"identifier":"DOR-1"},{"place":2,"identifier":"DOR-10"},
  {"place":3,"identifier":"DOR-20"},{"place":4,"identifier":"DOR-30"},
  {"place":5,"identifier":"DOR-40"}],
- "inFlight":[],"held":[{"identifier":"DOR-99","reason":"blocked"}],"needsTriage":[],"dorian":[]}
+ "inFlight":[{"identifier":"DOR-50"},{"identifier":"DOR-60"}],
+ "held":[{"identifier":"DOR-99","reason":"blocked"}],"needsTriage":[],"dorian":[]}
 JSON
 FLOW
 chmod +x "$flow_bin"
@@ -1444,10 +1446,10 @@ check_eq 'and asks for the whole order as JSON' 'order --json' "$(head -n 1 "$ca
 rk "$coord" "$locks" --list >/dev/null
 rk "$coord" "$locks" --insert 'DOR-20 from kept ranks' >/dev/null
 check_eq 'fresh kept ranks ask flow nothing' 0 "$(wc -l <"$calls" | tr -d ' ')"
-check_contains '--list shows a release row' '  1  release    rel-9.9.9' "$r"
-check_contains '--list shows a rank' '  4  rank 1     DOR-1 again' "$r"
-check_contains '--list shows an unranked ticket' 'unranked   DOR-99 held' "$r"
-check_contains '--list shows a label with no ticket' 'no ticket  misc job' "$r"
+check_contains '--list shows a release row' '  1  release     rel-9.9.9' "$r"
+check_contains '--list shows a rank' '  4  rank 1      DOR-1 again' "$r"
+check_contains '--list shows an unranked ticket' 'unranked    DOR-99 held' "$r"
+check_contains '--list shows a label with no ticket' 'no ticket   misc job' "$r"
 : >"$calls"
 RANKS_MAX_AGE=0 rk "$coord" "$locks" --insert 'DOR-20 one call' >/dev/null
 check_eq 'an insert and its listing ask flow once in all' 1 "$(wc -l <"$calls" | tr -d ' ')"
@@ -1456,7 +1458,7 @@ RANKS_MAX_AGE=0 rk "$coord" "$locks" --insert 'no ticket here' >/dev/null
 RANKS_MAX_AGE=0 rk "$coord" "$locks" --insert 'rel-1.0.0-two' >/dev/null
 coord2=$(new_coord)
 RANKS_MAX_AGE=0 rk "$coord2" "$locks" --insert 'plain' >/dev/null
-check_eq 'only the listing asks, and a line with no ticket not even that' 2 "$(wc -l <"$calls" | tr -d ' ')"
+check_eq 'no ticket, a release row, and the listing after a write ask flow nothing' 0 "$(wc -l <"$calls" | tr -d ' ')"
 
 # A person's placement says so in the log.
 rk "$coord" "$locks" --move 'misc job' --top >/dev/null
@@ -1497,7 +1499,7 @@ for mode in missing fail junk slow; do
   check_contains "flow $mode: the insert still succeeds" "0:[heavy] order: insert 'DOR-1 new' done" "$r"
   check_eq "flow $mode: the label goes to the end" 'DOR-40 there|DOR-1 new|' "$(line_of "$coord")"
   check_contains "flow $mode: the log says why" 'by rank: DOR-1: no rank (' "$(last_log "$coord")"
-  check_contains "flow $mode: --list shows the rank as unknown" 'unknown    DOR-1 new' "$r"
+  check_contains "flow $mode: --list shows the rank as unknown" 'unknown     DOR-1 new' "$r"
   check_le "flow $mode: the lookup is capped" 4 "$took"
 done
 check_contains 'a slow flow is named as still running' 'flow order is still running after 1s' "$r"
@@ -1507,6 +1509,95 @@ check_contains 'a failing flow is named, with the version that has order' 'flow 
 r=$(FLOW_MODE=junk rk "$coord" "$locks" --list)
 check_contains 'junk from flow is named' 'no ranks: flow order printed no work order' "$r"
 
+# Work in flight ranks ahead of every queued issue, in flight order.
+coord=$(new_coord)
+locks=$(new_locks)
+rk "$coord" "$locks" --insert 'DOR-1 best todo' >/dev/null
+rk "$coord" "$locks" --insert 'DOR-60 in review' >/dev/null
+r=$(rk "$coord" "$locks" --insert 'DOR-50 in progress')
+check_eq 'work in flight goes ahead of the best queued issue, in flight order' \
+  'DOR-50 in progress|DOR-60 in review|DOR-1 best todo|' "$(line_of "$coord")"
+check_contains 'and --list says it is in flight' '  1  in flight   DOR-50 in progress' "$r"
+check_eq 'and the log says so' 'insert|DOR-50 in progress|by rank: DOR-50: in flight -> #1' "$(last_log "$coord")"
+
+# A ticket id must not be glued to a letter or digit before it.
+r=$(rk "$coord" "$locks" --insert 'xdor-10 glued')
+check_contains 'xdor-10 names no ticket' '(by rank: no ticket in the label: at the end)' "$r"
+r=$(rk "$coord" "$locks" --insert 'pr/DOR-10 slash')
+check_contains 'pr/DOR-10 names DOR-10' '(by rank: DOR-10: rank 2)' "$r"
+
+# Nothing ranked goes at or above the LAST release row or running line.
+coord=$(new_coord)
+locks=$(new_locks)
+rk "$coord" "$locks" --insert 'DOR-40 running second' >/dev/null
+sleep 30 &
+driver=$!
+own_pids+=("$driver")
+order_env "$coord" "$locks" bash "$CHECK" --label 'DOR-40 running second' --hold "$driver" >/dev/null 2>&1
+rk "$coord" "$locks" --insert 'misc first' --top >/dev/null
+rk "$coord" "$locks" --insert 'DOR-1 best' >/dev/null
+check_eq 'a ranked label never goes above a running line, even second in line' \
+  'misc first|DOR-40 running second|DOR-1 best|' "$(line_of "$coord")"
+kill -KILL "$driver" 2>/dev/null
+wait "$driver" 2>/dev/null
+coord=$(new_coord)
+rk "$coord" "$locks" --insert 'misc a' >/dev/null
+rk "$coord" "$locks" --insert 'rel-1' --at 2 >/dev/null
+rk "$coord" "$locks" --insert 'misc b' >/dev/null
+rk "$coord" "$locks" --insert 'rel-2' >/dev/null
+check_eq 'a release row goes behind the last release row, wherever it is' 'misc a|rel-1|rel-2|misc b|' "$(line_of "$coord")"
+rk "$coord" "$locks" --insert 'DOR-1 best' >/dev/null
+check_eq 'and a ranked label never goes above it' 'misc a|rel-1|rel-2|DOR-1 best|misc b|' "$(line_of "$coord")"
+
+# The refresh marker: a stale one is cleared, a live one is respected, and of
+# two near-simultaneous starts only one asks flow.
+coord=$(new_coord)
+mkdir -p "$coord"
+printf '%s\n' "$$" >"$coord/heavy-order.ranks.run"
+perl -e 'utime time - 100, time - 100, $ARGV[0]' "$coord/heavy-order.ranks.run"
+: >"$calls"
+r=$(FLOW_REFRESH=10 rk "$coord" "$locks" --insert 'DOR-1 after stale')
+check_eq 'a marker older than the cap plus 30 s is stale, and a refresh runs' 1 "$(wc -l <"$calls" | tr -d ' ')"
+check_contains 'and the label is placed by rank' '(by rank: DOR-1: rank 1)' "$r"
+coord=$(new_coord)
+printf '%s\n' "$$" >"$coord/heavy-order.ranks.run"
+: >"$calls"
+r=$(FLOW_TIMEOUT=1 rk "$coord" "$locks" --insert 'DOR-1 behind live')
+check_eq 'a fresh marker with a live pid starts no second refresh' 0 "$(wc -l <"$calls" | tr -d ' ')"
+check_contains 'and the label waits out the cap at the end' 'flow order is still running after 1s' "$r"
+coord=$(new_coord)
+: >"$calls"
+FLOW_MODE=slowish FLOW_TIMEOUT=6 rk "$coord" "$locks" --insert 'DOR-1 first racer' >"$work/race1" &
+race1=$!
+FLOW_MODE=slowish FLOW_TIMEOUT=6 rk "$coord" "$locks" --insert 'DOR-10 second racer' >"$work/race2" &
+race2=$!
+wait "$race1" "$race2"
+check_eq 'two near-simultaneous starts ask flow once' 1 "$(wc -l <"$calls" | tr -d ' ')"
+check_eq 'and both are placed by rank' 'DOR-1 first racer|DOR-10 second racer|' "$(line_of "$coord")"
+
+# The listing after a write reads kept ranks only: no flow call, no wait.
+coord=$(new_coord)
+order_env "$coord" "$locks" bash "$CHECK" --insert 'DOR-1 a' >/dev/null 2>&1
+order_env "$coord" "$locks" bash "$CHECK" --insert 'DOR-10 b' >/dev/null 2>&1
+: >"$calls"
+start=$(date +%s)
+r=$(FLOW_MODE=slow FLOW_TIMEOUT=5 rk "$coord" "$locks" --move 'DOR-10 b' --top)
+took=$(($(date +%s) - start))
+check_eq 'a --move asks flow nothing' 0 "$(wc -l <"$calls" | tr -d ' ')"
+check_le 'and does not wait for it' 2 "$took"
+check_contains 'its listing says the ranks are not kept' 'no kept ranks' "$r"
+
+# The real lookup, with the hook unset, from a checkout with no flow installed.
+norepo="$work/norepo"
+mkdir -p "$norepo/scripts/lib"
+cp "$(dirname "$CHECK")/heavy-run-lock.sh" "$norepo/scripts/"
+cp "$(dirname "$CHECK")"/lib/heavy-order*.sh "$norepo/scripts/lib/"
+coord=$(new_coord)
+r=$(env -u DORKOS_HEAVY_FLOW_CMD DORKOS_HEAVY_ORDER_DIR="$coord" DORKOS_HEAVY_LOCK_DIR="$locks" \
+  bash "$norepo/scripts/heavy-run-lock.sh" --insert 'DOR-1 nowhere' 2>&1)
+check_contains 'with no flow installed the label goes to the end, saying why' \
+  "0:[heavy] order: insert 'DOR-1 nowhere' done (by rank: DOR-1: no rank (flow is not installed): at the end)" "$?:$r"
+
 # A refresh that outlives the wait lands for the next command.
 coord=$(new_coord)
 order_env "$coord" "$locks" bash "$CHECK" --insert 'DOR-40 there' >/dev/null 2>&1
@@ -1514,7 +1605,7 @@ r=$(FLOW_MODE=slowish FLOW_TIMEOUT=1 rk "$coord" "$locks" --insert 'DOR-1 early'
 check_contains 'a refresh still running leaves the label at the end' 'flow order is still running after 1s' "$r"
 sleep 3
 r=$(FLOW_MODE=fail rk "$coord" "$locks" --list)
-check_contains 'and the next command reads the ranks it kept' 'rank 1     DOR-1 early' "$r"
+check_contains 'and the next command reads the ranks it kept' 'rank 1      DOR-1 early' "$r"
 check_lacks 'without asking flow again' 'no ranks' "$r"
 
 # Old ranks: used, and said to be old, while a refresh fails or runs long;

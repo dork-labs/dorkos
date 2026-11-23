@@ -255,7 +255,9 @@ order_write() {
   return "$rc"
 }
 
-# The line, numbered, as the coordinator's script printed it.
+# The line, numbered, as the coordinator's script printed it, with each
+# label's rank. With $1 = kept, the ranks are only the kept ones: no flow call
+# and no wait (the listing printed after a write).
 order_list() {
   order_external_check
   if [ ! -f "$ORDER_FILE" ] || ! awk 'NF { f = 1; exit } END { exit !f }' "$ORDER_FILE"; then
@@ -265,10 +267,10 @@ order_list() {
   # The rank column (DOR-5065): one flow call for the whole line, and only
   # when some label names a ticket.
   local l n=0
-  grep -qiE 'dor-[0-9]+' "$ORDER_FILE" && order_ranks_load
+  grep -qiE '(^|[^A-Za-z0-9])dor-[0-9]+' "$ORDER_FILE" && order_ranks_load "${1:-}"
   while IFS= read -r l; do
     n=$((n + 1))
-    printf '%3d  %-9s  %s\n' "$n" "$(order_rank_column "$l")" "$l"
+    printf '%3d  %-10s  %s\n' "$n" "$(order_rank_column "$l")" "$l"
   done < <(order_lines)
   [ "${ORDER_RANKS_STATE:-}" = off ] && echo "[heavy] order: no ranks: $ORDER_RANKS_WHY"
   [ -n "${ORDER_RANKS_OLD:-}" ] && echo "[heavy] order: $ORDER_RANKS_OLD"
@@ -350,7 +352,7 @@ order_command() {
   fi
   if [ "$rc" = 0 ]; then
     echo "[heavy] order: $op '$label' done${ORDER_PLACE_NOTE:+ (by rank: $ORDER_PLACE_NOTE)}"
-    order_list
+    order_list kept
   fi
   return "$rc"
 }

@@ -13,10 +13,12 @@
 #   * A release row (`rel-*`, `qa-gate-*`, `qa-row*`) goes first: behind any
 #     release rows already there and behind whatever is running, ahead of
 #     everything else (the PM's Nov 22 rule; contributing/ci.md).
-#   * A label naming a ticket (`DOR-1234`, any case; the first one wins) goes
-#     in front of the first line whose ticket ranks lower in `flow order`. A
-#     line with no ticket, or whose ticket flow does not rank, counts as
-#     lowest. A release row or a running line is never passed.
+#   * A label naming a ticket (`DOR-1234`, any case, not glued to a letter or
+#     digit before it; the first one wins) goes in front of the first line
+#     whose ticket ranks lower in `flow order`. Work in flight (In Progress,
+#     In Review) ranks ahead of every queued issue. A line with no ticket, or
+#     whose ticket flow does not rank, counts as lowest. Nothing ranked goes
+#     at or above the last release row or the last running line.
 #   * Anything else goes to the end, with a note: a label with no ticket, a
 #     ticket flow does not rank, or no rank to be had at all.
 #
@@ -52,11 +54,16 @@
 #
 # Nothing here signals a process (Hard Rule 7): the refresh's cap is an alarm
 # the kernel delivers to the flow process itself (perl's `alarm` survives
-# `exec`), and "in flight" is a liveness probe that sends nothing.
+# `exec`), and "in flight" is a liveness probe that sends nothing. The cap ends
+# that one process (node) only: anything flow started itself (composio) may
+# run on until it finishes, but writes into nothing this script reads.
 
-# The first ticket id in label $1, upper-cased (DOR-1234), or nothing.
+# The first ticket id in label $1, upper-cased (DOR-1234), or nothing. It must
+# start the label or follow a character that is not a letter or digit, so
+# `xdor-12` names no ticket.
 order_ticket_of() {
-  printf '%s' "$1" | grep -oiE 'dor-[0-9]+' | head -n 1 | tr '[:lower:]' '[:upper:]'
+  printf '%s' "$1" | grep -oiE '(^|[^A-Za-z0-9])dor-[0-9]+' | head -n 1 |
+    sed 's/^[^Dd]*//' | tr '[:lower:]' '[:upper:]'
 }
 
 # True when label $1 is a release row.
@@ -85,14 +92,28 @@ order_flow_argv() {
   ORDER_FLOW_ARGV=(node --experimental-strip-types --disable-warning=ExperimentalWarning "$root/scripts/flow.ts")
 }
 
+# The refresh's cap, in seconds.
+order_ranks_cap() {
+  local cap="${DORKOS_HEAVY_FLOW_REFRESH_TIMEOUT:-300}"
+  case $cap in '' | *[!0-9]* | 0) cap=300 ;; esac
+  printf '%s' "$cap"
+}
+
 # One refresh, run in the background by order_ranks_load: ask flow, and on
 # success replace heavy-order.ranks in one rename; else write why to .err.
+#
+# The kept map has three columns: ticket, sort key, what --list shows. Work in
+# flight (flow order's `inFlight`, In Progress or In Review) sorts ahead of
+# every queued issue, in its own order: those are the PRs whose checks the line
+# exists to run. Queued issues follow by their place. Held, needs-triage,
+# Dorian's list and anything flow does not list are `unranked`.
 order_ranks_refresh() {
-  local cap out rc why=''
-  cap="${DORKOS_HEAVY_FLOW_REFRESH_TIMEOUT:-300}"
-  case $cap in '' | *[!0-9]* | 0) cap=300 ;; esac
-  # $$ is the parent's pid in a subshell (and bash 3.2 has no BASHPID).
-  out="$ORDER_RANKS_FILE.out.$$.$RANDOM"
+  local cap out rc why='' me
+  cap=$(order_ranks_cap)
+  # This subshell's own pid (bash 3.2 has no BASHPID): sh's parent is it.
+  me=$(exec sh -c 'echo "$PPID"')
+  printf '%s\n' "$me" >|"$ORDER_RANKS_FILE.run"
+  out="$ORDER_RANKS_FILE.out.$me"
   # Output to a file, not a pipe: a child flow left running must not hold a
   # read open past the cap.
   # shellcheck disable=SC2016 # a perl program, not a shell expansion
@@ -108,35 +129,67 @@ order_ranks_refresh() {
   if [ "$rc" = 0 ] && perl -MJSON::PP -e '
     local $/; my $d = eval { JSON::PP::decode_json(<STDIN>) };
     exit 3 unless ref $d eq "HASH" && ref $d->{issues} eq "ARRAY";
+    my $id = sub { ref $_[0] eq "HASH" && defined $_[0]->{identifier} ? uc $_[0]->{identifier} : undef };
+    my (%seen, $k);
+    my @flight = ref $d->{inFlight} eq "ARRAY" ? @{ $d->{inFlight} } : ();
+    for (@flight) { my $i = $id->($_); next if !defined $i || $seen{$i}++; $k++; print "$i\t$k\tin flight\n" }
+    my $n = $k // 0;
     for (@{ $d->{issues} }) {
-      next unless ref $_ eq "HASH" && defined $_->{identifier} && defined $_->{place};
-      printf "%s\t%s\n", uc $_->{identifier}, $_->{place} if $_->{place} =~ /^[0-9]+$/;
+      my $i = $id->($_);
+      next if !defined $i || $seen{$i} || ($_->{place} // "") !~ /^[0-9]+$/;
+      $seen{$i}++;
+      printf "%s\t%d\trank %d\n", $i, $_->{place} + $n, $_->{place};
     }
-    for my $k (qw(held needsTriage inFlight dorian)) {
-      next unless ref $d->{$k} eq "ARRAY";
-      for (@{ $d->{$k} }) { printf "%s\tunranked\n", uc $_->{identifier} if ref $_ eq "HASH" && defined $_->{identifier} }
+    for my $list (qw(held needsTriage dorian)) {
+      next unless ref $d->{$list} eq "ARRAY";
+      for (@{ $d->{$list} }) { my $i = $id->($_); print "$i\tunranked\tunranked\n" if defined $i && !$seen{$i}++ }
     }' <"$out" >"$out.map" 2>/dev/null; then
     mv -f -- "$out.map" "$ORDER_RANKS_FILE" && rm -f -- "$ORDER_RANKS_FILE.err"
   else
     printf '%s\n' "${why:-flow order printed no work order}" >"$ORDER_RANKS_FILE.err"
   fi
   rm -f -- "$out" "$out.map"
-  # Only one refresh runs at a time, so the marker is this one's.
-  rm -f -- "$ORDER_RANKS_FILE.run"
+  # Only while the marker is still this refresh's: a later one may own it.
+  [ "$(head -n 1 "$ORDER_RANKS_FILE.run" 2>/dev/null)" = "$me" ] && rm -f -- "$ORDER_RANKS_FILE.run"
   return 0
 }
 
-# True while a refresh is in flight (a liveness probe: no signal is sent).
+# True while a refresh is in flight. The marker is created atomically before
+# the refresh starts ("starting"), then holds its pid. One older than the cap
+# plus 30 s, or naming a pid that is gone, is stale. A liveness probe only: no
+# signal is sent.
 order_ranks_running() {
-  local pid
-  pid=$(cat "$ORDER_RANKS_FILE.run" 2>/dev/null)
-  case $pid in '' | *[!0-9]*) return 1 ;; esac
+  local pid age
+  [ -f "$ORDER_RANKS_FILE.run" ] || return 1
+  age=$(file_age "$ORDER_RANKS_FILE.run")
+  [ -n "$age" ] && [ "$age" -lt $(($(order_ranks_cap) + 30)) ] || return 1
+  pid=$(head -n 1 "$ORDER_RANKS_FILE.run" 2>/dev/null)
+  case $pid in
+    starting) return 0 ;;
+    '' | *[!0-9]*) return 1 ;;
+  esac
   kill -0 "$pid" 2>/dev/null
+}
+
+# Start one refresh unless one is in flight. The marker is created with
+# noclobber, so of two near-simultaneous starts only one gets it; a stale
+# marker is cleared first.
+order_ranks_start() {
+  if [ -f "$ORDER_RANKS_FILE.run" ]; then
+    order_ranks_running && return 0
+    rm -f -- "$ORDER_RANKS_FILE.run"
+  fi
+  (set -C && printf 'starting\n' >"$ORDER_RANKS_FILE.run") 2>/dev/null || return 0
+  rm -f -- "$ORDER_RANKS_FILE.err"
+  order_ranks_refresh </dev/null >/dev/null 2>&1 8>&- &
+  disown "$!" 2>/dev/null
+  return 0
 }
 
 # The ranks for this command, once. Sets ORDER_RANKS_STATE (ok | off),
 # ORDER_RANKS (the map), ORDER_RANKS_OLD (a note when they are old) and, when
-# off, ORDER_RANKS_WHY.
+# off, ORDER_RANKS_WHY. With $1 = kept, only kept ranks are read: no refresh
+# starts and nothing waits (the listing after a write).
 order_ranks_load() {
   [ -n "${ORDER_RANKS_STATE:-}" ] && return 0
   local max wait age deadline
@@ -151,13 +204,10 @@ order_ranks_load() {
   case $wait in '' | *[!0-9]*) wait=10 ;; esac
   age=$(file_age "$ORDER_RANKS_FILE")
   if [ -z "$age" ] || [ "$age" -ge "$max" ]; then
-    if order_flow_argv; then
-      if ! order_ranks_running; then
-        rm -f -- "$ORDER_RANKS_FILE.err"
-        order_ranks_refresh </dev/null >/dev/null 2>&1 8>&- &
-        printf '%s\n' "$!" >"$ORDER_RANKS_FILE.run"
-        disown "$!" 2>/dev/null
-      fi
+    if [ "${1:-}" = kept ]; then
+      ORDER_RANKS_WHY='no kept ranks; the next --insert or --list asks flow'
+    elif order_flow_argv; then
+      order_ranks_start
       deadline=$(($(date +%s) + wait))
       while order_ranks_running && [ "$(date +%s)" -lt "$deadline" ]; do sleep 0.2; done
       if order_ranks_running; then
@@ -179,38 +229,43 @@ order_ranks_load() {
   return 0
 }
 
-# Ticket $1's place in the work order, "unranked", or nothing when no ranks
-# could be had. A ticket flow does not list at all is unranked too.
-order_rank_of() {
+# Ticket $1's kept row ("<sort key><TAB><shown>"), "unranked<TAB>unranked" for
+# a ticket flow does not list, or nothing when no ranks could be had.
+order_rank_row() {
   [ "${ORDER_RANKS_STATE:-}" = ok ] || return 0
   local r
-  r=$(printf '%s\n' "$ORDER_RANKS" | T="$1" awk -F '\t' 'BEGIN { t = ENVIRON["T"] } $1 == t { print $2; exit }')
-  printf '%s' "${r:-unranked}"
+  r=$(printf '%s\n' "$ORDER_RANKS" | T="$1" awk -F '\t' 'BEGIN { t = ENVIRON["T"] } $1 == t { print $2 "\t" ($3 == "" ? "rank " $2 : $3); exit }')
+  printf '%s' "${r:-unranked	unranked}"
 }
 
-# The one short --list column for label $1: release, rank N, unranked,
-# no ticket, or unknown (no ranks to be had).
+# Ticket $1's sort key: a number (lower goes first), "unranked", or nothing.
+order_rank_of() { order_rank_row "$1" | cut -f 1; }
+
+# The one short --list column for label $1: release, in flight, rank N,
+# unranked, no ticket, or unknown (no ranks to be had).
 order_rank_column() {
   local t r
   order_is_release "$1" && { printf 'release'; return 0; }
   t=$(order_ticket_of "$1")
   [ -n "$t" ] || { printf 'no ticket'; return 0; }
-  r=$(order_rank_of "$t")
-  case $r in
-    '') printf 'unknown' ;;
-    *[!0-9]*) printf 'unranked' ;;
-    *) printf 'rank %s' "$r" ;;
-  esac
+  r=$(order_rank_row "$t" | cut -f 2)
+  printf '%s' "${r:-unknown}"
 }
 
 # Where label $1 goes in line file $2 (trimmed, one label per line). Sets
 # r_at (a 1-based place, or empty for the end) and r_note (why, for the log).
+#
+# Nothing new goes at or above the LAST release row: a release row goes right
+# behind it (and behind any running line that follows it). A ranked label goes
+# behind the last release row and the last running line, wherever they are,
+# then in front of the first line whose ticket sorts later; no ticket or no
+# rank sorts last.
 order_rank_place() {
-  local label=$1 file=$2 ticket='' rank='' l lt lr i=0 release=0
+  local label=$1 file=$2 ticket='' rank='' shown l lt lr i=0 floor=0 release=0 n
   r_at=''
   if order_is_release "$label"; then
     release=1
-    r_note='release row: first, behind release rows and running jobs'
+    r_note='release row: behind the last release row and running jobs'
   else
     ticket=$(order_ticket_of "$label")
     if [ -z "$ticket" ]; then
@@ -218,6 +273,7 @@ order_rank_place() {
       return 0
     fi
     rank=$(order_rank_of "$ticket")
+    shown=$(order_rank_row "$ticket" | cut -f 2)
     case $rank in
       '')
         r_note="$ticket: no rank (${ORDER_RANKS_WHY:-unknown}): at the end"
@@ -228,13 +284,27 @@ order_rank_place() {
         return 0
         ;;
     esac
-    r_note="$ticket: rank $rank${ORDER_RANKS_OLD:+ ($ORDER_RANKS_OLD)}"
+    r_note="$ticket: $shown${ORDER_RANKS_OLD:+ ($ORDER_RANKS_OLD)}"
+  fi
+  n=$(awk 'END { print NR }' "$file")
+  if [ "$release" = 1 ]; then
+    while IFS= read -r l; do
+      i=$((i + 1))
+      order_is_release "$l" && floor=$i
+    done <"$file"
+    # Then past running lines right behind it.
+    while [ "$floor" -lt "$n" ] && claim_live "$(sed -n "$((floor + 1))p" "$file")"; do floor=$((floor + 1)); done
+    [ "$floor" -lt "$n" ] && r_at=$((floor + 1))
+    return 0
   fi
   while IFS= read -r l; do
     i=$((i + 1))
-    order_is_release "$l" && continue
-    claim_live "$l" && continue
-    [ "$release" = 1 ] && { r_at=$i; return 0; }
+    { order_is_release "$l" || claim_live "$l"; } && floor=$i
+  done <"$file"
+  i=0
+  while IFS= read -r l; do
+    i=$((i + 1))
+    [ "$i" -le "$floor" ] && continue
     lt=$(order_ticket_of "$l")
     lr=''
     [ -n "$lt" ] && lr=$(order_rank_of "$lt")
