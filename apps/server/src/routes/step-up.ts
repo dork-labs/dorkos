@@ -89,6 +89,13 @@ import {
 /** The longest password Better Auth stores. */
 const MAX_PASSWORD_LENGTH = 128;
 
+/**
+ * What a page from before 0.141.0 shows when it is too old to confirm from
+ * (DOR-5086). Its sheet shows a refused read's own words; this one says how out.
+ * Since 0.141, remove in 0.143 with `fromOlderPage` (DOR-5089).
+ */
+const OLDER_PAGE_RELOAD_ERROR = 'DorkOS changed after this page opened. Reload it, then try again.';
+
 /** What the routes read, injectable for tests. */
 export interface StepUpRouteDeps {
   /** The install owner's id, or `null`. */
@@ -353,10 +360,12 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
    * Whether the asking page is from before the named stale reasons (DOR-5086):
    * every page this server sends carries a stamp, and such a page sends it on
    * each step-up call. A page left open across the update has none, and its
-   * code reads only `extension-risk` with an empty list, whose "Sign in again"
-   * reloads it. So it is answered in that shape, with `stale` naming the
-   * reason beside it. A script sends none either, and gets the same. It gives
-   * such a page nothing new: the same refusal, with only the label added.
+   * code reads only `extension-risk`. So it is answered in that shape, with
+   * `stale` naming the reason beside it: a refused confirm, and a
+   * `stale-sign-in` read, whose "Sign in again" signs in in place. Its read
+   * when the page itself is too old (`stale-page`) is refused instead, with
+   * words that say reload, since that sign-in alone never clears it. A script
+   * sends none either, and gets the same. None of it lets anything confirm.
    *
    * Since 0.141, remove in 0.143 (DOR-5089), once no supported page needs it.
    */
@@ -469,7 +478,17 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     const { unavailable, risks } = await passwordUnavailable(c);
     const stale =
       unavailable === 'stale-sign-in' || unavailable === 'stale-page' ? unavailable : undefined;
-    // A page from before the named reasons reads only `extension-risk` (see fromOlderPage).
+    // A page from before the named reasons, too old to confirm from: its sheet shows a
+    // refused read's own words with only Close. A 200 view would show its "Sign in again",
+    // which signs in without reloading and lands here again (DOR-5086).
+    if (stale === 'stale-page' && fromOlderPage(c)) {
+      return c.json(
+        { ...errorBody(OLDER_PAGE_RELOAD_ERROR, 'extension-risk'), stale },
+        REFUSALS['extension-risk'].status
+      );
+    }
+    // A page from before the named reasons reads only `extension-risk` (see fromOlderPage);
+    // only its `stale-sign-in` read gets here.
     const shown = stale && fromOlderPage(c) ? 'extension-risk' : unavailable;
     const view: HeldStepUpView = {
       heldActionId: entry.statement.heldActionId,
