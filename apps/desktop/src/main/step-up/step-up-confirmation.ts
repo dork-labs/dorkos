@@ -24,6 +24,15 @@ import type {
 /** The shape a held action's id takes: the server's ULIDs, never anything longer. */
 const HELD_ACTION_ID = /^[0-9A-Za-z]{10,64}$/;
 
+/** Every reason the window knows for offering no password; anything else offers it. */
+const UNAVAILABLE: readonly NonNullable<StepUpWindowView['unavailable']>[] = [
+  'insecure-connection',
+  'no-password',
+  'extension-risk',
+  'stale-sign-in',
+  'stale-page',
+];
+
 /** The shell's person proof header (DOR-3330), as the server reads it. */
 const PERSON_PROOF_HEADER = 'x-dorkos-person';
 
@@ -140,12 +149,7 @@ export class StepUpConfirmation {
     const notes = Array.isArray(body?.notes)
       ? body.notes.filter((note): note is string => typeof note === 'string')
       : [];
-    const unavailable =
-      body?.passwordUnavailable === 'insecure-connection' ||
-      body?.passwordUnavailable === 'no-password' ||
-      body?.passwordUnavailable === 'extension-risk'
-        ? body.passwordUnavailable
-        : undefined;
+    const unavailable = UNAVAILABLE.find((value) => value === body?.passwordUnavailable);
     const blockedLines =
       unavailable === 'extension-risk' && Array.isArray(body?.blockedBy)
         ? body.blockedBy.flatMap(blockedLineOf)

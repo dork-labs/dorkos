@@ -67,15 +67,20 @@ function show(view: StepUpWindowView): void {
     return;
   }
   if (view.unavailable === 'extension-risk') {
-    if (view.blockedLines?.length) {
-      end(`${view.blockedLines.join(' ')} Fix it in Settings → Extensions.`);
-      return;
-    }
-    // None named: none is loaded now, but one ran since sign-in (M1 on #3401).
-    end('A mini app ran after this page opened. Sign in again, then try once more.');
+    end(`${view.blockedLines?.join(' ') ?? ''} Fix it in Settings → Extensions.`.trim());
+    return;
+  }
+  // A mini app's risk cleared after this sign-in began (M1 on #3401, DOR-5086).
+  if (view.unavailable === 'stale-sign-in') {
+    end('Something changed after you signed in. Sign in again, then try once more.');
     byId('close').className = '';
     byId('sign-in-again').hidden = false;
     byId<HTMLButtonElement>('sign-in-again').focus();
+    return;
+  }
+  // The app window's page is from before a change (DOR-5026, DOR-5086).
+  if (view.unavailable === 'stale-page') {
+    end('This page opened before a change. Reload it, then try again.');
     return;
   }
   if (view.unavailable === 'no-password') {

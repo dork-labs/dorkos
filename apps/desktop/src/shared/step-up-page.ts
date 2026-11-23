@@ -45,7 +45,8 @@ export interface StepUpWindowView {
   requestCode?: string;
   notes: string[];
   /** Why no password is offered, when it is not. */
-  unavailable?: 'insecure-connection' | 'no-password' | 'extension-risk';
+  unavailable?:
+    'insecure-connection' | 'no-password' | 'extension-risk' | 'stale-sign-in' | 'stale-page';
   /** For `extension-risk`: one line per mini app that keeps confirming off. */
   blockedLines?: string[];
 }

@@ -245,10 +245,24 @@ export const StepUpPasswordUnavailableSchema = z.enum([
    * sheet. Named in {@link HeldStepUpView.blockedBy}.
    */
   'extension-risk',
+  /**
+   * A risky mini app cleared after this sign-in began, so a page it opened may
+   * still run that code: sign in again (Security's M1 on #3401, DOR-5086).
+   */
+  'stale-sign-in',
+  /**
+   * This page can't show it loaded after a risky mini app cleared: no page
+   * stamp, an old one, or one for another sign-in. A reload brings a fresh
+   * one (DOR-5026, DOR-5086).
+   */
+  'stale-page',
 ]);
 
 /** Why a held action cannot be confirmed by password from here. */
 export type StepUpPasswordUnavailable = z.infer<typeof StepUpPasswordUnavailableSchema>;
+
+/** The two ways a confirm can come from before a risky mini app cleared. */
+export type StepUpStaleConfirm = Extract<StepUpPasswordUnavailable, 'stale-sign-in' | 'stale-page'>;
 
 /** One loaded extension that keeps step-up off, and why. */
 export const StepUpExtensionRiskSchema = z.object({
@@ -347,6 +361,10 @@ export const STEP_UP_REFUSAL_CODES = [
   'insecure-connection',
   /** A loaded extension an agent can rewrite, or that changed since it was approved. */
   'extension-risk',
+  /** A risky mini app cleared after this sign-in began: sign in again. */
+  'stale-sign-in',
+  /** This page can't show it loaded after a risky mini app cleared: reload it. */
+  'stale-page',
   /** Not the app's own page, or a program rather than a person. */
   'not-a-person',
   /** Another browser held this action. */

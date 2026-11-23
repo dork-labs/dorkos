@@ -130,6 +130,76 @@ export function openActionStepUpFromLink(
   return true;
 }
 
+/** Where the held actions this tab already reloaded for are kept, for this tab only. */
+const RELOADED_KEY = 'dorkos.step-up.reloaded';
+
+/** How many reloaded ids are kept; older ones have long expired. */
+const RELOADED_KEPT = 20;
+
+function reloadedIds(storage: Pick<Storage, 'getItem'>): string[] {
+  try {
+    const parsed = JSON.parse(storage.getItem(RELOADED_KEY) ?? '[]') as unknown;
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Whether this tab already reloaded once for `heldActionId` (DOR-5086). A page
+ * too old to confirm from reloads by itself at most once per held action, so
+ * a page that is still refused after its reload can never loop.
+ *
+ * @param heldActionId - The held action's id.
+ * @param storage - This tab's session storage, for tests.
+ */
+export function stepUpReloadedFor(
+  heldActionId: string,
+  storage: Pick<Storage, 'getItem'> = window.sessionStorage
+): boolean {
+  return reloadedIds(storage).includes(heldActionId);
+}
+
+/**
+ * Note that this tab reloads for `heldActionId`, before it does.
+ *
+ * @param heldActionId - The held action's id.
+ * @param storage - This tab's session storage, for tests.
+ * @returns Whether the note was kept. When it wasn't (storage off or full),
+ *   nothing may reload by itself: the next page could not tell it already had.
+ */
+export function noteStepUpReload(
+  heldActionId: string,
+  storage: Pick<Storage, 'getItem' | 'setItem'> = window.sessionStorage
+): boolean {
+  const ids = [...reloadedIds(storage).filter((id) => id !== heldActionId), heldActionId];
+  try {
+    storage.setItem(RELOADED_KEY, JSON.stringify(ids.slice(-RELOADED_KEPT)));
+    return reloadedIds(storage).includes(heldActionId);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Load this page afresh and reopen the sheet for `heldActionId` there
+ * (DOR-5086). A confirm counts only from a page the server sent after the
+ * last mini app risk cleared (DOR-5026), and only a real page load brings a
+ * fresh stamp. Only the id travels, in the address, as a link from outside
+ * the app would carry it: the new page asks the server what it is.
+ *
+ * @param heldActionId - The held action to reopen.
+ * @param location - This page's location, for tests.
+ */
+export function reloadToConfirm(
+  heldActionId: string,
+  location: Pick<Location, 'href' | 'assign'> = window.location
+): void {
+  const url = new URL(location.href);
+  url.searchParams.set(CONFIRM_LINK_PARAM, heldActionId);
+  location.assign(url.toString());
+}
+
 /**
  * Close the sheet for `heldActionId`, say how it ended, and show the next one.
  * A late answer for a sheet that already closed does nothing, so it can never
