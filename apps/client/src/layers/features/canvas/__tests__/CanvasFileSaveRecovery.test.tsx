@@ -298,19 +298,19 @@ it('a 404 says the file cannot be edited here, not that evidence is temporarily 
 });
 // DOR-4442: a refusal that names its check says why, in one plain line.
 it.each([
-  ['NOT_SESSION', 'Only files on a chat’s canvas can be edited here.'],
+  ['not_session', 'Only files on a chat’s canvas can be edited here.'],
   [
-    'NO_RECORDED_FOLDER',
+    'no_recorded_folder',
     'This file’s folder wasn’t recorded when it was opened, so editing is off.',
   ],
-  ['ROOT_MISMATCH', 'This file isn’t in this chat’s agent folder, so editing is off.'],
-  ['FOLDER_GONE', 'This file’s folder was moved or deleted, so editing is off.'],
-  ['OUTSIDE_BOUNDARY', 'This file is outside the folders this chat can edit.'],
+  ['root_mismatch', 'This file isn’t in this chat’s agent folder, so editing is off.'],
+  ['folder_gone', 'This file’s folder was moved or deleted, so editing is off.'],
+  ['outside_boundary', 'This file is outside the folders this chat can edit.'],
 ])('a 404 refused for %s says why', async (reason, line) => {
   port.discover.mockRejectedValue(
     Object.assign(new Error('The document save evidence is not available.'), {
       status: 404,
-      body: { code: 'DOC_FILE_SAVE_UNAVAILABLE', reason },
+      body: { code: 'not_found', reason },
     })
   );
   view();
@@ -323,7 +323,7 @@ it('a 404 naming a reason the client does not know keeps the general line', asyn
   port.discover.mockRejectedValue(
     Object.assign(new Error('The document save evidence is not available.'), {
       status: 404,
-      body: { code: 'DOC_FILE_SAVE_UNAVAILABLE', reason: 'SOMETHING_NEW' },
+      body: { code: 'not_found', reason: 'something_new' },
     })
   );
   view();

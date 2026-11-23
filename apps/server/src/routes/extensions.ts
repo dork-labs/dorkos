@@ -113,8 +113,8 @@ export const SAFE_EXT_ID = /^[a-z0-9][a-z0-9-]*$/;
  *
  * They write `extensions.enabled` / `extensions.disabled`, both `operator-only`
  * in `config-write-policy.ts`, straight through `configManager` — around the
- * door that enforces that classification. So they answer with that door's own
- * code, `operator_only`: one setting, one refusal, wherever a caller meets it.
+ * door that enforces that classification. They answer `person_only`: a refusal
+ * of an agent is not about where the caller is, so never `operator_only`.
  *
  * The messages talk about which code DorkOS runs rather than about a config
  * key, because that is what a person reading a refusal actually needs to know.
@@ -122,7 +122,7 @@ export const SAFE_EXT_ID = /^[a-z0-9][a-z0-9-]*$/;
  * {@link module:routes/extensions-person-bar}, shared with the approval routes.
  */
 const EXTENSION_TOGGLE_BAR: PersonBarCopy = {
-  code: 'operator_only',
+  code: 'person_only',
   subject: 'which extensions are turned on',
   crossSite: (origin) =>
     `Nothing changed. ${origin} isn’t DorkOS. Turn extensions on or off in the app.`,
@@ -314,10 +314,13 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
     const id = c.req.param('id');
     try {
       if (!SAFE_EXT_ID.test(id)) return invalidId(c);
+      if (!extensionManager.get(id)) return noSuchExtension(c, id);
       const result = await extensionManager.initializeServer(id);
       if (!result.ok) {
         logger.warn(`[Extensions] ${id} did not start: ${result.error}`);
-        return problem(c, 'conflict', { detail: 'Its server didn’t start. Check Settings.' });
+        return problem(c, 'upstream_unavailable', {
+          detail: 'Its server didn’t start. Check Settings.',
+        });
       }
       return c.json({ ok: true });
     } catch (err) {

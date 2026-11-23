@@ -96,11 +96,8 @@ export function requirePersonCopy(extensionName: string): PersonBarCopy {
     code: 'person_only',
     subject: `${extensionName}'s settings`,
     crossSite: (origin) =>
-      `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
-      `Only a person using DorkOS can change ${extensionName}'s settings.`,
-    agent:
-      `DorkOS changed nothing. Only a person can change ${extensionName}'s settings. ` +
-      `Ask them to do it in DorkOS.`,
+      `DorkOS changed nothing. ${origin} isn’t DorkOS. Change ${extensionName}'s settings in DorkOS.`,
+    agent: `DorkOS changed nothing. Only a person can change ${extensionName}'s settings.`,
   };
 }
 

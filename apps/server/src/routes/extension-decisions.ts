@@ -56,9 +56,8 @@ export const DECISION_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'answers to extension decisions',
   crossSite: (origin) =>
-    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
-    `Only a person using DorkOS can answer this.`,
-  agent: 'DorkOS changed nothing. Only a person can answer this. Ask them to answer it in DorkOS.',
+    `DorkOS changed nothing. ${origin} isn’t DorkOS. Answer this in DorkOS itself.`,
+  agent: 'DorkOS changed nothing. Only a person can answer this, in DorkOS.',
 };
 
 /** What a caller is told while the inbox is not up. */

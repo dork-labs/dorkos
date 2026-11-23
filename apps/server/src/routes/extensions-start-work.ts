@@ -33,9 +33,8 @@ const START_WORK_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'work started from an extension',
   crossSite: (origin) =>
-    `DorkOS started nothing. This request came from ${origin}, which is not DorkOS. ` +
-    `Only a person using DorkOS can start this.`,
-  agent: 'DorkOS started nothing. Only a person can start this. Ask them to start it in DorkOS.',
+    `DorkOS started nothing. ${origin} isn’t DorkOS. Start this in DorkOS itself.`,
+  agent: 'DorkOS started nothing. Only a person can start this, in DorkOS.',
 };
 
 /** The statuses of an extension that is turned on. */

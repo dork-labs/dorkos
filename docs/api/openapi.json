@@ -30590,97 +30590,31 @@
             }
           },
           "400": {
-            "description": "Invalid recovery input",
+            "description": "`invalid_request`: invalid recovery input",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "reason": {
-                      "type": "string",
-                      "enum": [
-                        "NOT_SESSION",
-                        "NO_RECORDED_FOLDER",
-                        "ROOT_MISMATCH",
-                        "FOLDER_GONE",
-                        "OUTSIDE_BOUNDARY"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Current owning chat document or original operation unavailable",
+            "description": "`not_found`: current owning chat document or original operation unavailable; `reason` names the check that refused, for the owner (`not_session`, `no_recorded_folder`, `root_mismatch`, `folder_gone`, `outside_boundary`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "reason": {
-                      "type": "string",
-                      "enum": [
-                        "NOT_SESSION",
-                        "NO_RECORDED_FOLDER",
-                        "ROOT_MISMATCH",
-                        "FOLDER_GONE",
-                        "OUTSIDE_BOUNDARY"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Evidence, authority or storage unavailable; no fence is cleared",
+            "description": "`temporarily_unavailable`: evidence, authority or storage unavailable; no fence is cleared",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "reason": {
-                      "type": "string",
-                      "enum": [
-                        "NOT_SESSION",
-                        "NO_RECORDED_FOLDER",
-                        "ROOT_MISMATCH",
-                        "FOLDER_GONE",
-                        "OUTSIDE_BOUNDARY"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -31001,97 +30935,31 @@
             }
           },
           "400": {
-            "description": "Invalid recovery input",
+            "description": "`invalid_request`: invalid recovery input",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "reason": {
-                      "type": "string",
-                      "enum": [
-                        "NOT_SESSION",
-                        "NO_RECORDED_FOLDER",
-                        "ROOT_MISMATCH",
-                        "FOLDER_GONE",
-                        "OUTSIDE_BOUNDARY"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Current owning chat document or original operation unavailable",
+            "description": "`not_found`: current owning chat document or original operation unavailable; `reason` names the check that refused, for the owner (`not_session`, `no_recorded_folder`, `root_mismatch`, `folder_gone`, `outside_boundary`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "reason": {
-                      "type": "string",
-                      "enum": [
-                        "NOT_SESSION",
-                        "NO_RECORDED_FOLDER",
-                        "ROOT_MISMATCH",
-                        "FOLDER_GONE",
-                        "OUTSIDE_BOUNDARY"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Evidence, authority or storage unavailable; no fence is cleared",
+            "description": "`temporarily_unavailable`: evidence, authority or storage unavailable; no fence is cleared",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "reason": {
-                      "type": "string",
-                      "enum": [
-                        "NOT_SESSION",
-                        "NO_RECORDED_FOLDER",
-                        "ROOT_MISMATCH",
-                        "FOLDER_GONE",
-                        "OUTSIDE_BOUNDARY"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -31186,11 +31054,11 @@
                     "reason": {
                       "type": "string",
                       "enum": [
-                        "NOT_SESSION",
-                        "NO_RECORDED_FOLDER",
-                        "ROOT_MISMATCH",
-                        "FOLDER_GONE",
-                        "OUTSIDE_BOUNDARY"
+                        "not_session",
+                        "no_recorded_folder",
+                        "root_mismatch",
+                        "folder_gone",
+                        "outside_boundary"
                       ]
                     }
                   },
@@ -109663,7 +109531,7 @@
             }
           },
           "409": {
-            "description": "`conflict`, `reason` `offer_gone` (used, dismissed or over 15 minutes old) or `not_running`",
+            "description": "`conflict`, `reason` `offer_gone` (used, dismissed or over 15 minutes old), `not_running`, or `offer_project_unavailable` (the project is gone or out of scope)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -109712,7 +109580,7 @@
             }
           },
           "500": {
-            "description": "`internal_error`, `reason` `offer_failed`: the settings change failed",
+            "description": "`internal_error`, `reason` `offer_failed`: the settings store could not be written",
             "content": {
               "application/problem+json": {
                 "schema": {

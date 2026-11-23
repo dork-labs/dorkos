@@ -140,7 +140,25 @@ describe('DevLinkService refusals', () => {
     const err = await refusal(service().preview({ path: alias, scope: 'global' }));
     expect(err.code).toBe('dev_link_path_not_real');
     expect(err.details).toEqual({ realPath: work });
+    expect(err.toProblem()).toMatchObject({ realPath: work, reason: 'dev_link_path_not_real' });
     expect(err.message).toBe(`That path is a link. Use ${work} instead.`);
+  });
+
+  it('never names where a link leads when that folder is outside the boundary', async () => {
+    // Purpose: a link inside the boundary pointing out of it must not reveal
+    // the outside folder's path, in the details or the sentence (DOR-4979).
+    const outside = await realpath(await mkdtemp(path.join(tmpdir(), 'devlink-outside-')));
+    try {
+      const alias = path.join(base, 'leads-out');
+      await symlink(outside, alias, 'dir');
+      const err = await refusal(service().preview({ path: alias, scope: 'global' }));
+      expect(err.code).toBe('dev_link_path_not_real');
+      expect(err.details).toEqual({});
+      expect(err.toProblem()).not.toHaveProperty('realPath');
+      expect(err.message).not.toContain(outside);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 
   it('refuses a relative path', async () => {

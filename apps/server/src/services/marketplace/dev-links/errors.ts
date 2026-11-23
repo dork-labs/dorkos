@@ -6,6 +6,7 @@
  * @module services/marketplace/dev-links/errors
  */
 import { problemBody } from '@dorkos/http-kit';
+import { isContained } from '../../../lib/boundary.js';
 import type { DevLinkErrorCode } from '@dorkos/shared/marketplace-schemas';
 import type { Problem, ProblemCode } from '@dorkos/shared/problem';
 
@@ -90,5 +91,31 @@ export function packageIsDevLinked(name: string): DevLinkError {
     409,
     `${name} runs from a dev link. Unlink it first.`,
     { name }
+  );
+}
+
+/**
+ * The refusal for a path that is a link: it names the real folder only when
+ * the caller may use it, so a link pointing outside the boundary never reveals
+ * where it leads (DOR-4979).
+ *
+ * @param real - The folder the link resolves to.
+ * @param boundary - The directory boundary a linked folder must sit inside.
+ */
+export function notItsRealPath(real: string, boundary: string): DevLinkError {
+  if (!isContained(real, boundary)) {
+    return new DevLinkError(
+      'dev_link_path_not_real',
+      400,
+      'That path is a link to a folder outside the folders DorkOS may use.'
+    );
+  }
+  return new DevLinkError(
+    'dev_link_path_not_real',
+    400,
+    `That path is a link. Use ${real} instead.`,
+    {
+      realPath: real,
+    }
   );
 }

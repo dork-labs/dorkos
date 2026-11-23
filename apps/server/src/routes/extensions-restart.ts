@@ -92,7 +92,7 @@ export function registerExtensionRestartRoute(
       broadcastReloaded([id]);
       // A successful client build does not prove the server half started.
       if ((record.hasServerEntry || record.hasDataProxy) && !manager.getServerHandler(id)) {
-        return problem(c, 'conflict', {
+        return problem(c, 'upstream_unavailable', {
           detail: 'Couldn’t start the app. Open Settings to check.',
           extensions: { reason: 'server_start_failed' },
         });

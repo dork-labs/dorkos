@@ -182,8 +182,11 @@ describe('POST /api/extensions/:id/restart', () => {
   it('never reports a restart when compilation worked but the server did not start', async () => {
     serverError = { code: 'server_start_failed', message: 'Couldn’t start the app.' };
     const res = await restart('people');
-    expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ code: 'conflict', reason: 'server_start_failed' });
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({
+      code: 'upstream_unavailable',
+      reason: 'server_start_failed',
+    });
     expect(broadcast).toEqual([['people']]);
   });
 });

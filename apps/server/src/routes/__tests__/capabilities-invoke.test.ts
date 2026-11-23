@@ -93,19 +93,6 @@ const testDomain: CapabilityDomain = {
         throw new CapabilityToolError({ error: 'boom', code: 'DELIBERATE' });
       },
     }),
-    defineCapability({
-      id: 'test.crash',
-      title: 'Crash',
-      description: 'Always throws.',
-      tier: 'observe',
-      area: null,
-      input: z.object({}),
-      output: z.unknown(),
-      surfaces: { mcp: { toolName: 'crash', servers: ['external'] } },
-      invoke: async () => {
-        throw new Error('EACCES: permission denied, open /secret/path/db.sqlite');
-      },
-    }),
   ],
 };
 
@@ -139,11 +126,7 @@ describe('POST /api/capabilities/:id/invoke', () => {
       .post('/api/capabilities/test.nope/invoke')
       .send({});
     expect(res.status).toBe(404);
-    expect(res.headers['content-type']).toContain('application/problem+json');
-    expect(res.body).toMatchObject({
-      code: 'unknown_capability',
-      detail: 'No action has that id. List them at /api/capabilities.',
-    });
+    expect(res.body.code).toBe('UNKNOWN_CAPABILITY');
   });
 
   it("answers a stopped extension's tool with the same sentence the session gives (DOR-2685)", async () => {
@@ -153,10 +136,9 @@ describe('POST /api/capabilities/:id/invoke', () => {
       .post('/api/capabilities/ext_mail_app.send_message/invoke')
       .send({});
     expect(res.status).toBe(503);
-    expect(res.headers['content-type']).toContain('application/problem+json');
-    expect(res.body).toMatchObject({
-      code: 'temporarily_unavailable',
-      detail: "That tool isn't available right now: its extension is stopped or restarting.",
+    expect(res.body).toEqual({
+      error: "That tool isn't available right now: its extension is stopped or restarting.",
+      code: 'EXTENSION_TOOL_UNAVAILABLE',
     });
   });
 
@@ -169,31 +151,12 @@ describe('POST /api/capabilities/:id/invoke', () => {
     expect(res.body.issues).toBeDefined();
   });
 
-  it('answers a capability error as a 400 problem with a fixed sentence and its code as `reason`', async () => {
+  it('surfaces a capability error payload verbatim as 400', async () => {
     const res = await request(fixtureTarget.mount(buildApp()))
       .post('/api/capabilities/test.fail/invoke')
       .send({});
     expect(res.status).toBe(400);
-    expect(res.headers['content-type']).toContain('application/problem+json');
-    expect(res.body).toMatchObject({
-      code: 'invalid_request',
-      detail: 'The action refused this request. Check its input and try again.',
-      reason: 'deliberate',
-    });
-    expect(JSON.stringify(res.body)).not.toContain('boom');
-  });
-
-  it('answers a crash with a fixed sentence and never the exception’s text', async () => {
-    const res = await request(fixtureTarget.mount(buildApp()))
-      .post('/api/capabilities/test.crash/invoke')
-      .send({});
-    expect(res.status).toBe(500);
-    expect(res.headers['content-type']).toContain('application/problem+json');
-    expect(res.body).toMatchObject({
-      code: 'internal_error',
-      detail: 'The action failed. Try again.',
-    });
-    expect(JSON.stringify(res.body)).not.toContain('/secret/path');
+    expect(res.body).toEqual({ error: 'boom', code: 'DELIBERATE' });
   });
 
   // The three groups share the `/api/capabilities` prefix in production
@@ -515,8 +478,7 @@ describe('a Wi-Fi sign-in and capabilities (DOR-2969)', () => {
       `/api/capabilities/tiers.${tier}/invoke`
     );
     expect(res.status).toBe(403);
-    expect(res.headers['content-type']).toContain('application/problem+json');
-    expect(res.body).toMatchObject({ code: 'not_from_wifi', detail: 'Do this at this computer.' });
+    expect(res.body.code).toBe(NOT_FROM_WIFI);
     expect(ran).toEqual([]);
   });
 

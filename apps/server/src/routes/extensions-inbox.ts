@@ -61,10 +61,8 @@ const SETTINGS_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: "an extension's project settings",
   crossSite: (origin) =>
-    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
-    `Only a person using DorkOS can change these settings.`,
-  agent:
-    'DorkOS changed nothing. Only a person can change these settings. Ask them to change it in DorkOS.',
+    `DorkOS changed nothing. ${origin} isn’t DorkOS. Change these settings in DorkOS itself.`,
+  agent: 'DorkOS changed nothing. Only a person can change these settings, in DorkOS.',
 };
 
 /**

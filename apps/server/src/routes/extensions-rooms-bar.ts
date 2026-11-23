@@ -91,6 +91,5 @@ export const ROOM_WRITE_REFUSAL_MESSAGE: Record<RoomWriteRefusal, string> = {
   'no-origin': 'Nothing was posted. A mini app can only reply from your own window of DorkOS.',
   'other-site': 'Nothing was posted. This request came from a page that is not DorkOS.',
   'no-app-window': 'Nothing was posted. A mini app can only reply from your own window of DorkOS.',
-  'not-a-browser-session':
-    'Nothing was posted. Sign in to DorkOS in your browser to reply from a mini app.',
+  'not-a-browser-session': 'Nothing was posted. Sign in to DorkOS in your browser first.',
 };

@@ -63,6 +63,11 @@ const WIRE: Readonly<Record<string, Wire>> = {
     status: 502,
     reason: 'extension_error',
   },
+  offer_project_unavailable: {
+    code: 'conflict',
+    detail: 'That project is no longer available.',
+    reason: 'offer_project_unavailable',
+  },
   offer_failed: {
     code: 'internal_error',
     detail: 'Couldn’t change that. Try again.',

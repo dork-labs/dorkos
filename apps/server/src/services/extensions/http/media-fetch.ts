@@ -40,7 +40,7 @@ export const NO_PERSON: PersonRefusal = Object.freeze({
   status: 403,
   body: Object.freeze(
     problemBody('person_only', {
-      detail: 'A video link can only play the video. Ask a person to do this in DorkOS.',
+      detail: 'A video link can only play the video.',
     })
   ),
 });

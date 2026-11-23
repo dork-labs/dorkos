@@ -29,11 +29,11 @@ const FAILED_CHECK = {
  * (DOR-4442). Every line still says editing is off; none names a path.
  */
 const REFUSED_BECAUSE: Record<DocSaveRefusalReason, string> = {
-  NOT_SESSION: 'Only files on a chat’s canvas can be edited here.',
-  NO_RECORDED_FOLDER: 'This file’s folder wasn’t recorded when it was opened, so editing is off.',
-  ROOT_MISMATCH: 'This file isn’t in this chat’s agent folder, so editing is off.',
-  FOLDER_GONE: 'This file’s folder was moved or deleted, so editing is off.',
-  OUTSIDE_BOUNDARY: 'This file is outside the folders this chat can edit.',
+  not_session: 'Only files on a chat’s canvas can be edited here.',
+  no_recorded_folder: 'This file’s folder wasn’t recorded when it was opened, so editing is off.',
+  root_mismatch: 'This file isn’t in this chat’s agent folder, so editing is off.',
+  folder_gone: 'This file’s folder was moved or deleted, so editing is off.',
+  outside_boundary: 'This file is outside the folders this chat can edit.',
 };
 
 /** The sentence for a failed check: the refusal's own reason when there is one. */

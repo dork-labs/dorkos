@@ -133,6 +133,21 @@ function hasBody(req: http.IncomingMessage): boolean {
 }
 
 /**
+ * JSON safe to send as a header value: every character past ASCII written as a
+ * `\uXXXX` escape, which `JSON.parse` reads back unchanged. A verdict's
+ * `detail` is a sentence for a person and may hold one (`isn’t`); a raw one
+ * makes the request itself unsendable.
+ *
+ * @param value - What to encode.
+ */
+function headerJson(value: unknown): string {
+  return JSON.stringify(value).replace(
+    /[\u007f-\uffff]/g,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`
+  );
+}
+
+/**
  * Answer with a problem document on the raw response, at its own status.
  *
  * @param res - The raw response.
@@ -195,7 +210,7 @@ export function createIsolatedHandler(options: IsolatedHandlerOptions): Extensio
       // Everything that reads the request is decided before a connection is
       // opened, so nothing that throws here can leave one counted and open.
       const headers = inboundHeaders(req.headers);
-      headers[PERSON_VERDICT_HEADER] = JSON.stringify(personVerdict(honoRequestFacts(c), name));
+      headers[PERSON_VERDICT_HEADER] = headerJson(personVerdict(honoRequestFacts(c), name));
       // One request per virtual connection.
       headers.connection = 'close';
 

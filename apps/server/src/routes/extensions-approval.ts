@@ -75,7 +75,7 @@ import { registerExtensionApprovalSetRoutes } from './extensions-approval-set.js
  */
 const APPROVAL_BAR: PersonBarCopy = {
   code: 'person_only',
-  subject: 'which extensions may run code inside DorkOS',
+  subject: 'which extensions may run',
   crossSite: (origin) => `Nothing changed. ${origin} isn’t DorkOS. Allow extensions in the app.`,
   agent: 'Nothing changed. Only a person allows an extension to run, in Settings.',
 };

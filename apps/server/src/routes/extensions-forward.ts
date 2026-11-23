@@ -98,17 +98,15 @@ const REFUSAL_MESSAGE: Record<ForwardRefusal, string> = {
   'no-origin': 'Nothing was sent. A mini app can only forward from your own window of DorkOS.',
   'other-site': 'Nothing was sent. This request came from a page that is not DorkOS.',
   'no-app-window': 'Nothing was sent. A mini app can only forward from your own window of DorkOS.',
-  'not-a-browser-session':
-    'Nothing was sent. Sign in to DorkOS in your browser to forward from a mini app.',
-  'login-off':
-    'Nothing was sent. DorkOS must ask for your password here, so it can tell your words are yours.',
+  'not-a-browser-session': 'Nothing was sent. Sign in to DorkOS in your browser first.',
+  'login-off': 'Nothing was sent. Set a DorkOS password first, so your words are provably yours.',
   'not-the-owner': 'Nothing was sent. Only the person who owns DorkOS can forward to their agents.',
   'not-json': 'Nothing was sent. Send the comment as JSON.',
 };
 
 /** What a mini app that never asked to forward is told. */
 const NO_FORWARD_DECLARED =
-  'This mini app does not ask to forward comments. Add "capabilities": { "forward": true } to its manifest.';
+  'This mini app doesn’t ask to forward. Add "capabilities": { "forward": true }.';
 
 const ForwardBodySchema = z
   .object({
@@ -134,8 +132,7 @@ const FORWARD_AGENTS_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'which agents a mini app forwards to',
   crossSite: (origin) =>
-    `Nothing changed. This request came from ${origin}, which is not DorkOS. ` +
-    `Only a person using DorkOS can choose the agents a mini app forwards to.`,
+    `Nothing changed. ${origin} isn’t DorkOS. Choose forward agents in DorkOS itself.`,
   agent: 'Nothing changed. Only a person can choose the agents a mini app forwards to.',
 };
 

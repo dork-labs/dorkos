@@ -69,7 +69,7 @@ const TURNED_ON: ReadonlySet<ExtensionStatus> = new Set(['enabled', 'compiled', 
 
 /** What a mini app that never asked for rooms is told. */
 const NO_ROOMS_DECLARED =
-  'This mini app does not ask for rooms. Add "capabilities": { "rooms": true } to its manifest.';
+  'This mini app doesn’t ask for rooms. Add "capabilities": { "rooms": true }.';
 
 /** Whether a mini app's manifest asks for rooms (`capabilities.rooms`). */
 function asksForRooms(record: { manifest: { capabilities?: { rooms?: boolean } } }): boolean {
@@ -91,8 +91,7 @@ const ROOM_ACCESS_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'which rooms a mini app uses',
   crossSite: (origin) =>
-    `Nothing changed. This request came from ${origin}, which is not DorkOS. ` +
-    `Only a person using DorkOS can choose which rooms a mini app uses.`,
+    `Nothing changed. ${origin} isn’t DorkOS. Choose a mini app’s rooms in DorkOS itself.`,
   agent: 'Nothing changed. Only a person can choose which rooms a mini app uses.',
 };
 

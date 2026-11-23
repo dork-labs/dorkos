@@ -32,7 +32,7 @@ import { problem } from '@dorkos/http-kit';
 /** What the bar says when it refuses a remove or a forget. */
 const REMOVAL_BAR: PersonBarCopy = {
   code: 'person_only',
-  subject: 'which extensions are on this computer and what they were allowed',
+  subject: 'which extensions are installed',
   crossSite: (origin) => `Nothing changed. ${origin} isn’t DorkOS. Remove extensions in the app.`,
   agent: 'Nothing changed. Only a person removes an extension, in Settings.',
 };

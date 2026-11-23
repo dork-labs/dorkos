@@ -109,8 +109,7 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
           tier: 'destructive',
           reason: 'enforcement_unavailable',
           approvable: false,
-          message:
-            'DorkOS cannot check permissions for this action right now, so it was refused. Try again in a moment.',
+          message: "DorkOS can't check permissions right now, so nothing ran. Try again soon.",
         },
       };
     }

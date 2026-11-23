@@ -219,8 +219,7 @@ describe('POST /api/extension-decisions/:id/action', () => {
     expect(res.headers['content-type']).toBe('application/problem+json');
     expect(res.body).toMatchObject({
       code: 'person_only',
-      detail:
-        'DorkOS changed nothing. Only a person can answer this. Ask them to answer it in DorkOS.',
+      detail: 'DorkOS changed nothing. Only a person can answer this, in DorkOS.',
     });
     expect(handler).not.toHaveBeenCalled();
     expect(fx.inbox.listOpen()).toHaveLength(1);
@@ -454,8 +453,7 @@ describe('ctx.requirePerson through /api/ext/:id/*', () => {
     expect(res.headers['content-type']).toContain('application/problem+json');
     expect(res.body).toMatchObject({
       code: 'person_only',
-      detail:
-        "DorkOS changed nothing. Only a person can change Flow's settings. Ask them to do it in DorkOS.",
+      detail: "DorkOS changed nothing. Only a person can change Flow's settings.",
     });
   });
 

@@ -87,7 +87,7 @@ const refusal = (code: string) =>
       detail: z.string(),
     })
     .strict();
-const TOGGLE_REFUSED = refusal('operator_only');
+const TOGGLE_REFUSED = refusal('person_only');
 const APPROVAL_REFUSED = refusal('person_only');
 const TRUST_REFUSED = refusal('person_only');
 const NO_ROUTES = (id: string) =>
@@ -305,14 +305,10 @@ const CASES: ContractCase[] = [
     },
   },
   {
-    name: 'starting a server half of an extension that is not installed says why',
+    name: 'starting a server half of an extension that is not installed is a 404',
     method: 'POST',
     path: `/api/extensions/${MISSING}/init-server`,
-    expect: {
-      status: 409,
-      headers: PROBLEM_TYPE_A2,
-      schema: z.object({ code: z.literal('conflict'), detail: z.string() }).loose(),
-    },
+    expect: { status: 404, headers: PROBLEM_TYPE_A2, body: NO_SUCH(MISSING) },
   },
   {
     // DOR-4785: the Restart on a stopped-app notice meets the same chain as every write.
@@ -410,8 +406,7 @@ const CASES: ContractCase[] = [
       status: 403,
       headers: PROBLEM_TYPE_A2,
       body: problemBody('person_only', {
-        detail:
-          'DorkOS changed nothing. Only a person can answer this. Ask them to answer it in DorkOS.',
+        detail: 'DorkOS changed nothing. Only a person can answer this, in DorkOS.',
       }),
     },
   },
@@ -439,8 +434,7 @@ const CASES: ContractCase[] = [
       status: 403,
       headers: PROBLEM_TYPE_A2,
       body: problemBody('person_only', {
-        detail:
-          'DorkOS changed nothing. Only a person can change these settings. Ask them to change it in DorkOS.',
+        detail: 'DorkOS changed nothing. Only a person can change these settings, in DorkOS.',
       }),
     },
   },
@@ -454,8 +448,7 @@ const CASES: ContractCase[] = [
       status: 403,
       headers: PROBLEM_TYPE_A2,
       body: problemBody('person_only', {
-        detail:
-          'DorkOS started nothing. Only a person can start this. Ask them to start it in DorkOS.',
+        detail: 'DorkOS started nothing. Only a person can start this, in DorkOS.',
       }),
     },
   },
@@ -761,8 +754,11 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
       const enabled = await call(server, 'POST', `/api/extensions/${id}/enable`, {});
       expect(enabled.status, enabled.text).toBe(200);
       const started = await call(server, 'POST', `/api/extensions/${id}/init-server`, {});
-      expect(started.status).toBe(409);
-      expect(started.json).toMatchObject({ code: 'conflict', detail: expect.any(String) });
+      expect(started.status).toBe(502);
+      expect(started.json).toMatchObject({
+        code: 'upstream_unavailable',
+        detail: 'Its server didn’t start. Check Settings.',
+      });
       await check(server, {
         path: `/api/ext/${id}/where`,
         expect: { status: 404, body: NO_ROUTES(id) },

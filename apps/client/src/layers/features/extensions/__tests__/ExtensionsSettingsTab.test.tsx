@@ -609,10 +609,10 @@ describe('ExtensionsSettingsTab', () => {
     it("shows the server's own sentence, with nothing prefixed to it", async () => {
       const refusal = 'Nothing changed. Only a person turns extensions on or off, in Settings.';
       mockRefusedToggle({
-        type: 'urn:dorkos:problem:operator_only',
-        title: 'Only the person at this computer can do that.',
+        type: 'urn:dorkos:problem:person_only',
+        title: 'Only a person can do that, not an agent.',
         status: 403,
-        code: 'operator_only',
+        code: 'person_only',
         detail: refusal,
       });
 

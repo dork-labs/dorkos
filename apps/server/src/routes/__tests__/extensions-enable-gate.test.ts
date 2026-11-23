@@ -227,7 +227,7 @@ describe('who may turn an extension on or off', () => {
 
       expect(res.status).toBe(403);
       expect(res.headers['content-type']).toBe('application/problem+json');
-      expect(res.body.code).toBe('operator_only');
+      expect(res.body.code).toBe('person_only');
       expect(manager.enable).not.toHaveBeenCalled();
       expect(state.extensions.enabled).toEqual([]);
       // And the feed is told NOTHING — a refused attempt must not leave a line

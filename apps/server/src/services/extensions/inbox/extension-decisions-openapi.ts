@@ -120,9 +120,12 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
       403: error('`person_only`: not a person; `not_from_wifi`: a yes sent over Wi-Fi'),
       404: error('`not_found`: no such decision'),
       409: error(
-        '`conflict`, `reason` `offer_gone` (used, dismissed or over 15 minutes old) or `not_running`'
+        '`conflict`, `reason` `offer_gone` (used, dismissed or over 15 minutes old), ' +
+          '`not_running`, or `offer_project_unavailable` (the project is gone or out of scope)'
       ),
-      500: error('`internal_error`, `reason` `offer_failed`: the settings change failed'),
+      500: error(
+        '`internal_error`, `reason` `offer_failed`: the settings store could not be written'
+      ),
       503: error('`temporarily_unavailable`: the inbox is not ready yet'),
     },
   });
