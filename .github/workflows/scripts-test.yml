@@ -391,6 +391,13 @@ jobs:
       - name: Build-only turbo cache trim fixtures
         run: bash scripts/test-keep-build-cache-only.sh
 
+      # prune-main-build-caches.sh deletes main's older turbo build caches after
+      # every merge (build-cache.yml, DOR-4627). It must never delete a pnpm
+      # store, another ref's cache or one of the newest entries it keeps, so
+      # its verdicts are pinned against a stub gh.
+      - name: Main build-cache prune fixtures
+        run: bash scripts/test-prune-main-build-caches.sh
+
       # build-test-deps.sh builds what test.yml's suites import in a turbo run
       # with no test arguments, so one cached build serves every test job
       # (DOR-4625). Its build set and its summary hand-off are pinned here.
@@ -739,6 +746,14 @@ jobs:
       # should make to the merge queue, as ejections. Hermetic, no pnpm.
       - name: No-code scope fixtures
         run: bash scripts/test-no-code-scope.sh
+
+      # browser-smoke-scope.sh decides whether a pull request's browser smoke
+      # shards run (DOR-5111), so a rule that lets a path a page loads through
+      # silently moves its catches to the merge queue, as ejections. The suite
+      # also checks the inert-workspace list against this tree. Git, jq and
+      # node, no pnpm.
+      - name: Browser-smoke scope fixtures
+        run: bash scripts/test-browser-smoke-scope.sh
 
       # release-branch-contents.sh is the rule for what a pull request into a
       # release/v<X.Y.Z> branch may carry (DOR-4639): only cherry-picks of main

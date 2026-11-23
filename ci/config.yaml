@@ -103,8 +103,8 @@ collect:
   # backfilled ledger entries (#1135, #1246, #1391) get live verdicts.
   backfill_from: '2026-08-12'
   # Queue builds a day whose test reports are downloaded for flaky-test-runs.
-  # Each costs about twelve requests (two listings, ten artifacts: six browser
-  # shards and four vitest shards).
+  # Each costs about eighteen requests (two listings, sixteen artifacts: six
+  # browser shards and ten vitest shards, ledger 261123-194400).
   artifact_builds_per_day: 10
   review_workflow: claude-code-review.yml
   # Playwright's JSON reporter counts flaky tests (failed, then passed on the
@@ -297,25 +297,29 @@ triage:
   #
   #     One run, not two. The 2026-09-20 fixture-clock break was deterministic
   #     inside its window and ejected three unrelated PRs nine times before a
-  #     person diagnosed it; waiting for a second canary costs another six hours
-  #     of cron for a signal the first run already gave. A canary red costs one
+  #     person diagnosed it; waiting for a second canary costs another day of
+  #     cron for a signal the first run already gave. A canary red costs one
   #     line in a report and never a merge, so the cheap error to make is the
   #     false alarm — and the trigger clears itself on the next green run.
   #
   #     THE PRICE IS PRE-COMMITTED: at the measured 5.1% per-shard failure rate,
-  #     one red round out of four a day fires a rank-2 red on about 46% of days.
-  #     If that turns out to be noise rather than signal, raise this to 2 with a
-  #     ledger entry, accepting that it doubles detection latency.
+  #     one red round out of four a day fired a rank-2 red on about 46% of
+  #     days; at one round a day (DOR-5114) it is about 14%. If that turns out
+  #     to be noise rather than signal, raise this to 2 with a ledger entry,
+  #     accepting that it doubles detection latency.
   #
-  #     18 hours of silence, against a nominal 6-hour gap: `evals.yml`'s daily
-  #     cron is delivered a median 2.60 h and p90 5.61 h late, so a tighter
-  #     number would fire on throttling rather than on breakage. NOTE that 18
-  #     here is not 18 hours of wall clock to detection: a day is collected the
-  #     morning after and the rule reads the reported day's end, so a stopped
-  #     canary is named in about 39 hours worst case. Collecting more often is
-  #     what would shorten that, not a smaller number here.
+  #     40 hours of silence, against a nominal 24-hour gap (one cron a day since
+  #     DOR-5114, ledger 261123-195020): `evals.yml`'s daily cron is delivered a
+  #     median 2.60 h, p90 5.61 h and at worst 11.88 h late, so two rounds can
+  #     land about 36 hours apart without anything being wrong, and a tighter
+  #     number would fire on throttling rather than on breakage. One whole
+  #     missed day does cross it. NOTE that 40 here is not 40 hours of wall
+  #     clock to detection: a day is collected the morning after and the rule
+  #     reads the reported day's end, so a stopped canary is named in about
+  #     64 hours worst case, plus the collector's own delay. Collecting more
+  #     often is what would shorten that, not a smaller number here.
   canary_red_min_runs: 1
-  canary_silent_hours: 18
+  canary_silent_hours: 40
   # 12. A developer machine that is chronically saturated. Load average at hook
   #     start divided by that machine's online cores, p90 over the window, per
   #     clone. "My pushes are slow" was a feeling for months because nothing

@@ -398,7 +398,9 @@ describe('the plan reaches the pull request leg and nothing else', () => {
   });
 
   it('the queue sweep reads no plan', () => {
-    const sweep = step("Run every package's test suite (shard ${{ matrix.shard }}/6)");
+    const sweep = step(
+      "Run every package's test suite (shard ${{ matrix.shard }}/${{ strategy.job-total }})"
+    );
     expect(sweep).not.toContain('PACKAGES');
     expect(sweep).not.toContain('--filter');
     expect(sweep).not.toContain('--affected');

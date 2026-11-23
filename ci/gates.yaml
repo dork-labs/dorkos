@@ -86,6 +86,17 @@ gates:
     source: .github/workflows/browser-test.yml
     purpose: Warns when a copy change will break a browser spec's expected text, so it is fixed before the queue finds it.
 
+  # --- build-cache.yml ---
+  - id: wf.build-cache.test-builds
+    source: .github/workflows/build-cache.yml
+    purpose: After every merge to main, builds what the test suites import and saves main's test build cache and ubuntu-latest pnpm store for the queue and pull requests. Never required.
+  - id: wf.build-cache.browser-builds
+    source: .github/workflows/build-cache.yml
+    purpose: After every merge to main, builds what the browser suite boots from and saves main's browser build cache and 24.04 pnpm store for the queue and pull requests. Never required.
+  - id: wf.build-cache.prune
+    source: .github/workflows/build-cache.yml
+    purpose: After every merge to main, deletes main's older turbo build caches, keeping the newest three of each family, so per-merge saves stay inside the cache budget. Never required.
+
   # --- cache-cleanup.yml ---
   - id: wf.cache-cleanup.cache-cleanup
     source: .github/workflows/cache-cleanup.yml

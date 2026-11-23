@@ -200,7 +200,7 @@ entries:
     job: browser-test
     step: Refuse a PR whose smoke specs did not pass
     kind: step-if
-    reason: PRs must pass the four smoke shards; off PRs that job is skipped and the fan-in instead requires the full shards and first-run journey. Failed, cancelled or skipped PR smoke fails this required context. A pull request into release/* takes the queue's side (no smoke, full shards and first-run, DOR-4639).
+    reason: PRs must pass the four smoke shards unless the text-only-scope job answered `none` (a text-only change no spec quotes, DOR-4834, or a change no browser leg loads, DOR-5111; both pull-request only); off PRs that job is skipped and the fan-in instead requires the full shards and first-run journey. Failed, cancelled or skipped PR smoke fails this required context. A pull request into release/* takes the queue's side (no smoke, full shards and first-run, DOR-4639).
   - workflow: browser-test.yml
     job: browser-test
     step: Refuse a run whose shards did not all pass
@@ -302,7 +302,7 @@ entries:
   # --- jobs the required fan-ins need (the census follows needs:) ---
   - workflow: test.yml
     job: test-shard
-    step: Run every package's test suite (shard ${{ matrix.shard }}/6)
+    step: Run every package's test suite (shard ${{ matrix.shard }}/${{ strategy.job-total }})
     kind: step-if
     reason: The full sweep runs in the merge queue and on the main canary; its pull_request twin below runs the affected packages. Exactly one of the pair runs on each event. A pull request into release/* takes this full side too (DOR-4639).
   - workflow: test.yml
