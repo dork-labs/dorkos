@@ -1,7 +1,7 @@
 ---
 id: 261122-161025
 title: Compute one work order from Linear with one function
-status: proposed
+status: accepted
 created: 2026-11-22
 spec: null
 superseded-by: null
@@ -11,6 +11,8 @@ amends: null
 # 261122-161025. Compute one work order from Linear with one function
 
 ## Status
+
+Accepted (2026-11-23: the PM signed off the method on 2026-11-22; the build is DOR-5062).
 
 Proposed. Asked for by the operator on 2026-11-22 (#proj-dork-architecture, 09:54 CT) and designed in [research/20261122_work-sequencing.md](../research/20261122_work-sequencing.md). The PM, who owns priorities, signs off the method before anything in it writes to Linear.
 
