@@ -179,13 +179,17 @@ export function registerSessionRelayOpenApi(registry: OpenAPIRegistry): void {
     { 409: NOT_LINKED }
   );
 
-  registerWrite(
-    registry,
-    'delete',
-    '/link',
-    'Unlink this computer',
-    'Forgets the hub and closes the live connection. Works with the network off.'
-  );
+  // Registered directly, not through `registerWrite`, to name it: `POST /link`
+  // derives `sessionRelay.link` and so would this one ("link" is a command word).
+  registry.registerPath({
+    method: 'delete',
+    path: '/api/session-relay/link',
+    operationId: 'sessionRelay.unlink',
+    tags: TAGS,
+    summary: 'Unlink this computer',
+    description: 'Forgets the hub and closes the live link. Works with the network off.',
+    responses: { 200: STATUS, 403: NOT_HERE, 404: OFF },
+  });
 
   registerPasskeyOpenApi(registry);
 }
@@ -273,6 +277,8 @@ function registerPasskeyOpenApi(registry: OpenAPIRegistry): void {
   registry.registerPath({
     method: 'delete',
     path: '/api/session-relay/passkeys/{credentialId}',
+    // `DELETE /passkeys` (the damaged file) derives `sessionRelay.deletePasskeys`.
+    operationId: 'sessionRelay.deletePasskey',
     tags: TAGS,
     summary: 'Remove an approvals passkey',
     description:

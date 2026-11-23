@@ -64,6 +64,8 @@ export const REPO_WIDE_SUITES = [
   '__tests__/mcp-exclude-copy.test.ts',
   '__tests__/merge-group-runner-label.test.ts',
   '__tests__/one-shot-routes.test.ts',
+  // Reads docs/api/openapi.json and the repo VERSION file.
+  '__tests__/openapi-version.test.ts',
   // Walks every shipped app and package for network senders (DOR-4990).
   '__tests__/outbound-census.test.ts',
   '__tests__/playwright-apt-debs.test.ts',

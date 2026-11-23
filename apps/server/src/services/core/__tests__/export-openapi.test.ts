@@ -5,6 +5,7 @@ import {
 } from '@dorkos/shared/schemas';
 import { RoomRepoSidecarSchema } from '@dorkos/shared/room-repo';
 import { generateOpenAPISpec, LocalRoomRepoSchema } from '../openapi-registry.js';
+import { SERVER_VERSION } from '../../../lib/version.js';
 
 /** Validates the OpenAPI export pipeline produces a valid, complete spec. */
 describe('export-openapi', () => {
@@ -231,6 +232,61 @@ describe('export-openapi', () => {
     expect(JSON.stringify(status?.responses?.['200'])).toContain('no-store');
     const receipt = generateOpenAPISpec().components?.schemas?.RelayDeliveryReceipt;
     expect(JSON.stringify(receipt)).not.toMatch(/ownerUserId|observerToken|payload|subject/);
+  });
+
+  it('names every operation, each with its own operationId', () => {
+    const ids: string[] = [];
+    for (const item of Object.values(generateOpenAPISpec().paths ?? {})) {
+      for (const method of ['get', 'put', 'post', 'delete', 'patch'] as const) {
+        const operation = item?.[method];
+        if (!operation) continue;
+        expect(operation.operationId, `${method} has no operationId`).toMatch(/^[a-zA-Z]/);
+        ids.push(operation.operationId as string);
+      }
+    }
+    expect(ids.length).toBeGreaterThan(400);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('names a projected operation by its capability id', () => {
+    const paths = generateOpenAPISpec().paths ?? {};
+    expect(paths['/api/audit/{id}']?.get?.operationId).toBe('audit.get');
+    expect(paths['/api/capabilities/catalog']?.get?.operationId).toBe('capabilities.list');
+    // A capability id keeps its own style and group, whatever the path says.
+    expect(paths['/api/sessions/running']?.get?.operationId).toBe('audit.running_chats');
+  });
+
+  it('derives the other ids by the rule in operation-ids.ts', () => {
+    const paths = generateOpenAPISpec().paths ?? {};
+    expect(paths['/api/sessions']?.get?.operationId).toBe('sessions.list');
+    expect(paths['/api/health']?.get?.operationId).toBe('health.get');
+    expect(paths['/api/notifications/read-all']?.post?.operationId).toBe('notifications.readAll');
+    expect(paths['/api/auth/revoke-session']?.post?.operationId).toBe('auth.revokeSession');
+    expect(paths['/api/health/deep']?.get?.operationId).toBe('health.getDeep');
+  });
+
+  it('declares every {name} path segment as a path parameter', () => {
+    const missing: string[] = [];
+    for (const [path, item] of Object.entries(generateOpenAPISpec().paths ?? {})) {
+      const names = [...path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]);
+      for (const method of ['get', 'put', 'post', 'delete', 'patch'] as const) {
+        const operation = item?.[method];
+        if (!operation) continue;
+        const declared = new Set(
+          ((operation.parameters ?? []) as Array<{ name: string; in: string }>)
+            .filter((p) => p.in === 'path')
+            .map((p) => p.name)
+        );
+        for (const name of names)
+          if (!declared.has(name)) missing.push(`${method} ${path} {${name}}`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('carries the server version, or the one it is given', () => {
+    expect(generateOpenAPISpec().info.version).toBe(SERVER_VERSION);
+    expect(generateOpenAPISpec({ version: '9.8.7' }).info.version).toBe('9.8.7');
   });
 
   it('produces valid JSON output', () => {

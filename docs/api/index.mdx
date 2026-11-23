@@ -15,7 +15,11 @@ By default the server listens on `http://localhost:4242` (or `:6242` in a dev ch
 
 ## Authentication
 
-DorkOS runs with no login by default, for a single person on their own machine. If you turn on login (`dorkos auth enable`) or expose the server past localhost, requests need the same session credentials the app itself uses. Agents reaching the API from outside the app (over the tunnel, for example) can use the external MCP server at `/mcp` instead, which accepts an API key rather than a browser session.
+Most operations need nothing when a script runs on the same computer as DorkOS. A few ask for a personal API key even there, such as running a connected app's action from a script. Calls need a sign-in in two cases: you turn on "Ask for a password on this computer too" (or run `dorkos auth enable`), or the call comes from another device. Then a call needs one of two things. A browser sends the sign-in cookie it got when you signed in. A script sends a personal API key as `Authorization: Bearer <key>`. You create keys in DorkOS under **Settings → Login & security → API keys**, which shows up while you are signed in or the password setting is on.
+
+Each operation's page says what it takes. A few need nothing from anywhere, such as the health check. The API document marks each one the same way, so a generated client knows how to sign in.
+
+The `X-DorkOS-Agent` header names the agent making a call. It only says who is calling, and it never stands in for a sign-in, so it is not listed as a way to sign in. Agents reaching DorkOS from outside the app can also use the [MCP server](/docs/integrations/mcp-server) at `/mcp`, which takes an API key the same way.
 
 ## Prefer talking to an agent instead?
 

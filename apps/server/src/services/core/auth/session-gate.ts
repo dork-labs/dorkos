@@ -8,7 +8,7 @@
  * with that setting off passes with nothing. Read per request, so changing the
  * setting needs no restart.
  *
- * ## Exemptions (always reach their handler)
+ * ## Exemptions (always reach their handler; `./gated-paths.ts`)
  *
  * - **Non-API paths** — static SPA assets and `index.html`, so the login screen
  *   can render (only `/api/*` and `/mcp` paths are gated).
@@ -59,17 +59,13 @@ import { logger } from '../../../lib/logger.js';
 // the auth barrel (which re-exports this module) is a safe function-level cycle.
 import { getAuth } from './index.js';
 import type { RequestFacts } from '../../../http/request-facts.js';
-import { isSessionGatedPath } from './gated-paths.js';
+import { isGateExemptPath, isSessionGatedPath } from './gated-paths.js';
 import { gateAccessFor, type GateAccess } from './gate-policy.js';
 import { currentServerRole } from '../../../lib/server-role.js';
 import { publicComputerSessionExpired } from '../hub/public-computer.js';
 import { decideAgentComputerGate } from '../agent-computer/agent-gate.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import type { AgentComputerWriteRefusal } from '../agent-computer/agent-writes.js';
-import {
-  RELAY_LINK_PATH,
-  SESSION_RELAY_PASSKEY_FINISH_PATH,
-} from '@dorkos/shared/session-relay-link';
 import {
   mayCarrySessionCookie,
   requestSessionRoute,
@@ -107,80 +103,6 @@ export interface RequestUser {
    * in on (`./sessions/session-route.ts`). Present only for a cookie credential.
    */
   readonly route?: SessionRoute;
-}
-
-/**
- * The one path under `/api/health` that the gate still protects.
- *
- * The liveness probe is exempt because a load balancer, the desktop shell, and
- * the tunnel all have to reach it before anyone signs in, and it says only that
- * the server is up. `/api/health/deep` is a different thing wearing the same
- * prefix: it reports how many rooms, integrations, and agents this machine has
- * and which of them are broken. That is for the operator, so it needs the
- * operator's credential.
- */
-const GATED_HEALTH_PATHS = ['/api/health/deep'];
-
-/**
- * Whether a path reaches a gated health route, however it is spelled.
- *
- * The router matches non-strictly, so `/api/health/deep/` reaches the same
- * handler as `/api/health/deep`, and a path with doubled slashes must not be
- * trusted to miss it either. An
- * exact-string carve-out out of a prefix exemption therefore leaks: the
- * trailing-slash spelling misses the carve-out, matches the `/api/health/`
- * exemption, and returns the whole report with no credential. Match the way
- * the router does — normalize, then compare as a prefix.
- *
- * Case is already handled: the caller lowercases before any gate check.
- *
- * @param path - The lowercased request path.
- * @returns `true` when the request would reach a gated health route.
- */
-function isGatedHealthPath(path: string): boolean {
-  const collapsed = path.replace(/\/{2,}/g, '/');
-  // `\/$`, not `\/+$`: the collapse on the line above leaves no run of two
-  // slashes for the `+` to consume, so it could only ever retry at every offset
-  // of a run that cannot exist — quadratic in shape (CodeQL js/polynomial-redos)
-  // on the pre-auth path every request takes, which is the last place to leave
-  // one standing.
-  const normalized = collapsed.length > 1 ? collapsed.replace(/\/$/, '') : collapsed;
-  return GATED_HEALTH_PATHS.some(
-    (gated) => normalized === gated || normalized.startsWith(`${gated}/`)
-  );
-}
-
-/**
- * A media URL with a whole ticket (43 base64url characters), matched on the
- * path exactly as the router sees it, case and all: the router is
- * case-sensitive, so this is the only spelling that reaches the media route,
- * and no other spelling (`/api/extensions/MEDIA/…`) is ever exempt.
- */
-const MEDIA_TICKET_PATH = /^\/api\/extensions\/media\/[A-Za-z0-9_-]{43}$/;
-
-/**
- * Paths that always pass while login is enabled: the Better Auth endpoints (so
- * sign-in is reachable), the health probe, and on a hub the link path.
- *
- * @param path - The path, lowercased.
- * @param exactPath - The same path in its original case, for the one
- *   exemption that must match it exactly.
- */
-function isExemptPath(path: string, exactPath: string): boolean {
-  if (isGatedHealthPath(path)) return false;
-  return (
-    path.startsWith('/api/auth/') ||
-    path === '/api/health' ||
-    path.startsWith('/api/health/') ||
-    // Signed-token-authorized embedded-browser content (see the module doc).
-    path.startsWith('/api/workbench/serve/') ||
-    // A video an app's frame plays, by its ticket (see the module doc).
-    MEDIA_TICKET_PATH.test(exactPath) ||
-    // A computer redeeming a link code, on a hub only (see the module doc).
-    (path === RELAY_LINK_PATH && currentServerRole() === 'hub') ||
-    // A new approvals passkey coming back to this computer (see the module doc).
-    (path === SESSION_RELAY_PASSKEY_FINISH_PATH && currentServerRole() !== 'hub')
-  );
 }
 
 /** Extract the token from an `Authorization: Bearer <token>` header, or `null`. */
@@ -373,7 +295,9 @@ export async function decideSessionGate(
   // Only the API surface and the MCP endpoint are gated; SPA assets pass so the
   // login screen can load. The Better Auth endpoints and the health probe are
   // always reachable.
-  if (!isSessionGatedPath(lowered) || isExemptPath(lowered, path)) return { allowed: true };
+  if (!isSessionGatedPath(lowered) || isGateExemptPath(lowered, path, currentServerRole())) {
+    return { allowed: true };
+  }
 
   if (access === 'refused') return { allowed: false };
 
