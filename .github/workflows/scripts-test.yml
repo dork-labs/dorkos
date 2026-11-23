@@ -755,6 +755,14 @@ jobs:
       - name: Browser-smoke scope fixtures
         run: bash scripts/test-browser-smoke-scope.sh
 
+      # pr-related-scope.sh decides whether a pull request's unit tests are
+      # chosen by import, and pr-related-tests.sh runs that choice in a shard
+      # (DOR-5110). A fallback that stops firing lets a config, fixture or
+      # setup change run a narrow set and moves the catch to the merge queue,
+      # as an ejection. Hermetic: throwaway repos and stub runners, no pnpm.
+      - name: Tests-by-import fixtures
+        run: bash scripts/test-pr-related.sh
+
       # release-branch-contents.sh is the rule for what a pull request into a
       # release/v<X.Y.Z> branch may carry (DOR-4639): only cherry-picks of main
       # with a matching patch-id and the release commit. A rule that quietly

@@ -672,7 +672,9 @@ jobs:
       packages: ${{ steps.plan.outputs.packages }}
       tests: ${{ steps.noscope.outputs.run }}
       text_only: ${{ steps.textonly.outputs.text_only || 'false' }}
-      vitest_files: ${{ steps.textonly.outputs.vitest_files || '[]' }}
+      vitest_files: ${{ steps.textonly.outputs.text_only == 'true' && steps.textonly.outputs.vitest_files || steps.related.outputs.vitest_files || '[]' }}
+      related: ${{ steps.related.outputs.related || 'false' }}
+      dirs: ${{ steps.plan.outputs.dirs }}
     steps:
       # A canary run is against `main` or it is nothing.
       #
@@ -821,6 +823,47 @@ jobs:
             echo "::notice title=No-code scope::only changelog, docs or version lines changed, so test-shard and test-binary run no suite here. The merge queue runs the full suite."
           fi
           echo "run=$verdict" >> "$GITHUB_OUTPUT"
+      # TESTS CHOSEN BY IMPORT (DOR-5110, ledger 261123-195117). Decides, from
+      # scripts/pr-related-scope.sh, whether a pull request's tests can be
+      # picked by Vitest's import graph rather than by whole suite. When it
+      # can, and the plan below is `selected`, each shard runs
+      # scripts/pr-related-tests.sh: in every planned suite, only the test
+      # files that import (or name) a changed file, split across the same
+      # shards. It answers false, and every planned suite runs whole as
+      # before, for any config, test tooling, setup file, fixture, mock,
+      # deleted file, or file outside the packages that is not prose; the
+      # script's header has the list. The changed-file list rides the same
+      # `vitest_files` output the text-only lane uses.
+      #
+      # No `if:`: every event but pull_request answers false without looking,
+      # a release pull request included, so the merge queue and the canary run
+      # every suite exactly as before. The script comes from the BASE commit,
+      # never this checkout (Security, #3238). Every failure answers false.
+      - name: Decide whether this change's tests can be chosen by import
+        id: related
+        env:
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
+          TEXT_ONLY: ${{ steps.textonly.outputs.text_only }}
+        run: |
+          set -uo pipefail
+          not_related() {
+            echo "tests are not chosen by import ($1); the planned suites run whole"
+            printf 'related=false\nvitest_files=[]\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          [ "$EVENT" = 'pull_request' ] || not_related "a $EVENT run"
+          [ "${TEXT_ONLY:-}" != true ] || not_related 'the text-only lane has this change'
+          if ! git rev-parse --verify --quiet 'HEAD^2' >/dev/null || ! base=$(git rev-parse --verify --quiet 'HEAD^1'); then
+            not_related 'no test-merge commit to diff'
+          fi
+          git cat-file blob "$base:scripts/pr-related-scope.sh" > "$RUNNER_TEMP/pr-related-scope.sh" 2>/dev/null ||
+            not_related 'the base commit has no scripts/pr-related-scope.sh'
+          bash "$RUNNER_TEMP/pr-related-scope.sh" "$base" HEAD > "$RUNNER_TEMP/related-outputs" || not_related 'the decision failed'
+          reason=$(sed -n 's/^reason=//p' "$RUNNER_TEMP/related-outputs")
+          grep -qx 'related=true' "$RUNNER_TEMP/related-outputs" || not_related "${reason:-no answer}"
+          grep -q '^vitest_files=\[' "$RUNNER_TEMP/related-outputs" || not_related 'the decision printed no file list'
+          echo "::notice title=Tests chosen by import::$reason. Each planned suite runs the test files that import or name a changed file; the merge queue runs every suite."
+          grep -E '^(related|vitest_files)=' "$RUNNER_TEMP/related-outputs" >> "$GITHUB_OUTPUT"
       # Writes scope=full, or scope=selected with the chosen suites' package
       # names and directories. No `if:`: on every event but pull_request it
       # answers full without looking, and those legs never read it.
@@ -1361,7 +1404,16 @@ jobs:
         env:
           SCOPE: ${{ needs.test-shard-count.outputs.scope }}
           PACKAGES: ${{ needs.test-shard-count.outputs.packages }}
+          DIRS: ${{ needs.test-shard-count.outputs.dirs }}
+          RELATED: ${{ needs.test-shard-count.outputs.related }}
+          VITEST_FILES: ${{ needs.test-shard-count.outputs.vitest_files }}
         run: |
+          # Tests chosen by import (DOR-5110): only on a `selected` plan, and
+          # scripts/pr-related-tests.sh runs a package's whole suite whenever
+          # the graph cannot answer for it.
+          if [ "$SCOPE" = 'selected' ] && [ "${RELATED:-}" = true ]; then
+            exec bash scripts/pr-related-tests.sh '${{ matrix.shard }}/${{ strategy.job-total }}' "$VITEST_FILES"
+          fi
           filters=()
           if [ "$SCOPE" = 'selected' ]; then
             for package in $PACKAGES; do filters+=("--filter=$package"); done
