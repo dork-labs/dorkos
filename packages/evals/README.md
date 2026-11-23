@@ -40,7 +40,7 @@ pnpm evals:local --suite activity-read --budget 0.50
 # the free structural suite: no model, no spend, seconds
 pnpm evals -- --suite core --tier test-mode
 
-# the channel suite's free half: four mechanism cases, no model, seconds
+# the channel suite's free half: ten mechanism cases, no model, seconds
 pnpm evals -- --suite rooms --tier test-mode
 
 # clean up sandboxes and containers an interrupted run left behind
@@ -55,19 +55,19 @@ the three ways to fix it. It never quietly passes.
 `--suite <name>` takes a suite name or a single case id. The name decides the
 bill, so it is worth knowing which is which:
 
-| Suite          | What is in it                                                   | Spends?                             |
-| -------------- | --------------------------------------------------------------- | ----------------------------------- |
-| `core`         | the product suite: governance, operate, agents, the widget case | yes, on `pnpm evals:local`          |
-| `smoke`        | the cheap label-gated subset (the harness self-test today)      | only if you run it credentialed     |
-| `rooms`        | channels: four free mechanism cases + eight quarantined probes  | only the probes, and only on a tier |
-| `memory`       | agent memory across surfaces, three quarantined probes          | yes, credentialed                   |
-| `connector`    | connector routing, quarantined                                  | yes, credentialed                   |
-| `experimental` | cases kept out of `core` by a known harness gap                 | yes, credentialed                   |
-| `chat`         | the same six chat cases, on whichever runtime you point them at | yes, and NOT on a Claude plan       |
-| `heartbeat`    | four seeded beat situations: the right move and the right rung  | yes, credentialed                   |
-| `unblock`      | does the agent act, ask DorkOS for access, or wait for a yes    | yes, credentialed                   |
-| `discovery`    | names a connection or package once when it helps, quiet if not  | yes, credentialed                   |
-| `all`          | everything registered                                           | yes                                 |
+| Suite          | What is in it                                                    | Spends?                             |
+| -------------- | ---------------------------------------------------------------- | ----------------------------------- |
+| `core`         | the product suite: governance, operate, agents, the widget case  | yes, on `pnpm evals:local`          |
+| `smoke`        | the cheap subset: the harness self-test and the widget case      | only if you run it credentialed     |
+| `rooms`        | channels: ten free mechanism cases + 24 credentialed probes      | only the probes, and only on a tier |
+| `memory`       | agent memory across surfaces, five quarantined probes            | yes, credentialed                   |
+| `connector`    | connector routing, quarantined                                   | yes, credentialed                   |
+| `experimental` | quarantined probes: memory, most rooms probes, harness-gap cases | yes, credentialed                   |
+| `chat`         | the same six chat cases, on whichever runtime you point them at  | yes, and NOT on a Claude plan       |
+| `heartbeat`    | four seeded beat situations: the right move and the right rung   | yes, credentialed                   |
+| `unblock`      | does the agent act, ask DorkOS for access, or wait for a yes     | yes, credentialed                   |
+| `discovery`    | names a connection or package once when it helps, quiet if not   | yes, credentialed                   |
+| `all`          | everything registered                                            | yes                                 |
 
 ### The `chat` suite, and runs that pay somebody else
 
@@ -193,18 +193,21 @@ charged.
 It is the only suite split across two tiers on purpose, because half of what a
 channel does can be measured with no model at all.
 
-- **`--suite rooms --tier test-mode` is free and it GATES.** Four mechanism
-  cases: a mentioned agent always runs a turn; a message that addresses nobody
+- **`--suite rooms --tier test-mode` is free and it GATES.** Ten mechanism
+  cases, among them: a mentioned agent always runs a turn; a message that addresses nobody
   runs none and spends none; three messages inside the gathering window become
   one turn charged once; Stop interrupts a running turn and the room says so
   exactly once. They read the room's own event stream and the `room_turn_spend`
   rows, so none of them can be satisfied by an agent that merely said something
-  plausible. The suite's other eight cases appear in that run as
+  plausible. The suite's other 24 cases appear in that run as
   `skipped-wrong-tier` — see below.
-- **The eight credentialed cases are quarantined**: the context-recall probes
-  X-01 to X-06 from `contributing/capabilities/chat.md` §7, plus restraint (an engaged
-  agent staying out of a conversation that is not about it) and the adversarial
-  injection case A-15. X-07 (bridged rooms) and X-08 (after compaction) are NOT
+- **The 24 credentialed cases are quarantined, all but one**. Among them: the
+  context-recall probes X-01 to X-06 from `contributing/capabilities/chat.md` §7,
+  restraint (an engaged agent staying out of a conversation that is not about
+  it), the adversarial injection case A-15, `rooms-burst-answered-in-full`,
+  `rooms-files-edit-by-path`, and the 13 reply-judgment cases in
+  `src/suite/rooms-judgment.ts`. The one that gates is
+  `rooms-ack-only-reacts-not-replies` (A-06). X-07 (bridged rooms) and X-08 (after compaction) are NOT
   implemented, and `src/suite/rooms.ts` says why rather than shipping a case that
   asserts nothing.
 
@@ -304,8 +307,9 @@ pnpm evals:local --suite unblock
 
 ### The `memory` suite (agent memory, DOR-632)
 
-Three credentialed, quarantined probes in `src/suite/memory.ts` — X-09, X-12 and
-X-11b from `contributing/capabilities/chat.md` §7.1. All of them spend, none of them
+Five credentialed, quarantined probes in `src/suite/memory.ts`: X-09, X-12,
+X-11b, X-10 and X-13 from `contributing/capabilities/chat.md` §7.1. The first
+three are described here; the table below covers all five. All of them spend, none of them
 gate, and none of them run at all without a credential:
 
 - **`memory-recall-cross-surface` (X-09)** is the feature's acceptance probe. A
@@ -347,11 +351,10 @@ measured cost is therefore recorded into the room notes
 (`setupCostUsd` / `laterCostUsd`) as evidence rather than dropped, and shows up
 in `results.json` under the oracle evidence.
 
-**What still needs a credentialed run** (nothing here has been run against a
-model yet):
+**What still needs a credentialed run:**
 
-1. all three cases end to end, three green oracle verdicts each, per the bar
-   above;
+1. every case to three green oracle verdicts, per the bar above (the table below
+   says where each stands);
 2. **the X-11b drill.** Its recipe is written out in full in the case's TSDoc —
    remove the fence and the trust framing from `buildMemoryBlock` in
    `apps/server/src/services/runtimes/shared/agent-context.ts`, run
@@ -568,7 +571,7 @@ receives is the ENDING (`uninstalled`, `denied`, or — since DOR-1932 —
 The harness is a legitimate decider here, not a hole in the gate. Deciding is
 refused for anyone presenting an agent identity or an approval token
 (`services/core/approvals/decision-authority.ts`); the driver sends neither
-header, so it lands in the same `local-trust` posture the cockpit uses on a
+header, so it lands in the same `local-trust` posture the app uses on a
 single-user machine. **Nothing in the server was loosened to allow this.** If a
 future change makes the driver's decisions 403, the fix is in the harness, never
 in that check.
@@ -784,6 +787,12 @@ this tier was being built, a run armed with the flag and no OpenRouter key boote
 five servers and drove real turns, because the local sign-in answered the ladder.
 Nothing was billed only because the sandbox had no OpenRouter key to spend, which
 is luck rather than a gate.
+
+One unit test in this package spends too:
+`src/runner/__tests__/harness-server.test.ts` boots a real server and drives one
+live turn, and it runs only when `DORKOS_EVALS_CREDENTIALED=1` is set beside
+`ANTHROPIC_API_KEY`. A fake key does not make it free: the test server finds your
+`claude` sign-in and bills that instead.
 
 None of these names is listed in `turbo.json`, and none of them may be. Turbo runs
 strict and strips whatever a task was not told to pass, which is the single reason
