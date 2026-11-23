@@ -208,7 +208,7 @@ Most people never need this section. Here's what's happening if you're curious.
 - **One item at a time, unless you ask for more.** The scheduled run and `/flow auto` take one
   item, finish with it, then claim the next, capped at 2 items in flight overall and 1 per project
   by default. To work on several at once, run `flow drain --parallel <n>`: each item gets its own
-  copy of the project and its own session, and a reviewer agent checks every push.
+  copy of the project and its own chat, and a reviewer agent checks every push.
 - **Ready work fuels it.** The loop only claims items carrying a "ready" label. Triage adds that
   label when it accepts an item; decompose adds it to the tasks it produces. No labeled work means
   nothing to dispatch.

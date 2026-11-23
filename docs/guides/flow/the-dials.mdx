@@ -119,17 +119,17 @@ How aggressively the engine takes work on its own, under `autonomy` in `config.j
 
 ### Drain: several items at once
 
-`flow drain --parallel 3` works on three ready items at the same time. Each gets its own copy of the project (a worktree) and its own agent session, spread across the accounts you allow. A separate reviewer agent reads every push, and a pull request opens only after a clean review. These settings live under `drain`:
+`flow drain --parallel 3` works on three ready items at the same time. Each gets its own copy of the project (a worktree) and its own agent chat, spread across the accounts you allow. A separate reviewer agent reads every push, and a pull request opens only after a clean review. These settings live under `drain`:
 
-| Dial                | What it does                                                        | Default       |
-| ------------------- | ------------------------------------------------------------------- | ------------- |
-| `parallel`          | How many items a drain works on at once. `0` means one at a time.   | `0`           |
-| `host`              | Where sessions run: `cli`, `cmux`, `dorkos`, or `auto` to pick one. | `"auto"`      |
-| `maxLivePerAccount` | The most sessions one account runs at once.                         | `2`           |
-| `maxLoadPerCpu`     | New sessions wait while the computer is busier than this.           | `1.5`         |
-| `maxReviewRounds`   | Review rounds before the item stops and waits for you.              | `5`           |
-| `stallAfterMinutes` | Minutes without progress before a quiet session is restarted.       | `60`          |
-| `permissionMode`    | How much each session may do without asking.                        | `acceptEdits` |
+| Dial                | What it does                                                      | Default       |
+| ------------------- | ----------------------------------------------------------------- | ------------- |
+| `parallel`          | How many items a drain works on at once. `0` means one at a time. | `0`           |
+| `host`              | Where chats run: `cli`, `cmux`, `dorkos`, or `auto` to pick one.  | `"auto"`      |
+| `maxLivePerAccount` | The most chats one account runs at once.                          | `2`           |
+| `maxLoadPerCpu`     | New chats wait while the computer is busier than this.            | `1.5`         |
+| `maxReviewRounds`   | Review rounds before the item stops and waits for you.            | `5`           |
+| `stallAfterMinutes` | Minutes without progress before a quiet chat is restarted.        | `60`          |
+| `permissionMode`    | How much each chat may do without asking.                         | `acceptEdits` |
 
 Each account flow may use has to join the rotation first; `flow accounts setup` walks you through it. See [Use all your accounts](/docs/guides/flow/use-all-your-accounts).
 

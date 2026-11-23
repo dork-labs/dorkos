@@ -272,7 +272,7 @@ This is what the recovery reconciler reads each tick: it lists `agent/claimed` +
   v1 carries `attemptCount` and `workerPid` for single-machine liveness. The scheduled tick and
   `/flow auto` stay sequential, WIP-capped. Running several items at once is `flow drain --parallel
   N` (`drain.parallel`): one supervisor per project, held by a pid lock at `.dork/flow/drain.lock`,
-  starts one worktree and session per item and restarts a session that goes quiet for
+  starts one worktree and agent chat per item and restarts a chat that goes quiet for
   `drain.stallAfterMinutes`. What is not built is multi-writer safety across machines: fencing
   tokens and atomic multi-claim between independent drains.
 </Callout>
