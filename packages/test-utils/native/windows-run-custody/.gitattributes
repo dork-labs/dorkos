@@ -1,0 +1,3 @@
+# The private builder and verifier hash identical authored source bytes on every OS.
+*.c text eol=lf
+*.h text eol=lf
