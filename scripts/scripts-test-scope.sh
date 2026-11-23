@@ -56,7 +56,7 @@ SCOPE_PATTERNS=(
   '^packages/eslint-config/'
   '^\.github/workflows/scripts-test\.yml$'
   '^\.github/workflows/claude-code-review\.yml$'
-  '^\.github/workflows/merge-tail\.yml$'
+  '^\.github/workflows/review-redispatch\.yml$'
   '^\.github/workflows/operating-skills-version-check\.yml$'
   '^\.github/workflows/test\.yml$'
   '^\.github/workflows/credential-free-build\.yml$'

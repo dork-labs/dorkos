@@ -2,7 +2,7 @@
 id: 261117-174608
 title: 'merge-tail: ask GitHub again when mergeability is still being computed'
 kind: experiment
-status: proposed
+status: reverted
 actor: agent
 gates:
   - wf.merge-tail.arm
@@ -32,3 +32,5 @@ once 3 PRs in a row stay UNKNOWN, so the 10-minute job timeout holds with 100 op
 
 Revert if a PR is armed with a status the gate would have refused, or if ticks start hitting
 `timeout-minutes`.
+
+Retired 2026-11-24 with the workflow it changed (DOR-5124, ledger 261124-010000): PRs auto-merge at open, so nothing arms.

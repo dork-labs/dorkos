@@ -2,7 +2,7 @@
 id: 261121-191243
 title: the merge queue takes out a config or migration head queued without QA's real-data label after it
 kind: incident-fix
-status: proposed
+status: reverted
 actor: agent
 gates:
   - wf.arm-door.door
@@ -52,3 +52,5 @@ once this merges; until Security promotes that change, its local copy holds the 
 
 Revert, or narrow it, if it takes out a pull request whose head did carry a fresh QA label (a
 misread label time or file list) more than once in the window.
+
+Retired 2026-11-24 with the workflow it changed (DOR-5124, ledger 261124-010000): PRs auto-merge at open, so nothing arms.

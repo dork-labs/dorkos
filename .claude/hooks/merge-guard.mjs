@@ -154,8 +154,8 @@ Admin merges are reserved for the CI Steward break-glass path (/ci-break-glass,
 phase 1b, not built yet). Until it exists, no agent has a sanctioned admin
 merge.
 
-Do this instead: gh pr merge --auto <number>, or let merge-tail arm the PR
-within about 10 minutes. If the queue itself is broken, say so and leave the
+Do this instead: nothing, if the PR was opened with scripts/open-pr.sh (it
+turned on auto-merge). Otherwise gh pr merge --auto <number>. If the queue itself is broken, say so and leave the
 PR alone. The guide: contributing/ci.md.`;
 
 /** gh flags that consume the next token when written without `=`. */

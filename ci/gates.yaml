@@ -121,7 +121,7 @@ gates:
   # --- claude-code-review.yml ---
   - id: wf.claude-code-review.review
     source: .github/workflows/claude-code-review.yml
-    purpose: Automated Claude review of a PR against REVIEW.md; a red result stops merge-tail from arming, and merge-tail re-requests the review up to three times per head SHA.
+    purpose: Automated Claude review of a PR against REVIEW.md; its Security lens feeds security-verdict and so pr-gates, and review-redispatch re-requests the review up to three times per head SHA.
 
   # --- claude.yml ---
   - id: wf.claude.claude
@@ -209,11 +209,6 @@ gates:
     source: .github/workflows/lint.yml
     purpose: Full-monorepo Prettier check, ESLint for every package, and ESLint for the repo-root scripts and hooks.
 
-  # --- merge-tail.yml ---
-  - id: wf.merge-tail.arm
-    source: .github/workflows/merge-tail.yml
-    purpose: Every 10 minutes, arms auto-merge on PRs that are finished, green and unblocked, and re-requests a lost automated review on the ones whose review check is red.
-
   # --- neon-preview-sweep.yml ---
   - id: wf.neon-preview-sweep.sweep
     source: .github/workflows/neon-preview-sweep.yml
@@ -240,10 +235,10 @@ gates:
     source: .github/workflows/publish-community.yml
     purpose: Publishes and attests the immutable Community image and its strict version-to-digest release manifest.
 
-  # --- arm-door.yml ---
-  - id: wf.arm-door.door
-    source: .github/workflows/arm-door.yml
-    purpose: On every merge-queue entry, takes a PR back out when its head lacks a security-reviewed label at or after it or a verify proof, and tells the author once when it was queued without the local arm script. Fails open.
+  # --- review-redispatch.yml ---
+  - id: wf.review-redispatch.redispatch
+    source: .github/workflows/review-redispatch.yml
+    purpose: Never gates a merge. Every 10 minutes, re-requests a lost automated review (re-review label) on PRs whose review check is red, up to the ladder in should-redispatch-review.sh, so pr-gates is not left waiting (DOR-5124; was merge-tail's second duty).
 
   # --- release-publish.yml ---
   - id: wf.release-publish.prove
