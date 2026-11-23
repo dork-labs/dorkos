@@ -8,7 +8,7 @@ import type {
 } from './canvas-channel-schemas.js';
 /**
  * Transport interface — the hexagonal architecture port that decouples the React client
- * from its backend. The supported `HttpTransport` uses HTTP/SSE to Express.
+ * from its backend. The supported `HttpTransport` uses HTTP/SSE to the Hono server.
  *
  * Injected via React Context (`TransportProvider`).
  *
