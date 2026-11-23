@@ -11,7 +11,7 @@ import type { RequestListener } from 'node:http';
 import type { Hono, MiddlewareHandler } from 'hono';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { createApiApp, type ApiEnv } from '../api-chain.js';
-import type { BodyRule } from '../request-body.js';
+import type { BodyRule } from '@dorkos/http-kit';
 import { frontDoorListener } from '../front-door.js';
 
 /** One group to mount: where, and its routes. */

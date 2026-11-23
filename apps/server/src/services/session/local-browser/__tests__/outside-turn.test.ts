@@ -5,9 +5,9 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalBrowserState } from '@dorkos/shared/local-browser';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { sessionMetadata } from '@dorkos/db';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { noteRoomTurnWords } from '../../../core/turn-power/outside-words.js';
-import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { RuntimeRegistry } from '../../../core/runtime-registry.js';
 import {
   clearTestHomes,
   registerTestHomes,
@@ -230,17 +230,16 @@ describe('the chat’s agent, for the marks its turns carry', () => {
 
   it('is its folder’s agent when the launch recorded none (DOR-5035)', async () => {
     const db = createTestDb();
-    runtimeRegistry.setDb(db);
-    db.insert(sessionMetadata)
-      .values({
-        sessionId: 'chat-1',
-        runtime: 'claude-code',
-        agentPath: null,
-        createdAt: new Date().toISOString(),
-      })
-      .run();
+    const registry = new RuntimeRegistry();
+    registry.setDb(db);
+    registry.register(new FakeAgentRuntime('claude-code') as never);
+    // The CLI's shape: a folder, no agent.
+    await registry.persistSessionRuntime('chat-1', 'claude-code', { kind: 'interactive' });
     registerTestHomes(['/agents/juno']);
-    setSessionAgentSources({ liveCwd: () => '/agents/juno' });
+    setSessionAgentSources({
+      db,
+      liveCwd: (id) => (id === 'chat-1' ? '/agents/juno' : undefined),
+    });
     const marksOf = vi.fn((): ReturnType<OutsideTurnSources['marksOf']> => ({}));
     await liveOutsideTurnCheck({
       launchOriginOf: () => null,

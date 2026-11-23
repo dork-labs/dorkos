@@ -201,6 +201,19 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
   } as Task;
 }
 
+/** The run's refused tools and, on a capped run, its cap and the file that set it. */
+function runCapFields(
+  raw: string | null
+): Pick<TaskRun, 'refusedTools' | 'cappedAt' | 'cappedFile'> {
+  const column = readRefusedToolsColumn(raw);
+  // Ran capped at Don't ask for a changed SKILL file (DOR-3703, M4; DOR-5060).
+  return {
+    refusedTools: column.tools,
+    ...(column.cappedAt ? { cappedAt: 'dontAsk' as const } : {}),
+    ...(column.cappedAt && column.file ? { cappedFile: column.file } : {}),
+  };
+}
+
 /** Convert a Drizzle run row to a TaskRun object. */
 export function mapRunRow(row: typeof pulseRuns.$inferSelect): TaskRun {
   return {
@@ -216,9 +229,7 @@ export function mapRunRow(row: typeof pulseRuns.$inferSelect): TaskRun {
     trigger: row.trigger as TaskRunTrigger,
     resolvedRuntime: row.resolvedRuntime ?? null,
     resolvedModel: row.resolvedModel ?? null,
-    refusedTools: readRefusedToolsColumn(row.refusedTools).tools,
-    // Ran capped at Don't ask for a changed SKILL file (DOR-3703, M4).
-    ...(readRefusedToolsColumn(row.refusedTools).cappedAt ? { cappedAt: 'dontAsk' as const } : {}),
+    ...runCapFields(row.refusedTools),
     outcome: (row.outcome as TaskRunOutcome | null) ?? null,
     scheduledFor: row.scheduledFor ?? null,
     missedTicks: row.missedTicks ?? null,

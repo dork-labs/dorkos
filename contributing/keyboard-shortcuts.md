@@ -96,6 +96,7 @@ The hook attaches a global `keydown` listener only when `activeInteraction` is n
 interface UseInteractiveShortcutsOptions {
   activeInteraction: { type: 'approval' | 'question'; toolCallId: string } | null;
   onApprove?: () => void;
+  onAlwaysAllow?: () => void;
   onDeny?: () => void;
   onToggleOption?: (index: number) => void;
   onNavigateOption?: (direction: 'up' | 'down') => void;
@@ -109,9 +110,9 @@ interface UseInteractiveShortcutsOptions {
 ### Key Behaviors
 
 1. **Guard:** If `activeInteraction` is `null`, no listener is attached.
-2. **Text input filter:** If the `keydown` target is an enabled `<textarea>` or `<input>`, only `Enter` (submit) is handled. All other keys pass through to the text input normally.
+2. **Modifier and text-input filters:** A key held with `Cmd`, `Ctrl` or `Alt` is ignored, so window-level chords such as `Cmd+1` never also toggle an option (DOR-540). If the target is an enabled `<textarea>` or `<input>`, a question handles only `Enter` (submit) and `ArrowUp`/`ArrowDown`; everything else types normally. On an approval card, `Enter` inside a field marked `data-approval-field` (the deny reason) is left to that field, so it cannot approve the call being refused.
 3. **Double-fire prevention:** A `respondingRef` prevents the approve/deny callbacks from firing twice on rapid key presses. The ref resets when `activeInteraction.toolCallId` changes (new tool becomes active).
-4. **Approval mode:** `Enter` calls `onApprove`, `Escape` calls `onDeny`. No other keys are handled.
+4. **Approval mode:** `Enter` calls `onApprove`, `Shift+Enter` calls `onAlwaysAllow`, `Escape` calls `onDeny`. No other keys are handled.
 5. **Question mode:** Digit keys `1`-`9` toggle options (bounds-checked against `optionCount`), arrow keys navigate, `Space` toggles the focused option, `[`/`]` and `ArrowLeft`/`ArrowRight` navigate between question tabs, `Enter` submits.
 
 ## Keyboard Shortcut Reference
@@ -258,10 +259,11 @@ The command palette displays a `PaletteFooter` bar showing context-appropriate k
 
 ### Approval Mode (`WAITING_FOR_APPROVAL`)
 
-| Key      | Action                |
-| -------- | --------------------- |
-| `Enter`  | Approve the tool call |
-| `Escape` | Deny the tool call    |
+| Key           | Action                                                       |
+| ------------- | ------------------------------------------------------------ |
+| `Enter`       | Approve the tool call                                        |
+| `Shift+Enter` | Always allow (only when the card offers it; `onAlwaysAllow`) |
+| `Escape`      | Deny the tool call                                           |
 
 ### Question Mode (`WAITING_FOR_ANSWER`)
 
@@ -400,14 +402,14 @@ When `isActive` is `true`, the component renders:
 
 Option count includes the "Other" free-text option (i.e., `options.length + 1`).
 
-### `InferenceIndicator.tsx`
+### Live lane waiting line
 
-Displays contextual status text below the message list. When `isWaitingForUser` is `true`:
+The one status line above the composer (`deriveLaneState` in `features/conversation/model/lane-state.ts`, drawn by `features/conversation/ui/LaneContent.tsx`) shows the `turn-waiting` rung while a turn is parked:
 
-- **Approval:** Shows `Shield` icon + "Waiting for your approval"
-- **Question:** Shows `MessageSquare` icon + "Waiting for your answer"
+- **Approval:** `Shield` icon + "Waiting for your approval"
+- **Question:** `MessageSquare` icon + "Waiting for your answer"
 
-Both use amber coloring (`text-amber-500` icon, `text-amber-600` text) to match the interactive tool cards.
+Both use the warning status token (`text-status-warning-fg`) and show how long the turn has waited.
 
 ## `Kbd` Component
 

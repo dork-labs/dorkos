@@ -20,9 +20,11 @@ import {
 import type { CapabilityDeps, CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import type { AgentIdentity } from '../../core/agent-identity/agent-identity-service.js';
 import { recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import { resetLiveOutsiderTurns } from '../../core/turn-power/live-outsider-turns.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import { TodoPromiseService } from '../todo-promise-service.js';
 import { TodoPromiseStore } from '../todo-promise-store.js';
+import { rowCarriesOutsideWords } from '../todo-authority.js';
 import { TodoService } from '../todo-service.js';
 import { TodoStore } from '../todo-store.js';
 import { TodoTurns } from '../todo-turns.js';
@@ -143,11 +145,17 @@ describe('to-do tools', () => {
         parentOf: (sessionId: string) => turns.parentOf(sessionId, (id) => store.get(id)),
         readSource: (entryId: string) => sources[entryId],
         agentInRoom: (roomId: string, agentPath: string) => members.has(`${roomId}:${agentPath}`),
+        carriesOutsideWords: (id: string) => rowCarriesOutsideWords(store.get(id)),
       },
     } as unknown as CapabilityDeps;
   });
 
-  afterEach(() => promises.stop());
+  afterEach(() => {
+    promises.stop();
+    // A to-do made from a guest's post now marks the agent's running turn (DOR-4666), and that
+    // record is kept per agent until its chat's next turn, so clear it between cases.
+    resetLiveOutsiderTurns();
+  });
 
   it("stores the calling turn's level and charges the agent, whoever else is around (G2)", async () => {
     await ran('chat-a');

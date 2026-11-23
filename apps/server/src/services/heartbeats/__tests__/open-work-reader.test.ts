@@ -7,8 +7,13 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { sessionStartedBy, type Db } from '@dorkos/db';
+import { sessionMetadata, sessionNativeBindings, sessionStartedBy, type Db } from '@dorkos/db';
 import { createOpenWorkReader, LANE_OPEN_MS } from '../gatherers/open-work-reader.js';
+import { setSessionAgentSources } from '../../core/agent-identity/session-agent.js';
+import {
+  clearTestHomes,
+  registerTestHomes,
+} from '../../core/agent-identity/__tests__/agent-home-fixture.js';
 
 const NOW = Date.parse('2026-11-02T12:00:00Z');
 const JUNO = { id: 'agent-juno', name: 'Juno', projectPath: '/agents/juno', cwd: null };
@@ -27,7 +32,11 @@ function started(db: Db, sessionId: string, parent: string | null, ageMs: number
 }
 
 let stop: (() => void) | undefined;
-afterEach(() => stop?.());
+afterEach(() => {
+  stop?.();
+  setSessionAgentSources(undefined);
+  clearTestHomes();
+});
 
 describe('the lanes an agent started', () => {
   it('are the recent chats its own chats started, and no one else’s', async () => {
@@ -54,6 +63,30 @@ describe('the lanes an agent started', () => {
         sessionId: 'mine',
         startedAt: new Date(NOW - 3_600_000).toISOString(),
       },
+    ]);
+  });
+
+  it('counts a lane started from a chat launched with only the agent’s folder (DOR-5038)', async () => {
+    const db = createTestDb();
+    registerTestHomes(['/agents/juno']);
+    setSessionAgentSources({ db, liveCwd: () => undefined });
+    const at = new Date(NOW).toISOString();
+    db.insert(sessionMetadata)
+      .values({ sessionId: 'juno-chat', runtime: 'claude-code', agentPath: null, createdAt: at })
+      .run();
+    db.insert(sessionNativeBindings)
+      .values({
+        sessionId: 'juno-chat',
+        runtime: 'claude-code',
+        cwd: '/agents/juno',
+        createdAt: at,
+      })
+      .run();
+    started(db, 'mine', 'juno-chat', 60 * 60 * 1000);
+    const built = createOpenWorkReader(db, { agentIdForCwd: () => undefined, now: () => NOW });
+    stop = built.stop;
+    expect((await built.reader.lanesOf(JUNO, new Date(NOW))).map((l) => l.sessionId)).toEqual([
+      'mine',
     ]);
   });
 

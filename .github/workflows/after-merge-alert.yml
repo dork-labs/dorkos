@@ -1,0 +1,65 @@
+name: after-merge-alert
+
+# Tells the author when a check fails on main after their merge (DOR-5121,
+# under DOR-5098: release fast, fix forward). Checks that rarely catch real
+# failures run after merge, on `push` to main; this is how their failures reach
+# a person: a comment on the merged PR, and one issue per failure group
+# (workflow + job), labelled after-merge-failure, assigned to the author. When
+# the workflow is green on main again, its groups close. The room ping comes
+# from the red-main alarm. scripts/after-merge-alert.sh has the rules.
+#
+# Add a workflow to `workflows:` below when DOR-5125 moves a check after merge.
+#
+# A `workflow_run` workflow runs the default branch's copy, and this checks out
+# main's script, so a PR cannot change it. It holds no secret. It never posts a
+# log line: this repository is public.
+
+on:
+  workflow_run:
+    workflows: [scripts-test, CLI Smoke Test, Desktop Smoke, db-check]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: after-merge-alert-${{ github.event.workflow_run.workflow_id }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  alert:
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == github.event.repository.default_branch &&
+      contains(fromJSON('["failure","timed_out","success"]'), github.event.workflow_run.conclusion)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/after-merge-alert.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Alert the author, or close the groups once green
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          if [ "$CONCLUSION" = success ]; then
+            bash scripts/after-merge-alert.sh passed "$WORKFLOW" "$RUN_URL"
+          else
+            bash scripts/after-merge-alert.sh failed "$RUN_ID" "$HEAD_SHA" "$WORKFLOW" "$RUN_URL"
+          fi

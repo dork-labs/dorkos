@@ -13,6 +13,8 @@ export interface ChatSeatTarget {
   port: RoomSeatMessagesPort;
   seat: SeatMessageTarget;
   replyToId: string | null;
+  /** The send named this seat's message, but it already had its answer. */
+  askAnswered: boolean;
 }
 
 /** Resolve only an explicit bound seat chat, never an agent-id DM or an ordinary origin. */
@@ -60,7 +62,7 @@ export async function resolveChatSeatTarget(
     !seatOriginAllowed(facts.launchOrigin, seat, replyToId !== null)
   )
     throw new ChatMessageError('NOT_ALLOWED', 'That room seat is unavailable.');
-  return { port, seat, replyToId };
+  return { port, seat, replyToId, askAnswered: identityMatches && replyToId === null };
 }
 
 /** Existing eligibility plus the room bridge's intentional legacy adoption compatibility. */

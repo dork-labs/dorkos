@@ -33,6 +33,51 @@ export function bodyHash(body: string): string {
   return `sha256:${createHash('sha256').update(body).digest('base64url')}`;
 }
 
+/** A line that opens a fenced code block (an info string may follow), and its fence. */
+const FENCE = /^[ \t]*(`{3,}|~{3,})/;
+
+/** A line that can close one: the fence alone, with nothing after it but spacing. */
+const FENCE_CLOSE = /^[ \t]*(`{3,}|~{3,})[ \t]*$/;
+
+/**
+ * A body with only the spacing a formatter changes taken out (DOR-5060,
+ * Security's ruling of Nov 22): CRLF read as LF, trailing ASCII spaces and
+ * tabs dropped from every line, and, outside fenced code blocks, runs of blank
+ * lines read as one. Nothing else: indentation still counts (it can move a
+ * list item or a key), any other character counts, a Unicode space or a
+ * zero-width one included, and a fenced block keeps its blank lines.
+ *
+ * @param body - The body the task reads.
+ */
+export function normalizedBody(body: string): string {
+  const out: string[] = [];
+  let fence: string | null = null;
+  for (const raw of body.replace(/\r\n/g, '\n').split('\n')) {
+    const line = raw.replace(/[ \t]+$/, '');
+    if (fence) {
+      out.push(line);
+      const close = FENCE_CLOSE.exec(line)?.[1];
+      if (close && close[0] === fence[0] && close.length >= fence.length) fence = null;
+      continue;
+    }
+    const marker = FENCE.exec(line)?.[1];
+    if (marker) fence = marker;
+    if (line === '' && out.at(-1) === '') continue;
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
+/**
+ * {@link bodyHash} of {@link normalizedBody}: what a cap compares, beside the
+ * exact hash kept for the audit.
+ *
+ * @param body - The body the task reads.
+ */
+export function normalizedBodyHash(body: string): string {
+  return bodyHash(normalizedBody(body));
+}
+
 /**
  * The first eight characters of a hash, as a notice names it.
  *

@@ -11,6 +11,8 @@
  */
 import {
   HeldStepUpViewSchema,
+  PAGE_STAMP_HEADER,
+  PAGE_STAMP_META,
   STEP_UP_PATH,
   STEP_UP_REFUSAL_CODES,
   StepUpConfirmedBodySchema,
@@ -65,9 +67,20 @@ async function failureOf(res: Response): Promise<ConfirmActionFailure> {
   };
 }
 
+/**
+ * The stamp the server wrote into this page when it sent it (DOR-5026), or
+ * null under the dev server, which sends none.
+ */
+function pageStamp(): string | null {
+  return document.querySelector(`meta[name="${PAGE_STAMP_META}"]`)?.getAttribute('content') ?? null;
+}
+
 async function send(path: string, init: RequestInit, baseUrl: string): Promise<Response | null> {
+  const stamp = pageStamp();
+  const headers = new Headers(init.headers);
+  if (stamp) headers.set(PAGE_STAMP_HEADER, stamp);
   try {
-    return await fetch(`${baseUrl}${ROUTE}/${path}`, { credentials: 'include', ...init });
+    return await fetch(`${baseUrl}${ROUTE}/${path}`, { credentials: 'include', ...init, headers });
   } catch {
     return null;
   }

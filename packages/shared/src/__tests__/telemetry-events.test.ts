@@ -415,3 +415,43 @@ describe('install funnel events (DOR-2862)', () => {
     ).toBe(true);
   });
 });
+
+describe('the anonymous mark on usage events (DOR-4989)', () => {
+  const usageEvents = [
+    APP_STARTED,
+    SESSION_CREATED,
+    { ...APP_STARTED, event: 'first_run_completed' as const, properties: {} },
+    { ...APP_STARTED, event: 'instance_active' as const, properties: {} },
+  ];
+
+  it('accepts $process_person_profile: false on every usage event', () => {
+    for (const e of usageEvents) {
+      const marked = { ...e, properties: { ...e.properties, $process_person_profile: false } };
+      expect(TelemetryEventSchema.safeParse(marked).success).toBe(true);
+    }
+  });
+
+  it('never accepts $process_person_profile: true', () => {
+    for (const e of usageEvents) {
+      const marked = { ...e, properties: { ...e.properties, $process_person_profile: true } };
+      expect(TelemetryEventSchema.safeParse(marked).success).toBe(false);
+    }
+  });
+
+  it('is added by the reporter only: caller input carrying it is rejected', () => {
+    expect(
+      TelemetryEventInputSchema.safeParse({
+        event: 'instance_active',
+        properties: { $process_person_profile: false },
+      }).success
+    ).toBe(false);
+  });
+
+  it('still rejects other unknown properties once marked', () => {
+    const marked = {
+      ...SESSION_CREATED,
+      properties: { runtime: 'codex', $process_person_profile: false, cwd: '/Users/kai' },
+    };
+    expect(TelemetryEventSchema.safeParse(marked).success).toBe(false);
+  });
+});

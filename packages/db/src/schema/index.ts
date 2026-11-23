@@ -57,6 +57,7 @@ export * from './browser/agent-profiles.js';
 
 export * from './session/session-locations.js';
 export * from './session/session-birth-allocations.js';
+export * from './session/session-draft-sources.js';
 
 export * from './session/session-native-bindings.js';
 export * from './session/session-touches.js';

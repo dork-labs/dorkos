@@ -10,7 +10,9 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Chat is where you talk to your agent. The workbench is where you can see and touch what it's actually doing: the files it's editing, a shell to run commands in, and a browser to check its work in.
 
-It lives in the panel to the right of chat, as a set of tabs: **Files**, **Canvas**, **Browser**, and **Terminal**. Open a chat and they're right there, no setup needed.
+It lives in the panel to the right of chat, as a set of tabs: **Files**, **Canvas**, **Page previews**, and **Terminal**. Open a chat and they're right there, no setup needed.
+
+The panel can also hold a **Browser** tab. That one is the [Agent browser](/docs/guides/agent-browser), a real browser window your agent works in, and it has a guide of its own.
 
 <ProductShot
   id="workbench"
@@ -78,9 +80,9 @@ Open the Terminal tab and you get an actual shell, running in your chat's workin
   does. Treat it like any other shell: don't paste commands you don't understand.
 </Callout>
 
-## Browser: Preview Without Leaving DorkOS
+## Page previews: Preview Without Leaving DorkOS
 
-The **Browser** tab is a browser inside DorkOS, with the controls you expect: back, forward, reload, and an address bar you can type into. Type an address yourself, or let your agent send you a page.
+The **Page previews** tab is a browser inside DorkOS, with the controls you expect: back, forward, reload, and an address bar you can type into. Type an address yourself, or let your agent send you a page.
 
 - **Local HTML files** render right there, relative links and pictures included.
 - **Dev servers you're running** — Vite, Next, anything on a `localhost` address — render too, from any device that reaches your DorkOS machine directly: your laptop, your phone, a tablet on the couch. Live reload keeps working. Through a tunnel, or an HTTPS proxy sitting in front of DorkOS, the tab can't reach the preview; it tells you so and offers the "Open in system browser" button in the toolbar, which is always there.
@@ -92,9 +94,9 @@ A page here isn't only something to look at. Ask your agent to try the signup fo
 
 ## Multi-Document Tabs
 
-Canvas and Browser each hold more than one thing at a time, and each keeps its own set. Open three files and they line up as tabs across the top of **Canvas**, exactly like a code editor. Open three pages and they line up the same way across the top of **Browser**. Click a tab to switch, click its `x` to close it.
+Canvas and Page previews each hold more than one thing at a time, and each keeps its own set. Open three files and they line up as tabs across the top of **Canvas**, exactly like a code editor. Open three pages and they line up the same way across the top of **Page previews**. Click a tab to switch, click its `x` to close it.
 
-Each tab also remembers where you were. Switch to Browser and back, and the file you were reading is still the one on screen.
+Each tab also remembers where you were. Switch to Page previews and back, and the file you were reading is still the one on screen.
 
 If you (or the agent) open something that's already open, DorkOS switches to that existing tab instead of opening a duplicate.
 
@@ -125,7 +127,7 @@ An agent isn't limited to describing what it did in text. It can act directly on
 
 - **Open a file** it just edited, so you're looking at exactly what changed. It lands in the **Canvas** tab.
 - **Open a terminal**, if it wants you to see (or run) something in a live shell.
-- **Open a page** it wants you to check, like a dev server it just started. It lands in the **Browser** tab, so a page it sends never takes over the file you were reading.
+- **Open a page** it wants you to check, like a dev server it just started. It lands in the **Page previews** tab, so a page it sends never takes over the file you were reading.
 - **Use that page**, once it's open: click a button or a link, type into a field, press a key, scroll to something further down, and wait for the page to catch up before looking again.
 
 It can also **read what's already there**. Ask "what have we got open?" and the agent gets the real list — every tab, what it is, what it's called, and which one is at the front — and it can read one back, like the chart it drew for you last turn. Before, it could only guess from whatever your window last mentioned.
@@ -144,7 +146,7 @@ Nobody is interrupted by it. The room's log gets one quiet line per turn saying 
 
 ## Agents Can Check Their Own Work, and Act on It
 
-Once an agent has a preview open in the Browser tab, it isn't flying blind: it can read the same signals you'd check yourself. It can read the console for errors and warnings, check for network requests that failed (a missing asset, a broken API call), and take a screenshot to see exactly how the page rendered. That lets it catch a mistake and fix it before telling you it's done, instead of you having to open dev tools and relay the error back.
+Once an agent has a preview open in the Page previews tab, it isn't flying blind: it can read the same signals you'd check yourself. It can read the console for errors and warnings, check for network requests that failed (a missing asset, a broken API call), and take a screenshot to see exactly how the page rendered. That lets it catch a mistake and fix it before telling you it's done, instead of you having to open dev tools and relay the error back.
 
 It can also use the page. Ask it to "sign up as test@example.com and tell me what happens" and it reads the page to see what's on it, types the address into the email field, clicks **Create account**, waits for the page to settle, and tells you what it saw — including the 500 in the console, if there was one. It never pastes the page's HTML at you, and it doesn't guess: when several things on the page match what it asked for, it says so and asks which one rather than picking one.
 

@@ -24,7 +24,7 @@ import {
   SubmitElicitationRequestSchema,
 } from '@dorkos/shared/schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import {
   readCallerAuthority,

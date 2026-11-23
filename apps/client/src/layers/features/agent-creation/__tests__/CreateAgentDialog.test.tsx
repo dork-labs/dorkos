@@ -2,14 +2,16 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, renderHook } from '@testing-library/react';
+import { act, render, screen, cleanup, waitFor, renderHook } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
+import { newSessionTarget } from '@/layers/shared/lib';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
+import { beginSessionNavigation } from '@/layers/entities/session';
 import {
   useAutoKickoff,
   __resetFiredKickoffsForTest,
@@ -215,6 +217,25 @@ async function reachNamingViaDesign(user: ReturnType<typeof userEvent.setup>) {
   return screen.findByLabelText('Name');
 }
 
+function renderFreshAgentChat(sessionId: string) {
+  const submitKickoff = vi.fn().mockResolvedValue(undefined);
+  const hook = renderHook(
+    (props: { sessionId: string }) =>
+      useAutoKickoff({
+        sessionId: props.sessionId,
+        cwd: '/home/test/.dork/agents/scout',
+        status: 'idle',
+        messages: [],
+        hydrated: true,
+        submitKickoff,
+        submitContent: vi.fn().mockResolvedValue(undefined),
+      }),
+    { initialProps: { sessionId } }
+  );
+
+  return { submitKickoff, rerender: hook.rerender };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -229,7 +250,7 @@ describe('CreateAgentDialog', () => {
       onCreated: null,
     });
     useImportProjectsStore.setState({ isOpen: false });
-    useAgentBirthStore.setState({ records: {} });
+    useAgentBirthStore.setState({ records: {}, deferred: {} });
     __resetFiredKickoffsForTest();
   });
 
@@ -537,11 +558,26 @@ describe('CreateAgentDialog', () => {
       _path: '/home/test/.dork/agents/scout',
       capabilities: [],
     } as never);
+    let resolveAcknowledgement!: (value: { sessionId: string }) => void;
+    const acknowledgement = new Promise<{ sessionId: string }>((resolve) => {
+      resolveAcknowledgement = resolve;
+    });
+    vi.mocked(transport.allocateSession).mockReturnValueOnce(acknowledgement);
     renderDialog(transport);
 
     const nameInput = await reachNamingViaDesign(user);
     await user.type(nameInput, 'Scout');
     await user.click(screen.getByTestId('create-button'));
+
+    await waitFor(() =>
+      expect(transport.allocateSession).toHaveBeenCalledExactlyOnceWith({
+        kind: 'registered-agent',
+        agentId: 'id',
+      })
+    );
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(useAgentBirthStore.getState().records).toEqual({});
+    resolveAcknowledgement({ sessionId: 'acknowledged-greeting' });
 
     // The navigated session id carries the birth; the record's kickoff is the
     // fenced design-your-own INTERVIEW (not a generic hello) — it routes to the
@@ -550,7 +586,7 @@ describe('CreateAgentDialog', () => {
     await waitFor(() => {
       const call = mockNavigate.mock.calls.at(-1)?.[0];
       navigatedSessionId = call?.search?.session;
-      expect(navigatedSessionId).toBeTruthy();
+      expect(navigatedSessionId).toBe('acknowledged-greeting');
     });
     const record = useAgentBirthStore.getState().records[navigatedSessionId!];
     expect(record).toBeDefined();
@@ -561,15 +597,79 @@ describe('CreateAgentDialog', () => {
     expect(record.kickoffMessage).toContain('.dork/SOUL.md');
     expect(mockNavigate).toHaveBeenLastCalledWith({
       to: '/session',
-      search: {
+      search: expect.objectContaining({
         agentId: 'id',
         draft: '1',
         dir: undefined,
         session: navigatedSessionId,
         runtime: 'codex',
-      },
+      }),
     });
   });
+
+  it.each(['creator first', 'new chat first', 'allocation fails'] as const)(
+    'keeps the greeting for exactly one new chat when %s',
+    async (order) => {
+      const user = userEvent.setup();
+      const transport = createMockTransport();
+      vi.mocked(transport.createAgent).mockResolvedValue({
+        id: 'id',
+        name: 'scout',
+        displayName: 'Scout',
+        runtime: 'claude-code',
+        registeredAt: '2026-07-20T00:00:00.000Z',
+        _path: '/home/test/.dork/agents/scout',
+        capabilities: [],
+      } as never);
+      let resolveAcknowledgement!: (value: { sessionId: string }) => void;
+      let rejectAcknowledgement!: (error: Error) => void;
+      vi.mocked(transport.allocateSession)
+        .mockReturnValueOnce(
+          new Promise<{ sessionId: string }>((resolve, reject) => {
+            resolveAcknowledgement = resolve;
+            rejectAcknowledgement = reject;
+          })
+        )
+        .mockResolvedValueOnce({ sessionId: 'next-chat' })
+        .mockResolvedValueOnce({ sessionId: 'later-chat' });
+      renderDialog(transport);
+
+      const nameInput = await reachNamingViaDesign(user);
+      await user.type(nameInput, 'Scout');
+      await user.click(screen.getByTestId('create-button'));
+      await waitFor(() => expect(transport.allocateSession).toHaveBeenCalledTimes(1));
+
+      const openNext = () => {
+        const isStillWanted = beginSessionNavigation(() => ({ pathname: '/session', search: {} }));
+        return newSessionTarget(transport, { agentId: 'id' }, { isStillWanted });
+      };
+      if (order === 'allocation fails') {
+        // The creator still wants the chat when the server refuses its allocation.
+        await act(async () => rejectAcknowledgement(new Error('Chat allocation failed')));
+        const { toast } = await import('sonner');
+        expect(toast.error).toHaveBeenCalledWith('Couldn’t open a new chat.');
+      } else if (order === 'creator first') {
+        beginSessionNavigation(() => ({ pathname: '/channels', search: {} }));
+        await act(async () => resolveAcknowledgement({ sessionId: 'abandoned-chat' }));
+        expect(useAgentBirthStore.getState().records).toEqual({});
+      }
+      const next = await openNext();
+      const { submitKickoff, rerender } = renderFreshAgentChat(next.search.session);
+      expect.soft(submitKickoff).toHaveBeenCalledTimes(1);
+      if (order === 'new chat first') {
+        await act(async () => resolveAcknowledgement({ sessionId: 'abandoned-chat' }));
+      }
+
+      expect.soft(mockNavigate).not.toHaveBeenCalled();
+      expect.soft(useAgentBirthStore.getState().deferred).toEqual({});
+      // An older response must not park a second greeting for a later chat.
+      const later = await newSessionTarget(transport, { agentId: 'id' });
+      rerender({ sessionId: later.search.session });
+      expect.soft(submitKickoff).toHaveBeenCalledTimes(1);
+      expect(Object.keys(useAgentBirthStore.getState().records)).toEqual(['next-chat']);
+      expect(useAgentBirthStore.getState().records['next-chat']?.fired).toBe(true);
+    }
+  );
 
   it('onboarding (onCreated set): parks a birth without navigating, then the first session claims + fires it once', async () => {
     const user = userEvent.setup();
@@ -595,32 +695,18 @@ describe('CreateAgentDialog', () => {
     await user.type(nameInput, 'Scout');
     await user.click(screen.getByTestId('create-button'));
 
-    // The host hook fired and NO navigation happened — the birth is parked under
-    // a session id nobody will ever visit.
     await waitFor(() => expect(hostOnCreated).toHaveBeenCalledTimes(1));
     expect(mockNavigate).not.toHaveBeenCalled();
+    expect(transport.allocateSession).not.toHaveBeenCalled();
+    expect(useAgentBirthStore.getState().records).toEqual({});
+    expect(useAgentBirthStore.getState().deferred.id.path).toBe('/home/test/.dork/agents/scout');
 
-    const parked = Object.values(useAgentBirthStore.getState().records);
-    expect(parked).toHaveLength(1);
-    expect(parked[0].path).toBe('/home/test/.dork/agents/scout');
-    expect(parked[0].fired).toBe(false);
-
-    // Now the agent's first real session opens in that directory. useAutoKickoff
-    // claims the parked record by directory and fires the hello exactly once.
-    const submitKickoff = vi.fn().mockResolvedValue(undefined);
-    const { rerender } = renderHook(
-      (props: { sessionId: string }) =>
-        useAutoKickoff({
-          sessionId: props.sessionId,
-          cwd: '/home/test/.dork/agents/scout',
-          status: 'idle',
-          messages: [],
-          hydrated: true,
-          submitKickoff,
-          submitContent: vi.fn().mockResolvedValue(undefined),
-        }),
-      { initialProps: { sessionId: 'first-real-session' } }
-    );
+    // Only the first acknowledged fresh chat for the agent binds the greeting.
+    vi.mocked(transport.allocateSession).mockResolvedValueOnce({ sessionId: 'first-real-session' });
+    const target = await newSessionTarget(transport, { agentId: 'id' });
+    expect(target.search.session).toBe('first-real-session');
+    expect(useAgentBirthStore.getState().deferred).toEqual({});
+    const { submitKickoff, rerender } = renderFreshAgentChat('first-real-session');
 
     await waitFor(() => expect(submitKickoff).toHaveBeenCalledTimes(1));
     expect(submitKickoff.mock.calls[0][0]).toContain('<dork-kickoff>');

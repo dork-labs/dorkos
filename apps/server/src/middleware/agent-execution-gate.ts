@@ -15,7 +15,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { refuseAgentExecutionWrite } from '../services/core/operator/agent-execution.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { isFromWifi, NOT_FROM_WIFI } from '../services/core/auth/sessions/wifi-level.js';
 import { namedInstructionFields } from '../services/core/operator/agent-file-inputs.js';

@@ -69,7 +69,7 @@ import { createStepUpRoutes } from '../step-up.js';
 import { setTestOwner } from './test-owner.js';
 import { createExtensionDecisionsRoutes } from '../extension-decisions.js';
 import type { ApiEnv } from '../../http/api-chain.js';
-import { parseRequestBody } from '../../http/request-body.js';
+import { apiRequestBody } from '../../http/request-body.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createExtensionsRoutes } from '../extensions.js';
 import { createExtensionApiRoutes } from '../extension-api.js';
@@ -167,7 +167,7 @@ beforeEach(() => {
     )
   );
   const bare = new Hono<ApiEnv>()
-    .use(parseRequestBody())
+    .use(apiRequestBody())
     .use(signedIn)
     .route('/api/extension-decisions', decisions);
   bareTarget.mount(getRequestListener(bare.fetch, { overrideGlobalObjects: false }));

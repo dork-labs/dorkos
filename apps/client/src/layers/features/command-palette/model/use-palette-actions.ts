@@ -23,7 +23,9 @@ import {
 } from '@/layers/shared/lib';
 import { useRemoteAccessActions, useRemoteAccessSnapshot } from '@/layers/entities/tunnel';
 import {
+  beginSessionNavigation,
   useDirectoryState,
+  useLiveLocation,
   useStartNewSession,
   useSessionChatStore,
   resolveSessionForCwd,
@@ -85,6 +87,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
   const [selectedCwd, setDir] = useDirectoryState();
   const { setTheme, theme } = useTheme();
   const navigate = useNavigate();
+  const readLocation = useLiveLocation();
   const queryClient = useQueryClient();
   const transport = useTransport();
 
@@ -230,40 +233,35 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
   const handleCommandSelect = useCallback(
     (command: string) => {
       closePalette();
+      const isStillWanted = beginSessionNavigation(readLocation);
       void resolveSessionForCwd({ queryClient, transport }, selectedCwd)
         .then(async (resolved) => {
+          if (!isStillWanted()) return;
           if (resolved === null) {
             notifySessionLookupFailed(selectedCwd);
             return;
           }
-          // Recorded here and not before the resolve, for the reason
-          // `handleAgentSelect` defers its own write: the lookup can fail, and
-          // an agent nobody reached is not one to rank (DOR-928). The chat
-          // itself is recorded by the chat page when it shows it.
+          const target = resolved.isNew
+            ? await newSessionTarget(
+                transport,
+                { dir: selectedCwd ?? undefined },
+                { isStillWanted }
+              )
+            : toSession({ session: resolved.sessionId });
+          if (!isStillWanted()) return;
           if (selectedCwd) recordAgentOpened(selectedCwd);
+          const id = target.search.session;
           const store = useSessionChatStore.getState();
-          const draft = store.getSession(resolved.sessionId).input;
-          store.updateSession(resolved.sessionId, {
-            input: composeCommandDraft(command, draft),
-          });
-          void navigate(
-            resolved.isNew
-              ? await newSessionTarget(transport, {
-                  session: resolved.sessionId,
-                  dir: selectedCwd ?? undefined,
-                })
-              : toSession({ session: resolved.sessionId })
-          );
+          const draft = store.getSession(id).input;
+          store.updateSession(id, { input: composeCommandDraft(command, draft) });
+          await navigate(target);
         })
         .catch((error: unknown) => {
-          // `resolveSessionForCwd` handles its own failures, so anything landing
-          // here is a defect in this callback — and without the catch it is an
-          // unhandled rejection and a row that died in silence.
           reportClientError(transport, error);
-          notifySessionLookupFailed(selectedCwd);
+          if (isStillWanted()) notifySessionLookupFailed(selectedCwd);
         });
     },
-    [closePalette, navigate, queryClient, transport, selectedCwd, recordAgentOpened]
+    [closePalette, navigate, readLocation, queryClient, transport, selectedCwd, recordAgentOpened]
   );
 
   // An extension page (spec `flow-multiproject` §6.5). The href was built from

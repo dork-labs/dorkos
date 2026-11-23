@@ -17,8 +17,8 @@ import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { ProjectableAttachment } from '../room-context.js';
 import type { Db } from '@dorkos/db';
 import { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
-import { ReadCursorService } from '../../core/read-cursor-service.js';
-import { ReadCursorStore } from '../../core/read-cursor-store.js';
+import type { ReadCursorService } from '../../core/read-cursor-service.js';
+import { roomReadCursors } from '../service/room-audience.js';
 import { indexRoomEntry, roomsSource, searchMessages, SearchIndexer } from '../../search/index.js';
 import { AuthorRegistry, isOwnerRecord } from '../author-registry.js';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
@@ -856,7 +856,8 @@ export function createRoomHarness(opts: {
   const canvasDocuments = new CanvasDocumentStore(db);
   const attachments = new AttachmentRowStore(db);
   const bridges = new BridgeStore(db);
-  const readCursors = new ReadCursorService(new ReadCursorStore(db));
+  // Addressed exactly as `createRoomSubsystem` addresses it: through this harness's real rooms.
+  const readCursors = roomReadCursors(db, () => service);
   // The REAL ladder over the REAL rooms table, with this harness's options
   // standing in for the config rung — composed exactly as `createRoomSubsystem`
   // composes it. A stub resolver here would make every per-room-override test a
@@ -891,7 +892,7 @@ export function createRoomHarness(opts: {
     ...(opts.canvasNow ? { now: opts.canvasNow } : {}),
   });
   setCanvasService(canvas);
-  const service = new RoomService({
+  const service: RoomService = new RoomService({
     store,
     ...(opts.mirrorAccess ? { mirrorAccess: opts.mirrorAccess } : {}),
     ...(opts.mirrorWrites ? { mirrorWrites: opts.mirrorWrites } : {}),

@@ -84,7 +84,7 @@ import { checkClaudeLaunchAccount } from '../services/runtimes/claude-code/launc
 import { projectRegistry } from '../services/projects/project-registry.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';

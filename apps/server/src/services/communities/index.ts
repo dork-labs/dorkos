@@ -13,8 +13,10 @@
  * Two concrete adapters live here. `local/` is this machine's own SQLite rooms,
  * wrapped rather than rewritten. `buzz/` is a read-only Buzz relay — the foreign
  * case, kept deliberately unlike ours so the port cannot quietly become a
- * description of our own backend. `apps/space` is the third. Each ships with
- * its own `communityConformance` registration.
+ * description of our own backend. `remote/` is the third: it reaches the space
+ * store in `services/spaces`, whose model is the one model for a space (ADR
+ * `261122-173853`). `local/` and `buzz/` each ship with their own
+ * `communityConformance` registration; `remote/` does not have one yet.
  *
  * **The Buzz adapter is not exported here, and not registered at startup.** That
  * is the whole of its wiring story: it needs a relay URL and a label from

@@ -65,6 +65,7 @@ const ALLOWED_PAYLOAD_KEYS = [
   'errorCode',
   'installId',
   'dorkosVersion',
+  'sourceType',
 ] as const;
 
 const sampleEvent: InstallEvent = {
@@ -74,6 +75,7 @@ const sampleEvent: InstallEvent = {
   outcome: 'failure',
   durationMs: 4321,
   errorCode: 'NETWORK_ERROR',
+  sourceType: 'github',
 };
 
 describe('telemetry-privacy (end-to-end)', () => {
@@ -123,6 +125,7 @@ describe('telemetry-privacy (end-to-end)', () => {
       durationMs: sampleEvent.durationMs,
       errorCode: sampleEvent.errorCode,
       dorkosVersion: DORKOS_VERSION,
+      sourceType: sampleEvent.sourceType,
     });
   });
 

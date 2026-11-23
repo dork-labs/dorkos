@@ -37,6 +37,39 @@ interface SendOptions {
   markReplied: (id: string) => void;
 }
 
+/**
+ * Run one send, and count an accepted deliberate message as the sender's room
+ * turn's answer, so the room does not say the agent "did not reply" (DOR-4670).
+ *
+ * The sender's turn is held from the moment the send is entered, ahead of every
+ * await (the per-agent lock included), so a send that outlives its turn after
+ * that answers nothing. Before that moment is a known gap: a call that waited on
+ * an approval card while its turn ended can be read as a newer turn's answer
+ * (see `RoomTriggerDispatcher.privateAnswerMark`).
+ * Only a `message` counts: a `report` is the server's own send. A refusal
+ * throws past the mark, and a receipt already `failed` delivered nothing.
+ *
+ * @param deps - The service's dependencies; the room route holds the turn.
+ * @param caller - The calling chat, from the verified turn.
+ * @param kind - What is being sent.
+ * @param send - The send itself.
+ * @returns The send's receipt, unchanged.
+ */
+export async function answeringRoomTurn(
+  deps: ChatMessageServiceDeps,
+  caller: ChatCaller,
+  kind: SendOptions['kind'],
+  send: () => Promise<ChatSendReceipt>
+): Promise<ChatSendReceipt> {
+  const answered =
+    kind === 'message'
+      ? deps.seatMessages?.()?.privateAnswerMark(caller.sessionId, caller.agentPath)
+      : undefined;
+  const receipt = await send();
+  if (receipt.status !== 'failed') answered?.();
+  return receipt;
+}
+
 /** Execute a validated send through its single selected delivery owner. */
 export async function sendChatMessage(options: SendOptions): Promise<ChatSendReceipt> {
   const { deps, caller, input, delivery, kind } = options;
@@ -95,6 +128,7 @@ export async function sendChatMessage(options: SendOptions): Promise<ChatSendRec
         row: rowInput,
         rendered: renderSeatMessage(rowInput),
         carried: seatCarryOf(rowInput),
+        askAnswered: seatTarget.askAnswered,
       });
     } catch (error) {
       if (error instanceof ChatMessageError) throw error;

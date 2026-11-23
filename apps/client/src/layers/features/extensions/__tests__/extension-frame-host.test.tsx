@@ -103,7 +103,11 @@ describe('isolated app host', () => {
     await start();
     const frame = document.querySelector('iframe')!;
     expect(frame.getAttribute('sandbox')).toBe(EXTENSION_FRAME_SANDBOX);
-    expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
+    // Exactly scripts, pinned as a literal (DOR-5026): with no same-origin and
+    // no popups, app code can neither open the app's page nor read its page
+    // stamp, which "Confirm it's you" relies on. Any widening fails here.
+    expect(EXTENSION_FRAME_SANDBOX).toBe('allow-scripts');
+    expect(frame.getAttribute('sandbox')?.split(/\s+/)).toEqual(['allow-scripts']);
     // Never a srcdoc frame, which would inherit the shell's 'unsafe-inline' policy:
     // DorkOS's own frame route sends the document and its policy.
     expect(frame.hasAttribute('srcdoc')).toBe(false);

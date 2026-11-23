@@ -22,7 +22,7 @@ import { readCallerAuthority } from '../lib/caller-authority.js';
 import { BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';

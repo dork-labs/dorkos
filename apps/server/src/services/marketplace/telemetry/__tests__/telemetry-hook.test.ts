@@ -12,6 +12,7 @@ const sampleEvent: InstallEvent = {
   type: 'plugin',
   outcome: 'success',
   durationMs: 1234,
+  sourceType: 'github',
 };
 
 describe('telemetry-hook', () => {

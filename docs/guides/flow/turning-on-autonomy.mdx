@@ -9,12 +9,14 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Turning on the automatic loop
 
-`/flow` can work through your ready queue on its own and stop at your review gate. You still approve every merge, so you get the progress without babysitting every stage.
+`/flow` can work through your ready queue on its own and stop at your review gate. You get the progress without babysitting every stage.
 
 <Callout type="info">
-  **"Automatic" never means "merges without you."** The loop claims a ready item, drives it to a
-  pull request with evidence, parks at the review gate, and waits. You approve and merge. Nothing
-  reaches `main` that you did not choose, in any setup on this page. (We checked. Twice.)
+  **"Automatic" means the loop carries work to a check, then waits for it.** The loop claims a ready
+  item, drives it to a pull request with evidence, parks at the review gate, and waits. Who answers
+  that gate is a per-project setting in DorkOS: you, or a separate reviewer agent that ships work it
+  reviewed clean ([How much it does on its own](#how-much-it-does-on-its-own)). Without DorkOS, it's
+  always you. Either way, nothing ships that nobody checked.
 </Callout>
 
 There are three ways to run this loop without hand-driving each stage yourself. They differ in one way: how the loop gets scheduled. All three carry one item along the same path (triage, through verify, to review) and stop at the same gate.
@@ -26,8 +28,8 @@ Pick based on how much you want running in the background versus in front of you
 | Setup                       | Needs a server running? | Runs...                           | Available now?      |
 | --------------------------- | ----------------------- | --------------------------------- | ------------------- |
 | **A: `/flow auto`**         | No                      | While your terminal is open       | Yes                 |
-| **B: the Pulse seat**       | Yes                     | On a schedule, in the background  | Yes, off by default |
-| **C: the portable watcher** | No                      | On a schedule you set up yourself | No, not built yet   |
+| **B: DorkOS Schedules**     | Yes                     | On a schedule, in the background  | Yes, off by default |
+| **C: a scheduler of yours** | No                      | On a schedule you set up yourself | Yes, you wire it up |
 
 <Cards>
   <Card title="A: Terminal drain (/flow auto)">
@@ -35,13 +37,13 @@ Pick based on how much you want running in the background versus in front of you
     install. Stops when you close the terminal, so it's a great fit for a focused afternoon, less so
     for overnight.
   </Card>
-  <Card title="B: The Pulse seat">
+  <Card title="B: DorkOS Schedules">
     A scheduled background loop that keeps working without you at the keyboard. Off by default, and
     it runs for as long as the DorkOS server does.
   </Card>
-  <Card title="C: The portable watcher">
-    A design for repos that don't run the DorkOS server: a script you'd build and run on your own
-    schedule. Not shipped yet, so think of this as a preview of what's next.
+  <Card title="C: A scheduler of yours">
+    For repos that don't run the DorkOS server: point a `cron` line or a scheduled CI job at the
+    same run. You set it up and keep it running.
   </Card>
 </Cards>
 
@@ -67,8 +69,10 @@ Pick based on how much you want running in the background versus in front of you
     question, answer it in the terminal and it keeps going.
   </Step>
   <Step>
-    **Close the loop yourself.** Once you approve and merge a pull request, run `/flow:done
-    <issue>` to close the item, file any follow-up work, and clean up.
+    **Answer the review gate.** Approve with `flow review <issue> --approve`. By default that also
+    sets the pull request to merge once its checks pass. Once it merges, whoever merged it, run
+    `/flow:done <issue>` to close the item, file any follow-up work, and clean up. [Driving it
+    manually](/docs/guides/flow/driving-it-manually) shows the review step in full.
   </Step>
 </Steps>
 
@@ -80,11 +84,11 @@ Pick based on how much you want running in the background versus in front of you
 **Cons**
 
 - Only runs while your terminal is open. Close it, and the drain stops.
-- You merge and run `/flow:done` yourself. Nothing auto-merges yet.
+- You answer the review gate yourself.
 
-## B: the Pulse seat (the scheduled background loop)
+## B: DorkOS Schedules (the scheduled background loop)
 
-The Pulse seat moves the same drain off your terminal and onto the DorkOS server, so it keeps working while you're away. It runs on a schedule: each time it fires, it picks up exactly one ready item, carries it to the review gate, and stops. That keeps every run isolated and easy to pick back up if something goes wrong.
+A scheduled run moves the same drain off your terminal and onto the DorkOS server, so it keeps working while you're away. It runs on a schedule: each time it fires, it picks up exactly one ready item, carries it to the review gate, and stops. That keeps every run isolated and easy to pick back up if something goes wrong.
 
 This is real today, but it ships turned off, and it needs the DorkOS server running.
 
@@ -105,9 +109,9 @@ This is real today, but it ships turned off, and it needs the DorkOS server runn
     still works, but update the plugin from the Marketplace to see what this page describes.)
   </Step>
   <Step>
-    **Tune how often it runs and how much it takes on.** See [The
-    dials](/docs/guides/flow/the-dials) for the settings that control cadence and work-in-progress
-    limits.
+    **Tune how often it runs and how much it takes on.** It runs at the top of every hour. To change
+    that, edit `flow-drain`'s time on the **Schedules** page. See [The
+    dials](/docs/guides/flow/the-dials) for cadence and work-in-progress limits.
   </Step>
   <Step>
     **Watch and steer it.** `/flow:status` shows every item in flight, every parked question, and
@@ -126,51 +130,63 @@ This is real today, but it ships turned off, and it needs the DorkOS server runn
 **Cons**
 
 - Needs the DorkOS server running. No server, no scheduled runs.
-- Still stops at the review gate. You merge and run `/flow:done` yourself.
+- Still stops at the review gate until someone checks it: you, or the reviewer agent if you allow it.
 - Checks for new work on an interval rather than reacting instantly.
 
-## C: the portable watcher (not shipped yet)
+## C: a scheduler of yours (no DorkOS server)
 
-The watcher is meant for repos that don't run the DorkOS server: a script you'd operate yourself on whatever schedule you choose, without any DorkOS infrastructure.
+For repos that don't run the DorkOS server, any scheduler you run yourself can start the same loop: an OS `cron` line, a launchd job, or a scheduled CI job. Each time it fires, it starts one agent run of `/flow continue` in the repo. That run claims the top-ranked ready item, carries it to its review gate, and ends.
 
-<Callout type="warn">
-  **Not available yet.** This is a design, not a working feature. The autonomy setting only accepts
-  the Pulse seat today; a config file that names the watcher seat is rejected.
-</Callout>
-
-### What it would look like
+### Setup
 
 <Steps>
   <Step>
-    **You run an external poller** on whatever schedule you choose (a cron entry, a small script, a
-    CI job). There's no DorkOS server in this picture.
+    **Pick a scheduler.** To keep going with your laptop closed, use one that lives somewhere else,
+    like CI.
   </Step>
-  <Step>**Each run, it checks the tracker for ready work** and claims the top-ranked item.</Step>
-  <Step>**It fires one headless run** that carries that item to its review gate, then exits.</Step>
+  <Step>
+    **Have each fire run `/flow continue` once** in the repo. Your scheduler's own entry sets the
+    timing; flow never changes it.
+  </Step>
+  <Step>
+    **Pause it the same way.** `/flow:pause` writes a pause flag into your project, and each run
+    checks it first and stops. A scheduler on another machine, like CI, is paused by turning that
+    job off.
+  </Step>
 </Steps>
 
-**Pros (once it ships)**
+**Pros**
 
-- No server needed. Works with any repo and tracker the adapter supports.
-- Same loop as the Pulse seat, so nothing about how work gets carried to review changes.
+- No DorkOS server needed. Works with any repo and tracker flow supports.
+- Same loop as DorkOS Schedules, so nothing about how work gets carried to review changes.
 
 **Cons**
 
-- Not available today. You'd build and run it yourself once it ships.
-- No status pane or built-in recovery until then.
+- You set up the scheduler and keep it running.
+- With nobody at a terminal, a question parks on the tracker and waits for your reply there.
 
 ## Which should I use?
 
 Good news: you don't have to think hard about this one.
 
-| If you want to...                                                      | Use...                                                       |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Put the loop to work right now and watch it, no setup                  | **A, `/flow auto`**                                          |
-| Do a single item, then stop                                            | **A, bare `/flow` then Continue the queue**                  |
-| Keep making progress while your terminal is closed, and you run DorkOS | **B, the Pulse seat** (enable `flow-drain`, then approve it) |
-| Run it on a repo with no DorkOS server                                 | **C, the watcher** (once it ships)                           |
+| If you want to...                                                      | Use...                                         |
+| ---------------------------------------------------------------------- | ---------------------------------------------- |
+| Put the loop to work right now and watch it, no setup                  | **A, `/flow auto`**                            |
+| Do a single item, then stop                                            | **A, bare `/flow` then Continue the queue**    |
+| Keep making progress while your terminal is closed, and you run DorkOS | **B, DorkOS Schedules** (approve `flow-drain`) |
+| Run it on a repo with no DorkOS server                                 | **C, a scheduler of yours**                    |
 
-Short version: attended and no server means A. Unattended and you run DorkOS means B. No server and no DorkOS repo means C, once it's built. A and B stop at the same review gate; the only difference is who keeps the loop ticking.
+Short version: attended and no server means A. Unattended and you run DorkOS means B. Unattended with no DorkOS server means C. All three stop at the same review gate; the only difference is who keeps the loop ticking.
+
+## How much it does on its own
+
+In DorkOS, each project has one dial in its Flow settings: **Ask me first**, **Tell me after** or **Just do it**. It decides who answers each kind of question.
+
+- **Ask me first.** Flow asks you before it ships finished work, and an agent's question waits for you.
+- **Tell me after.** The reviewer agent ships work it reviewed clean. An agent's question shows its own pick and a deadline; if you haven't answered by then, the agent goes with its pick. You get a note about each one.
+- **Just do it.** The same, with quieter notes, and agents go with their own pick without asking, writing down why.
+
+A new project starts at **Tell me after**. A project flow already worked in stays at **Ask me first** until you choose, and so does any project flow runs without DorkOS; there, failing checks are still fixed on their own. Under every stop, the Flow panel never sorts new ideas on its own: run `/flow:triage`, or approve the daily `flow-triage` schedule. A question about secrets or spending always waits for you. By default, flow also waits for a person to add the `security-reviewed` label before it sets a pull request to merge for the reviewer agent. [The dials](/docs/guides/flow/the-dials#how-much-it-does-on-its-own) has the full table.
 
 ## Staying in control
 
@@ -179,6 +195,7 @@ Autonomy never means losing the ability to see or stop what's happening, in any 
 - **`/flow:status`** shows one screen with every item in flight, every parked question, and the
   reasoning behind each decision.
 - **`/flow pause`** stops every automatic mode at once. **`/flow resume`** brings it back.
+  `/flow:pause for 1 hour` or `/flow:pause until 9am` ends on its own at that time.
 - **Reprioritize or turn off part of the loop** through its config.
 - **Reassign an item** to redirect it. The change takes effect at the next stage boundary.
 
@@ -188,9 +205,10 @@ The loop also has a hard floor it never crosses, no matter how confident it is. 
 
 Most people never need this section. Here's what's happening if you're curious.
 
-- **One item at a time.** The loop runs sequentially, capped at 2 items across the project and 1
-  per project by default. It's not a swarm of agents working in parallel; it claims one item,
-  finishes with it, then claims the next.
+- **One item at a time, unless you ask for more.** The scheduled run and `/flow auto` take one
+  item, finish with it, then claim the next, capped at 2 items in flight overall and 1 per project
+  by default. To work on several at once, run `flow drain --parallel <n>`: each item gets its own
+  copy of the project and its own chat, and a reviewer agent checks every push.
 - **Ready work fuels it.** The loop only claims items carrying a "ready" label. Triage adds that
   label when it accepts an item; decompose adds it to the tasks it produces. No labeled work means
   nothing to dispatch.
@@ -200,15 +218,12 @@ Most people never need this section. Here's what's happening if you're curious.
 - **Each scheduled run checks for stuck work first.** Before claiming anything new, it recovers any
   run that crashed mid-way and picks up any answer you left to a parked question. New work only
   gets claimed after that.
-- **What the Pulse seat actually is today:** a per-run scheduled drain. Each time it fires, it's a
-  fresh chat that checks for recovery and resumed work, then dispatches, and carries one item to
-  its gate. An always-on background process that runs continuously, plus automatic merge detection,
-  are not built yet; that's the next phase of server work. The Pulse seat gets you unattended
-  progress to the gate. It doesn't merge for you.
-- **What's still ahead:** an always-on scheduler that runs continuously instead of tick by tick,
-  automatic detection of approved pull requests so merges can fire without you running a command,
-  running more than one item at a time safely, and a push-based connection to the tracker instead
-  of checking on an interval.
+- **What a scheduled run actually is today:** each time it fires, it's a fresh chat that checks
+  for recovery and resumed work, then dispatches, and carries one item to its gate. It gets you
+  unattended progress to the gate. Whether it goes past the gate depends on [how much it does on
+  its own](#how-much-it-does-on-its-own).
+- **What's still ahead:** one always-on process that runs the loop nonstop instead of run by run,
+  and a push-based connection to the tracker instead of checking on an interval.
 
 ## Next steps
 

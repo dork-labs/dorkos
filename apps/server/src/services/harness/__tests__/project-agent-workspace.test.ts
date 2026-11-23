@@ -64,9 +64,12 @@ import { logger } from '../../../lib/logger.js';
  *
  * 10 → 11 for `continuing-on-another-account` (Re-seat P0), which tells an
  * agent whose room seat moved to another account to finish, not repeat.
+ *
+ * 12 → 13 for `waiting-for-a-busy-computer` (DOR-4209), which teaches an agent
+ * that its heavy shell jobs wait in the computer's one line, and never to dodge it.
  */
 const PACK_NAMES = OPERATING_SKILLS_PACK.map((skill) => skill.name).sort();
-const PACK_SIZE = 12;
+const PACK_SIZE = 13;
 
 let tmpRoot: string;
 

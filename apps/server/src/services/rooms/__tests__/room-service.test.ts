@@ -424,6 +424,11 @@ describe('RoomService', () => {
   describe('read cursor and unread counts', () => {
     let roomId: string;
 
+    // A spy left behind by a failed assertion would leak into every later test.
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     beforeEach(() => {
       roomId = service.createRoom(
         { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
@@ -529,14 +534,11 @@ describe('RoomService', () => {
       // One event name for every kind of thread a person reads — a room, an
       // agent session, the inbox — so a client subscribes once and filters on
       // `threadKind`.
-      expect(broadcast).toHaveBeenCalledWith('read_cursor', {
-        userId: human,
-        threadKind: 'room',
-        threadId: roomId,
-        lastReadSeq: 2,
-        unreadCount: 1,
-      });
-      broadcast.mockRestore();
+      expect(broadcast).toHaveBeenCalledWith(
+        'read_cursor',
+        { userId: human, threadKind: 'room', threadId: roomId, lastReadSeq: 2, unreadCount: 1 },
+        expect.any(Function)
+      );
     });
 
     it('says nothing when the write moved nothing', () => {

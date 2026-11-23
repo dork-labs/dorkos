@@ -12,10 +12,10 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 <ProductShot
   id="agent-discovery"
-  alt="The Mesh tab scanning for agent projects and registering them one by one into a growing network view"
+  alt="DorkOS searching this computer for agent projects and adding them one by one"
 />
 
-Mesh is DorkOS's agent discovery system. It scans your computer for AI agent projects (Claude Code, Cursor, Codex, and others), registers each one with a short profile called a manifest, and shows them all in one place: the Mesh tab.
+Mesh is DorkOS's agent discovery system. It scans your computer for AI agent projects (Claude Code, Cursor, Codex, and others), registers each one with a short profile called a manifest, and shows them all in one place: the **Team** page.
 
 If you run more than one agent across more than one project, Mesh is how you stop losing track of them.
 
@@ -24,22 +24,22 @@ If you run more than one agent across more than one project, Mesh is how you sto
 <Steps>
 <Step>
 
-**Open the Mesh tab.** You'll see a list of any agents already registered, plus a network view once you have a few.
+**Open "Bring in existing projects."** Press `Cmd+K` (`Ctrl+K` on Windows and Linux) and choose **Bring in existing projects**. You can also click **New agent** on the Team page and pick **Bring in an existing project folder**, or use **Search for projects** on an empty Team page.
 
 </Step>
 <Step>
 
-**Click "Scan for Agents."** Mesh walks your project folders looking for markers like `CLAUDE.md`, `AGENTS.md`, or a `.cursor/` folder. It reads files, it doesn't touch anything, so scanning is safe to run as often as you like.
+**Click "Search for projects."** Mesh walks your project folders looking for markers like `CLAUDE.md`, `AGENTS.md`, or a `.cursor/` folder. It reads files, it doesn't touch anything, so scanning is safe to run as often as you like. Open **Advanced** to pick which folders to search and how deep to look.
 
 </Step>
 <Step>
 
-**Approve or deny each candidate.** Every project Mesh finds shows up as a card with an approve and a deny button. Approve the ones you want tracked. Deny the rest, and Mesh won't ask about them again.
+**Add, skip, or deny each project.** Every project Mesh finds shows up as a card. Click **Add** for the ones you want, or **Add all** to take every one. **Skip** leaves a project for another time. **Deny** blocks it, and Mesh won't ask about it again.
 
 </Step>
 <Step>
 
-**Check the topology graph.** Approved agents appear as nodes, grouped by project. This is the fastest way to see everything you're running at a glance.
+**Check the map.** On the **Team** page, switch to the **Topology** view. Your agents appear as nodes, grouped by project. This is the fastest way to see everything you're running at a glance.
 
 </Step>
 </Steps>
@@ -59,13 +59,13 @@ Nothing bad happens. Mesh recognizes it's already registered and skips it silent
 
 ## Denying agents
 
-Not every project Mesh finds is one you want tracked, maybe it's an old experiment or a folder you keep around for reference. Click deny on its card, or give a reason if you want to remember why later. Denied projects won't show up in future scans. Changed your mind? You can remove a denial from the reference API below.
+Not every project Mesh finds is one you want tracked. Maybe it's an old experiment or a folder you keep around for reference. Click **Deny** on its card. Denied projects won't show up in future scans, and the **Denied** view on the Team page lists them. Changed your mind? You can remove a denial with the reference API below.
 
 ## Health states
 
 Once an agent is registered, Mesh watches for signs of life:
 
-- **Active**: seen in the last 5 minutes.
+- **Active**: seen in the last hour.
 - **Inactive**: no signal for a while, but still within 24 hours.
 - **Stale**: hasn't checked in for over 24 hours. It might be offline, or it might just be heads-down on something long-running.
 
@@ -75,7 +75,7 @@ When you approve an agent, DorkOS writes a small manifest describing it (name, w
 
 ## Reference
 
-The rest of this page is for scripting registration, building something of your own on top of Mesh, or understanding the internals. If you're just using the Mesh tab, you're done.
+The rest of this page is for scripting registration, building something of your own on top of Mesh, or understanding the internals. If you're just using the app, you're done.
 
 ### Two registries: installed vs. discovered
 
@@ -103,7 +103,7 @@ Any directory with a `.dork/agent.json` file is a valid agent location. You're n
 
 Mesh doesn't watch your filesystem for new `.dork/agent.json` files. Discovery only runs when triggered:
 
-- Clicking "Scan for Agents" in the UI.
+- Clicking "Search for projects" in the app.
 - Calling `POST /api/mesh/discover` or the `mesh_discover` MCP tool.
 - On startup, a background reconciler walks every path in `mesh.scanRoots` (configured in `config.json`) and picks up any manifests added since the last scan.
 
@@ -128,11 +128,11 @@ Mesh ships with ten detection strategies covering the major AI agent tools:
 | **amazon-q**    | `.amazonq/` directory at the project root.                                                           | `amazon-q`    |
 | **continue**    | `.continue/` directory at the project root.                                                          | `continue`    |
 
-The `AgentRuntime` enum also includes placeholder values for agents that don't yet have detection strategies: `augment`, `jetbrains-ai`, `kilo-code`, `trae`, and `other`.
+The `AgentRuntime` enum also includes `opencode` and `doe`, runtimes DorkOS runs itself, which have no scan strategy, plus placeholder values for agents that don't yet have detection strategies: `augment`, `jetbrains-ai`, `kilo-code`, `trae`, and `other`.
 
 Any directory that already contains a `.dork/agent.json` manifest is auto-imported: the agent is added to the registry without requiring approval again.
 
-Trigger a scan from the UI by opening the Mesh tab and clicking the discover button, or use the REST API:
+Trigger a scan from the app with **Bring in existing projects** (see [Try it](#try-it)), or use the REST API:
 
 ```bash
 curl -X POST http://localhost:4242/api/mesh/discover \
@@ -140,7 +140,7 @@ curl -X POST http://localhost:4242/api/mesh/discover \
   -d '{ "roots": ["/home/user/projects"], "maxDepth": 5 }'
 ```
 
-The response is an array of `DiscoveryCandidate` objects, each containing the directory path, the strategy that matched, and hints about the agent's name and capabilities. In the UI, each candidate appears as a card with approve and deny buttons.
+The response is an array of `DiscoveryCandidate` objects, each containing the directory path, the strategy that matched, and hints about the agent's name and capabilities. In the app, each candidate appears as a card with **Add**, **Skip** and **Deny** buttons.
 
 <Callout type="info">
   Discovery is non-destructive. It only reads filesystem markers and never modifies your project
@@ -176,7 +176,7 @@ Every registered agent has a manifest describing its identity and configuration.
     },
     description: { type: 'string', description: 'What the agent does', default: "''" },
     runtime: {
-      type: "'claude-code' | 'cursor' | 'codex' | 'other'",
+      type: "'claude-code' | 'codex' | 'opencode' | 'doe' | 'cursor' | … | 'other'",
       description: 'The AI platform powering the agent',
     },
     capabilities: {
@@ -207,7 +207,7 @@ Discovery strategies automatically populate the manifest with hints extracted fr
 
 There are three ways to register an agent in Mesh.
 
-**MeshPanel UI.** Open the Mesh tab and click "Register Agent." The form lets you enter the agent name, capabilities, project path, and optional metadata. You can also accept a discovery candidate directly from its card.
+**The app.** Click **Add** on a project's card in **Bring in existing projects**. To make a new agent from scratch instead, click **New agent** on the Team page.
 
 **REST API.** Send a POST request with the agent manifest:
 
@@ -256,11 +256,11 @@ When an agent creates a registration via MCP tools, the manifest is written to `
 
 ### Network topology
 
-The topology graph in the Mesh tab renders your agent network visually. Agents appear as nodes grouped by namespace, with namespace hub nodes connecting related agents. Cross-namespace edges show permitted communication paths.
+The **Topology** view on the Team page renders your agent network visually. Agents appear as nodes grouped by namespace, with namespace hub nodes connecting related agents. Cross-namespace edges show permitted communication paths.
 
 Live health data is overlaid on the graph:
 
-- **Active nodes**: seen recently (within the last 5 minutes).
+- **Active nodes**: seen recently (within the last hour).
 - **Inactive nodes**: not seen for a while, but within 24 hours.
 - **Stale nodes**: not seen for over 24 hours, may be offline.
 
@@ -278,7 +278,7 @@ curl -X POST http://localhost:4242/api/mesh/agents/{agentId}/heartbeat \
 
 <TypeTable
   type={{
-    active: { type: 'status', description: 'Agent has been seen within the last 5 minutes' },
+    active: { type: 'status', description: 'Agent has been seen within the last hour' },
     inactive: { type: 'status', description: 'Agent has not been seen for up to 24 hours' },
     stale: {
       type: 'status',
@@ -291,7 +291,7 @@ When an agent's health state changes, Mesh emits a lifecycle event through the R
 
 ### Denying agents (API)
 
-Deny a candidate via the UI (click the deny button on its card) or the API:
+Deny a candidate in the app (click **Deny** on its card) or with the API:
 
 ```bash
 curl -X POST http://localhost:4242/api/mesh/deny \
@@ -321,8 +321,9 @@ curl -X DELETE "http://localhost:4242/api/mesh/denied?path=%2Fhome%2Fuser%2Fproj
     },
     'Max scan depth': {
       type: 'number',
-      description: 'How many directory levels deep to scan',
-      default: '3',
+      description:
+        "How many directory levels deep to scan. The app's Scan depth slider starts at 3 and goes up to 5; the API uses 5 when you leave it out",
+      default: '5',
     },
   }}
 />

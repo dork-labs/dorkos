@@ -97,7 +97,7 @@ my-extension/
 | `permissions`        | No       | Reserved for future use.                                                                                                                                                                                            |
 | `capabilities`       | No       | Client-side capability declarations. Today: `capabilities.events` — the host events this extension may subscribe to. See [Events](#events).                                                                         |
 | `defaultEnabled`     | No       | **Core extensions only.** Whether the extension ships enabled. Omitted or `true` = ships on; `false` = ships off (user opts in). Ignored for user/marketplace extensions. See [Core Extensions](#core-extensions).  |
-| `canDisable`         | No       | **Core extensions only.** Defaults to `true`. `false` = always on, renders no toggle ("Required"). Reserved — no core extension uses `false` today. See [Core Extensions](#core-extensions).                        |
+| `canDisable`         | No       | **Core extensions only.** Defaults to `true`. `false` = always on, renders no toggle ("Required"); `marketplace` is the one core extension that uses it. See [Core Extensions](#core-extensions).                   |
 | `serverCapabilities` | No       | Server-side declarations: entry point, external hosts, secrets, settings. See [Secrets](#secrets) and [Settings Declaration](#settings-declaration).                                                                |
 | `dataProxy`          | No       | Declarative API proxy config. See [Declarative Proxy](#declarative-proxy).                                                                                                                                          |
 | `tools`              | No       | Tools the extension gives the person's agents while it runs. Needs `serverCapabilities`. See [`ctx.tools`](#ctxtools).                                                                                              |
@@ -734,22 +734,22 @@ Core extension source lives in `apps/server/src/core-extensions/{id}/` and follo
 
 ### Staging at startup
 
-At server startup, `ensureCoreExtensions(dorkHome)` (in `apps/server/src/services/core-extensions/ensure-core-extensions.ts`, called from `apps/server/src/index.ts`) scans the core-extension source tree and version-stages every subdirectory with a valid `extension.json` into `{dorkHome}/extensions/<id>/` — the **same** runtime directory user extensions use. From that point on, the standard `extensionManager.initialize()` discovery pass treats them identically to user extensions; the only difference is provenance.
+At server startup, `ensureCoreExtensions(dorkHome)` (in `apps/server/src/services/core-extensions/ensure-core-extensions.ts`, called from `apps/server/src/startup/steps/telemetry-extensions-runtimes.ts`) scans the core-extension source tree and version-stages every subdirectory with a valid `extension.json` into `{dorkHome}/extensions/<id>/` — the **same** runtime directory user extensions use. From that point on, the standard `extensionManager.initialize()` discovery pass treats them identically to user extensions; the only difference is provenance.
 
 `ensureCoreExtensions()` returns `CoreExtensionInfo[]` (`{ id, defaultEnabled, canDisable }`), which the extension manager uses to resolve each extension's enabled state and to render the Settings UI. Extension records carry `origin: 'core' | 'user'`, derived from this startup staging set (it is not a manifest claim).
 
 ### Settings UI
 
-Core extensions appear in Settings → Extensions under a **"Core extensions"** section; user-installed extensions appear under **"Installed extensions"**. Each core extension has a working enable/disable toggle. Whether it ships on or off is controlled by `defaultEnabled` in its manifest; whether the user can toggle it at all is controlled by `canDisable`.
+Core extensions appear in Settings → Extensions under a **"Core extensions"** section; user-installed extensions appear under **"Installed extensions"**. Each core extension with `canDisable: true` has a working enable/disable toggle. Whether it ships on or off is controlled by `defaultEnabled` in its manifest; whether the user can toggle it at all is controlled by `canDisable`.
 
 ### Manifest fields
 
 Core extensions may set two optional manifest fields (ignored for user/marketplace extensions):
 
-| Field            | Default | Semantics                                                                                                                               |
-| ---------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `defaultEnabled` | `true`  | Whether the extension ships enabled. Omitted or `true` = ships on; `false` = ships off (user opts in).                                  |
-| `canDisable`     | `true`  | Whether the user may turn it off. `false` = always on, renders no toggle ("Required"). Reserved — no core extension uses `false` today. |
+| Field            | Default | Semantics                                                                                                               |
+| ---------------- | ------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `defaultEnabled` | `true`  | Whether the extension ships enabled. Omitted or `true` = ships on; `false` = ships off (user opts in).                  |
+| `canDisable`     | `true`  | Whether the user may turn it off. `false` = always on, renders no toggle ("Required"). Only `marketplace` uses `false`. |
 
 The user's deviations from these defaults are stored in `config.extensions` as two lists (`enabled` for opt-ins, `disabled` for opt-outs). See [Configuration → extensions](./configuration.md#settings-reference) for the resolution model and the hand-edit caveat.
 
@@ -757,11 +757,11 @@ The user's deviations from these defaults are stored in `config.extensions` as t
 
 | id              | Name        | `defaultEnabled` | `canDisable` |
 | --------------- | ----------- | ---------------- | ------------ |
-| `marketplace`   | Marketplace | `true` (on)      | `true`       |
+| `marketplace`   | Marketplace | `true` (on)      | `false`      |
 | `hello-world`   | Hello World | `false` (off)    | `true`       |
 | `linear-issues` | Linear Loop | `false` (off)    | `true`       |
 
-Marketplace backs the `/marketplace` UI and ships on. Hello World ships off as the canonical authoring skeleton and a live toggleable demo. Linear Loop incubates here (off by default) until `@dorkos/extension-api` is published, after which it migrates to the marketplace.
+Marketplace backs the `/marketplace` UI, ships on and cannot be turned off. Hello World ships off as the canonical authoring skeleton and a live toggleable demo. Linear Loop incubates here (off by default) until `@dorkos/extension-api` is published, after which it migrates to the marketplace.
 
 ### Writing a New Core Extension
 

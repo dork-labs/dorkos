@@ -142,6 +142,12 @@ export interface ActiveClaim {
    * write rather than before it. A retraction does not set it either: taking a
    * pill back leaves the entry with nothing on it, which is not an answer.
    *
+   * **An accepted private `chat_send` from this turn sets it too** (DOR-4670,
+   * {@link RoomTriggerDispatcher.privateAnswerMark}). The agent answered, just not
+   * here, so the room owes no "did not reply" line. It is this mark and not the
+   * post's for the same reason as a reaction: no words landed in the room, so a
+   * re-seat must not be told the answer is already posted.
+   *
    * Per `(room, agent)` like its sibling, and CONSUMED by the delivery it was set
    * for ({@link RoomTriggerDispatcher.takeReactedViaTool}), because a claim
    * outlives its answer under RP8's park-and-resume and a standing mark would

@@ -55,7 +55,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { MCP_OAUTH_CALLBACK_PATH } from '../services/mesh/agent-mcp-oauth-service.js';
 

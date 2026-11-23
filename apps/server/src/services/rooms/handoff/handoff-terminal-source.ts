@@ -23,7 +23,6 @@ import {
   type PreparedPrivateSessionMessage,
 } from '../../session/private-messages/acceptance.js';
 import { decodeHandoffEnvelope, joinHandoffCurrentCarry } from './handoff-envelope.js';
-import { sessionAgentOf } from '../../core/agent-identity/session-agent.js';
 import { captureAdmissionRecipient } from './outbox/admission-recipient.js';
 import { HandoffOutboxStore, decodeSavedHandoffScope } from './outbox/handoff-outbox-store.js';
 type Ref = Extract<PrivateSessionMessageSourceRef, { kind: 'room_handoff_terminal' }>;
@@ -105,7 +104,6 @@ export class HandoffTerminalSource implements PrivateSessionMessageSourceAdapter
       .get();
     if (
       !metadata?.runtime ||
-      sessionAgentOf(exec, envelope.source.callerSessionId) !== envelope.source.agentPath ||
       !author ||
       author.kind !== 'agent' ||
       author.naturalKey !== envelope.source.agentPath ||
@@ -120,11 +118,15 @@ export class HandoffTerminalSource implements PrivateSessionMessageSourceAdapter
       })
     )
       return refuse();
+    // The chat's agent must still be the one admission witnessed, or no longer be known at all
+    // (its runtime dropped it): then the witness captured and checked at admission, for this
+    // session and author, stands, and the notice goes only to that chat (DOR-5040).
     const recipient = captureAdmissionRecipient(
       exec,
       envelope.source.callerSessionId,
       row.authorId,
-      envelope.source.agentPath
+      envelope.source.agentPath,
+      { acceptUnknownAgent: true }
     );
     if (!recipient || stableStringify(recipient) !== stableStringify(envelope.recipient))
       return refuse();

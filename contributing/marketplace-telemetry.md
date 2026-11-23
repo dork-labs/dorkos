@@ -124,7 +124,7 @@ export const marketplaceInstallEvents = pgTable(
     dorkosVersion: text('dorkos_version').notNull(),
 
     /** Discriminated source form the package was installed from — one of
-     *  `relative-path` / `github` / `url` / `git-subdir` / `npm`. Added by
+     *  `relative-path` / `github` / `url` / `git-subdir` / `npm` / `local` / `unknown`. Added by
      *  marketplace-05; see the `source_type` column section below. */
     sourceType: text('source_type').notNull(),
 
@@ -148,7 +148,7 @@ The two indexes back the only two read patterns the marketplace page needs: "cou
 
 ## 7. Privacy contract
 
-**The schema is the contract.** Anything that is not a column on `marketplaceInstallEvents` cannot be stored, by construction. Drizzle will reject the insert at compile time, and the Zod `InstallEventSchema` in the Edge Function will reject the payload at runtime before it ever reaches the DB.
+**The schema is the contract.** Anything that is not a column on `marketplaceInstallEvents` cannot be stored, by construction. Drizzle will reject the insert at compile time, and the Zod `InstallTelemetryEventSchema` (`@dorkos/shared/marketplace-install-telemetry`) the Edge Function validates with will reject the payload at runtime before it ever reaches the DB.
 
 The forbidden columns — the ones that are explicitly not on the table and never will be without a public ADR overruling this section — include:
 
@@ -221,13 +221,23 @@ This rollup is also explicitly within Drizzle, also within Neon. The architectur
 Marketplace-05 added a new `source_type` column to
 `marketplace_install_events` so the marketplace team can track adoption
 of each discriminated source form over time. The column is a plain
-`text` field constrained to five values:
+`text` field constrained to seven values (`INSTALL_TELEMETRY_SOURCE_TYPES`):
 
 - `relative-path` — bare `./name` string resolved against the marketplace clone
-- `github` — `{ source: 'github', repo }` object form
-- `url` — `{ source: 'url', url }` object form (GitLab, Bitbucket, self-hosted)
+- `github` — `{ source: 'github', repo }` object form, or a direct `github:user/repo` / github.com URL install
+- `url` — `{ source: 'url', url }` object form (GitLab, Bitbucket, self-hosted), or a direct non-GitHub URL install
 - `git-subdir` — `{ source: 'git-subdir', url, path }` sparse-clone form
 - `npm` — `{ source: 'npm', package }` stub (install deferred to marketplace-06)
+- `local` — a folder on the person's own computer (the path is never sent)
+- `unknown` — the install failed before its source was resolved (DOR-4988)
+
+A marketplace entry reports the form it declares. An install that fails
+before resolving reports `packageName: '<unresolved>'` and the requested
+marketplace only when it is a configured one (else `<direct>`), never the
+name the person typed. A folder install reports `packageName: '<local>'`.
+`errorCode` is kept only when it looks like an error class name, else
+`UnknownError`. A name over the 64-character cap is sent as `<too-long>`.
+The mapping lives in `services/marketplace/telemetry/install-event.ts`.
 
 ### Privacy implications
 
@@ -252,7 +262,13 @@ ALTER TABLE "marketplace_install_events" ALTER COLUMN "source_type" SET NOT NULL
 ### Wire format
 
 The telemetry reporter on the server (`services/marketplace/telemetry/telemetry-reporter.ts`)
-derives `sourceType` from the resolved `PluginSource` discriminator and
-includes it in every POST to `/api/telemetry/install`. The Edge Function
-validates the field via the Zod `enum(['relative-path', 'github', 'url', 'git-subdir', 'npm'])`
-schema and inserts it into the `source_type` column.
+includes `sourceType` in every POST to `/api/telemetry/install`. The Edge
+Function validates it against `INSTALL_TELEMETRY_SOURCE_TYPES` and inserts it
+into the `source_type` column.
+
+The whole event schema lives in one place, `@dorkos/shared/marketplace-install-telemetry`
+(`InstallTelemetryEventSchema`). The Edge Function validates with it, and
+`telemetry-reporter.test.ts` parses the body the reporter really sends against
+it, so a field the route requires cannot go missing on the send side without a
+red test. Until DOR-4988 the reporter dropped `sourceType` and every event got a
+`400`.

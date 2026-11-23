@@ -16,7 +16,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import {
   accountSigninPolicy,

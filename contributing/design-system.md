@@ -990,7 +990,7 @@ switch, a menu — cannot be a `CollapsibleFieldCard`, because that primitive's
 whole header is one button and controls cannot nest inside a button. Those rows
 use a bare Radix `Collapsible` with the same chevron treatment (`ChevronDown`,
 `-rotate-90` when closed) so they still read as the same affordance;
-`settings/ui/tools/ToolGroupRow.tsx` is the example to copy.
+`settings/ui/external-mcp/ExternalMcpCard.tsx` (a switch beside the trigger) is the example to copy.
 
 Do not hand-roll a third one.
 

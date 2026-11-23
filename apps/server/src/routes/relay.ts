@@ -23,7 +23,7 @@ import {
 } from '@dorkos/shared/relay-schemas';
 import { initSSEStream } from '../services/core/streams/stream-adapter.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { validationFailureBody } from '../lib/route-utils.js';

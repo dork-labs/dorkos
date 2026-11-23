@@ -51,4 +51,10 @@ void generateFiles({
   input: openapi,
   output: outputDir,
   includeDescription: true,
+  // File pages by path and method (`api/sessions/{id}/get`), never by
+  // operationId. The default ('v2') names a page by its operationId at the top
+  // of `docs/api/`, which would move every page's URL and put the pages outside
+  // the `api/` subtree the prune above clears, so a removed operation's page
+  // would outlive it.
+  name: { algorithm: 'v1' },
 });

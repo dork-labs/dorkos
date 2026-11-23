@@ -12,6 +12,11 @@
  */
 
 import { siteUrl } from '@dorkos/shared/links';
+import {
+  MAX_INSTALL_DURATION_MS,
+  MAX_INSTALL_NAME_LEN,
+  type InstallTelemetryPackageType,
+} from '@dorkos/shared/marketplace-install-telemetry';
 import { getOrCreateInstanceId } from '../../../lib/instance-id.js';
 import {
   registerTelemetryReporter,
@@ -21,22 +26,38 @@ import {
 
 const TELEMETRY_ENDPOINT = siteUrl('/api/telemetry/install');
 
+/** Sent in place of a package or marketplace name longer than the site accepts. */
+export const TOO_LONG_NAME_LABEL = '<too-long>';
+
+/** `name` when the site accepts its length, else {@link TOO_LONG_NAME_LABEL}. */
+function fitName(name: string): string {
+  return name.length > 0 && name.length <= MAX_INSTALL_NAME_LEN ? name : TOO_LONG_NAME_LABEL;
+}
+
 /**
  * The wire-format payload sent to the dorkos.ai telemetry endpoint.
  *
  * Mirrors {@link InstallEvent} (which is already PII-free by construction)
  * and adds two server-supplied fields: a stable per-machine `installId` and
- * the running `dorkosVersion`.
+ * the running `dorkosVersion`. The site route validates it against
+ * `InstallTelemetryEventSchema` from `@dorkos/shared/marketplace-install-telemetry`,
+ * and the reporter's test parses this payload against that same schema.
  */
 export interface TelemetryPayload {
   packageName: string;
   marketplace: string;
-  type: InstallEvent['type'];
+  /**
+   * The site's list, not the marketplace's: {@link buildPayload} assigns the
+   * marketplace `PackageType` here, so a package type the site would refuse
+   * fails to compile.
+   */
+  type: InstallTelemetryPackageType;
   outcome: InstallEvent['outcome'];
   durationMs: number;
   errorCode?: string;
   installId: string;
   dorkosVersion: string;
+  sourceType: InstallEvent['sourceType'];
 }
 
 /**
@@ -88,9 +109,11 @@ export function registerDorkosCommunityTelemetry(
 /**
  * Build the wire-format payload from an {@link InstallEvent}.
  *
- * Strips nothing — the {@link InstallEvent} shape from `telemetry-hook` is
- * already PII-free by design. The `errorCode` field is only included when
- * present so successful events stay slim.
+ * What may be sent is decided upstream, in `buildInstallEvent`. This only fits
+ * the event to what the site accepts, so it is counted rather than refused: a
+ * package or marketplace name over the length cap becomes `<too-long>`, and
+ * `durationMs` is clamped. `errorCode` is only included when present so
+ * successful events stay slim.
  *
  * @param event - The terminal install event reported by the installer.
  * @param installId - The stable per-machine UUID stored in dorkHome.
@@ -102,13 +125,14 @@ export function buildPayload(
   dorkosVersion: string
 ): TelemetryPayload {
   return {
-    packageName: event.packageName,
-    marketplace: event.marketplace,
+    packageName: fitName(event.packageName),
+    marketplace: fitName(event.marketplace),
     type: event.type,
     outcome: event.outcome,
-    durationMs: event.durationMs,
+    durationMs: Math.min(Math.max(0, Math.round(event.durationMs)), MAX_INSTALL_DURATION_MS),
     ...(event.errorCode !== undefined && { errorCode: event.errorCode }),
     installId,
     dorkosVersion,
+    sourceType: event.sourceType,
   };
 }

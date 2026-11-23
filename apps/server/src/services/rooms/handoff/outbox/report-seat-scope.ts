@@ -5,8 +5,35 @@ import { RoomSessionLedger } from '../../session-bindings/room-session-ledger.js
 export type ReportSeatScope =
   { roomId: string; authorId: string; joinedAt: string; agentPath: string } | 'unavailable' | null;
 
-/** A retired native ID and a deliberate seat move retain the original room/agent relation. */
-export function reportSeatScope(db: Db, sessionId: string): ReportSeatScope {
+/**
+ * Whether a spin-off of a session whose seat moved is still the seat's work: it started at or
+ * before the move (DOR-3753). The old session stays a real chat a person can reopen, and a
+ * spin-off started there afterwards is that chat's, not the seat's. An unknown start is never
+ * taken for an early one.
+ *
+ * @param spinOffStartedAt - When the spin-off was first started (epoch ms), or null when unknown.
+ * @param movedAt - When the seat moved off the session (epoch ms).
+ */
+export function spinOffPredatesMove(
+  spinOffStartedAt: number | null | undefined,
+  movedAt: number
+): boolean {
+  return typeof spinOffStartedAt === 'number' && spinOffStartedAt <= movedAt;
+}
+
+/**
+ * A retired native ID and a deliberate seat move retain the original room/agent relation; a
+ * move does only for a spin-off started at or before it ({@link spinOffPredatesMove}).
+ *
+ * @param db - The database.
+ * @param sessionId - The chat the spin-off reports to.
+ * @param spinOffStartedAt - When the reporting spin-off was first started, or null when unknown.
+ */
+export function reportSeatScope(
+  db: Db,
+  sessionId: string,
+  spinOffStartedAt: number | null
+): ReportSeatScope {
   const ledger = new RoomSessionLedger(db);
   const binding = ledger.bindingForSession(sessionId);
   const moved = binding ? undefined : ledger.seatMovedFrom(sessionId);
@@ -24,7 +51,9 @@ export function reportSeatScope(db: Db, sessionId: string): ReportSeatScope {
     room.archived ||
     !member ||
     author?.kind !== 'agent' ||
-    (moved && Date.parse(member.joinedAt) > moved.movedAt)
+    (moved &&
+      (Date.parse(member.joinedAt) > moved.movedAt ||
+        !spinOffPredatesMove(spinOffStartedAt, moved.movedAt)))
   )
     return 'unavailable';
   return {

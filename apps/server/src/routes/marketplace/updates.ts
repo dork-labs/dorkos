@@ -16,7 +16,7 @@ import {
 } from '../../services/marketplace/flows/update-installed.js';
 import { trustedCaller } from '../../services/core/capabilities/index.js';
 import { readCallerAuthority } from '../../lib/caller-authority.js';
-import { readJsonBody } from '../../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../../http/request-facts.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceRouteContext } from './context.js';

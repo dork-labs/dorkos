@@ -7,7 +7,7 @@ import bodyParser from 'body-parser';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readJsonBody, underMount, type BodyRule } from '../http/request-body.js';
+import { readJsonBody, underMount, type BodyRule } from '@dorkos/http-kit';
 import { requirePersonAtThisComputer } from '../lib/caller-authority.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { decideSessionGate } from '../services/core/auth/session-gate.js';

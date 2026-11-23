@@ -1,5 +1,5 @@
 import { introductionsOnAtStartup } from '../../services/rooms/introductions/introducer.js';
-import { roomAudience } from '../../services/rooms/service/room-audience.js';
+import { roomAudience, roomReadCursors } from '../../services/rooms/service/room-audience.js';
 /**
  * Rooms: read state, the rooms graph, remote community mirrors and
  * subscriptions, room files and worktrees, session binding repair, and the
@@ -10,11 +10,7 @@ import { roomAudience } from '../../services/rooms/service/room-audience.js';
  * @module startup/steps/rooms
  */
 import { wireDirectChats } from '../../services/rooms/direct-chat/index.js';
-import {
-  ReadCursorService,
-  setReadCursorService,
-} from '../../services/core/read-cursor-service.js';
-import { ReadCursorStore } from '../../services/core/read-cursor-store.js';
+import { setReadCursorService } from '../../services/core/read-cursor-service.js';
 import type { ConnectorRuntimePrincipalService } from '../../services/connectors/principal/runtime-principal-service.js';
 import { LocalRoomAttachmentStore } from '../../services/rooms/attachments/local-room-attachment-store.js';
 import { RemoteRoomSubscriptionBridge } from '../../services/communities/remote/remote-room-subscription-bridge.js';
@@ -123,7 +119,9 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
   // three depend on a domain they have nothing to do with. Built BEFORE the
   // rooms graph because rooms read and write it — the room list's unread badge
   // and every person's place in a room come from here.
-  const readCursorService = new ReadCursorService(new ReadCursorStore(db));
+  // Who may see a moved cursor is asked of the rooms graph below when one
+  // moves, which is after that graph exists: nothing moves a cursor during boot.
+  const readCursorService = roomReadCursors(db, () => roomService);
   setReadCursorService(readCursorService);
 
   const docChannelRuntimePrincipals: { current?: ConnectorRuntimePrincipalService } = {};
@@ -453,7 +451,7 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
   });
   // A chat bound without an agent is its folder's agent's; the folder its own
   // runtime runs it in now is one place that folder is known (DOR-5035).
-  setSessionAgentSources({ liveCwd: (sessionId) => liveRuntimeCwd(db, sessionId) });
+  setSessionAgentSources({ db, liveCwd: (sessionId) => liveRuntimeCwd(db, sessionId) });
   // Where else an agent's conversations are: session storage is derived per
   // working directory (ADR-0310), and room turns stood in their agent's copy of
   // the room's files until spec `agent-home-desk` moved them home. Claude Code's

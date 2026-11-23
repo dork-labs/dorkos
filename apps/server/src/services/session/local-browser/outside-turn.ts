@@ -1,5 +1,5 @@
 /** Whether a chat's turn came from, or read words from, someone outside the team. */
-import { agentOfChat, liveSessionCwd } from '../../core/agent-identity/session-agent.js';
+import { sessionAgentById } from '../../core/agent-identity/session-agent.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { roomTurnReadOutsideWords } from '../../core/turn-power/outside-words.js';
 import { marksOf } from '../../core/turn-power/turn-levels.js';
@@ -30,12 +30,8 @@ export interface OutsideTurnSources {
 }
 
 const LIVE_SOURCES: OutsideTurnSources = {
-  // A chat bound without an agent is its folder's agent's (DOR-5035).
-  agentPathOf: async (sessionId) =>
-    agentOfChat(
-      await runtimeRegistry.getSessionAgentPath(sessionId),
-      runtimeRegistry.getNativeSessionCwd(sessionId) ?? liveSessionCwd(sessionId)
-    ) ?? null,
+  // A chat bound without an agent is its folder's agent's (DOR-5035), by the one resolver (DOR-5038).
+  agentPathOf: async (sessionId) => (await sessionAgentById(sessionId)) ?? null,
   launchOriginOf: (sessionId) => runtimeRegistry.getSessionLaunchOrigin(sessionId),
   marksOf,
   startedMarked: turnStart,

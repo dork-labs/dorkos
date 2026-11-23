@@ -178,6 +178,10 @@ export default function TelemetryPage() {
             </li>
           </ul>
           <p className="text-warm-gray leading-relaxed">
+            Each event also asks our analytics tool (PostHog) not to build a profile from it, unless
+            you linked this install to a DorkOS account and chose to link your usage data to it.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
             The install tag comes from a command copied on dorkos.ai by a visitor who allowed
             analytics cookies, like <span className="font-mono">--ref=k3j4mnb8x2qa.hn.launch</span>.
             It is a random code made for that one copy, plus the campaign tag of the link that

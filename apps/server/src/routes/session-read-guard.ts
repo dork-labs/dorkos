@@ -21,7 +21,7 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { matchedRoutes } from 'hono/route';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { parseSessionId } from '../lib/route-utils.js';
 import { sessionExists } from '../services/session/launch/session-exists.js';

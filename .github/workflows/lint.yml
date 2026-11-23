@@ -84,7 +84,7 @@ name: lint
 #
 # This workflow gates the queue but never watches `main` afterwards, so a break
 # that lands is invisible until the next PR is ejected by it. The canary is
-# this workflow, unchanged, run against `main` HEAD four times a day.
+# this workflow, unchanged, run against `main` HEAD once a day (DOR-5114).
 #
 # NOTHING NEEDED REWRITING HERE. Every step in this file — the Prettier check,
 # `turbo lint`, `pnpm lint:root` — is unconditional and means exactly the same
@@ -98,15 +98,15 @@ name: lint
 # dispatch aimed anywhere but `main` fails instead of posting this check on a
 # pull request's head. Inline, not a script: it runs before `actions/checkout`,
 # where the workspace is still empty and a `bash scripts/…` would exit 127 on
-# every event. The reasoning, the four slots and what their
-# coverage is worth given GitHub's throttling are in test.yml's matching
-# header; the cron here is the same four hours, offset by minutes so the four
-# canary workflows do not ask for runners in the same second.
+# every event. The reasoning, the one daily slot and what its coverage is
+# worth given GitHub's throttling are in test.yml's matching header; the cron
+# here is the same hour, offset by minutes so the four canary workflows do not
+# ask for runners in the same second.
 on:
   pull_request:
   merge_group:
   schedule:
-    - cron: '33 0,5,10,21 * * *'
+    - cron: '33 0 * * *'
   workflow_dispatch:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026

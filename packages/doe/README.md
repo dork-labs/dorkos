@@ -4,7 +4,7 @@ Doe is a Node library for agents that do business work. Your application supplie
 
 Coding work goes to a separate builder with its own instructions and tools. The business agent gets a short result. Your application can also show the builder's progress.
 
-This package does not install an agent runtime in the DorkOS app. App support and the service that schedules agent beats are separate work.
+This package is the library only. The DorkOS app runs agents on Doe through its own runtime, which lives in the DorkOS server, not in this package.
 
 ## What your application owns
 

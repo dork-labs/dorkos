@@ -30,11 +30,11 @@ import { defineConfig } from 'vitest/config';
 export const REPO_WIDE_SUITES = [
   // Reads docs/guides/agent-browser.mdx, packages/browser's pin and playwright-core's browsers.json.
   '__tests__/agent-browser-doc-versions.test.ts',
-  '__tests__/agents-service-census.test.ts',
   '__tests__/binary-lane-job.test.ts',
   '__tests__/binary-test-glob.test.ts',
   '__tests__/browser-proof-page.test.ts',
   '__tests__/browser-turbo-build-cache.test.ts',
+  '__tests__/build-cache-workflow.test.ts',
   '__tests__/check-boundary.test.ts',
   '__tests__/check-design-tokens.test.ts',
   '__tests__/check-own-mocks.test.ts',
@@ -64,11 +64,14 @@ export const REPO_WIDE_SUITES = [
   '__tests__/mcp-exclude-copy.test.ts',
   '__tests__/merge-group-runner-label.test.ts',
   '__tests__/one-shot-routes.test.ts',
+  // Reads docs/api/openapi.json and the repo VERSION file.
+  '__tests__/openapi-version.test.ts',
   // Walks every shipped app and package for network senders (DOR-4990).
   '__tests__/outbound-census.test.ts',
   '__tests__/playwright-apt-debs.test.ts',
   // Reads test.yml, browser-test.yml, docs-openapi-check.yml,
   // release-branch-contents.yml and changelog-fragment-check.yml (DOR-4639).
+  '__tests__/pr-related-step.test.ts',
   '__tests__/release-branch-ci.test.ts',
   // The guard over these two lists. It reads only scripts/, but a new suite
   // can land from any PR, so it must run in the queue too (DOR-4224).

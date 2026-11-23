@@ -167,13 +167,13 @@ export function ceilingForEntries(
   return { permissionCeiling: bounds.length === 1 ? bounds[0]! : bounds };
 }
 
-/** A message a turn answers, with what says where its words came from. */
+/** A message a turn answers or was shown, with what says where its words came from. */
 type AnsweredEntry = Pick<RoomEntry, 'id' | 'authorId'> & {
   body?: Pick<RoomEntry['body'], 'via'>;
 };
 
 /**
- * Whether any message a turn answers came from outside the team (DOR-4023): a stranger on a bridged
+ * Whether any of these messages came from outside the team (DOR-4023): a stranger on a bridged
  * chat (or an author nobody can resolve), a mini app's post (kept with the outsider mark), a
  * comment a mini app forwarded (`via`: its page wrote the request), or a post held to the default
  * for who was calling (a Wi-Fi sign-in). Another agent's own post is not: it is inside the team.
@@ -181,7 +181,9 @@ type AnsweredEntry = Pick<RoomEntry, 'id' | 'authorId'> & {
  * agent hops), so the turn it wakes counts them too.
  *
  * @param authors - The registry holding the stored author records.
- * @param entries - Every message the turn answers.
+ * @param entries - For the turn's outside-words note, every message it answers AND every message
+ *   its context showed (`marksForShown` in `context-entries.ts`, DOR-4144); for
+ *   {@link answersUntrustedText}, only the messages it answers.
  * @param roomId - The room, to read a post's kept marks.
  */
 export function answersOutsideWords(

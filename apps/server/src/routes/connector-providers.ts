@@ -27,7 +27,7 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { validationFailureBody } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';

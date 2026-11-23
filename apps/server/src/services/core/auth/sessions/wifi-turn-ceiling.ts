@@ -62,21 +62,32 @@ function fromOwnPage(headers: RequestFacts['headers']): boolean {
 }
 
 /**
- * Whether a Wi-Fi request is the owner's own: the owner's sign-in cookie,
- * verified on this request and made on the Wi-Fi route, with no agent header,
- * from the app's own page. No registered owner means nobody's is.
+ * Whether a Wi-Fi request carries the owner's own sign-in: the owner's sign-in
+ * cookie, verified on this request and made on the Wi-Fi route, with no agent
+ * header, from the app's own page. No registered owner means nobody's is. It
+ * says nothing about whether that device may run agents ({@link isOwnerOnWifi}).
  *
  * @param facts - The request's facts.
  */
-function isOwnerOnWifi(facts: WifiTurnFacts): boolean {
+export function isOwnerSignInOnWifi(facts: WifiTurnFacts): boolean {
   const { user } = facts;
   if (user?.credential !== 'cookie' || user.route !== 'wifi') return false;
   if (user.sessionId === undefined) return false;
   if (presentsAgentIdentity(facts) || !fromOwnPage(facts.headers)) return false;
   const owner = readOwnerAccount();
-  if (owner === null || owner.id !== user.userId) return false;
-  // Only a device the owner let run agents, at this computer (DOR-4744).
-  return wifiAgentTurnsAllowed(user.sessionId);
+  return owner !== null && owner.id === user.userId;
+}
+
+/**
+ * Whether a Wi-Fi request is the owner's own: their sign-in
+ * ({@link isOwnerSignInOnWifi}) on a device they let run agents, at this
+ * computer (DOR-4744).
+ *
+ * @param facts - The request's facts.
+ */
+function isOwnerOnWifi(facts: WifiTurnFacts): boolean {
+  const sessionId = facts.user?.sessionId;
+  return sessionId !== undefined && isOwnerSignInOnWifi(facts) && wifiAgentTurnsAllowed(sessionId);
 }
 
 /**

@@ -1,0 +1,245 @@
+# Saves main's build caches after every merge (DOR-4627, ledger
+# 261123-194610-build-cache-per-merge).
+#
+# WHY. Pull requests and queue builds restore their turbo builds and pnpm
+# stores from caches only `refs/heads/main` may write, because main's scope is
+# the only one every other ref can read. Until this file, the only runs on main
+# that wrote them were the scheduled canary rounds of test.yml and
+# browser-test.yml, which GitHub delivers about twice a day (02:xx and 14:xx
+# UTC on 2026-11-18..22). So a queue build restored an entry up to half a day
+# and a dozen merges old, and rebuilt most packages: over 366 test-shard jobs on
+# 2026-11-16..17 there were 0 exact hits, 246 restored an entry built for an
+# older lockfile, and turbo replayed 1.2% of merge_group tasks. A recent queue
+# shard replayed 4 of 20 builds and spent 173 s building.
+#
+# WHAT. On every push to main (every merge), two small jobs build what the
+# canary builds and save the same keys the canary saves:
+#
+#   * test-builds (ubuntu-latest, test.yml's image): scripts/build-test-deps.sh
+#     with no filters, the build step of test.yml's queue shards, then
+#     `turbo-test-builds-<os>-<arch>-<lockfile>-<sha>`. Also the ubuntu-latest
+#     pnpm store, which test.yml, typecheck.yml and lint.yml all restore.
+#   * browser-builds (ubuntu-24.04, browser-test.yml's pinned image): the build
+#     line of browser-test.yml's browser-shard, with its NODE_ENV, then
+#     `turbo-browser-builds-<os>-<arch>-<lockfile>-<sha>`. Also the 24.04 pnpm
+#     store browser-test.yml restores.
+#
+# Each first restores the newest entry (the previous merge's), so only the
+# packages the merge changed rebuild. Each trims the cache to its own build
+# step's entries with scripts/keep-build-cache-only.sh before saving, exactly
+# as the canary does, so no `test` result is ever handed on, and a trim that
+# cannot read its summary saves nothing. An exact hit (a re-run of the same
+# SHA) saves nothing.
+#
+# THE SAME HASHES AS THE JOBS THAT READ THEM. Turbo replays an entry only when
+# its task hash matches, and a build's hash covers its env (turbo.json `build.env`:
+# NODE_ENV, VITE_*, NEXT_PUBLIC_*, POSTHOG_*). test.yml's shards set none of
+# those; browser-test.yml's jobs set NODE_ENV=development. Each job here sets
+# exactly what its readers set, and scripts/__tests__/build-cache-workflow.test.ts
+# pins the build lines, the env and the keys against test.yml and
+# browser-test.yml so they cannot drift apart.
+#
+# CHURN. Every merge adds one entry per family, and the repository sits near
+# its 10 GB budget, so the prune job deletes main's older `turbo-test-builds-*`
+# and `turbo-browser-builds-*` entries, keeping the newest three of each
+# (scripts/prune-main-build-caches.sh). A pnpm store is saved only when its key
+# (image + lockfile) is new, so stores add nothing between lockfile changes.
+# cache-cleanup.yml still sweeps closed PRs' caches; it never touches main.
+#
+# COST. Public repository, so no money; runner minutes only. About 2-3 minutes
+# a job when the store and the previous merge's builds hit, so about 5 runner
+# minutes a merge across the two jobs, plus seconds for the prune. Superseded
+# pushes are cancelled (one group per ref), so a burst of merges builds once.
+#
+# NOT A GATE. It runs only on push to main and on dispatch, reports on no pull
+# request and no merge group, and must never become a required check. A red run
+# means the next queue build starts colder, nothing more.
+name: build-cache
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# One group per ref, cancelling: the newest merge's builds are the ones worth
+# saving, and a run superseded mid-build would only save an older tree.
+concurrency:
+  group: build-cache-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test-builds:
+    # A dispatch on any other branch would save into that branch's scope, which
+    # nothing else reads.
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # One commit, no saved credential: nothing here pushes.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      # The store test.yml's test-shard keys on the runner image (ledger
+      # 261031-012000); it says why, and why ImageOS is read in a step.
+      - name: Find the pnpm store
+        id: pnpm-store
+        run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore the pnpm store built on this runner image
+        id: pnpm-store-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - run: pnpm install --frozen-lockfile
+      - name: Save the pnpm store for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pnpm-store-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      # The previous merge's entry, so only what this merge changed rebuilds.
+      # Same keys as test.yml's restore.
+      - name: Restore the builds the last merge saved
+        id: turbo-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-
+
+      # test.yml's "Build what the suites import, once, with no test arguments",
+      # as its queue shards run it: every package, no filters.
+      - name: Build what the test suites import
+        id: deps
+        run: bash scripts/build-test-deps.sh
+
+      - name: Keep only this run's build entries in the turbo cache
+        id: trim
+        if: ${{ steps.turbo-restore.outputs.cache-hit != 'true' }}
+        env:
+          BUILD_SUMMARY: ${{ steps.deps.outputs.summary }}
+        run: |
+          if bash scripts/keep-build-cache-only.sh "$BUILD_SUMMARY"; then
+            echo 'save=true' >> "$GITHUB_OUTPUT"
+          else
+            echo '::warning title=Build cache not saved::the turbo cache could not be trimmed to build entries, so this run saves none; the next run rebuilds.'
+            echo 'save=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save the builds for the queue and pull requests
+        if: ${{ steps.trim.outputs.save == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+
+  browser-builds:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    # browser-test.yml's pinned image (ledger 261027-053504): its pnpm store is
+    # keyed on the image, and this saves the one its jobs restore.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # browser-test.yml's jobs set this, and turbo hashes NODE_ENV into every
+    # build, so without it no entry saved here would ever replay there.
+    env:
+      NODE_ENV: development
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Find the pnpm store
+        id: pnpm-store
+        run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore the pnpm store built on this runner image
+        id: pnpm-store-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - run: pnpm install --frozen-lockfile
+      - name: Save the pnpm store for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pnpm-store-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Restore the builds the last merge saved
+        id: turbo-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-
+
+      # browser-test.yml's browser-shard build line, the widest of the browser
+      # jobs' filters.
+      - name: Build what the webServer legs boot from
+        run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client --filter=@dorkos/site^... --summarize
+
+      - name: Keep only this run's build entries in the turbo cache
+        id: trim
+        if: ${{ steps.turbo-restore.outputs.cache-hit != 'true' }}
+        run: |
+          if bash scripts/keep-build-cache-only.sh; then
+            echo 'save=true' >> "$GITHUB_OUTPUT"
+          else
+            echo '::warning title=Browser build cache not saved::the turbo cache could not be trimmed to build entries, so this run saves none; the next run rebuilds.'
+            echo 'save=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save the builds for the queue and pull requests
+        if: ${{ steps.trim.outputs.save == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+
+  # Deletes main's older build entries so a save per merge stays inside the
+  # cache budget. Its own job so the write token never shares a runner with a
+  # build: it checks out main's scripts, runs one, and builds nothing. After
+  # both build jobs, whatever they concluded, so a red build still prunes.
+  prune:
+    needs: [test-builds, browser-builds]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Delete main's older build caches, keeping the newest three of each
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          KEEP: '3'
+        run: bash scripts/prune-main-build-caches.sh

@@ -597,3 +597,66 @@ describe('install funnel events (DOR-2862)', () => {
     expect((await readJson(res)).accepted).toBe(0);
   });
 });
+
+describe('anonymous usage events (DOR-4989)', () => {
+  const ANONYMOUS = { $process_person_profile: false };
+  const usageEvents = [
+    VALID_APP_STARTED,
+    VALID_SESSION_CREATED,
+    {
+      event: 'first_run_completed' as const,
+      properties: { installRef: 'k3j4mnb8x2qa' },
+      distinctId: '7c6d2b9a-9f44-4f3a-bf67-3f3aa6bbf7c4',
+      timestamp: '2026-10-12T12:00:00.000Z',
+      dorkosVersion: '0.112.0',
+    },
+    {
+      event: 'instance_active' as const,
+      properties: {},
+      distinctId: '7c6d2b9a-9f44-4f3a-bf67-3f3aa6bbf7c4',
+      timestamp: '2026-10-12T12:00:01.000Z',
+      dorkosVersion: '0.112.0',
+    },
+  ];
+
+  it('accepts every usage event marked anonymous and forwards the mark to PostHog', async () => {
+    env.POSTHOG_PROJECT_KEY = 'phc_test_key';
+    const marked = usageEvents.map((e) => ({
+      ...e,
+      properties: { ...e.properties, ...ANONYMOUS },
+    }));
+    const res = await POST(makeRequest({ events: marked }));
+    expect((await readJson(res)).accepted).toBe(usageEvents.length);
+
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const sent = JSON.parse(init.body as string) as {
+      batch: Array<{ properties: Record<string, unknown> }>;
+    };
+    expect(sent.batch).toHaveLength(usageEvents.length);
+    for (const e of sent.batch) expect(e.properties.$process_person_profile).toBe(false);
+  });
+
+  it('forwards an unmarked usage event without the mark', async () => {
+    env.POSTHOG_PROJECT_KEY = 'phc_test_key';
+    await POST(makeRequest({ events: [VALID_APP_STARTED] }));
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const sent = JSON.parse(init.body as string) as {
+      batch: Array<{ properties: Record<string, unknown> }>;
+    };
+    expect(sent.batch[0].properties).not.toHaveProperty('$process_person_profile');
+  });
+
+  it('drops a usage event that asks PostHog to build a person profile', async () => {
+    const res = await POST(
+      makeRequest({
+        events: [
+          {
+            ...VALID_APP_STARTED,
+            properties: { ...VALID_APP_STARTED.properties, $process_person_profile: true },
+          },
+        ],
+      })
+    );
+    expect((await readJson(res)).accepted).toBe(0);
+  });
+});

@@ -20,7 +20,7 @@ import { modeRaises } from '../services/core/auth/sessions/wifi-raise-guard.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../services/runtimes/claude-code/runtime-constants.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import type { BindingChangedError } from '../services/relay/binding-store.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 import { cardConnection, type CardConnection } from './relay-adapter-http.js';
 import { chatModeWord } from '@dorkos/shared/permissions';

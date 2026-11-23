@@ -9,10 +9,16 @@
  * started it, and how it reports. Every word is DorkOS's own except the
  * parent's title and agent name, which DorkOS also holds.
  *
- * A parent that cannot take chat messages (a room's seat, a bridged chat, a
- * scheduled run) is never named as a `chat_send` target: every such send is
- * refused, and the spin-off would conclude the parent is unreachable. A room's
- * seat still takes reports, as turns of its own (DOR-3488).
+ * A parent that is not a sendable chat is never named as a `chat_send` target.
+ * A scheduled run, a beat, a Telegram or Slack direct chat, a connector event's
+ * chat or a chat from before origins were recorded refuses every send, and the
+ * spin-off would conclude the parent is unreachable. A room's seat does take a
+ * send since DOR-4472 (as a private aside, refused in a bridged room unless it
+ * answers the seat), but each one leaves a note in the room and spends one of
+ * the room's turns, so milestones ride the turn-end reports a seat receives as
+ * turns of its own (DOR-3488). A spin-off with no report route is pointed at
+ * whoever its brief names, and a shared room hears only the three project
+ * updates (DOR-4469), never its running status.
  *
  * The wait it suggests is one plain command per call, never a shell loop:
  * Claude Code can't check a loop before it runs, so it asks a person
@@ -37,9 +43,9 @@ export function spinOffBriefing(opts: {
         'limit, your last message goes back to that chat on its own. So end each turn with a ' +
         'short report: what you did and what is left.',
       opts.parentIsRoomSeat
-        ? 'That chat is its agent’s seat in a room, so it takes no chat_send: your report wakes ' +
-            'it with a turn of its own, and nobody else in the room sees it. Put milestones in ' +
-            'your turn-end reports.'
+        ? 'That chat is its agent’s seat in a room. Each chat_send to it would show a note in ' +
+            'the room and spend one of its turns, so put milestones in your turn-end reports: ' +
+            'each one wakes it with a turn of its own, and nobody else in the room sees it.'
         : `Send milestones before then with chat_send to ${opts.parentChatId}; nobody has to ` +
             'ask. Do not send your final result that way too: it already goes back on its own.',
       'If you are waiting on CI, a timer or a helper, keep your turn alive (for example ' +
@@ -52,9 +58,11 @@ export function spinOffBriefing(opts: {
     );
   } else {
     lines.push(
-      'It does not hear from you on its own, and it cannot take chat messages. If it works in ' +
-        'a room you are in, report there with post_to_room; otherwise say it in your own last ' +
-        'message.'
+      'It does not hear from you on its own, and it is not a chat to message: it refuses ' +
+        'messages, or each one would show a note in a room. If your brief names a chat or an ' +
+        'agent to tell, send what matters there. In a room you share with it, post with ' +
+        'post_to_room only when the work starts, is blocked on a person, or ships, or to ' +
+        'answer someone who asked; otherwise say it in your own last message.'
     );
   }
   return lines.join(' ');

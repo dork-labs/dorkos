@@ -135,6 +135,12 @@ export class TestModeSessionRegistry {
     this.emit({ type: 'session_upserted', session: { ...session } });
   }
 
+  /** Observe the exact pre-message settings entry without creating a session. */
+  observeDraftSettingsOwner(sessionId: string): () => boolean {
+    const pending = this.pendingSettings.get(sessionId);
+    return () => !this.sessions.has(sessionId) && this.pendingSettings.get(sessionId) === pending;
+  }
+
   /**
    * Save settings for a tracked session or a draft without announcing existence.
    * Production runtimes accept settings before their first native message too.

@@ -1,24 +1,29 @@
 flowchart TB
   accTitle: Marketplace discovery, installation, and activation
   accDescr: Source registries and repositories supply packages. The website browses them. Local installation validates and previews changes, performs a file transaction, then activates code or projects agent assets through Harness Sync.
-  repo["Marketplace sources<br/>Dork Labs + third-party repositories"]
-  site["Website marketplace<br/>Discovery + README pages"]
-  user["DorkOS client / CLI / MCP caller"]
-  installer["Local MarketplaceInstaller<br/>Resolve → stage once → validate → preview<br/>Approval binds staged content"]
-  txn["File transaction<br/>Stage → backup → rename → restore on failure<br/>Recovery backups excluded from discovery"]
-  disk[("Installed packages<br/>User / project / agent scope")]
-  activate["Activation by package type<br/>Extensions · messaging · agents · shapes"]
-  harness["Harness Sync<br/>Project skills, commands, hooks and MCP config"]
-  runtime["Harness-native files<br/>Read by Claude Code / Codex / OpenCode"]
-  telemetry["Website telemetry endpoint<br/>Install reporting, not package delivery"]
-  repo -->|"HTTPS registry / sidecar / README"| site
-  repo -->|"HTTPS / Git / npm / local source"| installer
-  user -->|"HTTP API or MCP tool"| installer
-  installer -->|"Authorized install"| txn
+
+  repo["<b>Marketplace sources</b><br/><span class='d'>Dork Labs and third-party repositories</span>"]
+  site["<b>dorkos.ai marketplace</b><br/><span class='d'>Discovery and README pages</span>"]
+  user["<b>App, CLI or MCP caller</b>"]
+  installer["<b>Installer</b><br/><span class='d'>Resolve · stage once · validate · preview<br/>Approval binds the staged copy</span>"]
+  txn["<b>File transaction</b><br/><span class='d'>Stage · back up · rename · restore on failure</span>"]
+  disk[("<b>Installed packages</b><br/><span class='d'>User, project or agent scope</span>")]
+  activate["<b>Activation by package type</b><br/><span class='d'>Extensions · messaging · agents · shapes</span>"]
+  restore["<b>Rollback</b><br/><span class='d'>Undo this install only<br/>Keep existing secrets and agent links</span>"]
+  harness["<b>Harness Sync</b><br/><span class='d'>Projects skills, commands, hooks and MCP config</span>"]
+  runtime["<b>Files each harness reads</b><br/><span class='d'>Claude Code · Codex · OpenCode</span>"]
+  telemetry["<b>Install telemetry</b><br/><span class='d'>Reporting only, never delivery</span>"]
+
+  repo -->|"registry, READMEs"| site
+  repo -->|"HTTPS, Git, npm, local"| installer
+  user -->|"API or MCP tool"| installer
+  installer -->|"authorized install"| txn
   txn --> disk
   disk --> activate
-  restore["Connection rollback / reinstall<br/>Undo only this install’s entry<br/>Preserve existing secrets + agent links"]
-  activate -->|"Messaging package failure / reinstall"| restore
+  activate -->|"messaging failure, reinstall"| restore
   disk --> harness
   harness --> runtime
-  installer -->|"Install outcome, subject to telemetry settings"| telemetry
+  installer -->|"outcome, if telemetry is on"| telemetry
+
+  classDef external fill:#ffffff,stroke:#8a9bab,color:#3b4a58
+  class repo external

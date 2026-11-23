@@ -53,6 +53,10 @@ import { declaredInterruptOutcome, scenarioStore } from './scenario-store.js';
 import { forcedLimitScenario } from '../../rooms/reseat/forced-limit-turn.js';
 import { setTestAccountWorld } from '../../rooms/reseat/test-account-world.js';
 import { TestModeSessionRegistry } from './session-registry.js';
+import {
+  hasPreparedSettingsMutation,
+  savePreparedSettings,
+} from '../../core/runtime-seam/prepared-settings-write.js';
 import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
 import type { ReplaySource } from './replay/source.js';
 import { isReplayIsolated } from '../../../lib/replay/isolation.js';
@@ -203,13 +207,28 @@ export class TestModeRuntime implements AgentRuntime {
   }
 
   async updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
-    await this.settingsPort?.saveSessionSettings(sessionId, opts);
-    return {
-      updated: this.registry.applySettings(sessionId, {
-        ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
-        ...(opts.model !== undefined ? { model: opts.model } : {}),
-      }),
+    const prepared = hasPreparedSettingsMutation(sessionId);
+    const port = this.settingsPort;
+    if (!prepared) await port?.saveSessionSettings(sessionId, opts);
+    const patch = {
+      ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
+      ...(opts.model !== undefined ? { model: opts.model } : {}),
     };
+    if (prepared) {
+      const ownsDraft = this.registry.observeDraftSettingsOwner(sessionId);
+      return savePreparedSettings(sessionId, opts, port, {
+        isCurrent: () =>
+          this.settingsPort === port &&
+          !this.isTurnOpen(sessionId) &&
+          this.getInternalSessionId(sessionId) === undefined &&
+          ownsDraft(),
+        publish: () => {
+          this.registry.applySettings(sessionId, patch);
+          return undefined;
+        },
+      });
+    }
+    return { updated: this.registry.applySettings(sessionId, patch) };
   }
 
   async *sendMessage(
@@ -418,6 +437,14 @@ export class TestModeRuntime implements AgentRuntime {
 
   async getSession(_projectDir: string, id: string): Promise<Session | null> {
     return this.registry.get(id);
+  }
+
+  /**
+   * The folder this runtime is running the chat in, from its own tracked sessions, as Claude
+   * Code answers it: so a chat started with only a folder resolves its agent (DOR-5035).
+   */
+  getSessionCwd(sessionId: string): string | undefined {
+    return this.registry.get(sessionId)?.cwd;
   }
 
   /** Discover tracked identities without falling back to another scripted runtime. */

@@ -11,9 +11,14 @@ DorkOS uses Vitest for all testing, with React Testing Library for component tes
 
 ## Running Tests
 
-<Tabs items={['All tests', 'Single run', 'Specific file']}>
-  <Tab value="All tests">```bash pnpm test ``` Runs all tests in watch mode.</Tab>
-  <Tab value="Single run">```bash pnpm test -- --run ``` Runs all tests once. Use this for CI.</Tab>
+<Tabs items={['All tests', 'Watch one package', 'Specific file']}>
+  <Tab value="All tests">
+    ```bash pnpm test -- --run ``` Runs every package's tests once through Turborepo (`pnpm test`
+    alone does the same). It waits its turn behind other heavy runs on this computer.
+  </Tab>
+  <Tab value="Watch one package">
+    ```bash pnpm --filter @dorkos/server test:watch ``` Reruns that package's tests as you edit.
+  </Tab>
   <Tab value="Specific file">
     ```bash pnpm vitest run apps/server/src/services/session/__tests__/transcript-reader.test.ts ```
   </Tab>
@@ -34,7 +39,7 @@ Tests live alongside source code in `__tests__/` directories:
       </Folder>
     </Folder>
     <Folder name="client/src/layers" defaultOpen>
-      <Folder name="features/chat" defaultOpen>
+      <Folder name="widgets/session" defaultOpen>
         <Folder name="__tests__" defaultOpen>
           <File name="ChatPanel.test.tsx" />
         </Folder>

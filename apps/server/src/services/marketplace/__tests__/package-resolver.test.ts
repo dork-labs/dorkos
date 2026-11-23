@@ -83,6 +83,19 @@ describe('PackageResolver', () => {
     await rm(scratchDir, { recursive: true, force: true });
   });
 
+  describe('isConfiguredMarketplace (DOR-4988)', () => {
+    it('is true only for a marketplace this install has configured', async () => {
+      const resolver = new PackageResolver(
+        buildSourceManagerStub({
+          get: new Map([['dorkos-community', buildSource('dorkos-community')]]),
+        }),
+        buildCacheStub()
+      );
+      expect(await resolver.isConfiguredMarketplace('dorkos-community')).toBe(true);
+      expect(await resolver.isConfiguredMarketplace('kais-private-marketplace')).toBe(false);
+    });
+  });
+
   describe('local path resolution', () => {
     it('resolves a relative path to an absolute local source', async () => {
       const fixtureDir = join(scratchDir, 'fixture-pkg');

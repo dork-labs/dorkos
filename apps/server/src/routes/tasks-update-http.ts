@@ -44,7 +44,7 @@ import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { errorRefusalUnlessOwner, runAccountWrite } from './cloud-owner-bar.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { raiseStanding } from '../services/notifications/standing-events.js';

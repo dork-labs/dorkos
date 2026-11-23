@@ -13,7 +13,8 @@ import {
   useResumeConnectorConnection,
 } from '@/layers/entities/connectors';
 import { useMeshAgentPaths, useRegisteredAgents } from '@/layers/entities/mesh';
-import { formatRelativeTime, getAgentDisplayName, toSession } from '@/layers/shared/lib';
+import { useStartNewSession } from '@/layers/entities/session';
+import { formatRelativeTime, getAgentDisplayName } from '@/layers/shared/lib';
 import { useSafeNavigate, useSettingsDeepLink } from '@/layers/shared/model';
 import {
   AlertDialog,
@@ -430,6 +431,7 @@ function TryIt({ detail }: { detail: ConnectorConnectionDetail }) {
   const { data: agentsData } = useRegisteredAgents();
   const { data: pathsData } = useMeshAgentPaths();
   const navigate = useSafeNavigate();
+  const startNewSession = useStartNewSession();
   if (prompts.length === 0) return null;
   const paths = pathsData?.agents ?? [];
   const pathOf = (agentId: string | undefined) =>
@@ -454,11 +456,7 @@ function TryIt({ detail }: { detail: ConnectorConnectionDetail }) {
             className="h-auto min-h-8 justify-start py-1.5 text-left whitespace-normal"
             disabled={!target || !navigate}
             onClick={() =>
-              target &&
-              navigate &&
-              void navigate(
-                toSession({ session: crypto.randomUUID(), agentId: target.id, draft: '1', prompt })
-              )
+              target && navigate && startNewSession(undefined, { agentId: target.id, prompt })
             }
           >
             <Sparkles className="text-muted-foreground size-3.5" aria-hidden />

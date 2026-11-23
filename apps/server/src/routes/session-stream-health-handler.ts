@@ -17,7 +17,7 @@
 import type { Context } from 'hono';
 import { StreamHealthReportSchema } from '@dorkos/shared/schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { logger } from '../lib/logger.js';
 import { errorBody, parseSessionId } from '../lib/route-utils.js';
 import { openSessionStreamCount } from '../services/core/streams/session-stream-watch.js';

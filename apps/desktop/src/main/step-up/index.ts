@@ -21,7 +21,8 @@
  */
 import { join } from 'node:path';
 
-import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { BrowserWindow, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron';
+import { PAGE_STAMP_META } from '@dorkos/shared/step-up';
 import log from 'electron-log';
 
 import {
@@ -29,6 +30,7 @@ import {
   STEP_UP_PAGE_FILE,
   STEP_UP_PRELOAD_FILE,
   STEP_UP_WINDOW_CLOSE_CHANNEL,
+  STEP_UP_WINDOW_RELOAD_CHANNEL,
   STEP_UP_WINDOW_SIGN_IN_CHANNEL,
   STEP_UP_WINDOW_SUBMIT_CHANNEL,
   STEP_UP_WINDOW_VIEW_CHANNEL,
@@ -67,6 +69,24 @@ function isSubmit(value: unknown): value is StepUpWindowSubmit {
   if (body.kind === 'password') return text('password');
   if (body.kind === 'change') return text('currentPassword') && text('newPassword');
   return false;
+}
+
+/**
+ * The stamp the server wrote into the app window's page, read from its main
+ * world. A mini app's frame can't reach it: frames are sandboxed to scripts
+ * alone. `null` when there is none, or it can't be read.
+ *
+ * @param contents - The app window that asked.
+ */
+async function pageStampOf(contents: WebContents): Promise<string | null> {
+  try {
+    const value: unknown = await contents.executeJavaScript(
+      `document.querySelector('meta[name="${PAGE_STAMP_META}"]')?.getAttribute('content') ?? null`
+    );
+    return typeof value === 'string' && value.length <= 1024 ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Open the window for one held action, and resolve with how it ended. */
@@ -130,6 +150,7 @@ export function registerStepUpWindow(deps: StepUpWindowDeps): void {
         origin: serverOrigin(port),
         fetch: deps.fetch,
         personProof: deps.personProof,
+        pageStamp: () => pageStampOf(event.sender),
       });
       log.info('[StepUp] Confirming a held action in the shell’s own window');
       return confirmInWindow(BrowserWindow.fromWebContents(event.sender), confirmation);
@@ -158,6 +179,13 @@ export function registerStepUpWindow(deps: StepUpWindowDeps): void {
     const confirmation = confirmationOf(event);
     if (!confirmation) return;
     confirmation.signInAgain();
+    BrowserWindow.fromWebContents(event.sender)?.close();
+  });
+
+  ipcMain.handle(STEP_UP_WINDOW_RELOAD_CHANNEL, (event) => {
+    const confirmation = confirmationOf(event);
+    if (!confirmation) return;
+    confirmation.reload();
     BrowserWindow.fromWebContents(event.sender)?.close();
   });
 }

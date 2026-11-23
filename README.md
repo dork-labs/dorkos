@@ -16,7 +16,7 @@
 
 Your agents join your team chat, take on real work, and build the custom tools your company runs on.
 
-Ask for a tool your business needs, like a dashboard or a tracker, and your agents build it as a mini app inside DorkOS. You approve it before it runs, then it opens on its own page or in the side panel. (The app and docs call these [extensions](https://dorkos.ai/docs/integrations/extensions).)
+Ask for a tool your business needs, like a dashboard or a tracker, and your agents build it as a mini app inside DorkOS. It starts right away, with a line in Activity, only when the agent that made it runs at Full on the default Trusted setting and has read nothing from outside your team in that turn. Otherwise it waits for your OK. It opens on its own page or in the side panel. (The app and docs call these [extensions](https://dorkos.ai/docs/integrations/extensions).)
 
 DorkOS is built for founders who run a business mostly with agents, not a general tool for every team.
 
@@ -127,12 +127,13 @@ claude mcp add dorkos --transport http http://localhost:4242/mcp
 ## Docker
 
 ```bash
-docker build --build-arg INSTALL_MODE=npm -t dorkos .
-docker run --rm -p 4242:4242 \
+docker run -d --name dorkos -p 127.0.0.1:4242:4242 \
   -e ANTHROPIC_API_KEY=your-key-here \
-  -e DORKOS_HOST=0.0.0.0 \
-  dorkos
+  -v dorkos-data:/home/node/.dork \
+  ghcr.io/dork-labs/dorkos:latest
 ```
+
+The volume keeps your data when the container restarts, and `127.0.0.1` keeps DorkOS reachable from this computer only. Before you let anyone else reach it, create the owner account with `docker exec -it dorkos dorkos auth enable`. The [Docker guide](https://dorkos.ai/docs/self-hosting/docker) covers versions, Docker Compose and settings.
 
 ## Yours to keep
 
@@ -152,11 +153,12 @@ DorkOS is a Turborepo monorepo: one repository that holds the browser client, th
 git clone https://github.com/dork-labs/dorkos.git
 cd dorkos
 pnpm install
-cp .env.example .env  # Add your ANTHROPIC_API_KEY
+cp .env.example .env  # Ports and paths
+claude auth login     # pnpm dev uses your Claude Code sign-in
 pnpm dev
 ```
 
-This starts the server on port 6242 and the browser client on port 6241.
+This starts the server on port 6242 and the browser client on port 6241. An `ANTHROPIC_API_KEY` does not reach `pnpm dev`; [CONTRIBUTING.md](CONTRIBUTING.md) explains why.
 
 For how the pieces fit together, start with the [architecture guide](contributing/architecture.md). [CONTRIBUTING.md](CONTRIBUTING.md) has the full contributor workflow, [DOCS.md](DOCS.md) maps where every kind of documentation lives, [AGENTS.md](AGENTS.md) is the deep technical reference, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) covers how we expect people to treat each other here (currently a draft awaiting approval).
 

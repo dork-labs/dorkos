@@ -44,6 +44,6 @@ A host that already parsed the JSON body passes it as `{ parsedBody }`, and the 
 ## How a request flows
 
 1. `message/send` / `message/stream` arrives at the JSON-RPC handler and the SDK's `DefaultRequestHandler` invokes `DorkOSAgentExecutor.execute()`.
-2. The executor publishes the initial A2A `Task` event (state `submitted`) so the task is persisted before anything else, resolves the target agent (`message.metadata.agentId`, then `task.metadata.agentId`, then the first registered agent), and subscribes to a per-execution reply subject `relay.a2a.reply.{taskId}.{nonce}`.
+2. The executor publishes the initial A2A `Task` event (state `submitted`) so the task is persisted before anything else, resolves the target agent (`message.metadata.agentId`, then `task.metadata.agentId`; a request naming no agent fails rather than going to a guessed one), and subscribes to a per-execution reply subject `relay.a2a.reply.{taskId}.{nonce}`.
 3. The translated payload is published to `relay.agent.{namespace}.{agentId}`; the responding adapter streams one Relay envelope per StreamEvent back to the reply subject, terminated by a `done` event.
 4. The executor accumulates `text_delta` events (validated with Zod in `reply-events.ts`) and completes the task exactly once with the full response text; stream errors, delivery failures, and the 2-minute timeout fail the task with the real diagnostic in the status message.

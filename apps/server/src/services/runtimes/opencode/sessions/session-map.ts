@@ -78,6 +78,17 @@ export class OpenCodeSessionMap {
     }
   }
 
+  /** Strict point lookup for prepared birth. A failed SQL read never establishes absence. */
+  readBinding(sessionId: string): { ocSessionId: string } | null {
+    return (
+      this.db
+        .select({ ocSessionId: opencodeSessions.ocSessionId })
+        .from(opencodeSessions)
+        .where(eq(opencodeSessions.sessionId, sessionId))
+        .get() ?? null
+    );
+  }
+
   /**
    * All persisted bindings — the hydration source that re-seeds the mapper's
    * in-memory maps after a server restart. Never throws — a failed read is

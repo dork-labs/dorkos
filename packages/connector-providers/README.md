@@ -41,9 +41,9 @@ import { ManagedConnectorCatalogPageSchema } from '@dork-labs/connector-provider
 import { ManagedConnectorUsageResponseSchema } from '@dork-labs/connector-providers/connector-managed-usage-schemas';
 ```
 
-The root entry (`@dork-labs/connector-providers`) re-exports the Composio adapter and the event
-payload protector. Prefer the narrow subpaths when you only need the schemas: they never load the
-Composio SDK.
+The root entry (`@dork-labs/connector-providers`) re-exports the Composio adapter, the event
+payload protector and the paid-operation checks (`isPaidOperation`, `PAID_BY_DEFAULT_TOOLKITS`).
+Prefer the narrow subpaths when you only need the schemas: they never load the Composio SDK.
 
 ## Versions
 
@@ -55,7 +55,7 @@ Pin an exact version and bump it when you take a new DorkOS release.
 
 ## Dependencies
 
-- `zod` is a **peer dependency** (`^4.6.2`), so your app and this package share one copy and
+- `zod` is a **peer dependency** (`^4.6.6`), so your app and this package share one copy and
   their schemas recognise each other.
 - `@composio/core` is a regular dependency at an **exact** version. The adapter is written
   against that version's exact shapes.

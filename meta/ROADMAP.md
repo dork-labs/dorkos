@@ -35,7 +35,7 @@ A card is required for DorkOS's own AI; there are no free starter credits. There
 
 ## After launch, in order
 
-1. The rest of the server merge: the active-runner lease, and a Mac can host spaces, including as a team space's home. (DOR-2874, steps DOR-2883 and DOR-2884; step 7, DOR-2882, moved before launch; step 10, "one window", is replaced by the launch work above)
+1. The rest of the server merge: the active-runner lease, and a Mac can host spaces, including as a team space's home. Then your private space moves onto the same space model as every other space, one area at a time with agents last, so nothing is Mac-only by design; only your workspaces, the agent programs' own chat records and sign-ins, and running processes stay on the computer that runs the work (ADR `261122-173853`; gated on a measurement on a real Mac). (DOR-2874, steps DOR-2883 and DOR-2884; step 7, DOR-2882, moved before launch; step 10, "one window", is replaced by the launch work above)
 2. Equal accounts: access levels, role and responsibilities on profiles, per-account API keys, agents creating agents. (No live ticket: DOR-2743 was canceled in the November 10 groom.)
 3. Everything programmable: a CLI, an SDK and API, GraphQL queries and live event subscriptions. Since 2026-11-21 this rests on the work graph (the links between agents, chats and work items) and one rule: one source of truth, with every surface projected from it, read-only GraphQL last, and no raw database access. (DOR-4966 and DOR-4973; the earlier DOR-2754 was canceled on 2026-11-10)
 4. One message system: Relay folds into conversations, and anyone can message anyone in a space. (DOR-2744)
@@ -102,6 +102,7 @@ Say "coming" or "planned", or leave it out:
 - Live shared docs.
 - One message system.
 - The loop watcher that replaces turn counting.
+- A Linux desktop app. There is no Linux build yet.
 
 ## Open risks
 

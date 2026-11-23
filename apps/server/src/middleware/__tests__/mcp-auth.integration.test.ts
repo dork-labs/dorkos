@@ -40,7 +40,7 @@ import { getAuth, initAuth } from '../../services/core/auth/index.js';
 import { honoMcpAuth } from '../mcp-auth.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { mountBetterAuth } from '../../http/better-auth.js';
-import { readJsonBody } from '../../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import { logger } from '../../lib/logger.js';

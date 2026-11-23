@@ -34,10 +34,18 @@ interface RelayAdapter {
     envelope: RelayEnvelope,
     context?: AdapterContext
   ): Promise<DeliveryResult>; // Send outbound message
+  startsAgentTurns?(subject: string): boolean; // Required in practice if this adapter runs agent turns (turn ceiling)
   getStatus(): AdapterStatus; // Current runtime status
-  testConnection?(): Promise<{ ok: boolean; error?: string }>; // Optional lightweight credential check
+  testConnection?(): Promise<{ ok: boolean; error?: string; botUsername?: string }>; // Optional lightweight credential check
+  deliverPrivateNotification?(
+    subject: string,
+    text: string,
+    authorizeDispatch: () => boolean
+  ): Promise<PrivateNotificationResult>; // Optional private single-text send, no queue copy, no retry
 }
 ```
+
+The source of truth is `RelayAdapter` in `packages/relay/src/types.ts`; read its TSDoc before implementing.
 
 ### Properties
 
@@ -173,11 +181,19 @@ getStatus(): AdapterStatus {
 }
 ```
 
-#### `testConnection?(): Promise<{ ok: boolean; error?: string }>`
+#### `testConnection?(): Promise<{ ok: boolean; error?: string; botUsername?: string }>`
 
-Optional method for lightweight credential validation without starting the full adapter lifecycle. When present, `AdapterManager.testConnection()` calls this instead of the heavier `start()`/`stop()` cycle. This avoids side effects like Telegram's 409 Conflict error when a polling session lingers.
+Optional method for lightweight credential validation without starting the full adapter lifecycle. When present, `AdapterManager.testConnection()` calls this instead of the heavier `start()`/`stop()` cycle. This avoids side effects like Telegram's 409 Conflict error when a polling session lingers. A bot-backed adapter may return `botUsername` so the UI can name the bot it reached.
 
 If absent, `AdapterManager` falls back to creating a temporary adapter instance and calling `start()`/`stop()` to test connectivity.
+
+#### `startsAgentTurns?(subject: string): boolean`
+
+Says whether delivering this subject starts an agent turn (DOR-791). The publish pipeline's turn ceiling asks it at dispatch. An adapter that never runs turns (Telegram, Slack, a webhook) can leave it out and is treated as free. **An adapter that does run turns must implement it**: a silent adapter falls back to the shipped turn-running prefixes (`relay.agent.*`, `relay.system.tasks.*`), so a turn-running adapter on a new prefix would go uncounted.
+
+#### `deliverPrivateNotification?(subject, text, authorizeDispatch): Promise<PrivateNotificationResult>`
+
+Optional. Sends one private text with no durable payload copy and no transport retry, for connector event notices. It must call `authorizeDispatch()` as the final check before the network send and return `{ state: 'delivered', receiptId }`, `{ state: 'refused' }` or `{ state: 'outcome_unknown' }`. `AdapterRegistry.deliverPrivateNotification()` refuses for an adapter that does not implement it. The Telegram and Slack adapters do.
 
 ## Subject Hierarchy
 
@@ -548,7 +564,7 @@ Supports two delivery modes controlled by the `streaming` config field:
 | Streaming (`true`) | Posts initial message on first `text_delta`, then updates via `chat.update` every 1 second. Final update on `done`. |
 | Buffered (`false`) | Accumulates text in memory, posts once on `done`. Reduces API quota usage.                                          |
 
-All bot responses thread under the original inbound message using `platformData.ts`. Messages exceeding Slack's 4000-character limit are split into multiple chunks (at paragraph or sentence boundaries) and sent sequentially with a 1.1-second delay between chunks for rate limiting.
+All bot responses thread under the original inbound message, using the envelope's `platformData.threadTs` (already in a thread) or `platformData.ts` (the message's own Slack timestamp). Messages exceeding Slack's 4000-character limit are split into multiple chunks (at paragraph or sentence boundaries) and sent sequentially with a 1.1-second delay between chunks for rate limiting.
 
 **Working Indicator** (`typingIndicator`, key and shape unchanged):
 
@@ -1064,7 +1080,7 @@ interface AdapterBinding {
   chatId?: string; // Optional: restrict to a specific chat/user ID
   channelType?: 'dm' | 'group'; // Optional: restrict to a channel type
   sessionStrategy: 'per-chat' | 'per-user' | 'stateless';
-  permissionMode?: 'default' | 'plan' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'auto'; // Permission mode for sessions (default: 'acceptEdits')
+  permissionMode?: 'default' | 'plan' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'auto'; // Permission mode for sessions (default: 'default', the prompting mode, DOR-604; bindings older than the field are carried forward at 'acceptEdits' by services/relay/safe-defaults.ts)
   canInitiate: boolean; // Whether the adapter can start new conversations (default: false)
   canReply: boolean; // Whether the adapter can reply to messages (default: true); also the chats-as-channels consent-gate check once bridge: 'room' — see below
   canReceive: boolean; // Whether the adapter can receive inbound messages (default: true)
@@ -1134,7 +1150,7 @@ Agent responses published back to `relay.human.*` subjects are detected by check
 
 ### Binding HTTP API
 
-Binding endpoints are mounted under `/api/relay` (`apps/server/src/routes/relay-adapters.ts`). Relay is on by default; `DORKOS_RELAY_ENABLED=false` turns it off. When the binding subsystem is not initialized, these endpoints answer 503.
+Binding endpoints are mounted under `/api/relay`. Reads, delete and the test probe are in `apps/server/src/routes/relay-adapters.ts`; create, move and update are in `apps/server/src/routes/relay-binding-step-up.ts`, because a write that raises what a chat connection may do (a looser permission mode, starting chats, un-pausing, bridging, a wider or different target) waits for the owner to confirm it is them (DOR-4355). The reverse of each stays immediate. Relay is on by default; `DORKOS_RELAY_ENABLED=false` turns it off. When the binding subsystem is not initialized, these endpoints answer 503.
 
 | Method   | Path                           | Description                                                     |
 | -------- | ------------------------------ | --------------------------------------------------------------- |
@@ -1144,6 +1160,7 @@ Binding endpoints are mounted under `/api/relay` (`apps/server/src/routes/relay-
 | `PATCH`  | `/api/relay/bindings/:id`      | Update a binding's options                                      |
 | `POST`   | `/api/relay/bindings/:id/move` | Re-point a binding to a different agent, clearing stale session |
 | `DELETE` | `/api/relay/bindings/:id`      | Delete a binding (cleans up its orphaned session entries)       |
+| `POST`   | `/api/relay/bindings/:id/test` | Synthetic routing test probe (rate-limited, 10 a minute)        |
 
 `chatId`, `channelType` and `label` are optional on create; `sessionStrategy` defaults to `'per-chat'`. Deleting a binding calls `BindingRouter.cleanupOrphanedSessions()`.
 
@@ -1725,7 +1742,12 @@ packages/relay/src/adapters/slack/
 ├── stream.ts             # Streaming chat.update logic
 ├── stream-api.ts         # Typed wrapper for Slack streaming API
 ├── approval.ts           # Approval state, Block Kit buttons, timeouts
-└── thread-tracker.ts     # LRU thread participation tracker for thread-aware mode
+├── thread-tracker.ts     # LRU thread participation tracker for thread-aware mode
+├── presence.ts           # Working-presence indicator, driven by the turn
+├── private-notification.ts # Single private send for deliverPrivateNotification (no retries)
+├── proxy.ts              # Corporate-proxy support for the adapter's network traffic
+├── slack-manifest.ts     # SLACK_MANIFEST and configuration constants
+└── slack-platform-client.ts # PlatformClient implementation
 ```
 
 Each file receives its dependencies (state, callbacks, client) via function parameters rather than importing module-level singletons. This makes every function independently testable.

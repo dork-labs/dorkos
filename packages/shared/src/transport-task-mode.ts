@@ -27,8 +27,10 @@ export interface TaskModeUndoTransport {
    * changed since the diff the person saw.
    *
    * @param taskId - The schedule.
-   * @param capAt - When the cap the person saw first held (`Task.fileCap.at`).
-   * @param hash - The file hash the diff they approved showed (`Task.fileCap.hash`).
+   * @param capAt - When the cap the person saw first held (`Task.fileCap.at`), or
+   *   `null` to approve the file as it is now while no cap stands (DOR-5060).
+   * @param hash - The hash the diff they approved showed (`Task.fileCap.hash`,
+   *   or `Task.fileReview.hash` with no cap).
    */
-  approveTaskFile(taskId: string, capAt: string, hash: string): Promise<Task>;
+  approveTaskFile(taskId: string, capAt: string | null, hash: string): Promise<Task>;
 }

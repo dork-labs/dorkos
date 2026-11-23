@@ -3,9 +3,16 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, sessionNativeBindings, type Db } from '@dorkos/db';
 import { registerTestHomes, clearTestHomes } from './agent-home-fixture.js';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { runtimeRegistry, RuntimeRegistry } from '../../runtime-registry.js';
 import {
   agentOfChat,
+  chatAgentStateOf,
+  chatFactsOf,
+  chatFolderById,
+  chatFolderOf,
   liveSessionCwd,
+  sessionAgentById,
   sessionAgentOf,
   setSessionAgentSources,
 } from '../session-agent.js';
@@ -78,6 +85,77 @@ describe('sessionAgentOf', () => {
     bind('stored', null, JUNO);
     clearTestHomes();
     expect(sessionAgentOf(db, 'stored')).toBeUndefined();
+  });
+});
+
+describe('chatAgentStateOf', () => {
+  it('tells an agent, an unknown agent, nobody’s folder and a refused folder apart', () => {
+    registerTestHomes([JUNO, RIO], { managed: { '/workspaces/ghost': '/agents/gone' } });
+    bind('agent', null, JUNO);
+    bind('unknown', null);
+    bind('nobody', null, '/work/project');
+    bind('refused', null, '/workspaces/ghost');
+    expect(chatAgentStateOf(db, 'agent')).toEqual({ kind: 'agent', agentPath: JUNO });
+    expect(chatAgentStateOf(db, 'unknown')).toEqual({ kind: 'unknown' });
+    expect(chatAgentStateOf(db, 'no-such-chat')).toEqual({ kind: 'unknown' });
+    expect(chatAgentStateOf(db, 'nobody')).toEqual({ kind: 'nobody' });
+    expect(chatAgentStateOf(db, 'refused')).toEqual({ kind: 'refused' });
+  });
+
+  it('reads the live folder when the stored one is empty', () => {
+    bind('empty', null);
+    db.insert(sessionNativeBindings)
+      .values({ sessionId: 'empty', runtime: 'claude-code', cwd: '', createdAt: at })
+      .run();
+    live.empty = JUNO;
+    expect(chatAgentStateOf(db, 'empty')).toEqual({ kind: 'agent', agentPath: JUNO });
+  });
+});
+
+describe('sessionAgentById', () => {
+  it('resolves from the database wired at boot; before that, reads only the recorded agent', async () => {
+    runtimeRegistry.setDb(db);
+    bind('stored', null, JUNO);
+    bind('recorded', RIO);
+    setSessionAgentSources(undefined);
+    await expect(sessionAgentById('stored')).resolves.toBeUndefined();
+    await expect(sessionAgentById('recorded')).resolves.toBe(RIO);
+    setSessionAgentSources({ db, liveCwd: (sessionId) => live[sessionId] });
+    await expect(sessionAgentById('stored')).resolves.toBe(JUNO);
+    await expect(sessionAgentById('recorded')).resolves.toBe(RIO);
+  });
+});
+
+describe('chatFolderOf and chatFactsOf, for a real chat that recorded no agent (DOR-5038)', () => {
+  beforeEach(async () => {
+    const registry = new RuntimeRegistry();
+    registry.setDb(db);
+    registry.register(new FakeAgentRuntime('claude-code') as never);
+    await registry.persistSessionRuntime('cli', 'claude-code', { kind: 'interactive' });
+  });
+
+  it('reads the live folder, then names nobody once it is lost', () => {
+    live.cli = JUNO;
+    expect(chatFolderOf(db, 'cli')).toBe(JUNO);
+    expect(chatFactsOf(db, 'cli')).toEqual({ runtime: 'claude-code', agentPath: JUNO });
+    delete live.cli;
+    expect(chatFolderOf(db, 'cli')).toBeUndefined();
+    expect(chatFactsOf(db, 'cli')).toEqual({ runtime: 'claude-code', agentPath: null });
+    expect(chatFactsOf(db, 'no-such-chat')).toBeUndefined();
+  });
+
+  it('prefers the stored folder, and serves an id-only caller from the wired database', () => {
+    // The stored folder by hand: the real writer (`rememberNativeSession`) runs the
+    // boundary check, which these made-up paths would fail. The chat itself is real.
+    db.insert(sessionNativeBindings)
+      .values({ sessionId: 'cli', runtime: 'claude-code', cwd: RIO, createdAt: at })
+      .run();
+    live.cli = JUNO;
+    expect(chatFolderOf(db, 'cli')).toBe(RIO);
+    setSessionAgentSources({ db, liveCwd: (sessionId) => live[sessionId] });
+    expect(chatFolderById('cli')).toBe(RIO);
+    setSessionAgentSources(undefined);
+    expect(chatFolderById('cli')).toBeUndefined();
   });
 });
 

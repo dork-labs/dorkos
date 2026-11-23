@@ -29,6 +29,7 @@ import { MAX_TRANSCRIPT_LEN } from '@dorkos/shared/telemetry-events';
 import type { HistoryMessage } from '@dorkos/shared/types';
 
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { chatFolderById } from '../services/core/agent-identity/session-agent.js';
 import { DEFAULT_CWD } from './resolve-root.js';
 
 /** Default number of trailing messages an excerpt keeps (~10 user/assistant turns). */
@@ -124,10 +125,13 @@ export async function getSessionTranscriptExcerpt(
 ): Promise<string | undefined> {
   try {
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
-    // The session's own project directory is where its transcript lives; fall
-    // back to the default working directory for a session with no bound agent
-    // path (a best-effort read, not a guarantee).
-    const cwd = (await runtimeRegistry.getSessionAgentPath(sessionId)) ?? DEFAULT_CWD;
+    // The session's own project directory is where its transcript lives: its
+    // recorded agent, else the folder the server holds for it (DOR-5038), else
+    // the default working directory (a best-effort read, not a guarantee).
+    const cwd =
+      (await runtimeRegistry.getSessionAgentPath(sessionId)) ??
+      chatFolderById(sessionId) ??
+      DEFAULT_CWD;
     const internalId = runtime.getInternalSessionId(sessionId) ?? sessionId;
     const messages = await runtime.getMessageHistory(cwd, internalId);
     return buildTranscriptExcerpt(messages, maxMessages);

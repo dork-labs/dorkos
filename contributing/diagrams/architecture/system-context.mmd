@@ -1,23 +1,26 @@
 flowchart TB
   accTitle: DorkOS systems and deployment boundaries
-  accDescr: The client reaches the local execution server. The space server is a second entry and image target of the same server package, with its own Postgres and sign-in. Cloud space management uses a separate public server API contract; rollout is independent of local implementation. Marketplace discovery and installation use the same package sources. Hub and agent-computer roles of the same program are omitted here; see the roles view.
-  client["DorkOS client · React<br/>Browser / phone web app / desktop"]
-  server["DorkOS server · Hono · role: computer<br/>Projects · Sessions · Rooms · Tasks · Heartbeats<br/>Extensions · Audit · Relay · Mesh<br/>Local SQLite + files"]
-  runtime["Local AgentRuntime implementations<br/>Claude Code · Codex app-server · OpenCode sidecar · Doe<br/>computer-local VM (experiment, off)<br/>Runtime-specific history"]
-  cloud["Optional DorkOS Cloud<br/>Hosted accounts + service management"]
-  community["Space server · same package, own entry + image<br/>One or many spaces · agents as members<br/>Server sign-in · tenant memberships<br/>Own PostgreSQL + blob storage"]
-  communityUI["Space website · React<br/>apps/client/src/space"]
-  sources["Marketplace sources<br/>Registries + package repositories"]
-  site["DorkOS website · Next.js<br/>Docs + marketplace discovery"]
-  client <-->|"HTTP commands / WebSocket events<br/>Space SSE"| server
-  server -->|"SDK calls / local sidecar / in-process engine"| runtime
-  server -->|"Optional HTTPS<br/>Link, heartbeat, managed services, credits"| cloud
-  server <-->|"Approved participation · pairing<br/>Qualified HTTP + SSE · availability report"| community
-  cloud -.->|"Space-management contract · availability-dependent<br/>HTTPS server API; separate from participation"| community
-  communityUI <-->|"HTTP commands / SSE events"| community
-  server -->|"Fetch: HTTPS / Git / npm"| sources
-  site -->|"HTTPS metadata + READMEs"| sources
-  classDef service fill:#edf3fa,stroke:#46709b,color:#183047
-  classDef hosted fill:#fff5e4,stroke:#a87720,color:#49320c
-  class server,community,runtime,client,communityUI,site,sources service
-  class cloud hosted
+  accDescr: The app reaches the local server. The space server is a second entry and image target of the same server package, with its own Postgres and sign-in. Cloud space management uses a separate public contract; rollout is independent of local implementation. Marketplace discovery and installation use the same package sources. The hub and agent-computer roles of the same program are omitted here; see the roles view.
+
+  client["<b>DorkOS app</b><br/><span class='d'>Browser · phone · desktop</span>"]
+  server["<b>DorkOS server</b><br/><span class='d'>Your computer's role · chats, rooms, tasks, beats, audit<br/>SQLite and files</span>"]
+  runtime["<b>Agent runtimes</b><br/><span class='d'>Claude Code · Codex · OpenCode · Doe<br/>Each keeps its own history</span>"]
+  cloud["<b>DorkOS Cloud · optional</b><br/><span class='d'>Accounts · managed services · credits</span>"]
+  community["<b>Space server</b><br/><span class='d'>Same package, own entry and image<br/>Server sign-in · Postgres · agents are members</span>"]
+  communityUI["<b>Space website</b><br/><span class='d'>The space server's own pages</span>"]
+  sources["<b>Marketplace sources</b><br/><span class='d'>Registries and package repositories</span>"]
+  site["<b>dorkos.ai</b><br/><span class='d'>Docs · marketplace discovery</span>"]
+
+  client <-->|"HTTP, WebSocket<br/><span class='d'>space updates over SSE</span>"| server
+  server -->|"SDK, sidecar or in process"| runtime
+  server -->|"optional HTTPS"| cloud
+  server <-->|"pairing · HTTP and SSE<br/><span class='d'>availability report</span>"| community
+  cloud -.->|"space management<br/><span class='d'>contract only</span>"| community
+  communityUI <-->|"HTTP, SSE"| community
+  server -->|"fetches packages"| sources
+  site -->|"reads metadata"| sources
+
+  classDef cloud fill:#fff5e4,stroke:#a87720,color:#49320c
+  classDef external fill:#ffffff,stroke:#8a9bab,color:#3b4a58
+  class cloud cloud
+  class sources external

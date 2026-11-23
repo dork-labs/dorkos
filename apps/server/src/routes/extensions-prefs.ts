@@ -19,7 +19,7 @@ import type { ExtensionManager } from '../services/extensions/extension-manager.
 import { resolveExtensionDataDir } from '../services/extensions/extension-data-paths.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { refusedExtensionWrite } from './extension-write-binding.js';
 
 /** The file an app's screen data lives in, beside its server half's `data.json`. */

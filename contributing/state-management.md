@@ -38,7 +38,7 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 | Dialog-scoped state        | React useState                                    | Pages stack in CommandPaletteDialog                                  | Resets when dialog closes, no persistence needed                                       |
 | Debounced derived state    | useDeferredValue                                  | Preview panel data during rapid navigation                           | Defers expensive fetches without state management overhead                             |
 | Multi-source derived state | TanStack Query + `useMemo`                        | Feature flags + entity data combined                                 | Each source stays in TanStack Query; derivation happens in a custom hook via `useMemo` |
-| Cross-feature signal       | Zustand (entity layer)                            | `usePulsePresetDialog` — sidebar triggers dialog in sibling feature  | Entity-layer store avoids FSD model cross-import violation                             |
+| Cross-feature signal       | Zustand (entity layer)                            | `useTaskTemplateDialog`: the top bar opens a dialog in another slice | Entity-layer store avoids FSD model cross-import violation                             |
 | Slot-based UI contribution | Extension registry (Zustand)                      | Command palette items, dashboard sections, right-panel tabs, dialogs | Decouples rendering surface from contributing features via typed slots                 |
 | URL-synced filter state    | useFilterState + TanStack Router                  | Agent list filters, sort, search — serialized to URL search params   | Shareable, bookmarkable, composable; debounced text inputs via per-key config          |
 | URL-driven dialog state    | `dialogSearchSchema` + deep-link hooks            | `?settings=tools`, `?tasks=open` — open dialogs from any page        | Deep-linkable, works cross-page, merged into every route via `mergeDialogSearch`       |
@@ -49,16 +49,19 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 
 ### Zustand Store (App Store)
 
-The central UI store lives at `apps/client/src/layers/shared/model/app-store/app-store.ts`. It uses the `devtools` middleware for Redux DevTools support and is composed from four slices, each responsible for a distinct domain:
+The central UI store lives at `apps/client/src/layers/shared/model/app-store/app-store.ts`. It uses the `devtools` middleware for Redux DevTools support and is composed from seven slices, each responsible for a distinct domain:
 
-| Slice              | File                       | Purpose                                                       |
-| ------------------ | -------------------------- | ------------------------------------------------------------- |
-| `CoreSlice`        | `app-store.ts`             | Sidebar, session, navigation, streaming status, context files |
-| `PanelsSlice`      | `app-store-panels.ts`      | Transient dialog/panel open-close state                       |
-| `PreferencesSlice` | `app-store-preferences.ts` | Persisted boolean settings, font, promo dismissals            |
-| `CanvasSlice`      | `app-store-canvas.ts`      | Per-session canvas UI state                                   |
+| Slice              | File                       | Purpose                                                                  |
+| ------------------ | -------------------------- | ------------------------------------------------------------------------ |
+| `CoreSlice`        | `app-store.ts`             | Sidebar, session, navigation, streaming status, context files            |
+| `PanelsSlice`      | `app-store-panels.ts`      | Transient dialog/panel open-close state                                  |
+| `PreferencesSlice` | `app-store-preferences.ts` | Persisted boolean settings, font, promo dismissals                       |
+| `CanvasSlice`      | `app-store-canvas.ts`      | Per-session canvas UI state                                              |
+| `RoomCanvasSlice`  | `app-store-room-canvas.ts` | A room's shared canvas as last received from the server; never persisted |
+| `RightPanelSlice`  | `app-store-right-panel.ts` | Right panel open state and active tab, persisted per agent               |
+| `PipSlice`         | `app-store-pip.ts`         | The floating picture-in-picture panel's content and geometry             |
 
-The combined `AppState` type is the intersection of all four slices, defined in `app-store-types.ts` to break circular type dependencies between slice files.
+The combined `AppState` type is the intersection of all seven slices, defined in `app-store-types.ts` to break circular type dependencies between slice files.
 
 Key state owned by the app store:
 
@@ -75,6 +78,9 @@ import { devtools } from 'zustand/middleware';
 import { createPanelsSlice } from './app-store-panels';
 import { createPreferencesSlice } from './app-store-preferences';
 import { createCanvasSlice } from './app-store-canvas';
+import { createRoomCanvasSlice } from './app-store-room-canvas';
+import { createRightPanelSlice } from './app-store-right-panel';
+import { createPipSlice } from './app-store-pip';
 
 export const useAppStore = create<AppState>()(
   devtools(
@@ -98,6 +104,9 @@ export const useAppStore = create<AppState>()(
         ...createPanelsSlice(...a),
         ...createPreferencesSlice(...a),
         ...createCanvasSlice(...a),
+        ...createRoomCanvasSlice(...a),
+        ...createRightPanelSlice(...a),
+        ...createPipSlice(...a),
       };
     },
     { name: 'app-store' }
@@ -134,19 +143,26 @@ Server state is managed through entity hooks in the `entities/` FSD layer:
 
 ```typescript
 // apps/client/src/layers/entities/session/model/query/use-sessions.ts
-import { useQuery } from '@tanstack/react-query';
-import { useTransport } from '@/layers/shared/model';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTransport, useAppStore } from '@/layers/shared/model';
+import { sessionListQueryOptions } from '../../api/session-list-query';
 
-export function useSessions(cwd?: string) {
+export function useSessions() {
   const transport = useTransport();
+  const queryClient = useQueryClient();
+  const { selectedCwd } = useAppStore();
 
-  return useQuery({
-    queryKey: ['sessions', cwd],
-    queryFn: () => transport.listSessions(cwd),
-    refetchInterval: 30_000,
+  // Cold load only: live updates arrive on the global `/api/events` stream
+  // (bridged into this cache by `useGlobalSessionStream`), so there is no timer poll.
+  const sessionsQuery = useQuery({
+    ...sessionListQueryOptions({ transport, queryClient }, selectedCwd),
+    enabled: selectedCwd !== null,
   });
+  return { sessions: sessionsQuery.data ?? [], isLoading: sessionsQuery.isLoading /* ... */ };
 }
 ```
+
+Query keys come from the slice's key factory (`sessionKeys.list(cwd)` in `entities/session/api/query-keys.ts`), never a hand-written array.
 
 ### URL State with TanStack Router (Standalone Mode)
 
@@ -260,9 +276,9 @@ export function usePreviewData(agentId: string, agentCwd: string) {
 When a component needs state computed from multiple independent server queries, create a dedicated hook that combines them:
 
 ```typescript
-// Pattern: useAgentToolStatus combines agent permissions + feature flags
-function useAgentToolStatus() {
-  const { data: agent } = useCurrentAgent(); // TanStack Query
+// Illustrative: a hook that combines agent permissions + feature flags
+function useAgentToolStatus(cwd: string | null) {
+  const { data: agent } = useCurrentAgent(cwd); // TanStack Query; the manifest's areas are a record
   const tasksEnabled = useTasksEnabled(); // TanStack Query
   const relayEnabled = useRelayEnabled(); // TanStack Query
 
@@ -302,7 +318,7 @@ When one feature needs to trigger a dialog or action in a sibling feature, FSD's
 
 ```typescript
 // apps/client/src/layers/entities/tasks/model/use-task-template-dialog.ts
-// Lives in entities/ so both features/top-nav and widgets/tasks can use it.
+// Lives in entities/ so widgets/one-bar, features/session-list and widgets/tasks can all use it.
 
 export const useTaskTemplateDialog = create<TaskTemplateDialogState>((set) => ({
   pendingTemplate: null,
@@ -316,7 +332,7 @@ export const useTaskTemplateDialog = create<TaskTemplateDialogState>((set) => ({
 Usage pattern:
 
 ```typescript
-// In features/top-nav/ui/TasksHeader.tsx — triggers the dialog
+// In widgets/one-bar/ui/NewTaskAction.tsx: triggers the dialog
 const openBlank = useTaskTemplateDialog((s) => s.openBlank);
 openBlank(); // Signals TasksPage to open CreateTaskDialog
 
@@ -346,22 +362,22 @@ const [activeTab, setActiveTab] = useDialogTabState({
 });
 ```
 
-This hook is the single convergence point for tab state across `SettingsDialog`, `AgentDialog`, and any future tabbed dialogs. Do **not** use `useState(initialTab)` plus a separate `useEffect` — that pattern triggers an unnecessary re-render and is what the React 19 docs warn against in [You might not need an effect](https://react.dev/learn/you-might-not-need-an-effect).
+This hook is the single convergence point for tab state across `SettingsDialog` and any future tabbed dialogs. Do **not** use `useState(initialTab)` plus a separate `useEffect` — that pattern triggers an unnecessary re-render and is what the React 19 docs warn against in [You might not need an effect](https://react.dev/learn/you-might-not-need-an-effect).
 
 `TabbedDialog` from `shared/ui/` already uses `useDialogTabState` internally — most consumers don't need to import the hook directly.
 
 ### Cross-Page Dialog Opens (URL Deep-Link Hooks)
 
-Use the deep-link hooks from `@/layers/shared/model` (`useSettingsDeepLink`, `useTasksDeepLink`, `useRelayDeepLink`, `useAgentDialogDeepLink`, `useOpenAgentDialog`) for cross-page dialog opens. These hooks read and write URL search params merged into every route via `dialogSearchSchema`, so any link or button can deep-link to a dialog (and tab/section) from any page. Store-based opens via `setSettingsOpen` etc. remain valid as a fallback for in-dialog flows that don't need URL state.
+Use the deep-link hooks from `@/layers/shared/model` (`useSettingsDeepLink`, `useTasksDeepLink`, `useProfileDeepLink`) for cross-page dialog opens, and `useOpenConnections` to go to the Connections page (it replaced the `?relay=open` dialog). These hooks read and write URL search params merged into every route via `dialogSearchSchema`, so any link or button can deep-link to a dialog (and tab/section) from any page. Store-based opens via `setSettingsOpen` etc. remain valid as a fallback for in-dialog flows that don't need URL state.
 
 **`dialogSearchSchema`** (`shared/model/dialog-search-schema.ts`) is a Zod object merged into every route's `validateSearch` via `mergeDialogSearch()`. Each dialog param uses one of two patterns:
 
 - **Boolean-ish**: `?tasks=open` opens a parameterless dialog (any non-empty value works, `'open'` is canonical)
 - **Tab-targeted**: `?settings=tools` opens a dialog to a specific tab; sub-sections use a sibling param (`?settings=tools&settingsSection=mcp`)
 
-Current dialog params: `settings`, `settingsSection`, `agent`, `agentPath`, `tasks`, `relay`. The Mesh panel was migrated from a dialog to the `/agents` page, so `mesh` is no longer in the schema.
+Current params: `settings`, `settingsSection`, `tasks`, `profile`, `profilePage`, `profileRow`, `panel`, `inbox`. Legacy params nothing writes: `agent`, `agentPath`, `profileRef` and `hubTab` are parsed only so `useLegacyProfileLinkRedirect` can rewrite an old bookmark, and `relay` only so the `/_shell` route (`routes/_shell.tsx`) can redirect an old `?relay=open` link to `/connections`. `?inbox=` is one-shot: `useInboxDeepLink` (`entities/notifications`) reads it and removes it.
 
-Each deep-link hook returns a typed `DialogDeepLink<T>` with `isOpen`, `activeTab`, `section`, `open()`, `close()`, `setTab()`, and `setSection()` actions. The `useOpenAgentDialog` convenience hook sets both `agent` and `agentPath` params in one call.
+`useSettingsDeepLink` and `useTasksDeepLink` return a typed `DialogDeepLink<T>` with `isOpen`, `activeTab`, `section`, `open()`, `close()`, `setTab()`, and `setSection()` actions. `useProfileDeepLink` returns a `ProfileDeepLink` (`isOpen`, `memberId`, `page`, `open(memberId, page?)`, `setPage()`, `close()`); its `open` pushes a history entry so Back closes the profile.
 
 See [`contributing/architecture.md`](architecture.md#dialog-deep-linking-via-url-search-params) for the dual-signal pattern (`storeOpen || urlSignal.isOpen`) and example URLs.
 
@@ -491,7 +507,7 @@ The `EventStreamProvider` manages a single connection to `/api/events` shared ac
 - `config_changed` — settings were written. **Section names only, never a value** — config holds credentials, and this one is ADDRESSED (`operatorAudience`), so an agent's connection never receives it. `useConfigSync` re-reads `GET /api/config` (DOR-2052). A write that stored nothing but `ui.communityNavigation` (remembered Community order and destinations) is movement, not a settings change, and sends nothing; windows read that state from the navigation routes instead (DOR-2227)
 - `community_connections_changed` — a Community connection was added, connected, told to reconnect, or removed (most urgently: the person left the Community or was removed). **A stamp only** — the global stream cannot address one local owner, so the frame names no owner, ref or status, and it is ADDRESSED (`operatorAudience`). The server emits it from `RemoteConnectionStore.onChange`, the one place every pairing, expiry, disconnect and refused grant ends; `useCommunityConnectionsSync` invalidates the confirmed owner's connection list, and `useCommunityRevocationCleanup` does the erasing and routing from the refetched list. The 30-second poll stays as the fallback
 
-This list is not automatic. `GENERIC_EVENTS` in `shared/lib/transport/stream-manager.ts` is the machine-checked one (`services/core/__tests__/sse-event-allowlist.test.ts` compares it against every name the server broadcasts); keeping the prose here in step is part of shipping a generic event, per `specs/unified-conversation/04-implementation.md`.
+This list is not automatic. `GENERIC_EVENTS` in `shared/lib/transport/generic-events.ts` is the machine-checked one (`services/core/__tests__/sse-event-allowlist.test.ts` compares it against every name the server broadcasts); keeping the prose here in step is part of shipping a generic event, per `specs/unified-conversation/04-implementation.md`.
 
 **Example** (from `use-tunnel-sync.ts`):
 

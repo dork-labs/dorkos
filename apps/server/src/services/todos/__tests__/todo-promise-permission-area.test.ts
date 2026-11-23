@@ -78,7 +78,12 @@ describe('the to-do promise tools — the To-dos permission area (DOR-3936)', ()
     });
     registry = composeRegistry([todoPromisesDomain], {
       logger: noopLogger,
-      todoPromiseDeps: { service, agentIdForPath: () => 'agent-ana' },
+      // Only the area is under test; every row is the team's own (DOR-4666 has the marking).
+      todoPromiseDeps: {
+        service,
+        agentIdForPath: () => 'agent-ana',
+        carriesOutsideWords: () => false,
+      },
     });
   });
 

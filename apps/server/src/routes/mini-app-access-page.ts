@@ -28,7 +28,7 @@ import { getCookie, setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { ExtensionConnectionError } from '@dorkos/extension-api/server';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import type { MiniAppAccess } from '../services/connectors/extensions/mini-app-access.js';
 import {

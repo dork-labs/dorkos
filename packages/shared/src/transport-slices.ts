@@ -50,6 +50,7 @@ import type { QueuedChatTransport } from './transport-queued-chat.js';
 import type { ConnectorSpendingTransport } from './transport-connector-spending.js';
 import type { ConnectorWritesBackTransport } from './transport-connector-writes-back.js';
 import type { BackupsTransport } from './transport-backups.js';
+import type { SessionLocationTransport } from './transport-session-locations.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -93,4 +94,5 @@ export interface TransportSlices
     QueuedChatTransport,
     ConnectorSpendingTransport,
     ConnectorWritesBackTransport,
-    BackupsTransport {}
+    BackupsTransport,
+    SessionLocationTransport {}

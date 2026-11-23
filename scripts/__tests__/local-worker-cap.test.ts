@@ -69,49 +69,33 @@ describe('the root config caps local runs', () => {
 });
 
 describe('the turbo entry points carry the same cap', () => {
-  // `pnpm vitest run <path>` and `pnpm test` load different configs, so a cap
-  // in one is not a cap in the other.
-  it.each(['test', 'verify:checks', 'verify:preopen:turbo'])(
-    'the root `%s` script sets VITEST_MAX_WORKERS',
-    (name) => {
-      expect(
-        pkg.scripts[name],
-        `the root \`${name}\` script no longer sets VITEST_MAX_WORKERS, so the turbo path runs ` +
-          'one worker per core again while `pnpm vitest run` stays capped — the two halves ' +
-          'disagreeing is worse than neither, because the fast path looks fixed.'
-      ).toContain('VITEST_MAX_WORKERS=');
-    }
-  );
-
-  it('sets the same number the root config declares', () => {
-    // Two places that must agree, with no way to notice from either alone.
-    for (const name of ['test', 'verify:checks', 'verify:preopen:turbo']) {
-      const n = /VITEST_MAX_WORKERS=\$\(test -n "\$CI" \|\| echo (\d+)\)/.exec(
-        pkg.scripts[name] as string
-      );
-      expect(n, `the \`${name}\` script's cap is not in the expected CI-gated form`).not.toBeNull();
-      expect(Number(n![1]), `\`${name}\` caps at a different number than vitest.config.ts`).toBe(
-        Number(declared![1])
-      );
-    }
-  });
-
-  it('the shell gate really does yield the cap locally and nothing under CI', () => {
-    // The assertions above are string matching; this one runs the expression.
-    // An empty value is what vitest reads as "no cap" (`if (process.env.X)`),
-    // so the CI case must produce an empty string, not the literal "0" and not
-    // the word "true".
-    //
-    // The child's environment is built from nothing rather than inherited, so
-    // the case that must produce an empty string cannot be rescued by a `CI`
-    // this process happens to carry — which is exactly what would happen if
-    // this suite were ever run on a CI runner.
-    const run = (ci?: string) =>
-      execFileSync('sh', ['-c', 'test -n "$CI" || echo 4'], {
+  // Run each entry point's actual shell assignment in a clean environment.
+  // Checking just that the caller exported a value misses a later overwrite.
+  describe.each(['test', 'verify:checks', 'verify:preopen:turbo'])('%s', (name) => {
+    const resolveCap = (env: Record<string, string>) => {
+      const assignment = /VITEST_MAX_WORKERS=\$\([^)]*\)/.exec(pkg.scripts[name]!);
+      expect(assignment, `${name} must select a worker cap for Turbo`).not.toBeNull();
+      return execFileSync('sh', ['-c', `${assignment![0]}; printf '%s' "$VITEST_MAX_WORKERS"`], {
+        cwd: repoRoot,
         encoding: 'utf8',
-        env: { PATH: '/usr/bin:/bin', ...(ci === undefined ? {} : { CI: ci }) },
-      }).trim();
-    expect(run()).toBe(String(declared![1]));
-    expect(run('true')).toBe('');
+        env: { PATH: '/usr/bin:/bin', ...env },
+      });
+    };
+
+    it('uses the root default with no lower local cap', () => {
+      for (const cap of ['', '4', '8', '0', '-1', 'invalid']) {
+        expect(resolveCap({ VITEST_MAX_WORKERS: cap })).toBe(declared![1]);
+      }
+      expect(resolveCap({})).toBe(declared![1]);
+    });
+
+    it.each(['1', '2', '3'])('honors an explicit lower local cap of %s', (cap) => {
+      expect(resolveCap({ VITEST_MAX_WORKERS: cap })).toBe(cap);
+    });
+
+    it('leaves CI uncapped with or without a caller override', () => {
+      expect(resolveCap({ CI: 'true' })).toBe('');
+      expect(resolveCap({ CI: 'true', VITEST_MAX_WORKERS: '2' })).toBe('');
+    });
   });
 });

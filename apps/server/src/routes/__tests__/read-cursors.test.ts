@@ -63,6 +63,7 @@ import {
   setWelcomeBackGreeter,
 } from '../../services/rooms/index.js';
 import { WelcomeBackGreeter } from '../../services/rooms/welcome-back/greeter.js';
+import { readCursorAudience } from '../../services/rooms/service/room-audience.js';
 import { ReadCursorStore } from '../../services/core/read-cursor-store.js';
 import {
   ReadCursorService,
@@ -108,7 +109,9 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
     // but WHO is asking is the same question here as it is in a room.
     setRoomService(createRoomSubsystem({ db }).service);
     store = new ReadCursorStore(db);
-    setReadCursorService(new ReadCursorService(store));
+    setReadCursorService(
+      new ReadCursorService(store, (moved) => readCursorAudience(moved, getRoomService()))
+    );
     // A real greeter with its own `personSeen` recorded, because the claim
     // under test is about WHEN the route calls it and with what — not about
     // what a greeting then does (team-room-home §D5.2).
@@ -479,7 +482,9 @@ describe('GET /api/read-cursors/:kind/:id', () => {
     db = createTestDb();
     setRoomService(createRoomSubsystem({ db }).service);
     store = new ReadCursorStore(db);
-    setReadCursorService(new ReadCursorService(store));
+    setReadCursorService(
+      new ReadCursorService(store, (moved) => readCursorAudience(moved, getRoomService()))
+    );
     const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Kinds' });

@@ -58,7 +58,7 @@ import {
   type SessionRelayStatus,
 } from '@dorkos/shared/session-relay-link';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { requirePersonAtThisComputer } from '../lib/caller-authority.js';

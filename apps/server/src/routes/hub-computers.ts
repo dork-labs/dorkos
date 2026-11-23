@@ -50,7 +50,7 @@ import {
 } from '@dorkos/shared/session-relay';
 import type { AuditOutcome } from '@dorkos/shared/audit-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { errorBody } from '../lib/route-utils.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';

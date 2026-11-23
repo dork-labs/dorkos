@@ -65,7 +65,14 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
         const sessionId = request.sessionId ?? 'juno-seat';
         request.onSessionBound(sessionId);
         const draft = draftIn(request.prompt);
-        if (draft === undefined) return { sessionId, text: null };
+        if (draft === undefined) {
+          // An ordinary room turn: it holds the seat while a test keeps it busy (DOR-5087).
+          state.seatTaken?.();
+          await state.seatBusy;
+          return { sessionId, text: null };
+        }
+        // What happens to the source chat while the seat works (DOR-5040).
+        if (state.whileSeatRuns) live.override = state.whileSeatRuns();
         // The seat is not the chat under test: its own launch facts stand in.
         const { recordFixturePublicSource } = await import('./durable-handoff-fixture.js');
         const { durableHarness } = state;
@@ -79,7 +86,20 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
       },
     } as unknown as ScriptedTurnRunner;
   }
-  const state: { durableHarness?: import('./room-test-harness.js').RoomHarness } = {};
+  const state: {
+    durableHarness?: import('./room-test-harness.js').RoomHarness;
+    /** The folder the source chat's runtime reports once the seat runs: `null` for none. */
+    whileSeatRuns?: () => string | null;
+    /** The folder the runtime reports right after admission: `null` once it forgot the chat. */
+    afterAdmission?: () => string | null;
+    /** While pending, an ordinary turn of the seat stays running. */
+    seatBusy?: Promise<void>;
+    /** Called once an ordinary turn holds the seat. */
+    seatTaken?: () => void;
+  } = {};
+  /** An override of the folder the runtime reports for the source chat. */
+  const live: { override?: string | null } = {};
+  const GHOST_WORKSPACE = '/workspaces/ghost-ws';
 
   /** Start the chat for real with `cwd` only, its one turn posting into the room as `as`. */
   async function launchFolderChat(as: AgentIdentity): Promise<PostResult> {
@@ -92,6 +112,8 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
           { roomId: room.id, text: DRAFT },
           { identity: as, sessionId: SESSION, retryChannel: 'mcp-argument' }
         )) as PostResult;
+        // The runtime forgets the chat before the seat takes the hand-off (DOR-5087).
+        if (state.afterAdmission) live.override = state.afterAdmission();
         yield { type: 'done', data: { sessionId: SESSION } } as StreamEvent;
       },
     ]);
@@ -139,7 +161,12 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
     rio = { agentPath: otherHome, displayName: 'Rio', createdAt };
     const { registerTestHomes } =
       await import('../../core/agent-identity/__tests__/agent-home-fixture.js');
-    registerTestHomes([home, otherHome]);
+    registerTestHomes([home, otherHome], { managed: { [GHOST_WORKSPACE]: '/agents/gone' } });
+    state.whileSeatRuns = undefined;
+    state.afterAdmission = undefined;
+    state.seatBusy = undefined;
+    state.seatTaken = undefined;
+    live.override = undefined;
     const permission = await import('../../core/capabilities/permission-enforcement.js');
     permission.initPermissionGate({
       readConfig: () => ({ preset: 'trusted', defaults: { areas: {}, actions: {} } }),
@@ -183,10 +210,12 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
     runtime = new FakeAgentRuntime('fake-live');
     // Like Claude Code: the runtime knows the folder it is running each chat in.
     runtime.getSessionCwd = (sessionId) =>
-      (
-        runtime.sendMessage.mock.calls.find((call) => call[0] === sessionId)?.[2] as
-          { cwd?: string } | undefined
-      )?.cwd;
+      live.override !== undefined
+        ? (live.override ?? undefined)
+        : (
+            runtime.sendMessage.mock.calls.find((call) => call[0] === sessionId)?.[2] as
+              { cwd?: string } | undefined
+          )?.cwd;
     runtimeRegistry.register(runtime);
     runtimeRegistry.setDefault('fake-live');
     const { setSessionAgentSources } = await import('../../core/agent-identity/session-agent.js');
@@ -274,6 +303,79 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
     expect(row.noticeReceiptId).toEqual(expect.any(String));
     const prepared = await terminalAcceptance.prepare(row.noticeReceiptId!);
     expect(prepared.content).toBe('Juno shared it in #launch.');
+  });
+
+  // DOR-5040: the runtime drops the chat (a restart, an idle reclaim) after admission.
+  it('still accepts the end notice after the runtime dropped the chat', async () => {
+    state.whileSeatRuns = () => null;
+    const answer = await launchFolderChat(juno);
+    await settle();
+    const row = store.handoffOutbox.readOwned(answer.handoffId!, junoId)!;
+    expect(row.noticeState).toBe('accepted');
+    const prepared = await terminalAcceptance.prepare(row.noticeReceiptId!);
+    expect(prepared.content).toBe('Juno shared it in #launch.');
+  });
+
+  // DOR-5087: a restart while the hand-off waits. The test runtime, like any runtime that keeps
+  // its chats in memory, no longer knows the chat's folder when the seat takes the hand-off.
+  /** Hand off while the seat is busy, so it waits in the queue as QA's restart row sets it up. */
+  async function queuedHandoff(): Promise<PostResult> {
+    let free!: () => void;
+    state.seatBusy = new Promise<void>((resolve) => (free = resolve));
+    const taken = new Promise<void>((resolve) => (state.seatTaken = resolve));
+    const human = store.listEntries(room.id, { limit: 1 })[0]!.authorId;
+    service.post(room.id, { authorId: human, text: '@juno hold this turn' });
+    await taken;
+    const answer = await launchFolderChat(juno);
+    expect(answer).toMatchObject({ posted: false, handedOff: true });
+    expect(store.handoffOutbox.readOwned(answer.handoffId!, junoId)?.state).toBe('queued');
+    free();
+    await settle();
+    return answer;
+  }
+
+  it('posts a hand-off whose chat the runtime forgot before the seat took it, and reports once', async () => {
+    state.afterAdmission = () => null;
+    const answer = await queuedHandoff();
+    const row = store.handoffOutbox.readOwned(answer.handoffId!, junoId)!;
+    expect(row.state).toBe('posted');
+    expect(
+      store
+        .listEntries(room.id, { limit: 100 })
+        .filter((entry) => entry.kind === 'post' && entry.authorId === junoId)
+    ).toHaveLength(1);
+    expect(row.noticeState).toBe('accepted');
+    const prepared = await terminalAcceptance.prepare(row.noticeReceiptId!);
+    expect(prepared.content).toBe('Juno shared it in #launch.');
+  });
+
+  it.each([
+    ['another agent’s home', () => otherHome],
+    ['a folder that is no agent’s', () => join(dorkHome, 'scratch')],
+    ['a folder the resolver refuses', () => GHOST_WORKSPACE],
+  ])('never posts a queued hand-off whose chat now stands in %s', async (_label, folder) => {
+    state.afterAdmission = folder;
+    const answer = await queuedHandoff();
+    expect(store.handoffOutbox.readOwned(answer.handoffId!, junoId)?.state).toBe('declined');
+    expect(
+      store
+        .listEntries(room.id, { limit: 100 })
+        .filter((entry) => entry.kind === 'post' && entry.authorId === junoId)
+    ).toEqual([]);
+  });
+
+  it.each([
+    ['now stands in another agent’s home', () => otherHome],
+    ['now stands in a folder that is no agent’s', () => join(dorkHome, 'scratch')],
+    ['now stands in a folder the resolver refuses', () => GHOST_WORKSPACE],
+  ])('skips the end notice when the chat %s', async (_label, folder) => {
+    state.whileSeatRuns = folder;
+    const answer = await launchFolderChat(juno);
+    await settle();
+    const row = store.handoffOutbox.readOwned(answer.handoffId!, junoId)!;
+    // The post went out, so the skip is the notice-time check, not an earlier failure.
+    expect(row.state).toBe('posted');
+    expect(row.noticeState).toBe('skipped');
   });
 
   it("refuses another agent posting from it, and says the chat isn't theirs", async () => {

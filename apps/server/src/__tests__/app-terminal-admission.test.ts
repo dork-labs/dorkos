@@ -51,7 +51,7 @@ vi.mock('../services/core/auth/index.js', async (original) => {
 import type { ServerResponse } from 'node:http';
 import { frontDoorListener } from '../http/front-door.js';
 import { composeFrontDoor } from '../http/hono-api.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import { logger } from '../lib/logger.js';

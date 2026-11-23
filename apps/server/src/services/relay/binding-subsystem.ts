@@ -384,14 +384,16 @@ export class BindingSubsystem {
       const resolveSettings = createTurnExecutionSettingsResolver();
       const agentRuntimes = deps.agentRuntimes;
       const sessionCreator: AgentSessionCreator = {
-        async createSession(cwd: string, permissionMode: PermissionMode) {
+        async createSession(cwd: string, permissionMode: PermissionMode, agentPath: string) {
           const id = crypto.randomUUID();
           // Which runtime answers is the AGENT's, resolved per session rather
-          // than fixed when the subsystem came up (DOR-1614). `cwd` is the
-          // agent's own project directory — the router resolves it from the
-          // binding's agent id — so it is also where the manifest that decides
-          // this lives.
-          const { runtime, runtimeType } = await resolveSessionCreatorRuntime(agentRuntimes, cwd);
+          // than fixed when the subsystem came up (DOR-1614), from its own
+          // manifest at its home. `cwd` is only where the session works: a
+          // managed checkout or the default folder is not the agent (DOR-5055).
+          const { runtime, runtimeType } = await resolveSessionCreatorRuntime(
+            agentRuntimes,
+            agentPath
+          );
           // No fallback: the binding decides the mode (DOR-604), and the
           // resolver above cannot answer about permissions at all.
           runtime.ensureSession(id, {
@@ -399,7 +401,7 @@ export class BindingSubsystem {
             cwd,
             // The id is minted one line up, so there is no settings row to find
             // — this is the manifest-then-server ladder, every time.
-            ...(await resolveSettings({ sessionId: id, runtimeType, agentDirectory: cwd })),
+            ...(await resolveSettings({ sessionId: id, runtimeType, agentDirectory: agentPath })),
           });
           // Write down WHO owns this session, at the one moment it is known.
           // Without this the ownership table has no row, `getSessionRuntimeType`
@@ -414,6 +416,8 @@ export class BindingSubsystem {
           // session runs on the runtime chosen above, and its dispatch subject
           // falls back to the inferred type.
           try {
+            // The chat is the binding's agent's, wherever it works (DOR-5055).
+            //
             // The origin seeds no permission mode. The binding already chose
             // one — it is the `permissionMode` argument above — and a grant
             // nobody set there is not consent to the operator's own level
@@ -422,7 +426,7 @@ export class BindingSubsystem {
               id,
               runtimeType,
               { kind: 'relay-binding' },
-              cwd
+              agentPath
             );
           } catch (err) {
             logger.warn(

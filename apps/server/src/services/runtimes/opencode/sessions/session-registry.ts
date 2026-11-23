@@ -18,6 +18,7 @@
  *
  * @module services/runtimes/opencode/session-registry
  */
+import { isDeepStrictEqual } from 'node:util';
 import type { Session, PermissionModeId } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import { shownToPerson, titleShownToPerson } from '@dorkos/shared/kickoff';
@@ -156,6 +157,23 @@ export class OpenCodeSessionRegistry {
   get(sessionId: string): Session | null {
     const session = this.sessions.get(sessionId);
     return session ? { ...session } : null;
+  }
+
+  /** Capture this exact private owner before a birth-only settings read can yield. */
+  prepareSettingsOwner(sessionId: string) {
+    const owner = this.sessions.get(sessionId);
+    const snapshot = owner ? structuredClone(owner) : undefined;
+    return {
+      tracked: owner !== undefined,
+      isCurrent: (): boolean => {
+        const current = this.sessions.get(sessionId);
+        return (
+          current === owner &&
+          (current === undefined ||
+            (current.id === sessionId && isDeepStrictEqual(current, snapshot)))
+        );
+      },
+    };
   }
 
   /**
