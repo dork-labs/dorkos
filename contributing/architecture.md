@@ -211,7 +211,7 @@ See [Agent UI Control](#agent-ui-control) for the bidirectional UI-command patte
 
 ## Tabbed Dialog Primitive (`TabbedDialog`)
 
-`apps/client/src/layers/shared/ui/tabbed-dialog.tsx` is the high-level primitive for any sidebar-tabbed dialog in DorkOS. It owns the responsive sidebar, mobile drill-in behavior, animated active-tab pill, deep-link sync via `useDialogTabState`, and extension-slot merging. Both `SettingsDialog` and `AgentDialog` consume it as thin declarative wrappers around a `tabs[]` array.
+`apps/client/src/layers/shared/ui/tabbed-dialog.tsx` is the high-level primitive for any sidebar-tabbed dialog in DorkOS. It owns the responsive sidebar, mobile drill-in behavior, animated active-tab pill, deep-link sync via `useDialogTabState`, and extension-slot merging. `SettingsDialog` consumes it as a thin declarative wrapper around a `tabs[]` array.
 
 **Reach for `TabbedDialog` when you need:**
 
@@ -238,7 +238,7 @@ DorkOS dialogs (Settings, Tasks) and the profile panel are URL-addressable via s
 - `useProfileDeepLink()`: a member's profile (`?profile=<roster id>`, with `?profilePage=` and `?profileRow=`)
 - `useOpenConnections()`: navigates to the Connections page (optionally `?app=<id>`). It replaced the old `?relay=open` dialog; Connections is a page, not a dialog
 
-The old Agent dialog params (`agent`, `agentPath`, `hubTab`) are still parsed only so `useLegacyProfileLinkRedirect` (`features/profile`) can rewrite an old bookmark; nothing writes them.
+The old Agent dialog params (`agent`, `agentPath`, `profileRef`, `hubTab`) are still parsed only so `useLegacyProfileLinkRedirect` (`features/profile`) can rewrite an old bookmark; nothing writes them.
 
 `RegistryDialog` reads BOTH the URL signal and the existing store flag (`storeOpen || urlSignal.isOpen`) so legacy store-based opens continue to work. Closing the dialog clears both signals. Use the URL hooks for any new cross-page open.
 

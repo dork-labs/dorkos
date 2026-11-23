@@ -277,8 +277,8 @@ When a component needs state computed from multiple independent server queries, 
 
 ```typescript
 // Illustrative: a hook that combines agent permissions + feature flags
-function useAgentToolStatus() {
-  const { data: agent } = useCurrentAgent(); // TanStack Query
+function useAgentToolStatus(cwd: string | null) {
+  const { data: agent } = useCurrentAgent(cwd); // TanStack Query; the manifest's areas are a record
   const tasksEnabled = useTasksEnabled(); // TanStack Query
   const relayEnabled = useRelayEnabled(); // TanStack Query
 
@@ -375,7 +375,7 @@ Use the deep-link hooks from `@/layers/shared/model` (`useSettingsDeepLink`, `us
 - **Boolean-ish**: `?tasks=open` opens a parameterless dialog (any non-empty value works, `'open'` is canonical)
 - **Tab-targeted**: `?settings=tools` opens a dialog to a specific tab; sub-sections use a sibling param (`?settings=tools&settingsSection=mcp`)
 
-Current params: `settings`, `settingsSection`, `tasks`, `relay`, `profile`, `profilePage`, `profileRow`, `panel`, `inbox`, plus the legacy `agent`, `agentPath`, `profileRef` and `hubTab`, which nothing writes and are parsed only so `useLegacyProfileLinkRedirect` can rewrite an old bookmark. `?inbox=` is one-shot: `useInboxDeepLink` (`entities/notifications`) reads it and removes it.
+Current params: `settings`, `settingsSection`, `tasks`, `profile`, `profilePage`, `profileRow`, `panel`, `inbox`. Legacy params nothing writes: `agent`, `agentPath`, `profileRef` and `hubTab` are parsed only so `useLegacyProfileLinkRedirect` can rewrite an old bookmark, and `relay` only so the `/_shell` route (`routes/_shell.tsx`) can redirect an old `?relay=open` link to `/connections`. `?inbox=` is one-shot: `useInboxDeepLink` (`entities/notifications`) reads it and removes it.
 
 `useSettingsDeepLink` and `useTasksDeepLink` return a typed `DialogDeepLink<T>` with `isOpen`, `activeTab`, `section`, `open()`, `close()`, `setTab()`, and `setSection()` actions. `useProfileDeepLink` returns a `ProfileDeepLink` (`isOpen`, `memberId`, `page`, `open(memberId, page?)`, `setPage()`, `close()`); its `open` pushes a history entry so Back closes the profile.
 

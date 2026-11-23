@@ -455,6 +455,8 @@ Available models are fetched via `useModels({ sessionId?, runtime?, account? })`
 
 ```typescript
 // apps/client/src/layers/entities/session/model/query/use-models.ts
+import { MODELS_KEY } from '@/layers/shared/lib';
+
 export function modelsQueryOptions(transport: Transport, opts?: ModelsQueryScope) {
   const { sessionId, runtime, account, cwd } = opts ?? {};
   return {

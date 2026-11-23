@@ -49,9 +49,15 @@ StreamEvent yielded to client
   |  HttpTransport: SSE event -> onEvent callback
   |
   v
-projectInProgressTurn folds the event
+Session stream store records a pending interaction
   |
-  |  Upserts a tool_call part with interactiveType
+  |  session.pendingInteractions (a PendingInteractionDTO), not inProgressTurn
+  |
+  v
+foldPendingInteractions builds the card
+  |
+  |  Re-tags the DTO as its event; foldApproval/foldQuestion
+  |  upsert a tool_call part with interactiveType
   |
   v
 AssistantMessageContent renders interactive component
@@ -168,7 +174,7 @@ function handleAskUserQuestion(session, toolUseId, input) {
 
 **3. Client receives `question_prompt` event**
 
-The event lands in the per-session stream store as part of the in-progress turn. The client never mutates message state from a handler: `projectInProgressTurn` in `features/chat/model/stream/project-session-turn.ts` is a pure fold over the turn's `SessionEvent`s, and its `foldQuestion` upserts a tool-call part with `interactiveType: 'question'` (reusing the part if one already exists for the event's `id`):
+On the live path the event does **not** join the in-progress turn. The session stream store (`entities/session/model/stream/session-stream-store.ts`) converts `approval_required`, `question_prompt` and `elicitation_prompt` into a `PendingInteractionDTO` (re-tagged through `INTERACTION_DTO_TYPE`) and keeps it in `session.pendingInteractions`, the same list a snapshot fills on reconnect. The card is then built by the pure projection in `features/chat/model/stream/project-session-turn.ts`: `foldPendingInteractions` turns each DTO back into its event (`DTO_TO_INTERACTION_EVENT_TYPE`) and hands it to `foldPendingInteraction`, whose `foldQuestion` upserts a tool-call part with `interactiveType: 'question'` (reusing the part if one already exists for the event's `id`). The same fold also runs from `projectInProgressTurn` for interaction events a snapshot carries inside the turn itself:
 
 ```typescript
 // features/chat/model/stream/project-session-turn.ts
@@ -398,7 +404,7 @@ Key changes from the original pattern:
 
 **3. Client receives `approval_required` event**
 
-`foldApproval` in `features/chat/model/stream/project-session-turn.ts` upserts the tool-call part with the fields `approvalFieldsOf(event)` builds (`approval-fields.ts`), including `interactiveType: 'approval'` and the countdown:
+As with a question, the store keeps it in `session.pendingInteractions`, and `foldPendingInteractions` → `foldPendingInteraction` → `foldApproval` (`features/chat/model/stream/project-session-turn.ts`) upserts the tool-call part with the fields `approvalFieldsOf(event)` builds (`approval-fields.ts`), including `interactiveType: 'approval'` and the countdown:
 
 ```typescript
 function foldApproval(
@@ -711,9 +717,14 @@ router.post('/:id/my-new-result', async (c) => {
 });
 ```
 
-### Step 5: Fold the event in `project-session-turn.ts`
+### Step 5: Carry the event to a card on the client
 
-The client turns session events into message parts in one pure function, `projectInProgressTurn` (`apps/client/src/layers/features/chat/model/stream/project-session-turn.ts`). Add a `fold*` function and a case for your event:
+A live interactive event never reaches the message through the in-progress turn. The session stream store files it as a pending interaction, and the projection rebuilds the card from that list on every render, live and after a reload alike. Every step below is required; skip one and the event is silently dropped or no card appears.
+
+1. **Wire schema.** Add the event to `SessionEventSchema` (`packages/shared/src/session-stream.ts`) and a matching member to `PendingInteractionDTOSchema` (`packages/shared/src/schemas.ts`). Extend `ToolCallPartSchema` (same file) if your tool needs fields of its own, the way `questions` is stored for the question prompt.
+2. **Allowlist.** Add the event name to `SESSION_EVENT_TYPES` (`apps/client/src/layers/shared/lib/transport/session-event-types.ts`); names missing from it never reach the store.
+3. **Store.** In `apps/client/src/layers/entities/session/model/stream/session-stream-store.ts`, add the event to the `InteractionEvent` union, to `INTERACTION_DTO_TYPE`, and to the `approval_required` / `question_prompt` / `elicitation_prompt` case that upserts into `session.pendingInteractions`. `interaction_resolved` already removes it.
+4. **Projection.** In `apps/client/src/layers/features/chat/model/stream/project-session-turn.ts`, add the inverse entry to `DTO_TO_INTERACTION_EVENT_TYPE` and the `InteractionEvent` union there, write a `fold*` function, and call it from `foldPendingInteraction`. Add the same case to `projectInProgressTurn`'s switch so an event a snapshot carries inside the turn folds the same way.
 
 ```typescript
 // apps/client/src/layers/features/chat/model/stream/project-session-turn.ts
@@ -726,21 +737,22 @@ function foldMyNewInteractive(
     existing.interactiveType = 'my_new_type';
     existing.status = 'pending';
   } else {
-    parts.push({ type: 'tool_call', toolCallId: event.id, toolName: 'MyNewTool', input: '', status: 'pending', interactiveType: 'my_new_type' });
+    parts.push({
+      type: 'tool_call',
+      toolCallId: event.id,
+      toolName: 'MyNewTool',
+      input: '',
+      status: 'pending',
+      interactiveType: 'my_new_type',
+    });
   }
 }
 
-// in projectInProgressTurn's switch:
+// in foldPendingInteraction's switch (the live path), and in projectInProgressTurn's:
 case 'my_new_interactive':
   foldMyNewInteractive(parts, event);
   break;
 ```
-
-Three more places must agree, or the event is silently dropped:
-
-- Add the event name to `SESSION_EVENT_TYPES` (`apps/client/src/layers/shared/lib/transport/session-event-types.ts`); names missing from it never reach the store.
-- If a person must be able to answer it after a reload, also handle it in `foldPendingInteraction` (same file), which replays recovered interactions through the same folds.
-- Extend `ToolCallPartSchema` (`packages/shared/src/schemas.ts`) if your tool needs fields of its own, the way `questions` is stored for the question prompt.
 
 ### Step 6: Build UI component
 

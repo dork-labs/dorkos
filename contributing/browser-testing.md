@@ -93,7 +93,7 @@ apps/e2e/
                                # permissions, pip, profile, search, shapes, workbench
 ```
 
-Outside `tests/`, `multi-window/`, `community-two-desktop/`, `capture/`, `perf/` and `replay-demo/` are standalone runners with their own scripts in `apps/e2e/package.json` (e.g. `pnpm --filter @dorkos/e2e multi-window`), not part of the Playwright suite.
+Outside `tests/`, `multi-window/`, `community-two-desktop/`, `capture/`, `perf/` and `replay-demo/` are standalone runners, not part of the Playwright suite. Most have a script in `apps/e2e/package.json` (`pnpm --filter @dorkos/e2e multi-window`, `community-two-desktop`, `capture`, and `demo:replay` for `replay-demo/`). `perf/` has none: run it with `pnpm --filter @dorkos/e2e exec tsx perf/composer-latency.ts`.
 
 ## Writing Tests
 
