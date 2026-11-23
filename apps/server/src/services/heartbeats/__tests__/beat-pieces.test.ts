@@ -107,6 +107,17 @@ describe('the beat prompt', () => {
     expect(own).not.toContain(BUILT_IN_CHECKLIST[0]);
   });
 
+  it('keeps the rungs for telling people, and a message to an agent off them (DOR-4469)', () => {
+    // The ladder once read as ranking a direct message to the agent who must act above a
+    // room post. Coordinating with that agent is the work itself, not a louder way to speak.
+    const text = prompt().replace(/\s+/g, ' ');
+    expect(text).toContain(
+      'Use the quietest way to tell a person anything: the record, your next report, a room, a direct message, or a note outside the app, in that order.'
+    );
+    expect(text).toContain('Those rungs are for telling people.');
+    expect(text).toContain('A message to the agent who must act is work, not a rung.');
+  });
+
   it('says so when its manager changed', () => {
     expect(prompt({ newManager: true })).toContain('Who you report to changed.');
     expect(prompt()).not.toContain('Who you report to changed.');
