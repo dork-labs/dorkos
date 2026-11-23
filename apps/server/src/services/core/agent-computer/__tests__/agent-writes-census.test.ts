@@ -99,6 +99,10 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
     'whether a promise was kept is the answer of the person it was made to (DOR-3034)',
     ['POST /api/todo-promises/:id/confirm'],
   ],
+  [
+    'an agent makes and changes to-dos with its own tools, which carry its turn’s power; the route refuses an agent’s write (DOR-3088)',
+    ['POST /api/todos', 'PATCH /api/todos/:id'],
+  ],
   ['no person signs in or up here', ['ALL /api/auth/*']],
   ['middleware in front of the routes it guards', ['ALL /api/canvas/docs/*']],
   [

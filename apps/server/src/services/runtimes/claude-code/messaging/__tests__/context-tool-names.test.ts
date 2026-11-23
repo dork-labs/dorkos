@@ -531,7 +531,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // so it stays deferred.
     // 153 -> 154 for `withdraw_approval_request` (DOR-4586): no prompt block names it,
     // so it stays deferred.
-    expect(advertised.size).toBe(154);
+    // 154 -> 157 for `todo_add`, `todo_update` and `todos_list`, on by default since DOR-5071:
+    // no prompt block names them, so they stay deferred.
+    expect(advertised.size).toBe(157);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',
