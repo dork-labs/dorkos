@@ -4,8 +4,8 @@ name: claude-code-review
 # lines where it finds issues. Runs on-demand, not on every push: a full review
 # fires when a PR is opened or marked ready-for-review, and re-reviews fire when
 # the author applies the `re-review` label (auto-cleared after, so it is a reusable
-# "re-request review" button). Pushes do NOT auto-review, so a round of feedback
-# commits does not trigger a fresh review each time. Controls (labels): `skip-review`
+# "re-request review" button). Since Nov 23 every push reviews too (see `on:`),
+# because the Security lens's verdict has to name the exact head. Controls (labels): `skip-review`
 # (no review at all), `review:light` / `review:deep` (intensity). See the
 # `creating-pull-requests` skill for the author-facing flow. This is the "auto"
 # half of the Claude review setup; claude.yml is the interactive "@claude" half.
@@ -186,10 +186,14 @@ name: claude-code-review
 # identically.
 
 on:
-  # On-demand, not on every push: no `synchronize`. A full review fires on open
-  # and on ready-for-review; re-reviews fire when the `re-review` label is added.
+  # Every push reviews too (`synchronize`, DOR-5099, Nov 23): the Security lens's
+  # verdict must name the exact head, and `pr-gates` accepts that verdict as
+  # Security's sign-off, so a head with no review would wait forever. On a push
+  # the reviewer is in re-review mode (only new or still-open Important
+  # findings). The concurrency group below is per head SHA, so a review of an
+  # older head still finishes. Re-reviews also fire on `re-review`.
   pull_request:
-    types: [opened, ready_for_review, reopened, labeled]
+    types: [opened, synchronize, ready_for_review, reopened, labeled]
 
   # Manual review of any open PR by number. Two jobs (DOR-457):
   #   1. Escape hatch for the conflicted-PR blind spot above — the only way to get
@@ -309,7 +313,7 @@ env:
 # SHA was cancelled when a newer trigger arrived. Under a per-SHA key it runs to
 # completion and posts its verdict, correctly attributed to the SHA it read. That
 # costs a little subscription budget in the rare case where two review triggers
-# straddle a push (reviews do not fire on `synchronize`, so this needs a push
+# straddle a push (this needs a push
 # BETWEEN two review triggers), and it buys a review that is never half-done.
 #
 # `workflow_dispatch` carries no head SHA in its payload, so a manual run is

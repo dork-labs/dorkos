@@ -131,6 +131,49 @@ echo '[{"event":"labeled","label":{"name":"security-reviewed"},"created_at":"202
 run run 12
 check 'needs-design with a fresh design-ok: passes' 0 "$rc"
 
+# --- the cloud Security lens stands in for Security's label (Nov 23) ---
+sv() { # state login time
+  printf '{"context":"security-verdict","state":"%s","creator":{"login":"%s"},"created_at":"%s","id":1}' "$1" "$2" "$3"
+}
+reset_fixtures
+echo '[]' >"$fx/events"
+echo "[$(sv success 'github-actions[bot]' 2026-11-23T10:10:00Z)]" >"$fx/statuses"
+run run 12
+check 'no label, but a cloud Security pass at the head: passes' 0 "$rc"
+check 'it says the cloud verdict counted' yes "$(has "$out" 'counts as Security')"
+
+reset_fixtures
+echo '[{"event":"labeled","label":{"name":"security-reviewed"},"created_at":"2026-11-23T09:00:00Z"}]' >"$fx/events"
+echo "[$(sv success 'github-actions[bot]' 2026-11-23T10:10:00Z)]" >"$fx/statuses"
+run run 12
+check 'a stale label plus a cloud pass: passes' 0 "$rc"
+
+reset_fixtures
+echo '[]' >"$fx/events"
+echo "[$(sv success 'someone' 2026-11-23T10:10:00Z)]" >"$fx/statuses"
+run run 12
+check 'a security-verdict status not from GitHub Actions does not count' 1 "$rc"
+
+reset_fixtures
+echo '[]' >"$fx/events"
+echo "[$(sv failure 'github-actions[bot]' 2026-11-23T10:10:00Z)]" >"$fx/statuses"
+run run 12
+check 'a cloud fail does not count' 1 "$rc"
+
+reset_fixtures
+echo '[]' >"$fx/events"
+echo "[$(sv success 'github-actions[bot]' 2026-11-23T10:10:00Z),$(sv failure 'github-actions[bot]' 2026-11-23T10:20:00Z)]" >"$fx/statuses"
+run run 12
+check 'the newest cloud verdict wins (fail after pass)' 1 "$rc"
+
+reset_fixtures
+echo '[]' >"$fx/events"
+echo '[{"name":"needs-design"}]' >"$fx/labels"
+echo "[$(sv success 'github-actions[bot]' 2026-11-23T10:10:00Z)]" >"$fx/statuses"
+run run 12
+check 'a cloud pass does not stand in for design-ok' 1 "$rc"
+check 'and names the design gate' yes "$(has "$out" 'no-design-ok')"
+
 for f in pull commit runs statuses checkruns events labels files; do
   reset_fixtures
   FAKE_FAIL=$f run run 12
