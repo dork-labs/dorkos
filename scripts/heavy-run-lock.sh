@@ -20,6 +20,9 @@
 #                                           (leave the line: a job that ran
 #                                           outside this script)
 #   bash scripts/heavy-run-lock.sh --status (the line, who runs, the stale check)
+#   bash scripts/heavy-run-lock.sh --list | --insert | --move | --remove ...
+#                                           (write the line by command, never
+#                                           by hand; scripts/lib/heavy-order-write.sh)
 #
 # It forwards the command's output and exit code unchanged, so on a quiet
 # machine it is invisible: the first slot is free and the command starts. The
@@ -206,8 +209,10 @@ set -uo pipefail
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH='' cd -- "$here/.." && pwd)
 
-# --label <label>, --done <label> and --status: the ORDER line (DOR-4209,
-# DOR-4901), in scripts/lib/heavy-order.sh. They come first on the line.
+# --label <label>, --done <label>, --status and the write commands (--list,
+# --insert, --move, --remove): the ORDER line (DOR-4209, DOR-4901, DOR-5079), in
+# scripts/lib/heavy-order.sh and scripts/lib/heavy-order-write.sh. They come
+# first on the line. A label is checked against ORDER_LABEL_RE everywhere.
 label=''
 order_cmd=''
 case "${1:-}" in
@@ -220,10 +225,22 @@ case "${1:-}" in
       exit 2
     fi
     shift 2
+    # `--label <label> -- <command>` is the old order script's form; take the
+    # `--` so a caller can swap scripts without rewriting its line (DOR-5079).
+    [ -z "$order_cmd" ] && [ "${1:-}" = -- ] && shift
     ;;
   --status)
     order_cmd=status
     shift
+    ;;
+  --list | --insert | --move | --remove)
+    order_cmd='write'
+    ;;
+  -h | --help)
+    # shellcheck source=lib/heavy-order-write.sh
+    . "$here/lib/heavy-order-write.sh"
+    order_usage
+    exit 2
     ;;
 esac
 
@@ -266,6 +283,9 @@ order_on=0
 if [ -n "$label" ] || [ -n "$order_cmd" ]; then
   # shellcheck source=lib/heavy-order.sh
   . "$here/lib/heavy-order.sh"
+  # shellcheck source=lib/heavy-order-write.sh
+  . "$here/lib/heavy-order-write.sh"
+  [ -n "$label" ] && { order_valid label "$label" || exit 2; }
   order_dir=$(heavy_order_dir)
   if order_dir_ready "$order_dir"; then
     order_init "$order_dir"
@@ -273,18 +293,19 @@ if [ -n "$label" ] || [ -n "$order_cmd" ]; then
   fi
 fi
 
+if [ "$order_cmd" = write ]; then
+  # Writing needs a real order folder: going on without one would change nothing.
+  [ "$order_on" = 1 ] || exit 2
+  order_command "$@"
+  exit $?
+fi
 if [ "$order_cmd" = 'done' ]; then
   if [ "$order_on" = 0 ]; then
     echo "[heavy] order: no usable order folder, so there is no line to leave."
     exit 0
   fi
-  order_lock
-  order_pop "$label"
-  claim_drop "$label"
-  order_rotate_stale
-  order_unlock
-  echo "[heavy] order: popped '$label'; next is '$(order_top)'"
-  exit 0
+  order_done_command "$label"
+  exit $?
 fi
 if [ "$order_cmd" = status ]; then
   if [ "$order_on" = 0 ]; then

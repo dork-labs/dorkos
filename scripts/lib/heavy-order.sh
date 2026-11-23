@@ -67,9 +67,18 @@
 # THE FILES, all in the order folder: `DORKOS_HEAVY_ORDER_DIR`, else
 # `load-gate/` in the DorkOS data folder (`$DORK_HOME`, else `~/.dork`), the
 # same folder whose `config.json` holds the gate's settings. It is made (mode
-# 700) on first use. Only the order file is yours to write by hand.
+# 700) on first use. Write the order file with this script's commands
+# (--insert, --move, --remove; scripts/lib/heavy-order-write.sh), never by hand
+# (DOR-5079): a hand rewrite is how other chats' labels were lost on 2026-11-22.
 #   heavy-order          one label per line; blank lines are ignored, and each
 #                        line is compared trimmed
+#   heavy-order.lock     the kernel lock every write takes (a perl flock, as
+#                        the coordinator's own uncommitted order script takes on
+#                        its heavy-order.lock). An old heavy-order.lock.d folder
+#                        is not looked at any more
+#   heavy-order.log      written here: one tab-separated line per write
+#   heavy-order.sum      written here: the sha256 of the last managed write,
+#                        so a hand edit is named on the next one
 #   heavy-order.top      written here: the top label and since when it has
 #                        been idle
 #   heavy-claims/        written here: one file per live top-of-line run
@@ -115,39 +124,133 @@ file_age() {
   perl -e 'my @s = stat($ARGV[0]) or exit 1; print time - $s[9]' "$1" 2>/dev/null
 }
 
-# Serialise every write to the order file and the state beside it. mkdir is
-# atomic; a lock older than 30 s belongs to a writer that died mid-write (a
-# write takes milliseconds), so it is taken over. Bounded: after 10 s the write
-# goes ahead unlocked rather than wedging every heavy run on the machine.
+# Serialise every write to the order file and the state beside it with an
+# exclusive flock on heavy-order.lock (DOR-5082). This shell opens the file on
+# descriptor 8 and a short perl takes the lock on that same open file, so the
+# lock lives as long as descriptor 8 stays open here: the kernel drops it when
+# this shell closes it or dies in any way, so there is no stale lock to take
+# over. (The mkdir lock this replaces took over any lock older than 30 s with
+# no owner check, so two waiting writers could both get in and lose a write.)
+# A child that outlives the lock must not inherit descriptor 8: see the `8>&-`
+# on the beater and the notifier. A caller's own descriptor 8, if it passed
+# one, is replaced here, so a labelled run's command does not receive it.
+#
+# The wait is a blocking flock under an alarm, so waiters queue in the kernel
+# rather than polling: none of them can lose every race and time out while
+# the others go round again.
+#
+# order_flock <seconds>: 0 once held, 1 when not had in time, 2 when the lock
+# file cannot be opened or locked at all (say a symlink, or no perl).
+order_flock() {
+  if [ -L "$ORDER_LOCK" ]; then
+    echo "[heavy] order: $ORDER_LOCK is a symlink; not locking through it." >&2
+    return 2
+  fi
+  { exec 8>>"$ORDER_LOCK"; } 2>/dev/null || return 2
+  # shellcheck disable=SC2016 # a perl program, not a shell expansion
+  perl -MFcntl=:flock -e '
+    open(my $fh, ">>&=", 8) or exit 2;
+    my $wait = $ARGV[0];
+    exit(flock($fh, LOCK_EX | LOCK_NB) ? 0 : 1) if $wait <= 0;
+    local $SIG{ALRM} = sub { exit 1 };
+    alarm $wait;
+    flock($fh, LOCK_EX) or exit 2;
+    alarm 0;
+    exit 0' "$1" 2>/dev/null
+  case $? in
+    0) return 0 ;;
+    1) exec 8>&-; return 1 ;;
+  esac
+  exec 8>&-
+  echo "[heavy] order: could not open or lock $ORDER_LOCK." >&2
+  return 2
+}
+
+# The run path's lock. Bounded: after 10 s the write goes ahead unlocked rather
+# than wedging every heavy run on the machine.
 order_lock() {
-  local age
-  for _ in $(seq 1 100); do
-    mkdir "$ORDER_LOCK" 2>/dev/null && return 0
-    age=$(file_age "$ORDER_LOCK")
-    if [ -n "$age" ] && [ "$age" -gt 30 ]; then
-      rmdir "$ORDER_LOCK" 2>/dev/null
-      continue
-    fi
-    sleep 0.1
-  done
-  echo "[heavy] order: the order file stayed locked for 10s; going ahead without the lock." >&2
+  order_flock 10
+  case $? in
+    0) return 0 ;;
+    1) echo "[heavy] order: the order file stayed locked for 10s; going ahead without the lock." >&2 ;;
+    *) echo "[heavy] order: going ahead without the lock." >&2 ;;
+  esac
   return 0
 }
-order_unlock() { rmdir "$ORDER_LOCK" 2>/dev/null; return 0; }
+# Closing descriptor 8 drops the lock. Closing it when it is not held is
+# harmless, so unlike the old `rmdir` this can never free another writer's lock.
+order_unlock() {
+  exec 8>&-
+  return 0
+}
+
+# The order file's sha256, or nothing when it is absent.
+order_hash() {
+  [ -f "$1" ] || return 0
+  { shasum -a 256 "$1" 2>/dev/null || sha256sum "$1" 2>/dev/null; } | awk 'NR == 1 { print $1 }'
+}
+
+# Store the hash of a write this script made, so a later write can tell a hand
+# edit from its own (DOR-5079).
+order_sum_store() {
+  local h
+  h=$(order_hash "$ORDER_FILE")
+  printf '%s\n' "${h:-absent}" >"$ORDER_SUM" 2>/dev/null
+  return 0
+}
+
+# Who asked: the parent's process NAME and pid, never its command line.
+order_caller() {
+  local c
+  c=$(ps -o comm= -p "$PPID" 2>/dev/null | sed 's#.*/##')
+  printf '%s[%s]' "${c:-?}" "$PPID"
+}
+
+# One audit line in heavy-order.log: UTC time, op, label, detail, caller,
+# reason, tab-separated, with no tab or newline inside a field.
+order_log() {
+  local f out='' op=$1 label=$2 detail=$3 reason=${4:-}
+  for f in "$(date -u +%FT%TZ)" "$op" "$label" "$detail" "${ORDER_CALLER:-$(order_caller)}" "$reason"; do
+    f=$(printf '%s' "$f" | tr '\t\n\r' '   ')
+    out="${out:+$out	}$f"
+  done
+  printf '%s\n' "$out" >>"$ORDER_LOG" 2>/dev/null
+  return 0
+}
+
+# Say so when the file was changed outside these commands since their last
+# write; with $1 = log, record it too. The write still goes ahead.
+order_external_check() {
+  local stored cur
+  [ -f "$ORDER_SUM" ] || return 0
+  stored=$(cat "$ORDER_SUM" 2>/dev/null)
+  cur=$(order_hash "$ORDER_FILE")
+  cur=${cur:-absent}
+  [ "$stored" = "$cur" ] && return 0
+  echo "[heavy] order: heavy-order was changed outside heavy-run-lock.sh since its last managed write. Use --insert/--move/--remove instead of editing it." >&2
+  [ "${1:-}" = log ] && order_log "external-edit-detected" "-" "stored=${stored:0:12} current=${cur:0:12}" ""
+  return 0
+}
 
 # Rewrite the order file through a temp file and a rename, so a reader never
 # sees half of it. $@ is awk's arguments (options, then the program).
 order_rewrite() {
   local tmp="$ORDER_FILE.tmp.$$"
-  awk "$@" "$ORDER_FILE" >"$tmp" && mv -f -- "$tmp" "$ORDER_FILE"
+  awk "$@" "$ORDER_FILE" >"$tmp" && mv -f -- "$tmp" "$ORDER_FILE" && order_sum_store
   rm -f -- "$tmp"
 }
 
-# Remove the first line equal (trimmed) to $1. Other lines keep their exact text.
+# Remove the first line equal (trimmed) to $1, logged as `done` (a run leaving
+# the line). Other lines keep their exact text.
 # shellcheck disable=SC2016 # awk programs, not shell expansions
 order_pop() {
+  local pos
   [ -f "$ORDER_FILE" ] || return 0
+  pos=$(awk -v l="$1" '{ t = $0; gsub(/^[ \t]+|[ \t]+$/, "", t) } NF { n++ } t == l { print n; exit }' "$ORDER_FILE")
+  [ -n "$pos" ] || return 0
+  order_external_check log
   order_rewrite -v l="$1" '{ t = $0; gsub(/^[ \t]+|[ \t]+$/, "", t) } !done && t == l { done = 1; next } 1'
+  order_log "done" "$1" "was #$pos" ""
 }
 
 # Swap the top non-blank line with the next non-blank one: "down one place".
@@ -196,7 +299,7 @@ claim_take() {
         touch "$f.beat" 2>/dev/null
         sleep 30
       done
-    ) </dev/null >/dev/null 2>&1 &
+    ) </dev/null >/dev/null 2>&1 8>&- &
     ORDER_BEATER=$!
     # Out of the job table, so stopping it at the end prints no "Terminated".
     disown "$ORDER_BEATER" 2>/dev/null
@@ -241,7 +344,9 @@ order_rotate_stale() {
   second=$(order_second)
   # Alone in line: there is nobody to let past, so it stays.
   [ -n "$second" ] || return 0
+  order_external_check log
   order_move_top_down
+  order_log "stale-move" "$top" "below '$second'" "no live run for $((now - state_since))s"
   since=$(date -r "$state_since" '+%Y-%m-%d %H:%M %Z' 2>/dev/null || echo "epoch $state_since")
   note="- $(date '+%Y-%m-%d %H:%M %Z') (heavy-run-lock, DOR-4901): moved '$top' down one place, below '$second'. Reason: top of line since $since with no live run for $((now - state_since))s. Not deleted."
   printf '%s\n' "$note" >>"$NOTES_FILE" 2>/dev/null
@@ -250,15 +355,21 @@ order_rotate_stale() {
   # Run as `$DORKOS_HEAVY_NOTIFY <label> <note>`, in the background, its output
   # dropped. One program path, never a shell string: nothing here is eval'd.
   if [ -n "$NOTIFY_CMD" ] && [ -x "$NOTIFY_CMD" ]; then
-    "$NOTIFY_CMD" "$top" "$note" </dev/null >/dev/null 2>&1 &
+    "$NOTIFY_CMD" "$top" "$note" </dev/null >/dev/null 2>&1 8>&- &
   fi
   return 0
 }
 
 # Set up the order layer's paths for order folder $1.
 order_init() {
+  # Read by heavy-order-write.sh (its test-only fault hook checks the folder).
+  # shellcheck disable=SC2034
+  ORDER_DIR="$1"
   ORDER_FILE="$1/heavy-order"
-  ORDER_LOCK="$1/heavy-order.lock.d"
+  ORDER_LOG="$1/heavy-order.log"
+  ORDER_SUM="$1/heavy-order.sum"
+  ORDER_CALLER=''
+  ORDER_LOCK="$1/heavy-order.lock"
   TOP_STATE="$1/heavy-order.top"
   CLAIMS_DIR="$1/heavy-claims"
   NOTES_FILE="$1/heavy-order-notes.md"

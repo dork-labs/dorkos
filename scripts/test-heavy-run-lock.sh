@@ -66,6 +66,7 @@ CHECK="${CHECK:-$repo_root/scripts/heavy-run-lock.sh}"
 unset CI DORKOS_HEAVY_SLOT_HELD DORKOS_HEAVY_LOCK DORKOS_HEAVY_WAIT_SECONDS DORKOS_HEAVY_SLOTS \
   DORKOS_HEAVY_MAX_LOAD DORKOS_HEAVY_TEST_MAX_LOAD DORKOS_IGNORE_LOAD DORKOS_HEAVY_LOAD_WAIT_SECONDS DORKOS_HEAVY_LOAD_POLL_SECONDS \
   CI_STEWARD_TIMINGS_FILE CI_STEWARD_RUN_ID DORKOS_HEAVY_ORDER_DIR DORKOS_HEAVY_LABEL \
+  DORKOS_HEAVY_ORDER_LOCK_WAIT DORKOS_HEAVY_ORDER_TEST_CORRUPT \
   DORKOS_HEAVY_ORDER_STALE_SECONDS DORKOS_LOAD_GATE_IN_TURN DORKOS_HEAVY_NOTIFY \
   DORKOS_HEAVY_SECOND_SWAP_MAX_MB DORKOS_HEAVY_SECOND_FREE_MIN_PCT DORKOS_HEAVY_SECOND_SWAP_GROWTH_MAX_MB \
   DORKOS_HEAVY_SECOND_MAX_LOAD DORKOS_HEAVY_SECOND_DISK_MIN_GB
@@ -1133,6 +1134,223 @@ sleep 5
 mem_env "$coord" "$locks" DORKOS_HEAVY_ORDER_STALE_SECONDS=6 bash "$CHECK" --status >/dev/null 2>&1
 check_eq 'the idle top moved down on its own clock' \
   "$(printf 'third-job\nidle-top')" "$(awk 'NF' "$coord/heavy-order")"
+
+echo ""
+echo "== the order line takes commands, never a hand edit (DOR-5079) =="
+
+# Each command, with its exit code first, as "rc:output".
+ord() { local c=$1 l=$2; shift 2; out=$(order_env "$c" "$l" bash "$CHECK" "$@" 2>&1); echo "$?:$out"; }
+# The same, with one VAR=value setting for the run.
+ordv() { local c=$1 l=$2 v=$3; shift 3; out=$(order_env "$c" "$l" "$v" bash "$CHECK" "$@" 2>&1); echo "$?:$out"; }
+line_of() { awk 'NF' "$1/heavy-order" | tr '\n' '|'; }
+
+coord=$(new_coord)
+locks=$(new_locks)
+check_contains '--list on an empty line says so' '0:[heavy] order: (empty: no order)' "$(ord "$coord" "$locks" --list)"
+check_contains '--insert adds at the end' "0:[heavy] order: insert 'alpha' done" "$(ord "$coord" "$locks" --insert alpha)"
+ord "$coord" "$locks" --insert beta >/dev/null
+check_contains '--insert --top goes first' '  1  gamma' "$(ord "$coord" "$locks" --insert gamma --top)"
+ord "$coord" "$locks" --insert delta --after gamma >/dev/null
+ord "$coord" "$locks" --insert eps --before beta >/dev/null
+ord "$coord" "$locks" --insert zeta --at 2 >/dev/null
+check_eq 'after, before and --at place the label' 'gamma|zeta|delta|alpha|eps|beta|' "$(line_of "$coord")"
+check_contains '--list numbers the line' '  6  beta' "$(ord "$coord" "$locks" --list)"
+
+# A duplicate insert, an unknown label, a bad anchor: refused (2), nothing changed.
+before=$(line_of "$coord")
+r=$(ord "$coord" "$locks" --insert beta)
+check_contains 'a duplicate insert is refused (2)' "2:[heavy] REFUSE (order): 'beta' is already in the line (#6); use --move" "$r"
+r=$(ord "$coord" "$locks" --move nobody --top)
+check_contains 'moving an unknown label is refused (2)' "2:[heavy] REFUSE (order): 'nobody' is not in the line" "$r"
+r=$(ord "$coord" "$locks" --remove nobody --reason 'made-up')
+check_contains 'removing an unknown label is refused (2)' "2:" "$r"
+r=$(ord "$coord" "$locks" --insert omega --after nobody)
+check_contains 'an anchor not in the line is refused (2)' "anchor 'nobody' is not in the line" "$r"
+r=$(ord "$coord" "$locks" --move beta --after beta)
+check_contains 'a label placed after itself is refused' "cannot be placed after itself" "$r"
+r=$(ord "$coord" "$locks" --insert omega --at 9)
+check_contains '--at out of range is refused' '--at 9 is out of range (1..7)' "$r"
+r=$(ord "$coord" "$locks" --move beta)
+check_contains '--move needs a position' '2:[heavy] usage: a position is required' "$r"
+r=$(ord "$coord" "$locks" --insert omega --sideways)
+check_contains 'an unknown position is a usage error' "unknown position '--sideways'" "$r"
+r=$(ord "$coord" "$locks" --insert 'bad\label')
+check_contains 'a label outside the allowed set is refused (2)' '2:[heavy] REFUSE (label)' "$r"
+r=$(ord "$coord" "$locks" --label 'bad;label' bash -c 'echo ran')
+check_contains 'a run with a bad label is refused (2) and runs nothing' '2:[heavy] REFUSE (label)' "$r"
+r=$(ord "$coord" "$locks" --insert 'two  spaces')
+check_contains 'a label with two spaces in a row is refused (it could never leave)' '2:[heavy] REFUSE (label)' "$r"
+r=$(ord "$coord" "$locks" --insert omega --at 99999999999999999999999)
+check_contains 'an --at too big for a number is refused, as live does' '2:[heavy] REFUSE (order): --at' "$r"
+r=$(ord "$coord" "$locks" --remove beta)
+check_contains '--remove needs --reason' '2:[heavy] REFUSE (order): --remove needs --reason' "$r"
+check_eq 'none of the refusals changed the line' "$before" "$(line_of "$coord")"
+
+r=$(ord "$coord" "$locks" --move beta --top)
+check_contains '--move --top moves it first' '  1  beta' "$r"
+r=$(ord "$coord" "$locks" --remove eps --reason 'made-up: no longer needed')
+check_eq '--remove with a reason drops it' 'beta|gamma|zeta|delta|alpha|' "$(line_of "$coord")"
+check_contains 'and the reason is in the log' 'made-up: no longer needed' "$(cat "$coord/heavy-order.log")"
+r=$(ord "$coord" "$locks" --done never-there)
+check_contains '--done on an unknown label is a no-op (0)' "0:[heavy] order: popped 'never-there'" "$r"
+check_contains 'and is logged as not in line' 'not-in-line (no change)' "$(cat "$coord/heavy-order.log")"
+r=$(ord "$coord" "$locks" --done alpha)
+check_contains '--done leaves the line' "next is 'beta'" "$r"
+check_eq 'only that label left' 'beta|gamma|zeta|delta|' "$(line_of "$coord")"
+check_eq 'every write is one log line, refusals none' 10 "$(wc -l <"$coord/heavy-order.log" | tr -d ' ')"
+r=$(ord "$coord" "$locks" --help)
+check_contains '--help prints the usage (2)' '2:usage: heavy-run-lock.sh --label' "$r"
+
+# A hand edit is said out loud and logged; the write still goes ahead.
+printf 'hand-added\n' >>"$coord/heavy-order"
+r=$(ord "$coord" "$locks" --insert theta)
+check_contains 'a hand edit is noticed' 'was changed outside heavy-run-lock.sh' "$r"
+check_contains 'and the write still went ahead' "insert 'theta' done" "$r"
+check_contains 'and it is logged' 'external-edit-detected' "$(cat "$coord/heavy-order.log")"
+r=$(ord "$coord" "$locks" --list)
+check_lacks 'a managed write leaves no warning behind' 'changed outside' "$r"
+
+# The verify: a write that would lose or gain a label writes nothing (3).
+before=$(line_of "$coord")
+r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_TEST_CORRUPT=drop-first --insert iota)
+check_contains 'a write that would lose a label is refused (3)' '3:[heavy] REFUSE (order verify)' "$r"
+check_contains 'and names what would be lost' "would be LOST: 'beta'" "$r"
+r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_TEST_CORRUPT=dup-last --move beta --at 2)
+check_contains 'a write that would duplicate a label is refused (3)' 'would be ADDED/DUPLICATED' "$r"
+check_eq 'and nothing was written' "$before" "$(line_of "$coord")"
+
+# The lock is a kernel flock on heavy-order.lock (DOR-5082). hold_order_lock
+# <coord> <seconds> holds it from another process, the way a slow writer
+# would, until `<coord>/release` appears or the seconds run out, and returns
+# once it is held; the holder's pid is in $holder.
+hold_order_lock() {
+  rm -f -- "$1/held" "$1/release"
+  # shellcheck disable=SC2016 # a perl program, not a shell expansion
+  perl -MFcntl=:flock -e '
+    open(my $f, ">>", $ARGV[0]) or exit 1;
+    flock($f, LOCK_EX) or exit 1;
+    open(my $r, ">", $ARGV[2]) or exit 1;
+    close $r;
+    for (1 .. $ARGV[1] * 20) {
+      last if -e $ARGV[3];
+      select(undef, undef, undef, 0.05);
+    }' "$1/heavy-order.lock" "$2" "$1/held" "$1/release" &
+  holder=$!
+  own_pids+=("$holder")
+  for _ in $(seq 1 100); do
+    [ -f "$1/held" ] && return 0
+    sleep 0.05
+  done
+  return 1
+}
+
+# A held lock refuses a write in time (4) and changes nothing.
+hold_order_lock "$coord" 60 || not_ok 'the test holder never took the order lock'
+started=$(date +%s)
+r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_LOCK_WAIT=1 --insert kappa)
+check_contains 'a held lock refuses the write (4)' '4:[heavy] order: lock busy for 1s, nothing changed' "$r"
+check_le 'within its wait' 3 "$(($(date +%s) - started))"
+r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_LOCK_WAIT=1 --done beta)
+check_eq 'a --done that cannot lock exits 4' 4 "${r%%:*}"
+check_contains 'and says so loudly' "[heavy] ORDER POP FAILED" "$r"
+check_eq 'and the label is still in line' "$before" "$(line_of "$coord")"
+# A holder that dies, however it dies, lets go at once: nothing waits for a
+# lock to look old, so nothing can take over a live one.
+kill -KILL "$holder" 2>/dev/null
+wait "$holder" 2>/dev/null
+r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_LOCK_WAIT=1 --insert kappa)
+check_contains 'a holder killed with SIGKILL frees the lock at once' "0:[heavy] order: insert 'kappa' done" "$r"
+# An old lock folder from the mkdir lock this replaced means nothing now.
+mkdir "$coord/heavy-order.lock.d"
+r=$(ordv "$coord" "$locks" DORKOS_HEAVY_ORDER_LOCK_WAIT=1 --insert lambda)
+check_contains 'an old heavy-order.lock.d folder blocks nothing' "0:[heavy] order: insert 'lambda' done" "$r"
+
+# A slow write keeps every other writer out until it ends (DOR-5082): two
+# writers that arrive while the lock is held both wait, then both land.
+coord=$(new_coord)
+locks=$(new_locks)
+ord "$coord" "$locks" --insert first >/dev/null
+hold_order_lock "$coord" 60 || not_ok 'the test holder never took the order lock'
+order_env "$coord" "$locks" bash "$CHECK" --insert waiter-1 >/dev/null 2>&1 &
+w1=$!
+order_env "$coord" "$locks" bash "$CHECK" --insert waiter-2 >/dev/null 2>&1 &
+w2=$!
+own_pids+=("$w1" "$w2")
+sleep 1
+check_eq 'no writer gets in while a slow write holds the lock' 'first|' "$(line_of "$coord")"
+# Still running means still waiting: the check above saw writers held off,
+# not writers that had yet to start.
+if kill -0 "$w1" 2>/dev/null && kill -0 "$w2" 2>/dev/null; then
+  ok 'both writers are still waiting for it'
+else
+  not_ok 'both writers are still waiting for it'
+fi
+touch "$coord/release"
+wait "$holder" 2>/dev/null
+wait "$w1"
+c1=$?
+wait "$w2"
+c2=$?
+check_eq 'both waiting writers finish once it lets go' '0 0' "$c1 $c2"
+check_eq 'and both land' 'first|waiter-1|waiter-2|' "$(awk 'NF' "$coord/heavy-order" | LC_ALL=C sort | tr '\n' '|')"
+
+# Concurrent writes all land: none lost, none doubled.
+coord=$(new_coord)
+locks=$(new_locks)
+pids=()
+for i in 1 2 3 4 5 6 7 8; do
+  order_env "$coord" "$locks" bash "$CHECK" --insert "job-$i" >/dev/null 2>&1 &
+  pids+=("$!")
+done
+codes=''
+for p in "${pids[@]}"; do
+  wait "$p"
+  codes="$codes $?"
+done
+# Every exit code, so a writer that failed is told apart from one that was lost.
+check_eq 'every concurrent insert exits 0' ' 0 0 0 0 0 0 0 0' "$codes"
+check_eq 'eight concurrent inserts all land' 8 "$(awk 'NF' "$coord/heavy-order" | sort -u | wc -l | tr -d ' ')"
+check_eq 'and none is doubled' 8 "$(awk 'NF' "$coord/heavy-order" | wc -l | tr -d ' ')"
+
+# Writes while a top row is running: a release row jumps in behind it, the
+# running top can be moved past or removed, and its own end changes nothing else.
+coord=$(new_coord)
+locks=$(new_locks)
+ord "$coord" "$locks" --insert running-job >/dev/null
+ord "$coord" "$locks" --insert waiting-job >/dev/null
+order_env "$coord" "$locks" bash "$CHECK" --label 'running-job' sleep 30 >/dev/null 2>&1 &
+holder=$!
+own_pids+=("$holder")
+await_locked "$locks" 1 || not_ok 'running-job never took a slot'
+ord "$coord" "$locks" --insert 'release v9.9.9 QA gate' --after running-job >/dev/null
+check_eq 'a release row goes in right behind the running job' \
+  'running-job|release v9.9.9 QA gate|waiting-job|' "$(line_of "$coord")"
+ord "$coord" "$locks" --move waiting-job --top >/dev/null
+check_eq 'a row can move to the top while another runs' \
+  'waiting-job|running-job|release v9.9.9 QA gate|' "$(line_of "$coord")"
+r=$(ord "$coord" "$locks" --remove running-job --reason 'made-up: superseded')
+check_contains 'the running row can be removed, with a reason' "remove 'running-job' done" "$r"
+signal_tree TERM "$holder"
+wait "$holder" 2>/dev/null
+check_eq 'the removed job ending changes nothing else' 'waiting-job|release v9.9.9 QA gate|' "$(line_of "$coord")"
+r=$(ord "$coord" "$locks" --list)
+check_lacks 'and a run leaving the line leaves no hand-edit warning' 'changed outside' "$r"
+
+# A labelled run leaving the line keeps the stored hash in step, and logs it.
+coord=$(new_coord)
+locks=$(new_locks)
+ord "$coord" "$locks" --insert solo >/dev/null
+ord "$coord" "$locks" --insert after-solo >/dev/null
+order_env "$coord" "$locks" bash "$CHECK" --label solo bash -c 'true' >/dev/null 2>&1
+check_eq 'the run left the line' 'after-solo|' "$(line_of "$coord")"
+check_contains 'the run'"'"'s leaving is logged' "	done	solo	was #1" "$(cat "$coord/heavy-order.log")"
+r=$(ord "$coord" "$locks" --insert next)
+check_lacks 'and the next write sees no hand edit' 'changed outside' "$r"
+
+# The old script's run form, `<label> -- <command>`, still works after --label.
+r=$(ord "$coord" "$locks" --label after-solo -- bash -c 'echo dashdash-ran')
+check_contains 'a -- after --label <label> is taken, and the command runs' '0:' "${r:0:2}"
+check_contains 'the command after -- ran' 'dashdash-ran' "$r"
 
 echo ""
 printf '%s passed, %s failed\n' "$pass" "$fail"
