@@ -572,6 +572,40 @@ describe('working-with-spin-off-chats', () => {
   it('is named in the umbrella sibling list', () => {
     expect(bodyOf('operating-dorkos')).toContain('working-with-spin-off-chats');
   });
+
+  // DOR-4469: one lead owns long work and coordinates by chat_send; a room hears three
+  // kinds of project update. "Post there only if the room needs to know" left every
+  // report a candidate for a room post, so its absence is pinned.
+  it('teaches one project lead that coordinates by direct message', () => {
+    expect(flat).toContain('## One lead for long project work');
+    expect(flat).toContain('one spin-off chat that owns the work until it ships');
+    expect(flat).toContain('not a new role and not more access');
+    expect(flat).toContain('If a lead already has the work, message it.');
+    expect(flat).toContain('It sends `chat_send` to the one agent who must act');
+    expect(flat).toContain('never use cc as a status channel');
+  });
+
+  it('names the three room updates and keeps answers for whoever asks', () => {
+    expect(flat).toContain(
+      'A room hears three things about project work**: it started, it is blocked on a person, it shipped.'
+    );
+    expect(flat).toContain('These are kinds of update, not a quota.');
+    expect(flat).toContain('they still get a short, useful answer');
+    expect(flat).toContain(
+      'Post there only when the work starts, is blocked on a person, or ships, or to answer someone who asked.'
+    );
+    expect(flat).not.toContain('Post there only if the room needs to know');
+  });
+
+  it('says a room chat can send, a send never posts into a room, and a beat gets no report', () => {
+    expect(flat).toContain('Your chat in a room can send too.');
+    expect(flat).toContain('`chat_send` never posts into a room');
+    expect(flat).toContain('Only `post_to_room` speaks in a room.');
+    expect(flat).toContain(
+      'A spin-off started from a beat, a scheduled run or a Telegram or Slack chat does not report back'
+    );
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(71);
+  });
 });
 
 /**
@@ -626,6 +660,22 @@ describe('working-on-a-heartbeat', () => {
   it('is named in the umbrella sibling list, and the pack is stamped for it', () => {
     expect(bodyOf('operating-dorkos')).toContain('working-on-a-heartbeat');
     expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(40);
+  });
+
+  it('hands long work to one lead, names who hears the result, and keeps rooms quiet (DOR-4469)', () => {
+    const flat = beat.replace(/\s+/g, ' ');
+    expect(flat).toContain('## Long work gets one lead');
+    expect(flat).toContain('start one project-lead spin-off chat with `session_start`');
+    expect(flat).toContain('or message the lead that already has it, then end the beat');
+    expect(flat).toContain('A spin-off started from a beat does not report back to it');
+    expect(flat).toContain('Name in its brief the chat or agent that should hear the result.');
+    expect(flat).toContain(
+      'The lead coordinates by direct message with the one agent who must act.'
+    );
+    expect(flat).toContain(
+      'For project work a room hears three things: it started, it is blocked on a person, it shipped.'
+    );
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(71);
   });
 });
 

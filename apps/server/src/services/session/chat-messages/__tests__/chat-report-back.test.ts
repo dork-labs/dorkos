@@ -736,6 +736,10 @@ describe('the words', () => {
     });
     expect(roomChild).not.toContain('chat_send');
     expect(roomChild).toContain('post_to_room');
+    // DOR-4469: the room hears three project updates, never a spin-off's running status.
+    expect(roomChild).toContain('If your brief names a chat or an agent to tell');
+    expect(roomChild).toContain('only when the work starts, is blocked on a person, or ships');
+    expect(roomChild).not.toContain('report there with post_to_room');
   });
 });
 

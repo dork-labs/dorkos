@@ -481,8 +481,12 @@ export interface OperatingSkill {
  *   means try later, and what only the person can do. The new skill seeds without
  *   a bump; the bump is for the sibling lists in `operating-dorkos` and
  *   `answering-dorkos-questions`.
+ * - 71: `working-with-spin-off-chats` and `working-on-a-heartbeat` teach the project
+ *   lead (DOR-4469): long work goes to one lead chat that messages the one agent who
+ *   must act, and a room hears only started, blocked on a person, and shipped. An
+ *   agent seeded at 70 would post every report and status relay into the room.
  */
-export const OPERATING_SKILLS_VERSION = 70;
+export const OPERATING_SKILLS_VERSION = 71;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

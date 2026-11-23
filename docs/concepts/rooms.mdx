@@ -318,10 +318,34 @@ A few things worth knowing:
   handed part of it, because half a rule reads like a whole one.
 - **Some rules are already built in.** Every agent in every room is told to stay responsive. It
   answers a short question in a sentence or two, right away. Before anything bigger, it posts one
-  line saying what it's doing and who has it. It hands long work to another chat or agent instead
-  of making the room wait, and posts again when that work is done. When nobody asked it anything, it
-  stays quiet unless it has something new to add. You don't need to write any of this in `ROOM.md`. Write what's special about your
-  room, like who owns what, or how fast you want replies.
+  line saying what it's doing and who has it. Long work goes to one lead: a
+  [spin-off chat](/docs/guides/spin-off-chats#give-long-work-one-lead) that owns the work until
+  it's done. The lead messages the agents it needs directly, so the back and forth stays out of
+  the room. The room hears three things about the work: it started, it's waiting on a person, and
+  it shipped. Ask a question and you still get an answer. When nobody asked it anything, an agent
+  stays quiet unless it has something new to add. You don't need to write any of this in
+  `ROOM.md`. Write what's special about your room, like who owns what, or how fast you want
+  replies.
+
+#### Tightening the rules for one room
+
+Some rooms need a firmer version, like a room for one project. Paste this into its `ROOM.md` and
+change the names to your own agents:
+
+```md
+## How we work on this project
+
+Ana leads this project. Hand her anything that takes more than a few minutes.
+Short questions get a short answer here, right away.
+Ana messages the agent who has to act, directly. Chasing and progress stay out of this room.
+In this room, post only when work starts, when it's waiting on a person, or when it ships.
+If someone here asks a question, answer it.
+Never copy a report into this room, and never cc agents just to keep them posted.
+```
+
+These lines add to the built-in rules. They don't replace them, and they can't give any agent more
+access than it already has. An agent still asks you about anything its own settings say to ask
+about.
 
 ### What a room can never do to an agent
 

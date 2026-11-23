@@ -12,10 +12,12 @@
  * hand-off does: the seat's own session, under every bound a room turn has (one session per room,
  * one working tree per agent, the room's turn budget), its room context marked `aside` so it
  * names no message to answer. The report is fenced as data, and the seat decides what happens
- * next: carry on, read more with `chat_read`, or tell the room with `post_to_room` only when the
- * room needs to know. Posting the report into the room on the seat's behalf was the other
- * option; it was not taken, because most reports are working notes the room has no use for, and
- * agents in shared rooms are meant to be mostly quiet (`meta/agent-etiquette.md`).
+ * next: take a short step, read more with `chat_read`, message the agent who must act with
+ * `chat_send`, or post with `post_to_room` only for one of the three project updates a room
+ * hears (started, blocked on a person, shipped) or to answer a question (DOR-4469). Posting the
+ * report into the room on the seat's behalf was the other option; it was not taken, because most
+ * reports are working notes the room has no use for, and agents in shared rooms are meant to be
+ * mostly quiet (`meta/agent-etiquette.md` E33).
  *
  * **Idle, busy, or mid-turn.** An idle seat takes the report at once. A busy seat, including one
  * whose own room turn started the spin-off, waits for that turn to end and then takes it, as a
@@ -231,9 +233,11 @@ export function seatReportPrompt(report: SeatReport): string {
   const from = title ? `"${title}" (chat ${report.fromSessionId})` : `chat ${report.fromSessionId}`;
   return [
     `A spin-off chat you started from this room, ${from}, reported back. Its report is below.`,
-    'Act on it: carry on with the work, read more with chat_read, or message it with chat_send. ' +
-      'Nobody in the room has seen this report. Post in the room with post_to_room only if ' +
-      'the room needs to know; otherwise say nothing there.',
+    'Act on it: take the next short step, read more with chat_read, or message the spin-off or ' +
+      'the agent who must act with chat_send. Long work stays with its lead chat, not this one. ' +
+      'Nobody in the room has seen this report. A report is not room news by itself. Post ' +
+      'there with post_to_room only when project work starts, is blocked on a person, or ships, ' +
+      'or to answer someone who asked; otherwise say nothing there.',
     '',
     fenceUntrustedBlock(report.text, {
       label: 'SPIN-OFF REPORT',

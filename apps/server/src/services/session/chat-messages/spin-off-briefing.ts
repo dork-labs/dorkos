@@ -12,7 +12,9 @@
  * A parent that cannot take chat messages (a room's seat, a bridged chat, a
  * scheduled run) is never named as a `chat_send` target: every such send is
  * refused, and the spin-off would conclude the parent is unreachable. A room's
- * seat still takes reports, as turns of its own (DOR-3488).
+ * seat still takes reports, as turns of its own (DOR-3488). A spin-off with no
+ * report route is pointed at whoever its brief names, and a shared room hears
+ * only the three project updates (DOR-4469), never its running status.
  *
  * The wait it suggests is one plain command per call, never a shell loop:
  * Claude Code can't check a loop before it runs, so it asks a person
@@ -52,9 +54,10 @@ export function spinOffBriefing(opts: {
     );
   } else {
     lines.push(
-      'It does not hear from you on its own, and it cannot take chat messages. If it works in ' +
-        'a room you are in, report there with post_to_room; otherwise say it in your own last ' +
-        'message.'
+      'It does not hear from you on its own, and it cannot take chat messages. If your brief ' +
+        'names a chat or an agent to tell, send what matters there. In a room you share with ' +
+        'it, post with post_to_room only when the work starts, is blocked on a person, or ' +
+        'ships; otherwise say it in your own last message.'
     );
   }
   return lines.join(' ');

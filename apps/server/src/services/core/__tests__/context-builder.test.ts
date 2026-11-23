@@ -767,6 +767,34 @@ describe('buildChatToolsBlock', () => {
     expect(result).toContain(`${IN_SESSION_TOOL_PREFIX}chat_read if you need to know`);
   });
 
+  // DOR-4469: long work goes to one lead that coordinates by chat_send, and a room hears
+  // three kinds of project update. A seat may send (the limit is on which chats a send may
+  // target), and chat_send never posts into a room.
+  it('teaches one project lead, direct coordination and no status relays (DOR-4469)', () => {
+    const result = _buildChatToolsBlock(undefined, true).replace(/\s+/g, ' ');
+    expect(result).toContain('LONG PROJECT WORK GETS ONE LEAD');
+    expect(result).toContain(
+      `It messages the one agent who must act with ${IN_SESSION_TOOL_PREFIX}chat_send`
+    );
+    expect(result).toContain('never start a second one to ask for status');
+    expect(result).toContain('No status relays.');
+    expect(result).toContain(
+      'A room hears three things about project work: it started, it is blocked on a person, it shipped.'
+    );
+    expect(result).toContain('Never use cc as a status channel.');
+    expect(result).toContain('Anyone who asks still gets a short answer.');
+    expect(result).toContain('post only for one of those three, or to answer a question');
+  });
+
+  it('says a room chat can send, and that a send never posts into a room (DOR-4469)', () => {
+    const result = _buildChatToolsBlock(undefined, true).replace(/\s+/g, ' ');
+    expect(result).toContain('Your chat in a room can send too, to an agent id or a chat id.');
+    expect(result).toContain(`${IN_SESSION_TOOL_PREFIX}chat_send never posts into a room`);
+    expect(result).toContain('it arrives as a private turn');
+    expect(result).toContain(`Only ${IN_SESSION_TOOL_PREFIX}post_to_room speaks there.`);
+    expect(result).toContain('A scheduled run, a beat or a bridged chat gets no report');
+  });
+
   it('keeps the block with Relay off, without the relay_notify_user half', () => {
     vi.mocked(isRelayEnabled).mockReturnValue(false);
     const result = _buildChatToolsBlock(undefined, true);
