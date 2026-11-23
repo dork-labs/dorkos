@@ -5,6 +5,7 @@ status: accepted
 created: 2026-11-23
 spec: null
 superseded-by: null
+amends: [0204]
 ---
 
 # 261123-170832. Every API operation is stable, preview or internal; breaking changes land at once with every caller fixed, with no deprecation period
@@ -12,6 +13,8 @@ superseded-by: null
 ## Status
 
 Accepted (Dorian, 2026-11-23). Supersedes the window recorded on 2026-11-21 in [`research/20261121_rest-api-review.md`](../research/20261121_rest-api-review.md) §8 ("the later of 20 minors and 90 days"), which was never written as an ADR. Feeds DOR-4983.
+
+**Amends** [0204](0204-consolidate-sse-connections-into-unified-stream.md), which stays Accepted: its consequence "old endpoints must be deprecated carefully if external consumers use them directly" is retired for every HTTP endpoint and stream. Its consolidation onto one stream stands. The precedent is ADR 0193, which migrated in one change "with no deprecation period" because every consumer lived in the repo.
 
 ## Context
 
@@ -23,7 +26,7 @@ We will mark every operation `x-stability: stable | preview | internal`, declare
 
 **There is no deprecation period.** An endpoint that changes or goes away is changed or removed in one change that fixes every caller in the repo (web client, CLI, desktop, extensions and `packages/extension-api`, MCP tools, site, e2e, docs and contributor guides). That change carries a changelog fragment that says plainly it is a breaking change and names the replacement. There are no `deprecated` flags on operations, no `Deprecation` or `Sunset` headers and no aliases.
 
-**The one exception** is the space server's frozen promises (ADR 261018-124422 rule 2), which stay byte-identical.
+**The one exception** is the space server's frozen promises, which stay byte-identical. **The space server keeps its shape.** Its frozen promises (ADR 261018-124422 rule 2, spec `server-merge` D6) have no end date. They change only through D6's deliberate path: a PR of its own that updates the pinning tests and says so, agreed with Cloud first. Convergence with this ADR, if any, goes that way and no other.
 
 The JSDoc `@deprecated since 0.x, remove in 0.y` rule still governs TypeScript exports; it does not apply to HTTP operations.
 

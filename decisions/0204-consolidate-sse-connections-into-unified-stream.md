@@ -16,6 +16,8 @@ Accepted
 
 (2026-08-06 audit) Amended by 260805-041016: the cockpit's transport for /api/events is WebSocket now; the single-fan-out consolidation stands.
 
+**Amended by** [261123-170832](261123-170832-api-stability-without-deprecation-periods.md) and [261123-170833](261123-170833-one-event-contract.md) (2026-11-23): the Negative consequence "old endpoints must be deprecated carefully if external consumers use them directly" is retired. Streams that duplicate `/api/events` are removed in one change that fixes every caller, with a changelog line naming the replacement. The consolidation stands.
+
 ## Context
 
 The DorkOS client opens 4-5 persistent SSE connections per tab (tunnel, extensions, relay, session sync, plus the active message stream). Browsers limit HTTP/1.1 to 6 connections per origin. When all slots are consumed, HTTP requests (tool approvals, API polling) are queued by the browser and never reach the server, causing 30-second timeouts and a frozen UI. The `EventSource` API is inherently HTTP/1.1-only — even with HTTP/2 on the server, EventSource connections don't multiplex.

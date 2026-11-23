@@ -7966,7 +7966,7 @@
       "extractedFrom": null,
       "specSlug": null,
       "supersedes": null,
-      "amends": null,
+      "amends": ["0204"],
       "affects": [
         "apps/server/src/routes/**",
         "apps/server/src/services/core/capabilities/**",
@@ -7982,7 +7982,7 @@
       "extractedFrom": null,
       "specSlug": null,
       "supersedes": null,
-      "amends": null,
+      "amends": ["0204"],
       "affects": [
         "packages/shared/src/session-stream.ts",
         "apps/server/src/routes/events.ts",

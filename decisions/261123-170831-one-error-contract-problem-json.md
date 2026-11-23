@@ -19,15 +19,15 @@ The local API answers failures in 18 body shapes, built at 816 inline `c.json({ 
 
 ## Decision
 
-We will answer every failure from the app's API with RFC 9457 `application/problem+json`. The fields are `packages/cloud-api`'s `ProblemSchema` (`code`, `status`, `title`, `detail`, `instance`, `retryAfterMs`) plus RFC 9457's `type`, so one parser reads both sides. Codes are one `lower_snake` list in `packages/shared`, aligned with the Cloud list; local-only codes (such as `session_locked`, `runtime_not_available`, `unknown_capability`) join it. Validation failures carry an `issues` extension in one shape.
+We will answer every failure from the app's API with RFC 9457 `application/problem+json`. The fields are the fields of `packages/cloud-api`'s `ProblemSchema`, plus RFC 9457's `type`, so one parser reads both sides. Codes are one `lower_snake` list in `packages/shared`, aligned with the Cloud list; local-only codes (such as `session_locked`, `runtime_not_available`, `unknown_capability`) join it. Validation failures carry an `issues` extension in one shape.
 
-Problems are sent only through the shared HTTP kit, `packages/http-kit` (DOR-4954). A lint keeps hand-built error bodies out of route files.
+Problems are sent only through the shared HTTP kit, `packages/http-kit`, which lands with DOR-4954; no route switches before it exists. A lint keeps hand-built error bodies out of route files.
 
 The capability gate's approval-required answer stays a **202 body**, not an error. Its refusal becomes a problem with code `forbidden`.
 
 **No compatibility window.** A route switches to the new shape in the same change that fixes every caller in the repo: the web client, the CLI, the desktop app, extensions and `packages/extension-api`, MCP tools and the e2e suite. The client never reads both shapes.
 
-**The space server** converges after the December 8 freeze. Its frozen promises (ADR 261018-124422 rule 2) are not changed by this ADR.
+**The space server keeps its shape.** Its frozen promises (ADR 261018-124422 rule 2, spec `server-merge` D6) have no end date. They change only through D6's deliberate path: a PR of its own that updates the pinning tests and says so, agreed with Cloud first. Convergence with this ADR, if any, goes that way and no other.
 
 ## Consequences
 
@@ -41,5 +41,5 @@ The capability gate's approval-required answer stays a **202 body**, not an erro
 
 - Each switch is a larger change: a route group and all its callers land together, so changes touch more files and need wider review.
 - A script outside the repo that parsed the old `{ error }` body breaks on the release that switches its route; the changelog fragment is its only warning.
-- Until the space server converges after launch, the app still parses two dialects: problems from its own API and `{ code, message }` from spaces.
+- The app keeps parsing two dialects, problems from its own API and `{ code, message }` from spaces, until a deliberate D6 change agreed with Cloud moves the space server.
 - `packages/http-kit` does not exist yet, so this work waits on DOR-4954.

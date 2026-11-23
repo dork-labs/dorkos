@@ -30,7 +30,9 @@ Both the REST paths and `POST /api/capabilities/{id}/invoke` are documented proj
 
 The hand registry accepts no new paths and shrinks to zero, domain by domain; each domain's hand OpenAPI file is deleted as it moves. A few hand routes stay only for shapes a capability cannot express (multipart uploads, raw file bodies, streams), and they are listed in one allowlist with a reason each. The API lint gate (DOR-4996) enforces served equals documented in both directions as a ratchet that may only fall.
 
-**Fit with the one space model (ADR 261122-173853).** A capability names an action a member takes in a space, not a store. D8's per-space member checks become the capability's visibility rule, run once by the registry before `invoke`. So one definition serves the private space on a Mac, a hub and a team space; which store sits behind it is the domain's concern, and it can move from the Mac's store to the space store as each domain becomes a tenant without changing its path or its document entry. The space server's routes stay frozen until the December 8 launch (ADR 261018-124422 rule 2) and are outside the mount until then; they converge after the freeze.
+**Fit with the one space model (ADR 261122-173853).** A capability names an action a member takes in a space, not a store. D8's per-space member checks become the capability's visibility rule, run once by the registry before `invoke`. So one definition serves the private space on a Mac, a hub and a team space; which store sits behind it is the domain's concern, and it can move from the Mac's store to the space store as each domain becomes a tenant without changing its path or its document entry. The space server's routes are outside the mount.
+
+**The space server keeps its shape.** Its frozen promises (ADR 261018-124422 rule 2, spec `server-merge` D6) have no end date. They change only through D6's deliberate path: a PR of its own that updates the pinning tests and says so, agreed with Cloud first. Convergence with this ADR, if any, goes that way and no other.
 
 ## Consequences
 
@@ -46,4 +48,4 @@ The hand registry accepts no new paths and shrinks to zero, domain by domain; ea
 - The `http` surface becomes a real route description, larger than today's two fields, and every capability author must fill it.
 - Migrating about 390 hand operations is long, domain-by-domain work; until it finishes, two authoring paths coexist and the ratchet only stops growth.
 - Request shapes the mount cannot express keep hand routes, so the allowlist needs review to stay short.
-- The space server keeps its own shape until after launch.
+- The space server keeps its own shape, so the API has a second authoring path there for as long as its frozen promises stand.
