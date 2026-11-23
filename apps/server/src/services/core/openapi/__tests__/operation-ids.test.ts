@@ -22,7 +22,7 @@ describe('deriveOperationId', () => {
     // ...unless it is a named thing, or the method is GET (a GET reads what it names).
     ['post', '/api/hub/computers/link-code', false, 'hub.createComputersLinkCode'],
     ['get', '/api/runs/run-history', false, 'runs.getRunHistory'],
-    // GET: a collection path is `list`, anything else `get`.
+    // GET: a collection path is `list`, anything else `get` (paging: see below).
     ['get', '/api/sessions', true, 'sessions.list'],
     ['get', '/api/sessions/{id}', true, 'sessions.get'],
     ['get', '/api/sessions/{id}/messages', false, 'sessions.getMessages'],
@@ -105,6 +105,21 @@ describe('assignOperationIds', () => {
     assignOperationIds(doc);
     expect(doc.paths['/api/a']?.get?.operationId).toBe('a.get');
     expect(doc.paths['/api/b']?.get?.operationId).toBe('b.list');
+  });
+
+  it('names a GET that pages (a limit or cursor query parameter) list', () => {
+    const query = (name: string) => ({ parameters: [{ in: 'query', name }] });
+    const doc = document({
+      '/api/rooms/{id}/entries': { get: query('cursor') },
+      '/api/usage': { get: query('limit') },
+      '/api/one': { get: query('fields') },
+      '/api/two/{x}': { get: { parameters: [{ in: 'path', name: 'cursor' }] } },
+    });
+    assignOperationIds(doc);
+    expect(doc.paths['/api/rooms/{id}/entries']?.get?.operationId).toBe('rooms.listEntries');
+    expect(doc.paths['/api/usage']?.get?.operationId).toBe('usage.list');
+    expect(doc.paths['/api/one']?.get?.operationId).toBe('one.get');
+    expect(doc.paths['/api/two/{x}']?.get?.operationId).toBe('two.get');
   });
 
   it('keeps an id set by hand', () => {

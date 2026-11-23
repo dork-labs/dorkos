@@ -14,8 +14,8 @@
  *    documented doors onto one capability definition. Capability ids keep
  *    their own style (snake_case words, and sometimes another group than the
  *    path's: `audit.running_chats` on `/api/sessions/running`).
- * 2. **Derived** from the method and the document's paths, for everything
- *    else, by {@link deriveOperationId}: `${group}.${verb}${Resource}`. No
+ * 2. **Derived** from the method, the document's paths and the operation's
+ *    query parameters, for everything else, by {@link deriveOperationId}: `${group}.${verb}${Resource}`. No
  *    schema is ever read, so adding a field to a response never renames an
  *    operation.
  *
@@ -40,8 +40,11 @@
  *      Resource. A `GET` reads, so its last segment always names what it reads;
  *   3. `GET` → `list` when the path is a collection: it does not end in a
  *      `{param}`, and the document also has the same path with one `{param}`
- *      segment added (`/api/sessions` beside `/api/sessions/{id}`); `get`
- *      otherwise;
+ *      segment added (`/api/sessions` beside `/api/sessions/{id}`); or when
+ *      the operation pages, declaring a `limit` or `cursor` query parameter
+ *      (`GET /api/rooms/{id}/entries`). Both read the request's
+ *      shape, never a response. Every list pages by cursor, so every list
+ *      ends up `list`; `get` otherwise;
  *   4. `POST` → `create`; `PUT` and `PATCH` → `update`; `DELETE` → `delete`;
  *      any other method → its name.
  *
@@ -50,6 +53,7 @@
  * | `GET`    | `/api/sessions` (beside `/api/sessions/{id}`)           | `sessions.list`                                   |
  * | `GET`    | `/api/sessions/{id}`                                    | `sessions.get`                                    |
  * | `GET`    | `/api/health/deep` (no `/api/health/deep/{id}`)         | `health.getDeep`                                  |
+ * | `GET`    | `/api/rooms/{id}/entries` (takes `cursor`)              | `rooms.listEntries`                               |
  * | `GET`    | `/api/sessions/{id}/settings`                           | `sessions.getSettings`                            |
  * | `POST`   | `/api/sessions`                                         | `sessions.create`                                 |
  * | `POST`   | `/api/sessions/{id}/messages`                           | `sessions.createMessages`                         |
@@ -114,6 +118,7 @@ export const NAMED_SEGMENTS: ReadonlySet<string> = new Set([
 /** An operation, as far as this module reads one. */
 interface OperationShape {
   operationId?: string;
+  parameters?: Array<{ in?: string; name?: string }>;
 }
 
 /** The slice of a generated document this module reads and writes. */
@@ -129,6 +134,8 @@ export interface DeriveOptions {
    * (see {@link isCollectionPath}).
    */
   isCollection?: boolean;
+  /** Whether the operation declares a `limit` or `cursor` query parameter. */
+  isPaged?: boolean;
 }
 
 /** Whether a path segment is a `{param}` placeholder. */
@@ -166,8 +173,8 @@ function pascal(segments: readonly string[]): string {
 }
 
 /** The verb for a method with no command word, by the rule in the module doc. */
-function methodVerb(method: string, isCollection: boolean): string {
-  if (method === 'get') return isCollection ? 'list' : 'get';
+function methodVerb(method: string, isList: boolean): string {
+  if (method === 'get') return isList ? 'list' : 'get';
   if (method === 'post') return 'create';
   if (method === 'put' || method === 'patch') return 'update';
   return method;
@@ -196,7 +203,8 @@ export function deriveOperationId(
     return `${camel(group)}.${camel(last)}${pascal(statics.slice(0, -1))}`;
   }
   const endsInParam = last !== undefined && isParam(last);
-  const verb = methodVerb(lowerMethod, !endsInParam && options.isCollection === true);
+  const isList = (!endsInParam && options.isCollection === true) || options.isPaged === true;
+  const verb = methodVerb(lowerMethod, isList);
   return `${camel(group)}.${verb}${pascal(statics)}`;
 }
 
@@ -215,6 +223,14 @@ export function isCollectionPath(path: string, paths: ReadonlySet<string>): bool
     if (!rest.includes('/') && isParam(rest)) return true;
   }
   return false;
+}
+
+/** The query parameters that mark an operation as paging through a list. */
+const PAGING_PARAMS = new Set(['limit', 'cursor']);
+
+/** Whether an operation declares a `limit` or `cursor` query parameter. */
+function isPaged(op: OperationShape): boolean {
+  return (op.parameters ?? []).some((p) => p.in === 'query' && PAGING_PARAMS.has(p.name ?? ''));
 }
 
 /** The key two ids collide on: lowercased, underscores removed. */
@@ -257,7 +273,10 @@ export function assignOperationIds(document: OperationIdDocument): void {
   for (const { key, op } of operations) if (op.operationId) claim(op.operationId, key);
   for (const { key, method, path, op } of operations) {
     if (op.operationId) continue;
-    const id = deriveOperationId(method, path, { isCollection: isCollectionPath(path, paths) });
+    const id = deriveOperationId(method, path, {
+      isCollection: isCollectionPath(path, paths),
+      isPaged: isPaged(op),
+    });
     claim(id, key);
     op.operationId = id;
   }

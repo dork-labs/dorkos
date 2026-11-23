@@ -22568,7 +22568,7 @@
             "description": "The agent is not owned by this API key user."
           }
         },
-        "operationId": "connectors.getAccessibleSubscriptions",
+        "operationId": "connectors.listAccessibleSubscriptions",
         "security": [
           {
             "apiKey": []
@@ -22709,7 +22709,7 @@
             "description": "Notifications are unavailable or the owner decision changed."
           }
         },
-        "operationId": "connectors.getConnectionsEventsDefinitions"
+        "operationId": "connectors.listConnectionsEventsDefinitions"
       }
     },
     "/api/connectors/connections/{connectionId}/events/subscriptions": {
@@ -46484,7 +46484,7 @@
             }
           }
         },
-        "operationId": "sessions.getRecent"
+        "operationId": "sessions.listRecent"
       }
     },
     "/api/sessions/daily-counts": {
@@ -52548,7 +52548,7 @@
             }
           }
         },
-        "operationId": "relay.getEndpointsInbox"
+        "operationId": "relay.listEndpointsInbox"
       }
     },
     "/api/relay/dead-letters": {
@@ -64099,7 +64099,7 @@
             }
           }
         },
-        "operationId": "connectors.getCatalog"
+        "operationId": "connectors.listCatalog"
       }
     },
     "/api/connectors/catalog/logos/{serviceSlug}": {
@@ -94666,7 +94666,7 @@
             }
           }
         },
-        "operationId": "connectors.getUsageAgent",
+        "operationId": "connectors.listUsageAgent",
         "security": [
           {
             "apiKey": []
@@ -94831,7 +94831,7 @@
             }
           }
         },
-        "operationId": "connectors.getUsageOperator"
+        "operationId": "connectors.listUsageOperator"
       }
     },
     "/api/relay/bindings/{id}/move": {
@@ -96363,7 +96363,7 @@
             }
           }
         },
-        "operationId": "permissions.getHistory"
+        "operationId": "permissions.listHistory"
       }
     },
     "/api/agents/create": {
@@ -97618,7 +97618,7 @@
             }
           }
         },
-        "operationId": "rooms.getThreads"
+        "operationId": "rooms.listThreads"
       }
     },
     "/api/rooms/{id}": {
@@ -97868,7 +97868,7 @@
             }
           }
         },
-        "operationId": "rooms.getEntries"
+        "operationId": "rooms.listEntries"
       },
       "post": {
         "tags": [
@@ -103458,7 +103458,7 @@
             }
           }
         },
-        "operationId": "search.get"
+        "operationId": "search.list"
       }
     },
     "/api/profile": {
@@ -105483,7 +105483,7 @@
             }
           }
         },
-        "operationId": "notifications.get"
+        "operationId": "notifications.list"
       }
     },
     "/api/notifications/{id}/read": {
