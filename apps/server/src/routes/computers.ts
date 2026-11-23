@@ -13,7 +13,7 @@ import {
 import { type ComputerService, ComputerRefusal } from '../services/computers/computer-service.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 
 /** Narrow service boundary for the authenticated computer routes. */

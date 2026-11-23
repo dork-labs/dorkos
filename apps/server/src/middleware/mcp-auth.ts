@@ -11,7 +11,7 @@ import { requestSessionRoute } from '../services/core/auth/sessions/session-rout
 import { getMcpLocalToken, getMcpLocalTokenPath } from '../services/core/auth/mcp-local-token.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
 import { READ_ONLY_MCP_TOOL_NAMES } from '../services/core/external-mcp/tool-security.js';
-import { readJsonBody, type RequestBodyEnv } from '../http/request-body.js';
+import { readJsonBody, type RequestBodyEnv } from '@dorkos/http-kit';
 
 /**
  * The surface a {@link honoMcpAuth} middleware guards. Both surfaces share the

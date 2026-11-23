@@ -31,7 +31,7 @@ import {
 } from '../services/tasks/agent-mode/agent-mode-undo.js';
 import { storedNotificationPayload } from '../services/notifications/notification-service.js';
 import type { ScheduleArmedPayload } from '../services/notifications/schedule-armed-copy.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { operatorOnlyTaskRefusal } from './task-route-answers.js';
 import { wifiScheduleRefusal } from './task-wifi-guard.js';

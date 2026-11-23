@@ -69,7 +69,7 @@ import { isCloudLinked } from '../services/core/cloud/v1-client.js';
 import { envelopeRefusalUnlessOwner, runAccountWrite } from './cloud-owner-bar.js';
 import { officialOnlyOrigin } from '../middleware/spaces-enabled.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { startHostedSpaceMove } from './cloud-community-move-http.js';

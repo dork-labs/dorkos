@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { BoundaryError, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
 

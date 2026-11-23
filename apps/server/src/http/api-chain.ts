@@ -72,7 +72,8 @@ import {
 } from '../services/core/auth/oauth-callback-arrival.js';
 import { currentServerRole } from '../lib/server-role.js';
 import type { ClientFilesHandler } from './client-files.js';
-import { parseRequestBody, underMount, type BodyRule } from './request-body.js';
+import { underMount, type BodyRule } from '@dorkos/http-kit';
+import { apiRequestBody } from './request-body.js';
 import { answerUnclaimed } from './unclaimed.js';
 import { wifiLevelMiddleware } from '../services/core/auth/sessions/wifi-level.js';
 import { personSessionRefusal } from './person-session-refusal.js';
@@ -214,7 +215,7 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
 
   options.beforeBodyParsing?.(app);
 
-  app.use(parseRequestBody<ApiEnv>(options.bodyRules));
+  app.use(apiRequestBody<ApiEnv>(options.bodyRules));
   // Before the session gate: bad remote MCP keys never reach the route limiter.
   app.use(buildMcpAuthThrottle());
   app.use(async (c, next) => {

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { CreateTerminalRequestSchema } from '@dorkos/shared/terminal-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { registerWithSignIn } from '../http/raw-node-stream.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { TerminalLimitError, type TerminalManager } from '../services/terminal/index.js';

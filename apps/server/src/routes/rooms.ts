@@ -52,7 +52,7 @@ import {
 import { listRoomsAcrossCommunities } from '../services/communities/index.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { roomPostBound } from './room-post-bound.js';

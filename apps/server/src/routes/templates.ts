@@ -20,7 +20,7 @@ import {
 import type { TemplateCatalog, TemplateEntry } from '@dorkos/shared/template-catalog';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 
 /** Filename for user-defined templates within the dorkHome directory. */
 const USER_CATALOG_FILENAME = 'agent-templates.json';

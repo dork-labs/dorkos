@@ -56,6 +56,7 @@ dorkos/
 │   ├── relay/            # @dorkos/relay - Inter-agent message bus
 │   ├── mesh/             # @dorkos/mesh - Agent discovery & registry
 │   ├── harness/          # @dorkos/harness - Projects .agents/ + plugins to every agent harness
+│   ├── http-kit/         # @dorkos/http-kit - Request facts, bounded body reader, problem+json errors for every server chain
 │   ├── memory/           # @dorkos/memory - MEMORY.md store behind the MemoryProvider port
 │   ├── decisions/        # @dorkos/decisions - DecisionModel bridges (rules, OpenAI-compatible, Jev) + the ladder
 │   ├── keep-awake/       # @dorkos/keep-awake - Holds the computer awake while work runs (caffeinate, systemd-inhibit, Windows)

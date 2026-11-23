@@ -24,7 +24,7 @@ import {
   ConnectorGrantExclusionError,
   type ConnectorGrantExclusionService,
 } from '../services/connectors/access/grant-exclusions.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { validationFailureBody } from '../lib/route-utils.js';
 import { verifyRequestAuth, type RequestUser } from '../services/core/auth/session-gate.js';

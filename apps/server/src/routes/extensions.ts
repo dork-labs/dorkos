@@ -43,7 +43,7 @@ import { noteStepUpRisksBeforeServing } from '../services/extensions/step-up/ste
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { registerExtensionApprovalRoutes } from './extensions-approval.js';
 import { registerExtensionStepUpRoutes } from './extensions-step-up.js';

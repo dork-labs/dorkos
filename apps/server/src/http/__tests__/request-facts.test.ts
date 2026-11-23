@@ -9,7 +9,7 @@
  * itself before it left the server.
  */
 import { describe, expect, it } from 'vitest';
-import { forwardedClientAddress } from '../request-facts.js';
+import { forwardedClientAddress } from '@dorkos/http-kit';
 import { requestFactsFor, type DescribedRequest } from './described-request.js';
 
 /** A header shape, and the address Express's `req.ip` reported for it from peer `192.0.2.10`. */

@@ -23,7 +23,7 @@ import { normalizeTrustedSource } from '../services/marketplace/lib/trusted-sour
 import { logger } from '../lib/logger.js';
 import { configManager } from '../services/core/config-manager.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import { refuseFrontDoorChange } from '../lib/caller-authority.js';

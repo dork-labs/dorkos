@@ -15,7 +15,7 @@ import {
   CanvasChannelReplayQuerySchema,
 } from '@dorkos/shared/canvas-channel-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, underMount, type BodyRule } from '../http/request-body.js';
+import { readJsonBody, underMount, type BodyRule } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import type { DocChannelActor } from '../services/canvas/doc-channel/authorization.js';

@@ -54,7 +54,7 @@ import {
   refuseAgentSelfFilesFromWifi,
 } from '../middleware/agent-execution-gate.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { enrichTopology, type TopologyEnrichmentDeps } from './mesh-topology.js';

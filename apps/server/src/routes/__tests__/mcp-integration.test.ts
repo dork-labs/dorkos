@@ -48,7 +48,7 @@ import type { Server } from 'node:http';
 import { honoListener, swappableServer } from '@dorkos/test-utils/listening-server';
 import { createExternalMcpServer } from '../../services/core/mcp-server.js';
 import type { ApiEnv } from '../../http/api-chain.js';
-import { parseRequestBody } from '../../http/request-body.js';
+import { apiRequestBody } from '../../http/request-body.js';
 import { createMcpEndpoint, createMcpRoutes } from '../mcp.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
 
@@ -87,7 +87,7 @@ function createMinimalDeps(): McpToolDeps {
  */
 function serve(routes: Hono<ApiEnv>): Server {
   const app = new Hono<ApiEnv>();
-  app.use(parseRequestBody());
+  app.use(apiRequestBody());
   app.route('/mcp', routes);
   return target.mount(honoListener(app));
 }

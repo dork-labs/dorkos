@@ -19,7 +19,7 @@ import {
 } from '@dorkos/shared/connector-exclusion-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { validationFailureBody } from '../lib/route-utils.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import {

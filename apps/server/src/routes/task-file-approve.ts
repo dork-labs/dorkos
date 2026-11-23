@@ -24,7 +24,7 @@ import {
   approveCappedFile,
   approveFileAsItIs,
 } from '../services/tasks/agent-mode/file-cap/file-cap-person.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { operatorOnlyTaskRefusal } from './task-route-answers.js';
 import { wifiScheduleRefusal } from './task-wifi-guard.js';

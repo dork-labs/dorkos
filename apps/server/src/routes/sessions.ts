@@ -40,7 +40,7 @@ import * as historyWindow from '../services/session/history/history-window.js';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { forkPlace, httpLaunchOf } from './session-launcher.js';
 import { httpTurnOrigin } from '../services/session/origin/turn-origin.js';

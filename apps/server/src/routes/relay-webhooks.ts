@@ -25,7 +25,7 @@ import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { WebhookAdapter } from '@dorkos/relay';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, type BodyRule } from '../http/request-body.js';
+import { readJsonBody, type BodyRule } from '@dorkos/http-kit';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 
 /** The one answer to any request whose signature was not verified (DOR-3650). */

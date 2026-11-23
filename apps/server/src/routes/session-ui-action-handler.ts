@@ -30,7 +30,7 @@ import { UiActionRequestSchema } from '@dorkos/shared/schemas';
 import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { isPersonTurn } from '../lib/caller-authority.js';
 import type { RequestFacts } from '../http/request-facts.js';

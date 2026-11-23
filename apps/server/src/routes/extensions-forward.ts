@@ -74,7 +74,7 @@ import {
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { personTurnBound } from './room-post-bound.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { logger } from '../lib/logger.js';
 import { resolveCaller } from './room-caller.js';

@@ -11,7 +11,7 @@ import { honoListener, swappableServer } from '@dorkos/test-utils/listening-serv
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { createA2aRoutes } from '../routes/a2a.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { parseRequestBody } from '../http/request-body.js';
+import { apiRequestBody } from '../http/request-body.js';
 
 // The credential check has its own cases (`a2a-card-honesty.test.ts`,
 // `middleware/__tests__/mcp-auth.test.ts`); these drive the gateway behind it.
@@ -134,7 +134,7 @@ function buildTestApp(agents: AgentManifest[] = [], options: BuildOptions = {}) 
   const db = makeMockDb();
 
   const app = new Hono<ApiEnv>();
-  app.use(parseRequestBody());
+  app.use(apiRequestBody());
   // Mounted as the server mounts them: the spec path (AGENT_CARD_PATH) plus
   // the legacy alias, and everything under /a2a.
   app.route(
