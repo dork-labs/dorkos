@@ -1,17 +1,20 @@
 /**
  * Who may send a room seat a private message, checked as admission commits (DOR-4547).
  *
- * Two rules, both read from server-owned rows and never from the message:
+ * Both rules cover only writes into a seat by its chat id, the route this inbox owns. A send to
+ * an agent's id goes to a direct chat with that agent instead, which neither rule touches.
+ * Both read server-owned rows and in-memory queue state, never the message.
  *
- * - **Membership.** Only a live member of the seat's room may start a private message to it.
- *   An answer to something the seat itself sent is exempt: the seat started that conversation,
- *   and the agent it asked may sit outside the room (DOR-4472 D1).
- * - **One answer per exchange.** A private turn a seat runs because of notes from seat X may send
- *   X one thing only: the answer to an original note of X's, never an answer to an answer and
- *   never a fresh note. So two seats cannot keep each other busy: X asks, the seat answers, and
- *   X's turn about that answer cannot write back. The rule is per sending seat and per target
- *   seat, and holds only while that turn runs, so either seat may write again from a later turn.
- *   A longer cycle through a third seat stays bounded by each room's automatic-turn budget.
+ * - **Membership.** Only a live member of the seat's room may start a private message to it,
+ *   checked at admission and again before the note's turn launches. An answer to something the
+ *   seat itself sent is exempt: the seat started that conversation, and the agent it asked may
+ *   sit outside the room (DOR-4472 D1).
+ * - **One answer per exchange, seat to seat.** A private turn a seat runs because of notes from
+ *   seat X may send X's seat one thing only: the answer to an original note of X's, never an
+ *   answer to an answer and never a fresh note. So when X asks and the seat answers, X's turn
+ *   about that answer cannot write back to the seat by chat id. The rule is per sending seat and
+ *   per target seat, and holds only while that turn runs, so either seat may write again from a
+ *   later turn. A cycle through a third seat stays bounded by each room's automatic-turn budget.
  *
  * @module server/services/rooms/handoff/seat-message-guards
  */

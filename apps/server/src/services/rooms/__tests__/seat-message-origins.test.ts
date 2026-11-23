@@ -345,7 +345,10 @@ it.each(['interactive', 'session-relay'])(
     // message there (DOR-4547); it can still answer one Bo sent it.
     await expect(
       chats.send(caller, { to: target.sessionId, message: 'Not a member.' })
-    ).rejects.toMatchObject({ code: 'NOT_ALLOWED' });
+    ).rejects.toMatchObject({
+      code: 'NOT_ALLOWED',
+      message: "Only room members can start a private note here. Send to the agent's id instead.",
+    });
     seatAsk(target.sessionId);
     const receipt = await chats.send(caller, {
       to: target.sessionId,

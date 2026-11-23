@@ -61,6 +61,7 @@ import { agentLookupFor, createRoomHarness, outcomeRunner } from './room-test-ha
 const agents = agentLookupFor({
   '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'mention-only' },
   '/agents/bo': { name: 'bo', displayName: 'Bo', responseMode: 'mention-only' },
+  '/agents/cy': { name: 'cy', displayName: 'Cy', responseMode: 'mention-only' },
 });
 const caller = { sessionId: 'sender-chat', agentPath: '/agents/ana' };
 const loose = { asks: 'never', reach: 'everything' } as const;
@@ -2038,12 +2039,21 @@ describe('batch target checks (DOR-4722)', () => {
 describe('DOR-4547: who may send a seat a private message', () => {
   const anaSeat = { sessionId: 'ana-seat', agentPath: '/agents/ana' };
   const boSeat = { sessionId: 'seat-chat', agentPath: '/agents/bo' };
+  const cySeat = { sessionId: 'cy-seat', agentPath: '/agents/cy' };
+  const seatOwners: Record<string, string> = {
+    'ana-seat': '/agents/ana',
+    'cy-seat': '/agents/cy',
+  };
   let ana: string;
   let seatChats: ChatMessageService;
 
   beforeEach(() => {
     ana = harness.authors.resolveAgent('/agents/ana', 'Ana').id;
     harness.store.bindRoomSession(roomId, ana, 'ana-seat', new Date().toISOString());
+    const cy = harness.authors.resolveAgent('/agents/cy', 'Cy').id;
+    const joinedAt = new Date().toISOString();
+    harness.store.addMember({ roomId, authorId: cy, responseMode: 'mention-only', joinedAt });
+    harness.store.bindRoomSession(roomId, cy, 'cy-seat', joinedAt);
     // Each seat chat belongs to its own agent, so either seat can write to the other.
     seatChats = new ChatMessageService({
       ...deps,
@@ -2051,7 +2061,7 @@ describe('DOR-4547: who may send a seat a private message', () => {
         bound: true,
         roomBound: true,
         launchOrigin: 'room',
-        agentPath: id === 'ana-seat' ? '/agents/ana' : '/agents/bo',
+        agentPath: seatOwners[id] ?? '/agents/bo',
         startedByExtension: null,
       }),
     });
@@ -2085,6 +2095,23 @@ describe('DOR-4547: who may send a seat a private message', () => {
       .listEntries(roomId, { limit: 100 })
       .filter((e) => e.body.text.includes('a private message'));
 
+  /** Hold Bo's seat busy through the real claim map, so messages wait in its queue. */
+  function holdBoBusy(): RoomTriggerDispatcher {
+    const blocker = harness.service.postNotice(roomId, { text: 'Seat busy marker.' });
+    const { triggers } = harness.service as unknown as { triggers: RoomTriggerDispatcher };
+    (triggers as unknown as { claimed: Map<string, unknown> }).claimed.set(agentKey(roomId, bo), {
+      roomId,
+      authorId: bo,
+      sessionId: 'seat-chat',
+      agentPath: '/agents/bo',
+      entryId: blocker.id,
+    });
+    return triggers;
+  }
+  function releaseBo(triggers: RoomTriggerDispatcher): void {
+    (triggers as unknown as { claimed: Map<string, unknown> }).claimed.clear();
+  }
+
   it('a member can start one; once she leaves the room she can only answer', async () => {
     const member = await chats.send(caller, { to: 'seat-chat', message: 'From a member' });
     await seatInbox!.idle();
@@ -2097,10 +2124,21 @@ describe('DOR-4547: who may send a seat a private message', () => {
       chats.send(caller, { to: 'seat-chat', message: 'From outside the room' })
     ).rejects.toMatchObject({
       code: 'NOT_ALLOWED',
-      message: expect.stringContaining('Only members of this room'),
+      message: "Only room members can start a private note here. Send to the agent's id instead.",
     });
     expect(turns).toHaveLength(1);
     expect(notices()).toHaveLength(1);
+
+    // Naming an ask that already has its answer starts nothing either, and says why.
+    boAsks('replied-ask');
+    receipts.update('replied-ask', { status: 'replied' });
+    await expect(
+      chats.send(caller, { to: 'seat-chat', message: 'Late answer', replyTo: 'replied-ask' })
+    ).rejects.toMatchObject({
+      code: 'NOT_ALLOWED',
+      message: 'That message already has an answer. Only room members can start a new one.',
+    });
+    expect(turns).toHaveLength(1);
 
     // An answer to what the seat itself asked still lands, member or not (D1).
     boAsks('bo-ask');
@@ -2160,7 +2198,10 @@ describe('DOR-4547: who may send a seat a private message', () => {
     });
     // ...but neither Bo's fresh note nor Ana's reply to the answer starts another turn.
     // The two turns overlap, so the refusals may arrive in either order.
-    const over = { code: 'NOT_ALLOWED', message: expect.stringContaining('exchange is over') };
+    const over = {
+      code: 'NOT_ALLOWED',
+      message: 'That answer ended this exchange. End your turn, or post in your room.',
+    };
     expect(refused).toHaveLength(2);
     expect(refused).toEqual(
       expect.arrayContaining([
@@ -2169,11 +2210,74 @@ describe('DOR-4547: who may send a seat a private message', () => {
       ])
     );
 
+    // The answer says it needs no private reply; the question it answered does not.
+    expect(turns[1]!.prompt).toContain('It needs no private reply.');
+    expect(turns[0]!.prompt).not.toContain('It needs no private reply.');
+
     // The guard lasts only for the turn: from a later turn, Ana can write to Bo again.
     quiet = true;
     const later = await seatChats.send(anaSeat, { to: 'seat-chat', message: 'One more question' });
     await seatInbox!.idle();
     expect(receipts.get(later.messageId)?.status).toBe('delivered');
     expect(turns).toHaveLength(3);
+  });
+
+  it('a reserved answer from a non-member says its message already has an answer', async () => {
+    harness.store.removeMember(roomId, ana);
+    boAsks('bo-ask');
+    vi.useFakeTimers();
+    const triggers = holdBoBusy();
+    const first = await chats.send(caller, {
+      to: 'seat-chat',
+      message: 'First answer',
+      replyTo: 'bo-ask',
+    });
+    await expect(
+      chats.send(caller, { to: 'seat-chat', message: 'Second answer', replyTo: 'bo-ask' })
+    ).rejects.toMatchObject({
+      code: 'NOT_ALLOWED',
+      message: 'That message already has an answer. Only room members can start a new one.',
+    });
+    releaseBo(triggers);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await seatInbox!.idle();
+    expect(receipts.get(first.messageId)?.status).toBe('delivered');
+  });
+
+  it('a sender who leaves the room before the seat is free loses only its own note', async () => {
+    vi.useFakeTimers();
+    const triggers = holdBoBusy();
+    const fromAna = await seatChats.send(anaSeat, { to: 'seat-chat', message: 'ANA_NOTE' });
+    const fromCy = await seatChats.send(cySeat, { to: 'seat-chat', message: 'CY_NOTE' });
+    harness.store.removeMember(roomId, ana);
+    releaseBo(triggers);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await seatInbox!.idle();
+    expect(turns).toHaveLength(1);
+    expect(turns[0]!.prompt).toContain('CY_NOTE');
+    expect(turns[0]!.prompt).not.toContain('ANA_NOTE');
+    expect(receipts.get(fromCy.messageId)?.status).toBe('delivered');
+    expect(receipts.get(fromAna.messageId)).toMatchObject({
+      status: 'failed',
+      failureReason: 'NOT_ALLOWED: The sender left the room.',
+    });
+  });
+
+  it("a seat running on one seat's note can still start a note to a third seat", async () => {
+    const { triggers } = harness.service as unknown as { triggers: RoomTriggerDispatcher };
+    let toCy: string | undefined;
+    triggers.deps.runner.run = async (request) => {
+      if (!request.sessionId) throw new Error('Seat runner requires a bound session');
+      turns.push(request);
+      if (request.sessionId === 'seat-chat') {
+        toCy = (await seatChats.send(boSeat, { to: 'cy-seat', message: 'Cy, can you look?' }))
+          .messageId;
+      }
+      return { text: null, sessionId: request.sessionId };
+    };
+    await seatChats.send(anaSeat, { to: 'seat-chat', message: 'Is the build green?' });
+    await seatInbox!.idle();
+    expect(turns.map((t) => t.sessionId)).toEqual(['seat-chat', 'cy-seat']);
+    expect(receipts.get(toCy!)).toMatchObject({ status: 'delivered', replyToId: null });
   });
 });

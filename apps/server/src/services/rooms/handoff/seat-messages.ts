@@ -18,6 +18,7 @@ import {
 } from './seat-message-target.js';
 import {
   seatCarryOf,
+  seatBatchEntry,
   seatMessageBatch,
   seatMessageNotice,
   SEAT_MESSAGE_BATCH_MAX,
@@ -42,6 +43,8 @@ const DEFAULT_LIMITS: SeatMessageLimits = {
   globalMax: SEAT_MESSAGE_GLOBAL_MAX,
 };
 const RECHECK_MS = 30_000;
+/** One queued note as its private turn shows it. */
+const entryOf = (item: Pending): string => seatBatchEntry(item.rendered, !item.unsolicited);
 interface Inbox {
   items: Pending[];
   active: Pending[];
@@ -93,7 +96,8 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
     const remaining = this.core.triggers.deps.budget.remaining(input.target.roomId);
     if (remaining.room === 0 || remaining.global === 0)
       throw new ChatMessageError('NOT_ALLOWED', 'budget: The room has no automatic turns left.');
-    if (seatMessageBatch([input.rendered]).length > SEAT_MESSAGE_BATCH_MAX)
+    // Sized as an answer, its longest form, before the store decides which it is.
+    if (seatMessageBatch([seatBatchEntry(input.rendered, true)]).length > SEAT_MESSAGE_BATCH_MAX)
       throw new ChatMessageError(
         'INVALID_INPUT',
         'That message is too long for a private seat turn.'
@@ -115,12 +119,11 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
         (input.row.fromAgentId !== null || pending.row.fromAgentPath === input.row.fromAgentPath) &&
         currentSeatMessageTarget(this.core, pending.target) === currentSession
     );
-    // Read before the transaction: the sender's running private turn and its membership.
+    // The notes the sender seat's private turn is running on right now (in memory).
     const sender = resolveSeatMessageTarget(this.core, input.row.fromSessionId);
     const running = sender
       ? (this.queues.get(agentKey(sender.roomId, sender.authorId))?.active ?? [])
       : [];
-    const member = senderIsRoomMember(this.core, input.row.fromAgentPath, input.target.roomId);
     const { row, trace } = this.receipts.insertWithTrace(
       {
         ...input.row,
@@ -137,17 +140,22 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
         if (unsolicited && this.core.bridges.findBridgeByRoom(input.target.roomId) !== null)
           throw new ChatMessageError('NOT_ALLOWED', 'That room seat is unavailable.');
         // An answer to the seat's own ask is exempt: the seat started it (D1).
-        if (unsolicited && !member)
+        if (
+          unsolicited &&
+          !senderIsRoomMember(this.core, input.row.fromAgentPath, input.target.roomId)
+        )
           throw new ChatMessageError(
             'NOT_ALLOWED',
-            'Only members of this room can send its seats a private message.'
+            input.row.replyToId !== null || input.askAnswered
+              ? 'That message already has an answer. Only room members can start a new one.'
+              : "Only room members can start a private note here. Send to the agent's id instead."
           );
         const askedReplyToId =
           stored.replyToId === null ? undefined : this.receipts.get(stored.replyToId)?.replyToId;
         if (!exchangeAllows(this.core, running, input.target, askedReplyToId))
           throw new ChatMessageError(
             'NOT_ALLOWED',
-            'This private exchange is over. Post in the room to keep going.'
+            'That answer ended this exchange. End your turn, or post in your room.'
           );
         return unsolicited && !noticePending ? this.writeTrace(input) : null;
       }
@@ -309,11 +317,29 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
     this.scheduleExpiry(queue);
   }
 
+  /**
+   * Fail each queued fresh note whose sender has left the seat's room, and only those: one
+   * leaver never fails another sender's note in the same batch. Answers stay (D1).
+   *
+   * @returns Whether any note was dropped.
+   */
+  private dropLeavers(queue: Inbox): boolean {
+    const left = queue.items.filter(
+      (item) =>
+        item.unsolicited &&
+        !senderIsRoomMember(this.core, item.row.fromAgentPath, item.target.roomId)
+    );
+    if (!left.length) return false;
+    queue.items = queue.items.filter((item) => !left.includes(item));
+    this.settle(left, 'failed', 'NOT_ALLOWED: The sender left the room.');
+    this.scheduleExpiry(queue);
+    return true;
+  }
+
   private batch(queue: Inbox): Pending[] {
     const batch: Pending[] = [];
     for (const item of queue.items) {
-      if (seatMessageBatch([...batch, item].map((v) => v.rendered)).length > SEAT_MESSAGE_BATCH_MAX)
-        break;
+      if (seatMessageBatch([...batch, item].map(entryOf)).length > SEAT_MESSAGE_BATCH_MAX) break;
       batch.push(item);
     }
     return batch;
@@ -381,7 +407,7 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
       room,
       entry: latest,
       authorId: first.target.authorId,
-      prompt: seatMessageBatch(batch.map((v) => v.rendered)),
+      prompt: seatMessageBatch(batch.map(entryOf)),
       untrustedText: true,
       validateTarget: () =>
         !this.stopped && !this.faulted && state.canRun && seatBatchStillCurrent(this.core, batch),
@@ -415,6 +441,7 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
           this.settle(queue.items.splice(0, 1), 'failed', 'NOT_ALLOWED: The room seat changed.');
           continue;
         }
+        if (this.dropLeavers(queue)) continue;
         const batch = this.batch(queue);
         const result = await this.launchBatch(queue, batch);
         if (result.outcome === 'busy') {
