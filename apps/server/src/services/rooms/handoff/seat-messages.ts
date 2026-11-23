@@ -23,6 +23,8 @@ import {
   SEAT_MESSAGE_BATCH_MAX,
 } from './seat-message-prompt.js';
 import { joinSeatCarry } from './join-seat-carry.js';
+import { roomStartAnchor } from '../room-trigger/room-start-anchor.js';
+import { exchangeAllows, senderIsRoomMember } from './seat-message-guards.js';
 import type {
   RoomSeatMessagesPort,
   SeatMessageAdmission,
@@ -113,6 +115,12 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
         (input.row.fromAgentId !== null || pending.row.fromAgentPath === input.row.fromAgentPath) &&
         currentSeatMessageTarget(this.core, pending.target) === currentSession
     );
+    // Read before the transaction: the sender's running private turn and its membership.
+    const sender = resolveSeatMessageTarget(this.core, input.row.fromSessionId);
+    const running = sender
+      ? (this.queues.get(agentKey(sender.roomId, sender.authorId))?.active ?? [])
+      : [];
+    const member = senderIsRoomMember(this.core, input.row.fromAgentPath, input.target.roomId);
     const { row, trace } = this.receipts.insertWithTrace(
       {
         ...input.row,
@@ -128,6 +136,19 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
         // This guard must run even when an existing notice would be coalesced.
         if (unsolicited && this.core.bridges.findBridgeByRoom(input.target.roomId) !== null)
           throw new ChatMessageError('NOT_ALLOWED', 'That room seat is unavailable.');
+        // An answer to the seat's own ask is exempt: the seat started it (D1).
+        if (unsolicited && !member)
+          throw new ChatMessageError(
+            'NOT_ALLOWED',
+            'Only members of this room can send its seats a private message.'
+          );
+        const askedReplyToId =
+          stored.replyToId === null ? undefined : this.receipts.get(stored.replyToId)?.replyToId;
+        if (!exchangeAllows(this.core, running, input.target, askedReplyToId))
+          throw new ChatMessageError(
+            'NOT_ALLOWED',
+            'This private exchange is over. Post in the room to keep going.'
+          );
         return unsolicited && !noticePending ? this.writeTrace(input) : null;
       }
     );
@@ -351,24 +372,10 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
     const room = this.core.store.getRoom(first.target.roomId);
     if (!room) return { outcome: 'refused', why: 'gone', text: null };
     const [lastEntry] = this.core.store.listEntries(first.target.roomId, { limit: 1 });
-    // A valid private reply needs no public notice, even in an empty room. This
-    // context-only anchor is never persisted/published and advances no read cursor.
-    const latest: RoomEntry = lastEntry ?? {
-      roomId: room.id,
-      seq: 1,
-      id: first.row.id,
-      authorId: this.core.authors.system().id,
-      kind: 'notice',
-      body: { text: 'Private seat message.' },
-      mentions: [],
-      sessionId: null,
-      cascadeRoot: first.row.id,
-      cascadeDepth: 0,
-      parentEntryId: null,
-      threadRootEntryId: null,
-      signature: null,
-      createdAt: new Date().toISOString(),
-    };
+    // A valid private reply needs no public notice, even in an empty room. The room's start
+    // stands in for the missing entry, so the turn's 👀 and any post it makes name no row
+    // that does not exist (DOR-4621, the same anchor hand-offs and seat reports use).
+    const latest: RoomEntry = lastEntry ?? roomStartAnchor(room, first.target.authorId);
     const state = { canRun: true };
     return this.core.triggers.askAside({
       room,
@@ -390,7 +397,7 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
             ])
           ),
           room,
-          latest
+          lastEntry
         ),
       onClaimed: () => this.claimBatch(queue, batch, state),
     });

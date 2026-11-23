@@ -69,5 +69,5 @@ export function seatMessageNotice(sender: string, receiver: string): string {
       .split(/\s+/u)
       .slice(0, 3)
       .join(' ');
-  return `${name(sender)} messaged ${name(receiver)}'s chat in this room.`;
+  return `${name(sender)} sent ${name(receiver)} a private message.`;
 }

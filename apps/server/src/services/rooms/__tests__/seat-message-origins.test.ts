@@ -341,9 +341,16 @@ it.each(['interactive', 'session-relay'])(
       agentPath: home,
       launchOrigin: origin,
     });
+    // The peer is not in the person's Direct chat with Bo, so it cannot start a private
+    // message there (DOR-4547); it can still answer one Bo sent it.
+    await expect(
+      chats.send(caller, { to: target.sessionId, message: 'Not a member.' })
+    ).rejects.toMatchObject({ code: 'NOT_ALLOWED' });
+    seatAsk(target.sessionId);
     const receipt = await chats.send(caller, {
       to: target.sessionId,
       message: 'Existing Direct eligibility.',
+      replyTo: 'bridge-ask',
     });
     await inbox.idle();
     expect(turns).toHaveLength(1);
