@@ -8,7 +8,7 @@ environment (a worktree, or any machine whose default ports are busy).
 
 ## Projects
 
-- `chromium` — the cockpit suite. Runs every spec except the ones the test-mode
+- `chromium` — the main app suite, against the main leg. Runs every spec except the ones the test-mode
   and production projects below own, `tests/production/`, and the site specs
   (`marketplace.spec.ts`, `features.spec.ts`) unless the site leg is enabled;
   see below. Its `testIgnore` list must name every file a test-mode project
@@ -22,7 +22,7 @@ environment (a worktree, or any machine whose default ports are busy).
 - `chromium-streams`, `chromium-browser-driving`, `chromium-team-room`,
   `chromium-rooms-agents`, `chromium-bridge`, `chromium-extension-seams` — more
   test-mode projects, each for specs that would start a real, billable turn on
-  the cockpit leg or that share test-mode state and need their own worker
+  the main leg or that share test-mode state and need their own worker
   limit. `testMatch` on each project in `playwright.config.ts` lists its files,
   and the comment above it says why it is separate.
 - `chromium-production` — `tests/production/`, and the only project whose
@@ -50,7 +50,7 @@ per leg is what lets that number be grepped straight back to this table.
 See the comment on each leg in `playwright.config.ts` for the reasoning
 behind its specific value.
 
-Note the override names: the cockpit leg reads `DORKOS_COCKPIT_PORT`, **not**
+Note the override names: the main leg reads `DORKOS_COCKPIT_PORT`, **not**
 `DORKOS_PORT`. That is deliberate. `DORKOS_PORT` is what the root `.env` sets for
 your own dev server (6242), turbo passes it through, and `pnpm test:browser` runs
 under `dotenv` — so a leg reading it aimed itself at your dev stack from the repo
@@ -68,7 +68,7 @@ deleted before every boot:
 | API server (test-mode)  | `/tmp/dorkos-test-mode-<port>`  |
 | API server (production) | `/tmp/dorkos-production-<port>` |
 
-So a run cannot reach your data, and cannot inherit yesterday's rows. The cockpit
+So a run cannot reach your data, and cannot inherit yesterday's rows. The main
 leg used to have no `DORK_HOME` of its own, which meant it resolved the server's
 dev default — `apps/server/.temp/.dork`, the same directory `pnpm dev` and
 `pnpm dev:dogfood` read — and every default run wrote onboarding timestamps,
@@ -86,7 +86,7 @@ freshly wiped home and nowhere else.
 The site leg (`Next.js` + Turbopack + a fumadocs file watcher) is heavy, and only
 the site specs need it: `marketplace.spec.ts` and `features.spec.ts` (the
 `SITE_SPECS` list in `playwright.config.ts`), which point their baseURL at the
-marketing site instead of the cockpit. The leg boots only when `E2E_SITE=1`. When
+marketing site instead of the app. The leg boots only when `E2E_SITE=1`. When
 it is off, those specs are skipped so they never hang on an unreachable site.
 
 In CI the leg is on: the config defaults it on whenever `CI` is set (unless
@@ -117,7 +117,7 @@ relative to the start of the run. Legs start one after another, so the gap
 between two legs' first lines approximates the earlier leg's boot time. After the boot it goes quiet and keeps each leg's
 last 40 lines, printed only if the run fails.
 
-Leaving it off for cockpit-only runs is not just a speed win. On a machine with
+Leaving it off for app-only runs is not just a speed win. On a machine with
 many recursive file watchers already running (several worktrees, several dev
 servers), the site's watcher hits `EMFILE` ("too many open files"). Turbopack
 then fails to discover the `src/app` routes, so every route — including `/` —
@@ -157,7 +157,7 @@ against a shell with no policy on it.
 
 Keep what runs there small. It is a smoke subset by design: the shell booting,
 and the canvas, whose reachability probe and preview frame both read a policy
-refusal as an ordinary failure. Ordinary feature coverage belongs on the cockpit
+refusal as an ordinary failure. Ordinary feature coverage belongs on the main
 leg, where it is cheap. And never drive a turn there — that leg registers the
 real Claude Code runtime.
 
@@ -251,11 +251,11 @@ So a new mock-server suite takes one of these shapes:
 - **Put it in a module that exports a register function**, and call that from one
   of those files. For a coherent feature suite worth finding by name.
   `tests/chat/session-read-state.ts` is the worked example. Name the module
-  `*.ts`, never `*.spec.ts`: the extension keeps it off the cockpit leg.
+  `*.ts`, never `*.spec.ts`: the extension keeps it off the main leg.
 - **A new `chat-mock-<topic>.spec.ts`**, when the suite is big enough to be worth
   balancing on its own (a minute or more of CI time). Never a mock spec with any
-  other name: the cockpit project ignores this suite by the `chat-mock*.spec.ts`
-  glob, and a mock suite that reached the cockpit leg would bill real turns.
+  other name: the `chromium` project ignores this suite by the `chat-mock*.spec.ts`
+  glob, and a mock suite that reached the main leg would bill real turns.
 
 Either way the suite needs no new project and no new server leg.
 
@@ -288,8 +288,8 @@ env -u E2E_SITE \
 Notes:
 
 - **Every run boots the mock leg, whichever spec you asked for.** The web
-  servers are configured per-run, not per-project, so selecting a single cockpit
-  spec still starts the test-mode server and its Vite client. Moving the cockpit
+  servers are configured per-run, not per-project, so selecting a single `chromium`
+  spec still starts the test-mode server and its Vite client. Moving the main leg's
   ports alone therefore is not an isolated run — the mock leg stays on 4243/4248
   and collides with any other worktree already there, failing a run whose specs
   never touch it.
@@ -310,7 +310,7 @@ Notes:
   `playwright.first-run.config.ts`), which needs that wizard: it boots its own
   never-onboarded servers, runs with `pnpm e2e:first-run`, and gates the merge
   queue as `browser-test.yml`'s `first-run` job.
-- `--project chromium` runs the cockpit project; add `-g "<title>"` to run a
+- `--project chromium` runs the main app project; add `-g "<title>"` to run a
   single test by name.
 
 ## Why the API legs do not watch

@@ -16,7 +16,7 @@
 
 Your agents join your team chat, take on real work, and build the custom tools your company runs on.
 
-Ask for a tool your business needs, like a dashboard or a tracker, and your agents build it as a mini app inside DorkOS. On the default Trusted setting it starts right away, with a line in Activity; on Careful, it waits for your OK. It opens on its own page or in the side panel. (The app and docs call these [extensions](https://dorkos.ai/docs/integrations/extensions).)
+Ask for a tool your business needs, like a dashboard or a tracker, and your agents build it as a mini app inside DorkOS. It starts right away, with a line in Activity, only when the agent that made it runs at Full on the default Trusted setting and has read nothing from outside your team in that turn. Otherwise it waits for your OK. It opens on its own page or in the side panel. (The app and docs call these [extensions](https://dorkos.ai/docs/integrations/extensions).)
 
 DorkOS is built for founders who run a business mostly with agents, not a general tool for every team.
 
@@ -127,13 +127,13 @@ claude mcp add dorkos --transport http http://localhost:4242/mcp
 ## Docker
 
 ```bash
-docker run -d --name dorkos -p 4242:4242 \
+docker run -d --name dorkos -p 127.0.0.1:4242:4242 \
   -e ANTHROPIC_API_KEY=your-key-here \
   -v dorkos-data:/home/node/.dork \
   ghcr.io/dork-labs/dorkos:latest
 ```
 
-The volume keeps your data when the container restarts. Turn on login before you let anyone else reach the container. The [Docker guide](https://dorkos.ai/docs/self-hosting/docker) covers versions, Docker Compose and settings.
+The volume keeps your data when the container restarts, and `127.0.0.1` keeps DorkOS reachable from this computer only. Before you let anyone else reach it, create the owner account with `docker exec -it dorkos dorkos auth enable`. The [Docker guide](https://dorkos.ai/docs/self-hosting/docker) covers versions, Docker Compose and settings.
 
 ## Yours to keep
 
