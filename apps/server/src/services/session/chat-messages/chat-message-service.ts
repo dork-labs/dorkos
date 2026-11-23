@@ -37,7 +37,7 @@
  */
 import { CHAT_STOP_REASON_MAX } from './sending/chat-message-limits.js';
 export { CHAT_SUMMARY_MAX, CHAT_STOP_REASON_MAX } from './sending/chat-message-limits.js';
-import { sendChatMessage } from './sending/chat-send-message.js';
+import { answeringRoomTurn, sendChatMessage } from './sending/chat-send-message.js';
 import type { ChatUsagePause } from './sending/chat-usage-recovery.js';
 import type { RoomSeatMessagesPort } from '../../rooms/handoff/seat-message-types.js';
 import {
@@ -267,22 +267,22 @@ export class ChatMessageService {
         `Keep a message under ${CHAT_MESSAGE_MAX.toLocaleString('en-US')} characters.`
       );
     }
-    const delivery = input.delivery ?? 'queue';
     const agentLock = this.agentLockKey(caller, input.to);
-    return this.withDmLock(agentLock, () => this.sendLocked(caller, input, delivery, kind));
+    return answeringRoomTurn(this.deps, caller, kind, () =>
+      this.withDmLock(agentLock, () => this.sendLocked(caller, input, kind))
+    );
   }
 
   private async sendLocked(
     caller: ChatCaller,
     input: ChatSendInput,
-    delivery: ChatDelivery,
     kind: Extract<ChatMessageKind, 'message' | 'report'>
   ): Promise<ChatSendReceipt> {
     return sendChatMessage({
       deps: this.deps,
       caller,
       input,
-      delivery,
+      delivery: input.delivery ?? 'queue',
       kind,
       sender: this.agentFacts(caller.agentPath),
       deliver: (...args) => this.deliver(...args),

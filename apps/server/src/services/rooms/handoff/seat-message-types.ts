@@ -41,6 +41,8 @@ export interface SeatMessagePending extends SeatMessageAdmission {
 /** The room-owned route a verified chat service may use. */
 export interface RoomSeatMessagesPort {
   resolveSeatTarget(sessionId: string): SeatMessageTarget | null;
+  /** The sender's live room turn, marked as answered once its private send is accepted (DOR-4670). */
+  privateAnswerMark(sessionId: string, agentPath: string): (() => void) | undefined;
   admit(input: SeatMessageAdmission): ChatSendReceipt;
   recoverInterrupted(): number;
   stop(): void;
