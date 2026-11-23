@@ -162,7 +162,7 @@ dorkos --debug-trace
 Two environment variables force **every** channel off, no matter what your config says. They beat the config, so they are the fastest way to silence DorkOS in a shared image, a CI runner, or a locked-down machine:
 
 - `DO_NOT_TRACK` is the universal, cross-tool convention. Set it to `1` (or `true`) and DorkOS sends nothing.
-- `DORKOS_TELEMETRY_DISABLED` does the same thing but only affects DorkOS.
+- `DORKOS_TELEMETRY_DISABLED` does the same thing, but other tools on your computer ignore it. DorkOS still passes the switch on to the agent programs it starts (see below).
 
 ```bash
 export DO_NOT_TRACK=1

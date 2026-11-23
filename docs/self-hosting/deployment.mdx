@@ -93,7 +93,7 @@ Here's the full list, in case you're scripting a deployment or writing a systemd
     ANTHROPIC_API_KEY: {
       type: 'string',
       description:
-        'Claude API key. Not needed if this computer is already signed in to Claude Code, or if you connect AI another way in the app',
+        'Claude API key. If set, Claude Code uses it instead of a sign-in, and you pay per use. Leave it unset to use a Claude Code sign-in on this computer, or to connect AI another way in the app',
     },
     DORKOS_PORT: { type: 'number', description: 'Server port', default: "'4242'" },
     DORKOS_HOST: {

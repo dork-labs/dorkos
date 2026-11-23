@@ -36,7 +36,7 @@ A settings file you wrote by hand starts normally unless it includes retired set
   type={{
     ANTHROPIC_API_KEY: {
       description:
-        'Your Anthropic API key. Claude Code uses it when you are not signed in to Claude Code. Useful on a server or in Docker, where there is no sign-in to reuse.',
+        'Your Anthropic API key. If set, Claude Code uses this key instead of your sign-in, and you pay per use. Leave it unset to use your Claude Code sign-in. Useful on a server or in Docker, where there is no sign-in to reuse.',
       type: 'string',
     },
     DORKOS_PORT: {
