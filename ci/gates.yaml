@@ -271,6 +271,14 @@ gates:
     source: .github/workflows/after-merge-alert.yml
     purpose: Never gates a merge. When a push-to-main check fails, comments on the merged PR and opens or updates one issue per failure group, assigned to the author; closes the groups when the check is green again (DOR-5121).
 
+  # --- auto-revert.yml ---
+  - id: wf.auto-revert.decide
+    source: .github/workflows/auto-revert.yml
+    purpose: Never gates a merge. When a push-to-main check fails, re-runs it once, then decides whether the merge broke it (green on the parent, never a release or revert commit) (DOR-5122).
+  - id: wf.auto-revert.revert
+    source: .github/workflows/auto-revert.yml
+    purpose: Never gates a merge. Opens a revert PR with auto-merge for a merge that broke main, only while the AUTO_REVERT repo variable is on (DOR-5122).
+
   # --- pr-gates.yml ---
   - id: wf.pr-gates.pr-gates
     source: .github/workflows/pr-gates.yml
