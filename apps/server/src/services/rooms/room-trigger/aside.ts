@@ -20,7 +20,7 @@ import { recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { agentKey, type ClaimOutcome } from '../room-claims.js';
 import { isLiveAuthor } from '../handles/author-handles.js';
 import { buildRoomContext } from '../room-context.js';
-import { strangerMarkForShown } from '../limits/context-entries.js';
+import { outsideWordsForShown, strangerMarkForShown } from '../limits/context-entries.js';
 import { env } from '../../../env.js';
 import { roomLaunchStepFor } from '../repo/room-launch-step.js';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
@@ -316,7 +316,10 @@ export async function runAsideInDispatch(
             [],
             turnContext.context
           )),
-      ...(carried?.outsideWords ? { outsideWords: true as const } : {}),
+      // Or outside words its context showed (DOR-4144). Carried words are never cleared by it.
+      ...(carried?.outsideWords
+        ? { outsideWords: true as const }
+        : outsideWordsForShown(self.deps, room.id, [], turnContext.context)),
       ...(input.untrustedText ? { untrustedText: true as const } : {}),
       prompt: input.prompt,
       roomContext: turnContext.context,

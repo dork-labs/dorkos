@@ -7,7 +7,7 @@
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../author-registry.js';
-import { strangerMarkForEntries, type ReadEntry } from './turn-ceiling.js';
+import { answersOutsideWords, strangerMarkForEntries, type ReadEntry } from './turn-ceiling.js';
 
 /**
  * The id of every room message a built context shows the agent besides the one it answers: the
@@ -34,6 +34,20 @@ export function contextEntryIds(context: RoomContextData): string[] {
     ...(context.channelTail ?? []).map((entry) => entry.id),
     ...(context.thread ? [context.thread.rootEntryId] : []),
   ];
+}
+
+/**
+ * The id of every room message a built context shows the agent, its own recent posts included: the
+ * outside-words note reads these (DOR-4144). An agent's own post that relayed outside words puts
+ * them in front of it again, so unlike the mark ({@link contextEntryIds}) the note counts it.
+ *
+ * Reactions on those posts are left out: they show an emoji and a name, which is the roster gap
+ * {@link contextEntryIds} names.
+ *
+ * @param context - The context `buildRoomContext` returned for this turn.
+ */
+export function shownEntryIds(context: RoomContextData): string[] {
+  return [...contextEntryIds(context), ...context.ownRecent.map((entry) => entry.id)];
 }
 
 /** What {@link strangerMarkForShown} reads: the room log, its authors and who owns the install. */
@@ -70,4 +84,27 @@ export function strangerMarkForShown(
     deps.isOwnerAuthor,
     roomId
   );
+}
+
+/**
+ * The outside-words note over every message a room turn answers AND every message its context
+ * showed (DOR-4144): a turn shown outside words is marked the same as one that answered them, so a
+ * later raise asks. A stamp, never a ceiling: it lowers nothing (Security M4), and it adds to what
+ * the turn answers rather than replacing it.
+ *
+ * @param deps - The room log and its authors.
+ * @param roomId - The room the turn runs in.
+ * @param answered - The messages the turn answers; empty for an aside, which answers nothing.
+ * @param context - The context built for this turn.
+ */
+export function outsideWordsForShown(
+  deps: Pick<ShownMarkDeps, 'store' | 'authors'>,
+  roomId: string,
+  answered: readonly (Pick<RoomEntry, 'id' | 'authorId'> & Pick<ReadEntry, 'body'>)[],
+  context: RoomContextData
+): { outsideWords?: true } {
+  const shown = deps.store.listEntriesByIds(roomId, shownEntryIds(context));
+  return answersOutsideWords(deps.authors, [...answered, ...shown], roomId)
+    ? { outsideWords: true }
+    : {};
 }

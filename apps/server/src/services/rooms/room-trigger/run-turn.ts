@@ -15,12 +15,11 @@ import { logger } from '../../../lib/logger.js';
 import { recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { agentKey, type ClaimOutcome, type TriggerTarget } from '../room-claims.js';
 import {
-  answersOutsideWords,
   answersUntrustedText,
   ceilingForEntries,
   isEntryAuthorExternal,
 } from '../limits/turn-ceiling.js';
-import { strangerMarkForShown } from '../limits/context-entries.js';
+import { outsideWordsForShown, strangerMarkForShown } from '../limits/context-entries.js';
 import { env } from '../../../env.js';
 import { teammateOf } from '../limits/space-teammates.js';
 import { turnRefusalOf } from '../turn-guards/paused-turn.js';
@@ -144,10 +143,9 @@ export async function runOneInDispatch(
       ...(answersUntrustedText(self.deps.authors, answered, room.id)
         ? { untrustedText: true as const }
         : {}),
-      // A mini app's post or forward counts here as a stranger's does (DOR-4023).
-      ...(answersOutsideWords(self.deps.authors, answered, room.id)
-        ? { outsideWords: true as const }
-        : {}),
+      // A mini app's post or forward counts here as a stranger's does (DOR-4023), and so does
+      // one the context only showed: shown words reach the model as answered ones do (DOR-4144).
+      ...outsideWordsForShown(self.deps, room.id, answered, turnContext.context),
       // And whether any of them is a teammate's — a space member who is not
       // the owner — which takes away asking and every room but this one
       // (DOR-2955).
