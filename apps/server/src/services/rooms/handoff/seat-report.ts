@@ -99,12 +99,26 @@ export class RoomSeatReports {
   /**
    * The room and agent `sessionId` is the seat of, or null when it is no room's seat: the session
    * the room keeps for that agent, the one a live turn there runs on, or one that held the seat
-   * before it moved to another session, so a spin-off it started still reports in (DOR-3720).
+   * before it moved to another session (DOR-3720). A session the seat moved off answers here, but
+   * {@link RoomSeatReports.deliver} takes a report through it only from a spin-off started at or
+   * before the move (DOR-3753), and it holds no seat now ({@link RoomSeatReports.holdsSeat}).
    *
    * @param sessionId - The chat.
    */
   seatOf(sessionId: string): SeatOf | null {
     return this.resolveSeat(sessionId)?.seat ?? null;
+  }
+
+  /**
+   * Whether `sessionId` is a room's seat now: the session the room keeps for the agent, or the
+   * one a live turn there runs on. Not a session the seat moved off: a spin-off started from that
+   * chat now is started after the move, and no report of it can reach the seat (DOR-3753).
+   *
+   * @param sessionId - The chat.
+   */
+  holdsSeat(sessionId: string): boolean {
+    const resolved = this.resolveSeat(sessionId);
+    return resolved !== null && resolved.movedAt === undefined;
   }
 
   /** {@link seatOf}, with when the seat moved off `sessionId` when it is a former seat. */

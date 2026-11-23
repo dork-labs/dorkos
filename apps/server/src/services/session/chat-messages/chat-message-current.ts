@@ -25,7 +25,7 @@ export function getChatMessageService(): ChatMessageService | undefined {
 }
 
 /** What report-back asks of the rooms: whether a chat is a seat, and a report into one. */
-export type RoomSeatReportsPort = Pick<RoomSeatReports, 'seatOf' | 'deliver'>;
+export type RoomSeatReportsPort = Pick<RoomSeatReports, 'seatOf' | 'holdsSeat' | 'deliver'>;
 
 let seatReports: RoomSeatReportsPort | undefined;
 

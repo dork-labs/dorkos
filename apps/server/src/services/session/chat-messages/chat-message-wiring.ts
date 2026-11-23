@@ -418,9 +418,10 @@ export async function deliverToRoomSeat(
   const seat = [parentSessionId, canonical].find((id) => seats.seatOf(id) !== null);
   if (seat === undefined) return false;
   const fromTitle = await chatTitleOf(report.fromSessionId);
-  // A seat that moved checks this against the move (DOR-3753), so it is the server's record.
+  // A seat that moved checks this against the move (DOR-3753): only the server's record, set
+  // last so no start a caller handed in survives.
   const startedAt = reportStartedAtFromStore(getSessionStartedByStore(), report.fromSessionId);
-  const sent = { ...report, fromTitle, ...(startedAt !== null ? { startedAt } : {}) };
+  const sent = { ...report, fromTitle, startedAt: startedAt ?? undefined };
   return new Promise<boolean>((resolve, reject) => {
     const taken = seats.deliver(seat, sent, (ran) => {
       if (ran) resolve(true);
