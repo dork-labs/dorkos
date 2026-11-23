@@ -391,6 +391,13 @@ jobs:
       - name: Build-only turbo cache trim fixtures
         run: bash scripts/test-keep-build-cache-only.sh
 
+      # prune-main-build-caches.sh deletes main's older turbo build caches after
+      # every merge (build-cache.yml, DOR-4627). It must never delete a pnpm
+      # store, another ref's cache or one of the newest entries it keeps, so
+      # its verdicts are pinned against a stub gh.
+      - name: Main build-cache prune fixtures
+        run: bash scripts/test-prune-main-build-caches.sh
+
       # build-test-deps.sh builds what test.yml's suites import in a turbo run
       # with no test arguments, so one cached build serves every test job
       # (DOR-4625). Its build set and its summary hand-off are pinned here.

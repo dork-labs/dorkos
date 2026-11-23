@@ -293,8 +293,9 @@ name: test
 # does SAVE turbo's local cache for the shards (DOR-4190), trimmed to `build`
 # entries first, so what it hands on is builds and never a test result. The canary
 # also re-warms the `refs/heads/main` Actions caches (pnpm store, Playwright
-# browsers), which have had no writer since the push-to-main legs were retired
-# on 2026-09-19 and which every PR branch restores from.
+# browsers), which every PR branch restores from. Since DOR-4627, build-cache.yml
+# saves the same build entries and pnpm stores after every merge, so the
+# canary's saves are a backstop rather than the only writer.
 # PULL REQUESTS INTO A RELEASE BRANCH RUN THE FULL SWEEP (DOR-4639).
 #
 # Releases ship from `release/v<X.Y.Z>` branches cut from a QA-pinned main
@@ -1150,13 +1151,13 @@ jobs:
       # `test` entry ever did get through, "Prove the suite actually executed"
       # refuses the replay; it is not weakened here.
       #
-      # WHO WRITES IT. Only the main canary, at the end of this job. GitHub
-      # scopes caches by branch with a read fallback to `main`, and the
-      # canary is the only run of this workflow on `main`'s scope, so its entry
-      # is the one every queue build and every pull request can read. A queue
-      # build's own scope is deleted with its ref, so a save there would be
-      # waste. Builds that changed since the last canary still miss and
-      # rebuild, so a busy day sees partial hits.
+      # WHO WRITES IT. Runs on `main` only: build-cache.yml after every merge
+      # (DOR-4627, ledger 261123-194610), and the main canary at the end of
+      # this job. GitHub scopes caches by branch with a read fallback to
+      # `main`, so main's entry is the one every queue build and every pull
+      # request can read. A queue build's own scope is deleted with its ref, so
+      # a save there would be waste. Builds the PR itself changed still miss
+      # and rebuild.
       #
       # ONE ENTRY FOR EVERY TEST JOB (DOR-4625, ledger 261118-140000). Turbo
       # passes the `--` arguments of `turbo test` to EVERY task in the run, the
@@ -1168,7 +1169,8 @@ jobs:
       # first through scripts/build-test-deps.sh, a `turbo run build` with no
       # `--` arguments, and the suites run with `--only`, so the same builds
       # hash the same in every shard, the pull request leg and test-binary.
-      # One entry serves them all; shard 1 of the canary saves it.
+      # One entry serves them all; build-cache.yml saves it after every merge,
+      # and shard 1 of the canary saves it too.
       - name: Restore the builds the last main canary made
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

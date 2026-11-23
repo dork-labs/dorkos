@@ -835,7 +835,8 @@ jobs:
       # Restore the builds the last main canary made (DOR-4634). Before this,
       # no browser job had a turbo cache, so every leg rebuilt server, client
       # and their packages from nothing (~130 s each, 7 jobs per queue build).
-      # Only browser-shard (1/6) on main saves, after the build-only trim, so
+      # Only runs on main save, after the build-only trim: build-cache.yml
+      # after every merge (DOR-4627) and browser-shard (1/6) of the canary. So
       # nothing here ever replays a test result. Same fallback as test.yml:
       # the same lockfile first, then the newest entry for this OS and arch;
       # turbo's own task hashes decide what is replayed.
