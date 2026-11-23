@@ -36,32 +36,30 @@ export function contextEntryIds(context: RoomContextData): string[] {
   ];
 }
 
-/**
- * The id of every room message a built context shows the agent, its own recent posts included: the
- * outside-words note reads these (DOR-4144). An agent's own post that relayed outside words puts
- * them in front of it again, so unlike the mark ({@link contextEntryIds}) the note counts it.
- *
- * Reactions on those posts are left out: they show an emoji and a name, which is the roster gap
- * {@link contextEntryIds} names.
- *
- * @param context - The context `buildRoomContext` returned for this turn.
- */
-export function shownEntryIds(context: RoomContextData): string[] {
-  return [...contextEntryIds(context), ...context.ownRecent.map((entry) => entry.id)];
-}
-
-/** What {@link strangerMarkForShown} reads: the room log, its authors and who owns the install. */
+/** What {@link marksForShown} reads: the room log, its authors and who owns the install. */
 export interface ShownMarkDeps {
   store: { listEntriesByIds(roomId: string, ids: string[]): RoomEntry[] };
   authors: AuthorRegistry;
   isOwnerAuthor: (authorId: string) => boolean;
 }
 
+/** A message a room turn answers, with what says where its words came from. */
+type AnsweredEntry = Pick<RoomEntry, 'id' | 'authorId'> & Pick<ReadEntry, 'body'>;
+
 /**
- * The outsider mark over every message a room turn answers AND every message its context showed,
- * so a non-owner's unaddressed post in the window marks the turn as surely as one that named the
- * agent (DOR-3858, behind its boot flag), and so does a mini app's post or forward, whatever the
- * flag (DOR-4587, `strangerMarkForEntries`).
+ * What a room turn carries for every message it answers AND every message its context showed,
+ * read from the room log once:
+ *
+ * - the outsider mark (`carriedOutsider`): a non-owner's unaddressed post in the window marks the
+ *   turn as surely as one that named the agent (DOR-3858, behind its boot flag), and so does a
+ *   mini app's post or forward, whatever the flag (DOR-4587, `strangerMarkForEntries`);
+ * - the outside-words note (`outsideWords`): a turn shown outside words is marked the same as one
+ *   that answered them, so a later raise asks (DOR-4144). A stamp, never a ceiling: it lowers
+ *   nothing (Security M4).
+ *
+ * Both read the same messages ({@link contextEntryIds}), so neither counts the agent's own recent
+ * posts: a noted chat's posts are kept with the outsider mark, and counting them would keep the
+ * chat noted by what it wrote itself, turn after turn.
  *
  * @param enabled - Whether `DORKOS_MARK_STRANGER_TURNS` is on.
  * @param deps - See {@link ShownMarkDeps}.
@@ -69,42 +67,16 @@ export interface ShownMarkDeps {
  * @param answered - The messages the turn answers; empty for an aside, which answers nothing.
  * @param context - The context built for this turn.
  */
-export function strangerMarkForShown(
+export function marksForShown(
   enabled: boolean,
   deps: ShownMarkDeps,
   roomId: string,
-  answered: readonly ReadEntry[],
+  answered: readonly AnsweredEntry[],
   context: RoomContextData
-): { carriedOutsider?: true } {
-  const shown = deps.store.listEntriesByIds(roomId, contextEntryIds(context));
-  return strangerMarkForEntries(
-    enabled,
-    deps.authors,
-    [...answered, ...shown],
-    deps.isOwnerAuthor,
-    roomId
-  );
-}
-
-/**
- * The outside-words note over every message a room turn answers AND every message its context
- * showed (DOR-4144): a turn shown outside words is marked the same as one that answered them, so a
- * later raise asks. A stamp, never a ceiling: it lowers nothing (Security M4), and it adds to what
- * the turn answers rather than replacing it.
- *
- * @param deps - The room log and its authors.
- * @param roomId - The room the turn runs in.
- * @param answered - The messages the turn answers; empty for an aside, which answers nothing.
- * @param context - The context built for this turn.
- */
-export function outsideWordsForShown(
-  deps: Pick<ShownMarkDeps, 'store' | 'authors'>,
-  roomId: string,
-  answered: readonly (Pick<RoomEntry, 'id' | 'authorId'> & Pick<ReadEntry, 'body'>)[],
-  context: RoomContextData
-): { outsideWords?: true } {
-  const shown = deps.store.listEntriesByIds(roomId, shownEntryIds(context));
-  return answersOutsideWords(deps.authors, [...answered, ...shown], roomId)
-    ? { outsideWords: true }
-    : {};
+): { carriedOutsider?: true; outsideWords?: true } {
+  const read = [...answered, ...deps.store.listEntriesByIds(roomId, contextEntryIds(context))];
+  return {
+    ...strangerMarkForEntries(enabled, deps.authors, read, deps.isOwnerAuthor, roomId),
+    ...(answersOutsideWords(deps.authors, read, roomId) ? { outsideWords: true as const } : {}),
+  };
 }

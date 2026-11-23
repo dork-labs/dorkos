@@ -20,7 +20,7 @@ import { recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { agentKey, type ClaimOutcome } from '../room-claims.js';
 import { isLiveAuthor } from '../handles/author-handles.js';
 import { buildRoomContext } from '../room-context.js';
-import { outsideWordsForShown, strangerMarkForShown } from '../limits/context-entries.js';
+import { marksForShown } from '../limits/context-entries.js';
 import { env } from '../../../env.js';
 import { roomLaunchStepFor } from '../repo/room-launch-step.js';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
@@ -286,6 +286,13 @@ export async function runAsideInDispatch(
       // at a line written about itself (DOR-1263).
       aside: true,
     });
+    const shown = marksForShown(
+      env.DORKOS_MARK_STRANGER_TURNS,
+      self.deps,
+      room.id,
+      [],
+      turnContext.context
+    );
     const request: RoomTurnRequest = {
       room,
       authorId,
@@ -305,21 +312,10 @@ export async function runAsideInDispatch(
         ? { permissionCeiling: carried.permissionCeiling }
         : {}),
       ...(carried?.teammate ? { teammate: true as const } : {}),
-      // Or a non-owner's post its context showed: a thread opener or the channel glance, when the
-      // greeter's post sits in a thread (DOR-4453 F1).
-      ...(carried?.outsider
-        ? { carriedOutsider: true as const }
-        : strangerMarkForShown(
-            env.DORKOS_MARK_STRANGER_TURNS,
-            self.deps,
-            room.id,
-            [],
-            turnContext.context
-          )),
-      // Or outside words its context showed (DOR-4144). Carried words are never cleared by it.
-      ...(carried?.outsideWords
-        ? { outsideWords: true as const }
-        : outsideWordsForShown(self.deps, room.id, [], turnContext.context)),
+      // Or what its context showed: a thread opener or the channel glance, when the post it is
+      // about sits in a thread (DOR-4453 F1, DOR-4144). Only ever adds to what was carried.
+      ...(carried?.outsider || shown.carriedOutsider ? { carriedOutsider: true as const } : {}),
+      ...(carried?.outsideWords || shown.outsideWords ? { outsideWords: true as const } : {}),
       ...(input.untrustedText ? { untrustedText: true as const } : {}),
       prompt: input.prompt,
       roomContext: turnContext.context,
