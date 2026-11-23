@@ -607,6 +607,17 @@
         ".claude/rules/ci-pipeline",
         "creating-pull-requests/"
       ]
+    },
+    {
+      "guide": "paid-paths.md",
+      "description": "Every test, eval and server path that spends real money: its opt-in flag, its key, and why none can run from `pnpm test`, `pnpm verify`, pre-push or CI",
+      "patterns": [
+        "packages/evals/src/runner/credentials",
+        "paid-provider",
+        "scripts/harness-smoke/",
+        "credits-inference",
+        "test-community-deploy-live"
+      ]
     }
   ],
   "externalDocs": [

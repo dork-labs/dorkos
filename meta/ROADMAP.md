@@ -102,6 +102,7 @@ Say "coming" or "planned", or leave it out:
 - Live shared docs.
 - One message system.
 - The loop watcher that replaces turn counting.
+- A Linux desktop app. There is no Linux build yet.
 
 ## Open risks
 
