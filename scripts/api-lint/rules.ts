@@ -94,7 +94,9 @@ export const RULES: Record<RuleId, RuleSpec> = {
     fix: 'Serve the documented operation, or remove it from the document.',
   },
   'hand-registered-path': {
-    // The DOR-4978 mount PR flips this to `blocking: true`.
+    // The DOR-4978 mount PR flips this to `blocking: true`, and must run `--update` in the
+    // same PR: the advisory entries may lag the measured count, and a raise is judged against
+    // the base.
     blocking: false,
     fix: 'Advisory today. Once the capability mount (DOR-4978) merges, declare new routes as a capability `http` surface, not a hand registerPath.',
   },
