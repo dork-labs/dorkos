@@ -784,6 +784,9 @@ describe('buildChatToolsBlock', () => {
     expect(result).toContain('Never use cc as a status channel.');
     expect(result).toContain('Anyone who asks still gets a short answer.');
     expect(result).toContain('post only for one of those three, or to answer a question');
+    expect(result).toContain(
+      'A result somebody in a room asked for is owed there: post it when it comes back.'
+    );
   });
 
   it('says a room chat can send, and that a send never posts into a room (DOR-4469)', () => {
@@ -791,8 +794,15 @@ describe('buildChatToolsBlock', () => {
     expect(result).toContain('Your chat in a room can send too, to an agent id or a chat id.');
     expect(result).toContain(`${IN_SESSION_TOOL_PREFIX}chat_send never posts into a room`);
     expect(result).toContain('it arrives as a private turn');
-    expect(result).toContain(`Only ${IN_SESSION_TOOL_PREFIX}post_to_room speaks there.`);
-    expect(result).toContain('A scheduled run, a beat or a bridged chat gets no report');
+    expect(result).toContain(`Only ${IN_SESSION_TOOL_PREFIX}post_to_room speaks in a room.`);
+    expect(result).toContain('a one-line note saying you messaged it, never your words');
+    expect(result).not.toContain('a one-line note that you wrote');
+    expect(result).toContain(
+      'In a room bridged to Telegram or Slack, that chat takes only an answer to a message it sent you.'
+    );
+    expect(result).toContain(
+      "A scheduled run, a beat, a Telegram or Slack direct chat, a connector event's chat or a chat from an older DorkOS gets no report"
+    );
   });
 
   it('keeps the block with Relay off, without the relay_notify_user half', () => {

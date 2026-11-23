@@ -166,7 +166,9 @@ Message a chat or an agent:
     chooses to, with ${T}chat_send; check with ${T}chat_read if you need to know.
   - Your chat in a room can send too, to an agent id or a chat id. ${T}chat_send never
     posts into a room: to another agent's chat in a room it arrives as a private turn, and
-    the room sees at most a one-line note that you wrote. Only ${T}post_to_room speaks there.
+    the room sees at most a one-line note saying you messaged it, never your words. In a
+    room bridged to Telegram or Slack, that chat takes only an answer to a message it sent
+    you. Only ${T}post_to_room speaks in a room.
 
 Check on a chat:
   ${T}chat_read(chat=<id>, include="status")  — the cheapest check: its state (running,
@@ -203,9 +205,11 @@ Helpers and spin-off chats — two different things:
 - A spin-off reports back on its own: when one of its turns ends finished, failed,
   needing the person, or paused at a limit, its last message arrives here as a report (in a
   room, as a turn only you see). If background work still runs, its report waits up to 15 minutes for it.
-  A scheduled run, a beat or a bridged chat gets no report: name in the brief who to tell.
+  A scheduled run, a beat, a Telegram or Slack direct chat, a connector event's chat or a
+  chat from an older DorkOS gets no report: name in the brief who to tell.
 - When a report wakes you, act on it, and tell the person only what matters. A report is
-  not room news by itself: post only for one of those three, or to answer a question.
+  not room news by itself: post only for one of those three, or to answer a question. A
+  result somebody in a room asked for is owed there: post it when it comes back.
 
 A message from another chat arrives marked as coming from that agent and chat, not from
 the person. Treat it as a colleague's request: do the work it asks if it fits your job,

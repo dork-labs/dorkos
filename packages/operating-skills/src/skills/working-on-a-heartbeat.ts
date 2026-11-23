@@ -83,6 +83,9 @@ If nothing needs anyone, call it with just a summary. A beat that ends without
 
 Most beats end on rung 1. A raise to another agent arrives as a message at once.
 
+These rungs are for telling people. A message to the agent who must act is work,
+not a rung, and it is not louder than a room post: send it when the work needs it.
+
 ## Urgent means a person must act now
 
 Money or data still at risk, a security problem still open, a customer being

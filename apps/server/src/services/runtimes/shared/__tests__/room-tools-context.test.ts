@@ -239,10 +239,14 @@ describe.each(['mcp__dorkos__', 'dorkos_'])('the project-lead pattern (DOR-4469,
     expect(words).toContain('never relay them here, and never fan them out with cc');
     expect(words).toContain('These are kinds of update, not a quota');
     expect(words).toContain('when someone here asks, give a short, useful answer');
+    // A research result asked for in the room is not "news" to be held back: it is owed.
+    expect(words).toContain(
+      'A result somebody here asked for is owed here: when it comes back, post it, never sit on it.'
+    );
   });
 
   it('moves chasing to a direct message and takes cc off status duty', () => {
-    expect(words).toContain('chase it once with a direct message to its chat, not in the room');
+    expect(words).toContain('chase it once with a direct message to that agent, not in the room');
     expect(words).toContain('cc is never a status channel');
     expect(words).not.toContain('chase them when it is late');
   });

@@ -3,10 +3,12 @@
  *
  * **Why this exists.** A spin-off reports back on its own when one of its turns ends (spec
  * `spin-off-chats` §5), as a `chat_send` into the chat that started it. A room seat (the session
- * a room keeps for one agent, DOR-3397) takes no chat messages: an agent speaks in a room with
- * `post_to_room`, and a chat message into a seat would start a turn the room never asked for and
- * could not see. So every report to a seat was refused, the seat never woke, and a lead who
- * started work from #dorkos stalled until somebody read the spin-off by hand.
+ * a room keeps for one agent, DOR-3397) took no chat messages when this was written: an agent
+ * speaks in a room with `post_to_room`, and a chat message into a seat would start a turn the
+ * room never asked for and could not see. So every report to a seat was refused, the seat never
+ * woke, and a lead who started work from #dorkos stalled until somebody read the spin-off by hand.
+ * A seat now takes a `chat_send` as a private aside (DOR-4472), but that path leaves a note in
+ * the room and is refused in a bridged room, so a report still comes here, which does neither.
  *
  * **A report is a turn in the seat, never a post in the room.** It runs through the same aside a
  * hand-off does: the seat's own session, under every bound a room turn has (one session per room,
@@ -237,7 +239,8 @@ export function seatReportPrompt(report: SeatReport): string {
       'the agent who must act with chat_send. Long work stays with its lead chat, not this one. ' +
       'Nobody in the room has seen this report. A report is not room news by itself. Post ' +
       'there with post_to_room only when project work starts, is blocked on a person, or ships, ' +
-      'or to answer someone who asked; otherwise say nothing there.',
+      'or to answer someone who asked. A result somebody in the room asked for is owed there: ' +
+      'post it now, never sit on it. Otherwise say nothing there.',
     '',
     fenceUntrustedBlock(report.text, {
       label: 'SPIN-OFF REPORT',

@@ -25,6 +25,12 @@ describe('the seat report prompt (DOR-4469)', () => {
     expect(prompt).not.toContain('only if the room needs to know');
   });
 
+  it('says a result somebody in the room asked for is owed there, not held back', () => {
+    expect(prompt).toContain(
+      'A result somebody in the room asked for is owed there: post it now, never sit on it.'
+    );
+  });
+
   it('coordinates by chat_send and keeps long work with its lead', () => {
     expect(prompt).toContain('message the spin-off or the agent who must act with chat_send');
     expect(prompt).toContain('Long work stays with its lead chat, not this one.');

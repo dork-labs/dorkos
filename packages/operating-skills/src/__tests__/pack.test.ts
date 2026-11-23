@@ -602,9 +602,28 @@ describe('working-with-spin-off-chats', () => {
     expect(flat).toContain('`chat_send` never posts into a room');
     expect(flat).toContain('Only `post_to_room` speaks in a room.');
     expect(flat).toContain(
-      'A spin-off started from a beat, a scheduled run or a Telegram or Slack chat does not report back'
+      "A spin-off started from a beat, a scheduled run, a Telegram or Slack direct chat, a connector event's chat or a chat from an older DorkOS does not report back"
+    );
+    expect(flat).toContain('a one-line note saying you messaged it, never your words');
+    expect(flat).not.toContain('a one-line note that you wrote');
+    expect(flat).toContain(
+      'In a room bridged to Telegram or Slack, that chat takes only an answer to a message it sent you; anything else is refused.'
     );
     expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(71);
+  });
+
+  it('says a result asked for in the room is owed there, and room-chat notes ride turn-end reports', () => {
+    expect(flat).toContain(
+      'A result somebody in the room asked for is owed there: when it comes back, post it, never sit on it.'
+    );
+    expect(flat).toContain('never into a room (from a room chat: in turn-end reports only)');
+    expect(flat).toContain('one more direct message to that agent, not a post in a room');
+  });
+
+  it('suggests one plain wait per call, never a shell loop (DOR-3109)', () => {
+    expect(flat).toContain('or one `sleep 240` per call, then check again');
+    expect(flat).toContain('Never a shell loop');
+    expect(flat).not.toMatch(/`sleep` loop/);
   });
 });
 
@@ -674,6 +693,10 @@ describe('working-on-a-heartbeat', () => {
     );
     expect(flat).toContain(
       'For project work a room hears three things: it started, it is blocked on a person, it shipped.'
+    );
+    expect(flat).toContain('These rungs are for telling people.');
+    expect(flat).toContain(
+      'A message to the agent who must act is work, not a rung, and it is not louder than a room post'
     );
     expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(71);
   });

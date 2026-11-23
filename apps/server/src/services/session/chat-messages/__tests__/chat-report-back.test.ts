@@ -723,7 +723,7 @@ describe('the words', () => {
     expect(off).toContain(`chat_send to ${PARENT}`);
   });
 
-  it('never points a spin-off of a room chat at chat_send, which that chat refuses', () => {
+  it('never points a spin-off of a room chat at chat_send, which would be refused or show in the room', () => {
     // 2026-10-12: chats started from the room-bound coordinator were told to
     // "Send what matters with chat_send to <it>", every send was refused, and
     // they reported "the coordinator doesn't accept direct messages".
@@ -739,7 +739,11 @@ describe('the words', () => {
     // DOR-4469: the room hears three project updates, never a spin-off's running status.
     expect(roomChild).toContain('If your brief names a chat or an agent to tell');
     expect(roomChild).toContain('only when the work starts, is blocked on a person, or ships');
+    expect(roomChild).toContain('or to answer someone who asked');
     expect(roomChild).not.toContain('report there with post_to_room');
+    // DOR-4472 made an unbridged seat take a send, so "cannot take chat messages" was false.
+    expect(roomChild).not.toContain('cannot take chat messages');
+    expect(roomChild).toContain('it refuses messages, or each one would show a note in a room');
   });
 });
 
@@ -795,7 +799,13 @@ describe('a parent that is a room’s seat (DOR-3488)', () => {
       parentIsRoomSeat: true,
     });
     expect(seatChild).toContain('goes back to that chat on its own');
-    expect(seatChild).toContain('takes no chat_send');
+    // DOR-4472: a seat takes a send as a private aside, so the advice stays and the reason
+    // changes: each send leaves a note in the room and spends one of its turns.
+    expect(seatChild).not.toContain('takes no chat_send');
+    expect(seatChild).toContain(
+      'Each chat_send to it would show a note in the room and spend one of its turns'
+    );
+    expect(seatChild).toContain('put milestones in your turn-end reports');
     expect(seatChild).not.toContain(`chat_send to ${PARENT}`);
     expect(seatChild).toContain('keep your turn alive');
   });

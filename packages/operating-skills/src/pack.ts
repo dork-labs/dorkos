@@ -483,8 +483,9 @@ export interface OperatingSkill {
  *   `answering-dorkos-questions`.
  * - 71: `working-with-spin-off-chats` and `working-on-a-heartbeat` teach the project
  *   lead (DOR-4469): long work goes to one lead chat that messages the one agent who
- *   must act, and a room hears only started, blocked on a person, and shipped. An
- *   agent seeded at 70 would post every report and status relay into the room.
+ *   must act, and a room hears only started, blocked on a person, and shipped, plus
+ *   an answer or a result somebody there asked for. An agent seeded at 70 would post
+ *   every report and status relay into the room.
  */
 export const OPERATING_SKILLS_VERSION = 71;
 

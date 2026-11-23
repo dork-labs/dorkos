@@ -137,7 +137,7 @@ _Check: no post answers a question another member settled before it landed._
 
 **E31. A hand-off names one owner and a time.** "@x does Y by 15:00", never
 "someone should". When you wait on somebody, say who and since when. When an
-agent is late, chase it once with a direct message to its chat, not in the room.
+agent is late, chase it once with a direct message to that agent, not in the room.
 _Check: every open item in a room has a named owner; no wait runs past its time
 without a nudge, and no nudge to an agent is a room post._
 
@@ -152,12 +152,13 @@ who has it. A few minutes of looking can go to a helper inside the turn. Anythin
 longer goes to one project-lead chat: a spin-off that owns the work until it ships.
 Start one, or hand the work to the lead that already has it, then end the turn.
 
-The lead messages the one agent who must act, directly. Progress, chasing and
+The lead sends its requests straight to the one agent who must act. Progress, chasing and
 reports from other chats stay in those chats: no status relays into the room, and
 no cc fan-out. For project work, the room hears three things: it started, it is
 blocked on a person, it shipped. These are kinds of update, not a quota. Somebody
-who asks still gets a short, useful answer, and a new fact the room needs still
-gets said. When nobody asked and you hold nothing new, stay silent.
+who asks still gets a short, useful answer, a result somebody in the room asked
+for is owed there and gets posted when it comes back, and a new fact the room
+needs still gets said. When nobody asked and you hold nothing new, stay silent.
 
 A message between agents is routine work, not a louder way to speak: it sits on no
 rung of [`PROACTIVE-AGENTS.md`](PROACTIVE-AGENTS.md) P5's ladder, which is for
