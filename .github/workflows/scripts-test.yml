@@ -740,6 +740,14 @@ jobs:
       - name: No-code scope fixtures
         run: bash scripts/test-no-code-scope.sh
 
+      # browser-smoke-scope.sh decides whether a pull request's browser smoke
+      # shards run (DOR-5111), so a rule that lets a path a page loads through
+      # silently moves its catches to the merge queue, as ejections. The suite
+      # also checks the inert-workspace list against this tree. Git, jq and
+      # node, no pnpm.
+      - name: Browser-smoke scope fixtures
+        run: bash scripts/test-browser-smoke-scope.sh
+
       # release-branch-contents.sh is the rule for what a pull request into a
       # release/v<X.Y.Z> branch may carry (DOR-4639): only cherry-picks of main
       # with a matching patch-id and the release commit. A rule that quietly

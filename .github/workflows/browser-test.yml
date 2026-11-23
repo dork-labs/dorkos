@@ -30,8 +30,12 @@ name: browser-test
 #      until `check_response_timeout_minutes` (120) expires. So the filter and the
 #      option of ever making this required are mutually exclusive.
 #
-# The trade this accepts, stated plainly: a docs-only or changelog-only PR pays
-# for the smoke subset on each push, then the full suite in the queue.
+# The trade this accepts, stated plainly: a PR pays for the smoke subset on
+# each push, then the full suite in the queue. Since DOR-5111 a PR whose diff no
+# browser leg loads (another workflow, test folders, fixture suites, ledger
+# entries, docs; scripts/browser-smoke-scope.sh has the list) skips the smoke
+# from inside the text-only-scope job, never through a filter, and still runs
+# the full suite in the queue.
 #
 # THIS IS A REQUIRED CHECK on the merge queue, as of 2026-08-23 — the deliberate
 # second act the previous version of this header planned for. The trigger landed
@@ -171,13 +175,16 @@ jobs:
   # specs quote a changed string's old text, `none` when none does. Only a
   # pull request can get `specs` or `none`: on `specs` browser-smoke runs
   # exactly those specs on one runner, on `none` it does not run, and the
-  # browser-test fan-in accepts that. A merge queue build always answers
-  # `full`, so browser-shard and first-run run the whole suite as before.
+  # browser-test fan-in accepts that. A pull request that is not text only
+  # can still get `none` from the no-browser lane (DOR-5111) when nothing it
+  # changes reaches a browser leg; see that step. A merge queue build always
+  # answers `full`, so browser-shard and first-run run the whole suite as
+  # before.
   text-only-scope:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
-      browser: ${{ steps.textonly.outputs.browser || 'full' }}
+      browser: ${{ steps.browserscope.outputs.browser || steps.textonly.outputs.browser || 'full' }}
       specs: ${{ steps.textonly.outputs.specs || '[]' }}
     steps:
       - name: A canary run is against main
@@ -254,6 +261,42 @@ jobs:
           grep -qx 'text_only=true' "$lane/outputs" || not_text_only "$reason"
           echo "::notice title=Text-only lane::$reason. The test sweep and the browser suites stand down; vitest related and the specs that quote the old text run instead."
           cat "$lane/outputs" >> "$GITHUB_OUTPUT"
+      # THE NO-BROWSER LANE (DOR-5111, ledger 261123-194934). A
+      # pull request the text-only lane above left on `full` asks
+      # scripts/browser-smoke-scope.sh whether any changed path can reach what
+      # browser-smoke builds and boots. The script is deny by default: only a
+      # path it names as inert (another workflow, a test folder, a fixture
+      # suite, a ledger entry, the docs, a package outside the browser apps'
+      # closure) lets the smoke stand down, and then this step sets `browser`
+      # to `none`, the answer the fan-in already accepts from the text-only
+      # lane. No `if:`: every other event, a release pull request included,
+      # changes nothing and the lane above already answered `full` for the
+      # merge queue and the canary, so browser-shard and first-run run the
+      # whole suite exactly as before. The script comes from the BASE commit,
+      # never this checkout, and every failure to decide runs the smoke.
+      - name: Decide whether a browser can load this change
+        id: browserscope
+        env:
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
+          LANE: ${{ steps.textonly.outputs.browser }}
+        run: |
+          set -uo pipefail
+          smoke_runs() {
+            echo "the browser smoke runs as the text-only lane decided ($1)"
+            exit 0
+          }
+          [ "$EVENT" = pull_request ] || smoke_runs "a $EVENT run"
+          [ "$LANE" = full ] || smoke_runs "the text-only lane answered '$LANE'"
+          if ! git rev-parse --verify --quiet 'HEAD^2' >/dev/null || ! base=$(git rev-parse --verify --quiet 'HEAD^1'); then
+            smoke_runs 'no test-merge commit to diff'
+          fi
+          scope=$RUNNER_TEMP/browser-smoke-scope.sh
+          git cat-file blob "$base:scripts/browser-smoke-scope.sh" > "$scope" 2>/dev/null ||
+            smoke_runs 'the base commit has no scripts/browser-smoke-scope.sh'
+          verdict=$(bash "$scope" "$base" HEAD) || smoke_runs 'the scope script failed'
+          [ "$verdict" = false ] || smoke_runs 'a browser leg can load this change'
+          echo "::notice title=No-browser lane::nothing a browser leg loads changed, so the PR smoke shards stand down. The merge queue still runs every browser shard and the first-run journey."
+          echo 'browser=none' >> "$GITHUB_OUTPUT"
 
   # Four PR-only shards, no marketing-site leg and no real-model integration
   # opt-in. Reuse the suite's projects, isolation, caches and one CI retry.
@@ -1269,8 +1312,9 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
-      # The text-only decision gates browser-smoke on a pull request, so a run
-      # where it did not finish has nothing this job can trust. Checked in the
+      # The text-only and no-browser decisions gate browser-smoke on a pull
+      # request, so a run where they did not finish has nothing this job can
+      # trust. Checked in the
       # script, so this required job never skips it. On every other event it
       # answers `full` without looking and the full suite never waits on it.
       - name: Refuse a run whose text-only decision did not finish
