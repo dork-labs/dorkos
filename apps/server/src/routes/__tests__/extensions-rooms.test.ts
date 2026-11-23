@@ -62,6 +62,7 @@ import {
   type RoomService,
 } from '../../services/rooms/index.js';
 import { ReadCursorStore } from '../../services/core/read-cursor-store.js';
+import { readCursorAudience } from '../../services/rooms/service/room-audience.js';
 import {
   ReadCursorService,
   setReadCursorService,
@@ -143,7 +144,9 @@ beforeEach(async () => {
   });
   service = subsystem.service;
   setRoomService(service);
-  setReadCursorService(new ReadCursorService(new ReadCursorStore(db)));
+  setReadCursorService(
+    new ReadCursorService(new ReadCursorStore(db), (moved) => readCursorAudience(moved, service))
+  );
   setEntryMarksStore(createEntryMarksStore(db));
   initAuditTrail({
     log: new AuditLog(db),

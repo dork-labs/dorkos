@@ -1,11 +1,11 @@
-/** Every room event is addressed; a new producer must not silently broadcast. */
+/** Every room event and read cursor is addressed; a new producer must not silently broadcast. */
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { eventFanOut, type FanOutClient } from '../event-fan-out.js';
+import { eventFanOut, requiresAudience, type FanOutClient } from '../event-fan-out.js';
 import { roomAudience } from '../../rooms/service/room-audience.js';
 
 vi.mock('../auth/index.js', () => ({ readOwnerAccount: () => ({ id: 'owner' }) }));
@@ -37,7 +37,7 @@ const producers = sources(sourceRoot).flatMap((path) => {
       node.expression.expression.getText(source) === 'eventFanOut'
     ) {
       const name = node.arguments[0];
-      if (name && ts.isStringLiteral(name) && name.text.startsWith('room_')) {
+      if (name && ts.isStringLiteral(name) && requiresAudience(name.text)) {
         found.push({
           name: name.text,
           path,
@@ -68,10 +68,11 @@ const rooms = {
   },
 };
 
-describe('every room_* event', () => {
+describe('every room_* event and read_cursor', () => {
   it('discovers the live event family', () => {
     expect(names).toEqual(
       expect.arrayContaining([
+        'read_cursor',
         'room_created',
         'room_updated',
         'room_member_added',
@@ -153,10 +154,22 @@ it('requires room and dynamic audiences at compile time in both APIs', () => {
     .filter(
       (node): node is ts.TypeAliasDeclaration =>
         ts.isTypeAliasDeclaration(node) &&
-        ['ScopedEventName', 'UnscopedEventName'].includes(node.name.text)
+        ['ScopedEventLiteral', 'ScopedEventName', 'UnscopedEventName'].includes(node.name.text)
     )
     .map((node) => node.getText(source))
     .join('\n');
+  // The constants the aliases are built from, read from the same file.
+  const constants = source.statements
+    .filter(
+      (node): node is ts.VariableStatement =>
+        ts.isVariableStatement(node) &&
+        node.declarationList.declarations.some((decl) =>
+          ['ROOM_EVENT_PREFIX', 'SCOPED_EXACT_EVENTS'].includes(decl.name.getText(source))
+        )
+    )
+    .map((node) => node.getText(source).replace(/^export /, ''))
+    .join('\n');
+  expect(constants).toContain('SCOPED_EXACT_EVENTS');
   const signatures = service.members
     .filter(
       (node): node is ts.MethodDeclaration =>
@@ -176,6 +189,8 @@ it('requires room and dynamic audiences at compile time in both APIs', () => {
           `fan.${method}('session_status', ${payload});`,
           `fan.${method}(nonRoom, ${payload});`,
           `fan.${method}('room_created', ${payload}, () => true);`,
+          `fan.${method}('read_cursor', ${payload}, () => true);`,
+          `fan.${method}(cursorMixed, ${payload}, () => true);`,
           `fan.${method}(room, ${payload}, () => true);`,
           `fan.${method}(dynamic, ${payload}, () => true);`,
           `fan.${method}(mixed, ${payload}, () => true);`,
@@ -184,6 +199,8 @@ it('requires room and dynamic audiences at compile time in both APIs', () => {
           `fan.${method}(mixedOpenPrefix, ${payload}, () => true);`,
           `fan.${method}(mixedOpenSuffix, ${payload}, () => true);`,
           `// @ts-expect-error A room audience is mandatory.\nfan.${method}('room_created', ${payload});`,
+          `// @ts-expect-error A read cursor audience is mandatory.\nfan.${method}('read_cursor', ${payload});`,
+          `// @ts-expect-error A union with read_cursor needs an audience.\nfan.${method}(cursorMixed, ${payload});`,
           `// @ts-expect-error Undefined is not a room audience.\nfan.${method}(room, ${payload}, undefined);`,
           `// @ts-expect-error A dynamic string could name a room event.\nfan.${method}(dynamic, ${payload});`,
           `// @ts-expect-error An open prefix can name a room event.\nfan.${method}(openPrefix, ${payload});`,
@@ -199,6 +216,7 @@ it('requires room and dynamic audiences at compile time in both APIs', () => {
       `type Record<K extends string, V> = { [P in K]: V };
       type Extract<T, U> = T extends U ? T : never;
       type BroadcastAudience = () => boolean;
+      ${constants}
       ${aliases}
       declare class Fan { ${signatures} }
       declare const fan: Fan;
@@ -209,6 +227,7 @@ it('requires room and dynamic audiences at compile time in both APIs', () => {
       declare const mixedOpenSuffix: 'relay_signal' | \`\${string}_created\`;
       declare const dynamic: string;
       declare const mixed: 'room_created' | 'session_status';
+      declare const cursorMixed: 'read_cursor' | 'session_status';
       declare const nonRoom: 'relay_signal' | 'session_status';
       ${cases}`
     );

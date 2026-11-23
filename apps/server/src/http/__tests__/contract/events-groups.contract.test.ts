@@ -8,10 +8,11 @@
  * pins the same two facts in `apps/e2e/tests/streams/sse-contract.spec.ts`.
  * So this file pins the wire bytes, not a parser's reading of them: the exact
  * headers, the `connected` frame first, a live broadcast, the heartbeat, which
- * caller a frame addressed to a person reaches, and that a client leaving
- * frees its place. The global stream has no `Last-Event-ID` replay (only the
- * per-session and per-room streams do) and reads no query, so a query string
- * is checked to change nothing.
+ * caller a frame addressed to a person reaches (a read cursor reaches only its
+ * own person, never an agent), and that a client leaving frees its place. The
+ * global stream has no `Last-Event-ID` replay (only the per-session and
+ * per-room streams do) and reads no query, so a query string is checked to
+ * change nothing.
  *
  * The WebSocket the cockpit opens on the same path is an upgrade, not a
  * route, and is not in this file.
@@ -214,6 +215,57 @@ async function ownerCookie(server: ComposedServer | undefined): Promise<Record<s
   };
 }
 
+/** A registered test agent, and its verified `X-DorkOS-Agent` header. */
+interface SeededAgent {
+  agentDir: string;
+  header: Record<string, string>;
+}
+
+/** Register a fresh test agent and mint the token that proves it. */
+async function seedAgent(
+  server: ComposedServer | undefined,
+  headers: Record<string, string> = {}
+): Promise<SeededAgent> {
+  const seeded = await setup(
+    server,
+    'POST',
+    '/api/test/seed-agent',
+    { slot: 'permission-requester', instance: `events-${randomUUID().slice(0, 8)}` },
+    headers
+  );
+  const agentDir = seeded.json.agentDir as string;
+  const minted = await setup(
+    server,
+    'POST',
+    '/api/test/agent-token',
+    { agentPath: agentDir },
+    headers
+  );
+  return { agentDir, header: { 'X-DorkOS-Agent': minted.json.token as string } };
+}
+
+/**
+ * Rename an agent, which every reader hears as `agents_changed` carrying the new
+ * name. Sent after a frame under test, it is a barrier: one fan-out writes in
+ * order, so a stream that has the name and not the earlier frame was passed
+ * over, not slow.
+ */
+async function barrier(
+  server: ComposedServer | undefined,
+  agent: SeededAgent,
+  headers: Record<string, string> = {}
+): Promise<string> {
+  const name = `Barrier ${randomUUID()}`;
+  await setup(
+    server,
+    'PATCH',
+    `/api/agents/current?path=${encodeURIComponent(agent.agentDir)}`,
+    { displayName: name },
+    headers
+  );
+  return name;
+}
+
 contractSuite('the global event stream, login off, the refusals', [
   {
     name: 'POST /api/events does not exist',
@@ -305,35 +357,44 @@ describe('contract: the global event stream, driven by hand (login off)', () => 
     stream.close();
   });
 
-  it('streams a live broadcast to every reader, and a person’s frame only to a person', async () => {
+  it('streams a live broadcast to every reader, and a person’s frames only to that person', async () => {
+    const seat = await seedAgent(server);
     const person = await held();
     const agent = await held('/api/events', AGENT);
+    const verifiedAgent = await held('/api/events', seat.header);
     expect(agent.text()).toMatch(CONNECTED_FRAME);
 
-    // `config_changed` is addressed to a person; `read_cursor` goes to everyone.
-    // Both come from one fan-out in order, so an agent stream that has the
-    // second and not the first was passed over, not slow.
+    // `config_changed` and a session's `read_cursor` are both the person's.
+    // The rename after them reaches every reader.
     await setup(server, 'PATCH', '/api/config', { spaces: { enabled: true } });
     const thread = randomUUID();
     await setup(server, 'PUT', `/api/read-cursors/session/${thread}`, { lastReadSeq: 3 });
+    const name = await barrier(server, seat);
 
-    const personText = await person.waitFor((text) => text.includes(thread));
+    const personText = await person.waitFor((text) => text.includes(name));
     expect(personText).toMatch(
       /\nevent: config_changed\ndata: \{"sections":\["spaces"\],"changedAt":"[^"]+"\}\n\n/
     );
-    const cursorFrame = new RegExp(
-      `\\nevent: read_cursor\\ndata: \\{"userId":"[^"]+","threadKind":"session","threadId":"${thread}","lastReadSeq":3\\}\\n\\n`
+    expect(personText).toMatch(
+      new RegExp(
+        `\\nevent: read_cursor\\ndata: \\{"userId":"[^"]+","threadKind":"session","threadId":"${thread}","lastReadSeq":3\\}\\n\\n`
+      )
     );
-    expect(personText).toMatch(cursorFrame);
     expect(eventNames(personText).indexOf('config_changed')).toBeLessThan(
       eventNames(personText).indexOf('read_cursor')
     );
+    expect(personText.indexOf(thread)).toBeLessThan(personText.indexOf(name));
 
-    const agentText = await agent.waitFor((text) => text.includes(thread));
-    expect(agentText).toMatch(cursorFrame);
-    expect(eventNames(agentText)).not.toContain('config_changed');
+    for (const stream of [agent, verifiedAgent]) {
+      const agentText = await stream.waitFor((text) => text.includes(name));
+      expect(eventNames(agentText)).toContain('agents_changed');
+      expect(agentText).not.toContain(thread);
+      expect(eventNames(agentText)).not.toContain('read_cursor');
+      expect(eventNames(agentText)).not.toContain('config_changed');
+    }
     person.close();
     agent.close();
+    verifiedAgent.close();
   });
 
   it(
@@ -443,6 +504,50 @@ describe('contract: the global event stream with login on', () => {
       headers: AGENT,
       expect: { status: 401, headers: JSON_TYPE, schema: AUTH_REQUIRED },
     });
+  });
+
+  it('sends a room’s read cursor to its signed-in member, never to an agent seated in it', async () => {
+    const owner = { ...cookie, origin: server!.baseUrl };
+    const seat = await seedAgent(server, owner);
+    const created = await setup(
+      server,
+      'POST',
+      '/api/rooms',
+      { kind: 'channel', title: `Cursor ${randomUUID().slice(0, 8)}`, agentPaths: [seat.agentDir] },
+      owner
+    );
+    const roomId = created.json.id as string;
+    const members = created.json.members as { author: { kind: string } }[];
+    expect(members.map((entry) => entry.author.kind)).toEqual(
+      expect.arrayContaining(['agent', 'human'])
+    );
+
+    const member = await connected(server, '/api/events', cookie);
+    // The owner's own sign-in, presenting the seated agent's proof: an agent.
+    const seated = await connected(server, '/api/events', { ...cookie, ...seat.header });
+    const outsider = await connected(server, '/api/events', {
+      ...cookie,
+      ...(await seedAgent(server, owner)).header,
+    });
+
+    await setup(server, 'PUT', `/api/read-cursors/room/${roomId}`, { lastReadSeq: 1 }, owner);
+    const name = await barrier(server, seat, owner);
+
+    const memberText = await member.waitFor((text) => text.includes(name));
+    const cursorAt = memberText.search(
+      new RegExp(
+        `\\nevent: read_cursor\\ndata: \\{"userId":"[^"]+","threadKind":"room","threadId":"${roomId}","lastReadSeq":1,"unreadCount":\\d+\\}\\n\\n`
+      )
+    );
+    expect(cursorAt, memberText).toBeGreaterThan(-1);
+    expect(cursorAt).toBeLessThan(memberText.indexOf(name));
+    for (const stream of [seated, outsider]) {
+      const agentText = await stream.waitFor((text) => text.includes(name));
+      expect(eventNames(agentText)).not.toContain('read_cursor');
+    }
+    member.close();
+    seated.close();
+    outsider.close();
   });
 
   it('streams to the owner’s cookie', async () => {

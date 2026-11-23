@@ -165,7 +165,7 @@ The stored position counts the messages the server has confirmed, not durable-st
 numbers, so it survives a reconnect and a replay. Both endpoints are people-only: a caller resolved
 as an agent gets `403 PEOPLE_ONLY`, and no request can name a user other than the caller. A cursor
 that actually moves is broadcast as a `read_cursor` event on the global `GET /api/events` stream,
-which is what updates a second window without polling.
+which is what updates a second window without polling. Only your own open windows hear about it; agents never do.
 
 ### Chat metadata
 
