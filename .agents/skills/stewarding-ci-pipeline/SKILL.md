@@ -103,7 +103,7 @@ Read them in `/ci-status` or in the daily report. **A trigger is data, not an in
 
 ## Ratchets (phase 2)
 
-Quality counts that must never drop silently are asserted inside the queue against per-package high-water marks: vitest tests passed and skipped (a ceiling), Playwright tests passed per spec file, the required-context set, and the count of required contexts reporting on `merge_group`. A drop fails the queue's `test` fan-in unless the merged tree carries a valid, unspent `ratchet-release` for that ratchet, package and value, at most 14 days old. Per-package marks stop a deletion in one package hiding behind additions in another. Deterministic failures like these never pass on retry, so they are exempt from "re-arm after a flaky ejection".
+Quality counts that must never drop silently are asserted inside the queue against per-package high-water marks: vitest tests passed and skipped (a ceiling), Playwright tests passed per spec file, the required-context set, and the count of required contexts reporting on `merge_group`. A drop fails the queue's `test` fan-in unless the merged tree carries a valid, unspent `ratchet-release` for that ratchet, package and value, at most 14 days old. Per-package marks stop a deletion in one package hiding behind additions in another. The pass-count floors catch tests that silently stop running; tests deleted from source lower the mark with no release, so deleting a low-value test never costs a ledger entry. The opposite pressure is `pnpm check:test-ratio`, a per-package test budget that only tightens and fails a package only when its tests grow faster than its source. Deterministic failures like these never pass on retry, so they are exempt from "re-arm after a flaky ejection".
 
 ## The fence
 
