@@ -21,9 +21,15 @@
 # `scripts/arm-door.sh verdict`. When `pr-gates` is a required check, auto-merge
 # simply waits for the sign-offs.
 #
-# One difference from arm-door: the verify-proof reason (`no-proof`) is dropped.
-# The proof arm-door looks for is the other required checks being green, and as
-# a required check itself, this one sits beside them. Everything else counts.
+# Two differences from arm-door:
+#   - The verify-proof reason (`no-proof`) is dropped. The proof arm-door looks
+#     for is the other required checks being green, and as a required check
+#     itself, this one sits beside them.
+#   - Only Security's sign-off counts (DOR-5119, Dorian, Nov 23: release fast,
+#     fix forward). No local agent reviews an open PR, so QA's `qa-real-data`
+#     and the designer's `design-ok` are no longer merge gates: QA and the
+#     designer sweep each day's merges instead (DOR-5120). Their reasons are
+#     still printed, as a note, so the sweep can see what it will pick up.
 #
 # Fails closed: any read that fails is exit 2, and so is an `unreadable`
 # verdict. (arm-door fails open because it must never jam the queue; a required
@@ -70,7 +76,7 @@ explain() {
 # while local agents are down, the cloud verdict stands in for the label): the
 # newest `security-verdict` commit status on the head, posted by GitHub Actions,
 # in state `success` (security-verdict.yml, from main's copy). CLOUD_SECURITY=pass
-# then drops the two Security-label reasons; QA's and the designer's still count.
+# then drops the two Security-label reasons.
 cloud_security() { # <payload.json> -> pass | none
   jq -r '[.statuses[] | select(type == "object" and .context == "security-verdict"
             and (.creator.login // "") == "github-actions[bot]")]
@@ -79,7 +85,7 @@ cloud_security() { # <payload.json> -> pass | none
 }
 
 decide() {
-  local line=$1 reasons r out=()
+  local line=$1 reasons r out=() later=()
   case "$line" in
     "KEEP gates-met"*)
       echo "OK: every sign-off gate is met at this head."
@@ -90,10 +96,19 @@ decide() {
       IFS=, read -r -a list <<<"$reasons"
       for r in "${list[@]}"; do
         [ "$r" = no-proof ] && continue
+        case "$r" in
+          no-qa-label | qa-label-older-than-head | no-design-ok | design-ok-older-than-head)
+            later+=("$r")
+            continue
+            ;;
+        esac
         if [ "${CLOUD_SECURITY:-none}" = pass ]; then
           case "$r" in no-security-label | security-label-older-than-head) continue ;; esac
         fi
         out+=("$r")
+      done
+      for r in ${later[@]+"${later[@]}"}; do
+        echo "Note (not a merge gate; the daily sweep picks it up): $r: $(explain "$r")"
       done
       if [ "${#out[@]}" -eq 0 ]; then
         echo "OK: every sign-off gate is met at this head (the other required checks are the proof)."
