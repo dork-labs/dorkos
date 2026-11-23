@@ -80,10 +80,11 @@ export function encodeBroadcast(eventName: string, data: unknown): EncodedBroadc
  * Decide, per connected client, whether one broadcast is that client's to
  * receive.
  *
- * Omitted at the call site means everyone, which is what every event on this bus
- * has always meant and what all but one still mean. The one exception is
- * `interaction_pending`, which carries a prompt's detail — the tool, the command
- * and the working directory — and so goes only to a connection entitled to it
+ * Omitted at the call site means everyone, which is what most events on this
+ * bus mean. Room events and `read_cursor` must name one: both say what a person
+ * did in a place only some readers may see, so omitting it sends nothing. An
+ * event carrying detail, like `interaction_pending` (the tool, the command and
+ * the working directory), goes only to a connection entitled to it
  * (ADR 260819-022912).
  *
  * @param principal - What the connection registered itself as.
@@ -104,16 +105,24 @@ export type BroadcastAudience = (principal: CallerPrincipal) => boolean;
  */
 type EventFanOutListener = (eventName: string, data: unknown) => void;
 
-/** Inspect each union member: open key sets and room names require an audience. */
+/** The event names that must name an audience: room events and read cursors. */
+type ScopedEventLiteral = `room_${string}` | 'read_cursor';
+
+/** The runtime half of {@link ScopedEventLiteral}, for calls the types cannot see. */
+function requiresAudience(eventName: string): boolean {
+  return eventName.startsWith('room_') || eventName === 'read_cursor';
+}
+
+/** Inspect each union member: open key sets, room names and read cursors require an audience. */
 type ScopedEventName<Name extends string> = Name extends unknown
   ? Record<never, never> extends Record<Name, unknown>
     ? Name
-    : Name extends `room_${string}`
+    : Name extends ScopedEventLiteral
       ? Name
       : never
   : never;
 
-/** Omission is safe only when every constituent is a finite non-room literal. */
+/** Omission is safe only when every constituent is a finite literal outside {@link ScopedEventLiteral}. */
 type UnscopedEventName<Name extends string> = [ScopedEventName<Name>] extends [never]
   ? Name
   : never;
@@ -244,10 +253,10 @@ class EventFanOut {
    * @param eventName - The event name, e.g. `session_status`.
    * @param data - The payload, serialized once per wire format.
    * @param audience - Which connections this frame is for. Omitted means every
-   *   one of them, except room events, which require an audience — see
+   *   one of them, except room events and read cursors, which require one — see
    *   {@link BroadcastAudience}.
    */
-  broadcast(eventName: `room_${string}`, data: unknown, audience: BroadcastAudience): void;
+  broadcast(eventName: ScopedEventLiteral, data: unknown, audience: BroadcastAudience): void;
   broadcast<Name extends string>(
     eventName: Name & UnscopedEventName<Name>,
     data: unknown,
@@ -256,7 +265,7 @@ class EventFanOut {
   broadcast(eventName: string, data: unknown, audience: BroadcastAudience): void;
   broadcast(eventName: string, data: unknown, audience?: BroadcastAudience): void {
     this.notifyListeners(eventName, data);
-    if (eventName.startsWith('room_') && !audience) return;
+    if (requiresAudience(eventName) && !audience) return;
     this.writeToClients(() => encodeBroadcast(eventName, data), audience);
   }
 
@@ -292,7 +301,7 @@ class EventFanOut {
    *   every one of them.
    */
   broadcastRedacted(
-    eventName: `room_${string}`,
+    eventName: ScopedEventLiteral,
     full: unknown,
     redacted: unknown,
     entitled: BroadcastAudience,
@@ -320,7 +329,7 @@ class EventFanOut {
     audience?: BroadcastAudience
   ): void {
     this.notifyListeners(eventName, full);
-    if (eventName.startsWith('room_') && !audience) return;
+    if (requiresAudience(eventName) && !audience) return;
     const receives = audience ?? (() => true);
     this.writeToClients(
       () => encodeBroadcast(eventName, full),

@@ -916,7 +916,7 @@ ever written and read back by the person it belongs to.
 A `room` cursor is delegated into the room service, so it runs the room's own visibility check and
 recomputes the unread count the sidebar draws. A cursor that actually moves is announced as a
 `read_cursor` event on the global `GET /api/events` stream, which is how your other open windows
-catch up without polling.
+catch up without polling. Only the room's members get it; agents never do.
 
 What an agent has been shown is a separate number, `room_members.last_read_seq`, advanced by the
 room's participation loop as entries are handed to that agent. No route writes it.

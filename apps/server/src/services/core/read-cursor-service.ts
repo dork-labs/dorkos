@@ -19,7 +19,7 @@
  * @module server/services/core/read-cursor-service
  */
 import type { ReadCursor, ReadCursorThreadKind } from '@dorkos/shared/read-cursor-schemas';
-import { eventFanOut } from './event-fan-out.js';
+import { eventFanOut, type BroadcastAudience } from './event-fan-out.js';
 import type { ReadCursorStore } from './read-cursor-store.js';
 
 /** What a `read_cursor` broadcast says: whose cursor moved, in what, and to where. */
@@ -67,8 +67,14 @@ export class ReadCursorService {
    * Binds the service to a cursor store.
    *
    * @param store - The read-cursor table.
+   * @param audienceFor - Which streams may see one moved cursor. Required, so a
+   *   wiring that forgets it does not compile: a cursor names a person and the
+   *   thread they read, which is nobody else's to see.
    */
-  constructor(private readonly store: ReadCursorStore) {}
+  constructor(
+    private readonly store: ReadCursorStore,
+    private readonly audienceFor: (moved: ReadCursorMoved) => BroadcastAudience
+  ) {}
 
   /**
    * Where this person has read up to, or `null` when they have never read this
@@ -111,7 +117,8 @@ export class ReadCursorService {
   }
 
   /**
-   * Move this person's cursor forward and tell their other screens.
+   * Move this person's cursor forward and tell their other screens: only the
+   * streams its audience admits (see the constructor's `audienceFor`).
    *
    * **A write that changes nothing announces nothing.** Re-opening a thread
    * already read is the ordinary case, so a broadcast per call would make this
@@ -153,7 +160,7 @@ export class ReadCursorService {
       lastReadSeq: cursor.lastReadSeq,
       ...(opts.unreadCount ? { unreadCount: opts.unreadCount(cursor.lastReadSeq) } : {}),
     };
-    eventFanOut.broadcast('read_cursor', moved);
+    eventFanOut.broadcast('read_cursor', moved, this.audienceFor(moved));
     return cursor;
   }
 }
