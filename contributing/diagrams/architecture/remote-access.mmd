@@ -1,0 +1,33 @@
+flowchart LR
+  accTitle: Ways in to your DorkOS from another device
+  accDescr: Four routes reach a person's own DorkOS server from elsewhere, and each is a different route: the Wi-Fi listener on the same network, the person's own tunnel, managed remote ingress, and the chat relay through a hub. A sign-in made on one route is refused on another. The relay carries chats only and dials the hub the computer pinned, not Cloud. The tunnel and the Wi-Fi listener are shipped; managed remote and the relay are built and off by default; the hub is built and not deployed.
+
+  device["<b>Another device</b><br/><span class='d'>A phone or another browser</span>"]
+  tunnelsvc["<b>Tunnel service</b><br/><span class='d'>Outside DorkOS</span>"]
+  hub["<b>Your hub</b><br/><span class='d'>The same program in the hub role<br/>Built · not deployed</span>"]
+  cloud["<b>DorkOS Cloud · optional</b><br/><span class='d'>Hub assignment · managed command stream</span>"]
+
+  subgraph mac["Your computer"]
+    wifi["<b>Wi-Fi listener</b><br/><span class='d'>Mac only · a lower sign-in level</span>"]
+    tunnel["<b>Own tunnel</b><br/><span class='d'>Optional · outbound connection</span>"]
+    remote["<b>Managed remote ingress</b><br/><span class='d'>Commands from Cloud · built, off until switched on</span>"]
+    relay["<b>Chat relay</b><br/><span class='d'>Chats only · off until linked</span>"]
+    local["<b>Local DorkOS server</b><br/><span class='d'>Records which route made each sign-in</span>"]
+    wifi --> local
+    tunnel --> local
+    remote --> local
+    relay --> local
+  end
+
+  device -->|"same network"| wifi
+  device -->|"HTTPS, WSS"| tunnelsvc
+  tunnelsvc -->|"app traffic"| tunnel
+  device -->|"managed address<br/><span class='d'>when switched on</span>"| remote
+  device -->|"on the web"| hub
+  relay -->|"dials, signed frames"| hub
+  hub -->|"reads its assignment"| cloud
+
+  classDef cloud fill:#fff5e4,stroke:#a87720,color:#49320c
+  classDef external fill:#ffffff,stroke:#8a9bab,color:#3b4a58
+  class cloud cloud
+  class device,tunnelsvc external

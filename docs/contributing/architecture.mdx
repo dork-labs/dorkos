@@ -11,7 +11,7 @@ This is the engineering reference. For a plain-language introduction, start with
 
 DorkOS has several deployment boundaries. The local React client reaches a Hono server through the `Transport` interface. The space server (Community in paths and schemas) owns shared channels; since October its code lives in the same server package and ships as its own entry and image. Cloud is optional and communicates through a public contract. The marketplace website helps people discover packages that the local server installs.
 
-Reviewed against public source `14434634ff15978f4acaa561a445ac0b88c6555a` on November 21, 2026. Spaces is the product name; Community remains the service and schema name. Solid diagram edges show implemented public paths, while dashed edges identify unfinished wiring or service-contract relationships. Neither establishes live deployment. Sequence-diagram dashed arrows represent responses and events.
+Reviewed against public source `14434634ff15978f4acaa561a445ac0b88c6555a` on November 21, 2026. Spaces is the product name; Community remains the service and schema name. Every diagram uses one key: a blue box is built, a dashed grey box is planned, a dashed line is unfinished wiring or contract-only, an amber box is optional DorkOS Cloud, a white box is something outside DorkOS, and a green hexagon is a port. Solid diagram edges show implemented public paths, while dashed edges identify unfinished wiring or service-contract relationships. Neither establishes live deployment. Sequence-diagram dashed arrows represent responses and events. The code names, routes and switches behind each box are in the prose.
 
 ## System map
 
@@ -99,11 +99,15 @@ Source registries supply package metadata and content. The website browses them.
 
 ## Cloud boundary
 
-[![Public Cloud requests, optional inference configuration, and the separate tunnel path](/diagrams/architecture/cloud-boundary.svg)](/diagrams/architecture/cloud-boundary.svg)
+[![Public Cloud requests, inference endpoint selection, and the public contract package](/diagrams/architecture/cloud-boundary.svg)](/diagrams/architecture/cloud-boundary.svg)
 
 The public `packages/cloud-api` package defines schemas, routes, fixtures and a fetch client. Existing device-link, heartbeat and managed-service calls still use `/api/auth/device/*` and `/api/instances/*`; versioned clients use `/v1`. The older calls go to `DORKOS_CLOUD_URL` (default the website). The `/v1` calls go to `DORKOS_CLOUD_API_URL`; unset, that follows a custom `DORKOS_CLOUD_URL`, and otherwise defaults to the Cloud service's own address, since the website has no `/v1` routes.
 
 The contract's remote command stream uses SSE and has lease/acknowledgement semantics; managed remote access is not available yet, and the app describes remote access as it works today. The existing local tunnel manager separately uses the ngrok SDK. Remote browser traffic travels through the tunnel to the local server. The chat relay is a third path in the code: it carries chats to your own DorkOS in the cloud, not to Cloud's service. Credits inference is another optional path, selected through Runs on on a linked installation. The environment variable can disable credits; it cannot authorize spending. Local DorkOS and the space server both run without Cloud. The contract also carries the assignment of your own DorkOS in the cloud, agent computers, computer start and stop and the account directory; only the assignment and its viewer-open wake have app consumers today.
+
+[![Four routes from another device to your DorkOS: the Wi-Fi listener, your own tunnel, managed remote ingress, and the chat relay through your own DorkOS in the cloud](/diagrams/architecture/remote-access.svg)](/diagrams/architecture/remote-access.svg)
+
+Each of those routes is its own listener or dial, and DorkOS remembers which route each sign-in came through. A sign-in made on one route is refused on another.
 
 The account surface asks Cloud for opaque offers and short-lived hosted billing URLs; payment happens in a browser. Account export is a service job, separate from exporting a community. Claude Code and Doe select credits per chat. Codex binds a new chat to its credits home. OpenCode selects credits for its whole sidecar and waits for running replies before switching. Its local relay holds the Cloud token outside the sidecar. Every runtime requires its format in the token’s served list; there is no fallback to a different payer.
 
