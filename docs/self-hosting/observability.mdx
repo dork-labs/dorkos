@@ -28,7 +28,7 @@ Each span carries only durations, counts, and coarse labels (like which runtime,
 
 Runtime-call spans also carry standard AI metadata, following OpenTelemetry's `gen_ai.*` naming, so any tool that understands LLM traces can read them straight away:
 
-- `gen_ai.system`: which runtime ran the turn (`claude-code`, `codex`, or `opencode`).
+- `gen_ai.system`: which runtime ran the turn (`claude-code`, `codex`, `opencode`, or `doe` for DorkOS's own engine).
 - `gen_ai.response.model`: the model that answered, when the runtime reports one.
 - `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens`: the token counts for the whole turn, when known.
 - `dorkos.gen_ai.thinking_tokens`: how many of those output tokens the model spent thinking, when the runtime reports it. It is part of the output count, not an extra on top, so adding the two counts the same tokens twice.
