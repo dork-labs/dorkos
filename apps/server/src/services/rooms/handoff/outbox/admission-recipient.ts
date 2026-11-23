@@ -14,7 +14,8 @@ import {
  * Whether the chat's agent state names `agentPath`. With `acceptUnknownAgent`, a chat whose
  * agent is no longer known (its runtime dropped it, no agent was recorded) is taken to be the
  * agent the caller's admission witness already named; a refused folder, nobody's folder or a
- * different agent never is (DOR-5040).
+ * different agent never is. Taken by the end notice (DOR-5040) and by the claim and the
+ * before-run check of a queued hand-off (DOR-5087); admission never takes it.
  */
 function namesAgent(state: ChatAgentState, agentPath: string, acceptUnknownAgent: boolean) {
   if (state.kind === 'agent') return state.agentPath === agentPath;
