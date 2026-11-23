@@ -83,8 +83,8 @@ describe('the room tools block', () => {
     const words = block.replace(/\s+/g, ' ');
     expect(words).toContain('Long work does not hold the room');
     expect(words).toContain('A few minutes of looking can go to a helper');
-    expect(words).toContain('hand anything longer to a spin-off chat or another agent');
-    expect(words).toContain('end the turn, and post again when they report');
+    expect(words).toContain('Anything longer goes to ONE project-lead chat');
+    expect(words).toContain('Say who has it, then end the turn.');
   });
 
   it('tells every seat to stay responsive (DOR-4081)', () => {
@@ -98,7 +98,6 @@ describe('the room tools block', () => {
       "Before anything bigger, post one line: what you're doing and who has it."
     );
     expect(words).toContain('never do it inside a room turn');
-    expect(words).toContain('say who has it, end the turn, and post again when they report');
     expect(words).toContain('When nobody asked you and you hold nothing new, stay silent.');
     // Folded in, not duplicated: the old bullet is gone rather than left beside the new one.
     expect(words.match(/Long work does not hold the room/g)).toHaveLength(1);
@@ -212,5 +211,51 @@ describe('what the block says about a page that talks back (DOR-3159)', () => {
     expect(words).toContain("On a ROOM canvas, routed events don't start your turn yet.");
     expect(words).toContain('Only a person can pin a document');
     expect(words).toContain('only when the Docs experiment is on');
+  });
+});
+
+/**
+ * DOR-4469 (with DOR-4081's post-back rule revised): long work goes to one project-lead
+ * chat that coordinates by direct message, and the room hears only three kinds of project
+ * update. The old "post again when they report" line is what turned every delegate's
+ * report into a room post, so its absence is pinned too. Checked under every prefix,
+ * because every runtime reads the same block.
+ */
+describe.each(['mcp__dorkos__', 'dorkos_'])('the project-lead pattern (DOR-4469, %s)', (prefix) => {
+  const words = buildRoomToolsBlock(prefix).replace(/\s+/g, ' ');
+
+  it('sends long work to one lead that coordinates by direct message', () => {
+    expect(words).toContain('Anything longer goes to ONE project-lead chat');
+    expect(words).toContain('or hand it to the lead or agent that already has it');
+    expect(words).toContain('The lead owns the work until it ships');
+    expect(words).toContain('coordinates by direct message with the one agent who must act');
+    expect(words).not.toContain('post again when they report');
+  });
+
+  it('names the three room updates, and keeps answers when somebody asks', () => {
+    expect(words).toContain(
+      'THE ROOM HEARS THREE THINGS about project work: it started, it is blocked on a person, it shipped.'
+    );
+    expect(words).toContain('never relay them here, and never fan them out with cc');
+    expect(words).toContain('These are kinds of update, not a quota');
+    expect(words).toContain('when someone here asks, give a short, useful answer');
+    // A research result asked for in the room is not "news" to be held back: it is owed.
+    expect(words).toContain(
+      'A result somebody here asked for is owed here: when it comes back, post it, never sit on it.'
+    );
+  });
+
+  it('moves chasing to a direct message and takes cc off status duty', () => {
+    expect(words).toContain('chase it once with a direct message to that agent, not in the room');
+    expect(words).toContain('cc is never a status channel');
+    expect(words).not.toContain('chase them when it is late');
+  });
+
+  it('says posting is how words reach the room, not the only way to reach anybody', () => {
+    // A seat can message another agent directly, so "reaches anybody" was no longer true.
+    expect(words).toContain('the only way anything you say reaches the room');
+    expect(words).not.toContain('reaches anybody');
+    // The block reaches sessions the chat tools are gated away from, so it names none.
+    expect(words).not.toMatch(/chat_send|session_start/);
   });
 });

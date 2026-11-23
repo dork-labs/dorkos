@@ -3,19 +3,23 @@
  *
  * **Why this exists.** A spin-off reports back on its own when one of its turns ends (spec
  * `spin-off-chats` §5), as a `chat_send` into the chat that started it. A room seat (the session
- * a room keeps for one agent, DOR-3397) takes no chat messages: an agent speaks in a room with
- * `post_to_room`, and a chat message into a seat would start a turn the room never asked for and
- * could not see. So every report to a seat was refused, the seat never woke, and a lead who
- * started work from #dorkos stalled until somebody read the spin-off by hand.
+ * a room keeps for one agent, DOR-3397) took no chat messages when this was written: an agent
+ * speaks in a room with `post_to_room`, and a chat message into a seat would start a turn the
+ * room never asked for and could not see. So every report to a seat was refused, the seat never
+ * woke, and a lead who started work from #dorkos stalled until somebody read the spin-off by hand.
+ * A seat now takes a `chat_send` as a private aside (DOR-4472), but that path leaves a note in
+ * the room and is refused in a bridged room, so a report still comes here, which does neither.
  *
  * **A report is a turn in the seat, never a post in the room.** It runs through the same aside a
  * hand-off does: the seat's own session, under every bound a room turn has (one session per room,
  * one working tree per agent, the room's turn budget), its room context marked `aside` so it
  * names no message to answer. The report is fenced as data, and the seat decides what happens
- * next: carry on, read more with `chat_read`, or tell the room with `post_to_room` only when the
- * room needs to know. Posting the report into the room on the seat's behalf was the other
- * option; it was not taken, because most reports are working notes the room has no use for, and
- * agents in shared rooms are meant to be mostly quiet (`meta/agent-etiquette.md`).
+ * next: take a short step, read more with `chat_read`, message the agent who must act with
+ * `chat_send`, or post with `post_to_room` only for one of the three project updates a room
+ * hears (started, blocked on a person, shipped) or to answer a question (DOR-4469). Posting the
+ * report into the room on the seat's behalf was the other option; it was not taken, because most
+ * reports are working notes the room has no use for, and agents in shared rooms are meant to be
+ * mostly quiet (`meta/agent-etiquette.md` E33).
  *
  * **Idle, busy, or mid-turn.** An idle seat takes the report at once. A busy seat, including one
  * whose own room turn started the spin-off, waits for that turn to end and then takes it, as a
@@ -261,9 +265,12 @@ export function seatReportPrompt(report: SeatReport): string {
   const from = title ? `"${title}" (chat ${report.fromSessionId})` : `chat ${report.fromSessionId}`;
   return [
     `A spin-off chat you started from this room, ${from}, reported back. Its report is below.`,
-    'Act on it: carry on with the work, read more with chat_read, or message it with chat_send. ' +
-      'Nobody in the room has seen this report. Post in the room with post_to_room only if ' +
-      'the room needs to know; otherwise say nothing there.',
+    'Act on it: take the next short step, read more with chat_read, or message the spin-off or ' +
+      'the agent who must act with chat_send. Long work stays with its lead chat, not this one. ' +
+      'Nobody in the room has seen this report. A report is not room news by itself. Post ' +
+      'there with post_to_room only when project work starts, is blocked on a person, or ships, ' +
+      'or to answer someone who asked. A result somebody in the room asked for is owed there: ' +
+      'post it now, never sit on it. Otherwise say nothing there.',
     '',
     fenceUntrustedBlock(report.text, {
       label: 'SPIN-OFF REPORT',

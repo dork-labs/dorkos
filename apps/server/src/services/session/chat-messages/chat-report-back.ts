@@ -51,10 +51,12 @@
  * ## Into a room's seat
  *
  * A parent that is an agent's seat in a room (the session the room keeps for
- * it) takes no chat messages, so a report there goes through the room instead
- * (`toRoomSeat`, `rooms/handoff/seat-report.ts`, DOR-3488): it wakes the seat
- * with a private turn that carries the report, once the seat is free. Nothing
- * is posted into the room unless the seat's turn decides the room needs it.
+ * it) gets its report through the room instead (`toRoomSeat`,
+ * `rooms/handoff/seat-report.ts`, DOR-3488), never through `chat_send`'s seat
+ * path, which leaves a note in the room and is refused in a bridged room
+ * (DOR-4472): it wakes the seat with a private turn that carries the report,
+ * once the seat is free. Nothing is posted into the room unless the seat's turn
+ * posts one of the three project updates or an answer (DOR-4469).
  *
  * ## A report that cannot be delivered
  *
@@ -88,8 +90,10 @@ export { lastTurnText } from './report-back/report-text.js';
 export { reasonOf } from './report-back/report-reason.js';
 export { spinOffBriefing } from './spin-off-briefing.js';
 export {
+  REPORT_DETAIL_MAX,
   REPORT_TEXT_MAX,
   composeReport,
+  cutReportDetail,
   type ReportNotice,
   type ReportReason,
 } from './report-back/report-words.js';
@@ -674,7 +678,8 @@ export class ChatReportBack {
   ): Promise<void> {
     const agentPath = await this.deps.agentPathOf(sessionId).catch(() => null);
     if (!agentPath) throw new Error('The chat has no agent home to report as.');
-    // A room's seat takes no chat messages: the report wakes the seat with a turn of its own.
+    // A room's seat gets the report as a turn of its own, never through chat_send's seat path,
+    // which leaves a note in the room and is refused in a bridged room (DOR-4472).
     const toSeat = this.deps.toRoomSeat;
     if (
       toSeat &&

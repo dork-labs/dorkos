@@ -9,6 +9,13 @@
 /** The longest last message a report carries; the parent reads more with `chat_read`. */
 export const REPORT_TEXT_MAX = 6_000;
 
+/**
+ * The longest error, startup reason or question a report carries, its "…"
+ * included. A runtime's error can be any length, and a report past the send
+ * limit is refused whole, so the parent would hear nothing (DOR-3535).
+ */
+export const REPORT_DETAIL_MAX = 1_000;
+
 /** Why a report went. */
 export type ReportReason =
   'finished' | 'failed' | 'stopped' | 'limit' | 'needs-you' | 'holding' | 'never-started';
@@ -45,19 +52,40 @@ export const SUMMARY: Record<ReportNotice, string> = {
   holding: 'Still working',
 };
 
+/** What a cut detail ends with, inside {@link REPORT_DETAIL_MAX}. */
+const DETAIL_CUT = '… (Details cut short.)';
+
+/** At most `max` code units of `s`, never splitting a character made of two. */
+function cutAt(s: string, max: number): string {
+  const end = max > 0 && /[\uD800-\uDBFF]/.test(s.charAt(max - 1)) ? max - 1 : max;
+  return s.slice(0, end);
+}
+
+/**
+ * A detail cut to {@link REPORT_DETAIL_MAX}, saying so; one that fits comes
+ * back as it is. Cutting twice changes nothing, so a detail the outbox saved
+ * already cut reads the same when its report is sent after a restart.
+ *
+ * @param detail - The error, startup reason or question a report carries.
+ */
+export function cutReportDetail(detail: string): string {
+  if (detail.length <= REPORT_DETAIL_MAX) return detail;
+  return `${cutAt(detail, REPORT_DETAIL_MAX - DETAIL_CUT.length)}${DETAIL_CUT}`;
+}
+
 /**
  * The report a spin-off sends its parent.
  *
  * @param reason - Why it goes.
  * @param text - The spin-off's last words.
- * @param detail - A further line, when there is one (the question it waits on).
+ * @param detail - A further line, when there is one (the error, startup reason or question).
  */
 export function composeReport(reason: ReportNotice, text: string, detail?: string): string {
   const parts = [STATUS_LINE[reason]];
-  if (detail) parts.push(detail);
+  if (detail) parts.push(cutReportDetail(detail));
   if (text) {
     const cut = text.length > REPORT_TEXT_MAX;
-    parts.push(cut ? `${text.slice(0, REPORT_TEXT_MAX)}…` : text);
+    parts.push(cut ? `${cutAt(text, REPORT_TEXT_MAX)}…` : text);
     if (cut) parts.push('(Cut short. Read the rest with chat_read.)');
   }
   return parts.join('\n\n');

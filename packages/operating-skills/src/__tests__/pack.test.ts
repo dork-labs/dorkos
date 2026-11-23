@@ -572,6 +572,59 @@ describe('working-with-spin-off-chats', () => {
   it('is named in the umbrella sibling list', () => {
     expect(bodyOf('operating-dorkos')).toContain('working-with-spin-off-chats');
   });
+
+  // DOR-4469: one lead owns long work and coordinates by chat_send; a room hears three
+  // kinds of project update. "Post there only if the room needs to know" left every
+  // report a candidate for a room post, so its absence is pinned.
+  it('teaches one project lead that coordinates by direct message', () => {
+    expect(flat).toContain('## One lead for long project work');
+    expect(flat).toContain('one spin-off chat that owns the work until it ships');
+    expect(flat).toContain('not a new role and not more access');
+    expect(flat).toContain('If a lead already has the work, message it.');
+    expect(flat).toContain('It sends `chat_send` to the one agent who must act');
+    expect(flat).toContain('never use cc as a status channel');
+  });
+
+  it('names the three room updates and keeps answers for whoever asks', () => {
+    expect(flat).toContain(
+      'A room hears three things about project work**: it started, it is blocked on a person, it shipped.'
+    );
+    expect(flat).toContain('These are kinds of update, not a quota.');
+    expect(flat).toContain('they still get a short, useful answer');
+    expect(flat).toContain(
+      'Post there only when the work starts, is blocked on a person, or ships, or to answer someone who asked.'
+    );
+    expect(flat).not.toContain('Post there only if the room needs to know');
+  });
+
+  it('says a room chat can send, a send never posts into a room, and a beat gets no report', () => {
+    expect(flat).toContain('Your chat in a room can send too.');
+    expect(flat).toContain('`chat_send` never posts into a room');
+    expect(flat).toContain('Only `post_to_room` speaks in a room.');
+    expect(flat).toContain(
+      "A spin-off started from a beat, a scheduled run, a Telegram or Slack direct chat, a connector event's chat or a chat from an older DorkOS does not report back"
+    );
+    expect(flat).toContain('a one-line note saying you messaged it, never your words');
+    expect(flat).not.toContain('a one-line note that you wrote');
+    expect(flat).toContain(
+      'In a room bridged to Telegram or Slack, that chat takes only an answer to a message it sent you; anything else is refused.'
+    );
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(71);
+  });
+
+  it('says a result asked for in the room is owed there, and room-chat notes ride turn-end reports', () => {
+    expect(flat).toContain(
+      'A result somebody in the room asked for is owed there: when it comes back, post it, never sit on it.'
+    );
+    expect(flat).toContain('never into a room (from a room chat: in turn-end reports only)');
+    expect(flat).toContain('one more direct message to that agent, not a post in a room');
+  });
+
+  it('suggests one plain wait per call, never a shell loop (DOR-3109)', () => {
+    expect(flat).toContain('or one `sleep 240` per call, then check again');
+    expect(flat).toContain('Never a shell loop');
+    expect(flat).not.toMatch(/`sleep` loop/);
+  });
 });
 
 /**
@@ -626,6 +679,26 @@ describe('working-on-a-heartbeat', () => {
   it('is named in the umbrella sibling list, and the pack is stamped for it', () => {
     expect(bodyOf('operating-dorkos')).toContain('working-on-a-heartbeat');
     expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(40);
+  });
+
+  it('hands long work to one lead, names who hears the result, and keeps rooms quiet (DOR-4469)', () => {
+    const flat = beat.replace(/\s+/g, ' ');
+    expect(flat).toContain('## Long work gets one lead');
+    expect(flat).toContain('start one project-lead spin-off chat with `session_start`');
+    expect(flat).toContain('or message the lead that already has it, then end the beat');
+    expect(flat).toContain('A spin-off started from a beat does not report back to it');
+    expect(flat).toContain('Name in its brief the chat or agent that should hear the result.');
+    expect(flat).toContain(
+      'The lead coordinates by direct message with the one agent who must act.'
+    );
+    expect(flat).toContain(
+      'For project work a room hears three things: it started, it is blocked on a person, it shipped.'
+    );
+    expect(flat).toContain('These rungs are for telling people.');
+    expect(flat).toContain(
+      'A message to the agent who must act is work, not a rung, and it is not louder than a room post'
+    );
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(71);
   });
 });
 

@@ -13,7 +13,8 @@
     "openapi-fresh",
     "fixtures",
     "not-held",
-    "release-window"
+    "release-window",
+    "pr-gates"
   ],
   "workflows": [
     {

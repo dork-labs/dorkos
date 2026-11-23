@@ -559,6 +559,7 @@ this block byte for byte, so it cannot drift quietly):
 - `fixtures`
 - `not-held`
 - `release-window`
+- `pr-gates`
 - Required workflow: dork-labs/dorkos, `.github/workflows/security-gate.yml` from `refs/heads/main` (organization rule; no bypass actors).
 <!-- ci-steward:required-checks:end -->
 <!-- prettier-ignore-end -->

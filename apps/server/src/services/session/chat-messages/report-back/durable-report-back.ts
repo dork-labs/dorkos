@@ -12,6 +12,7 @@ import type {
   ReportTarget,
   TurnWindow,
 } from '../chat-report-back.js';
+import { cutReportDetail } from './report-words.js';
 
 /** Journal transitions and effects owned by one report producer lifetime. */
 export class DurableReportBack {
@@ -88,7 +89,8 @@ export class DurableReportBack {
           reason,
           window,
           marks,
-          detail,
+          // Saved already cut: a runtime's error can be any length (DOR-3535).
+          detail: detail === undefined ? undefined : cutReportDetail(detail),
           outsideWords: chatReadOutsideWords(sessionId) || this.unsavedSources.has(sessionId),
           since: this.now(),
         },

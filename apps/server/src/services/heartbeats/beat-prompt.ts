@@ -160,8 +160,9 @@ export function buildBeatPrompt(input: BeatPromptInput): string {
       'goals, your checklist, your own health.',
     '',
     'For each item choose one: act, act then tell, ask, or stay quiet.',
-    'Use the quietest way to say anything: the record, your next report, a room, a direct ' +
-      'message, or a note outside the app, in that order.',
+    'Use the quietest way to tell a person anything: the record, your next report, a room, ' +
+      'a direct message, or a note outside the app, in that order. Those rungs are for ' +
+      'telling people. A message to the agent who must act is work, not a rung.',
     URGENT_DEFINITION,
     'Messages to people wait for their working hours unless urgent. Work with other agents has no quiet hours.',
     'If one small useful thing inside your role is worth doing now, you may do it, once, and record why.',

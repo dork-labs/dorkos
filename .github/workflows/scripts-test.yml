@@ -763,6 +763,18 @@ jobs:
       - name: Tests-by-import fixtures
         run: bash scripts/test-pr-related.sh
 
+      # after-merge-alert.sh is how a check that fails on main after merge
+      # reaches its author (DOR-5121): a PR comment and one issue per failure
+      # group. A silent break here loses those alerts. Stub gh, jq only.
+      - name: After-merge alert fixtures
+        run: bash scripts/test-after-merge-alert.sh
+
+      # auto-revert.sh decides whether a merge that turned main red is reverted
+      # (DOR-5122). A wrong rule reverts good work, or the release commit.
+      # Stub gh, jq only.
+      - name: Auto-revert fixtures
+        run: bash scripts/test-auto-revert.sh
+
       # release-branch-contents.sh is the rule for what a pull request into a
       # release/v<X.Y.Z> branch may carry (DOR-4639): only cherry-picks of main
       # with a matching patch-id and the release commit. A rule that quietly

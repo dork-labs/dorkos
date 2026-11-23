@@ -3,14 +3,17 @@ import { TOOL_NAME_NOTE } from '../tool-name-note.js';
 
 /**
  * Teaches an agent when to use a helper and when to start a spin-off chat, and
- * how to brief, check on, message and stop a spin-off (spec `spin-off-chats` §7).
+ * how to brief, check on, message and stop a spin-off (spec `spin-off-chats` §7),
+ * and how one project-lead spin-off carries long work while a room hears only
+ * three kinds of update (DOR-4469).
  */
 export const workingWithSpinOffChats: OperatingSkill = {
   name: 'working-with-spin-off-chats',
   description:
     'Use when work should run somewhere other than your own turn: choosing between a helper ' +
     'and a spin-off chat, starting and briefing a spin-off, checking on it, messaging, ' +
-    'steering or stopping another chat, or acting on a report a spin-off sent back. Covers ' +
+    'steering or stopping another chat, acting on a report a spin-off sent back, or leading ' +
+    'long project work from one chat. Covers ' +
     'session_start, chat_send, chat_read and chat_stop.',
   body: `# Working with spin-off chats
 
@@ -42,6 +45,23 @@ Use a **spin-off chat** when the work:
 
 A helper has no DorkOS tools. Send messages to other chats from your own chat.
 
+## One lead for long project work
+
+Long project work gets **one project lead**: one spin-off chat that owns the
+work until it ships. It is an ordinary spin-off with a clear brief, not a new
+role and not more access.
+
+- **Start one, or reuse one.** If a lead already has the work, message it.
+  Never start a second chat just to ask how it is going.
+- **The lead coordinates by direct message.** It sends \`chat_send\` to the one
+  agent who must act, checks the result, and keeps going. Chasing a late reply
+  is one more direct message to that agent, not a post in a room.
+- **No status relays.** Progress, chasing and other chats' reports stay in the
+  chats. Never copy them into a room, and never use cc as a status channel.
+- **A room hears three things about project work**: it started, it is blocked
+  on a person, it shipped. These are kinds of update, not a quota. When someone
+  in the room asks, they still get a short, useful answer.
+
 ## Start one
 
 \`session_start\` with \`prompt\` (the first message) and \`cwd\` (the folder it
@@ -54,10 +74,15 @@ Write the first message as a brief:
 2. **What done means**: the check that proves it. Tests pass, the PR merged, a
    file exists.
 3. **How to wait**: keep its turn alive while it waits on CI or a timer, for
-   example \`gh pr checks --watch\`, or a short \`sleep\` loop that checks again.
-   A turn that ends while still waiting has not finished anything.
-4. **How to report**: send milestones with \`chat_send\` as it goes. The final
-   report comes back by itself.
+   example \`gh pr checks --watch\`, or one \`sleep 240\` per call, then check
+   again. Never a shell loop: it is a command nobody can check before it runs, so
+   it stops to ask a person. A turn that ends while still waiting has not
+   finished anything.
+4. **What is known**: the context it needs, its limits, and the reviews or
+   approvals the work must pass.
+5. **How to report**: send working notes with \`chat_send\` as it goes, never
+   into a room (from a room chat: in turn-end reports only). The final report
+   comes back by itself.
 
 ## How a spin-off reports back
 
@@ -68,8 +93,16 @@ ends with background work still running, the report waits up to 15 minutes for
 that work.
 
 Started from a room, the report comes to your chat in that room as a turn
-only you see. Nobody else in the room reads it. Post there only if the room
-needs to know.
+only you see. Nobody else in the room reads it, and it is not room news by
+itself. Post there only when the work starts, is blocked on a person, or
+ships, or to answer someone who asked. A result somebody in the room asked
+for is owed there: when it comes back, post it, never sit on it. Long work
+stays with its lead chat; do not carry it on inside your room chat.
+
+A spin-off started from a beat, a scheduled run, a Telegram or Slack direct
+chat, a connector event's chat or a chat from an older DorkOS does not report
+back: nothing can write into those. Name in its brief the chat or agent that
+should hear the result.
 
 So after you start one, end your turn. Do not poll it.
 
@@ -107,6 +140,13 @@ Pick a \`delivery\`:
 To answer a message another chat sent you, set \`replyTo\` to that message's id.
 There is no "from" field. The server marks every message with you and your
 chat, so the other side always knows who wrote it.
+
+Your chat in a room can send too. \`chat_send\` never posts into a room: sent
+to another agent's chat in a room, it arrives there as a private turn, and the
+room sees at most a one-line note saying you messaged it, never your words. In
+a room bridged to Telegram or Slack, that chat takes only an answer to a
+message it sent you; anything else is refused. Only \`post_to_room\` speaks in
+a room.
 
 ## Stop one
 
