@@ -250,6 +250,11 @@ gates:
     source: .github/workflows/queue-repeat-guard.yml
     purpose: On every merge-queue entry, takes a PR back out when its head already failed the same required check in two queue builds, and tells the author once.
 
+  # --- pr-gates.yml ---
+  - id: wf.pr-gates.pr-gates
+    source: .github/workflows/pr-gates.yml
+    purpose: Fails while the head lacks a sign-off arm-door would pull it for (security-reviewed after the head, qa-real-data and design-ok where needed), so auto-merge waits for them (DOR-5107). Advisory until added to the ruleset.
+
   # --- hold-reason.yml ---
   - id: wf.hold-reason.hold-reason
     source: .github/workflows/hold-reason.yml
