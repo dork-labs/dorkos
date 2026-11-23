@@ -9,9 +9,10 @@
  * So this file pins the wire bytes, not a parser's reading of them: the exact
  * headers, the `connected` frame first, a live broadcast, the heartbeat, which
  * caller a frame addressed to a person reaches (a read cursor reaches only its
- * own person, or a room's members), and that a client leaving frees its place. The global stream has no `Last-Event-ID` replay (only the
- * per-session and per-room streams do) and reads no query, so a query string
- * is checked to change nothing.
+ * own person, never an agent), and that a client leaving frees its place. The
+ * global stream has no `Last-Event-ID` replay (only the per-session and
+ * per-room streams do) and reads no query, so a query string is checked to
+ * change nothing.
  *
  * The WebSocket the cockpit opens on the same path is an upgrade, not a
  * route, and is not in this file.

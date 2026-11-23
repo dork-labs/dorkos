@@ -41,10 +41,11 @@ export function roomAudience(
 }
 
 /**
- * Address a moved read cursor. A room cursor goes to the room's members, the
- * same audience as the room's own events. A session, inbox or room-thread
- * cursor goes only to the person it belongs to, on every screen they have open.
- * Agent streams never receive one, even an agent seated in the room.
+ * Address a moved read cursor. Every cursor belongs to one person, so it goes
+ * only to that person's streams, on every screen they have open. A room cursor
+ * also passes the room's membership check, so a person who left the room hears
+ * nothing more from it. Agent streams never receive one, even an agent seated
+ * in the room.
  *
  * @param moved - The cursor that moved: whose it is, and in what thread.
  * @param rooms - Author and membership lookups, read when the frame is sent.
@@ -54,14 +55,15 @@ export function readCursorAudience(
   moved: ReadCursorMoved,
   rooms: RoomAudienceSource
 ): BroadcastAudience {
-  if (moved.threadKind === 'room') return roomAudience(moved.threadId, rooms);
+  const inRoom = moved.threadKind === 'room' ? roomAudience(moved.threadId, rooms) : null;
   return (principal) => {
     if (principal.kind !== 'operator' && principal.kind !== 'program') return false;
     try {
-      return personAuthor(principal, rooms.authorRegistry).id === moved.userId;
+      if (personAuthor(principal, rooms.authorRegistry).id !== moved.userId) return false;
     } catch {
       return false;
     }
+    return inRoom ? inRoom(principal) : true;
   };
 }
 

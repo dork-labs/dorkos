@@ -105,15 +105,33 @@ export type BroadcastAudience = (principal: CallerPrincipal) => boolean;
  */
 type EventFanOutListener = (eventName: string, data: unknown) => void;
 
-/** The event names that must name an audience: room events and read cursors. */
-type ScopedEventLiteral = `room_${string}` | 'read_cursor';
+/** Every event whose name starts with this is a room event, and must name an audience. */
+export const ROOM_EVENT_PREFIX = 'room_';
 
-/** The runtime half of {@link ScopedEventLiteral}, for calls the types cannot see. */
-function requiresAudience(eventName: string): boolean {
-  return eventName.startsWith('room_') || eventName === 'read_cursor';
+/**
+ * The other event names that must name an audience, as keys. The one list both
+ * halves read: {@link ScopedEventLiteral} for typed calls, and
+ * {@link requiresAudience} for calls the types cannot see.
+ */
+export const SCOPED_EXACT_EVENTS = { read_cursor: true } as const;
+
+/** The event names that must name an audience: room events and read cursors. */
+type ScopedEventLiteral = `${typeof ROOM_EVENT_PREFIX}${string}` | keyof typeof SCOPED_EXACT_EVENTS;
+
+/**
+ * Whether a broadcast of this name must name an audience.
+ *
+ * @param eventName - The event name.
+ * @returns True for a room event or one of {@link SCOPED_EXACT_EVENTS}.
+ */
+export function requiresAudience(eventName: string): boolean {
+  return eventName.startsWith(ROOM_EVENT_PREFIX) || Object.hasOwn(SCOPED_EXACT_EVENTS, eventName);
 }
 
-/** Inspect each union member: open key sets, room names and read cursors require an audience. */
+/**
+ * Inspect each union member: open key sets, room names and read cursors
+ * require an audience.
+ */
 type ScopedEventName<Name extends string> = Name extends unknown
   ? Record<never, never> extends Record<Name, unknown>
     ? Name
@@ -122,7 +140,10 @@ type ScopedEventName<Name extends string> = Name extends unknown
       : never
   : never;
 
-/** Omission is safe only when every constituent is a finite literal outside {@link ScopedEventLiteral}. */
+/**
+ * Omission is safe only when every constituent is a finite literal outside
+ * {@link ScopedEventLiteral}.
+ */
 type UnscopedEventName<Name extends string> = [ScopedEventName<Name>] extends [never]
   ? Name
   : never;

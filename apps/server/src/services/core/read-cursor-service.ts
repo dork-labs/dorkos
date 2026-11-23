@@ -1,6 +1,8 @@
 /**
- * Read state as the rest of DorkOS sees it: one write, and everybody who is
- * looking finds out (team-room-home spec §D4, ADR 260808-140956).
+ * Read state as the rest of DorkOS sees it: one write, and the person's other
+ * open screens find out (team-room-home spec §D4, ADR 260808-140956). Nobody
+ * else does: the audience each broadcast names admits only that person's own
+ * streams, never an agent's.
  *
  * {@link ReadCursorStore} owns the table and the monotonic guard; this owns the
  * one thing a store must not, which is telling the world. The split is the same
@@ -19,6 +21,7 @@
  * @module server/services/core/read-cursor-service
  */
 import type { ReadCursor, ReadCursorThreadKind } from '@dorkos/shared/read-cursor-schemas';
+import { logger } from '../../lib/logger.js';
 import { eventFanOut, type BroadcastAudience } from './event-fan-out.js';
 import type { ReadCursorStore } from './read-cursor-store.js';
 
@@ -160,7 +163,21 @@ export class ReadCursorService {
       lastReadSeq: cursor.lastReadSeq,
       ...(opts.unreadCount ? { unreadCount: opts.unreadCount(cursor.lastReadSeq) } : {}),
     };
-    eventFanOut.broadcast('read_cursor', moved, this.audienceFor(moved));
+    let audience: BroadcastAudience;
+    try {
+      audience = this.audienceFor(moved);
+    } catch (err) {
+      // The cursor is saved either way; a frame with no known reader goes to nobody.
+      logger.warn(
+        '[read-cursors] could not tell who may see a moved read cursor; sent it to nobody',
+        {
+          threadKind,
+          error: err instanceof Error ? err.message : String(err),
+        }
+      );
+      return cursor;
+    }
+    eventFanOut.broadcast('read_cursor', moved, audience);
     return cursor;
   }
 }

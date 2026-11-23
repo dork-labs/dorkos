@@ -1,8 +1,9 @@
 ---
 covers:
   - 'fix(rooms): read markers now reach only room members (DOR-3269)'
+  - "fix(rooms): a room's read marker reaches only its own person (DOR-3269)"
 ---
 
 ### Fixed
 
-- Read markers now reach only the people they belong to: a room's members for a room, and only your own windows for your chats and inbox (DOR-3269)
+- Agents no longer see when you read a chat, a room or your inbox. Only your own open windows hear about it (DOR-3269)

@@ -18,10 +18,11 @@ _openapi:
           the requested one, so a refused write answers with what still holds
           rather than with an error. **Every write that actually moves the
           cursor broadcasts `read_cursor` on `GET /api/events`**, carrying the
-          user, the kind, the thread and the new position; a write that changes
-          nothing broadcasts nothing. The cursor written is always the caller's
-          own — there is no way to name a user in this request, and therefore no
-          way to read or move anybody else's read state. **Only people have read
+          user, the kind, the thread and the new position, to the caller's own
+          streams only and never to an agent; a write that changes nothing
+          broadcasts nothing. The cursor written is always the caller's own —
+          there is no way to name a user in this request, and therefore no way
+          to read or move anybody else's read state. **Only people have read
           state here** — a caller the server resolves as an agent (one
           presenting a valid `X-DorkOS-Agent`) is refused with 403
           `PEOPLE_ONLY`, and one whose token does not verify is refused with

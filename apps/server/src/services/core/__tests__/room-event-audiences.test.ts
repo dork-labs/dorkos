@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { eventFanOut, type FanOutClient } from '../event-fan-out.js';
+import { eventFanOut, requiresAudience, type FanOutClient } from '../event-fan-out.js';
 import { roomAudience } from '../../rooms/service/room-audience.js';
 
 vi.mock('../auth/index.js', () => ({ readOwnerAccount: () => ({ id: 'owner' }) }));
@@ -37,11 +37,7 @@ const producers = sources(sourceRoot).flatMap((path) => {
       node.expression.expression.getText(source) === 'eventFanOut'
     ) {
       const name = node.arguments[0];
-      if (
-        name &&
-        ts.isStringLiteral(name) &&
-        (name.text.startsWith('room_') || name.text === 'read_cursor')
-      ) {
+      if (name && ts.isStringLiteral(name) && requiresAudience(name.text)) {
         found.push({
           name: name.text,
           path,
@@ -162,6 +158,18 @@ it('requires room and dynamic audiences at compile time in both APIs', () => {
     )
     .map((node) => node.getText(source))
     .join('\n');
+  // The constants the aliases are built from, read from the same file.
+  const constants = source.statements
+    .filter(
+      (node): node is ts.VariableStatement =>
+        ts.isVariableStatement(node) &&
+        node.declarationList.declarations.some((decl) =>
+          ['ROOM_EVENT_PREFIX', 'SCOPED_EXACT_EVENTS'].includes(decl.name.getText(source))
+        )
+    )
+    .map((node) => node.getText(source).replace(/^export /, ''))
+    .join('\n');
+  expect(constants).toContain('SCOPED_EXACT_EVENTS');
   const signatures = service.members
     .filter(
       (node): node is ts.MethodDeclaration =>
@@ -208,6 +216,7 @@ it('requires room and dynamic audiences at compile time in both APIs', () => {
       `type Record<K extends string, V> = { [P in K]: V };
       type Extract<T, U> = T extends U ? T : never;
       type BroadcastAudience = () => boolean;
+      ${constants}
       ${aliases}
       declare class Fan { ${signatures} }
       declare const fan: Fan;
