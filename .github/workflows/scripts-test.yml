@@ -294,6 +294,12 @@ jobs:
       - name: Reviewer shell-script fixtures
         run: bash scripts/test-review-classifier.sh
 
+      # security-verdict-check.sh reads the cloud Security lens verdict that
+      # review-gh.sh posts (DOR-5099): a bot's `pass` marker for the exact head,
+      # or red. Stubbed `gh`, bash and jq.
+      - name: Security verdict fixtures
+        run: bash scripts/test-security-verdict-check.sh
+
       - name: Git-guard hook fixtures
         run: bash scripts/test-git-guard.sh
 
@@ -313,18 +319,30 @@ jobs:
       - name: Merge-guard hook fixtures
         run: bash scripts/test-merge-guard.sh
 
+      # heavy-command-guard sends a raw heavy command typed into a bare Claude
+      # Code session (a whole vitest suite, playwright test, turbo build) into
+      # DorkOS's load gate through `pnpm heavy` (DOR-4209). Same parser as the
+      # guards above. Its ALLOW half matters most: a one-file vitest run and the
+      # wrappers that already join the gate must keep working. Node only.
+      - name: Heavy-command guard fixtures
+        run: bash scripts/test-heavy-command-guard.sh
+
       # Opening a PR is code, not prose (2026-11-20: a brief said "open with
       # hold", the arm script refused hold and never lifted it, and 19 PRs sat
       # for 9 hours). open-pr.sh holds the rules (cap, computed labels,
       # provenance, hold only with a reason), pr-create-guard refuses a bare
       # `gh pr create`, and hold-reason-check.sh is the advisory hold-reason
-      # workflow's decision. Stubbed `gh`, throwaway git repos, node for the
-      # guard and the security-path classifier.
-      - name: Open-PR script, PR-create guard and hold-reason fixtures
+      # workflow's decision. not-held-check.sh is the not-held check (DOR-5103),
+      # which fails while `hold` is on, and release-window-check.sh is the
+      # release-window check (DOR-5102): freezes and releases. Stubbed `gh`,
+      # throwaway git repos, node for the guard and the security-path classifier.
+      - name: Open-PR script, PR-create guard, hold-reason, not-held and release-window fixtures
         run: |
           bash scripts/test-pr-create-guard.sh
           bash scripts/test-open-pr.sh
           bash scripts/test-hold-reason-check.sh
+          bash scripts/test-not-held-check.sh
+          bash scripts/test-release-window-check.sh
 
       # in-project.sh is the wrapper every working-tree hook in settings.json
       # runs through; it decides whether a hook runs at all once a session has
@@ -372,6 +390,13 @@ jobs:
       # verdicts are pinned the same hermetic way.
       - name: Build-only turbo cache trim fixtures
         run: bash scripts/test-keep-build-cache-only.sh
+
+      # prune-main-build-caches.sh deletes main's older turbo build caches after
+      # every merge (build-cache.yml, DOR-4627). It must never delete a pnpm
+      # store, another ref's cache or one of the newest entries it keeps, so
+      # its verdicts are pinned against a stub gh.
+      - name: Main build-cache prune fixtures
+        run: bash scripts/test-prune-main-build-caches.sh
 
       # build-test-deps.sh builds what test.yml's suites import in a turbo run
       # with no test arguments, so one cached build serves every test job
@@ -430,6 +455,13 @@ jobs:
       # stamped or unreadable one taken out.
       - name: Arm-door fixtures
         run: bash scripts/test-arm-door.sh
+
+      # pr-gates-check.sh runs arm-door's decision on the pull request (minus
+      # the verify-proof reason), so auto-merge can wait for the sign-offs
+      # (DOR-5107). End to end through the real arm-door.sh, qa-real-data.sh and
+      # design-ok.sh, with a stubbed `gh`.
+      - name: PR-gates fixtures
+        run: bash scripts/test-pr-gates-check.sh
 
       # QA's real-data gate (DOR-4904), shared by the arm script and arm-door:
       # a config or migration change that slips past QA, and an ordinary one
@@ -618,6 +650,14 @@ jobs:
       - name: Credential-free environment scrub fixtures
         run: bash scripts/test-run-credential-free.sh
 
+      # ci-memory-watch.sh (DOR-4813) reports credential-free-build's memory
+      # peak, which the ledger's revert rule reads. The first draft picked the
+      # sample with the most swap (`swap_used_mb=` also ends in `used_mb=`).
+      # Hermetic: a made-up sample log in a temp dir, so it runs the same on
+      # macOS and Linux and never reads the runner's real memory.
+      - name: Runner memory watch fixtures
+        run: bash scripts/test-ci-memory-watch.sh
+
       # test-watch-prs.sh pins watch-prs.sh's classify() vocabulary AND (as of
       # DOR-1630) a probe-seam tier that drives its real `gh pr checks`
       # collection path against a stubbed `gh`. Before DOR-1630 nothing
@@ -706,6 +746,34 @@ jobs:
       # should make to the merge queue, as ejections. Hermetic, no pnpm.
       - name: No-code scope fixtures
         run: bash scripts/test-no-code-scope.sh
+
+      # browser-smoke-scope.sh decides whether a pull request's browser smoke
+      # shards run (DOR-5111), so a rule that lets a path a page loads through
+      # silently moves its catches to the merge queue, as ejections. The suite
+      # also checks the inert-workspace list against this tree. Git, jq and
+      # node, no pnpm.
+      - name: Browser-smoke scope fixtures
+        run: bash scripts/test-browser-smoke-scope.sh
+
+      # pr-related-scope.sh decides whether a pull request's unit tests are
+      # chosen by import, and pr-related-tests.sh runs that choice in a shard
+      # (DOR-5110). A fallback that stops firing lets a config, fixture or
+      # setup change run a narrow set and moves the catch to the merge queue,
+      # as an ejection. Hermetic: throwaway repos and stub runners, no pnpm.
+      - name: Tests-by-import fixtures
+        run: bash scripts/test-pr-related.sh
+
+      # after-merge-alert.sh is how a check that fails on main after merge
+      # reaches its author (DOR-5121): a PR comment and one issue per failure
+      # group. A silent break here loses those alerts. Stub gh, jq only.
+      - name: After-merge alert fixtures
+        run: bash scripts/test-after-merge-alert.sh
+
+      # auto-revert.sh decides whether a merge that turned main red is reverted
+      # (DOR-5122). A wrong rule reverts good work, or the release commit.
+      # Stub gh, jq only.
+      - name: Auto-revert fixtures
+        run: bash scripts/test-auto-revert.sh
 
       # release-branch-contents.sh is the rule for what a pull request into a
       # release/v<X.Y.Z> branch may carry (DOR-4639): only cherry-picks of main

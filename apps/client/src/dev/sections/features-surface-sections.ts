@@ -129,7 +129,23 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     title: 'Extension update card',
     page: 'home-inbox',
     category: 'Inbox',
-    keywords: ['extension', 'update', 'new power', 'files changed', 'approval', 're-ask'],
+    keywords: [
+      'extension',
+      'update',
+      'new power',
+      'files changed',
+      'approval',
+      're-ask',
+      'not confirmed',
+    ],
+  },
+  // StepUpCancelShowcases
+  {
+    id: 'step-up-not-confirmed',
+    title: 'Step-up not confirmed',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: ['step-up', 'confirm', 'cancel', 'mac app', 'password window', 'toast'],
   },
   // PlacesReaskShowcases
   {

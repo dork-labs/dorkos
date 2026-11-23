@@ -42,7 +42,7 @@ export async function createPublicChromeBrowser(
       bound: !!facts(id),
     }),
     guardsOf: (type: string) => (type === 'test' ? { protectedPaths: true as const } : undefined),
-    getSessionAgentPath: async (id: string) => facts(id)?.agentPath ?? null,
+    sessionAgent: async (id: string) => facts(id)?.agentPath ?? undefined,
     agentIdAtPath: (candidate: string) => (candidate === folder ? AGENT : undefined),
     realFolder: (candidate: string) => (candidate === folder ? realFolder : undefined),
     agentName: (id: string) => (id === AGENT ? 'Made-up CI agent' : undefined),
@@ -50,7 +50,7 @@ export async function createPublicChromeBrowser(
   const selection = createAgentBrowserProfiles(deps);
   browser.useProfileSelection(selection.select, selection.initialize);
   browser.useSessionAgentLookup(async (id) => {
-    const agentPath = await deps.getSessionAgentPath(id);
+    const agentPath = await deps.sessionAgent(id);
     return agentPath ? deps.agentIdAtPath(agentPath) : undefined;
   });
   browser.useProfileAccess(

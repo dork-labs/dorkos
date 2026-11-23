@@ -38,7 +38,7 @@ import { configManager } from '../../../core/config-manager.js';
 import { heldToACeiling } from '../turn-permission.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
 import { marksHold } from '../../../core/turn-power/turn-marks.js';
-import { writeDenyRules } from '../messaging/directory-grants.js';
+import { addLaunchDenyRules, writeDenyRules } from '../messaging/directory-grants.js';
 
 /** The real path of `target`, or `undefined` when it does not exist. */
 function realpathOrUndefined(target: string): string | undefined {
@@ -85,14 +85,14 @@ export function ownExtensionsDeniable(home: string, dorkHome: string = resolveDo
 }
 
 /**
- * Whether `file` is inside `home`'s own `.dork/extensions` folder, by any spelling
- * {@link extensionFolderNames} knows. The file need not exist yet: its closest existing
- * parent is read through its real path.
+ * Whether `file` is inside any of `folders`, as written or through its real path. The file need
+ * not exist yet: its closest existing parent is read through its real path, so a write through a
+ * link into one of the folders counts.
  *
  * @param file - An absolute path a file tool was aimed at.
- * @param home - The agent's home.
+ * @param folders - Every spelling of the folders in question.
  */
-export function isInOwnExtensions(file: string, home: string): boolean {
+export function isInsideAnyFolder(file: string, folders: readonly string[]): boolean {
   const target = path.resolve(file);
   let probe = target;
   let real: string | undefined;
@@ -102,9 +102,20 @@ export function isInOwnExtensions(file: string, home: string): boolean {
   }
   const spellings = [target];
   if (real !== undefined) spellings.push(path.join(real, path.relative(probe, target)));
-  return extensionFolderNames(home).some((folder) =>
+  return folders.some((folder) =>
     spellings.some((name) => name === folder || name.startsWith(folder + path.sep))
   );
+}
+
+/**
+ * Whether `file` is inside `home`'s own `.dork/extensions` folder, by any spelling
+ * {@link extensionFolderNames} knows ({@link isInsideAnyFolder}).
+ *
+ * @param file - An absolute path a file tool was aimed at.
+ * @param home - The agent's home.
+ */
+export function isInOwnExtensions(file: string, home: string): boolean {
+  return isInsideAnyFolder(file, extensionFolderNames(home));
 }
 
 /**
@@ -245,20 +256,7 @@ export function applyOtherAgentsExtensionsDeny(
   agentHomes: readonly string[],
   dorkHome: string
 ): void {
-  const rules = otherAgentsExtensionsDenyRules(ownHome, agentHomes, dorkHome);
-  if (rules.length === 0) return;
-  const base =
-    typeof sdkOptions.settings === 'object' && sdkOptions.settings !== null
-      ? sdkOptions.settings
-      : {};
-  const permissions = ((base as { permissions?: { deny?: string[] } }).permissions ?? {}) as {
-    deny?: string[];
-    [key: string]: unknown;
-  };
-  sdkOptions.settings = {
-    ...base,
-    permissions: { ...permissions, deny: [...(permissions.deny ?? []), ...rules] },
-  } as Options['settings'];
+  addLaunchDenyRules(sdkOptions, otherAgentsExtensionsDenyRules(ownHome, agentHomes, dorkHome));
 }
 
 /**

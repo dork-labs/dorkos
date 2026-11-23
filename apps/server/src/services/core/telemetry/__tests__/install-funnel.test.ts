@@ -126,13 +126,14 @@ describe('install funnel, usage channel on', () => {
       properties: { installRef: 'k3j4mnb8x2qa', utmSource: 'hn', utmCampaign: 'launch' },
     });
     expect(events[2]).toMatchObject({ event: 'instance_active', properties: {} });
-    expect(events[2]!.properties).toEqual({});
+    // Nothing but the reporter's anonymous mark (DOR-4989).
+    expect(events[2]!.properties).toEqual({ $process_person_profile: false });
   });
 
   it('sends the first run with no ref properties when the install carried no ref', async () => {
     start();
     const firstRun = (await sent()).find((e) => e.event === 'first_run_completed');
-    expect(firstRun?.properties).toEqual({});
+    expect(firstRun?.properties).toEqual({ $process_person_profile: false });
   });
 
   it('never repeats the first run, or a day it already reported, after a restart', async () => {

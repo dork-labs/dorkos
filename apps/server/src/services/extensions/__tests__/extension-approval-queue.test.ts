@@ -217,8 +217,11 @@ beforeEach(async () => {
   );
 });
 
-afterEach(() => {
+afterEach(async () => {
   stopQueue();
+  // A prior manager change can still be handling approvals. Wait before
+  // another test replaces the shared notification service and event capture.
+  await queue.sync({ announce: false });
   setNotificationService(null);
   vi.restoreAllMocks();
   fs.rmSync(dorkHome, { recursive: true, force: true });

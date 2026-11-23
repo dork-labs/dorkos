@@ -200,14 +200,13 @@ import {
   CapabilityToolError,
   defineCapability,
   type CapabilityDomain,
-  type CapabilityHandlerContext,
 } from '../core/capabilities/index.js';
 import { configManager } from '../core/config-manager.js';
 import type { AuthorRecord } from './author-registry.js';
 import { RoomError } from './room-errors.js';
 import { POST_TO_ROOM_DESCRIPTION } from './handoff/room-post-description.js';
 import { registerRoomPreGateChecks } from './attachments/protected-file-checks.js';
-import { callerAuthor, toolCallerOf } from './service/room-caller-author.js';
+import { callerAuthor, requireAgentCwd, toolCallerOf } from './service/room-caller-author.js';
 import { UNTRUSTED_NOTE } from './service/room-entry-projection.js';
 import {
   projectMemberMatches,
@@ -271,30 +270,6 @@ declare module '../core/capabilities/capability-definition.js' {
       repos?: RoomRepoService;
     };
   }
-}
-
-/**
- * The agent's own working directory, or a refusal it can act on.
- *
- * The one place a `post_to_room` attachment may point, and it is read off the
- * VERIFIED in-session surface rather than off the arguments — a cwd a caller
- * could name would be the confused-deputy shape this whole path exists to
- * avoid. A surface with no working directory (external `/mcp`) can attach
- * nothing, and says so instead of silently attaching from somewhere else.
- *
- * @param context - The capability invocation context.
- * @returns The session's working directory.
- * @throws {RoomError} `ATTACHMENT_PATH_REFUSED` when the surface carries none.
- */
-function requireAgentCwd(context: CapabilityHandlerContext): string {
-  if (!context.cwd) {
-    throw new RoomError(
-      'ATTACHMENT_PATH_REFUSED',
-      'Attaching a file needs a working directory to read it from, and this surface has none. ' +
-        'Post the message without attachments.'
-    );
-  }
-  return context.cwd;
 }
 
 /** Shared by both reads: which room, and optionally which thread inside it. */
@@ -442,15 +417,19 @@ export const roomsDomain: CapabilityDomain = {
         let entry;
         try {
           entry = answering(() =>
-            rooms.postFromTool(input.roomId, {
-              authorId,
-              text: seat.text,
-              ...(seat.replyTo !== undefined ? { replyTo: seat.replyTo } : {}),
-              ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
-              // The session the in-session server verified, never an argument,
-              // and whether a verified agent token stood behind the call.
-              ...toolCallerOf(context),
-            })
+            rooms.postFromTool(
+              input.roomId,
+              {
+                authorId,
+                text: seat.text,
+                ...(seat.replyTo !== undefined ? { replyTo: seat.replyTo } : {}),
+                ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+                // The session the in-session server verified, never an argument,
+                // and whether a verified agent token stood behind the call.
+                ...toolCallerOf(context),
+              },
+              seat.handoff ? rooms.handoffs.bindPosted(seat.handoff) : undefined
+            )
           );
         } catch (err) {
           if (attachmentIds.length > 0) {

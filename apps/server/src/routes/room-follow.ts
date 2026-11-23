@@ -26,7 +26,7 @@ import {
 } from '@dorkos/shared/room-schemas';
 import { getRoomService, RoomError } from '../services/rooms/index.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { parseOrRefuse, roomRoute, type RoomCaller } from './room-route.js';
 
 /**

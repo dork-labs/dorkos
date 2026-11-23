@@ -339,9 +339,9 @@ describe('turbo never hands a spend flag or a model key to any task', () => {
   }
 
   /**
-   * Every name that arms or pays for a real-money path, from AGENTS.md's table.
+   * Every name that arms or pays for a real-money path, from the table in contributing/paid-paths.md.
    * All twenty-one, not just the keys: a flag reaching a task is half of an armed
-   * gate, and the table in AGENTS.md claims none of them is here.
+   * gate, and the table in contributing/paid-paths.md claims none of them is here.
    *
    * The last two joined on DOR-1856, when `scripts/harness-smoke/run.sh` became
    * the fourth path — it drives a real `claude`, `codex` or `opencode` binary
@@ -373,7 +373,7 @@ describe('turbo never hands a spend flag or a model key to any task', () => {
     // which creates throwaway Fly, Neon and Tigris resources. It pays through the operator's
     // signed-in `fly` and `neonctl` profiles, so there is no key variable to list; these are its
     // six arms, every one required. Spelled out rather than imported: evals does not depend on
-    // the CLI, and the names are what AGENTS.md's table promises.
+    // the CLI, and the names are what the table in contributing/paid-paths.md promises.
     'DORKOS_COMMUNITY_LIVE_GATE',
     'DORKOS_COMMUNITY_LIVE_FLY_WRITES',
     'DORKOS_COMMUNITY_LIVE_NEON_WRITES',

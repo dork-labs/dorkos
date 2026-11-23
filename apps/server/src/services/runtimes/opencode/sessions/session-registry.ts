@@ -18,8 +18,10 @@
  *
  * @module services/runtimes/opencode/session-registry
  */
+import { isDeepStrictEqual } from 'node:util';
 import type { Session, PermissionModeId } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
+import { shownToPerson, titleShownToPerson } from '@dorkos/shared/kickoff';
 import { deriveSessionTitle } from '../../shared/derive-title.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
@@ -130,7 +132,7 @@ export class OpenCodeSessionRegistry {
   ): void {
     const { title, ...settings } = patch;
     const session = this.upsert(sessionId, settings);
-    const preview = toPreview(content);
+    const preview = titleShownToPerson(toPreview(shownToPerson(content)));
     // MessageOpts.title is only honored on the first turn (see AgentRuntime).
     if (session.title === '') session.title = title ?? (deriveSessionTitle(content) || preview);
     session.lastMessagePreview = preview;
@@ -155,6 +157,23 @@ export class OpenCodeSessionRegistry {
   get(sessionId: string): Session | null {
     const session = this.sessions.get(sessionId);
     return session ? { ...session } : null;
+  }
+
+  /** Capture this exact private owner before a birth-only settings read can yield. */
+  prepareSettingsOwner(sessionId: string) {
+    const owner = this.sessions.get(sessionId);
+    const snapshot = owner ? structuredClone(owner) : undefined;
+    return {
+      tracked: owner !== undefined,
+      isCurrent: (): boolean => {
+        const current = this.sessions.get(sessionId);
+        return (
+          current === owner &&
+          (current === undefined ||
+            (current.id === sessionId && isDeepStrictEqual(current, snapshot)))
+        );
+      },
+    };
   }
 
   /**

@@ -9,8 +9,9 @@
  * and a refusal stops it through the same door an expired message takes.
  *
  * Which agent the turn is for comes from what the SERVER knows first — the
- * agent the relay resolved from the subject, else the session's own recorded
- * agent — and only then from the payload's `forAgent`. A payload that names a
+ * agent the relay resolved from the subject, else the session's own agent (the
+ * recorded one, else the agent whose home its server-held folder is, DOR-5038)
+ * — and only then from the payload's `forAgent`. A payload that names a
  * different agent than the server knows is refused outright.
  *
  * @module services/core/agent-identity/turn-desk-check
@@ -31,7 +32,7 @@ export interface TurnDeskPlacement {
 
 /** What {@link createTurnDeskCheck} reads, injected so a test needs no server. */
 export interface TurnDeskCheckDeps {
-  /** The agent a session was recorded for (`session_metadata.agent_path`), or `null`. */
+  /** The session's agent, by `session-agent`'s `sessionAgentById`, or `null`. */
   sessionAgentPath(sessionId: string): Promise<string | null>;
   /**
    * Where the session-cwd chain places `agentPath` — the same question the
@@ -49,7 +50,16 @@ export interface TurnDeskCheckDeps {
  */
 export function createTurnDeskCheck(deps: TurnDeskCheckDeps): TurnDeskCheck {
   return async ({ cwd, agentDirectory, forAgent, sessionKey }) => {
-    const known = agentDirectory ?? (await deps.sessionAgentPath(sessionKey).catch(() => null));
+    let known = agentDirectory;
+    if (!known) {
+      // A failed read is not "nobody's chat": trusting the payload's `forAgent`
+      // then would let a sender pick the agent (Security, DOR-5038).
+      try {
+        known = (await deps.sessionAgentPath(sessionKey)) ?? undefined;
+      } catch {
+        return 'This chat’s agent could not be read, so this message was not run.';
+      }
+    }
     if (known && forAgent && path.resolve(known) !== path.resolve(forAgent)) {
       return 'This message named a different agent than the one it was sent to, so it was not run.';
     }

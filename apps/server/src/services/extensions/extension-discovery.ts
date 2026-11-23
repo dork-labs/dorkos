@@ -16,7 +16,12 @@ import {
   type ExtensionsConfig,
   type CoreExtensionInfo,
 } from './extension-enable-resolution.js';
-import { isApprovedCopy, isFromTrustedSource, namesThisCopy } from './extension-load-policy.js';
+import {
+  isApprovedCopy,
+  isFromTrustedSource,
+  namesThisCopy,
+  sharesApprovedOrigin,
+} from './extension-load-policy.js';
 import { mergePluginRecords, type DiscoveredRecord } from './extension-precedence.js';
 import { checkDeclaredSkills } from './agent-skills/skill-checks.js';
 import {
@@ -246,6 +251,9 @@ export class ExtensionDiscovery {
     const approvedElsewhere = (rec: DiscoveredRecord): boolean => {
       const copy = { ...rec, origin: 'user' as const };
       if (isApprovedCopy(copy, config) || isFromTrustedSource(copy, config)) return false;
+      // Another version from the approved origin is not another package: it
+      // stays listed, so it waits in Activity for its own yes (DOR-4895).
+      if (sharesApprovedOrigin(copy, config)) return false;
       // The approval names THIS folder, but its files changed since: not
       // another copy's, so it stays listed and asks for a fresh yes rather
       // than vanishing (security review of DOR-2527).

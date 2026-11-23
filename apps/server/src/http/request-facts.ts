@@ -10,35 +10,25 @@
  * asked. (They were built this way during the move from Express to Hono,
  * ADR `261009-192542`, so that both chains asked the same functions.)
  *
- * Every field is a raw fact, never a framework's interpretation of one. The
- * one exception is {@link RequestFacts.forwardedAddress}, the client address
- * with one proxy hop trusted, which {@link forwardedClientAddress} computes.
+ * The transport half (headers, peer, the forwarded address, TLS, method) is
+ * `@dorkos/http-kit`'s, shared with every server; this module adds the facts
+ * only this server's chain knows.
  *
  * @module http/request-facts
  */
-import type { IncomingHttpHeaders, IncomingMessage } from 'node:http';
-import type { TLSSocket } from 'node:tls';
+import { nodeTransportFacts, type TransportFacts } from '@dorkos/http-kit';
 import type { Context } from 'hono';
 import type { HttpBindings } from '@hono/node-server';
 import type { AgentIdentity } from '../services/core/agent-identity/agent-identity-service.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
 import { ingressOf, type RequestIngress } from '../services/core/remote/ingress-mark.js';
 
-/** What a policy may know about one request. */
-export interface RequestFacts {
-  /** The raw request headers, as Node parsed them (lower-case names). */
-  readonly headers: IncomingHttpHeaders;
-  /** The TCP peer address. No header can move it. */
-  readonly peerAddress: string | undefined;
-  /**
-   * The client address with ONE proxy hop trusted: the rightmost
-   * `X-Forwarded-For` entry, or the peer when there is none. Caller-written on
-   * a direct connection, so only a policy the operator opted into
-   * (`DORKOS_TRUST_PROXY`) may use it.
-   */
-  readonly forwardedAddress: string | undefined;
-  /** Whether the connection itself is TLS. The server binds plain HTTP, so in practice false. */
-  readonly connectionEncrypted: boolean;
+/**
+ * What a policy may know about one request: the transport facts every server
+ * shares (`@dorkos/http-kit`), plus which listener admitted it and who the
+ * chain proved the caller to be.
+ */
+export interface RequestFacts extends TransportFacts {
   /**
    * Which listener admitted this request: `direct` for the main one, otherwise
    * the marked listener (managed remote access, the own tunnel, Wi-Fi). The two
@@ -50,12 +40,6 @@ export interface RequestFacts {
   readonly user: RequestUser | undefined;
   /** The agent the `X-DorkOS-Agent` middleware resolved, when one did. */
   readonly agentIdentity: AgentIdentity | undefined;
-  /**
-   * The request method, when the surface knows it. A person-only bar at this
-   * computer asks for the person's session only on a change, never a read
-   * (`personSessionRequired`, DOR-3330); without one it assumes a change.
-   */
-  readonly method?: string;
 }
 
 /**
@@ -77,31 +61,6 @@ export type RequestFactsEnv = {
 };
 
 /**
- * The client address with one proxy hop trusted: what Express reported as
- * `req.ip` under `trust proxy, 1`, which the server ran with until it moved to
- * Hono, so the rate limiters keep the keys they always had.
- *
- * The socket peer is the one trusted hop, so the client is the last
- * `X-Forwarded-For` entry. Entries
- * are split on commas with surrounding spaces dropped, and empty ones skipped;
- * with none left, the client is the peer itself.
- *
- * @param forwardedFor - The raw `X-Forwarded-For` header, if any.
- * @param peerAddress - The TCP peer address.
- * @returns The client address.
- */
-export function forwardedClientAddress(
-  forwardedFor: string | undefined,
-  peerAddress: string | undefined
-): string | undefined {
-  const entries = (forwardedFor ?? '')
-    .split(',')
-    .map((entry) => entry.replace(/^ +| +$/g, ''))
-    .filter((entry) => entry !== '');
-  return entries.at(-1) ?? peerAddress;
-}
-
-/**
  * The facts of a Hono request served through `@hono/node-server`.
  *
  * Reads the raw Node request rather than `c.req`, so the headers are Node's
@@ -112,23 +71,13 @@ export function forwardedClientAddress(
  */
 export function honoRequestFacts(c: Context<RequestFactsEnv>): RequestFacts {
   const incoming = c.env.incoming;
-  // Node joins a repeated `X-Forwarded-For` into one string, so this is never
-  // an array at runtime; joining keeps the type honest without a cast.
-  const raw = incoming.headers['x-forwarded-for'];
-  const forwardedFor = Array.isArray(raw) ? raw.join(', ') : raw;
   return {
-    headers: incoming.headers,
-    peerAddress: incoming.socket.remoteAddress,
-    forwardedAddress: forwardedClientAddress(forwardedFor, incoming.socket.remoteAddress),
-    connectionEncrypted: isEncrypted(incoming),
+    // A person-only bar at this computer asks for the person's session only on
+    // a change, never a read (`personSessionRequired`, DOR-3330); a surface
+    // that does not know the method is treated as a change.
+    ...nodeTransportFacts(incoming, c.req.method),
     ingress: ingressOf(incoming),
     user: c.get('user'),
     agentIdentity: c.get('agentIdentity'),
-    method: c.req.method,
   };
-}
-
-/** Whether a request arrived on a TLS socket. */
-function isEncrypted(req: Pick<IncomingMessage, 'socket'>): boolean {
-  return Boolean((req.socket as TLSSocket | undefined)?.encrypted);
 }

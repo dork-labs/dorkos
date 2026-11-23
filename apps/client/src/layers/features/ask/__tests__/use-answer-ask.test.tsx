@@ -160,7 +160,8 @@ describe('useAnswerAsk', () => {
     expect(secondReceipt.current).toBeUndefined();
     expect(transport.approveTool).toHaveBeenCalledTimes(2);
     expect(transport.batchApprove).not.toHaveBeenCalled();
-    expect(result.current.error).toBeNull();
+    // The one left unconfirmed says so on the card (DOR-4909).
+    expect(result.current.error).toBe('Not confirmed. Nothing was allowed.');
   });
 
   it('takes the receipt back when the server refuses, so the card is answerable again', async () => {

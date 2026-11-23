@@ -24,12 +24,25 @@ vi.mock('node:fs/promises', () => ({
   mkdir: mockMkdir,
 }));
 
+import { PackageTypeSchema } from '@dorkos/marketplace/package-types';
+import {
+  INSTALL_TELEMETRY_PACKAGE_TYPES,
+  INSTALL_TELEMETRY_SOURCE_TYPES,
+  InstallTelemetryEventSchema,
+  MAX_INSTALL_DURATION_MS,
+  MAX_INSTALL_NAME_LEN,
+} from '@dorkos/shared/marketplace-install-telemetry';
+
 import {
   _resetTelemetryReporter,
   reportInstallEvent,
   type InstallEvent,
 } from '../telemetry-hook.js';
-import { buildPayload, registerDorkosCommunityTelemetry } from '../telemetry-reporter.js';
+import {
+  TOO_LONG_NAME_LABEL,
+  buildPayload,
+  registerDorkosCommunityTelemetry,
+} from '../telemetry-reporter.js';
 
 const DORK_HOME = '/tmp/test-dork-home';
 const TELEMETRY_ENDPOINT = 'https://dorkos.ai/api/telemetry/install';
@@ -41,6 +54,7 @@ const sampleEvent: InstallEvent = {
   type: 'agent',
   outcome: 'success',
   durationMs: 4321,
+  sourceType: 'relative-path',
 };
 
 const sampleFailureEvent: InstallEvent = {
@@ -103,10 +117,94 @@ describe('telemetry-reporter', () => {
         outcome: 'success',
         durationMs: 4321,
         dorkosVersion: DORKOS_VERSION,
+        sourceType: 'relative-path',
       });
       expect(typeof body.installId).toBe('string');
       expect((body.installId as string).length).toBeGreaterThan(0);
     });
+
+    // The contract with the site (DOR-4988): the body the reporter really POSTs
+    // must pass the very schema `/api/telemetry/install` validates with, or
+    // every event is a 400 and nothing is counted.
+    it.each([
+      ['a success', sampleEvent],
+      ['a failure', sampleFailureEvent],
+    ])('sends %s body the site route accepts', async (_label, event) => {
+      mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+
+      registerDorkosCommunityTelemetry(true, DORK_HOME, DORKOS_VERSION);
+      await reportInstallEvent(event);
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      const parsed = InstallTelemetryEventSchema.safeParse(JSON.parse(init.body as string));
+      expect(parsed.error?.issues).toBeUndefined();
+      expect(parsed.success).toBe(true);
+    });
+
+    it('replaces a name over the length cap so the site still counts it', () => {
+      const long = 'x'.repeat(MAX_INSTALL_NAME_LEN + 1);
+      const exact = 'y'.repeat(MAX_INSTALL_NAME_LEN);
+      const payload = buildPayload(
+        { ...sampleEvent, packageName: long, marketplace: exact },
+        '7c6d2b9a-9f44-4f3a-bf67-3f3aa6bbf7c4',
+        DORKOS_VERSION
+      );
+      expect(payload.packageName).toBe(TOO_LONG_NAME_LABEL);
+      expect(payload.marketplace).toBe(exact);
+      expect(InstallTelemetryEventSchema.safeParse(payload).success).toBe(true);
+
+      const longMarketplace = buildPayload(
+        { ...sampleEvent, marketplace: long },
+        '7c6d2b9a-9f44-4f3a-bf67-3f3aa6bbf7c4',
+        DORKOS_VERSION
+      );
+      expect(longMarketplace.marketplace).toBe(TOO_LONG_NAME_LABEL);
+      expect(InstallTelemetryEventSchema.safeParse(longMarketplace).success).toBe(true);
+    });
+
+    it('clamps a very slow install so the site still counts it', async () => {
+      mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+
+      registerDorkosCommunityTelemetry(true, DORK_HOME, DORKOS_VERSION);
+      await reportInstallEvent({ ...sampleEvent, durationMs: MAX_INSTALL_DURATION_MS * 3 });
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      const parsed = InstallTelemetryEventSchema.parse(JSON.parse(init.body as string));
+      expect(parsed.durationMs).toBe(MAX_INSTALL_DURATION_MS);
+    });
+
+    it('accepts exactly the package types the marketplace defines', () => {
+      expect([...INSTALL_TELEMETRY_PACKAGE_TYPES]).toEqual([...PackageTypeSchema.options]);
+    });
+
+    // `shape` was refused with a 400 until DOR-4988.
+    it.each(PackageTypeSchema.options)(
+      'sends a %s install the site route accepts',
+      async (type) => {
+        mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+
+        registerDorkosCommunityTelemetry(true, DORK_HOME, DORKOS_VERSION);
+        await reportInstallEvent({ ...sampleEvent, type });
+
+        const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        const parsed = InstallTelemetryEventSchema.parse(JSON.parse(init.body as string));
+        expect(parsed.type).toBe(type);
+      }
+    );
+
+    it.each(INSTALL_TELEMETRY_SOURCE_TYPES)(
+      'carries the %s source type through to the site',
+      async (sourceType) => {
+        mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+
+        registerDorkosCommunityTelemetry(true, DORK_HOME, DORKOS_VERSION);
+        await reportInstallEvent({ ...sampleEvent, sourceType });
+
+        const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        const parsed = InstallTelemetryEventSchema.parse(JSON.parse(init.body as string));
+        expect(parsed.sourceType).toBe(sourceType);
+      }
+    );
 
     it('in debug mode prints the payload to stderr and skips the network', async () => {
       mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
@@ -134,6 +232,7 @@ describe('telemetry-reporter', () => {
       expect(payload.type).toBe(sampleEvent.type);
       expect(payload.outcome).toBe(sampleEvent.outcome);
       expect(payload.durationMs).toBe(sampleEvent.durationMs);
+      expect(payload.sourceType).toBe(sampleEvent.sourceType);
     });
 
     it('includes errorCode only when present on the event', () => {
@@ -155,6 +254,7 @@ describe('telemetry-reporter', () => {
         'errorCode',
         'installId',
         'dorkosVersion',
+        'sourceType',
       ]);
       for (const key of Object.keys(payload)) {
         expect(allowedKeys.has(key)).toBe(true);

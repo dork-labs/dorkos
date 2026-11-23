@@ -11,7 +11,7 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 DorkOS works out of the box. Most people never open this page again after their first session: no ports to pick, no files to edit, nothing to tune. This page exists for the day you need to change one specific thing, a port conflict, a tunnel so you can check on an agent from your phone, a different AI service.
 
-The one setting worth knowing on day one is `ANTHROPIC_API_KEY`, and the [Installation guide](/docs/getting-started/installation) already walks you through setting it. Everything below is reference: skip to the section you need and ignore the rest.
+You don't need any setting to start. The first time DorkOS opens, a welcome screen helps you connect AI: a DorkOS account, your own key, a model on your computer, or an AI app you already use, like a Claude Code sign-in. Everything below is reference: skip to the section you need and ignore the rest.
 
 DorkOS reads settings from three places, in this order: CLI flags (what you type when you start DorkOS), environment variables (settings you export in your terminal, or put in a `.env` file next to where you run DorkOS), and the config file at `~/.dork/config.json` (DorkOS writes this itself; you rarely need to touch it by hand). If a setting appears in more than one place, the first one found wins. For example, to try a different port for one run without changing anything permanent:
 
@@ -30,21 +30,15 @@ If your settings were last used before version 0.115, upgrade to 0.115 first. Th
 
 A settings file you wrote by hand starts normally unless it includes retired settings. If it does, DorkOS names the settings to remove. Remove only those, then restart DorkOS. If DorkOS cannot read the saved version, it stops and leaves the file unchanged. Fix the `version` value in the file, or restore a saved copy, then restart DorkOS.
 
-## Required
-
-<TypeTable
-  type={{
-    ANTHROPIC_API_KEY: {
-      description: 'Your Anthropic API key. Required to start any Claude Code session.',
-      type: 'string',
-    },
-  }}
-/>
-
 ## Optional
 
 <TypeTable
   type={{
+    ANTHROPIC_API_KEY: {
+      description:
+        'Your Anthropic API key. If set, Claude Code uses this key instead of your sign-in, and you pay per use. Leave it unset to use your Claude Code sign-in. Useful on a server or in Docker, where there is no sign-in to reuse.',
+      type: 'string',
+    },
     DORKOS_PORT: {
       description: 'Port for the DorkOS server.',
       type: 'number',
@@ -164,7 +158,7 @@ A scheduled task runs an agent job on a timer (like "every night at 2am"), on it
 
 ### Keep awake
 
-DorkOS keeps your computer from falling asleep while agents work, then lets it sleep as usual. Change it in Settings → Tools → Sleep. See [Sleep and wake](/docs/guides/keep-awake) for what it can and cannot stop.
+DorkOS keeps your computer from falling asleep while agents work, then lets it sleep as usual. Change it in Settings → Advanced → Tools → Sleep. See [Sleep and wake](/docs/guides/keep-awake) for what it can and cannot stop.
 
 <TypeTable
   type={{

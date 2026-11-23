@@ -59,7 +59,7 @@ The first time DorkOS starts, it prints a plain notice in its log: what it could
 
 ## Marketplace installs
 
-The marketplace install-count channel is off by default too. Turning it on helps rank packages and spot broken installs. It follows the same no-PII rule and is documented on the [marketplace privacy page](https://dorkos.ai/marketplace/privacy).
+The marketplace install-count channel is off by default too. Turning it on helps rank packages and spot broken installs. It sends no account, hostname, username, file path or link, only the package name, its marketplace and how the install went; the [marketplace privacy page](https://dorkos.ai/marketplace/privacy) lists every field.
 
 ## Feature-usage events
 
@@ -75,6 +75,8 @@ Four events ship today:
 | `instance_active`     | At most once a day while DorkOS runs.                     | Nothing beyond the envelope.                                                                                                       |
 
 Each event is wrapped in the same anonymous envelope as everything else: your random `instanceId`, a timestamp, and your DorkOS version. Like the heartbeat, it never includes your prompts, your code, file paths, your hostname or username, or anything from your chats.
+
+Each usage event also asks our analytics tool (PostHog) not to build a profile from it. The one exception: you linked this install to a DorkOS account and chose to link your usage data to it (below).
 
 Like the heartbeat and install counts, this channel is off until you turn it on. Two things still hold once you do: nothing sends until after DorkOS has shown you the first-run notice, and you can turn it back off three ways, the same as every other channel:
 
@@ -129,14 +131,14 @@ When you link this install to a DorkOS account, you can also tie this install's 
 - The environment kill switches turn it off too: with `DO_NOT_TRACK=1` or `DORKOS_TELEMETRY_DISABLED=1` set, nothing is connected even if the checkbox is on.
 - It sends one more thing: this install's random `instanceId`, with the link request. Our analytics then treats your install, your account, and your visits to dorkos.ai while signed in (if you allow analytics cookies there) as one record. The counts themselves are the same ones described above, but they are no longer anonymous to us.
 
-Turning the checkbox off takes effect on your next link; it does not undo a link already made. To remove the joined record, delete your DorkOS account, which asks PostHog to erase it, or email us.
+Turning the checkbox off takes effect from the next event DorkOS sends: usage events ask for no profile again. It does not undo a link already made. To remove the joined record, delete your DorkOS account, which asks PostHog to erase it, or email us.
 
 ## AI run metadata (a separate opt-in)
 
 Every time an agent finishes a turn, DorkOS knows a few plain facts about it: which model ran, how many tokens it used, how long it took, and what it cost. You can choose to share a short summary of those facts with us, so we can see how the different runtimes compare. Like crash reports, this is **off until you turn it on**.
 
 - It goes to dorkos.ai, which passes it to PostHog, the analytics service we use. Feature-usage events take the same path. The heartbeat and install counts stay in our own database.
-- Each turn sends one small summary: the model, the runtime (Claude Code, Codex, or OpenCode), the input and output token counts, the turn's time, and its cost.
+- Each turn sends one small summary: the model, the runtime (Claude Code, Codex, OpenCode, or DorkOS's own engine), the input and output token counts, the turn's time, and its cost.
 - It carries **no** prompt, **no** code, **no** file path, and **nothing** you or the agent said. It is counts and a model name, full stop.
 
 This is the same AI data DorkOS can already put on your own traces (see [observability](/docs/self-hosting/observability)). That side is always yours and never reaches us. This setting is the opposite direction: it, and only it, shares those counts with DorkOS, and only when you turn it on.

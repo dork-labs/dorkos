@@ -15,6 +15,18 @@
 export const EXTENSION_TRUST_COPY = 'Turn it on only if you trust its source.';
 
 /**
+ * The line a card shows after its Allow ended on "Confirm it's you" closed
+ * without confirming (DOR-4909): nothing was allowed, and Allow is how to try
+ * again, so "Not now" never reads as the way out.
+ */
+export const ALLOW_NOT_CONFIRMED_COPY =
+  'Not confirmed, so nothing was allowed. Choose Allow to try again.';
+
+/** The same line on a history row, whose button reads "Turn it on". */
+export const TURN_ON_NOT_CONFIRMED_COPY =
+  'Not confirmed, so nothing was turned on. Choose Turn it on to try again.';
+
+/**
  * The consent sentence for one extension.
  *
  * Nothing about an extension a person has not turned on runs: the server

@@ -240,9 +240,15 @@ export function registerSessionApprovalStepUpCases(): void {
             path: '/made-up/risky',
             originProblem: 'changed',
             manifest: { name: 'Risky' },
+            // Served whatever its files: the person trusts its source outright.
+            trustedOrigin: { plugin: 'kit', source: 'made-up/kit' },
           } as never,
         ],
-        approvals: {},
+        extensions: {
+          approvedToRun: [],
+          approvedSources: {},
+          trustedSources: [{ source: 'made-up/kit', trustedAt: '2026-11-01T00:00:00.000Z' }],
+        },
         agents: [],
       }));
       try {
@@ -254,7 +260,46 @@ export function registerSessionApprovalStepUpCases(): void {
         expect(scripted.body.code).toBe('extension-risk');
         expect(runtime.approveTool).not.toHaveBeenCalled();
       } finally {
-        setStepUpExtensionRiskInputs(() => ({ records: [], approvals: {}, agents: [] }));
+        setStepUpExtensionRiskInputs(() => ({
+          records: [],
+          extensions: { approvedToRun: [], approvedSources: {} },
+          agents: [],
+        }));
+      }
+    });
+
+    it('confirms while a changed mini app only waits for a yes: its code never reaches the page (DOR-4906)', async () => {
+      setStepUpExtensionRiskInputs(() => ({
+        records: [
+          {
+            id: 'waiting',
+            status: 'compiled',
+            path: '/made-up/waiting',
+            currentDigest: 'sha256:new',
+            manifest: { name: 'Waiting' },
+          } as never,
+        ],
+        extensions: {
+          approvedToRun: ['waiting'],
+          approvedSources: { waiting: { path: '/made-up/waiting', digest: 'sha256:approved' } },
+        },
+        agents: [],
+      }));
+      try {
+        pending();
+        const held = await approve(false, { alwaysAllow: true });
+        expect(held.status).toBe(428);
+        expect((await confirm(held.body.heldActionId)).body).toMatchObject({
+          ok: true,
+          status: 200,
+        });
+        expect(runtime.approveTool).toHaveBeenCalledOnce();
+      } finally {
+        setStepUpExtensionRiskInputs(() => ({
+          records: [],
+          extensions: { approvedToRun: [], approvedSources: {} },
+          agents: [],
+        }));
       }
     });
 

@@ -14,6 +14,7 @@
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
+import { chatFolderById } from '../../core/agent-identity/session-agent.js';
 
 /**
  * A runtime that can name the account one of its sessions runs on.
@@ -49,7 +50,11 @@ export async function resolveAccountRootForSession(sessionId: string): Promise<s
   try {
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     if (!isAccountAware(runtime)) return undefined;
-    const projectDir = (await runtimeRegistry.getSessionAgentPath(sessionId)) ?? DEFAULT_CWD;
+    // A chat that recorded no agent runs in its own folder, not the default (DOR-5038).
+    const projectDir =
+      (await runtimeRegistry.getSessionAgentPath(sessionId)) ??
+      chatFolderById(sessionId) ??
+      DEFAULT_CWD;
     // `null`: no account may work in the session's project, so there is no
     // account of its own to sign into.
     return (await runtime.accountRootForSession(sessionId, projectDir)) ?? undefined;

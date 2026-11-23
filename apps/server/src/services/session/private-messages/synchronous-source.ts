@@ -17,6 +17,16 @@ export function assertDispatchBinding(
   binding?: PrivateSessionMessageDispatchBinding
 ): void {
   if (
+    receipt.sourceKind === 'room_handoff_terminal' &&
+    (!binding ||
+      binding.sessionId !== receipt.sessionId ||
+      binding.runtime !== receipt.originRuntime)
+  )
+    throw new PrivateSessionMessageRefusalError(
+      'dispatch_binding_changed',
+      'This update is no longer available.'
+    );
+  if (
     receipt.sourceKind === 'document_event_batch' &&
     binding &&
     (binding.sessionId !== receipt.sessionId || binding.runtime !== receipt.originRuntime)

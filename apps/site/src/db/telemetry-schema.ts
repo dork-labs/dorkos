@@ -43,7 +43,7 @@ export const marketplaceInstallEvents = pgTable(
     packageName: text('package_name').notNull(),
     /** Marketplace identifier (e.g. `dorkos-community`). 1..64 chars. */
     marketplace: text('marketplace').notNull(),
-    /** Package type — agent | plugin | skill-pack | adapter. */
+    /** Package type — agent | plugin | skill-pack | adapter | shape. */
     type: text('type').notNull(),
     /** Install outcome — success | failure | cancelled. */
     outcome: text('outcome').notNull(),
@@ -62,7 +62,7 @@ export const marketplaceInstallEvents = pgTable(
     dorkosVersion: text('dorkos_version').notNull(),
     /**
      * Marketplace source type the plugin was installed from. One of
-     * `relative-path`, `github`, `url`, `git-subdir`, `npm`. Added in
+     * `relative-path`, `github`, `url`, `git-subdir`, `npm`, `local`, `unknown`. Added in
      * marketplace-05 so we can track adoption of each source form over
      * time. Not PII — purely an install-pipeline metadata field.
      */

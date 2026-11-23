@@ -29,6 +29,7 @@ import type {
   ChatMessageKind,
   ChatMessageStatus,
 } from '@dorkos/shared/chat-messages';
+import { HandoffOutboxStore } from '../../rooms/handoff/outbox/handoff-outbox-store.js';
 
 const ACTIVE_ASK_KINDS: readonly ChatMessageKind[] = ['message', 'start'];
 const ACTIVE_ASK_STATUSES: readonly ChatMessageStatus[] = ['working', 'delivered', 'steered'];
@@ -91,6 +92,7 @@ const BATCH = 500;
 
 /** Reads and writes the chat-message tables. */
 export class ChatMessageStore {
+  readonly handoffOutbox: HandoffOutboxStore;
   /**
    * Build a store over the database.
    *
@@ -100,7 +102,9 @@ export class ChatMessageStore {
   constructor(
     private readonly db: Db,
     private readonly now: () => Date = () => new Date()
-  ) {}
+  ) {
+    this.handoffOutbox = new HandoffOutboxStore(db);
+  }
 
   /**
    * Write a new chat message.
@@ -564,6 +568,7 @@ export class ChatMessageStore {
   rekeySession(fromId: string, toId: string): void {
     if (fromId === toId) return;
     this.db.transaction((tx) => {
+      this.handoffOutbox.reports.rekeyWithin(tx, fromId, toId);
       tx.update(chatMessages)
         .set({ toSessionId: toId })
         .where(eq(chatMessages.toSessionId, fromId))

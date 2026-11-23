@@ -25,7 +25,7 @@ import type { Db } from '@dorkos/db';
 import { createA2aGateway } from '@dorkos/a2a-gateway';
 import type { ApiEnv } from '../http/api-chain.js';
 import { closeResponseWithSignIn } from '../http/raw-node-stream.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { buildA2aRateLimiters } from '../middleware/a2a-rate-limit.js';
 import { honoMcpAuth } from '../middleware/mcp-auth.js';
 import { logger } from '../lib/logger.js';

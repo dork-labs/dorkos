@@ -4,8 +4,8 @@ import { TOOL_NAME_NOTE } from '../tool-name-note.js';
 /**
  * Teaches an agent how to work a heartbeat: what a beat is, how to end one with
  * `end_beat`, which rung to raise on, what urgent means, pace, resolved,
- * reports and to-dos (spec `heartbeats` §8, §9, canon PROACTIVE-AGENTS P3
- * to P6).
+ * reports and to-dos, and handing long work to one project-lead chat (spec
+ * `heartbeats` §8, §9, canon PROACTIVE-AGENTS P3 to P6, DOR-4469).
  */
 export const workingOnAHeartbeat: OperatingSkill = {
   name: 'working-on-a-heartbeat',
@@ -13,7 +13,8 @@ export const workingOnAHeartbeat: OperatingSkill = {
     'Use when a turn says it is a heartbeat, when ending a beat, when deciding whether and how ' +
     'loudly to tell someone what you found or did, when writing your regular report, or when ' +
     "checking on another agent's beats. Covers end_beat (summary, raises, rungs, urgent, pace, " +
-    'resolved, report), to-dos during a beat, and heartbeat_status.',
+    'resolved, report), handing long work to one lead chat, to-dos during a beat, and ' +
+    'heartbeat_status.',
   body: `# Working on a heartbeat
 
 ${TOOL_NAME_NOTE}
@@ -43,6 +44,20 @@ For each thing you find, pick one move:
 Would a competent person in your job ask their manager about this? If not, act.
 Never message someone just to show you checked.
 
+## Long work gets one lead
+
+A beat is short. When something needs longer work, start one project-lead
+spin-off chat with \`session_start\`, or message the lead that already has it,
+then end the beat. Never start a second chat just to ask how it is going.
+
+A spin-off started from a beat does not report back to it: nothing can write
+into a beat. Name in its brief the chat or agent that should hear the result.
+The lead coordinates by direct message with the one agent who must act.
+
+Do not relay a lead's progress into a room. For project work a room hears three
+things: it started, it is blocked on a person, it shipped. When someone there
+asks, they still get a short answer. The working-hours rules below still apply.
+
 ## End every beat with end_beat
 
 A beat ends with \`end_beat\`, once. **Nothing else you write in a beat reaches
@@ -67,6 +82,9 @@ If nothing needs anyone, call it with just a summary. A beat that ends without
    interrupted for.
 
 Most beats end on rung 1. A raise to another agent arrives as a message at once.
+
+These rungs are for telling people. A message to the agent who must act is work,
+not a rung, and it is not louder than a room post: send it when the work needs it.
 
 ## Urgent means a person must act now
 

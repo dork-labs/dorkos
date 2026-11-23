@@ -800,8 +800,8 @@ describe('what a preopen run checks (DOR-4728)', () => {
   });
 
   it('still runs the repo-wide scripts suites for a change only under apps/server/src/services/', () => {
-    // Those suites are censuses over the whole tree (agents-service-census reads this
-    // very directory), and the required typecheck workflow runs them on every PR.
+    // Those suites read across the whole tree (a change here can still move one of
+    // them), and the required typecheck workflow runs them on every PR.
     const steps = planFor({ 'apps/server/src/services/new-domain/index.md': 'words' });
     expect(names(steps)).toEqual(['scripts-repo', 'typecheck-lint']);
     expect(steps[0]?.args).toEqual([

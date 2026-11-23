@@ -1132,7 +1132,7 @@ describe('TaskRow: a task capped for a changed SKILL file (DOR-3703, M4)', () =>
       fireEvent.click(screen.getByRole('button', { name: 'Approve file' }));
       expect(await screen.findByText('Review the changed file')).toBeTruthy();
       expect(document.querySelector('[data-slot="task-file-cap-review-body"]')?.textContent).toBe(
-        'Nightly dependency audit. Approving lifts the cap, so its runs go back to Bypass permissions.'
+        'Approving lifts the cap, so “Nightly dependency audit” runs at Bypass permissions.'
       );
       const scroll = document.querySelector('[data-slot="task-file-cap-review-scroll"]')!;
       const footer = document.querySelector('[data-slot="task-file-cap-review-footer"]')!;
@@ -1203,6 +1203,155 @@ describe('TaskRow: a task capped for a changed SKILL file (DOR-3703, M4)', () =>
       cleanup();
       renderScheduleRow({ ...pendingSchedule, fileCapNext: false });
       expect(document.querySelector('[data-slot="task-file-cap-next"]')).toBeNull();
+    });
+
+    it('with no cap standing, reviews the whole file first and approves the hash it showed (DOR-5060)', async () => {
+      const approveTaskFile = vi.fn().mockResolvedValue(activeSchedule);
+      renderScheduleRow(
+        {
+          ...activeSchedule,
+          fileCapNext: true,
+          fileReview: { hash: HASH, previous: null, current: 'triage the​ inbox' },
+        },
+        {},
+        createMockTransport({ approveTaskFile })
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Review file' }));
+      expect(approveTaskFile).not.toHaveBeenCalled();
+      await screen.findByText('Review the file');
+      // Nothing was approved before, so the whole file reads as added, hidden characters shown.
+      const line = document.querySelector('[data-slot="task-file-cap-diff"] [data-kind]')!;
+      expect(line.getAttribute('data-kind')).toBe('added');
+      expect(line.textContent).not.toContain('​');
+      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(approveTaskFile).toHaveBeenCalledWith('sched-1', null, HASH));
+    });
+
+    it('says in one sentence what approving does, with a long task name whole, either way (DOR-5075)', async () => {
+      const longName = 'Sweep every open pull request across all of the repositories each night';
+      renderScheduleRow({
+        ...capped,
+        displayName: longName,
+        fileCap: { ...capped.fileCap!, previous: 'a', current: 'b' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Approve file' }));
+      await screen.findByText('Review the changed file');
+      const body = document.querySelector('[data-slot="task-file-cap-review-body"]')!;
+      expect(body.textContent).toBe(
+        `Approving lifts the cap, so “${longName}” runs at Bypass permissions.`
+      );
+      // The name wraps rather than being cut short.
+      expect(body.className).toContain('break-words');
+      expect(body.className).not.toContain('truncate');
+      cleanup();
+      renderScheduleRow({
+        ...activeSchedule,
+        displayName: longName,
+        permissionMode: 'bypassPermissions',
+        fileCapNext: true,
+        fileReview: { hash: HASH, previous: null, current: 'triage the inbox' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Review file' }));
+      await screen.findByText('Review the file');
+      expect(document.querySelector('[data-slot="task-file-cap-review-body"]')?.textContent).toBe(
+        `Approving lets “${longName}” run at Bypass permissions.`
+      );
+    });
+
+    it('says the whole file shows only when no approved copy was kept (DOR-5075)', async () => {
+      renderScheduleRow({
+        ...activeSchedule,
+        fileCapNext: true,
+        fileReview: { hash: HASH, previous: null, current: 'triage the inbox' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Review file' }));
+      await screen.findByText('Review the file');
+      const cue = document.querySelector('[data-slot="task-file-cap-first-review"]');
+      expect(cue?.textContent).toBe('No approved copy was kept, so the whole file shows.');
+      // Above the diff, in the same scrolling body.
+      const diff = document.querySelector('[data-slot="task-file-cap-diff"]')!;
+      expect(cue!.compareDocumentPosition(diff) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      cleanup();
+      renderScheduleRow({
+        ...activeSchedule,
+        fileCapNext: true,
+        fileReview: { hash: HASH, previous: 'triage the inbox', current: 'triage the backlog' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Review file' }));
+      await screen.findByText('Review the file');
+      expect(document.querySelector('[data-slot="task-file-cap-first-review"]')).toBeNull();
+    });
+
+    it('lines the diff up with the title and drops the dialog’s empty floor (DOR-5075)', async () => {
+      renderScheduleRow({
+        ...activeSchedule,
+        fileCapNext: true,
+        fileReview: { hash: HASH, previous: null, current: 'triage the inbox' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Review file' }));
+      await screen.findByText('Review the file');
+      const dialog = document.querySelector('[data-slot="task-file-cap-review"]')!;
+      expect(dialog.className.split(/\s+/)).toContain('min-h-0');
+      expect(dialog.className).not.toContain('min-h-[50vh]');
+      const scroll = document.querySelector('[data-slot="task-file-cap-review-scroll"]')!;
+      expect(scroll.className.split(/\s+/)).toContain('-mx-4');
+    });
+
+    it('draws hidden characters in the diff as labelled chips, and an emoji’s own selector as text (DOR-5075)', async () => {
+      renderScheduleRow({
+        ...activeSchedule,
+        fileCapNext: true,
+        fileReview: {
+          hash: HASH,
+          previous: null,
+          current: 'pay\u200Bthe\u202Einvoice\nthanks \u2764\uFE0F',
+        },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Review file' }));
+      await screen.findByText('Review the file');
+      const [first, second] = [
+        ...document.querySelectorAll('[data-slot="task-file-cap-diff"] [data-kind]'),
+      ];
+      expect(screen.getByRole('img', { name: 'hidden character U+200B' }).textContent).toBe(
+        'U+200B'
+      );
+      expect(screen.getByRole('img', { name: 'hidden character U+202E' }).textContent).toBe(
+        'U+202E'
+      );
+      expect(first!.querySelectorAll('[data-slot="hidden-character"]')).toHaveLength(2);
+      // The text a person could type, `<U+200B>`, is never what a marker looks like.
+      expect(first!.textContent).not.toContain('<U+');
+      expect(second!.querySelector('[data-slot="hidden-character"]')).toBeNull();
+      expect(second!.textContent).toContain('thanks \u2764\uFE0F');
+    });
+
+    it('shows every hidden character in the reviewed file as a marker, and Approve binds to the server’s hash (DOR-5060)', async () => {
+      // A zero-width space, a bidi override, and a tag character: the last is
+      // invisible to a person but read as text by a model.
+      const hidden = [0x200b, 0x202e, 0xe0041].map((cp) => String.fromCodePoint(cp));
+      const approveTaskFile = vi.fn().mockResolvedValue(activeSchedule);
+      renderScheduleRow(
+        {
+          ...activeSchedule,
+          fileCapNext: true,
+          fileReview: { hash: HASH, previous: null, current: `pay${hidden.join('the')}invoice` },
+        },
+        {},
+        createMockTransport({ approveTaskFile })
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Review file' }));
+      await screen.findByText('Review the file');
+      const line = document.querySelector('[data-slot="task-file-cap-diff"] [data-kind]')!;
+      const chips = [...line.querySelectorAll('[data-slot="hidden-character"]')];
+      expect(chips.map((chip) => chip.getAttribute('aria-label'))).toEqual([
+        'hidden character U+200B',
+        'hidden character U+202E',
+        'hidden character U+E0041',
+      ]);
+      for (const ch of hidden) expect(line.textContent).not.toContain(ch);
+      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      // What was shown is the markers; what is approved is the server's hash of the real bytes.
+      await waitFor(() => expect(approveTaskFile).toHaveBeenCalledWith('sched-1', null, HASH));
     });
   });
 });

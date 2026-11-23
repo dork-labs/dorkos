@@ -21,7 +21,11 @@ import {
   settleAsk,
 } from '@/layers/entities/attention';
 import { useTransport } from '@/layers/shared/model';
-import { describeDecisionRefusal } from '@/layers/shared/lib';
+import {
+  STEP_UP_NOT_ALLOWED_MESSAGE,
+  STEP_UP_NOT_CONFIRMED_MESSAGE,
+  describeDecisionRefusal,
+} from '@/layers/shared/lib';
 
 /** What a person can say to an Ask from a card that is not the full prompt. */
 type AskAnswer = 'allow' | 'deny';
@@ -100,8 +104,15 @@ export function useAnswerAsk(): AnswerAskState {
         // and a refusal means it never did — leaving it would show "You allowed
         // this" over a request still sitting there answerable.
         if (!deferred) for (const ask of answered) forgetAskReceipt(ask.interaction.id);
-        if ((err as { code?: string }).code !== STEP_UP_REQUIRED_CODE)
-          setError(describeDecisionRefusal(err, false).message);
+        // "Confirm it's you" closed unconfirmed: the card comes back, and says
+        // nothing was allowed, so it never reads as still on its way (DOR-4909).
+        setError(
+          (err as { code?: string }).code === STEP_UP_REQUIRED_CODE
+            ? decision === 'allow'
+              ? STEP_UP_NOT_ALLOWED_MESSAGE
+              : STEP_UP_NOT_CONFIRMED_MESSAGE
+            : describeDecisionRefusal(err, false).message
+        );
         if (deferred) requestAnimationFrame(() => openedFrom?.isConnected && openedFrom.focus());
         return false;
       } finally {

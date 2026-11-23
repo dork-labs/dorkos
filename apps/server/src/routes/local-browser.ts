@@ -9,7 +9,7 @@ import {
   LocalBrowserSignInRequestSchema,
 } from '@dorkos/shared/local-browser';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { refuseUnlessAccountOwner, requirePersonAtThisComputer } from '../lib/caller-authority.js';
 import {

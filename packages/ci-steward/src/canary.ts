@@ -6,10 +6,10 @@
  * only, so a break that LANDS is invisible until the next PR is ejected by it:
  * on 2026-09-17 a fixture-clock bug reached `main` and hid for three days, then
  * ejected three unrelated PRs about nine times in one evening before a person
- * diagnosed it (#1934). The canary is those same workflows, unchanged, on four
- * cron slots a day — see `ci/config.yaml`'s `canary:` block for which, and
- * `.github/workflows/test.yml`'s header for what the slots buy given GitHub's
- * cron throttling.
+ * diagnosed it (#1934). The canary is those same workflows, unchanged, on one
+ * cron slot a day (four until DOR-5114) — see `ci/config.yaml`'s `canary:`
+ * block for which, and `.github/workflows/test.yml`'s header for what the slot
+ * buys given GitHub's cron throttling.
  *
  * This module is where its answer is said out loud: the trigger rule, and the
  * report's line for the day.
@@ -59,11 +59,11 @@ export interface CanaryTriage {
  *
  * WHAT SILENCE ACTUALLY COSTS IN TIME. A day is collected the morning after,
  * and every rule here reads the reported day's end rather than the wall clock
- * so a page rebuilt by hand reaches the same answer. So an 18-hour threshold
- * detects a stopped canary in about 18 + up to 24 (the rest of the day) minus
- * nothing, plus the collector's own delay: **about 39 hours in the worst
- * case**, not 18. Tightening the number does not fix that; only collecting
- * more often would, and that is a different change.
+ * so a page rebuilt by hand reaches the same answer. So the 40-hour threshold
+ * (one cron a day plus GitHub's lateness) detects a stopped canary in about
+ * 40 + up to 24 (the rest of the day), plus the collector's own delay: **about
+ * 64 hours in the worst case**, not 40. Tightening the number does not fix
+ * that; only collecting more often would, and that is a different change.
  *
  * ONE EPISODE, ONE ID. The red trigger is keyed on the commit the oldest red
  * streak started at, but that anchor MOVES when one workflow of a spreading

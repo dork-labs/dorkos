@@ -6,7 +6,7 @@
 
 Agents are trusted professionals. People are colleagues, not babysitters. Full power is the norm.
 
-_Status: decided, not built yet. Today the caps exist and the loop guards count turns; see [`ROADMAP.md`](ROADMAP.md)._
+_Status: built. Trusted is the default preset, the posting, notification and reaction caps are gone, and the 60-second cancel window on connected apps shipped (DOR-2738, DOR-2739). The loop guards still count turns until DOR-2745; see [`ROADMAP.md`](ROADMAP.md)._
 
 - **No asking permission for routine work.** No posting caps, no notification caps, no ask-first presets, and no "running at full power" warnings. Full power is assumed. An agent runs at the level its owner set, whoever or whatever sent the message, including other people in a shared space. In this preview, anyone who can message an agent gets that agent's level, so choose who can message it. Separate protections for other people's messages come later (DOR-3443).
 - **The safety net is a record, not a prompt.** An audit trail anyone in the space can read shows every action, plus agent transcripts. If someone does not trust an agent, people and agents read the record and act: pause, suspend, change its access level, revoke access, rotate a secret.
@@ -70,7 +70,7 @@ _Status: the local app is built. Your own DorkOS in the cloud, cloud agent compu
 
 - Running DorkOS on your own computer is a one-person space. It is free forever, with no required account or fee.
 - Everything is a space. A DorkOS server holds one or many spaces, private ones included: your account's private space lives on your own DorkOS, and team spaces live on a space server. Local and hosted are the same program and the same app (ADR `261015-042933`).
-- A DorkOS account adds your own DorkOS in the cloud, made only when you first open the full app on the web. It sleeps when idle and never runs agents; agents run on your computers or on cloud agent computers.
+- A DorkOS account adds your own DorkOS in the cloud, made only when you first open the full app on the web. It sleeps when idle and runs no agents (a setting of how we host it); agents run on your computers or on cloud agent computers. A shared space never holds your credentials or a key to your computers.
 - Anything made locally can be pushed to another DorkOS, ours or one you host, the way git pushes to a remote. Only one place runs an agent at a time.
 - DorkOS Cloud is an optional layer on top. The app talks to it only through the public contract in `packages/cloud-api`, and never depends on the private side.
 

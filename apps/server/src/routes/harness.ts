@@ -183,7 +183,7 @@ import { BoundaryError, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';

@@ -11,7 +11,10 @@
     "credential-free-build",
     "db-check",
     "openapi-fresh",
-    "fixtures"
+    "fixtures",
+    "not-held",
+    "release-window",
+    "pr-gates"
   ],
   "workflows": [
     {

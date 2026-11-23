@@ -161,7 +161,7 @@ Import from barrel export in `shared/ui/`:
 // Import components
 import { Button } from '@/layers/shared/ui';
 import { Card, CardContent, CardHeader, CardTitle } from '@/layers/shared/ui';
-import { Form, FormControl, FormField, FormItem, FormLabel } from '@/layers/shared/ui';
+import { TextField, SelectField, SwitchField, SubmitButton } from '@/layers/shared/ui'; // form fields, see shared/ui/form-fields/
 
 // Use with variants
 export function Example() {
@@ -494,15 +494,13 @@ export function cn(...inputs: ClassValue[]) {
 
 ### "Custom utility classes not found"
 
-**Cause**: Defined in wrong layer or not using `@layer`.
-**Fix**: Always use `@layer utilities` in index.css:
+**Cause**: Defined as a v3-style `@layer utilities` class, which Tailwind v4 treats as plain CSS, so variants such as `hover:` or `dark:` do not apply to it.
+**Fix**: Define it with the `@utility` at-rule in index.css, as every existing custom utility does:
 
 ```css
 /* apps/client/src/index.css */
-@layer utilities {
-  .shadow-soft {
-    box-shadow: 0 2px 8px oklch(0% 0 0 / 0.08);
-  }
+@utility shadow-soft {
+  box-shadow: var(--elevation-soft);
 }
 ```
 

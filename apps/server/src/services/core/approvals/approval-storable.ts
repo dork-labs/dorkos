@@ -219,6 +219,7 @@ export function sweptMarketplaceCard(
       ...pkg,
       name: redactSecretsInText(pkg.name),
       where: redactSecretsInText(pkg.where),
+      ...(pkg.note !== undefined && { note: redactSecretsInText(pkg.note) }),
       risks: pkg.risks.map((risk) => ({
         ...risk,
         text: redactSecretsInText(risk.text),

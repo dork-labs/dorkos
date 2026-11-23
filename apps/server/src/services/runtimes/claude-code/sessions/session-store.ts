@@ -1,3 +1,9 @@
+import { hasPreparedSettingsMutation } from '../../../core/runtime-seam/prepared-settings-write.js';
+import { prepareClaudeSettingsUpdate } from './settings/prepared-update.js';
+import {
+  startLivePermissionModeUpdate,
+  finishLivePermissionModeUpdate,
+} from './settings/live-permission-update.js';
 import { RequiredSessionIdentityError } from '../../../../lib/replay/required-session-identity-error.js';
 import { rebindOwnedSdkSession } from './identity/sdk-session-rebind.js';
 /**
@@ -16,7 +22,6 @@ import {
 import type {
   PermissionMode,
   Session,
-  PendingInteractionDTO,
   InterruptOutcome,
   InterruptReason,
   InterruptReceipt,
@@ -29,25 +34,19 @@ import type {
   SessionUpdateResult,
   ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
-import { tightensDeclaredMode, actsWithoutAsking } from '@dorkos/shared/permission-semantics';
+import { actsWithoutAsking } from '@dorkos/shared/permission-semantics';
 import type { AgentSession } from '../agent-types.js';
-import { CLAUDE_CODE_CAPABILITIES, narrowToClaudeCodeMode } from '../runtime-constants.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../runtime-constants.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
 import { withClaudeConfigDir } from '../claude-config-env-lock.js';
-import {
-  gatePermissionMode,
-  isPersonOnlyMode,
-  sessionScopedMode,
-  setChosenMode,
-} from '../turn-permission.js';
+import { isPersonOnlyMode, sessionScopedMode, setChosenMode } from '../turn-permission.js';
 import { narrowToTool } from '../tool-gate/always-allow-breadth.js';
 import type { TranscriptReader } from './transcript-reader.js';
 import type { SessionLockManager } from '../../../session/session-lock.js';
 import {
   awaitControlAck,
-  PERMISSION_MODE_ACK_TIMEOUT_MS,
   STOP_ACK_SLOW_MS,
   STOP_ACK_TIMEOUT_MS,
   type ControlAck,
@@ -111,9 +110,6 @@ export function isWaitingOnPerson(session: AgentSession, now: number): boolean {
   }
   return false;
 }
-
-/** This runtime's own mode descriptors — the only meaning any mode id has. */
-const CLAUDE_MODES = CLAUDE_CODE_CAPABILITIES.permissionModes.values ?? [];
 
 /**
  * Whether a suggested mode is one DorkOS may make DURABLE off a single click on
@@ -598,13 +594,22 @@ export class SessionStore {
 
   /**
    * Update mutable session fields, auto-creating (hydrated from durable
-   * settings) if the session isn't currently in memory. Always resolves
-   * `updated: true` — there is no "session does not exist" case for this
-   * runtime, because the auto-create branch below handles it.
+   * settings) if the session isn't currently in memory. Ordinary updates resolve
+   * `updated: true` through auto-creation. A prepared first write can refuse
+   * stale source or local ownership before either durable or local mutation.
    */
   async updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
+    const prepared = hasPreparedSettingsMutation(sessionId)
+      ? await prepareClaudeSettingsUpdate(
+          this,
+          sessionId,
+          opts,
+          this.settingsPort,
+          this.defaultPermissionMode
+        )
+      : undefined;
     let session = this.findSession(sessionId);
-    if (!session) {
+    if (!session && !prepared) {
       // Auto-create with hasStarted=false — sendMessage will check the transcript
       // on disk before deciding whether to resume. Hydrate from the durable
       // store first (ADR-0260): a PATCH that touches only model/effort/fastMode
@@ -612,7 +617,7 @@ export class SessionStore {
       // the first thing to reach a session whose in-memory state was evicted or
       // the server restarted since. Without this, the auto-create silently
       // reset an ENFORCED bypassPermissions/plan session back to 'default'
-      // while the DB row — and the cockpit's display overlay reading it —
+      // while the DB row — and the app's display overlay reading it —
       // kept showing the operator's real choice (DOR-1151). Precedence
       // mirrors `ensureForMessage`: per-call override → persisted → runtime
       // default.
@@ -633,65 +638,26 @@ export class SessionStore {
     // (ADR-0260). Only user-driven PATCHes reach updateSession, so transient
     // per-send overrides (Tasks/relay) are never persisted here.
     await this.settingsPort?.saveSessionSettings(sessionId, opts);
+    session = prepared ? prepared.session() : session!;
+    if (prepared && !prepared.isCurrent())
+      return {
+        updated: true,
+        ...(opts.permissionMode ? { permissionModePendingUntilNextTurn: true } : {}),
+      };
     let permissionModePendingUntilNextTurn = false;
     if (opts.permissionMode) {
-      const prevMode = session.permissionMode;
+      const prevMode = prepared ? prepared.previousMode() : session.permissionMode;
       // A person's choice replaces the agent's level a running turn started from (DOR-3175).
-      setChosenMode(session, opts.permissionMode);
+      if (!prepared) setChosenMode(session, opts.permissionMode);
       if (session.activeQuery) {
-        const query = session.activeQuery;
-        // Bounded (DOR-1301): on a session winding down, DorkOS has already
-        // ended this query's stdin, so the SDK drops the write in silence and
-        // returns a promise nothing will settle. Awaiting it hung the PATCH —
-        // and made the best-effort catch below unreachable, since a dropped
-        // write never rejects either. The clock is what makes the best-effort
-        // contract true rather than merely written down.
-        // Only the SDK needs the narrow name (DOR-885): a mode id is whatever its
-        // runtime declared, and the session above keeps the id as asked, but a
-        // query can only be moved to a mode the SDK knows. Held to the ceilings
-        // the running turn and its background work carry (`warm-ceiling.ts`): a
-        // person loosening this chat mid-turn never loosens a stranger's turn.
-        const liveMode = narrowToClaudeCodeMode(gatePermissionMode(session), 'default');
-        const ack = await awaitControlAck(
-          () => query.setPermissionMode(liveMode as Parameters<typeof query.setPermissionMode>[0]),
-          PERMISSION_MODE_ACK_TIMEOUT_MS
+        const ack = await startLivePermissionModeUpdate(session, session.activeQuery);
+        permissionModePendingUntilNextTurn = finishLivePermissionModeUpdate(
+          sessionId,
+          prevMode,
+          opts.permissionMode,
+          ack,
+          prepared !== undefined && !prepared.isCurrent()
         );
-        if (ack !== 'acked') {
-          // Best-effort (ADR-0261): keep the new mode even when the live query
-          // refuses the change or never answers — it is already persisted
-          // (write-through above) and takes effect on the next turn. Never
-          // revert or re-throw, so the PATCH route does not surface a spurious
-          // 422.
-          logger.warn('[updateSession] live setPermissionMode did not take; applies next turn', {
-            sessionId,
-            mode: opts.permissionMode,
-            ack,
-          });
-          // Best-effort is fine; SILENTLY best-effort is not (DOR-1435). Keeping
-          // the mode is right, and reporting it as in force is wrong — the turn
-          // on `activeQuery` is still running under `prevMode`, and when that is
-          // the looser of the two nothing on this side can put the approval
-          // prompts back for it (the CLI skips `canUseTool` entirely under a
-          // mode that never asks). Only the tightening direction is carried up:
-          // see `SessionUpdateResult.permissionModePendingUntilNextTurn`.
-          //
-          // `prevMode` is what the SESSION was set to, which is very nearly —
-          // but not exactly — what the running turn is doing: the launcher can
-          // coerce `auto` down to `default` for a model that cannot do Auto
-          // without writing that back (`messaging/launch-resolver.ts`), so an
-          // `auto` → `default` PATCH on such a model reports pending for a turn
-          // that is already running `default`. Left standing deliberately. The
-          // effective mode is resolved per launch and never recorded on the
-          // session, so comparing against it would mean plumbing a second
-          // source of truth through here — and the error is in the safe
-          // direction: it says "not yet" about a change that has in fact taken,
-          // which costs one sentence and never hides a real gap.
-          permissionModePendingUntilNextTurn = tightensDeclaredMode(
-            CLAUDE_MODES,
-            prevMode,
-            opts.permissionMode
-          );
-        }
       }
       logger.debug('[updateSession] permissionMode change', {
         sessionId,
@@ -699,9 +665,11 @@ export class SessionStore {
         to: opts.permissionMode,
       });
     }
-    if (opts.model) session.model = opts.model;
-    if (opts.effort) session.effort = opts.effort;
-    if (opts.fastMode !== undefined) session.fastMode = opts.fastMode;
+    if (!prepared) {
+      if (opts.model) session.model = opts.model;
+      if (opts.effort) session.effort = opts.effort;
+      if (opts.fastMode !== undefined) session.fastMode = opts.fastMode;
+    }
     return {
       updated: true,
       ...(permissionModePendingUntilNextTurn ? { permissionModePendingUntilNextTurn: true } : {}),

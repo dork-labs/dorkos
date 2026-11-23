@@ -4,6 +4,7 @@
  *
  * @module services/session/chat-messages/chat-message-current
  */
+import type { ChatReportBack } from './chat-report-back.js';
 import type { RoomSeatReports } from '../../rooms/handoff/seat-report.js';
 import type { ChatMessageService } from './chat-message-service.js';
 
@@ -24,7 +25,7 @@ export function getChatMessageService(): ChatMessageService | undefined {
 }
 
 /** What report-back asks of the rooms: whether a chat is a seat, and a report into one. */
-export type RoomSeatReportsPort = Pick<RoomSeatReports, 'seatOf' | 'deliver'>;
+export type RoomSeatReportsPort = Pick<RoomSeatReports, 'seatOf' | 'holdsSeat' | 'deliver'>;
 
 let seatReports: RoomSeatReportsPort | undefined;
 
@@ -119,4 +120,20 @@ export function setRoomSeatRoutes(
 ): void {
   setRoomSeatReports(service.handoffs.reports);
   setRoomSeatMessageFactory((store, emit) => service.createSeatMessages(store, emit));
+}
+
+/** The report producer and recovery cursor belong to the current chat-service lifetime. */
+let reportBack: ChatReportBack | undefined;
+/** Replace the report producer, stopping workers owned by the previous service lifetime. */
+export function setChatReportBack(value: ChatReportBack | undefined): void {
+  if (reportBack !== value) reportBack?.stop();
+  reportBack = value;
+}
+/** Resume waiting reports and pending notices owned by the current service. */
+export async function recoverChatReports(): Promise<void> {
+  await reportBack?.recoverPending();
+}
+/** Stop report workers before their database and runtime services close. */
+export function stopChatReports(): void {
+  setChatReportBack(undefined);
 }

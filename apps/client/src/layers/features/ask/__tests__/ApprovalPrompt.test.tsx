@@ -95,6 +95,26 @@ describe('ApprovalPrompt', () => {
     expect(screen.getByRole('button', { name: /^Don’t allow/ })).toBeDefined();
   });
 
+  // Purpose: a "Confirm it’s you" closed unconfirmed left the card as it was,
+  // as if the yes were still on its way (DOR-4909). It now says so, and
+  // stays answerable.
+  it.each([
+    ['Allow', /^Allow/],
+    ['Always allow', /^Always allow$/],
+  ])('says nothing was allowed when %s ends on a cancelled step-up', async (_label, name) => {
+    mockApproveTool.mockRejectedValueOnce(
+      Object.assign(new Error('Not confirmed. Nothing changed.'), { code: 'step_up_required' })
+    );
+    render(<ApprovalPrompt {...baseProps} approvalHasSuggestions />);
+    fireEvent.click(screen.getByRole('button', { name }));
+    expect(await screen.findByText('Not confirmed. Nothing was allowed.')).toBeDefined();
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: /^Allow/ }) as HTMLButtonElement).disabled).toBe(
+        false
+      )
+    );
+  });
+
   it('renders tool arguments display', () => {
     render(<ApprovalPrompt {...baseProps} />);
     expect(screen.getByTestId('tool-args')).toBeDefined();

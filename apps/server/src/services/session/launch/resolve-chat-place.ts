@@ -6,6 +6,7 @@
  */
 import type { AgentRuntime, DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
+import type { PersonChatBinding } from '../../core/runtime-seam/person-draft-settings.js';
 import {
   resolveSessionCwdWithRoom,
   type ResolvedSessionPlace,
@@ -151,4 +152,26 @@ export async function resolveChatPlace(
     additionalDirectories: resolved.additionalDirectories,
     session,
   };
+}
+
+/** Match a saved folder to its directory and a registered agent to its verified owner.
+ * A registered agent can use a different directory through ordinary workspace placement.
+ */
+export function matchesPersonChatPlace(
+  source: PersonChatBinding,
+  place: ResolvedChatPlace,
+  verifiedAgentPath: string | undefined
+): boolean {
+  const birth = 'birth' in source ? source.birth : undefined;
+  const draft = 'draft' in source ? source.draft : undefined;
+  const expectedAgentPath =
+    birth?.kind === 'person-agent'
+      ? birth.recordedRegisteredPath
+      : draft?.sourceKind === 'person-agent'
+        ? draft.sourcePath
+        : undefined;
+  return expectedAgentPath !== undefined
+    ? verifiedAgentPath === expectedAgentPath &&
+        (place.forAgent === undefined || place.forAgent === expectedAgentPath)
+    : place.cwd === (birth?.kind === 'person-location' ? birth.cwd : draft?.sourcePath);
 }

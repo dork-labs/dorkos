@@ -8,6 +8,7 @@ import {
   useSessionId,
   useSessionRekeyTarget,
   useSessionSearch,
+  sessionDisplayTitle,
 } from '@/layers/entities/session';
 import { useInPlaceNavigate } from '@/layers/shared/model';
 import { PageHeading } from '@/layers/shared/ui';
@@ -80,7 +81,8 @@ export function SessionPage() {
 
   return (
     <>
-      <PageHeading>{sessionTitle?.trim() ? sessionTitle : 'Chat'}</PageHeading>
+      {/* The exact title the header shows, never a stored `<dork-…>` tag (DOR-4976). */}
+      <PageHeading>{sessionDisplayTitle(sessionTitle)}</PageHeading>
       <ChatPanel
         sessionId={activeSessionId}
         launchRuntime={runtime}

@@ -81,7 +81,7 @@ import type { ExtensionManager } from './extension-manager.js';
 import { presentExtensionCopies } from './copies/extension-copy-presence.js';
 import type { ExtensionsConfig } from './extension-enable-resolution.js';
 import {
-  isApprovedByOrigin,
+  sharesApprovedOrigin,
   isDismissedCopy,
   mayLoadClientHalf,
   mayRunExtensionCode,
@@ -631,8 +631,9 @@ async function hasClientEntry(dir: string): Promise<boolean> {
  * "Already approved" means the stored approval names this copy, or a trusted
  * origin it provably shares, whatever its files are now. An update rewrites
  * `extension.json`, so its digest never matches the yes; asking for a match
- * here hid every power an update added (DOR-4504). The approved set comes
- * only from DorkOS's own record, never from the package.
+ * here hid every power an update added (DOR-4504), and a newer copy from the
+ * approved origin now waits for its own yes the same way (DOR-4895). The
+ * approved set comes only from DorkOS's own record, never from the package.
  *
  * @param record - The extension record.
  * @param extensions - `config.extensions`.
@@ -641,7 +642,7 @@ function addedSinceApproval(
   record: ExtensionRecord,
   extensions: ExtensionApprovals
 ): ExtensionApprovalAdditions | null {
-  if (!namesThisCopy(record, extensions) && !isApprovedByOrigin(record, extensions)) return null;
+  if (!namesThisCopy(record, extensions) && !sharesApprovedOrigin(record, extensions)) return null;
   return addedSince(declaredSet(record.manifest), extensions.approvedPermissions?.[record.id]);
 }
 

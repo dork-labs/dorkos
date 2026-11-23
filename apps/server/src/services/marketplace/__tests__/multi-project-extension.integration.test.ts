@@ -1,8 +1,9 @@
 /**
  * The same extension installed into several projects from one source (spec
- * `flow-multiproject` §9, N5): a person approves Flow in repo A once, then a
- * newer Flow is installed into repo B through the installer, and B's copy runs
- * with no new approval item, while A's older copy reports `shadowedBy`.
+ * `flow-multiproject` §9, N5): a person approves Flow in repo A once, then the
+ * same Flow is installed into repo B through the installer, and B's copy runs
+ * with no new approval item, while A's copy reports `shadowedBy`. A newer
+ * version is other files, so it waits for a fresh yes (DOR-4895).
  *
  * Wires the REAL {@link ExtensionManager} (real discovery against a temp
  * `dorkHome` and temp projects, only `configManager` held in memory) into the
@@ -169,8 +170,8 @@ describe('one extension across many projects, from one approved source', () => {
     return path.join(result.installPath, '.dork', 'extensions', ids[0] ?? 'flow');
   }
 
-  it("loads B's newer copy with no new approval item, and A's copy reports shadowedBy", async () => {
-    const aCopy = await installInto('repo-a', '1.0.0');
+  it("runs B's copy of the approved files with no new approval item, and A's copy reports shadowedBy", async () => {
+    const aCopy = await installInto('repo-z', '1.0.0');
     const flowA = manager.get('flow');
     expect(flowA?.path).toBe(aCopy);
     expect(flowA?.trustedOrigin).toEqual({ plugin: PLUGIN, source: 'dork-labs/marketplace' });
@@ -182,7 +183,8 @@ describe('one extension across many projects, from one approved source', () => {
       origin: { plugin: PLUGIN, source: 'dork-labs/marketplace' },
     });
 
-    const bCopy = await installInto('repo-b', '1.2.0');
+    // The same version in another project: the very files the person approved.
+    const bCopy = await installInto('repo-a', '1.0.0');
 
     const running = manager.get('flow');
     expect(running?.path).toBe(bCopy);
@@ -194,6 +196,51 @@ describe('one extension across many projects, from one approved source', () => {
     expect(manager.listPublic()).toEqual([
       expect.objectContaining({ id: 'flow', shadowedBy: null, approvedToRun: true }),
     ]);
+  });
+
+  it('holds a newer version from the approved source for a fresh yes (DOR-4895)', async () => {
+    await installInto('repo-a', '1.0.0', ['flow'], { server: true });
+    await manager.approveToRun('flow');
+    const bCopy = await installInto('repo-b', '1.2.0', ['flow'], { server: true });
+
+    // The newer copy is the one listed, and it waits: the yes named other files.
+    const newer = manager.get('flow');
+    expect(newer?.path).toBe(bCopy);
+    expect(mayRunExtensionCode(newer!, stored.value)).toBe(false);
+    expect(isPendingApproval(newer!, stored.value)).toBe(true);
+    expect(newer?.runPath).toBeUndefined();
+
+    // A person's yes to it names its files, and then it runs.
+    await manager.approveToRun('flow');
+    const approved = manager.get('flow');
+    expect(approved?.path).toBe(bCopy);
+    expect(mayRunExtensionCode(approved!, stored.value)).toBe(true);
+  });
+
+  it('hands the yes to a copy of the same files on uninstall, never to a newer version (DOR-4895)', async () => {
+    const uninstall = new UninstallFlow({
+      dorkHome,
+      extensionManager: manager,
+      adapterManager: { removeAdapter: vi.fn() },
+      logger: noopLogger,
+    });
+    await installInto('repo-a', '1.0.0');
+    await manager.approveToRun('flow');
+    const sameFiles = await installInto('repo-b', '1.0.0');
+    const newer = await installInto('repo-c', '1.2.0');
+
+    // Removing the approved copy: the same files elsewhere inherit the yes.
+    await uninstall.uninstall({ name: PLUGIN, projectPath: path.join(root, 'repo-a') });
+    await manager.whenIdle();
+    expect(stored.value.approvedSources?.flow?.path).toBe(sameFiles);
+
+    // Removing that one too: the newer version is other files and inherits nothing.
+    await uninstall.uninstall({ name: PLUGIN, projectPath: path.join(root, 'repo-b') });
+    await manager.whenIdle();
+    expect(stored.value.approvedSources?.flow?.path).not.toBe(newer);
+    const left = manager.get('flow');
+    expect(left?.path).toBe(newer);
+    expect(mayRunExtensionCode(left!, stored.value)).toBe(false);
   });
 
   it('offers to trust the source once a person approves, and trusting it covers the next copy', async () => {
@@ -305,9 +352,10 @@ describe('one extension across many projects, from one approved source', () => {
   });
 
   it('runs a copy trusted by origin from a verified snapshot, so later edits in the project never run (R1)', async () => {
-    await installInto('repo-a', '1.0.0', ['flow'], { server: true });
+    await installInto('repo-z', '1.0.0', ['flow'], { server: true });
     await manager.approveToRun('flow');
-    const bCopy = await installInto('repo-b', '1.2.0', ['flow'], { server: true });
+    // The approved files, installed into another project: B runs by origin.
+    const bCopy = await installInto('repo-a', '1.0.0', ['flow'], { server: true });
 
     const running = manager.get('flow');
     expect(running?.path).toBe(bCopy);
@@ -320,12 +368,16 @@ describe('one extension across many projects, from one approved source', () => {
       '// evil\n'
     );
     const runScript = (globalThis as Record<string, unknown>).__flowRunsScript as () => string;
-    expect(runScript()).toBe('// v1.2.0, as shipped\n');
+    expect(runScript()).toBe('// v1.0.0, as shipped\n');
 
-    // The next scan sees B changed: it loses its origin, and its snapshot goes.
+    // The next scan sees B changed: it loses its origin, and the approved copy
+    // runs again from the same verified snapshot (identical files share one).
     await manager.reload();
-    expect(manager.get('flow')?.path).not.toBe(bCopy);
-    expect(existsSync(running!.runPath!)).toBe(false);
+    const after = manager.get('flow');
+    expect(after?.path).not.toBe(bCopy);
+    expect(after?.runPath).toBe(running!.runPath);
+    expect(existsSync(running!.runPath!)).toBe(true);
+    expect(runScript()).toBe('// v1.0.0, as shipped\n');
   });
 
   it('"Stop trusting" pins a running copy to its digest: it keeps running from its snapshot, and a change asks again', async () => {

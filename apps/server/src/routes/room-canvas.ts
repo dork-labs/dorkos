@@ -50,7 +50,7 @@ import {
 } from '../services/rooms/canvas/canvas-diff-review.js';
 import { findRoomCanvasMedia } from '../services/rooms/canvas/room-canvas-media.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { parseByteRange, servesInlineHere } from '../lib/file-route-guards.js';
 import { logger } from '../lib/logger.js';

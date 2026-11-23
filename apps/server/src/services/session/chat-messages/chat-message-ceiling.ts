@@ -53,7 +53,12 @@ const CARRIED_WORDS = { carriedWords: true } as const;
  */
 export function senderCeilingJson(
   deps: { turnLevelOf: (sessionId: string) => TurnPermissionLevel | undefined },
-  caller: { sessionId: string; agentPath: string; marksAtTurnEnd?: TurnMarks }
+  caller: {
+    sessionId: string;
+    agentPath: string;
+    marksAtTurnEnd?: TurnMarks;
+    outsideWordsAtTurnEnd?: boolean;
+  }
 ): string {
   const atTurnEnd = caller.marksAtTurnEnd ?? NO_MARKS;
   const level = deps.turnLevelOf(caller.sessionId);
@@ -70,7 +75,7 @@ export function senderCeilingJson(
   const held = sendingChatHolds(caller.sessionId, levelKnown) || marksHold(atTurnEnd);
   const flag = held
     ? CARRIED_HOLD
-    : chatReadOutsideWords(caller.sessionId)
+    : caller.outsideWordsAtTurnEnd === true || chatReadOutsideWords(caller.sessionId)
       ? CARRIED_WORDS
       : undefined;
   if (flag === undefined) return JSON.stringify(carried ?? NO_BOUND);

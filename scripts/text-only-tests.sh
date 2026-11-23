@@ -10,10 +10,18 @@
 # built; one package's own config needs only what that package imports, which
 # scripts/build-test-deps.sh builds first.
 #
-# NOTHING TO RUN IS NOT A PASS. A file list that names no package with a suite
-# fails: the classifier always names at least one changed file, so an empty run
-# means the list was lost on the way here. A package given a test file runs
-# without --passWithNoTests, so a test file vitest does not collect fails too.
+# A LOST LIST IS NOT A PASS. An empty file list, or one that is not a JSON
+# array of paths, fails: the classifier always names at least one changed file,
+# so either means the list was lost on the way here. A package given a test
+# file runs without --passWithNoTests, so a test file vitest does not collect
+# fails too.
+#
+# A LIST OUTSIDE EVERY PACKAGE SUITE IS NOT LOST (DOR-5024). A change to
+# Markdown in meta/, plans/ or research/ alone names real files, but none a
+# package suite can see, and no package test quotes them. Nothing runs and the
+# step passes, as the shards would for the same change: they run package suites
+# only (root scripts/ tests run in scripts-test.yml), and the merge queue runs
+# every suite on every entry.
 #
 # Never runs a PR's own edit of itself: anything under scripts/ is not text
 # only, so a change to this file runs the full suite instead.
@@ -39,7 +47,10 @@ for file in "${files[@]}"; do
     echo "text-only-tests: $file belongs to no package suite; the tests that quote it were found by name instead"
   fi
 done
-[ ${#dirs[@]} -gt 0 ] || { echo 'text-only-tests: no file belongs to a package with a test suite, so nothing would run' >&2; exit 1; }
+if [ ${#dirs[@]} -eq 0 ]; then
+  echo 'text-only-tests: no named file belongs to a package with a test suite, so nothing runs here; the merge queue runs every suite'
+  exit 0
+fi
 unique=$(printf '%s\n' "${dirs[@]}" | sort -u)
 dirs=()
 while IFS= read -r dir; do dirs+=("$dir"); done <<<"$unique"

@@ -15,12 +15,11 @@ import { logger } from '../../../lib/logger.js';
 import { recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { agentKey, type ClaimOutcome, type TriggerTarget } from '../room-claims.js';
 import {
-  answersOutsideWords,
   answersUntrustedText,
   ceilingForEntries,
   isEntryAuthorExternal,
 } from '../limits/turn-ceiling.js';
-import { strangerMarkForShown } from '../limits/context-entries.js';
+import { marksForShown } from '../limits/context-entries.js';
 import { env } from '../../../env.js';
 import { teammateOf } from '../limits/space-teammates.js';
 import { turnRefusalOf } from '../turn-guards/paused-turn.js';
@@ -132,21 +131,20 @@ export async function runOneInDispatch(
       ),
       // Only a Wi-Fi sign-in's post or a teammate's bounds the turn (`turn-ceiling.ts`).
       ...ceilingForEntries(self.deps.authors, answered, inSpaceRoom, room.id),
-      // Over what the context SHOWED as well as what it answers: a non-owner's unaddressed post
-      // in the window reaches the model just the same (DOR-4453 F1, as `seat-carry.ts` does).
-      ...strangerMarkForShown(
+      // The outsider mark and the outside-words note, over what the context SHOWED as well as
+      // what it answers: a shown post reaches the model just as an answered one does (DOR-4453
+      // F1, as `seat-carry.ts` does; DOR-4144). A mini app's post or forward counts as a
+      // stranger's does (DOR-4023).
+      ...marksForShown(
         env.DORKOS_MARK_STRANGER_TURNS,
         self.deps,
         room.id,
         answered,
-        turnContext.context
+        turnContext.context,
+        target.authorId
       ),
       ...(answersUntrustedText(self.deps.authors, answered, room.id)
         ? { untrustedText: true as const }
-        : {}),
-      // A mini app's post or forward counts here as a stranger's does (DOR-4023).
-      ...(answersOutsideWords(self.deps.authors, answered, room.id)
-        ? { outsideWords: true as const }
         : {}),
       // And whether any of them is a teammate's — a space member who is not
       // the owner — which takes away asking and every room but this one

@@ -22,7 +22,7 @@ import type { Context } from 'hono';
 import { DevtoolsActionResultSchema, DevtoolsIngestSchema } from '@dorkos/shared/schemas';
 import { devtoolsCaptureStore } from '../services/session/index.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { errorBody, parseSessionId } from '../lib/route-utils.js';
 
 const INVALID_SESSION_ID = errorBody('Invalid session ID', 'INVALID_SESSION_ID');

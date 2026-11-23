@@ -36,6 +36,8 @@ import os from 'node:os';
 import path from 'node:path';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { setStepUpExtensionRiskInputs } from '../../services/extensions/step-up/step-up-extension-risk.js';
+import { useStepUpRiskLedgerFile } from '../../services/extensions/step-up/step-up-risk-ledger.js';
 import { createExtensionsRoutes } from '../extensions.js';
 
 const fixtureTarget = swappableServer();
@@ -291,6 +293,45 @@ describe('Extension Routes', () => {
 
       expect(res.status).toBe(404);
       expect(res.body.error).toContain('missing');
+    });
+
+    it('serves nothing when the step-up risk reading cannot be kept (DOR-4906)', async () => {
+      manager.readBundle.mockResolvedValue('console.log("hello");');
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bundle-ledger-'));
+      // The ledger's folder is a file, so no reading can be written.
+      await fs.writeFile(path.join(dir, 'step-up'), 'not a folder');
+      useStepUpRiskLedgerFile(path.join(dir, 'step-up', 'risk-ledger.json'));
+      setStepUpExtensionRiskInputs(() => ({
+        records: [
+          {
+            id: 'risky',
+            status: 'active',
+            path: '/made-up/risky',
+            originProblem: 'changed',
+            manifest: { name: 'Risky' },
+            trustedOrigin: { plugin: 'kit', source: 'made-up/kit' },
+          } as never,
+        ],
+        extensions: {
+          approvedToRun: [],
+          approvedSources: {},
+          trustedSources: [{ source: 'made-up/kit', trustedAt: '2026-11-01T00:00:00.000Z' }],
+        },
+        agents: [],
+      }));
+      try {
+        const res = await request(fixtureServer).get('/api/extensions/test-ext/bundle');
+        expect(res.status).toBe(503);
+        expect(res.text).not.toContain('hello');
+      } finally {
+        setStepUpExtensionRiskInputs(() => ({
+          records: [],
+          extensions: { approvedToRun: [], approvedSources: {} },
+          agents: [],
+        }));
+        useStepUpRiskLedgerFile();
+        await fs.rm(dir, { recursive: true, force: true });
+      }
     });
   });
 

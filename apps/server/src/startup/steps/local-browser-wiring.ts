@@ -2,7 +2,7 @@ import { createBrowserSharePolicy } from '../../services/session/local-browser/a
 import { localBrowserHost } from '../local-browser.js';
 import { realpathSync } from 'node:fs';
 import { createAgentBrowserProfiles } from '../../services/session/local-browser/agent-profiles/agent-profiles.js';
-import { eq, sessionMetadata, type Db } from '@dorkos/db';
+import type { Db } from '@dorkos/db';
 import {
   createLocalBrowserProfileAccess,
   createLocalBrowserProfileProof,
@@ -18,6 +18,7 @@ import { notify } from '../../services/notifications/notification-service.js';
 import { localBrowserChangedAnnouncer } from '../../services/core/streams/live-change-broadcasts.js';
 import { logger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import { chatFactsOf, sessionAgentById } from '../../services/core/agent-identity/session-agent.js';
 import type { ServerRefs } from '../server-refs.js';
 
 /** Wire profile ownership and person-only sharing onto the boot-owned page service. */
@@ -51,21 +52,25 @@ export function wireLocalBrowserProfiles(refs: ServerRefs, db: Db, dorkHome: str
         return undefined; // Not registered, or unreadable: no guards.
       }
     },
-    getSessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
+    // The recorded agent, else its folder's: a chat started in an agent's folder
+    // from the command line records none (DOR-5038).
+    sessionAgent: sessionAgentById,
     agentIdAtPath: (agentPath) => refs.meshCore?.getByPath(agentPath)?.id,
     realFolder,
+  };
+  /** The mesh id of a chat's agent, by the same resolver. */
+  const agentIdOfChat = async (sessionId: string): Promise<string | undefined> => {
+    const home = await sessionAgentById(sessionId);
+    return home ? refs.meshCore?.getByPath(home)?.id : undefined;
   };
   localBrowserService.useProfileAccess(
     createLocalBrowserProfileAccess(profileAccessDeps),
     (id) => localBrowserProfiles.get(id) !== undefined,
     createLocalBrowserProfileProof({
       profiles: localBrowserProfiles,
-      sessionFacts: (sessionId) =>
-        db
-          .select({ runtime: sessionMetadata.runtime, agentPath: sessionMetadata.agentPath })
-          .from(sessionMetadata)
-          .where(eq(sessionMetadata.sessionId, sessionId))
-          .get(),
+      // Synchronous, as the pre-dispatch proof must be: the chat's agent by the
+      // same resolver, re-read on every check (DOR-5038).
+      sessionFacts: (sessionId) => chatFactsOf(db, sessionId),
       guardsOf: (type) => {
         try {
           return runtimeRegistry.get(type).getCapabilities().guards;
@@ -83,12 +88,9 @@ export function wireLocalBrowserProfiles(refs: ServerRefs, db: Db, dorkHome: str
     agentName: (id) => refs.meshCore?.listWithPaths().find((a) => a.id === id)?.name,
   });
   localBrowserService.useProfileSelection(selection.select, selection.initialize);
-  localBrowserService.useSessionAgentLookup(async (sessionId) => {
-    const agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);
-    return agentPath ? refs.meshCore?.getByPath(agentPath)?.id : undefined;
-  });
+  localBrowserService.useSessionAgentLookup(agentIdOfChat);
   localBrowserService.windowNames.use(async (sessionId) => {
-    const agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);
+    const agentPath = await sessionAgentById(sessionId);
     const agent = agentPath ? refs.meshCore?.getByPath(agentPath) : undefined;
     return agent ? agentWindowLabel(agent) : undefined;
   });
@@ -118,10 +120,7 @@ export function wireLocalBrowserProfiles(refs: ServerRefs, db: Db, dorkHome: str
       profiles: localBrowserProfiles,
       mayShare: createBrowserSharePolicy({
         state: (id) => localBrowserService.personState(id),
-        agentForSession: async (id) => {
-          const folder = await runtimeRegistry.getSessionAgentPath(id);
-          return folder ? refs.meshCore?.getByPath(folder)?.id : undefined;
-        },
+        agentForSession: agentIdOfChat,
         resolveSessionRuntime: (id) => runtimeRegistry.resolveSessionRuntime(id),
         outsideTurn: liveOutsideTurnCheck(),
         runtime: (type) => runtimeRegistry.get(type),

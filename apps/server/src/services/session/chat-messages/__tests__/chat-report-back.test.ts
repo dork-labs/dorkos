@@ -6,13 +6,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { logger } from '../../../../lib/logger.js';
+import { CHAT_MESSAGE_MAX } from '../chat-client-id.js';
 import {
   ChatReportBack,
   DEFER_MAX_MS,
   DELIVERY_RETRY_MS,
   REPORT_SETTLE_MS,
+  REPORT_DETAIL_MAX,
   REPORT_TEXT_MAX,
   composeReport,
+  cutReportDetail,
   lastTurnText,
   reasonOf,
   spinOffBriefing,
@@ -618,6 +621,119 @@ describe('ChatReportBack.onWaiting', () => {
   });
 });
 
+describe('a report with a long error or question still reaches its parent (DOR-3535)', () => {
+  /** Follows a cut detail at once; it promises nothing chat_read cannot show. */
+  const CUT = '… (Details cut short.)';
+  /** How much of a cut detail is kept before {@link CUT}. */
+  const KEPT = REPORT_DETAIL_MAX - CUT.length;
+  /** The report's second paragraph: the detail line under the status line. */
+  const detailOf = (message: string) => message.split('\n\n')[1]!;
+
+  it('a failed turn whose error is past the send limit still reports, cut short', async () => {
+    const { send, end } = harness({
+      statusOf: () =>
+        status({
+          lifecycle: 'error',
+          lastError: { message: 'Error detail. '.repeat(CHAT_MESSAGE_MAX) },
+        }),
+      history: async () => history(['user', 'do the thing']),
+    });
+
+    await expect(end()).resolves.toBe('failed');
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const message = send.mock.calls[0]![1].message as string;
+    expect(message.length).toBeLessThanOrEqual(CHAT_MESSAGE_MAX);
+    expect(message.startsWith('This turn failed.\n\nError detail. ')).toBe(true);
+    expect(detailOf(message)).toHaveLength(REPORT_DETAIL_MAX);
+    expect(detailOf(message).endsWith(CUT)).toBe(true);
+    // The runtime's error is not in the chat's history, so no chat_read promise.
+    expect(message).not.toContain('chat_read');
+  });
+
+  it('a startup refusal past the send limit still reports, cut short', async () => {
+    const { reportBack, send } = harness();
+    await reportBack.onNeverStarted(CHILD, 'Startup reason. '.repeat(CHAT_MESSAGE_MAX));
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const message = send.mock.calls[0]![1].message as string;
+    expect(message.startsWith('Failed: never started.\n\nStartup reason. ')).toBe(true);
+    expect(detailOf(message)).toHaveLength(REPORT_DETAIL_MAX);
+    expect(message.length).toBeLessThanOrEqual(CHAT_MESSAGE_MAX);
+    expect(detailOf(message).endsWith(CUT)).toBe(true);
+  });
+
+  it('a question past the send limit still reports, cut short', async () => {
+    const { reportBack, send } = harness({
+      statusOf: () => status({ lifecycle: 'blocked' }),
+      history: async () => history(['user', 'do the thing']),
+    });
+    await expect(
+      reportBack.onWaiting(CHILD, { key: 'long', what: 'Question. '.repeat(CHAT_MESSAGE_MAX) })
+    ).resolves.toBe(true);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const message = send.mock.calls[0]![1].message as string;
+    expect(message.startsWith('Waiting on the person to answer before it can go on.')).toBe(true);
+    expect(detailOf(message)).toHaveLength(REPORT_DETAIL_MAX);
+    expect(message.length).toBeLessThanOrEqual(CHAT_MESSAGE_MAX);
+    expect(detailOf(message).endsWith(CUT)).toBe(true);
+  });
+
+  it('keeps a detail at or just under the limit whole, with no cue', () => {
+    for (const length of [REPORT_DETAIL_MAX - 1, REPORT_DETAIL_MAX]) {
+      const detail = 'x'.repeat(length);
+      expect(composeReport('failed', '', detail)).toBe(`This turn failed.\n\n${detail}`);
+    }
+  });
+
+  it('cuts both a long detail and a long last message, and stays under the send limit', () => {
+    const report = composeReport(
+      'failed',
+      'reply'.repeat(REPORT_TEXT_MAX),
+      'detail'.repeat(CHAT_MESSAGE_MAX)
+    );
+    expect(report.length).toBeLessThanOrEqual(CHAT_MESSAGE_MAX);
+    expect(detailOf(report)).toHaveLength(REPORT_DETAIL_MAX);
+    expect(detailOf(report).endsWith(CUT)).toBe(true);
+    expect(report).toContain('Read the rest with chat_read.');
+  });
+
+  it('cuts a detail once: one already cut, as the outbox saves it, comes back the same', () => {
+    const long = 'Startup reason. '.repeat(CHAT_MESSAGE_MAX);
+    const saved = cutReportDetail(long);
+    expect(saved).toHaveLength(REPORT_DETAIL_MAX);
+    expect(cutReportDetail(saved)).toBe(saved);
+    expect(composeReport('never-started', '', saved)).toBe(
+      composeReport('never-started', '', long)
+    );
+  });
+
+  it('never splits an emoji where the detail is cut', () => {
+    const pad = (n: number) => 'x'.repeat(n);
+    const tail = 'tail'.repeat(REPORT_DETAIL_MAX);
+    // The emoji would straddle the cut: it goes whole, not half.
+    expect(detailOf(composeReport('failed', '', `${pad(KEPT - 1)}😀${tail}`))).toBe(
+      `${pad(KEPT - 1)}${CUT}`
+    );
+    // The emoji fits before the cut: it stays.
+    expect(detailOf(composeReport('failed', '', `${pad(KEPT - 2)}😀${tail}`))).toBe(
+      `${pad(KEPT - 2)}😀${CUT}`
+    );
+  });
+
+  it('never splits an emoji where the last message is cut', () => {
+    const pad = (n: number) => 'x'.repeat(n);
+    const replyOf = (report: string) => report.split('\n\n')[1]!;
+    expect(replyOf(composeReport('finished', `${pad(REPORT_TEXT_MAX - 1)}😀tail`))).toBe(
+      `${pad(REPORT_TEXT_MAX - 1)}…`
+    );
+    expect(replyOf(composeReport('finished', `${pad(REPORT_TEXT_MAX - 2)}😀tail`))).toBe(
+      `${pad(REPORT_TEXT_MAX - 2)}😀…`
+    );
+  });
+});
+
 describe('the review findings (DOR-2790 PR 2)', () => {
   it('reads THIS turn’s words even when the next turn’s message is already in the history', async () => {
     // The parent's follow-up queued behind the turn, started the next turn,
@@ -723,7 +839,7 @@ describe('the words', () => {
     expect(off).toContain(`chat_send to ${PARENT}`);
   });
 
-  it('never points a spin-off of a room chat at chat_send, which that chat refuses', () => {
+  it('never points a spin-off of a room chat at chat_send, which would be refused or show in the room', () => {
     // 2026-10-12: chats started from the room-bound coordinator were told to
     // "Send what matters with chat_send to <it>", every send was refused, and
     // they reported "the coordinator doesn't accept direct messages".
@@ -736,6 +852,14 @@ describe('the words', () => {
     });
     expect(roomChild).not.toContain('chat_send');
     expect(roomChild).toContain('post_to_room');
+    // DOR-4469: the room hears three project updates, never a spin-off's running status.
+    expect(roomChild).toContain('If your brief names a chat or an agent to tell');
+    expect(roomChild).toContain('only when the work starts, is blocked on a person, or ships');
+    expect(roomChild).toContain('or to answer someone who asked');
+    expect(roomChild).not.toContain('report there with post_to_room');
+    // DOR-4472 made an unbridged seat take a send, so "cannot take chat messages" was false.
+    expect(roomChild).not.toContain('cannot take chat messages');
+    expect(roomChild).toContain('it refuses messages, or each one would show a note in a room');
   });
 });
 
@@ -791,7 +915,13 @@ describe('a parent that is a room’s seat (DOR-3488)', () => {
       parentIsRoomSeat: true,
     });
     expect(seatChild).toContain('goes back to that chat on its own');
-    expect(seatChild).toContain('takes no chat_send');
+    // DOR-4472: a seat takes a send as a private aside, so the advice stays and the reason
+    // changes: each send leaves a note in the room and spends one of its turns.
+    expect(seatChild).not.toContain('takes no chat_send');
+    expect(seatChild).toContain(
+      'Each chat_send to it would show a note in the room and spend one of its turns'
+    );
+    expect(seatChild).toContain('put milestones in your turn-end reports');
     expect(seatChild).not.toContain(`chat_send to ${PARENT}`);
     expect(seatChild).toContain('keep your turn alive');
   });

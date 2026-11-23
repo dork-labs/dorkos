@@ -41,6 +41,36 @@ const { field } = parsed.data;
 4. Export the inferred type from `packages/shared/src/types.ts` if needed by client code
 5. **Regenerate the published docs** with BOTH commands below, and commit the result
 
+## Operation ids
+
+Every operation in the document has an `operationId`. It is the name a generated client calls the operation by, so **changing one is an API change**, even when the path stays put. The docs site still files its pages by path and method (`name: { algorithm: 'v1' }` in `apps/site/scripts/generate-api-docs.ts`), so an id change moves no page URL.
+
+- **A capability-projected path** uses its capability id (`audit.get`). The REST path and `POST /api/capabilities/:id/invoke` are two documented doors onto one capability definition, so they share its name. Capability ids keep their own style: snake_case words, and sometimes a group other than the path's (`audit.running_chats` on `GET /api/sessions/running`).
+- **A hand-set id wins.** Pass `operationId` to `registerPath` and the generator keeps it.
+- **Every other operation gets a derived id**, `${group}.${verb}${Resource}`, from its method, the document's paths and the operation's query parameters, never from a response schema, so adding a field to a body renames nothing. The rule and a table of examples are in the module doc of `services/core/openapi/operation-ids.ts`. In short: a last segment that is a command word is the verb (`POST /api/notifications/read-all` is `notifications.readAll`), and so is a hyphenated last segment led by one on any method but `GET` (`POST /api/auth/revoke-session` is `auth.revokeSession`); a `GET` is `list` on a collection path, one the document also has with a `{param}` added (`GET /api/sessions` beside `/api/sessions/{id}` is `sessions.list`), and also when it pages, declaring a `limit` or `cursor` query parameter (`GET /api/rooms/{id}/entries` is `rooms.listEntries`); every list pages by cursor, so every list ends up `list`. Otherwise a `GET` is `get` (`sessions.get`, `health.getDeep`); `POST`, `PUT`/`PATCH` and `DELETE` are `create`, `update` and `delete` (`sessions.createMessages`).
+
+**Every id is pinned.** `services/core/openapi/__tests__/operation-ids.snapshot.json` maps every `METHOD path` to its id, and `operation-ids-snapshot.test.ts` beside it fails with a line diff when any id changes, appears or goes. A new route changes it too, so commit the snapshot with the route. To accept a change on purpose:
+
+```bash
+pnpm vitest run apps/server/src/services/core/openapi/__tests__/operation-ids-snapshot.test.ts -u
+```
+
+Read the diff before you commit it: a changed line on an existing operation is an API change. The rule can rename an operation you never touched: adding `/api/x/{id}` turns `GET /api/x` from `x.get` into `x.list`, and adding a `limit` or `cursor` query parameter to a `GET` does the same. Unless that rename is what you want, do not run `-u`. Pin the old id instead: add `operationId: 'x.get'` (the id the snapshot shows on its old line) to that operation's `registerPath` call, and the snapshot passes unchanged.
+
+**Collisions.** `assignOperationIds` throws while the document is generated when two operations' ids match once lowercased with underscores removed (`x.foo_bar` and `x.fooBar`), derived or hand-set, naming both paths, so `pnpm docs:export-api` and every test that generates the document fail. Fix it with a hand-set `operationId` on one of the two `registerPath` calls. `services/core/__tests__/export-openapi.test.ts` checks that every operation has an id and that no two are byte-identical; `services/core/openapi/__tests__/operation-ids.test.ts` checks the throw.
+
+## Security on operations
+
+The document declares two schemes, `sessionCookie` and `apiKey`, and a default of either one. Each operation that differs carries its own `security`, worked out by `services/core/openapi/security-schemes.ts` from the code that enforces it:
+
+- `security: []` for a path the session gate lets through with no credential (`isGateExemptPath` in `services/core/auth/gated-paths.ts`, which the gate itself calls): the health probe, the signed-token and ticket routes, a hub's link path, a computer's passkey return.
+- `sessionCookie` only for the Better Auth endpoints under `/api/auth/`: the gate lets them through, and Better Auth reads the signed-in person from the cookie.
+- `apiKey` only for the connector routes in `PROGRAM_KEY_ROUTES` (`services/connectors/principal/program-key-routes.ts`). The routers register those routes from that list, so a route added there is documented as key-only with no second edit.
+
+A `registerPath` call that sets `security` keeps it. A local install with "Ask for a password on this computer too" off takes calls from this computer with no credential; the `info.description` and both scheme descriptions say so. `X-DorkOS-Agent` is an identity header, not a credential, so it is not a scheme; `docs/api/index.mdx` describes it. `services/core/openapi/__tests__/security-schemes.test.ts` asks the real session gate about every documented operation and fails when the document calls a path open that the gate guards, or the reverse.
+
+The document's `info.version` is the product version: the running server's version at `/api/openapi.json`, and the repo `VERSION` in the committed `docs/api/openapi.json`. A release bumps `VERSION`, so the release PR regenerates the docs too (`.claude/commands/system/release.md`, Phase 6).
+
 ## Regenerating the published API docs (two steps, not one)
 
 Anything that changes `openapi-registry.ts`, including a description or a response code, has to be regenerated and committed:
@@ -58,23 +88,36 @@ The `docs-openapi-check` workflow runs both and fails on any difference, so CI c
 
 The marketplace routes are mounted at `/api/marketplace` and backed by injected service dependencies (source manager, cache, fetcher, installer, uninstall/update flows). Route file: `apps/server/src/routes/marketplace.ts`, with one module per route group under `apps/server/src/routes/marketplace/`.
 
-| Method   | Path                                        | Description                                                                 |
-| -------- | ------------------------------------------- | --------------------------------------------------------------------------- |
-| `GET`    | `/api/marketplace/sources`                  | List configured marketplace sources                                         |
-| `POST`   | `/api/marketplace/sources`                  | Add a new source (`{ name, source, enabled? }`)                             |
-| `DELETE` | `/api/marketplace/sources/:name`            | Remove a source                                                             |
-| `POST`   | `/api/marketplace/sources/:name/refresh`    | Force-refetch a source's `marketplace.json`                                 |
-| `GET`    | `/api/marketplace/installed`                | List installed packages from `~/.dork/plugins/` and `~/.dork/agents/`       |
-| `GET`    | `/api/marketplace/installed/:name`          | Get a single installed package by name                                      |
-| `GET`    | `/api/marketplace/cache`                    | Cache status (counts, total bytes, whether automatic cleanup is paused)     |
-| `DELETE` | `/api/marketplace/cache`                    | Wipe the entire marketplace cache                                           |
-| `POST`   | `/api/marketplace/cache/prune`              | Remove cached packages no install needs (no options)                        |
-| `GET`    | `/api/marketplace/packages`                 | Aggregate packages from all enabled sources                                 |
-| `GET`    | `/api/marketplace/packages/:name`           | Fetch and validate a single package entry (`?marketplace=` to pin source)   |
-| `POST`   | `/api/marketplace/packages/:name/preview`   | Build a `PermissionPreview` without installing                              |
-| `POST`   | `/api/marketplace/packages/:name/install`   | Install a package (`{ marketplace?, source?, force?, yes?, projectPath? }`) |
-| `POST`   | `/api/marketplace/packages/:name/uninstall` | Uninstall a package (`{ purge?, projectPath? }`)                            |
-| `POST`   | `/api/marketplace/packages/:name/update`    | Advisory update check; pass `{ apply: true }` to apply the update           |
+| Method   | Path                                          | Description                                                                                         |
+| -------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/marketplace/sources`                    | List configured marketplace sources                                                                 |
+| `POST`   | `/api/marketplace/sources`                    | Add a new source (`{ name, source, enabled? }`)                                                     |
+| `DELETE` | `/api/marketplace/sources/:name`              | Remove a source (also `DELETE /sources?name=`, see below)                                           |
+| `POST`   | `/api/marketplace/sources/:name/refresh`      | Force-refetch a source's `marketplace.json` (also `POST /sources/refresh?name=`)                    |
+| `GET`    | `/api/marketplace/installed`                  | List installed packages from `~/.dork/plugins/` and `~/.dork/agents/`                               |
+| `GET`    | `/api/marketplace/installed/:name`            | Get a single installed package by name                                                              |
+| `GET`    | `/api/marketplace/cache`                      | Cache status (counts, total bytes, whether automatic cleanup is paused)                             |
+| `DELETE` | `/api/marketplace/cache`                      | Wipe the entire marketplace cache                                                                   |
+| `POST`   | `/api/marketplace/cache/prune`                | Remove cached packages no install needs (no options)                                                |
+| `GET`    | `/api/marketplace/packages`                   | Aggregate packages from all enabled sources                                                         |
+| `GET`    | `/api/marketplace/packages/:name`             | Fetch and validate a single package entry (`?marketplace=` to pin source)                           |
+| `POST`   | `/api/marketplace/packages/:name/preview`     | Build a `PermissionPreview` without installing                                                      |
+| `POST`   | `/api/marketplace/packages/:name/install`     | Install a package (`{ marketplace?, source?, force?, yes?, projectPath? }`)                         |
+| `POST`   | `/api/marketplace/packages/:name/uninstall`   | Uninstall a package (`{ purge?, projectPath? }`)                                                    |
+| `POST`   | `/api/marketplace/packages/:name/update`      | Advisory update check; pass `{ apply: true }` to apply the update                                   |
+| `POST`   | `/api/marketplace/packages/:name/check-files` | Give an install an older DorkOS made its installed-files record, or say why not                     |
+| `POST`   | `/api/marketplace/packages/:name/keep-files`  | A person's "Keep these as mine" for files an update kept but could not sort (signed-in person only) |
+| `GET`    | `/api/marketplace/updates`                    | One update check per installation, with what each newer version runs                                |
+| `POST`   | `/api/marketplace/updates`                    | Reinstall exactly the installations a person was shown, held to what they saw                       |
+| `GET`    | `/api/marketplace/held-back`                  | Global packages held back from sessions, and why                                                    |
+| `POST`   | `/api/marketplace/held-back/:name/review`     | Raise the approval card for a held-back package again                                               |
+| `POST`   | `/api/marketplace/held-back/:name/decision`   | A person's allow or refuse for a held-back package (trusted caller only)                            |
+| `GET`    | `/api/marketplace/dev-links`                  | Every dev link and whether it is in force                                                           |
+| `POST`   | `/api/marketplace/dev-links/preview`          | What linking a folder would do; changes nothing                                                     |
+| `POST`   | `/api/marketplace/dev-links`                  | Make a dev link (tier-gated: an agent gets a card, 202, or a 403)                                   |
+| `POST`   | `/api/marketplace/dev-links/:name/unlink`     | Remove a dev link (the person only)                                                                 |
+
+A source name rides in the path or, from the app, in `?name=`: a name saved by an older DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL path (DOR-4212). Both forms run the same handler.
 
 **Error responses** use a centralised `mapErrorToStatus` helper — `400` for invalid manifests, `409` for file conflicts, `404` for missing packages/sources, `500` for unexpected failures.
 
@@ -422,7 +465,7 @@ The `warnings` field is only present when the patch includes keys listed in `SEN
 
 ## Task Scheduler (`routes/tasks.ts`)
 
-Feature-flag guarded via `DORKOS_TASKS_ENABLED`. Router is mounted at `/api/tasks`.
+Mounted at `/api/tasks` when the scheduler is on (`scheduler.enabled`, default `true`, or the `DORKOS_TASKS_ENABLED` override; see [Feature Flags](#feature-flags)).
 
 | Method | Path                         | Description               |
 | ------ | ---------------------------- | ------------------------- |
@@ -459,24 +502,22 @@ This is the single pipeline every operator-facing message now goes through, incl
 
 ## Feature Flags
 
-The Relay route group is guarded by an environment variable feature flag. When disabled, the router is not mounted and all requests to those paths return 404. Mesh routes are always mounted (no feature flag).
+Relay, A2A and the task scheduler are each switched by a user setting, and an environment variable overrides that setting **only when it is present**, in both directions (`'DORKOS_X' in process.env`, so `false` turns the subsystem off). Leave the variable unset to let the setting decide. When a group is off its router is not mounted, and requests to those paths return 404. Mesh routes are always mounted (no flag).
 
-| Flag                   | Default | Guards                                                             |
-| ---------------------- | ------- | ------------------------------------------------------------------ |
-| `DORKOS_RELAY_ENABLED` | `false` | `/api/relay/*` routes                                              |
-| `DORKOS_A2A_ENABLED`   | `false` | `/.well-known/agent-card.json`, `/a2a/*` (requires Relay to be on) |
+| Setting (default)            | Override               | Guards                                                                                                                                             |
+| ---------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `relay.enabled` (`true`)     | `DORKOS_RELAY_ENABLED` | `/api/relay/*` routes; resolved by `relayStartsEnabled()` in `services/relay/relay-state.ts`                                                       |
+| `a2a.enabled` (`false`)      | `DORKOS_A2A_ENABLED`   | `/.well-known/agent-card.json`, `/a2a/*` (needs Relay and Mesh running)                                                                            |
+| `scheduler.enabled` (`true`) | `DORKOS_TASKS_ENABLED` | `/api/tasks/*` routes (task definitions and runs). Firing is a separate gate: outside production, tasks fire only with `DORKOS_TASKS_ENABLED=true` |
 
-This flag also controls the behavior of `POST /api/sessions/:id/messages`:
-
-- `DORKOS_RELAY_ENABLED` enables relay infrastructure for external adapters (Telegram, webhooks). The web client always uses direct SSE streaming regardless of this flag.
+Relay also carries external adapters (Telegram, Slack, webhooks) for `POST /api/sessions/:id/messages`. The web client always uses the durable session SSE stream, whatever the Relay setting.
 
 Other relevant environment variables:
 
-| Variable               | Default              | Description                                                                                                                                                                                                                                                                               |
-| ---------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DORKOS_PORT`          | `4242` (dev: `6242`) | Server port                                                                                                                                                                                                                                                                               |
-| `DORKOS_CORS_ORIGIN`   | (unset)              | Comma-separated list of EXTRA origins, honoured by CORS, the MCP mounts, the WebSocket upgrade check, and Better Auth's CSRF allowlist. Additive (DOR-1711): entries join the per-request policy (loopback + live tunnel + same-origin), never replace it. `*` is ignored with a warning. |
-| `DORKOS_TASKS_ENABLED` | `true`               | `/api/tasks/*` routes (task definitions and runs)                                                                                                                                                                                                                                         |
+| Variable             | Default              | Description                                                                                                                                                                                                                                                                               |
+| -------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DORKOS_PORT`        | `4242` (dev: `6242`) | Server port                                                                                                                                                                                                                                                                               |
+| `DORKOS_CORS_ORIGIN` | (unset)              | Comma-separated list of EXTRA origins, honoured by CORS, the MCP mounts, the WebSocket upgrade check, and Better Auth's CSRF allowlist. Additive (DOR-1711): entries join the per-request policy (loopback + live tunnel + same-origin), never replace it. `*` is ignored with a warning. |
 
 ## Agent Endpoints
 
@@ -667,7 +708,7 @@ Change one agent's own areas, actions, or Files & commands stop.
 
 ## Relay Endpoints
 
-All relay endpoints are under `/api/relay/` and require `DORKOS_RELAY_ENABLED=true`. When disabled, the relay router is not mounted and requests return 404.
+All relay endpoints are under `/api/relay/` and are mounted only when Relay is on (`relay.enabled`, default `true`, or the `DORKOS_RELAY_ENABLED` override; see [Feature Flags](#feature-flags)). When Relay is off, the relay router is not mounted and requests return 404.
 
 ### POST /api/relay/messages
 
@@ -816,7 +857,7 @@ SSE event stream for real-time relay activity. Supports server-side subject filt
 
 ### GET /api/relay/messages/:id/trace
 
-Get delivery trace for a specific message. Requires `DORKOS_RELAY_ENABLED=true`.
+Get delivery trace for a specific message. Available only when Relay is on.
 
 **Responses:**
 
@@ -843,7 +884,7 @@ Get delivery trace for a specific message. Requires `DORKOS_RELAY_ENABLED=true`.
 
 ### GET /api/relay/trace/metrics
 
-Aggregate delivery metrics for the Relay system. Requires `DORKOS_RELAY_ENABLED=true`.
+Aggregate delivery metrics for the Relay system. Available only when Relay is on.
 
 **Responses:**
 
@@ -861,7 +902,7 @@ Aggregate delivery metrics for the Relay system. Requires `DORKOS_RELAY_ENABLED=
 
 ## Adapter Catalog Endpoints
 
-All adapter catalog endpoints are under `/api/relay/adapters/` and require `DORKOS_RELAY_ENABLED=true`. They are only mounted when `AdapterManager` is available.
+All adapter catalog endpoints are under `/api/relay/adapters/` and are available only when Relay is on. They are only mounted when `AdapterManager` is available.
 
 ### GET /api/relay/adapters/catalog
 
@@ -1001,7 +1042,7 @@ Both `type` and `config` are required.
 
 ## Binding Endpoints
 
-All binding endpoints are under `/api/relay/bindings/` and require `DORKOS_RELAY_ENABLED=true`. They manage adapter-to-agent routing rules.
+All binding endpoints are under `/api/relay/bindings/` and are available only when Relay is on. They manage adapter-to-agent routing rules.
 
 ### GET /api/relay/bindings
 

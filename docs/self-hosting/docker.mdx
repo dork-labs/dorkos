@@ -81,7 +81,11 @@ Pass environment variables with `-e` or an env file. DorkOS reads the same varia
 
 <TypeTable
   type={{
-    ANTHROPIC_API_KEY: { type: 'string', description: 'Claude API key (required)' },
+    ANTHROPIC_API_KEY: {
+      type: 'string',
+      description:
+        'Claude API key. If set, Claude Code uses it and you pay per use. Leave it out to connect AI another way in the app',
+    },
     DORKOS_PORT: {
       type: 'number',
       description: 'Server port inside the container',
@@ -137,7 +141,7 @@ docker run -d --name dorkos \
   -e DORKOS_PREVIEW_PORT_RANGE=4243-4252 \
   -p 4242:4242 -p 4243-4252:4243-4252 \
   -v dorkos-data:/home/node/.dork \
-  dorklabs/dorkos:latest
+  ghcr.io/dork-labs/dorkos:latest
 ```
 
 Ten ports is ten previews open at once, which is plenty. Skip this and the canvas will
@@ -155,7 +159,7 @@ through a reverse proxy — add that name:
 docker run -d --name dorkos \
   -e DORKOS_TRUSTED_HOSTS=dorkos.lan \
   -p 4242:4242 -v dorkos-data:/home/node/.dork \
-  dorklabs/dorkos:latest
+  ghcr.io/dork-labs/dorkos:latest
 ```
 
 <Callout type="warn">

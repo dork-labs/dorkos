@@ -243,7 +243,7 @@ describe('platform → binding router → agent turn → reply delivery (real re
     // turn it drives runs in the prompting mode. Before DOR-604 an unconfigured
     // binding silently produced 'acceptEdits' — a message from off this machine
     // choosing a permission level nobody had agreed to.
-    expect(createSession).toHaveBeenCalledWith(WORKTREE_CWD, 'default');
+    expect(createSession).toHaveBeenCalledWith(WORKTREE_CWD, 'default', PROJECT_PATH);
 
     // Dispatched to the runtime-scoped agent subject with the enriched payload.
     await vi.waitFor(() => expect(registry.dispatches.length).toBe(1));

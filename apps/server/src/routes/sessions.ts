@@ -15,14 +15,14 @@
  * @module routes/sessions
  */
 import { Hono } from 'hono';
+import type { Db } from '@dorkos/db';
+import { mountSessionSettingsPatch } from './session-settings-patch.js';
+import { mountSessionSendMessage } from './session-send-message.js';
 import { z } from 'zod';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { openedChatToolWarnings } from '../services/session/launch/session-tool-warnings.js';
-import { sessionMessageReceipt } from './session-message-receipt.js';
 import {
-  UpdateSessionRequestSchema,
   ForkSessionRequestSchema,
-  SendMessageRequestSchema,
   ListSessionsQuerySchema,
   RecentSessionsQuerySchema,
   SessionDailyCountsQuerySchema,
@@ -38,20 +38,15 @@ import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
 import { stampHistory } from '../services/session/chat-messages/chat-message-stamps.js';
 import * as historyWindow from '../services/session/history/history-window.js';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
-import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { forkPlace, httpLaunchOf } from './session-launcher.js';
-import { httpTurnOrigin } from '../services/session/origin/turn-origin.js';
-import { recordAccepted } from './session-message-accepted.js';
-import { launchRefusalReply, notePersonMode, wifiModeRaiseReply } from './session-route-replies.js';
+import { forkPlace } from './session-launcher.js';
 import { readQuery } from '../http/request-query.js';
 import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logError, logger } from '../lib/logger.js';
-import { askForPersonBeforeChat, personOnlyModeChange } from '../http/person-session-refusal.js';
-import { workspaceCallerOf } from './session-workspace-caller.js';
+import { askForPersonBeforeChat } from '../http/person-session-refusal.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { askEntitlement, type AskSubject } from '../services/session/asks/ask-entitlement.js';
 import type { RoomBindingsPort, SessionOriginResolvers } from '../services/session/index.js';
@@ -71,7 +66,6 @@ import {
   peekProjector,
 } from '../services/session/index.js';
 import { accountUsageForSession } from '../services/session/fleet/session-account.js';
-import { sessionExists } from '../services/session/launch/session-exists.js';
 import { projectsOfFolders } from '../services/projects/project-registry.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import { createSessionAnswerRoutes } from './session-answers.js';
@@ -79,12 +73,6 @@ import { sessionUiActionHandler } from './session-ui-action-handler.js';
 import { registerSessionQueueRoutes } from './session-queue-handler.js';
 import { sessionEventsHandler } from './session-events-handler.js';
 import { guardSessionParam, readableSessions } from './session-read-guard.js';
-import {
-  modelGateAuthority,
-  rejectUndeclaredPermissionMode,
-  rejectUnknownModel,
-  sessionModeAuthority,
-} from './session-model-gate.js';
 import { mountWindowSignalRoutes, touchedSinceKeeper } from './session-touch-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
 import { sessionDevtoolsActionHandler, sessionDevtoolsIngestHandler } from './session-devtools.js';
@@ -92,7 +80,6 @@ import { createSessionCanvasRoutes, type SessionCanvasDeps } from './session-can
 import { sessionDevtoolsRecordingHandler } from './session-recording.js';
 import { sessionAttachmentHandler } from './session-attachments-handler.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
-import { sessionRunsOnCredits } from '../services/core/cloud/credits-model-gate.js';
 import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
 import {
   cancelContinueHandler,
@@ -102,10 +89,6 @@ import {
   waitForResetHandler,
 } from './session-continue.js';
 import type { RoomSessionPlacePort } from '../services/workspace/room-session-place.js';
-import {
-  dispatchSessionMessage,
-  isSessionLaunchRefusal,
-} from '../services/session/launch/launch-session.js';
 // A control request that outlived its bound is not a claude-code-only idea, but
 // claude-code is the only runtime with one today, so the class still lives with
 // its clock. A second runtime growing one is the signal to move it somewhere
@@ -114,9 +97,8 @@ import { ControlRequestTimeoutError } from '../services/runtimes/claude-code/ses
 
 /**
  * What the session routes read from the running server, handed over once by
- * `index.ts` at boot. The router keeps this object, and a handler reads the field
- * it needs from it on each request; the origin resolvers are copied off
- * `app.locals` when the object is built, so one set there later is not seen.
+ * `index.ts` at boot. The router keeps this object and reads the fields it needs
+ * for each request.
  *
  * The origin overlays (session-origin-legibility, team-room-home §D2.3) are
  * narrow batched lookups, each its own read rather than a widening of any bag:
@@ -125,6 +107,8 @@ import { ControlRequestTimeoutError } from '../services/runtimes/claude-code/ses
  * left unset is a safe no-op.
  */
 export interface SessionRouteDeps extends SessionOriginResolvers, SessionCanvasDeps {
+  /** The database that owns the mounted saved-folder allocation routes. */
+  personBirthDb?: Db;
   /**
    * The agent registry: the project paths `/recent` and `/daily-counts` fan
    * out over (DOR-329), and what a message's launch and a handoff read.
@@ -141,12 +125,6 @@ export interface SessionRouteDeps extends SessionOriginResolvers, SessionCanvasD
 
 const vaultRoot = DEFAULT_CWD;
 
-/** What naming DorkOS credits for a new session says to a caller that is not the owner. */
-const RUN_ON_CREDITS = {
-  personOnly: 'Only you can run a chat on your DorkOS credits, from the DorkOS app.',
-  action: 'run a chat on DorkOS credits',
-};
-
 /** What Switch now says to a caller that is not the owner. */
 const SWITCH_NOW = {
   personOnly: 'Only you can switch now, from the DorkOS app.',
@@ -158,9 +136,10 @@ const SWITCH_NOW = {
  *
  * @param deps - See {@link SessionRouteDeps}. A test that builds the server
  *   bare passes none.
+ * @param personBirthDb - The database shared with the mounted session location routes.
  * @returns The routes, for `http/hono-api.ts` to mount at `/api/sessions`.
  */
-export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
+export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?: Db): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
   // The read guard, once, in front of every path under `/:id`: the routes below,
@@ -559,178 +538,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     return read ? c.json(read) : c.json(historyWindow.UNKNOWN_CURSOR, 404);
   });
 
-  // PATCH /api/sessions/:id - Update session settings
-  router.patch('/:id', personOnlyModeChange(), async (c) => {
-    const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
-
-    const cwdParam = readQuery(c).cwd;
-    const parsed = UpdateSessionRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) {
-      return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
-    }
-    const {
-      permissionMode: requestedMode,
-      model,
-      effort,
-      fastMode,
-      title,
-      runtime: runtimeHint,
-      account: accountHint,
-    } = parsed.data;
-    // Fail-closed by construction: an unresolvable session throws here, before
-    // any check below can be skipped and before anything is written.
-    //
-    // Routing and ownership come out of the SAME read, because they are different
-    // questions with different answers: `runtime` is where this write goes, and
-    // `bound` is whether anyone has actually said so or the registry inferred it.
-    // A gate that conflates the two refuses requests on a guess — see
-    // {@link modelGateAuthority}. Nothing here writes ownership: that is the first
-    // turn's to establish (ADR-0255), and the `runtime` hint cannot bind.
-    const { runtime, bound } = await runtimeRegistry.resolveForSessionWithOwnership(sessionId, {
-      allowUnbound: true,
-    });
-    // The wire carries any well-formed mode id, because a runtime names its own
-    // modes (`PermissionModeIdSchema`). The session's runtime is the ONLY thing
-    // that can say whether the id it was handed is real, so it is the authority
-    // and this is the single place that asks it. Persisting an undeclared id
-    // would make the settings overlay display a safety posture the runtime never
-    // adopted — a codex session PATCHed to `auto` reads "Auto" everywhere while
-    // it keeps running read-only. WRITE PATH ONLY: a session already persisted in
-    // a now-undeclared mode still loads and runs.
-    //
-    // Asked of the runtime the session will run on: its bound one, else the one
-    // the request names, else the inferred one. Asking the inferred claude-code
-    // for a chat headed to Codex accepted `plan`, which Codex does not have, and
-    // the turn then ran at the agent's level (DOR-4411).
-    const modeRuntime = sessionModeAuthority(runtime, bound, runtimeHint);
-    const modeError = requestedMode && rejectUndeclaredPermissionMode(modeRuntime, requestedMode);
-    if (modeError) return c.json(errorBody(modeError, 'UNSUPPORTED_PERMISSION_MODE'), 400);
-    // From Wi-Fi a chat's mode may go down, never up (DOR-3037), judged by the same runtime.
-    const raise = await wifiModeRaiseReply(c, modeRuntime, sessionId, requestedMode);
-    if (raise) return raise;
-    // Same authority argument as the mode gate directly above, applied to the
-    // model: only the runtime can say whether the id it was handed is real, and it
-    // is asked HERE so every caller passes the same door.
-    //
-    // With one difference the mode gate does not need: WHICH runtime is asked.
-    // Model ids are namespaced per runtime and overlap nowhere, so asking the
-    // wrong one is a guaranteed refusal rather than a rare one — which is exactly
-    // what shipped, and what {@link modelGateAuthority} exists to stop. The mode
-    // gate above asks the same authority, falling back to `runtime` when the
-    // session is unbound and names no runtime: there the inference can only be
-    // too permissive, and the turn backstop (`clampModeToCeiling`) runs an
-    // undeclared mode at the runtime's strictest, never the agent's level.
-    //
-    // Which MENU is the other half of the question. A session on DorkOS credits
-    // may run only what credits serve on its runtime's protocol, so it is judged
-    // against the service's list rather than the runtime's own (DOR-2636), and
-    // that check does not degrade: nothing is stored while the list is
-    // unreadable. Whether the session is on credits is the same answer its launch
-    // reaches (`sessionRunsOnCredits`).
-    if (model !== undefined) {
-      const authority = modelGateAuthority(runtime, bound, runtimeHint);
-      const onCredits = authority
-        ? await sessionRunsOnCredits(authority, sessionId, {
-            accountHint,
-            cwd: typeof cwdParam === 'string' ? cwdParam : undefined,
-          })
-        : false;
-      const modelError = authority
-        ? await rejectUnknownModel(authority, model, { onCredits, sessionId })
-        : null;
-      if (modelError) return c.json(errorBody(modelError, 'UNSUPPORTED_MODEL'), 400);
-    }
-    // Past the gate the id is one THIS runtime declares, so it is a real mode by
-    // the only definition that matters — and it travels on as the runtime-declared
-    // id it is, all the way into the settings store. No narrowing happens here
-    // (DOR-885): each adapter reconciles the id with its own vocabulary at its own
-    // edge, which is the only place that can (`requestedMode` from here on).
-    // Translate client-facing session ID to backend-internal session ID (same as GET /:id).
-    // After a session remap the client uses the SDK UUID directly; without this translation
-    // runtime.updateSession would fail to find the session by client-facing ID.
-    const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
-    // updateSession no longer throws on a live mode-switch failure (ADR-0261):
-    // the chosen mode is persisted and applies on the next turn, so there is no
-    // 422 path — a failed live switch is not a request error.
-    const updated = await runtime.updateSession(internalSessionId, {
-      permissionMode: requestedMode,
-      model,
-      effort,
-      fastMode,
-    });
-    if (!updated.updated) return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
-    notePersonMode(sessionId, requestedMode);
-
-    const cwd = (cwdParam as string) || vaultRoot;
-    const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
-    if (outside) return c.json(outside, 403);
-
-    // Persist custom title to JSONL via SDK's renameSession()
-    if (title) {
-      await runtime.renameSession(internalSessionId, title, cwd);
-    }
-
-    const session = await runtime.getSession(cwd, internalSessionId);
-    if (session) {
-      session.permissionMode = requestedMode ?? session.permissionMode;
-      session.model = model ?? session.model;
-      if (effort) session.effort = effort;
-      if (fastMode !== undefined) session.fastMode = fastMode;
-      if (title) session.title = title;
-      if (!session.runtime) session.runtime = runtime.type;
-    }
-    // The loose fallback is still Session-shaped on the wire, so it must carry
-    // the required `runtime` field (task 1.1) — resolved from the owning runtime.
-    const loose = session ?? {
-      id: sessionId,
-      permissionMode: requestedMode,
-      model,
-      effort,
-      runtime: runtime.type,
-    };
-    // ## Say when the runtime is a guess (DOR-1693)
-    //
-    // On a session nobody owns, `runtime` is the legacy inference —
-    // `claude-code`, so that reads keep working before anything is recorded — and
-    // it goes out in the same field, with the same shape, as a real binding. A
-    // caller cannot tell them apart, and it can flatly contradict the `runtime`
-    // hint that same request just sent. `bound` is already in hand from the
-    // resolve above; throwing it away here is what made the answer an inference
-    // wearing the costume of a fact.
-    //
-    // Unowned is not the same as new. `persistSessionRuntime` is called from the
-    // interactive POST /messages path and nowhere else, so a scheduled run or a
-    // room turn can go many turns with no row at all — this flag says a runtime
-    // was guessed, never how much the session has done.
-    //
-    // A separate optional flag rather than omitting `runtime` or echoing the
-    // hint: both of those change what an existing client reads, and one of them
-    // would have this route report a binding the first turn has not written yet
-    // (ADR-0255). This adds a field and moves nothing.
-    const body = bound ? loose : { ...loose, runtimeUnbound: true as const };
-    // ## A tightening the running turn never confirmed is not a 200 (DOR-1435)
-    //
-    // Everything above is true of what DorkOS has STORED. When the runtime could
-    // not tell the turn already running about a mode the person just tightened,
-    // it is not true of what that turn will do — under a mode that never asks the
-    // CLI skips its approval callback entirely, so nothing on this side can put
-    // the prompts back for the reply already in flight. Answering `200
-    // {permissionMode:'default'}` there states a safety posture the agent has not
-    // adopted, which is the one direction this product must never be confidently
-    // wrong in.
-    //
-    // `202`, because the request was accepted and the change IS saved — it simply
-    // has not taken yet, which is exactly what 202 says and what a 4xx would deny.
-    // The field is what a client acts on; the status is what makes a client that
-    // reads neither at least not report certainty. LOOSENING stays a plain 200:
-    // an unconfirmed one costs a few extra approval prompts for the rest of one
-    // turn and corrects itself on the next.
-    if (updated.permissionModePendingUntilNextTurn) {
-      return c.json({ ...body, permissionModePendingUntilNextTurn: true }, 202);
-    }
-    return c.json(body);
-  });
+  mountSessionSettingsPatch(router, deps, personBirthDb);
 
   // POST /api/sessions/:id/fork - Fork a session
   router.post('/:id/fork', async (c) => {
@@ -798,97 +606,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     }
   });
 
-  // POST /api/sessions/:id/messages — Accept a message (trigger-only, ADR-0264;
-  // accept-only, spec `persistent-session-runtime` §3.3).
-  //
-  // This endpoint NO LONGER streams tokens in-band, and no longer waits for the
-  // session to be free. It validates and hands the message to the dispatcher,
-  // which either starts the turn now or puts it on the session's durable queue,
-  // then answers `202 Accepted` with the canonical session id, the message id, the
-  // delivery outcome and the queue position. Everything after that — the turn
-  // starting, its tokens, its end — arrives on `GET /:id/events`, the single
-  // delivery path.
-  //
-  // **There is no `409` here.** A busy session used to refuse a second window;
-  // now it queues, and the person can edit or remove what is waiting through the
-  // queue routes below. The write-lock still exists — it is the mutex one turn
-  // window holds, and its inactivity TTL still reclaims a turn that went dark
-  // (DOR-782) — but it is no longer an answer this route can give. The lock is
-  // bound to the turn's real duration and released on completion AND on error; a
-  // detached failure is surfaced INTO the projector so `/events` consumers see it.
-  // See `services/session/message-dispatcher.ts` and `trigger-turn.ts` for the
-  // orchestration and the lock/error invariants, and
-  // `services/session/launch/launch-session.ts` for the binding this route shares
-  // with every other surface that starts a session from a message.
-  router.post('/:id/messages', askForPersonBeforeChat(), async (c) => {
-    const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
-
-    const parsed = SendMessageRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) {
-      return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
-    }
-
-    // Naming DorkOS credits for a new session spends the DorkOS account's money,
-    // so only the owner of this DorkOS may name it (DOR-2652). Any other
-    // account, or none, is the runtime's own business and stays open.
-    if (parsed.data.account === CREDITS_ACCOUNT_ID) {
-      const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), RUN_ON_CREDITS);
-      if (refusal) return c.json(refusal, 403);
-    }
-
-    // An id nobody started is a 404, never a new session (DOR-2712): a stale id
-    // used to start a stranger session on the default runtime in the default
-    // folder. Starting a chat is said out loud with `create: true`.
-    if (parsed.data.create !== true && !(await sessionExists(sessionId, parsed.data.cwd))) {
-      return c.json(
-        errorBody(
-          'No session has this id. To start a new one, send create: true.',
-          'SESSION_NOT_FOUND'
-        ),
-        404
-      );
-    }
-
-    // Read X-Client-Id header, or generate UUID if missing
-    const clientId = c.req.header('x-client-id') || crypto.randomUUID();
-
-    // `{ kind: 'interactive' }` is what unlocks the trust stop, and this route is
-    // where that claim is true: a message posted to `/api/sessions/:id/messages`
-    // came from a person at a control panel holding the session's event stream
-    // open. Rooms, tasks and bindings never pass through here, and each names
-    // itself at its own call (DOR-2105). A caller presenting an agent identity
-    // is not that person: its chat is agent work, so it can read what it
-    // started (spec `audit-trail` §3.4), and it seeds no operator stop. Nor is
-    // a caller with no agent header but no session of the person's, once an
-    // owner exists who could prove themselves (DOR-3330): its message runs as
-    // agent work, never as the person.
-    // Whoever is not the person may only run a chat where they could start one
-    // themselves (DOR-3644), and an agent's launch carries its own marks on.
-    // From Wi-Fi, the turn runs at the runtime's default at most (DOR-3037).
-    const launch = httpLaunchOf(honoRequestFacts(c), sessionId);
-    const result = await dispatchSessionMessage({
-      origin: httpTurnOrigin(launch.launcher.kind !== 'person'),
-      ...launch,
-      sessionId,
-      request: parsed.data,
-      clientId,
-      meshCore: deps.meshCore,
-      roomSessionPlace: deps.roomSessionPlace,
-      // Who is asking, for a new workspace a workspaceKey names (DOR-2335).
-      workspaceCaller: workspaceCallerOf(honoRequestFacts(c)),
-    });
-    if (isSessionLaunchRefusal(result)) return launchRefusalReply(c, result);
-
-    // Accepted, so it counts as you writing here (spec `your-activity-first`
-    // D4). A dispatch that answered `accepted: false` refused the message and
-    // records nothing. An accepted one names the chat's canonical id; the
-    // fallback only covers the type, which leaves the field optional. Signing
-    // the sending device out stops the chat (DOR-3172).
-    if (result.accepted) recordAccepted(honoRequestFacts(c), result, sessionId, clientId);
-
-    return c.json(sessionMessageReceipt(result), 202);
-  });
+  mountSessionSendMessage(router, deps, personBirthDb);
 
   // POST /api/sessions/:id/opened — the chat page is showing this chat (spec
   // `your-activity-first` D3) — and POST /api/sessions/:id/stream-health — a
@@ -936,7 +654,10 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // clicked in, so running it against whatever a later turn leaves behind is not
   // the same action. A click after that turn ENDED is accepted, even while the
   // runtime finishes closing the stream (DOR-1239). See the handler's module doc.
-  router.post('/:id/ui-action', sessionUiActionHandler);
+  // A click is a chat message too, so it asks for the owner's step-up exactly as `/messages`
+  // does (DOR-5071): without it, an unproven click into a Direct chat ran at the stranger's
+  // bound with no step-up offered.
+  router.post('/:id/ui-action', askForPersonBeforeChat(), sessionUiActionHandler);
 
   // POST /api/sessions/:id/command-intents/:intent — Runtime-fulfilled command
   // intent (currently `compact`), DOR-109. The handler lives in

@@ -43,11 +43,11 @@ Run this when bumping the pinned rulesync snapshot (new tool, renamed event, cha
 1. **Fetch the new upstream.** Check out the target rulesync commit locally and note its full SHA and the npm version it corresponds to.
 2. **Bump the pinned SHA.** Update the `Pinned: commit <sha>` line in the header of `vendor/rulesync-maps.ts` to the new short SHA (and the `rulesync@<x.y.z>` version). The attribution test asserts this header still contains `dyoshikawa`, the pinned SHA, and `MIT`.
 3. **Keep the DorkOS additions.** They sit inside the vendored tables, marked and dated. Re-check each against its vendor page: if upstream has since adopted it, drop the marker; if the vendor renamed or removed the event, fix or remove the entry. Never let a re-vendor silently overwrite them.
-4. **Diff the four target tables** against the new upstream — for each of Claude, Codex, Cursor, and Copilot, compare:
-   - the `*_HOOK_EVENTS` array (`src/types/hooks.ts`),
-   - the `CANONICAL_TO_*_EVENT_NAMES` map (`src/types/hooks.ts`),
-   - the path constants (`src/constants/{claudecode,codexcli,copilot,cursor}-paths.ts`).
-     Apply only the deltas. Do not re-vendor tools we do not project.
+4. **Diff the four target tables** against the new upstream — for each of Claude, Codex, Cursor, and Copilot, compare (the paths are upstream rulesync's; every table lands in our `vendor/rulesync-maps.ts`):
+   - the `*_HOOK_EVENTS` array (upstream `src/types/hooks.ts`),
+   - the `CANONICAL_TO_*_EVENT_NAMES` map (upstream `src/types/hooks.ts`),
+   - the path constants (upstream `src/constants/{claudecode,codexcli,copilot,cursor}-paths.ts`).
+     Apply only the deltas. Do not re-vendor tools we do not project. The one exception already in the file is the Copilot CLI pair (`COPILOTCLI_HOOK_EVENTS`, `CANONICAL_TO_COPILOTCLI_EVENT_NAMES`, upstream `copilotcli-hooks.ts`): the engine does not project it, but `vendor/__tests__/rulesync-maps.test.ts` round-trips it, so diff it too rather than let it go stale.
 5. **Leave Gemini alone.** `vendor/gemini-maps.ts` is hand-authored and is NOT part of the rulesync snapshot — never overwrite it from upstream. If Gemini's own docs change, update it independently and clear the relevant `TODO(B9/DOR-143)`.
 6. **Re-derive reverse maps for free.** Every `*_TO_CANONICAL_EVENT_NAMES` map is `Object.fromEntries(Object.entries(forward).map(([k, v]) => [v, k]))` — never hand-edit a reverse map. If a forward map gains two canonical keys with the same tool spelling, the reverse collapses and the round-trip test will fail; that is the signal to reconcile.
 7. **Run the tests.** From the repo root: `pnpm vitest run packages/harness/src/vendor` (round-trip, non-empty, attribution) and `pnpm --filter @dorkos/harness typecheck`.

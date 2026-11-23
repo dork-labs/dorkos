@@ -12,6 +12,8 @@
  *
  * @module main/step-up/step-up-confirmation
  */
+import { PAGE_STAMP_HEADER } from '@dorkos/shared/step-up';
+
 import type {
   StepUpWindowAnswer,
   StepUpWindowOutcome,
@@ -21,6 +23,15 @@ import type {
 
 /** The shape a held action's id takes: the server's ULIDs, never anything longer. */
 const HELD_ACTION_ID = /^[0-9A-Za-z]{10,64}$/;
+
+/** Every reason the window knows for offering no password; anything else offers it. */
+const UNAVAILABLE: readonly NonNullable<StepUpWindowView['unavailable']>[] = [
+  'insecure-connection',
+  'no-password',
+  'extension-risk',
+  'stale-sign-in',
+  'stale-page',
+];
 
 /** The shell's person proof header (DOR-3330), as the server reads it. */
 const PERSON_PROOF_HEADER = 'x-dorkos-person';
@@ -33,6 +44,12 @@ export interface StepUpConfirmationDeps {
   fetch: (url: string, init: RequestInit) => Promise<Response>;
   /** The window's person proof, or `null`. */
   personProof: () => string | null;
+  /**
+   * The stamp the server wrote into the app window's page when it sent it, or
+   * `null`. The server counts a confirm only from a page loaded after the last
+   * mini app risk cleared (DOR-5026). Read once, on the first call.
+   */
+  pageStamp: () => Promise<string | null>;
 }
 
 /** Whether `id` can be a held action's id. */
@@ -70,6 +87,8 @@ export class StepUpConfirmation {
   private confirmed = false;
   /** The submit still waiting on the server, so closing the window waits for its answer. */
   private inFlight: Promise<StepUpWindowAnswer> | null = null;
+  /** The app window's page stamp, read once on the first call. */
+  private stamp: Promise<string | null> | undefined;
 
   /**
    * Start confirming one held action; nothing is sent until {@link view}.
@@ -86,8 +105,11 @@ export class StepUpConfirmation {
     return `${this.deps.origin}/api/step-up/${this.heldActionId}${suffix}`;
   }
 
-  private headers(write: boolean): Record<string, string> {
+  private async headers(write: boolean): Promise<Record<string, string>> {
     const headers: Record<string, string> = {};
+    this.stamp ??= this.deps.pageStamp().catch(() => null);
+    const stamp = await this.stamp;
+    if (stamp) headers[PAGE_STAMP_HEADER] = stamp;
     const proof = this.deps.personProof();
     if (proof) headers[PERSON_PROOF_HEADER] = proof;
     // The shell is this server's own app, so it names the server's own origin,
@@ -108,7 +130,7 @@ export class StepUpConfirmation {
     try {
       res = await this.deps.fetch(this.url(), {
         method: 'GET',
-        headers: this.headers(false),
+        headers: await this.headers(false),
         credentials: 'include',
       });
     } catch {
@@ -127,12 +149,10 @@ export class StepUpConfirmation {
     const notes = Array.isArray(body?.notes)
       ? body.notes.filter((note): note is string => typeof note === 'string')
       : [];
-    const unavailable =
-      body?.passwordUnavailable === 'insecure-connection' ||
-      body?.passwordUnavailable === 'no-password' ||
-      body?.passwordUnavailable === 'extension-risk'
-        ? body.passwordUnavailable
-        : undefined;
+    // The named stale reason first (DOR-5086): a call with no stamp may get the older shape beside it.
+    const unavailable = UNAVAILABLE.find(
+      (value) => value === (body?.stale ?? body?.passwordUnavailable)
+    );
     const blockedLines =
       unavailable === 'extension-risk' && Array.isArray(body?.blockedBy)
         ? body.blockedBy.flatMap(blockedLineOf)
@@ -174,7 +194,7 @@ export class StepUpConfirmation {
     try {
       res = await this.deps.fetch(this.url(suffix), {
         method: 'POST',
-        headers: this.headers(true),
+        headers: await this.headers(true),
         body: JSON.stringify(payload),
         // Without it, a request from the main process sends no session cookie.
         credentials: 'include',
@@ -232,6 +252,14 @@ export class StepUpConfirmation {
   }
 
   /**
+   * The person chose to reload the app's page, which is older than a change
+   * (DOR-5086). This held action stays held, so the fresh page reopens it.
+   */
+  reload(): void {
+    if (!this.confirmed) this.outcome = { kind: 'reload' };
+  }
+
+  /**
    * How it ended, for the app's page, once the window closed. A window closed
    * before confirming tells the server to drop the held action; one closed
    * while a password was being checked waits for that answer first, since the
@@ -239,11 +267,11 @@ export class StepUpConfirmation {
    */
   async finish(): Promise<StepUpWindowOutcome> {
     if (this.inFlight) await this.inFlight.catch(() => undefined);
-    if (!this.confirmed) {
+    if (!this.confirmed && this.outcome.kind !== 'reload') {
       await this.deps
         .fetch(this.url(), {
           method: 'DELETE',
-          headers: this.headers(true),
+          headers: await this.headers(true),
           credentials: 'include',
         })
         .catch(() => undefined);

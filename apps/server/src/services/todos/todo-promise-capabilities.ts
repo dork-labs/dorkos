@@ -57,6 +57,7 @@ import {
   type CapabilityHandlerContext,
 } from '../core/capabilities/index.js';
 import { changeToTell, type TodoChangeNotice } from './notice/todo-recipient-notice.js';
+import { markTurnIfOutside } from './todo-word-marks.js';
 import {
   TodoPromiseError,
   type TodoPromiseActor,
@@ -88,6 +89,8 @@ declare module '../core/capabilities/capability-definition.js' {
        * where nothing can be told, as in most tests.
        */
       tellRecipient?: (notice: TodoChangeNotice) => Promise<void>;
+      /** Whether a to-do's stored words came from outside the team (DOR-4666). */
+      carriesOutsideWords?(id: string): boolean;
     };
   }
 }
@@ -312,6 +315,7 @@ export const todoPromisesDomain: CapabilityDomain = {
           },
           { kind: 'agent', agentId }
         );
+        markTurnIfOutside(context, [todoPromise.id], todoPromiseDeps.carriesOutsideWords);
         return { ok: true as const, todoPromise };
       },
     }),
@@ -384,6 +388,10 @@ export const todoPromisesDomain: CapabilityDomain = {
             ...(input.delivered && input.state === 'kept' ? { delivered: input.delivered } : {}),
           }),
         }));
+        // The row it hands back may hold an earlier stranger's note (DOR-4666).
+        if (result.ok) {
+          markTurnIfOutside(context, [result.todoPromise.id], todoPromiseDeps.carriesOutsideWords);
+        }
         // The agent's own move or drop is told to whoever the promise was made to (DOR-3034).
         const change = result.ok ? changeToTell(before, result.todoPromise) : null;
         if (result.ok && change && actor.kind === 'agent' && todoPromiseDeps.tellRecipient) {
@@ -443,16 +451,24 @@ export const todoPromisesDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
-      invoke: async (deps, input) => {
+      invoke: async (deps, input, context) => {
         const { state = 'open', limit = LIST_DEFAULT_LIMIT, ...filter } = input;
-        const list = requireTodoPromiseDeps(deps).service.list(
+        const todoPromiseDeps = requireTodoPromiseDeps(deps);
+        const list = todoPromiseDeps.service.list(
           { ...filter, ...(state === 'all' ? {} : { state }) },
           // One more than asked, so a list cut at `limit` says so.
           limit + 1
         );
+        const shown = list.slice(0, limit);
+        // A stranger's to-do in the list hands their words on; the team's alone do not (DOR-4666).
+        markTurnIfOutside(
+          context,
+          shown.map((c) => c.id),
+          todoPromiseDeps.carriesOutsideWords
+        );
         // Which chat a promise was made in is the owner's to see (module TSDoc).
         return {
-          todoPromises: list.slice(0, limit).map((c) => ({ ...c, sourceSessionId: null })),
+          todoPromises: shown.map((c) => ({ ...c, sourceSessionId: null })),
           truncated: list.length > limit,
         };
       },

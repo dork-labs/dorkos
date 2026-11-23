@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -363,6 +363,30 @@ describe('ScheduleApprovalCard — what it says', () => {
     expect(slot('schedule-reason')).toBeNull();
   });
 
+  it('draws no reason line when the reason only repeats a prompt shown in full (DOR-5075)', async () => {
+    // A card that attests the file shows the prompt in full already; quoting it
+    // as the reason too puts the same words on the card twice.
+    renderCard(
+      proposal({ reason: ' Sweep the backlog and file anything stale.', fileCapNext: true })
+    );
+
+    await screen.findByText('Nightly sweep');
+    expect(slot('schedule-reason')).toBeNull();
+  });
+
+  it('keeps a reason that repeats the prompt when the prompt is folded away (DOR-5075)', async () => {
+    // Elsewhere the prompt sits behind "Show exact instructions": dropping the
+    // reason too would leave the card with no instructions in sight at all.
+    // No file path and no capped run: this card folds the prompt.
+    renderCard(
+      proposal({ reason: ' Sweep the backlog and file anything stale.', proposedByAgentPath: null })
+    );
+
+    expect(await findSlot('schedule-reason')).toHaveTextContent(
+      'Sweep the backlog and file anything stale.'
+    );
+  });
+
   it('says the cadence in words, with the timezone it is anchored to', async () => {
     // "every day at 3:00 AM" is a different promise in UTC than in Chicago, and
     // the operator is the one who has to know which.
@@ -489,6 +513,39 @@ describe('ScheduleApprovalCard — what it says', () => {
       expect(updateTask).toHaveBeenCalledWith('task-1', {
         status: 'active',
         approvedPromptHash: shown,
+        expectedApprovalRevision: 'a'.repeat(64),
+        approvalSurface: 'home',
+      })
+    );
+  });
+
+  it('shows hidden characters in the prompt as markers, and its yes hashes the real prompt (DOR-5060)', async () => {
+    // A zero-width space, a bidi override, and a tag character: the last is
+    // invisible to a person but read as text by a model.
+    const hidden = [0x200b, 0x202e, 0xe0041].map((cp) => String.fromCodePoint(cp));
+    const prompt = `Sweep${hidden.join(' the ')} backlog.`;
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+    renderCard(
+      proposal({ proposedByAgentPath: null, proposedByName: null, fileCapNext: true, prompt }),
+      { updateTask }
+    );
+    const shown = slot('schedule-prompt')!;
+    const shownText = shown.textContent ?? '';
+    // Each one is a chip a screen reader names, never the `<U+200B>` text a
+    // prompt could carry to look like one (DOR-5075).
+    for (const codePoint of ['U+200B', 'U+202E', 'U+E0041']) {
+      const chip = within(shown).getByRole('img', { name: `hidden character ${codePoint}` });
+      expect(chip).toHaveTextContent(codePoint);
+      expect(chip.getAttribute('data-slot')).toBe('hidden-character');
+    }
+    expect(shownText).not.toContain('<U+');
+    for (const ch of hidden) expect(shownText).not.toContain(ch);
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+    const real = await promptHash(prompt);
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        status: 'active',
+        approvedPromptHash: real,
         expectedApprovalRevision: 'a'.repeat(64),
         approvalSurface: 'home',
       })

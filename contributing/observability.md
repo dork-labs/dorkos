@@ -60,12 +60,14 @@ Span attributes are **allowlisted** in `services/observability/attributes.ts`. T
 
 ### Where it is minted
 
-| Ingress          | File                                       | Mint point                                          |
-| ---------------- | ------------------------------------------ | --------------------------------------------------- |
-| Room dispatch    | `services/rooms/room-trigger.ts`           | per `(entry, target)` pair, as the target is built  |
-| Interactive turn | `routes/sessions.ts`                       | in the route, before `triggerTurn`                  |
-| Task run         | `services/tasks/task-scheduler-service.ts` | in `executeRun`                                     |
-| Relay inbound    | `services/relay/binding-router.ts`         | in `handleInbound`, unless the envelope carries one |
+| Ingress          | File                                             | Mint point                                                                         |
+| ---------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Room dispatch    | `services/rooms/room-trigger/claim-collected.ts` | per `(entry, target)` pair, in `claimCollected()` as the claim is held             |
+| Room aside       | `services/rooms/room-trigger/aside.ts`           | per welcome-back offer, before its claim is held                                   |
+| Interactive turn | `services/session/launch/launch-session.ts`      | in `dispatchSessionMessage()` (called by `routes/sessions.ts`), before the trigger |
+| Queue recovery   | `services/session/message-dispatcher/adopt.ts`   | per adopted queued row: a new dispatch with origin `queue-recovery`                |
+| Task run         | `services/tasks/task-scheduler-service.ts`       | in `executeRunHeld`, once per run                                                  |
+| Relay inbound    | `services/relay/binding-router.ts`               | in `handleInbound`, unless the envelope carries one                                |
 
 **Never re-minted mid-chain.** The runtime handing back a canonical session id does not change it. That is the entire point: the dispatch id is stable exactly where the session id is not.
 
@@ -115,16 +117,16 @@ The `'[tag] message'` string prefix is the convention — roughly 90 tags across
 
 **New tags are lowercase-kebab and name the mechanism or domain.** Existing PascalCase tags (`[Extensions]`, `[Marketplace]`, `[HarnessSync]`) are legacy and are not being renamed; a rename would break every filter anyone has saved. The tag registry for the dispatch path — the part this guide governs — is:
 
-| Tag                      | Owning directory                         | Notes                                                                                            |
-| ------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `[rooms]`                | `services/rooms/`                        | Claims, notices, refusals, presence                                                              |
-| `[stall-guard]`          | `services/session/stall-guard.ts`        | The inactivity watchdog. Names the mechanism, not the domain                                     |
-| `[relay]`                | `services/relay/`                        | Inbound routing and its refusals                                                                 |
-| `[claude-code]`          | `services/runtimes/claude-code/`         | Runtime-specific, including expired prompts                                                      |
-| `[canUseTool]`           | `messaging/interactive-handlers.ts`      | SDK-mirroring exception, kept for grep parity                                                    |
-| `[phantom-cancellation]` | `observability/phantom-cancellations.ts` | The DOR-1087 tripwire. Written by BOTH claude-code senders, so it is one tag, not one per sender |
-| `[POST /messages]`       | `routes/sessions.ts`                     | The interactive turn ingress                                                                     |
-| `[DorkOS]`               | `index.ts`                               | Process lifecycle: boot, routes mounted, shutdown                                                |
+| Tag                      | Owning directory                            | Notes                                                                                            |
+| ------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `[rooms]`                | `services/rooms/`                           | Claims, notices, refusals, presence                                                              |
+| `[stall-guard]`          | `services/session/stall-guard.ts`           | The inactivity watchdog. Names the mechanism, not the domain                                     |
+| `[relay]`                | `services/relay/`                           | Inbound routing and its refusals                                                                 |
+| `[claude-code]`          | `services/runtimes/claude-code/`            | Runtime-specific, including expired prompts                                                      |
+| `[canUseTool]`           | `messaging/interactive-handlers.ts`         | SDK-mirroring exception, kept for grep parity                                                    |
+| `[phantom-cancellation]` | `observability/phantom-cancellations.ts`    | The DOR-1087 tripwire. Written by BOTH claude-code senders, so it is one tag, not one per sender |
+| `[POST /messages]`       | `services/session/launch/launch-session.ts` | The interactive turn ingress (`dispatchSessionMessage()`)                                        |
+| `[DorkOS]`               | `index.ts`                                  | Process lifecycle: boot, routes mounted, shutdown                                                |
 
 Add a row here in the same PR that introduces a tag. To see every tag currently in use:
 

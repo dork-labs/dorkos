@@ -1,7 +1,6 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
-import type { HeldStepUpView, StepUpExtensionRisk } from '@dorkos/shared/step-up';
+import type { HeldStepUpView } from '@dorkos/shared/step-up';
 import { primaryLabel } from '../model/step-up-primary-label';
-import { useSettingsDeepLink } from '@/layers/shared/model';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -19,6 +18,10 @@ import {
   getActionStepUpAfterExpiry,
   getActionStepUpAfterDifferent,
   getActionStepUpShowing,
+  getActionStepUpWaiting,
+  noteStepUpReload,
+  reloadToConfirm,
+  stepUpReloadedFor,
   subscribeActionStepUp,
   type ActionStepUpOutcome,
 } from '@/layers/shared/lib';
@@ -29,9 +32,18 @@ import {
   readHeldAction,
   type ConfirmActionFailure,
 } from '../model/confirm-action';
+import { hasUnsavedWork } from '../model/unsaved-work';
+import {
+  EndedBody,
+  ExtensionRiskBody,
+  NoPasswordBody,
+  RESET_PASSWORD_COMMAND,
+  StalePageBody,
+  StaleSignInBody,
+} from './StepUpRefusalBodies';
 
-/** The command that sets or resets the owner's password, run on the computer DorkOS runs on. */
-const RESET_PASSWORD_COMMAND = 'dorkos auth reset-password';
+/** How long "Updating this page…" shows before the page reloads by itself (DOR-5086). */
+const RELOAD_NOTICE_MS = 400;
 
 /** The line that always travels with a request code (designer, DOR-4355). */
 const REQUEST_CODE_NOTE = 'Check that the request you came from shows the same code.';
@@ -45,7 +57,12 @@ const REQUEST_CODE_NOTE = 'Check that the request you came from shows the same c
  * Every sentence about what will run is the server's. Cancel, Esc or any
  * failure leaves the action undone.
  */
-export function ActionStepUpHost() {
+export function ActionStepUpHost({
+  navigate,
+}: {
+  /** Load a URL as a new page; the browser's own by default. For tests. */
+  navigate?: (url: string) => void;
+} = {}) {
   const heldActionId = useSyncExternalStore(subscribeActionStepUp, getActionStepUpShowing);
   if (heldActionId === null) return null;
   // In the Mac app the password is never typed into this page: the shell takes
@@ -54,7 +71,7 @@ export function ActionStepUpHost() {
     return <DesktopStepUpSheet key={heldActionId} heldActionId={heldActionId} />;
   }
   // Keyed by the held action, so the next one starts with an empty field.
-  return <ActionStepUpSheet key={heldActionId} heldActionId={heldActionId} />;
+  return <ActionStepUpSheet key={heldActionId} heldActionId={heldActionId} navigate={navigate} />;
 }
 
 /** The held actions the shell's window is open for. */
@@ -82,8 +99,10 @@ function DesktopStepUpSheet({ heldActionId }: { heldActionId: string }) {
         <AlertDialogHeader className="text-left">
           <AlertDialogTitle>Confirm it’s you</AlertDialogTitle>
           <AlertDialogDescription>
+            {/* Name the window and what closing it does: a lost window once
+                read as a yes that never landed (DOR-4909). */}
             {confirm
-              ? 'Confirm in the window that just opened.'
+              ? 'Finish in the “Confirm it’s you” window. Closing it changes nothing.'
               : 'Update the DorkOS app to confirm this.'}
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -105,16 +124,40 @@ function DesktopStepUpSheet({ heldActionId }: { heldActionId: string }) {
 
 type Stage =
   | { kind: 'loading' }
+  | { kind: 'reloading' }
   | { kind: 'password'; view: HeldStepUpView }
   | { kind: 'change'; view: HeldStepUpView; minLength: number }
   | { kind: 'ended'; message: string };
+
+/**
+ * Why the password isn't offered: the named stale reason first (DOR-5086),
+ * since a page without a stamp (the dev server's) is answered in the older
+ * `extension-risk` shape with `stale` beside it.
+ */
+function reasonOf(view: HeldStepUpView): HeldStepUpView['passwordUnavailable'] {
+  return view.stale ?? view.passwordUnavailable;
+}
+
+/** Load this page afresh and reopen `heldActionId` there (DOR-5086). */
+function reloadPage(heldActionId: string, navigate?: (url: string) => void): void {
+  reloadToConfirm(
+    heldActionId,
+    navigate ? { href: window.location.href, assign: navigate } : window.location
+  );
+}
 
 /** Seconds left until `until`, never below zero. */
 function secondsUntil(until: number): number {
   return Math.max(0, Math.ceil((until - Date.now()) / 1000));
 }
 
-function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
+function ActionStepUpSheet({
+  heldActionId,
+  navigate,
+}: {
+  heldActionId: string;
+  navigate?: (url: string) => void;
+}) {
   const reasonId = useId();
   const codeId = useId();
   const codeNoteId = useId();
@@ -134,8 +177,28 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
 
   useEffect(() => {
     let live = true;
+    let reloadTimer: ReturnType<typeof setTimeout> | undefined;
     void readHeldAction(heldActionId).then((read) => {
       if (!live) return;
+      // Too old a page to confirm from (DOR-5086): reload once, by itself, and
+      // reopen this same held action there. Only when nothing typed would be
+      // lost and no other confirm waits behind this one (only this one
+      // reopens), and never twice for one action, so a page still refused
+      // after its reload stops on the Reload button instead of looping. The
+      // call that asked here ends with the page; once confirmed there, the
+      // server runs the action all the same.
+      if (
+        read.ok &&
+        reasonOf(read.view) === 'stale-page' &&
+        getActionStepUpWaiting() === 1 &&
+        !stepUpReloadedFor(heldActionId) &&
+        !hasUnsavedWork() &&
+        noteStepUpReload(heldActionId)
+      ) {
+        setStage({ kind: 'reloading' });
+        reloadTimer = setTimeout(() => reloadPage(heldActionId, navigate), RELOAD_NOTICE_MS);
+        return;
+      }
       if (read.ok) setStage({ kind: 'password', view: read.view });
       // Gone before it could be read: ask for the action again, on the same sheet.
       else if (read.reason === 'expired') finishActionStepUp(heldActionId, { kind: 'ask-again' });
@@ -143,8 +206,9 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
     });
     return () => {
       live = false;
+      clearTimeout(reloadTimer);
     };
-  }, [heldActionId]);
+  }, [heldActionId, navigate]);
 
   useEffect(() => {
     if (waitUntil === null) return;
@@ -163,14 +227,15 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
 
   /** Cancel, Esc or Close. Waits while a password check is in flight, whose answer ends the sheet. */
   function cancel() {
-    if (pending) return;
+    if (pending || stage.kind === 'reloading') return;
     void cancelHeldAction(heldActionId);
     finishActionStepUp(heldActionId, { kind: 'not-confirmed' });
   }
 
   /**
-   * Drop this held action and sign in again. The call that asked goes again
-   * afterwards and is held afresh in the new session; this one never moves there.
+   * Drop this held action and sign in again. The page then reloads, since a
+   * confirm counts only from a page loaded after the risk cleared (DOR-5026);
+   * the person asks again from there, and this action never moves over.
    */
   function signInAgain() {
     if (pending) return;
@@ -220,6 +285,14 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
       });
       return;
     }
+    // Refused as too old while the sheet was open: the same body the read shows.
+    if (result.reason === 'stale-page' || result.reason === 'stale-sign-in') {
+      setStage({
+        kind: 'password',
+        view: { ...stage.view, methods: [], passwordUnavailable: result.reason },
+      });
+      return;
+    }
     if (result.reason === 'too-many-attempts') {
       setWaitUntil(Date.now() + (result.retryAfterSeconds ?? 60) * 1000);
     }
@@ -243,6 +316,7 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
 
   const waiting = waitUntil !== null;
   const view = stage.kind === 'password' || stage.kind === 'change' ? stage.view : null;
+  const unavailable = view ? reasonOf(view) : undefined;
 
   return (
     <AlertDialog open onOpenChange={(next) => !next && cancel()}>
@@ -256,7 +330,12 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
             id={reasonId}
             className="text-foreground max-h-[30dvh] overflow-auto font-medium"
           >
-            {view?.reason ?? (stage.kind === 'loading' ? 'Checking what this will do…' : '')}
+            {view?.reason ??
+              (stage.kind === 'loading'
+                ? 'Checking what this will do…'
+                : stage.kind === 'reloading'
+                  ? 'Updating this page…'
+                  : '')}
           </AlertDialogDescription>
           {/* The code never shows without its note (designer, DOR-4355). */}
           {view?.requestCode && (
@@ -289,18 +368,24 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
             </p>
           )}
         </AlertDialogHeader>
-        {stage.kind === 'ended' ? (
+        {stage.kind === 'reloading' ? null : stage.kind === 'ended' ? (
           <EndedBody message={stage.message} onClose={cancel} />
-        ) : view?.passwordUnavailable === 'insecure-connection' ? (
+        ) : unavailable === 'insecure-connection' ? (
           <EndedBody message="Confirm this on the computer running DorkOS." onClose={cancel} />
-        ) : view?.passwordUnavailable === 'extension-risk' ? (
-          <ExtensionRiskBody
-            risks={view.blockedBy ?? []}
+        ) : unavailable === 'extension-risk' ? (
+          <ExtensionRiskBody risks={view?.blockedBy ?? []} onClose={cancel} />
+        ) : unavailable === 'stale-sign-in' ? (
+          <StaleSignInBody onClose={cancel} onSignInAgain={signInAgain} />
+        ) : unavailable === 'stale-page' ? (
+          <StalePageBody
             onClose={cancel}
-            onSignInAgain={signInAgain}
+            onReload={() => {
+              noteStepUpReload(heldActionId);
+              reloadPage(heldActionId, navigate);
+            }}
           />
-        ) : view?.passwordUnavailable === 'no-password' ? (
-          <NoPasswordBody onClose={cancel} remote={view.answeringRemotely} />
+        ) : unavailable === 'no-password' ? (
+          <NoPasswordBody onClose={cancel} remote={view?.answeringRemotely} />
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             {stage.kind === 'change' && (
@@ -394,6 +479,8 @@ function endedBy(
     case 'not-your-action':
     case 'not-a-person':
     case 'extension-risk':
+    case 'stale-sign-in':
+    case 'stale-page':
     case 'offline':
       return { kind: 'ended', message: failure.message };
     case 'no-password':
@@ -406,127 +493,6 @@ function endedBy(
     default:
       return null;
   }
-}
-
-function EndedBody({ message, onClose }: { message: string; onClose: () => void }) {
-  return (
-    <div className="space-y-4">
-      <p role="status" className="text-sm">
-        {message}
-      </p>
-      <Button type="button" className="h-11 w-full sm:h-9" onClick={onClose} autoFocus>
-        Close
-      </Button>
-    </div>
-  );
-}
-
-/** One line for a mini app that keeps confirming off (PM, DOR-3234 Must 3). */
-function extensionRiskLine(risk: StepUpExtensionRisk): string {
-  return risk.reason === 'agent-folder'
-    ? `Confirming is off while ${risk.name} can be edited by ${risk.agentName ?? 'an agent'}.`
-    : `Confirming is off while ${risk.name} has changed since you approved it.`;
-}
-
-/**
- * The sheet while a loaded mini app keeps confirming off: no password field,
- * one line per mini app, and the way to fix it in Settings → Extensions.
- */
-function ExtensionRiskBody({
-  risks,
-  onClose,
-  onSignInAgain,
-}: {
-  risks: readonly StepUpExtensionRisk[];
-  onClose: () => void;
-  onSignInAgain: () => void;
-}) {
-  const settings = useSettingsDeepLink();
-  // None loaded now, but one ran since this sign-in (M1 on #3401): sign in again.
-  if (risks.length === 0) {
-    return (
-      <div className="space-y-4">
-        <p role="status" className="text-sm">
-          A mini app has run since you signed in. Sign in again to confirm.
-        </p>
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-11 w-full sm:h-9 sm:w-auto"
-            onClick={onClose}
-          >
-            Close
-          </Button>
-          <Button
-            type="button"
-            className="h-11 w-full sm:h-9 sm:w-auto"
-            autoFocus
-            onClick={onSignInAgain}
-          >
-            Sign in again
-          </Button>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="space-y-4">
-      <div role="status" className="space-y-1 text-sm">
-        {risks.map((risk) => (
-          <p key={risk.id}>{extensionRiskLine(risk)}</p>
-        ))}
-      </div>
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-11 w-full sm:h-9 sm:w-auto"
-          onClick={onClose}
-        >
-          Close
-        </Button>
-        <Button
-          type="button"
-          className="h-11 w-full sm:h-9 sm:w-auto"
-          autoFocus
-          onClick={() => {
-            onClose();
-            settings.open('extensions');
-          }}
-        >
-          How to fix
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function NoPasswordBody({ onClose, remote }: { onClose: () => void; remote?: boolean }) {
-  return (
-    <div className="space-y-4">
-      <p role="status" className="text-sm">
-        This computer has no DorkOS password yet.
-      </p>
-      {remote ? (
-        <p role="status" className="text-sm">
-          Set one on the computer running DorkOS.
-        </p>
-      ) : (
-        <p className="text-sm">
-          Set one in a terminal here:{' '}
-          <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
-            {RESET_PASSWORD_COMMAND}
-          </code>
-        </p>
-      )}
-      <div className="flex gap-2">
-        <Button type="button" className="flex-1" onClick={onClose} autoFocus>
-          Close
-        </Button>
-      </div>
-    </div>
-  );
 }
 
 /** What went wrong, in the person's words. */

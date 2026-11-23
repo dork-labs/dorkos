@@ -14,6 +14,8 @@ Types and schemas only — no host logic. The runtime that loads, compiles, and 
 | `.` → `ExtensionManifest`, `ExtensionAPI`, `ExtensionRecord`, `ExtensionStatus`, `ExtensionModule`, … | The types an extension author writes against                |
 | `.` → `pageBadgeProblem`, `copyPageBadge`, `PAGE_BADGE_STATUSES`, `ExtensionPageBadge`                | The check and shape behind `api.setPageBadge`               |
 | `./server` → `SecretStore`, `SettingsStore`, `DataProviderContext`, `ServerExtensionRegister`         | Server-side extension contracts (the host implements these) |
+| `./manifest` → `ExtensionManifestSchema`, `SettingDeclarationSchema`, …                               | The manifest schema module on its own                       |
+| `./tool-check` → `checkDeclaredTools`, `checkContributionShape`, `checkToolInputSchema`               | Pure checks on the agent tools an extension declares        |
 
 ## Usage
 

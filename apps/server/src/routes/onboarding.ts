@@ -17,7 +17,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { MeshCore } from '@dorkos/mesh';
 import { FirstRunRequestSchema } from '@dorkos/shared/onboarding-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { resolveDorkHome } from '../lib/dork-home.js';

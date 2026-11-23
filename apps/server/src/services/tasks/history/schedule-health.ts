@@ -6,7 +6,7 @@
  * @module services/tasks/history/schedule-health
  */
 import { readRefusedToolsColumn } from './run-cap-column.js';
-import { asc, desc, inArray } from 'drizzle-orm';
+import { asc, desc, inArray, sql } from 'drizzle-orm';
 import { pulseRuns, pulseSchedules, type Db } from '@dorkos/db';
 import type { TaskFailureReason, TaskHealth } from '@dorkos/shared/types';
 import { isSleptDuringRunError } from '@dorkos/shared/schedule-notice-copy';
@@ -179,7 +179,9 @@ export function scheduleHealth(db: Db): Map<string, TaskHealth> {
     })
     .from(pulseRuns)
     .where(inArray(pulseRuns.status, [...FINISHED_STATUSES]))
-    .orderBy(asc(pulseRuns.scheduleId), desc(pulseRuns.startedAt), desc(pulseRuns.id))
+    // Runs can start in the same millisecond. Their ULIDs have random suffixes,
+    // so use insertion order to decide which run started the latest streak.
+    .orderBy(asc(pulseRuns.scheduleId), desc(pulseRuns.startedAt), sql`rowid DESC`)
     .all();
   const bySchedule = new Map<string, FinishedRun[]>();
   for (const row of rows) {

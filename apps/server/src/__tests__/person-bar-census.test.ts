@@ -71,7 +71,8 @@ const ROUTE_BARS: Record<string, readonly string[]> = {
   'routes/connector-resources.ts': ['resolveConnectorOperator'],
   'routes/extensions-rooms-bar.ts': ['personSessionRequired'],
   'routes/room-caller.ts': ['PERSON_SESSION_REQUIRED'],
-  'routes/sessions.ts': ['httpLaunchOf', 'askForPersonBeforeChat', 'personOnlyModeChange'],
+  'routes/session-send-message.ts': ['httpLaunchOf', 'askForPersonBeforeChat'],
+  'routes/session-settings-patch.ts': ['personOnlyModeChange'],
   // The chat route's person question moved here with the launch rule (DOR-3644).
   'routes/session-launcher.ts': ['isPersonTurn'],
   'http/hono-api.ts': ['askForPersonBeforeTaskWrite'],

@@ -86,13 +86,7 @@ function hasGreetableContent(message: ChatMessage): boolean {
 export interface UseAutoKickoffParams {
   /** The active session id, or null. */
   sessionId: string | null;
-  /**
-   * The session's working directory. Lets a fresh session CLAIM an unfired
-   * birth registered for its agent directory but never visited under its
-   * original id — the create-without-navigate path (e.g. onboarding advances
-   * instead of opening a session; the hello then lands on the agent's real
-   * first session).
-   */
+  /** The displayed directory. The greeting sends to the birth record's own directory. */
   cwd: string | null;
   /** The coarse rendered status — the kickoff only fires into an `idle` session. */
   status: ChatStatus;
@@ -154,17 +148,7 @@ export function useAutoKickoff({
   const hasLandedContent = messages.some(hasGreetableContent);
 
   useEffect(() => {
-    if (!sessionId) return;
-    if (!record) {
-      // No birth under this session id — a fresh, idle, empty session may
-      // claim an unfired birth registered for its directory (the create path
-      // that never navigated). The claim re-keys the record to this session;
-      // the store update re-runs this effect, which then fires normally.
-      if (cwd && messageCount === 0 && status === 'idle') {
-        useAgentBirthStore.getState().claimByPath(cwd, sessionId);
-      }
-      return;
-    }
+    if (!sessionId || !record) return;
     if (record.fired || firedKickoffs.has(sessionId)) return;
     if (!canStart) return;
     // Only open a truly fresh session. A session that already has content or a

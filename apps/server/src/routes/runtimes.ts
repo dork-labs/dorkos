@@ -72,7 +72,7 @@ import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/cal
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { respondWithSignInLanding } from '../http/sign-in-landing-response.js';
 import type { SignInFailureReason } from '@dorkos/shared/sign-in-landing';

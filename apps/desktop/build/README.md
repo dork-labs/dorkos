@@ -29,11 +29,11 @@
   background" below, and never edit the `.tiff` by hand.
 - `entitlements.mac.plist` — hardened-runtime entitlements for signing.
 
-`icon.svg` has consumers outside this directory too. The web cockpit's PWA
+`icon.svg` has consumers outside this directory too. The web app's PWA
 icons (`apps/client/public/icon-192.png`, `icon-512.png`,
 `maskable-icon-512.png`, `apple-touch-icon.png`) are rendered from the same
 glyph, so the "Add to Home Screen" mark on a phone matches the desktop app
-icon. See "Regenerating the cockpit PWA icons" below. `dmg-background.tiff`
+icon. See "Regenerating the web app PWA icons" below. `dmg-background.tiff`
 reads it as well, for the small mark in the installer window's corner. Both
 read the `<path>` out of `icon.svg` at generation time rather than copying it,
 so neither can drift from the app icon by hand.
@@ -146,7 +146,7 @@ drift apart. Two things worth knowing before you change the art:
 Commit the regenerated `dmg-background.tiff`. A test regenerates it and
 compares byte for byte, so a stale commit fails rather than shipping quietly.
 
-## Regenerating the cockpit PWA icons
+## Regenerating the web app PWA icons
 
 Not a bash recipe here — the logic lives in
 `apps/client/scripts/generate-pwa-icons.ts` (same `rsvg-convert` dependency

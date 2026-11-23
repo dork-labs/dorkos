@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { parseAppSearch } from '../../../client/src/layers/shared/lib/router-search';
 import { test, expect } from '../../fixtures';
 import { ChatPage } from '../../pages/ChatPage';
+import { openFromCommandPalette } from '../../pages/command-palette';
 
 /** Exercises the real app/server launch contract on the free scripted runtime. */
 test.use({ video: 'on' });
@@ -28,6 +30,96 @@ test.describe('Private session routes @smoke', () => {
 
   test.afterEach(async ({ request }) => {
     await request.post('/api/test/reset');
+  });
+
+  test('New chat keeps its saved-folder acknowledgement through settings, send, and reload', async ({
+    page,
+    request,
+  }) => {
+    const location = await request.post('/api/session-locations', { data: { cwd: agentDir } });
+    expect(location.ok()).toBe(true);
+    const { id: launchRef } = (await location.json()) as { id: string };
+    // An existing draft link selects the folder before the separate New chat action.
+    const previousId = randomUUID();
+    await page.goto(`/session?session=${previousId}&draft=1&launchRef=${launchRef}`);
+    const chat = new ChatPage(page);
+    await expect(chat.input).toBeEditable();
+
+    const writes: string[] = [];
+    page.on('request', (observed) => {
+      const path = new URL(observed.url()).pathname;
+      const method = observed.method();
+      if (
+        (method === 'POST' && /^\/api\/session-locations(?:\/[^/]+)?\/chats$/.test(path)) ||
+        (method === 'PATCH' && /^\/api\/sessions\/[^/]+$/.test(path)) ||
+        (method === 'POST' && /^\/api\/sessions\/[^/]+\/messages$/.test(path))
+      ) {
+        writes.push(`${method} ${path}`);
+      }
+    });
+    const waitForWrite = (method: 'POST' | 'PATCH', path: string) =>
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === method && new URL(response.url()).pathname === path
+      );
+
+    const allocationPath = `/api/session-locations/${launchRef}/chats`;
+    const [allocation] = await Promise.all([
+      waitForWrite('POST', allocationPath),
+      openFromCommandPalette(page, 'New chat'),
+    ]);
+    expect(allocation.status()).toBe(201);
+    expect(allocation.request().postDataJSON()).toEqual({});
+    const receipt = (await allocation.json()) as { sessionId: string; launchRef: string };
+    const { sessionId } = receipt;
+    expect(receipt.launchRef).toBe(launchRef);
+    expect(sessionId).not.toBe(previousId);
+    await expect
+      .poll(() => parseAppSearch(new URL(page.url()).search))
+      .toMatchObject({ session: sessionId, draft: '1', launchRef });
+    expect(writes).toEqual([`POST ${allocationPath}`]);
+
+    const settingsPath = `/api/sessions/${sessionId}`;
+    const settingsBefore = await request.get(`${settingsPath}/settings`);
+    expect(settingsBefore.ok()).toBe(true);
+    expect(await settingsBefore.json()).toEqual({ settings: null });
+
+    await page.getByRole('button', { name: /^Permissions:/ }).click();
+    const picker = page.locator('[aria-label="Permissions"]');
+    const [saved] = await Promise.all([
+      waitForWrite('PATCH', settingsPath),
+      picker.getByRole('radio', { name: 'Ask first' }).click(),
+    ]);
+    expect(saved.ok()).toBe(true);
+    expect(saved.request().postDataJSON()).toMatchObject({ permissionMode: 'always-deny' });
+    await page.keyboard.press('Escape');
+    await expect(picker).toBeHidden();
+    const stored = await request.get(`${settingsPath}/settings`);
+    expect(stored.ok()).toBe(true);
+    expect(await stored.json()).toMatchObject({ settings: { permissionMode: 'always-deny' } });
+
+    const prompt = 'Keep this new chat in its saved folder';
+    const sendPath = `${settingsPath}/messages`;
+    const [sent] = await Promise.all([waitForWrite('POST', sendPath), chat.sendAndLand(prompt)]);
+    expect(sent.status()).toBe(202);
+    expect(sent.request().postDataJSON()).toMatchObject({ content: prompt, create: true });
+    expect(await sent.json()).toMatchObject({ sessionId });
+    await chat.waitForTurnToEnd();
+    await expect.poll(() => new URL(page.url()).searchParams.get('draft')).toBe(null);
+
+    await page.reload();
+    const answer = await chat.lastAssistantMessage();
+    await expect(answer.getByText(`Echo: ${prompt}`, { exact: true })).toBeVisible();
+    expect(new URL(page.url()).searchParams.get('session')).toBe(sessionId);
+    const detail = await request.get(settingsPath);
+    expect(detail.ok()).toBe(true);
+    expect(await detail.json()).toMatchObject({
+      id: sessionId,
+      cwd: agentDir,
+      runtime: 'test-mode',
+      permissionMode: 'always-deny',
+    });
+    expect(writes).toEqual([`POST ${allocationPath}`, `PATCH ${settingsPath}`, `POST ${sendPath}`]);
   });
 
   test('a portable draft survives reload, starts on its chosen runtime, and reopens by ID', async ({

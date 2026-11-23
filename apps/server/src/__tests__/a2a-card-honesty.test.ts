@@ -53,7 +53,7 @@ vi.mock('../services/core/auth/mcp-local-token.js', () => ({
 
 import { createA2aRoutes } from '../routes/a2a.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { parseRequestBody } from '../http/request-body.js';
+import { apiRequestBody } from '../http/request-body.js';
 import { env } from '../env.js';
 import { configManager } from '../services/core/config-manager.js';
 import { verifyRequestAuth } from '../services/core/auth/index.js';
@@ -100,7 +100,7 @@ function mockConfig(opts: { authEnabled?: boolean } = {}): void {
  */
 function buildApp(): RequestListener {
   const app = new Hono<ApiEnv>();
-  app.use(parseRequestBody());
+  app.use(apiRequestBody());
   app.route(
     '/',
     createA2aRoutes({

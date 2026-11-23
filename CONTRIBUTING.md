@@ -8,7 +8,7 @@ DorkOS is a workspace for people and agents, where a founder runs their business
 
 Before you begin, ensure you have:
 
-- **Node.js 22+**
+- **Node.js 22.22.3 or later**
 - **pnpm 10+**
 - **An authenticated Claude Code** — run `claude auth login` (see below before reaching for an API key)
 
@@ -34,34 +34,43 @@ The client will be available at `http://localhost:6241` and the server at `http:
 
 ## Monorepo Structure
 
-This is a Turborepo monorepo with five apps and nineteen shared packages:
+This is a Turborepo monorepo:
 
-| Directory                    | Package                     | Description                                          |
-| ---------------------------- | --------------------------- | ---------------------------------------------------- |
-| `apps/client`                | `@dorkos/client`            | React 19 SPA (Vite 6, Tailwind 4, shadcn/ui)         |
-| `apps/server`                | `@dorkos/server`            | Express 5 API server                                 |
-| `apps/site`                  | `@dorkos/site`              | Marketing site & docs (Next.js 16, Fumadocs)         |
-| `apps/desktop`               | `@dorkos/desktop`           | Electron shell (macOS, Windows alpha)                |
-| `apps/e2e`                   | `@dorkos/e2e`               | Playwright browser tests                             |
-| `packages/cli`               | `dorkos`                    | Publishable npm CLI                                  |
-| `packages/shared`            | `@dorkos/shared`            | Zod schemas, shared types, port interfaces           |
-| `packages/db`                | `@dorkos/db`                | Drizzle ORM schemas (SQLite)                         |
-| `packages/relay`             | `@dorkos/relay`             | Inter-agent message bus                              |
-| `packages/mesh`              | `@dorkos/mesh`              | Agent discovery & registry                           |
-| `packages/harness`           | `@dorkos/harness`           | Projects skills, commands & hooks to every agent CLI |
-| `packages/memory`            | `@dorkos/memory`            | Agent memory engine behind the `MemoryProvider` port |
-| `packages/decisions`         | `@dorkos/decisions`         | Decision bridges and ladder behind `DecisionModel`   |
-| `packages/keep-awake`        | `@dorkos/keep-awake`        | Holds the computer awake while agents work           |
-| `packages/skills`            | `@dorkos/skills`            | `SKILL.md` schemas, parser, writer, scanner          |
-| `packages/operating-skills`  | `@dorkos/operating-skills`  | First-party skills that teach agents to run DorkOS   |
-| `packages/marketplace`       | `@dorkos/marketplace`       | Package schemas, parser, validator, scaffolder       |
-| `packages/a2a-gateway`       | `@dorkos/a2a-gateway`       | A2A protocol gateway                                 |
-| `packages/extension-api`     | `@dorkos/extension-api`     | Public API contract for extension authors            |
-| `packages/icons`             | `@dorkos/icons`             | SVG icon & logo registry                             |
-| `packages/evals`             | `@dorkos/evals`             | Headless outcome-oracle eval harness                 |
-| `packages/test-utils`        | `@dorkos/test-utils`        | Mock factories, test helpers, conformance suites     |
-| `packages/eslint-config`     | `@dorkos/eslint-config`     | Shared ESLint flat configs                           |
-| `packages/typescript-config` | `@dorkos/typescript-config` | Shared tsconfig presets                              |
+| Directory                      | Package                          | Description                                          |
+| ------------------------------ | -------------------------------- | ---------------------------------------------------- |
+| `apps/client`                  | `@dorkos/client`                 | React 19 SPA (Vite 6, Tailwind 4, shadcn/ui)         |
+| `apps/server`                  | `@dorkos/server`                 | Hono API server on Node                              |
+| `apps/site`                    | `@dorkos/site`                   | Marketing site & docs (Next.js 16, Fumadocs)         |
+| `apps/desktop`                 | `@dorkos/desktop`                | Electron shell (macOS, Windows alpha)                |
+| `apps/e2e`                     | `@dorkos/e2e`                    | Playwright browser tests                             |
+| `apps/space`                   | `@dorkos/community`              | The space server's image, migrations and test tiers  |
+| `apps/design-system`           | `@dorkos/design-system`          | Standalone shared UI catalog                         |
+| `packages/cli`                 | `dorkos`                         | Publishable npm CLI                                  |
+| `packages/shared`              | `@dorkos/shared`                 | Zod schemas, shared types, port interfaces           |
+| `packages/db`                  | `@dorkos/db`                     | Drizzle ORM schemas (SQLite)                         |
+| `packages/relay`               | `@dorkos/relay`                  | Inter-agent message bus                              |
+| `packages/mesh`                | `@dorkos/mesh`                   | Agent discovery & registry                           |
+| `packages/harness`             | `@dorkos/harness`                | Projects skills, commands & hooks to every agent CLI |
+| `packages/memory`              | `@dorkos/memory`                 | Agent memory engine behind the `MemoryProvider` port |
+| `packages/decisions`           | `@dorkos/decisions`              | Decision bridges and ladder behind `DecisionModel`   |
+| `packages/keep-awake`          | `@dorkos/keep-awake`             | Holds the computer awake while agents work           |
+| `packages/skills`              | `@dorkos/skills`                 | `SKILL.md` schemas, parser, writer, scanner          |
+| `packages/operating-skills`    | `@dorkos/operating-skills`       | First-party skills that teach agents to run DorkOS   |
+| `packages/marketplace`         | `@dorkos/marketplace`            | Package schemas, parser, validator, scaffolder       |
+| `packages/a2a-gateway`         | `@dorkos/a2a-gateway`            | A2A protocol gateway                                 |
+| `packages/extension-api`       | `@dorkos/extension-api`          | Public API contract for extension authors            |
+| `packages/icons`               | `@dorkos/icons`                  | SVG icon & logo registry                             |
+| `packages/evals`               | `@dorkos/evals`                  | Headless outcome-oracle eval harness                 |
+| `packages/doe`                 | `@dorkos/doe`                    | DorkOS's own agent engine                            |
+| `packages/browser`             | `@dorkos/browser`                | Managed-browser engine contracts and validation      |
+| `packages/connector-providers` | `@dork-labs/connector-providers` | Confined external connector SDK adapters             |
+| `packages/cloud-api`           | `@dork-labs/cloud-api`           | Public wire contract for DorkOS Cloud                |
+| `packages/ui`                  | `@dork-labs/ui`                  | Portable UI primitives and theme CSS                 |
+| `packages/ci-steward`          | `@dorkos/ci-steward`             | CI Steward engine: census, ledger, verdicts          |
+| `packages/heavy-slot`          | `@dorkos/heavy-slot`             | Holds a heavy-run slot for bare turbo tasks          |
+| `packages/test-utils`          | `@dorkos/test-utils`             | Mock factories, test helpers, conformance suites     |
+| `packages/eslint-config`       | `@dorkos/eslint-config`          | Shared ESLint flat configs                           |
+| `packages/typescript-config`   | `@dorkos/typescript-config`      | Shared tsconfig presets                              |
 
 ## Development Commands
 
@@ -100,7 +109,7 @@ pnpm vitest run apps/server/src/services/session/__tests__/aggregate-session-lis
 
 DorkOS uses a **hexagonal architecture** with a `Transport` interface that decouples the React client from its backend. The shipping implementation is:
 
-- **`HttpTransport`** — Browser, phone web app, and desktop renderer (HTTP and streams to Express)
+- **`HttpTransport`** — Browser, phone web app, and desktop renderer (HTTP and streams to the Hono server)
 
 Transport is injected via React Context (`TransportContext`). For deeper details, see [contributing/architecture.md](contributing/architecture.md).
 
@@ -198,7 +207,7 @@ pnpm smoke:integration   # Full integration test (starts server, validates API +
 pnpm smoke:npm           # Integration test against published npm package
 ```
 
-The CI workflow (`.github/workflows/cli-smoke-test.yml`) runs on every push to `main`, and on pull requests that touch what the tarball bundles: `packages/cli`, `packages/shared`, `apps/server`, `apps/client`, `Dockerfile`, `.dockerignore`, `scripts/smoke-test.sh`, `pnpm-lock.yaml`, and the workflow file itself. It uses bare Ubuntu runners (Node 22/24 matrix), an isolated Docker smoke test, and a full integration test that starts the server and validates API endpoints and client SPA serving.
+The CI workflow (`.github/workflows/cli-smoke-test.yml`) runs on every push to `main`, and on pull requests that touch what the tarball bundles: `packages/cli`, `apps/server`, `apps/client` and every workspace package they depend on, plus `Dockerfile`, `.dockerignore`, `docker/seccomp`, the smoke scripts, `pnpm-lock.yaml`, and the workflow file itself. It uses bare Ubuntu runners (Node 22/24 matrix for the install smoke test), an isolated Docker smoke test, and a full integration test that starts the server and validates API endpoints and client SPA serving.
 
 For the full target/install-mode model and troubleshooting, see [contributing/docker-testing.md](contributing/docker-testing.md).
 
@@ -216,7 +225,7 @@ docker build --build-arg INSTALL_MODE=npm -t dorkos .
 docker run --rm -p 4242:4242 -e ANTHROPIC_API_KEY=your-key dorkos
 ```
 
-Pass `--port` to use a custom port: `docker run --rm -p 8080:8080 dorkos --port 8080`
+Set `DORKOS_PORT` to use a custom port, which also moves the image's health check: `docker run --rm -p 8080:8080 -e DORKOS_PORT=8080 dorkos`
 
 For more testing patterns, see [.claude/rules/testing.md](.claude/rules/testing.md).
 
@@ -260,10 +269,10 @@ patterns and exceptions, and `packages/eslint-config/base.js` for the enforced r
 2. **Create a feature branch** (`git checkout -b feat/my-feature`)
 3. **Make your changes**
 4. **Add a changelog fragment** in `changelog/unreleased/` — see [changelog/README.md](changelog/README.md). Docs-only changes skip this with the `skip-changelog` label
-5. **Run the checks** (`pnpm verify` covers typecheck, lint, and the affected tests; `pnpm format` fixes formatting)
-6. **Open a pull request** with a clear description of your changes
+5. **Run the checks**: `pnpm verify:preopen` on your final commit with a clean tree before you open the PR (`pnpm verify` adds the affected tests, and is required when you touch `.github/`; `pnpm format` fixes formatting)
+6. **Open a pull request** with a clear description of your changes. Maintainers and agents working in this repo open theirs with `scripts/open-pr.sh`, which sets the review and changelog labels for you
 
-Nothing is pushed straight to `main` — it is branch-protected, and every change lands through a pull request and the merge queue. The queue builds your branch on top of `main` plus whatever is ahead of it and runs the required checks against that combined tree, so a branch that has fallen behind `main` is fine and does not need updating.
+Nothing is pushed straight to `main`: repository rules refuse direct pushes, and every change lands through a pull request and the merge queue. The merge queue does the merging; nobody merges a PR by hand. The queue builds your branch on top of `main` plus whatever is ahead of it and runs the required checks against that combined tree, so a branch that has fallen behind `main` is fine and does not need updating.
 
 ## Commit Conventions
 
@@ -297,7 +306,7 @@ When adding features, update relevant documentation:
 
 ## Code of Conduct
 
-We are committed to providing a welcoming and inclusive experience for all contributors. A formal Code of Conduct will be adopted soon. In the meantime, please:
+We are committed to providing a welcoming and inclusive experience for all contributors. Our [Code of Conduct](CODE_OF_CONDUCT.md) is a draft awaiting approval. In the meantime, please:
 
 - Be respectful and considerate
 - Welcome newcomers and help them get started
@@ -307,8 +316,7 @@ We are committed to providing a welcoming and inclusive experience for all contr
 ## Need Help?
 
 - **Documentation**: Start with [AGENTS.md](AGENTS.md) and [contributing/](contributing/)
-- **Issues**: Check existing issues or open a new one
-- **Discussions**: Start a discussion for questions or ideas
+- **Issues**: Check existing issues or open a new one, for questions and ideas too
 
 ## License
 

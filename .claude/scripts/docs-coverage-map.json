@@ -63,7 +63,7 @@
     },
     {
       "guide": "system-architecture.md",
-      "description": "Deployment boundaries, protocols, ports, Projects/extensions, account eligibility, main request admission, Spaces recovery, Cloud and marketplace; diagrams",
+      "description": "Deployment boundaries, server roles, protocols, ports, Projects/extensions, account eligibility, main request admission, Spaces recovery, heartbeats and the audit record, Cloud and marketplace; diagrams",
       "patterns": [
         "apps/server/src/services/projects/",
         "apps/server/src/services/extensions/",
@@ -72,6 +72,18 @@
         "specs/central-workspace-disposal/",
         "specs/managed-remote-app-consumer/",
         "apps/space/",
+        "apps/server/src/services/spaces/",
+        "apps/server/src/services/heartbeats/",
+        "apps/server/src/services/decisions/",
+        "apps/server/src/services/audit/",
+        "apps/server/src/services/computers/",
+        "apps/server/src/services/core/hub/",
+        "apps/server/src/services/core/hub-relay/",
+        "apps/server/src/services/core/session-relay/",
+        "apps/server/src/services/core/remote/",
+        "apps/server/src/services/core/agent-computer/",
+        "apps/server/src/lib/server-role",
+        "apps/server/src/lib/request-classifier",
         "apps/site/src/lib/cloud-accounts/",
         "apps/site/src/proxy",
         "packages/cloud-api/",
@@ -582,7 +594,7 @@
     },
     {
       "guide": "ci.md",
-      "description": "The CI pipeline for agents: required checks (ruleset only), local ratchets, sharding, the merge queue, merge-tail, the admin-merge guard, and CI Steward (ledger, census, deadlock invariant, fence)",
+      "description": "The CI pipeline for agents: required checks (ruleset only), local ratchets, sharding, the merge queue, arming (arm.sh, the queue doors), the admin-merge guard, and CI Steward (ledger, census, deadlock invariant, fence)",
       "patterns": [
         ".github/workflows/",
         "lefthook.yml",
@@ -594,6 +606,17 @@
         ".claude/hooks/merge-guard",
         ".claude/rules/ci-pipeline",
         "creating-pull-requests/"
+      ]
+    },
+    {
+      "guide": "paid-paths.md",
+      "description": "Every test, eval and server path that spends real money: its opt-in flag, its key, and why none can run from `pnpm test`, `pnpm verify`, pre-push or CI",
+      "patterns": [
+        "packages/evals/src/runner/credentials",
+        "paid-provider",
+        "scripts/harness-smoke/",
+        "credits-inference",
+        "test-community-deploy-live"
       ]
     }
   ],
@@ -888,7 +911,7 @@
     },
     {
       "doc": "docs/guides/agent-browser.mdx",
-      "description": "Live local browser: two choices, saved sign-ins, Pause, included Playwright, platform limits, and legacy CLI tools",
+      "description": "Agent browsers: one signed-out browser per agent, sharing your own browser, Pause, included Playwright, platform limits, and legacy CLI tools",
       "patterns": [
         "local-browser",
         "use-panel-views",
@@ -1284,7 +1307,7 @@
     },
     {
       "doc": "docs/guides/flow/turning-on-autonomy.mdx",
-      "description": "The three ways to let `/flow` reach a review gate on its own",
+      "description": "The ways to let `/flow` run on its own, and how much it does without asking",
       "patterns": [
         "contributing/flow-engine.md",
         "apps/e2e/tests/flow/"
@@ -1292,7 +1315,7 @@
     },
     {
       "doc": "docs/guides/flow/the-dials.mdx",
-      "description": "Every `/flow` config knob, its default, and when to turn it",
+      "description": "The common `/flow` settings, their defaults, and when to turn them",
       "patterns": [
         "contributing/flow-engine.md",
         "apps/e2e/tests/flow/"

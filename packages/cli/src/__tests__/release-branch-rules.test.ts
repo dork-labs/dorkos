@@ -336,6 +336,68 @@ describe('cherry-pick rule', () => {
       forbidden ? 'release-commit-forbidden-path' : 'non-release-file'
     );
   });
+  describe('the API document', () => {
+    const doc = (version: string, extra: Record<string, unknown> = {}) =>
+      JSON.stringify(
+        { openapi: '3.1.0', info: { title: 'Made-up API', version }, paths: {}, ...extra },
+        null,
+        2
+      );
+    const withDoc = (
+      before: string | undefined,
+      after: string | undefined,
+      status: 'M' | 'A' | 'D' = 'M'
+    ) =>
+      releaseCommit([
+        ...fullRelease.files,
+        { path: 'docs/api/openapi.json', status, before, after },
+      ]);
+    const codeOf = (commit: ReleaseBranchCommit) => checkReleaseCherryPicks(input([commit]))[0];
+
+    it('accepts a change of only info.version, to the release version', () => {
+      expect(checkReleaseCherryPicks(input([withDoc(doc('1.2.2'), doc('1.2.3'))]))).toEqual([]);
+    });
+    it.each([
+      ['a new path', doc('1.2.2'), doc('1.2.3', { paths: { '/api/x': {} } })],
+      ['a changed title', doc('1.2.2'), doc('1.2.3').replace('Made-up API', 'Other API')],
+      ['info.version for another release', doc('1.2.2'), doc('1.2.4')],
+      ['an unchanged info.version', doc('1.2.2'), doc('1.2.2', { paths: { '/api/x': {} } })],
+      ['a document that is not JSON', doc('1.2.2'), '{'],
+      // Text, not parsed JSON: the same document reformatted is still a change.
+      ['a reformatted document', doc('1.2.2'), JSON.stringify(JSON.parse(doc('1.2.3')))],
+      [
+        'a reordered document',
+        doc('1.2.2'),
+        JSON.stringify(
+          { info: { title: 'Made-up API', version: '1.2.3' }, openapi: '3.1.0', paths: {} },
+          null,
+          2
+        ),
+      ],
+      [
+        'a moved version field',
+        JSON.stringify(
+          { openapi: '3.1.0', x: { version: '1.2.2' }, info: { version: '1.2.2' } },
+          null,
+          2
+        ),
+        JSON.stringify(
+          { openapi: '3.1.0', x: { version: '1.2.3' }, info: { version: '1.2.2' } },
+          null,
+          2
+        ),
+      ],
+    ])('refuses %s', (_, before, after) => {
+      expect(codeOf(withDoc(before, after))).toMatchObject({
+        code: 'non-release-file',
+        detail: expect.stringContaining('docs/api/openapi.json'),
+      });
+    });
+    it('refuses adding or deleting it', () => {
+      expect(codeOf(withDoc(undefined, doc('1.2.3'), 'A'))?.code).toBe('non-release-file');
+      expect(codeOf(withDoc(doc('1.2.2'), undefined, 'D'))?.code).toBe('non-release-file');
+    });
+  });
   it('names every bad commit in one error', () => {
     const stray = { ...releaseCommit([{ path: 'x.ts', status: 'A' }]), sha: sha('3') };
     expect(() => assertReleaseCherryPicks(input([stray, pick({ patchId: sha('1') })]))).toThrow(

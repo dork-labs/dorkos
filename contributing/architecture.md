@@ -36,14 +36,13 @@ Transport
   stopTask(sessionId, taskId)         -> { success: boolean, taskId: string }
   interruptSession(sessionId)         -> { ok: boolean }
   getTasks(sessionId, cwd?)           -> { tasks: TaskItem[] }
-  getLastMessageIds(sessionId)        -> { user: string, assistant: string } | null
 
   -- Server / Config --
   health()                   -> HealthResponse
   getConfig()                -> ServerConfig
   updateConfig(patch)        -> void
-  getModels()                -> ModelOption[]
-  getSubagents()             -> SubagentInfo[]
+  getModels(opts?)           -> ModelOption[]          # opts: { sessionId?, runtime?, account?, cwd? }
+  getSubagents(opts?)        -> SubagentInfo[]         # opts: { sessionId? }
   getCapabilities()          -> { capabilities: Record<string, RuntimeCapabilities>, defaultRuntime: string }
   startTunnel()              -> { url: string }
   stopTunnel()               -> void
@@ -212,7 +211,7 @@ See [Agent UI Control](#agent-ui-control) for the bidirectional UI-command patte
 
 ## Tabbed Dialog Primitive (`TabbedDialog`)
 
-`apps/client/src/layers/shared/ui/tabbed-dialog.tsx` is the high-level primitive for any sidebar-tabbed dialog in DorkOS. It owns the responsive sidebar, mobile drill-in behavior, animated active-tab pill, deep-link sync via `useDialogTabState`, and extension-slot merging. Both `SettingsDialog` and `AgentDialog` consume it as thin declarative wrappers around a `tabs[]` array.
+`apps/client/src/layers/shared/ui/tabbed-dialog.tsx` is the high-level primitive for any sidebar-tabbed dialog in DorkOS. It owns the responsive sidebar, mobile drill-in behavior, animated active-tab pill, deep-link sync via `useDialogTabState`, and extension-slot merging. `SettingsDialog` consumes it as a thin declarative wrapper around a `tabs[]` array.
 
 **Reach for `TabbedDialog` when you need:**
 
@@ -232,11 +231,14 @@ For the underlying state-sync hook, see `useDialogTabState` in `shared/model/` (
 
 ## Dialog deep linking via URL search params
 
-DorkOS dialogs (Settings, Agent, Tasks, Relay, Mesh) are URL-addressable via search params on every route. The `dialogSearchSchema` is merged into each route's `validateSearch` schema; consumers use the per-dialog hooks in `@/layers/shared/model`:
+DorkOS dialogs (Settings, Tasks) and the profile panel are URL-addressable via search params on every route. The `dialogSearchSchema` (`shared/model/dialog-search-schema.ts`) is merged into each route's `validateSearch` schema; consumers use the per-dialog hooks in `@/layers/shared/model` (`use-dialog-deep-link.ts`):
 
-- `useSettingsDeepLink()` — Settings dialog with tab + sub-section deep links
-- `useAgentDialogDeepLink()` + `useOpenAgentDialog()` — Agent dialog with `agentPath`
-- `useTasksDeepLink()` / `useRelayDeepLink()` / `useMeshDeepLink()` — parameterless dialogs
+- `useSettingsDeepLink()`: Settings dialog with tab + sub-section deep links (`?settings=`, `?settingsSection=`)
+- `useTasksDeepLink()`: the parameterless Tasks dialog (`?tasks=open`)
+- `useProfileDeepLink()`: a member's profile (`?profile=<roster id>`, with `?profilePage=` and `?profileRow=`)
+- `useOpenConnections()`: navigates to the Connections page (optionally `?app=<id>`). It replaced the old `?relay=open` dialog; Connections is a page, not a dialog
+
+The old Agent dialog params (`agent`, `agentPath`, `profileRef`, `hubTab`) are still parsed only so `useLegacyProfileLinkRedirect` (`features/profile`) can rewrite an old bookmark; nothing writes them.
 
 `RegistryDialog` reads BOTH the URL signal and the existing store flag (`storeOpen || urlSignal.isOpen`) so legacy store-based opens continue to work. Closing the dialog clears both signals. Use the URL hooks for any new cross-page open.
 
@@ -316,7 +318,7 @@ All types defined in `packages/shared/src/schemas.ts`, re-exported from `package
 
 ## Runtime Registry
 
-DorkOS abstracts agent backends behind the `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`). Routes and services interact with every backend through this one contract; three production runtimes implement it — **Claude Code** (default), **Codex**, and **OpenCode** — plus the deterministic **test-mode** runtime for e2e.
+DorkOS abstracts agent backends behind the `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`). Routes and services interact with every backend through this one contract; four production runtimes implement it: **Claude Code** (default), **Codex**, **OpenCode** and **Doe** (DorkOS's own engine from `packages/doe`, shown in the app as "Runs on: DorkOS"), plus the deterministic **test-mode** runtime for e2e. A default-off experiment, `computer-local` (OpenCode inside a Lima VM), lives in `services/computers/` rather than here.
 
 ### Adapter Lineup
 
@@ -325,16 +327,19 @@ Each adapter lives in its own directory under `apps/server/src/services/runtimes
 ```
 services/runtimes/
 ├── claude-code/   # @anthropic-ai/claude-agent-sdk — default runtime (JSONL transcripts, MCP tools, plugins)
-├── codex/         # @openai/codex-sdk — SDK-thread adapter (ADR-0309)
+├── codex/         # one supervised `codex app-server` process per Codex home (ADR 261005-113107)
 ├── opencode/      # @opencode-ai/sdk — managed `opencode serve` sidecar (ADR-0308)
+├── doe/           # @dorkos/doe: DorkOS's own engine, no idle process
 └── test-mode/     # scripted scenario runtime for e2e (DORKOS_TEST_RUNTIME)
 ```
 
-**Codex — the SDK-thread model (ADR-0309).** One DorkOS session maps to one Codex thread. The sessionId↔threadId map is durable adapter-owned state (`codex_threads` table via `CodexThreadMap`, first-write-wins); `sendMessage` drives the SDK's `runStreamed()`, and `event-mapper.ts` converts thread events to `StreamEvent`s. Codex has no interactive approval channel (`supportsToolApproval: false`) — permission posture is upfront sandbox selection instead, with the shared permission-mode ids mapping onto sandbox levels (`default` → read-only, `acceptEdits` → workspace-write, `bypassPermissions` → full access). The SDK cannot enumerate past threads, so after a server restart earlier Codex sessions drop out of `listSessions` (resume of known sessions still works via the thread map).
+**Codex: one app-server process per home (ADR 261005-113107, which supersedes ADR-0309).** Turns reach Codex through `codex app-server` (JSON-RPC over stdio). `app-server/process-pool.ts` keeps one supervised child per (binary, `CODEX_HOME`, environment fingerprint), in practice the person's Codex home and the credits home: spawned lazily, restarted with backoff, idle-reaped only when nothing (an open turn, a pending request, a background terminal) still holds it. `transport/codex-transport.ts` is the seam between `CodexRuntime` and the process; `app-server/json-rpc-client.ts` speaks the protocol and `app-server/notification-mapper.ts` turns notifications into `StreamEvent`s. One DorkOS session maps to one Codex thread, and the map is durable adapter-owned state (`codex_threads` table via `CodexThreadMap`, first-write-wins). The app-server capabilities (`CODEX_APP_SERVER_CAPABILITIES` in `runtime-constants.ts`) declare real approvals, questions and steer (`supportsToolApproval`, `supportsQuestionPrompt`, `supportsSteer`); secrets never ride argv or the process environment. Sessions DorkOS created read history from its own event log; Codex threads started elsewhere (CLI, desktop) are discovered from Codex's native rollouts by `native-session-reader.ts`, so past sessions survive a restart.
+
+**Doe: DorkOS's own engine.** `services/runtimes/doe/` wraps `@dorkos/doe` (`DOE_CAPABILITIES`, `type: 'doe'`). It keeps no idle process (`supportsPersistentSession: false`): each turn runs a fresh facade against durable model records. It registers when `runtimes.doe.enabled` is on, with no inference configured until a person sets one up.
 
 **OpenCode — the sidecar model (ADR-0308).** One managed `opencode serve` process per DorkOS server (`server-manager.ts`): lazily spawned on first OpenCode use, bound to `127.0.0.1` with per-boot basic-auth credentials, health-checked with an exponential-backoff restart ladder, and torn down (SIGTERM → SIGKILL) in `shutdownServices()`. All I/O rides the SDK — OpenCode's own session store is opaque to DorkOS. A single global SSE subscription (`global-event-hub.ts`) fans events out per session (one subscription per runtime, not per session); `approvals.ts` forwards OpenCode permission requests through the standard tool-approval flow (answered `once`/`reject` only, never `always`, so OpenCode-side rule state cannot diverge from DorkOS). OpenCode is also the open-source-model path: its provider catalog (Ollama, any OpenAI-compatible endpoint) surfaces in the DorkOS model picker as `provider/model` options.
 
-Both new adapters register at the composition root (`apps/server/src/index.ts`), gated on `runtimes.codex.enabled` / `runtimes.opencode.enabled` config, and probe their external requirements (binary + auth) via `checkDependencies()` — surfaced through `GET /api/system/requirements` and the client's needs-setup flow. Every runtime must pass the shared conformance suite (`runtimeConformance(makeRuntime)` from `@dorkos/test-utils`). The full checklist for adding runtime #4 is `contributing/adding-a-runtime.md`.
+The non-default adapters register in `apps/server/src/startup/runtimes.ts`, gated on `runtimes.codex.enabled` / `runtimes.opencode.enabled` / `runtimes.doe.enabled` config, and probe their external requirements (binary + auth) via `checkDependencies()` — surfaced through `GET /api/system/requirements` and the client's needs-setup flow. Every runtime must pass the shared conformance suite (`runtimeConformance(makeRuntime)` from `@dorkos/test-utils`). The full checklist for adding another runtime is `contributing/adding-a-runtime.md`.
 
 ### AgentRuntime Interface
 
@@ -358,7 +363,7 @@ Each runtime declares static capability flags via `getCapabilities()`:
 
 | Field                       | Description                                                                                                                                                                              |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`                      | Runtime type identifier (`claude-code`, `codex`, `opencode`, `test-mode`)                                                                                                                |
+| `type`                      | Runtime type identifier (`claude-code`, `codex`, `opencode`, `doe`, `test-mode`)                                                                                                         |
 | `supportsToolApproval`      | Whether tool approval UI should be shown                                                                                                                                                 |
 | `supportsCostTracking`      | Whether dollar-cost tracking is available (gates the cost strip)                                                                                                                         |
 | `supportsResume`            | Whether sessions can be resumed                                                                                                                                                          |
@@ -370,7 +375,7 @@ Each runtime declares static capability flags via `getCapabilities()`:
 | `nativeContext`             | Context kinds the runtime injects natively (ADR-0273)                                                                                                                                    |
 | `features`                  | Open extension map for runtime-specific flags (ADR-0256)                                                                                                                                 |
 
-Capability-gated UI renders only what the active runtime declares — e.g. the cost strip is absent on Codex (`supportsCostTracking: false`, token usage only), and the permission picker shows Codex's sandbox levels rather than Claude's modes.
+Capability-gated UI renders only what the active runtime declares — e.g. the cost strip is absent on Codex (`supportsCostTracking: false`, token usage only), and the permission picker shows Codex's own modes rather than Claude's.
 
 ### RuntimeRegistry
 
@@ -379,7 +384,7 @@ Capability-gated UI renders only what the active runtime declares — e.g. the c
 Key methods:
 
 - `register(runtime)` — register or replace a runtime by its `type` string
-- `getDefault()` / `getDefaultType()` / `setDefault(type)` — the default runtime (claude-code unless changed). Shape-neutral: callers use only the `AgentRuntime` interface, so any registered runtime is a valid default. The relay's Claude Code adapter, which genuinely needs Claude-specific methods, binds the concrete claude-code runtime at the composition root instead (`relayAgentRuntime` in `index.ts`, passed as an `agentRuntimes` map keyed by the runtime's own `type`). The relay's binding subsystem prefers `getDefaultType()` when choosing where to create chat-originated sessions, but falls back — with a log — to the runtime the relay actually holds rather than disabling routing
+- `getDefault()` / `getDefaultType()` / `setDefault(type)` — the default runtime (claude-code unless changed). Shape-neutral: callers use only the `AgentRuntime` interface, so any registered runtime is a valid default. The relay's Claude Code adapter, which genuinely needs Claude-specific methods, binds the concrete claude-code runtime at the composition root instead (`relayAgentRuntime` from `startup/runtimes.ts`, passed as an `agentRuntimes` map keyed by the runtime's own `type`). The relay's binding subsystem prefers `getDefaultType()` when choosing where to create chat-originated sessions, but falls back — with a log — to the runtime the relay actually holds rather than disabling routing
 - `resolveForSession(sessionId)` — per-session dispatch: reads the session's immutable runtime binding from `session_metadata` (ADR-0255)
 - `persistSessionRuntime(sessionId, type, origin, agentPath?)` — records the binding when the session starts, **first-write-wins** (a session's runtime never changes after that). A row created earlier by a settings change carries no runtime, and this call claims it; a row that already names one is left alone. `origin` is a required, exhaustive `TurnOrigin` union (`services/session/origin/turn-origin.ts`, DOR-2105) naming what started the session — `interactive`, `room`, `schedule`, `relay-binding`, `agent-dm`, `connector-event`, `test-harness`. It is the only input to how much power the new row is seeded with, through the single `permissionSeedForOrigin` mapping, which answers `configured-stop` (seed on insert and on a claim — `interactive`), `configured-stop-on-insert` (seed only a row this write mints — a `room` nobody bridged) or `none` (everything else). A new turn-starting surface cannot compile until that switch handles it; the policies and the reason they differ are ADR `260919-010733`
 - `resolveForAgent(agentId, meshCore?)` — looks up the agent's manifest to determine which runtime to use, falling back to the default
@@ -409,16 +414,16 @@ A session that has not sent one yet has **no** runtime, and `session_metadata.ru
 
 ### Aggregated Session Listing (ADR-0310)
 
-Session history is **runtime-specific**: Claude Code reads JSONL transcripts, OpenCode reads its sidecar store, and Codex uses SDK threads plus DorkOS-owned persistence. The Codex SDK cannot list or read threads, so `codex_threads` preserves tracked bindings and metadata while a persisted event log supplies displayed history. There is no universal transcript store. `GET /api/sessions` and the global session-list stream aggregate instead:
+Session history is **runtime-specific**: Claude Code reads JSONL transcripts, OpenCode reads its sidecar store, Codex reads a DorkOS-owned event log for sessions created here and Codex's native rollouts for threads started elsewhere (with `codex_threads` keeping bindings and metadata), and Doe reads its own log-backed history. There is no universal transcript store. `GET /api/sessions` and the global session-list stream aggregate instead:
 
 - `aggregateSessionList` (`services/session/catalog/aggregate-session-list.ts`) fans out `listSessions` across `listRuntimes()` with `Promise.allSettled` and a per-runtime time budget, merges and sorts by `updatedAt`, and tags every session with its `runtime` type. A failing or slow runtime degrades to partial results plus a `warnings[]` entry in the response envelope — never a failed request. An optional `?runtime=` query filters to one runtime.
-- `session-list-broadcaster` (`services/session/catalog/session-list-broadcaster.ts`) fans in `subscribeSessionList` across all registered runtimes with per-runtime failure isolation, feeding the global `GET /api/events` stream. Runtimes must register **before** the broadcaster starts (see the composition-root ordering in `index.ts`).
+- `session-list-broadcaster` (`services/session/catalog/session-list-broadcaster.ts`) fans in `subscribeSessionList` across all registered runtimes with per-runtime failure isolation, feeding the global `GET /api/events` stream. Runtimes must register **before** the broadcaster starts (see the ordering in `startup/runtimes.ts`).
 
 ### Per-Session Settings Persistence (ADR-0260 / ADR-0261)
 
 Per-session settings — `permissionMode`, `model`, `effort`, `fastMode` — are **owned by the API core layer**, not by any runtime. They are persisted in the `session_metadata` table (the same table that holds immutable runtime ownership; settings columns use last-write-wins, identity columns first-write-wins). Runtimes stay pure executors.
 
-**The seam mirrors `AgentRegistryPort`/`RelayPort`:** the core exposes a narrow `SessionSettingsPort` (`getSessionSettings`/`saveSessionSettings`/`rekeySessionSettings`, implemented by `RuntimeRegistry`) and injects it into a runtime via the optional `setSessionSettings?(port)` setter at the composition root (`apps/server/src/index.ts`). A new runtime gains durable settings by accepting that one port — no DB code of its own.
+**The seam mirrors `AgentRegistryPort`/`RelayPort`:** the core exposes a narrow `SessionSettingsPort` (`getSessionSettings`/`saveSessionSettings`/`rekeySessionSettings`, implemented by `RuntimeRegistry`) and injects it into a runtime via the optional `setSessionSettings?(port)` setter where it is registered (`apps/server/src/startup/runtimes.ts`). A new runtime gains durable settings by accepting that one port — no DB code of its own.
 
 **Source-of-truth model:**
 
@@ -439,7 +444,7 @@ Every claude-code query is launched with `allowDangerouslySkipPermissions: true`
 
 ### File Organization
 
-Each adapter is self-contained in its directory (see [Adapter Lineup](#adapter-lineup) above for `codex/` and `opencode/`). All Claude Code-specific services live under `services/runtimes/claude-code/`:
+Each adapter is self-contained in its directory (see [Adapter Lineup](#adapter-lineup) above for `codex/`, `opencode/` and `doe/`). All Claude Code-specific services live under `services/runtimes/claude-code/`:
 
 | File                                 | Purpose                                                                           |
 | ------------------------------------ | --------------------------------------------------------------------------------- |
@@ -464,7 +469,6 @@ Each adapter is self-contained in its directory (see [Adapter Lineup](#adapter-l
 | `sessions/session-store.ts`          | `SessionStore` — in-memory store for active `AgentSession` objects                |
 | `sessions/session-list-watcher.ts`   | Fleet-wide session-list watcher backing `subscribeSessionList` (file watching)    |
 | `sessions/question-answers.ts`       | Structured-question answer mapping                                                |
-| `tooling/tool-filter.ts`             | Per-agent MCP tool-group resolution (`resolveToolConfig`)                         |
 | `tooling/command-registry.ts`        | Slash command discovery                                                           |
 | `mcp-tools/`                         | MCP tool server (core, tasks, relay, mesh, adapter, binding, UI, extension tools) |
 
@@ -522,7 +526,7 @@ A session's canvas is the same table under a `session:` scope (spec `canvas-agen
 
 ## Community Registry (the fourth seam)
 
-`CommunityAdapter` (`packages/shared/src/community-adapter.ts`) is the fourth swappable seam beside `AgentRuntime`, `Transport` and `ConnectorProvider`. It lets one local server read and write rooms in more than one place — this machine's SQLite rooms, a foreign relay, a hosted community — while keeping each community authoritative for its own rooms. The seam remains server-side for Community credentials. `HttpTransport` exposes qualified Community operations and a remote-room SSE subscription through the local server, while local and remote rooms keep their intentionally separate address and rendering paths.
+`CommunityAdapter` (`packages/shared/src/community-adapter.ts`) is the fourth swappable seam beside `AgentRuntime`, `Transport` and `ConnectorProvider`. It lets one local server read and write rooms in more than one place — this machine's SQLite rooms, a foreign relay, a hosted community — while keeping each community authoritative for its own rooms. It is the app's way into any space, local or remote (ADR `261122-173853`): the space store's model in `services/spaces` is the one model for a space, this machine's rooms are the agent computer's local store until the private space becomes a tenant on that store after launch, and only execution state (workspaces, runtime transcripts and sign-ins, processes) stays on the computer for good. The seam remains server-side for Community credentials. `HttpTransport` exposes qualified Community operations and a remote-room SSE subscription through the local server, while local and remote rooms keep their intentionally separate address and rendering paths.
 
 One instance serves one community, so every address on the port is the pair `(community, roomId)`. `CommunityRegistry` (`apps/server/src/services/communities/registry.ts`) dispatches on the community and holds the human-readable label; `aggregateCommunityRooms` lists across communities with per-community degradation and `warnings[]` — ADR-0310's shape with the nouns changed. Backend differences are **declared capabilities with branched conformance assertions**, never softened shared ones, and `communityConformance` in `@dorkos/test-utils` is the gate. The first backend behind it is this machine's own rooms: `LocalCommunityAdapter` (`apps/server/src/services/communities/local/`) wraps the shipped `RoomService` rather than replacing it, and is registered as `LOCAL_COMMUNITY` at startup so the registry always holds the one community that certainly exists. Author guide: [adding-a-community-adapter.md](adding-a-community-adapter.md).
 
@@ -568,7 +572,7 @@ The membership column survives Phase 3 unchanged as the RP3 delivery cursor (roo
 - **`kind: 'room'` delegates into `RoomService.setReadCursor`**, so a room cursor gets the room's `requireVisibleRoom` check, the monotonic guard, and the recomputed unread count in one call. Writing it straight to the table would emit an event the room list has nothing to patch with, leaving the badge lit on the second device.
 - Monotonicity is a write-path invariant, deliberately not a `CHECK`: SQLite cannot express a constraint about a value's own previous state. `ReadCursorStore.set` and `RoomStore.setReadCursor` share the same `lt()` predicate.
 
-`ReadCursorService.advance` broadcasts `read_cursor` on the global `GET /api/events` fan-out **only when the cursor actually moved**, carrying the unread count where one can be computed. A no-op write (opening an already-read thread, the common case) says nothing. An agent's cursor is never announced: RP3 advances it once per agent per turn, which would make it the loudest event on the stream, and nothing in the app draws it.
+`ReadCursorService.advance` broadcasts `read_cursor` on the global `GET /api/events` fan-out **only when the cursor actually moved**, carrying the unread count where one can be computed. A no-op write (opening an already-read thread, the common case) says nothing. The broadcast always names an audience (`readCursorAudience` in `services/rooms/service/room-audience.ts`, required by the service's constructor and by `eventFanOut` itself): every cursor belongs to one person (`userId`) and reaches only that person's own streams. A room cursor must also pass the room's membership check (`roomAudience`), so a person who left the room hears nothing more from it. No agent stream receives one, and a resolver that throws sends the frame to nobody. An agent's cursor is never announced: RP3 advances it once per agent per turn, which would make it the loudest event on the stream, and nothing in the app draws it.
 
 ### Client
 
@@ -653,18 +657,18 @@ Before the permission-areas system existed, this section described a stronger-lo
 
 Use [project structure](project-structure.md) for the repository map and [system architecture](system-architecture.md#key-files) for cross-system entry points. The composition roots are `apps/server/src/index.ts` for local services and `apps/server/src/services/spaces/app.ts` for the independent Community API.
 
-| Area                  | Location                                                            | Responsibility                                                                  |
-| --------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Client                | `apps/client/src/layers/`                                           | FSD layers; transport implementations live under `shared/lib/`                  |
-| Local API             | `apps/server/src/routes/`                                           | HTTP operations plus session, room and global socket entry points               |
-| Stream infrastructure | `apps/server/src/services/core/streams/`                            | Wire sinks, replay cursors and authenticated WebSocket upgrade routing          |
-| Agent execution       | `apps/server/src/services/runtimes/`                                | Claude Code, Codex, OpenCode and test runtimes                                  |
-| Turn orchestration    | `apps/server/src/services/session/`                                 | Dispatch, durable queues and shared session services                            |
-| Local coordination    | `services/rooms/`, `tasks/`, `relay/`, `mesh/` under the server     | Rooms, scheduling, message routing and discovery                                |
-| Replaceable backends  | `services/connectors/`, `communities/`, `memory/` under the server  | Account actions, remote community seam and agent memory                         |
-| Package delivery      | `services/marketplace/`, `extensions/`, `harness/` under the server | Transactions, activation and harness projection                                 |
-| Independent Community | `services/spaces/` under the server; `apps/space/` (build, web)     | Hono API, browser, PostgreSQL and blob storage                                  |
-| Cloud contract        | `packages/cloud-api/`                                               | Public schemas, routes and a fetch client; no private implementation dependency |
+| Area                  | Location                                                                                                                     | Responsibility                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Client                | `apps/client/src/layers/`                                                                                                    | FSD layers; transport implementations live under `shared/lib/`                  |
+| Local API             | `apps/server/src/routes/`                                                                                                    | HTTP operations plus session, room and global socket entry points               |
+| Stream infrastructure | `apps/server/src/services/core/streams/`                                                                                     | Wire sinks, replay cursors and authenticated WebSocket upgrade routing          |
+| Agent execution       | `apps/server/src/services/runtimes/`                                                                                         | Claude Code, Codex, OpenCode, Doe and test runtimes                             |
+| Turn orchestration    | `apps/server/src/services/session/`                                                                                          | Dispatch, durable queues and shared session services                            |
+| Local coordination    | `services/rooms/`, `tasks/`, `relay/`, `mesh/` under the server                                                              | Rooms, scheduling, message routing and discovery                                |
+| Replaceable backends  | `services/connectors/`, `communities/`, `memory/` under the server                                                           | Account actions, remote community seam and agent memory                         |
+| Package delivery      | `services/marketplace/`, `extensions/`, `harness/` under the server                                                          | Transactions, activation and harness projection                                 |
+| Independent Community | `services/spaces/` under the server (the only placement, ADR `261122-173853`); `apps/space/` (image, migrations, test tiers) | Hono API, browser, PostgreSQL and blob storage                                  |
+| Cloud contract        | `packages/cloud-api/`                                                                                                        | Public schemas, routes and a fetch client; no private implementation dependency |
 
 ## Claude Code Binary Resolution
 
@@ -912,7 +916,7 @@ interface RelayAdapter {
 
 **`AdapterRegistry`** (`packages/relay/src/adapter-registry.ts`) manages adapter lifecycle. On `register()`, the registry performs a zero-downtime hot-reload: starts the new adapter, swaps it in, then stops the old adapter. `Promise.allSettled()` is used on `shutdown()` so one adapter crashing never blocks others.
 
-**`AdapterPluginLoader`** (`packages/relay/src/adapter-plugin-loader.ts`) loads adapters from three sources:
+**The adapter plugin loader** (`loadAdapters()` in `packages/relay/src/adapter-plugin-loader.ts`) loads adapters from three sources:
 
 1. Built-in adapters (factory map)
 2. npm packages (`plugin.package` field in config — dynamic `import(packageName)`)
@@ -984,22 +988,23 @@ The Mesh subsystem (`packages/mesh/src/`) provides agent discovery, registration
 
 ### Core Components
 
-| Module                         | Purpose                                                                                             |
-| ------------------------------ | --------------------------------------------------------------------------------------------------- |
-| `mesh-core.ts`                 | Thin coordinator delegating to extracted modules (discovery, agent management, denial)              |
-| `mesh-discovery.ts`            | Discovery & registration logic (`discover`, `register`, `registerByPath`)                           |
-| `mesh-agent-management.ts`     | Agent CRUD, health computation, topology operations                                                 |
-| `mesh-denial.ts`               | Denial list operations (`deny`, `undeny`, `list`)                                                   |
-| `discovery/unified-scanner.ts` | Unified BFS async generator with detection strategies (claude-code, cursor, copilot, dork-manifest) |
-| `agent-registry.ts`            | SQLite-backed persistent registry of known agents (via `@dorkos/db` Drizzle instance)               |
-| `denial-list.ts`               | SQLite-backed denial list preventing re-discovery of denied paths                                   |
-| `namespace-resolver.ts`        | Resolves agent namespaces from workspace paths for subject-based routing                            |
-| `topology.ts`                  | `TopologyManager` — cross-namespace access rules and filtered topology views                        |
-| `budget-mapper.ts`             | Maps Relay budget envelopes to mesh agent capabilities                                              |
-| `relay-bridge.ts`              | Optional bridge publishing lifecycle events to Relay subjects                                       |
-| `health.ts`                    | `computeHealthStatus()` — active/inactive/stale thresholds from last heartbeat                      |
-| `reconciler.ts`                | Reconciles newly discovered candidates against registry state                                       |
-| `manifest.ts`                  | Reads/writes `.dork/agent.json` manifest files                                                      |
+| Module                         | Purpose                                                                                               |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `mesh-core.ts`                 | Thin coordinator delegating to extracted modules (discovery, agent management, denial)                |
+| `mesh-discovery.ts`            | Discovery & registration logic (`discover`, `register`, `registerByPath`)                             |
+| `mesh-agent-management.ts`     | Agent CRUD, health computation, topology operations                                                   |
+| `mesh-denial.ts`               | Denial list operations (`deny`, `undeny`, `list`)                                                     |
+| `discovery/unified-scanner.ts` | Unified BFS async generator with detection strategies (claude-code, cursor, copilot, dork-manifest)   |
+| `agent-registry.ts`            | SQLite-backed persistent registry of known agents (via `@dorkos/db` Drizzle instance)                 |
+| `denial-list.ts`               | SQLite-backed denial list preventing re-discovery of denied paths                                     |
+| `namespace-resolver.ts`        | Resolves agent namespaces from workspace paths for subject-based routing                              |
+| `topology.ts`                  | `TopologyManager` — cross-namespace access rules and filtered topology views                          |
+| `namespace-rule-store.ts`      | SQLite store of cross-namespace allow rules, projected one way into Relay                             |
+| `default-access-rules.ts`      | The default Relay access rules every namespace gets; read by both `RelayBridge` and `TopologyManager` |
+| `relay-bridge.ts`              | Optional bridge publishing lifecycle events to Relay subjects                                         |
+| `health.ts`                    | `computeHealthStatus()` — active/inactive/stale thresholds from last heartbeat                        |
+| `reconciler.ts`                | Reconciles newly discovered candidates against registry state                                         |
+| `manifest.ts`                  | Reads/writes `.dork/agent.json` manifest files                                                        |
 
 ### Discovery Strategies
 
@@ -1025,13 +1030,13 @@ Health is returned by `GET /api/mesh/agents/:id/health` and aggregated by `GET /
 
 ### Namespace Isolation and Topology
 
-`NamespaceResolver` derives a namespace string from an agent's workspace path (e.g., `/home/user/projects/api-service` → `projects.api-service`). Namespaces are the unit cross-namespace access rules grant or deny between. Since DOR-2739 (ADR `261006-225605`), `services/mesh/seed-open-mesh.ts` writes one such rule, `* → *`, once per install at boot, whatever the permission preset — so agents in different namespaces can see each other by default, and a person who removes that rule in Team → Access is back to needing an explicit rule per pair.
+`resolveNamespace()` (`packages/mesh/src/namespace-resolver.ts`) derives a namespace string from an agent's workspace path (e.g., `/home/user/projects/api-service` → `projects.api-service`). Namespaces are the unit cross-namespace access rules grant or deny between. Since DOR-2739 (ADR `261006-225605`), `services/mesh/seed-open-mesh.ts` writes one such rule, `* → *`, once per install at boot, whatever the permission preset — so agents in different namespaces can see each other by default, and a person who removes that rule in Team → Access is back to needing an explicit rule per pair.
 
 `TopologyManager` stores cross-namespace access rules and applies per-agent visibility filtering when `getMeshTopology()` is called. `PUT /api/mesh/topology/access` creates or updates rules. The topology view is consumed by the `TopologyGraph` React Flow visualization in the client (`features/mesh/`).
 
 ### Server Integration
 
-The server exposes Mesh via `routes/mesh.ts` (always mounted, no feature flag). MCP tools in `mcp-tool-server.ts` allow agents to discover, register, deny, inspect, and query topology programmatically (`mesh_discover`, `mesh_register`, `mesh_deny`, `mesh_list`, `mesh_unregister`, `mesh_status`, `mesh_inspect`, `mesh_query_topology`).
+The server exposes Mesh via `routes/mesh.ts` (always mounted, no feature flag). MCP tools in `services/runtimes/claude-code/mcp-tools/mesh-tools.ts` (projected for every runtime through the capability registry) allow agents to discover, register, deny, inspect, and query topology programmatically (`mesh_discover`, `mesh_register`, `mesh_deny`, `mesh_list`, `mesh_unregister`, `mesh_status`, `mesh_inspect`, `mesh_query_topology`).
 
 ### Lifecycle Hooks
 

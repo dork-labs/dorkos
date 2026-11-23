@@ -15,7 +15,7 @@ To build one, implement the `RelayAdapter` interface and register it with the ad
 
 ## The RelayAdapter Interface
 
-Every adapter implements four required methods, one optional method, and three readonly properties:
+Every adapter implements four required methods and three readonly properties. Three more methods are optional:
 
 ```typescript
 interface RelayAdapter {
@@ -34,6 +34,16 @@ interface RelayAdapter {
 
   // Optional: lightweight credential check without the full start/stop cycle
   testConnection?(): Promise<{ ok: boolean; error?: string; botUsername?: string }>;
+
+  // Optional, but required if delivering a subject runs a real model turn
+  startsAgentTurns?(subject: string): boolean;
+
+  // Optional: send one private text notice, with a last check before it goes out
+  deliverPrivateNotification?(
+    subject: string,
+    text: string,
+    authorizeDispatch: () => boolean
+  ): Promise<PrivateNotificationResult>;
 }
 ```
 
@@ -50,6 +60,8 @@ The four methods handle the adapter lifecycle:
 - **deliver()**: Handle outbound messages. When any agent or user publishes to a subject matching your prefix, Relay calls this method with the envelope. Streaming to platforms that support progressive updates happens _inside_ `deliver()`: the adapter posts an initial message and edits it in place as more content arrives (see the Telegram reference adapter, which does this through its `PlatformClient.editMessage`).
 - **getStatus()**: Return a snapshot of your adapter's runtime state for the UI.
 - **testConnection()**: Optional. A lightweight credential check that validates configuration without running the full `start()`/`stop()` lifecycle (long-polling loops, webhook servers). When present, `AdapterManager.testConnection()` prefers it, which avoids side effects like Telegram's 409 Conflict when an earlier polling connection lingers.
+- **startsAgentTurns()**: Optional for an adapter that never starts an agent turn (like a chat app or a webhook). **If delivering a subject makes your adapter run a real, paid model turn, implement it and return `true` for that subject.** The hourly turn ceiling asks this to count the turn. Without it, Relay only counts the built-in prefixes (`relay.agent.*` and `relay.system.tasks.*`), so turns on any other prefix would go uncounted.
+- **deliverPrivateNotification()**: Optional. Sends one plain-text notice to a person, such as an agent reaching you while you are away. Call `authorizeDispatch()` right before the network send and send nothing if it returns `false`. Don't retry the send inside the adapter.
 
 ## Adapter Lifecycle
 

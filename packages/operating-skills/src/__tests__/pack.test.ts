@@ -46,7 +46,7 @@ function listedSiblings(body: string): string[] {
 }
 
 describe('OPERATING_SKILLS_PACK', () => {
-  it('ships the twelve canonical skills, umbrella first', () => {
+  it('ships the thirteen canonical skills, umbrella first', () => {
     expect(OPERATING_SKILLS_PACK.map((s) => s.name)).toEqual([
       'operating-dorkos',
       'managing-agents',
@@ -60,6 +60,7 @@ describe('OPERATING_SKILLS_PACK', () => {
       'working-on-a-heartbeat',
       'continuing-on-another-account',
       'building-dorkos-apps',
+      'waiting-for-a-busy-computer',
     ]);
   });
 
@@ -571,6 +572,59 @@ describe('working-with-spin-off-chats', () => {
   it('is named in the umbrella sibling list', () => {
     expect(bodyOf('operating-dorkos')).toContain('working-with-spin-off-chats');
   });
+
+  // DOR-4469: one lead owns long work and coordinates by chat_send; a room hears three
+  // kinds of project update. "Post there only if the room needs to know" left every
+  // report a candidate for a room post, so its absence is pinned.
+  it('teaches one project lead that coordinates by direct message', () => {
+    expect(flat).toContain('## One lead for long project work');
+    expect(flat).toContain('one spin-off chat that owns the work until it ships');
+    expect(flat).toContain('not a new role and not more access');
+    expect(flat).toContain('If a lead already has the work, message it.');
+    expect(flat).toContain('It sends `chat_send` to the one agent who must act');
+    expect(flat).toContain('never use cc as a status channel');
+  });
+
+  it('names the three room updates and keeps answers for whoever asks', () => {
+    expect(flat).toContain(
+      'A room hears three things about project work**: it started, it is blocked on a person, it shipped.'
+    );
+    expect(flat).toContain('These are kinds of update, not a quota.');
+    expect(flat).toContain('they still get a short, useful answer');
+    expect(flat).toContain(
+      'Post there only when the work starts, is blocked on a person, or ships, or to answer someone who asked.'
+    );
+    expect(flat).not.toContain('Post there only if the room needs to know');
+  });
+
+  it('says a room chat can send, a send never posts into a room, and a beat gets no report', () => {
+    expect(flat).toContain('Your chat in a room can send too.');
+    expect(flat).toContain('`chat_send` never posts into a room');
+    expect(flat).toContain('Only `post_to_room` speaks in a room.');
+    expect(flat).toContain(
+      "A spin-off started from a beat, a scheduled run, a Telegram or Slack direct chat, a connector event's chat or a chat from an older DorkOS does not report back"
+    );
+    expect(flat).toContain('a one-line note saying you messaged it, never your words');
+    expect(flat).not.toContain('a one-line note that you wrote');
+    expect(flat).toContain(
+      'In a room bridged to Telegram or Slack, that chat takes only an answer to a message it sent you; anything else is refused.'
+    );
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(71);
+  });
+
+  it('says a result asked for in the room is owed there, and room-chat notes ride turn-end reports', () => {
+    expect(flat).toContain(
+      'A result somebody in the room asked for is owed there: when it comes back, post it, never sit on it.'
+    );
+    expect(flat).toContain('never into a room (from a room chat: in turn-end reports only)');
+    expect(flat).toContain('one more direct message to that agent, not a post in a room');
+  });
+
+  it('suggests one plain wait per call, never a shell loop (DOR-3109)', () => {
+    expect(flat).toContain('or one `sleep 240` per call, then check again');
+    expect(flat).toContain('Never a shell loop');
+    expect(flat).not.toMatch(/`sleep` loop/);
+  });
 });
 
 /**
@@ -625,6 +679,86 @@ describe('working-on-a-heartbeat', () => {
   it('is named in the umbrella sibling list, and the pack is stamped for it', () => {
     expect(bodyOf('operating-dorkos')).toContain('working-on-a-heartbeat');
     expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(40);
+  });
+
+  it('hands long work to one lead, names who hears the result, and keeps rooms quiet (DOR-4469)', () => {
+    const flat = beat.replace(/\s+/g, ' ');
+    expect(flat).toContain('## Long work gets one lead');
+    expect(flat).toContain('start one project-lead spin-off chat with `session_start`');
+    expect(flat).toContain('or message the lead that already has it, then end the beat');
+    expect(flat).toContain('A spin-off started from a beat does not report back to it');
+    expect(flat).toContain('Name in its brief the chat or agent that should hear the result.');
+    expect(flat).toContain(
+      'The lead coordinates by direct message with the one agent who must act.'
+    );
+    expect(flat).toContain(
+      'For project work a room hears three things: it started, it is blocked on a person, it shipped.'
+    );
+    expect(flat).toContain('These rungs are for telling people.');
+    expect(flat).toContain(
+      'A message to the agent who must act is work, not a rung, and it is not louder than a room post'
+    );
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(71);
+  });
+});
+
+/**
+ * The load-gate skill (DOR-4209). Each assertion pins a fact a wrong word turns
+ * into an agent that dodges the line, or reports a busy computer as a red build.
+ */
+describe('waiting-for-a-busy-computer', () => {
+  const wait = bodyOf('waiting-for-a-busy-computer');
+  const flat = wait.replace(/\s+/g, ' ');
+
+  it("quotes the chat's own wait words, from runtime-wait.ts", () => {
+    expect(flat).toContain('Waiting for the computer to calm down. 3rd in line.');
+    expect(flat).toContain(
+      'Still waiting for the computer. 3rd in line. It runs anyway in about 3h.'
+    );
+    expect(flat).toContain('Next in line.');
+  });
+
+  it("states the classifier's one-file rule and that commits and pushes are heavy", () => {
+    expect(flat).toContain('exactly one test file');
+    expect(flat).toContain('`git commit` and `git push`, because they run hooks');
+    expect(flat).toContain('`playwright test`, even for one file');
+  });
+
+  it("says exit 75 is try-later, never a failing test, and the off switch is the person's", () => {
+    expect(flat).toContain('exits **75** (EX_TEMPFAIL)');
+    expect(flat).toContain('Never report it as a failing test or a red build.');
+    expect(flat).toMatch(/That switch is the person's\. Use it only when they tell you to\./);
+    // Security (#4106): name no off switch. The refusal prints one when it
+    // applies; seeding it into every agent's pack teaches it to all of them.
+    expect(flat).not.toMatch(/DORKOS_HEAVY_LOCK|DORKOS_IGNORE_LOAD/);
+  });
+
+  it('names the background gap and forbids every workaround', () => {
+    // The hook for raw heavy commands quotes this paragraph word for word
+    // (DOR-4209), so it stays short and names every workaround.
+    for (const rule of [
+      'send them to the background',
+      'hide them in a script',
+      'split a suite into single files',
+      "change the line's settings or switches",
+      'Only the person can let a job through.',
+    ]) {
+      expect(flat).toContain(rule);
+    }
+    expect(flat).toContain('waits to start, then gives its turn back');
+  });
+
+  it('gives the person the three actions and the agent none', () => {
+    for (const action of ['**Let through**', '**Urgent**', '**Move to front**']) {
+      expect(wait).toContain(action);
+    }
+    expect(flat).toContain('You cannot do any of these');
+    expect(flat).toContain('There is no tool for it.');
+  });
+
+  it('is named in the umbrella sibling list, and the pack is stamped for it', () => {
+    expect(bodyOf('operating-dorkos')).toContain('waiting-for-a-busy-computer');
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(70);
   });
 });
 

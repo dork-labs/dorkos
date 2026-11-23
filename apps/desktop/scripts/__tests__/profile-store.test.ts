@@ -23,7 +23,7 @@ function fixture(key = Buffer.alloc(32, 7)) {
     profiles,
     resolveSessionRuntime: async (id) => ({ type: 'test', bound: id === input.sessionId }),
     guardsOf: () => ({ protectedPaths: true }),
-    getSessionAgentPath: async (id) => (id === input.sessionId ? FOLDER : null),
+    sessionAgent: async (id) => (id === input.sessionId ? FOLDER : undefined),
     agentIdAtPath: (folder) => (folder === FOLDER ? AGENT : undefined),
     realFolder: (folder) => (folder === FOLDER ? FOLDER : undefined),
     agentName: () => 'Made-up CI agent',

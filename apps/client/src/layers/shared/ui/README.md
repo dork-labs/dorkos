@@ -1,6 +1,6 @@
 # `shared/ui`
 
-Ninety primitives, one barrel (`index.ts`). This page exists so a component
+Over a hundred primitives, one barrel (`index.ts`). This page exists so a component
 you need can be found instead of re-implemented — the usual reason a
 duplicate shows up in `features/` or `widgets/` is that nobody knew this one
 was already here.

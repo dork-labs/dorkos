@@ -47,7 +47,7 @@ import {
 import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
 import { describeBytes } from '../services/rooms/repo/room-file-ops.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { parseUploadForm, UploadLimitError, type UploadForm } from '../http/uploads.js';
 import { errorBody } from '../lib/route-utils.js';

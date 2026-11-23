@@ -20,7 +20,7 @@ import type { Context, Hono } from 'hono';
 import { z } from 'zod';
 import { isReservedMcpServerName } from '@dorkos/shared/global-mcp-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { logger } from '../lib/logger.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import { notify } from '../services/notifications/notification-service.js';

@@ -28,7 +28,7 @@ import {
   type DocWorkReviewedMetadata,
 } from '@dorkos/shared/canvas-doc-routes';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import type { ActivityService } from '../services/activity/activity-service.js';

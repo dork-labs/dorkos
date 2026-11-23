@@ -33,6 +33,7 @@ describe('agentChatTarget', () => {
 
     expect(target?.search).toMatchObject({ session: 'direct', draft: '1', runtime: 'codex' });
     expect(transport.openDirectChat).toHaveBeenCalledWith({ agentPath: AGENT });
+    expect(transport.allocateSession).not.toHaveBeenCalled();
   });
 
   it('opens the agent’s latest chat for anyone the server refuses a Direct chat', async () => {
@@ -46,18 +47,23 @@ describe('agentChatTarget', () => {
     const target = await agentChatTarget(deps(transport), AGENT);
 
     expect(target?.search).toEqual({ session: 'latest' });
+    expect(transport.allocateSession).not.toHaveBeenCalled();
   });
 
   it('starts a fresh chat there when the agent has none with them yet', async () => {
     const transport = createMockTransport({
       openDirectChat: vi.fn().mockRejectedValue(refused(403)),
       listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
+      allocateSession: vi.fn().mockResolvedValue({ sessionId: 'acknowledged' }),
     });
 
     const target = await agentChatTarget(deps(transport), AGENT);
 
-    expect(target?.search).toMatchObject({ draft: '1' });
-    expect(target?.search.session).toEqual(expect.any(String));
+    expect(target?.search).toMatchObject({ draft: '1', session: 'acknowledged' });
+    expect(transport.allocateSession).toHaveBeenCalledExactlyOnceWith({
+      kind: 'location',
+      launchRef: 'test-location',
+    });
   });
 
   it('passes on any other failure for the caller to report', async () => {

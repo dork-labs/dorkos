@@ -1,6 +1,8 @@
 /**
- * Read state as the rest of DorkOS sees it: one write, and everybody who is
- * looking finds out (team-room-home spec §D4, ADR 260808-140956).
+ * Read state as the rest of DorkOS sees it: one write, and the person's other
+ * open screens find out (team-room-home spec §D4, ADR 260808-140956). Nobody
+ * else does: the audience each broadcast names admits only that person's own
+ * streams, never an agent's.
  *
  * {@link ReadCursorStore} owns the table and the monotonic guard; this owns the
  * one thing a store must not, which is telling the world. The split is the same
@@ -19,7 +21,8 @@
  * @module server/services/core/read-cursor-service
  */
 import type { ReadCursor, ReadCursorThreadKind } from '@dorkos/shared/read-cursor-schemas';
-import { eventFanOut } from './event-fan-out.js';
+import { logger } from '../../lib/logger.js';
+import { eventFanOut, type BroadcastAudience } from './event-fan-out.js';
 import type { ReadCursorStore } from './read-cursor-store.js';
 
 /** What a `read_cursor` broadcast says: whose cursor moved, in what, and to where. */
@@ -67,8 +70,14 @@ export class ReadCursorService {
    * Binds the service to a cursor store.
    *
    * @param store - The read-cursor table.
+   * @param audienceFor - Which streams may see one moved cursor. Required, so a
+   *   wiring that forgets it does not compile: a cursor names a person and the
+   *   thread they read, which is nobody else's to see.
    */
-  constructor(private readonly store: ReadCursorStore) {}
+  constructor(
+    private readonly store: ReadCursorStore,
+    private readonly audienceFor: (moved: ReadCursorMoved) => BroadcastAudience
+  ) {}
 
   /**
    * Where this person has read up to, or `null` when they have never read this
@@ -111,7 +120,8 @@ export class ReadCursorService {
   }
 
   /**
-   * Move this person's cursor forward and tell their other screens.
+   * Move this person's cursor forward and tell their other screens: only the
+   * streams its audience admits (see the constructor's `audienceFor`).
    *
    * **A write that changes nothing announces nothing.** Re-opening a thread
    * already read is the ordinary case, so a broadcast per call would make this
@@ -153,7 +163,21 @@ export class ReadCursorService {
       lastReadSeq: cursor.lastReadSeq,
       ...(opts.unreadCount ? { unreadCount: opts.unreadCount(cursor.lastReadSeq) } : {}),
     };
-    eventFanOut.broadcast('read_cursor', moved);
+    let audience: BroadcastAudience;
+    try {
+      audience = this.audienceFor(moved);
+    } catch (err) {
+      // The cursor is saved either way; a frame with no known reader goes to nobody.
+      logger.warn(
+        '[read-cursors] could not tell who may see a moved read cursor; sent it to nobody',
+        {
+          threadKind,
+          error: err instanceof Error ? err.message : String(err),
+        }
+      );
+      return cursor;
+    }
+    eventFanOut.broadcast('read_cursor', moved, audience);
     return cursor;
   }
 }

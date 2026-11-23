@@ -5950,6 +5950,25 @@ export const TaskFileCapSchema = z
 /** {@link TaskFileCapSchema}. */
 export type TaskFileCap = z.infer<typeof TaskFileCapSchema>;
 
+/**
+ * A task whose next run would be capped though no cap stands yet (DOR-5060):
+ * no approval covers the prompt it runs, so a person approves the file as it
+ * is now from this review, bound to the hash it shows.
+ */
+export const TaskFileReviewSchema = z
+  .object({
+    /** The hash of the prompt it runs: approving binds to it. */
+    hash: z.string(),
+    /** The file as last approved, for the diff; `null` when nothing was kept. */
+    previous: z.string().nullable(),
+    /** The prompt it runs, for the diff; `null` when too long to show. */
+    current: z.string().nullable(),
+  })
+  .openapi('TaskFileReview');
+
+/** {@link TaskFileReviewSchema}. */
+export type TaskFileReview = z.infer<typeof TaskFileReviewSchema>;
+
 export { isSpecificPermissionRule } from './permission-rules.js';
 
 /** A Claude Code permission rule proposed for one scheduled task's runs. */
@@ -6222,6 +6241,11 @@ export const TaskSchema = z
      */
     fileCap: TaskFileCapSchema.nullable().optional(),
     /**
+     * Set while its next run would be capped but no cap stands yet, so a person
+     * can approve its file as it is now (DOR-5060). Absent otherwise. Response-only.
+     */
+    fileReview: TaskFileReviewSchema.optional(),
+    /**
      * Held for a person, but nothing is waiting on them (DOR-3425): the file of a
      * schedule whose agent is at Full autonomy asks for more than was approved. It
      * stays a row under Needs you, with no knock and no escalation.
@@ -6333,6 +6357,16 @@ export const TaskRunSchema = z
      * the cap refused. Absent on an uncapped run.
      */
     cappedAt: z.enum(['dontAsk']).nullable().optional(),
+    /**
+     * On a capped run, the SKILL file that capped it: its path, the attested
+     * hash (`none` when nothing was attested yet) and the hash the file read
+     * as (`null` when unreadable) (DOR-5060). Absent on an uncapped run and on
+     * one recorded before this field.
+     */
+    cappedFile: z
+      .object({ path: z.string(), from: z.string(), to: z.string().nullable() })
+      .nullable()
+      .optional(),
     /**
      * How much a `needs_attention` run got done (DOR-3123); `null` on every
      * other status.

@@ -26,6 +26,14 @@ import type { SendMessageRequest } from '@dorkos/shared/schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
+import {
+  SessionBirthWriteError,
+  type SessionBirthWriteContext,
+} from '../../core/runtime-seam/session-birth-write.js';
+import type {
+  PersonChatBinding,
+  PersonDraftWitness,
+} from '../../core/runtime-seam/person-draft-settings.js';
 import { configManager } from '../../core/config-manager.js';
 import {
   homeOf,
@@ -57,7 +65,7 @@ import {
   type SessionLauncher,
 } from './launch-caller.js';
 import { auditLaunched, auditRefusedLaunch } from './launch-audit.js';
-import { resolveChatPlace } from './resolve-chat-place.js';
+import { matchesPersonChatPlace, resolveChatPlace } from './resolve-chat-place.js';
 import { isRegisteredChatAgentPath } from './verify-chat-agent.js';
 import { recordedAgentOf, sessionToolWarnings } from './session-tool-warnings.js';
 import type { SessionLaunchWarning } from '@dorkos/shared/schemas';
@@ -79,6 +87,8 @@ export interface DispatchSessionMessageOpts {
    * the power a new session row is born with (DOR-2105).
    */
   origin: TurnOrigin;
+  /** Exact source prepared by the person-authenticated route for an acknowledged chat. */
+  personChatSource?: PersonChatBinding;
   /**
    * Fires once, when the detached turn this message started (or joined the
    * queue for) ends. Called after the dispatch buffer records the end.
@@ -506,6 +516,12 @@ async function launchSessionMessage(
   }
   let effectiveCwd = resolvedChatPlace.cwd;
   const existing = resolvedChatPlace.session;
+  const source = opts.personChatSource;
+  if (
+    source &&
+    (existing.bound || !matchesPersonChatPlace(source, resolvedChatPlace, verifiedAgentPath))
+  )
+    throw new SessionBirthWriteError('source');
   // A room-bound session's agent and grants, when the room answered for it
   // (spec `agent-home-desk` §5.7): the turn carries the room's agent as
   // `forAgent` and the same folder grants a room turn carries.
@@ -654,11 +670,17 @@ async function launchSessionMessage(
   //
   // The caller's `origin` is passed through untouched: which power it unlocks is
   // `permissionSeedForOrigin`'s decision, never this module's (DOR-2105).
+  const sourceArgs: [SessionBirthWriteContext?, PersonDraftWitness?] = source
+    ? 'birth' in source
+      ? [source.birth]
+      : [undefined, source.draft]
+    : [];
   const isNewSession = await runtimeRegistry.persistSessionRuntime(
     sessionId,
     runtimeType,
     origin,
-    verifiedAgentPath
+    verifiedAgentPath,
+    ...sourceArgs
   );
   if (isNewSession && launchedBy !== undefined) {
     auditLaunched(sessionId, effectiveCwd ?? DEFAULT_CWD, launchedBy);

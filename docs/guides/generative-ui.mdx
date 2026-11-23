@@ -205,13 +205,14 @@ Click an empty square and your mark draws itself instantly, before the agent eve
 
 ### The ui-action Channel
 
-Buttons, list-item actions, and form submits are more than static UI. Clicking them can start a new turn with the agent. Every interactive control fires a `WidgetAction`, one of three kinds:
+Buttons, list-item actions, and form submits are more than static UI. Clicking them can start a new turn with the agent. Every interactive control fires a `WidgetAction`, one of four kinds:
 
-| Kind    | Fields                             | What happens                                                                            |
-| ------- | ---------------------------------- | --------------------------------------------------------------------------------------- |
-| `agent` | `id`, `label?`, `payload?`         | Sent back to the agent as a new turn (see below)                                        |
-| `ui`    | `command` (a `control_ui` command) | Runs locally in the client: no agent involvement, no new turn                           |
-| `url`   | `href` (must be `https://`)        | Opens in a new tab, after you confirm through the same link-safety modal chat links use |
+| Kind    | Fields                             | What happens                                                                                                                                                                                   |
+| ------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent` | `id`, `label?`, `payload?`         | Sent back to the agent as a new turn (see below)                                                                                                                                               |
+| `emit`  | `type`, `payload?`, `coalesceKey?` | Saved as an event on the canvas document the widget sits in. Works only in a document that accepts events; anywhere else the control is turned off. `type` can't start with `doc.` or `state.` |
+| `ui`    | `command` (a `control_ui` command) | Runs locally in the client: no agent involvement, no new turn                                                                                                                                  |
+| `url`   | `href` (must be `https://`)        | Opens in a new tab, after you confirm through the same link-safety modal chat links use                                                                                                        |
 
 A `ui`-kind action's `command` can be any `control_ui` command, including `{ "action": "celebrate" }` (confetti that erupts from the button you clicked, not the middle of the screen). An optional `kind` picks the style, and `emoji` picks the glyph for the emoji style:
 

@@ -26,10 +26,14 @@
 #   review-gh.sh view <jsonFields>             print PR metadata as JSON
 #   review-gh.sh summary <body>                 post the top-level summary comment
 #   review-gh.sh inline <path> <line> <body>    post one line-level review comment
+#   review-gh.sh security-verdict pass 0        post the Security lens's verdict
+#   review-gh.sh security-verdict fail <musts> <categories>
 #
 # Environment, set by the workflow and out of the model's reach:
 #   REVIEW_REPO  OWNER/REPO, no host prefix (validated below)
 #   REVIEW_PR    the pull request number (validated below)
+#   REVIEW_HEAD_SHA  the head commit the review is about (security-verdict;
+#                when unset, the PR's current head is resolved, as for inline)
 #   GH_TOKEN     supplied to the reviewer's shell by claude-code-action
 #
 # Run this from a copy materialized out of the repository's DEFAULT BRANCH, never
@@ -124,5 +128,60 @@ case "$sub" in
       -f side=RIGHT
     ;;
 
-  *) die "unknown subcommand '$sub'; expected diff, view, summary or inline" ;;
+  security-verdict)
+    # The Security lens's verdict (DOR-5099), in a fixed shape the
+    # `security-verdict` job reads as data. The model chooses only pass or
+    # fail, a count, and categories from a fixed list; every other byte of the
+    # comment, the head commit included, comes from this file. The body never
+    # carries a finding, because this repo is public (ci/security/review-lens.md).
+    [ "$#" -ge 2 ] && [ "$#" -le 3 ] ||
+      die "security-verdict takes: pass 0 | fail <musts> <categories> (got $# arguments)"
+    verdict=$1
+    musts=$2
+    cats=${3:-}
+    case "$musts" in
+      '' | *[!0-9]*) die "security-verdict musts must be a whole number; got '$musts'" ;;
+    esac
+    [ "${#musts}" -le 2 ] || die "security-verdict musts must be under 100; got '$musts'"
+    case "$verdict" in
+      pass)
+        [ "$#" -eq 2 ] && [ "$musts" -eq 0 ] || die "security-verdict pass takes exactly: pass 0"
+        ;;
+      fail)
+        [ "$#" -eq 3 ] && [ "$musts" -gt 0 ] ||
+          die "security-verdict fail takes: fail <musts, at least 1> <categories>"
+        [[ "$cats" =~ ^[a-z-]+(,[a-z-]+)*$ ]] ||
+          die "security-verdict categories must be a comma-separated list; got '$cats'"
+        IFS=, read -r -a cat_list <<<"$cats"
+        for c in "${cat_list[@]}"; do
+          case "$c" in
+            auth | injection | permissions | connectors | extensions | secrets | ci | supply-chain | other) ;;
+            *) die "security-verdict category '$c' is not one of auth, injection, permissions, connectors, extensions, secrets, ci, supply-chain, other" ;;
+          esac
+        done
+        ;;
+      *) die "security-verdict must be pass or fail; got '$verdict'" ;;
+    esac
+
+    # The head the review was about, set by the workflow; resolved only when
+    # unset (a manual dispatch), like `inline`.
+    sha=${REVIEW_HEAD_SHA:-}
+    if [ -z "$sha" ]; then
+      sha=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq '.headRefOid') ||
+        die "could not resolve the head commit of $repo#$pr"
+    fi
+    [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || die "unexpected head commit '$sha'"
+
+    if [ "$verdict" = pass ]; then
+      line="Security lens: **pass** at \`${sha:0:7}\`, no Musts."
+    else
+      line="Security lens: **fail** at \`${sha:0:7}\`, $musts Must(s) in: $cats. Details are not posted here because this repository is public."
+    fi
+    body="<!-- dorkos-security-verdict v1 head=$sha verdict=$verdict musts=$musts cats=${cats:--} -->
+$line
+_Advisory while the cloud and local Security reviews are compared (DOR-5099)._"
+    exec gh pr comment "$pr" --repo "$repo" --body "$body"
+    ;;
+
+  *) die "unknown subcommand '$sub'; expected diff, view, summary, inline or security-verdict" ;;
 esac

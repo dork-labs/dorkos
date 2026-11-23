@@ -1,7 +1,8 @@
 /**
  * The `CommunityAdapter` port — one contract for reading and writing rooms in
- * more than one place: this machine's own SQLite rooms, a Buzz relay, and (one
- * day) `apps/space`.
+ * more than one place: this machine's own SQLite rooms, a Buzz relay, and the
+ * space store (`services/spaces`, reached through the remote adapter). It is
+ * the app's way into any space, local or remote (ADR `261122-173853`).
  *
  * This is the FOURTH swappable seam beside {@link ./agent-runtime.js | AgentRuntime},
  * {@link ./transport.js | Transport} and {@link ./connector-provider.js | ConnectorProvider}:
@@ -27,7 +28,9 @@
  *    its {@link CommunityRef} (D3).
  * 4. **Nothing here executes an agent** (D9, ADR `260727-184933`). There is no
  *    turn, no session handle and no invocation on this port, deliberately. The
- *    port carries conversation; compute stays on the member's machine.
+ *    port carries conversation; execution state (turns, sessions, runtime
+ *    sign-ins) stays on a computer the member owns or pays for. Which servers
+ *    run agents at all is a role setting, not this port (ADR `261122-173853`).
  *
  * Schemas are the authoritative contract (the repo is Zod-first); TS types derive
  * via `z.infer`. The port interface itself is a runtime port rather than a

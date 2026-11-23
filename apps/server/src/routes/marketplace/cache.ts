@@ -11,7 +11,7 @@ import { UnreadableInstallsError } from '../../services/marketplace/cache/packag
 import { directorySize } from '../../services/marketplace/lib/directory-size.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceRouteContext } from './context.js';
-import { readJsonBody } from '../../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { safeReaddir, validationFailed } from './shared.js';
 
 /**

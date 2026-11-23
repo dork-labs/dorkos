@@ -1,25 +1,27 @@
 flowchart TB
   accTitle: Projects, extensions, and starting agent work
-  accDescr: Project identity resolves to a git main checkout, while workspaces are execution checkouts. One running extension can reach multiple permitted projects. Approval of code or trust in its source is separate from per-project settings. Activity decisions and bounded startWork preserve project account eligibility and session provenance.
-  folders["Sessions · agents · installs · workspaces"]
-  projects["Project registry<br/>Stable name → git main checkout<br/>Worktrees resolve to project identity"]
-  reported["Extension-reported roots<br/>Bounded visibility; no discovery expansion"]
-  workspace["Workspace checkout<br/>Execution isolation; not a new project identity"]
-  code["Discovered extension code"]
-  approval["Person approves copy / trusts source<br/>Activity inbox or Settings<br/>Code trust is not project enablement"]
-  extension["One running extension instance<br/>Multiple permitted projects"]
-  settings["Per-project extension settings<br/>Enable work separately from trusting code"]
-  inbox["Activity inbox decisions<br/>Core owns deadline, answer and history"]
-  start["startWork / sessions.start<br/>Project visibility + runtime account eligibility<br/>Shared rate / running limits, including descendants"]
-  session["New session in project root<br/>First prompt dispatched; origin recorded<br/>Current chat stays unchanged"]
+  accDescr: Project identity resolves to a git main checkout, while workspaces are execution checkouts. One running extension can reach several permitted projects. Approval of code or trust in its source is separate from per-project settings. Activity decisions and a bounded launch door preserve project account eligibility and session provenance.
+
+  folders["<b>Sessions · agents · installs · workspaces</b>"]
+  projects["<b>Project registry</b><br/><span class='d'>Stable name for a git main checkout<br/>Worktrees resolve to the same project</span>"]
+  reported["<b>Extension-reported roots</b><br/><span class='d'>Visible, not scanned</span>"]
+  workspace["<b>Workspace checkout</b><br/><span class='d'>Isolation for a run · not a new project</span>"]
+  code["<b>Discovered extension code</b>"]
+  approval["<b>A person approves a copy or trusts a source</b><br/><span class='d'>Activity inbox or Settings<br/>Trusting code is not enabling it</span>"]
+  extension["<b>One running extension</b><br/><span class='d'>Several permitted projects</span>"]
+  settings["<b>Per-project settings</b><br/><span class='d'>Enable work, separately from trusting code</span>"]
+  inbox["<b>Activity inbox</b><br/><span class='d'>Core owns the deadline, the answer and the history</span>"]
+  start["<b>One launch door</b><br/><span class='d'>Project visibility · account eligibility<br/>Shared rate and running limits</span>"]
+  session["<b>New chat in the project root</b><br/><span class='d'>First prompt sent · origin recorded<br/>The current chat is unchanged</span>"]
+
   folders --> projects
-  reported -->|"Reported until observed by core"| projects
+  reported -->|"until core sees them"| projects
   projects --> workspace
   code --> approval
-  approval -->|"Approved loading policy"| extension
-  projects -->|"Permitted project context"| extension
-  extension <-->|"Project-scoped configuration"| settings
-  extension <-->|"Raise / answer / resolve"| inbox
-  extension -->|"Person action or server request"| start
-  projects -->|"Resolve project; enforce visibility"| start
-  start -->|"Recheck eligibility at launch"| session
+  approval -->|"approved loading policy"| extension
+  projects -->|"permitted project context"| extension
+  extension <-->|"project-scoped configuration"| settings
+  extension <-->|"raise, answer, resolve"| inbox
+  extension -->|"a person's action or a server request"| start
+  projects -->|"resolve, enforce visibility"| start
+  start -->|"eligibility rechecked at launch"| session

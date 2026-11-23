@@ -17,6 +17,7 @@ import { usingTheAgentBrowser } from './skills/using-the-agent-browser.js';
 import { workingWithSpinOffChats } from './skills/working-with-spin-off-chats.js';
 import { workingOnAHeartbeat } from './skills/working-on-a-heartbeat.js';
 import { buildingDorkosApps } from './skills/building-dorkos-apps.js';
+import { waitingForABusyComputer } from './skills/waiting-for-a-busy-computer.js';
 
 /** One authored skill in the pack: its kebab-case name, discovery description, and body. */
 export interface OperatingSkill {
@@ -472,8 +473,21 @@ export interface OperatingSkill {
  *   that only adds places keeps running; which names pass for DorkOS; and that DorkOS
  *   draws the app's name on ⌘K rows and dialogs. An agent seeded at 68 would leave
  *   places undeclared and put the app's name in every ⌘K label.
+ * - 70: `waiting-for-a-busy-computer` joins the pack (DOR-4209). Heavy shell jobs
+ *   wait in the computer's one line, and the agent that waits sees nothing, so an
+ *   agent that does not know reads the wait as a hang and works around it: the
+ *   background, a script, a suite split into single files, a project's off
+ *   switch. The page teaches what is heavy, what a wait looks like, that exit 75
+ *   means try later, and what only the person can do. The new skill seeds without
+ *   a bump; the bump is for the sibling lists in `operating-dorkos` and
+ *   `answering-dorkos-questions`.
+ * - 71: `working-with-spin-off-chats` and `working-on-a-heartbeat` teach the project
+ *   lead (DOR-4469): long work goes to one lead chat that messages the one agent who
+ *   must act, and a room hears only started, blocked on a person, and shipped, plus
+ *   an answer or a result somebody there asked for. An agent seeded at 70 would post
+ *   every report and status relay into the room.
  */
-export const OPERATING_SKILLS_VERSION = 69;
+export const OPERATING_SKILLS_VERSION = 71;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
@@ -492,4 +506,5 @@ export const OPERATING_SKILLS_PACK: readonly OperatingSkill[] = [
   workingOnAHeartbeat,
   continuingOnAnotherAccount,
   buildingDorkosApps,
+  waitingForABusyComputer,
 ];

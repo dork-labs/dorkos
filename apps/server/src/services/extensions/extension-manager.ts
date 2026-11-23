@@ -1158,14 +1158,17 @@ export class ExtensionManager {
     const sources = extensions.approvedSources ?? {};
     const recorded = sources[id];
     // The approval was given to a trusted origin (§9.1), and another copy of
-    // that origin stays installed elsewhere: the person's decision is about the
-    // origin, so it moves to that copy instead of being lost with this one.
+    // that origin with the same files stays installed elsewhere: the person's
+    // decision covers that copy too, so it moves there instead of being lost
+    // with this one. A copy with other files (another version) was never
+    // approved, so it inherits nothing (DOR-4895).
     const heir =
       installRoot && recorded?.origin && isPathWithin(recorded.path, installRoot)
         ? [...this.extensions.values(), ...this.shadowed].find(
             (rec) =>
               rec.id === id &&
-              !!rec.currentDigest &&
+              // Never matches a copy whose files, or the yes's, are unread.
+              rec.currentDigest === (recorded.digest ?? null) &&
               !isPathWithin(rec.path, installRoot) &&
               rec.trustedOrigin?.plugin === recorded.origin?.plugin &&
               rec.trustedOrigin?.source === recorded.origin?.source

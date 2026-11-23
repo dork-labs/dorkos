@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import type { RoomHarness } from './room-test-harness.js';
 /**
  * One seat per agent per room, and the cross-room hand-off (DOR-3397, room coordination item 4):
  * only the session a room keeps for an agent posts there, and a post from any other session of
@@ -18,48 +22,36 @@ import { mockInterruptReceipt } from '@dorkos/test-utils';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
-import { lastTurnLevelOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
-import { setChatMessageService } from '../../session/chat-messages/chat-message-current.js';
 import type { ChatMessageService } from '../../session/chat-messages/chat-message-service.js';
-import { composeRegistry, type CapabilityRegistry } from '../../core/capabilities/index.js';
+import type { CapabilityRegistry } from '../../core/capabilities/index.js';
 import type { AgentIdentity } from '../../core/agent-identity/index.js';
-import { roomsDomain } from '../room-capabilities.js';
-import { resetFreshnessForTests } from '../messages/room-freshness.js';
+
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';
-import {
-  agentLookupFor,
-  createRoomHarness,
-  roomVoice,
-  type RecordedTurn,
-  type ScriptedTurnRunner,
-} from './room-test-harness.js';
-import { withStrangerMarkFlag } from './stranger-mark-flag.js';
-import { logger } from '../../../lib/logger.js';
-import { eq, sessionMetadata, type Db } from '@dorkos/db';
-import { runtimeRegistry } from '../../core/runtime-registry.js';
+import type { RecordedTurn, ScriptedTurnRunner } from './room-test-harness.js';
+import type { Db } from '@dorkos/db';
 
-vi.mock('../../core/auth/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../core/auth/index.js')>()),
-  readOwnerAccount: () => null,
-}));
-
-vi.mock('../../core/config-manager.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../core/config-manager.js')>()),
-  configManager: {
-    get: (section: string) => (section === 'auth' ? { enabled: false } : undefined),
-    set: () => {},
-  },
-}));
-
+let setChatMessageService: (typeof import('../../session/chat-messages/chat-message-current.js'))['setChatMessageService'];
+let composeRegistry: (typeof import('../../core/capabilities/index.js'))['composeRegistry'];
+let roomsDomain: (typeof import('../room-capabilities.js'))['roomsDomain'];
+let resetFreshnessForTests: (typeof import('../messages/room-freshness.js'))['resetFreshnessForTests'];
+let withStrangerMarkFlag: (typeof import('./stranger-mark-flag.js'))['withStrangerMarkFlag'];
+let logger: (typeof import('../../../lib/logger.js'))['logger'];
+let eq: (typeof import('@dorkos/db'))['eq'];
+let sessionMetadata: (typeof import('@dorkos/db'))['sessionMetadata'];
+let runtimeRegistry: (typeof import('../../core/runtime-registry.js'))['runtimeRegistry'];
+let agentLookupFor: (typeof import('./room-test-harness.js'))['agentLookupFor'];
+let createRoomHarness: (typeof import('./room-test-harness.js'))['createRoomHarness'];
+let roomVoice: (typeof import('./room-test-harness.js'))['roomVoice'];
+let agents: ReturnType<typeof agentLookupFor>;
+let temporaryHome: string;
+let permission: typeof import('../../core/capabilities/permission-enforcement.js');
+let lastTurnLevelOf: (typeof import('../../core/turn-power/turn-levels.js'))['lastTurnLevelOf'];
+let recordTurnLevels: (typeof import('../../core/turn-power/turn-levels.js'))['recordTurnLevels'];
 // Mention-only, so only an @bo starts a turn for Bo, and his read cursor in a room he was not
 // asked in stays where he joined it.
-const agents = agentLookupFor({
-  '/agents/bo': { name: 'bo', displayName: 'Bo', responseMode: 'mention-only' },
-  '/agents/cy': { name: 'cy', displayName: 'Cy', responseMode: 'mention-only' },
-});
 
 const BO: AgentIdentity = {
   agentPath: '/agents/bo',
@@ -167,9 +159,21 @@ describe('one seat per agent per room, and the hand-off', () => {
   let runner: ReturnType<typeof asyncRunner>;
   let harnessAuthors: AuthorRegistry;
   let db: Db;
+  let durableHarness: RoomHarness;
+  let terminalSource: import('../handoff/handoff-terminal-source.js').HandoffTerminalSource;
+  let terminalAcceptance: import('../../session/private-messages/acceptance.js').PrivateSessionMessageAcceptanceService;
+  let setupPromise: Promise<void> | undefined;
+  let ownedService: RoomService | undefined;
 
   /** Post as Bo from `sessionId`, the way the in-session server calls. */
-  function postAsBo(sessionId: string, input: Record<string, unknown>): Promise<PostResult> {
+  async function postAsBo(sessionId: string, input: Record<string, unknown>): Promise<PostResult> {
+    const { recordFixturePublicSource } = await import('./durable-handoff-fixture.js');
+    await recordFixturePublicSource(
+      durableHarness,
+      sessionId,
+      '/agents/bo',
+      input.roomId as string
+    );
     return registry.invoke('rooms.post', input, {
       identity: BO,
       sessionId,
@@ -201,7 +205,30 @@ describe('one seat per agent per room, and the hand-off', () => {
     }
   }
 
-  beforeEach(() => {
+  async function setupFixture(): Promise<void> {
+    vi.resetModules();
+    temporaryHome = mkdtempSync(join(tmpdir(), 'room-handoff-existing-'));
+    vi.stubEnv('DORK_HOME', temporaryHome);
+    ({ lastTurnLevelOf, recordTurnLevels } = await import('../../core/turn-power/turn-levels.js'));
+    ({ setChatMessageService } =
+      await import('../../session/chat-messages/chat-message-current.js'));
+    ({ composeRegistry } = await import('../../core/capabilities/index.js'));
+    ({ roomsDomain } = await import('../room-capabilities.js'));
+    ({ resetFreshnessForTests } = await import('../messages/room-freshness.js'));
+    ({ withStrangerMarkFlag } = await import('./stranger-mark-flag.js'));
+    ({ logger } = await import('../../../lib/logger.js'));
+    ({ eq, sessionMetadata } = await import('@dorkos/db'));
+    ({ runtimeRegistry } = await import('../../core/runtime-registry.js'));
+    ({ agentLookupFor, createRoomHarness, roomVoice } = await import('./room-test-harness.js'));
+    permission = await import('../../core/capabilities/permission-enforcement.js');
+    permission.initPermissionGate({
+      readConfig: () => ({ preset: 'trusted', defaults: { areas: {}, actions: {} } }),
+      readAgentPermissions: async () => undefined,
+    });
+    agents = agentLookupFor({
+      '/agents/bo': { name: 'bo', displayName: 'Bo', responseMode: 'mention-only' },
+      '/agents/cy': { name: 'cy', displayName: 'Cy', responseMode: 'mention-only' },
+    });
     resetFreshnessForTests();
     scripts = {};
     busy = () => false;
@@ -213,7 +240,28 @@ describe('one seat per agent per room, and the hand-off', () => {
       (request) => busy(request)
     );
     const harness = createRoomHarness({ agents, runner, operatorName: () => 'Dorian' });
+    durableHarness = harness;
     ({ service, store, human, db } = harness);
+    ownedService = service;
+    const { HandoffTerminalSource } = await import('../handoff/handoff-terminal-source.js');
+    const { HandoffTerminalNotices } = await import('../handoff/handoff-terminal-notices.js');
+    const { PrivateSessionMessageAcceptanceService } =
+      await import('../../session/private-messages/acceptance.js');
+    const { MessageQueueStore } = await import('../../session/message-queue-store.js');
+    terminalSource = new HandoffTerminalSource(db, store.handoffOutbox);
+    terminalAcceptance = new PrivateSessionMessageAcceptanceService(
+      db,
+      new MessageQueueStore(db),
+      [terminalSource],
+      'test-notice-boot'
+    );
+    const terminalNotices = new HandoffTerminalNotices(
+      store.handoffOutbox,
+      terminalSource,
+      terminalAcceptance,
+      () => {}
+    );
+    service.handoffs.initializeDurable(() => terminalNotices.flush());
     runtimeRegistry.setDb(db);
     // Real persisted target facts, read by the same registry as production chat admission.
     db.insert(sessionMetadata)
@@ -221,7 +269,7 @@ describe('one seat per agent per room, and the hand-off', () => {
         ['bo-chat', 'cy-chat'].map((sessionId) => ({
           sessionId,
           runtime: 'claude-code',
-          agentPath: '/agents/bo',
+          agentPath: sessionId === 'cy-chat' ? '/agents/cy' : '/agents/bo',
           launchOrigin: 'interactive',
           createdAt: new Date().toISOString(),
         }))
@@ -243,12 +291,35 @@ describe('one seat per agent per room, and the hand-off', () => {
     bo = harness.authors.resolveAgent('/agents/bo', 'Bo').id;
     // Every room has a line in it, so a seat's turn has something to be about.
     service.post(dorkos.id, { authorId: human, text: 'morning' });
-  });
+  }
+
+  beforeEach(async () => {
+    ownedService = undefined;
+    setupPromise = setupFixture();
+    await setupPromise;
+  }, 30_000);
 
   afterEach(async () => {
-    setChatMessageService(undefined);
-    await settle();
-  });
+    // A timed-out cold import still owns its continuation. Drain it before restoring the home.
+    await setupPromise?.catch(() => undefined);
+    setChatMessageService?.(undefined);
+    ownedService?.dispose();
+    try {
+      if (ownedService) await settle();
+    } finally {
+      const routes = await import('../../session/chat-messages/chat-message-current.js');
+      routes.setRoomSeatReports(undefined);
+      routes.disposeRoomSeatMessages();
+      permission?.resetPermissionGate();
+      vi.restoreAllMocks();
+      vi.resetModules();
+      if (db?.$client.open) db.$client.close();
+      vi.unstubAllEnvs();
+      if (temporaryHome) rmSync(temporaryHome, { recursive: true, force: true });
+      setupPromise = undefined;
+      ownedService = undefined;
+    }
+  }, 30_000);
 
   /** Bo's #team-product turn, asked by Dorian, hands `text` to #dorkos. */
   function productHandsOff(text: string, extra: Record<string, unknown> = {}): PostResult[] {
@@ -388,13 +459,22 @@ describe('one seat per agent per room, and the hand-off', () => {
       [bo, 'bo-chat'],
       [cy, 'cy-chat'],
     ] as const) {
-      await service.handoffs.handOff({
+      const { recordFixturePublicSource } = await import('./durable-handoff-fixture.js');
+      await recordFixturePublicSource(
+        durableHarness,
+        chat,
+        authorId === cy ? '/agents/cy' : '/agents/bo',
+        dorkos.id
+      );
+      const accepted = await service.handoffs.handOff({
         roomId: dorkos.id,
         author: harnessAuthors.getById(authorId)!,
         text: 'ship it',
         verbatim: false,
         callerSessionId: chat,
       });
+      expect(accepted.handedOff).toBe(true);
+      expect(accepted.handoffId).toEqual(expect.any(String));
     }
 
     await new Promise((resolve) => setTimeout(resolve, 2_500));
@@ -762,10 +842,118 @@ describe('one seat per agent per room, and the hand-off', () => {
     await settle();
 
     expect(receipt.instruction).toContain('The answer comes back to this chat.');
-    expect(send).toHaveBeenCalledWith(
-      expect.objectContaining({ agentPath: '/agents/bo' }),
-      expect.objectContaining({ to: 'bo-chat', message: 'Bo shared it in #dorkos.' }),
-      'report'
-    );
+    expect(send).not.toHaveBeenCalled(); // No legacy chat_send bypass: same outcome through closed source.
+    const row = store.handoffOutbox.readOwned(receipt.handoffId!, bo)!;
+    expect(row.noticeReceiptId).toEqual(expect.any(String));
+    const prepared = await terminalAcceptance.prepare(row.noticeReceiptId!);
+    expect(prepared.content).toBe('Bo shared it in #dorkos.');
+  });
+
+  // DOR-5032: the test runtime has to drive a hand-off end to end, so QA can check one survives
+  // a restart. The seat runs the test runtime's own default turn, not a stand-in for it.
+  describe('on the test runtime', () => {
+    /** Bo's #dorkos seat runs each turn on the test runtime's default `simple-text`. */
+    async function seatRunsTestMode(): Promise<void> {
+      const { setRoomService } = await import('../index.js');
+      const { TestModeRuntime } = await import('../../runtimes/test-mode/test-mode-runtime.js');
+      setRoomService(service);
+      const runtime = new TestModeRuntime();
+      scripts[dorkos.id] = async (request, sessionId) => {
+        if (draftIn(request.prompt) === undefined) return null;
+        const opts = {
+          cwd: request.cwd,
+          roomTurn: { roomId: dorkos.id, authorId: bo, turnId: request.entry.id },
+        } as MessageOpts;
+        for await (const _event of runtime.sendMessage(sessionId, request.prompt, opts)) {
+          /* drain */
+        }
+        return null;
+      };
+    }
+
+    /** What a scripted turn said on its own stream. */
+    async function textOf(events: AsyncGenerator<StreamEvent>): Promise<string> {
+      const said: string[] = [];
+      for await (const event of events) {
+        if (event.type === 'text_delta') said.push((event.data as { text: string }).text);
+      }
+      return said.join('');
+    }
+
+    /** The context a direct chat's scripted turn runs with. */
+    function chatContext(
+      sessionId: string
+    ): import('../../runtimes/test-mode/interaction-gate.js').ScenarioContext {
+      return {
+        sessionId,
+        signal: new AbortController().signal,
+        delay: async () => {},
+      } as unknown as import('../../runtimes/test-mode/interaction-gate.js').ScenarioContext;
+    }
+
+    it('a seat’s scripted reply posts the handed-off draft, and the hand-off ends posted', async () => {
+      await seatRunsTestMode();
+
+      const receipt = await postAsBo('bo-chat', { roomId: dorkos.id, text: 'from test mode' });
+      await settle();
+
+      expect(receipt).toMatchObject({ posted: false, handedOff: true });
+      expect(bosPosts(dorkos)).toEqual(['from test mode\n\n_Shared from another chat._']);
+      expect(service.handoffs.status(receipt.handoffId!, bo)).toMatchObject({ status: 'posted' });
+    });
+
+    it('a word-for-word hand-off is posted word for word by the scripted seat', async () => {
+      await seatRunsTestMode();
+
+      const receipt = await postAsBo('bo-chat', {
+        roomId: dorkos.id,
+        text: 'exactly this',
+        verbatim: true,
+      });
+      await settle();
+
+      expect(service.handoffs.status(receipt.handoffId!, bo)).toMatchObject({ status: 'posted' });
+      expect(bosPosts(dorkos)[0]?.split('\n')[0]).toBe('exactly this');
+    });
+
+    it('rooms-post-to hands a direct chat’s post to the seat, and it ends posted', async () => {
+      await seatRunsTestMode();
+      const { setAgentHomeRegistry } = await import('../../core/agent-identity/agent-home.js');
+      setAgentHomeRegistry({
+        isRegisteredHome: (dir) => dir === '/agents/bo',
+        listRegisteredHomes: () => ['/agents/bo'],
+        managedWorkspaceOwner: () => null,
+        roomsDir: null,
+      });
+      const { recordFixturePublicSource } = await import('./durable-handoff-fixture.js');
+      await recordFixturePublicSource(durableHarness, 'bo-chat', '/agents/bo', dorkos.id);
+      const { roomPostToScenario } =
+        await import('../../runtimes/test-mode/scenarios/room-post-to-scenario.js');
+
+      let said: string;
+      try {
+        said = await textOf(
+          roomPostToScenario(`${dorkos.id}  hello from a direct chat`, chatContext('bo-chat'), {
+            cwd: '/agents/bo',
+          })
+        );
+      } finally {
+        setAgentHomeRegistry(undefined);
+      }
+      await settle();
+
+      const handoffId = /^HANDED-OFF: (\S+)$/.exec(said)?.[1];
+      expect(handoffId).toBeDefined();
+      expect(bosPosts(dorkos)).toEqual(['hello from a direct chat\n\n_Shared from another chat._']);
+      expect(service.handoffs.status(handoffId!, bo)).toMatchObject({ status: 'posted' });
+    });
+
+    it('rooms-post-to says how to call it when the message names no room and text', async () => {
+      const { roomPostToScenario } =
+        await import('../../runtimes/test-mode/scenarios/room-post-to-scenario.js');
+      await expect(
+        textOf(roomPostToScenario('just-a-room-id', chatContext('bo-chat'), { cwd: '/agents/bo' }))
+      ).resolves.toBe('POST-TO-USAGE: send "<roomId> <text>"');
+    });
   });
 });

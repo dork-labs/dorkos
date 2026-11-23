@@ -10,6 +10,7 @@
  *
  * @module entities/recents/lib/jump-back-in
  */
+import { titleShownToPerson } from '@dorkos/shared/kickoff';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { Session } from '@dorkos/shared/types';
 import { interactionKey, type InteractionTimestamps } from '@/layers/entities/interactions';
@@ -174,7 +175,8 @@ function sessionItem(session: Session): JumpBackInSessionItem {
     kind: 'session',
     id: session.id,
     name: sessionDisplayTitle(session.title),
-    summary: oneLine(session.lastMessagePreview),
+    // A preview of a greeting kickoff is DorkOS markup, never shown (DOR-4976).
+    summary: oneLine(titleShownToPerson(session.lastMessagePreview)),
     lastActivityAt: session.updatedAt,
     session,
   };

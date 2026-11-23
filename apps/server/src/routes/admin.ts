@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import { Hono, type Context } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRateLimit } from '../http/rate-limiter.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { refuseFrontDoorChange } from '../lib/caller-authority.js';
 import { env } from '../env.js';

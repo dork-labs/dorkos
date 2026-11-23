@@ -68,7 +68,13 @@ const mockUseSessionDetail = vi.fn((_id: unknown, _options: unknown) => ({
 }));
 const mockRecordChatOpened = vi.fn<(sessionId: string | null) => void>();
 const mockSeek = vi.fn<(sessionId: string, messageId: string) => void>();
-vi.mock('@/layers/entities/session', () => ({
+vi.mock('@/layers/entities/session', async () => ({
+  // The real title rule, so the heading says exactly what the header says.
+  sessionDisplayTitle: (
+    await vi.importActual<typeof import('@/layers/entities/session/lib/session-display-title')>(
+      '@/layers/entities/session/lib/session-display-title'
+    )
+  ).sessionDisplayTitle,
   useRecordChatOpened: (sessionId: string | null) => mockRecordChatOpened(sessionId),
   useSessionDetail: (id: unknown, options: unknown) => mockUseSessionDetail(id, options),
   useSessionId: () => ['session-abc', vi.fn()],
@@ -125,10 +131,18 @@ describe('SessionPage', () => {
     expect(mockRecordChatOpened).toHaveBeenCalledWith('session-abc');
   });
 
-  it('says "Session" while the session has no title yet', () => {
+  it('says "New chat", like the header, while the session has no title yet', () => {
     mockSessionTitle.mockReturnValue('   ');
     render(<SessionPage />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Chat$/);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^New chat$/);
+  });
+
+  it('never reads a stored greeting tag aloud: the heading says "New chat" (DOR-4976)', () => {
+    mockSessionTitle.mockReturnValue('<dork-kickoff>');
+    render(<SessionPage />);
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading).toHaveTextContent(/^New chat$/);
+    expect(heading.textContent).not.toMatch(/<\/?dork-/);
   });
 
   /**
@@ -160,7 +174,7 @@ describe('SessionPage', () => {
     // SessionPage renders its undrawn heading and ChatPanel — no wrapping panel group divs
     expect([...container.children].map((child) => child.tagName)).toEqual(['H1', 'DIV']);
     expect(container.lastChild).toHaveAttribute('data-testid', 'chat-panel');
-    expect(screen.getByRole('heading', { level: 1, name: 'Chat' })).toHaveClass('sr-only');
+    expect(screen.getByRole('heading', { level: 1, name: 'New chat' })).toHaveClass('sr-only');
   });
 
   it('forwards the ?runtime= launch param to ChatPanel', () => {

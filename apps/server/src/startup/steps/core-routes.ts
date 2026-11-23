@@ -14,6 +14,7 @@ import { approvedByField } from '../../services/connectors/access/access-change-
 import path from 'node:path';
 import { setStepUpExtensionRiskInputs } from '../../services/extensions/step-up/step-up-extension-risk.js';
 import { useStepUpRiskLedgerFile } from '../../services/extensions/step-up/step-up-risk-ledger.js';
+import { usePageStampKeyFile } from '../../services/extensions/step-up/page-stamp.js';
 import type { ConnectorRoutesDeps } from '../../routes/connectors.js';
 import { credentialStore } from '../../services/core/credential-provider.js';
 import { ConnectorSessionAccessService } from '../../services/connectors/resources/session-access-service.js';
@@ -723,9 +724,11 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   // folder or changed since it was approved (DOR-3234). Read per request.
   // The ledger remembers a risk that cleared while a tab stayed open, across restarts.
   useStepUpRiskLedgerFile(path.join(dorkHome, 'step-up', 'risk-ledger.json'));
+  // Pages this server sends carry a stamp signed with this key (DOR-5026).
+  usePageStampKeyFile(path.join(dorkHome, 'step-up', 'page-stamp.key'));
   setStepUpExtensionRiskInputs(() => ({
     records: refs.extensionManager?.listRecords() ?? [],
-    approvals: configManager.get('extensions')?.approvedSources ?? {},
+    extensions: configManager.get('extensions') ?? { approvedToRun: [], approvedSources: {} },
     agents: (refs.meshCore?.listWithPaths() ?? []).map((agent) => ({
       path: agent.projectPath,
       name: agent.displayName ?? agent.name,

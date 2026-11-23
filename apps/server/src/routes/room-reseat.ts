@@ -16,7 +16,7 @@ import { Hono } from 'hono';
 import { ReseatSeatRequestSchema, type ReseatOptions } from '@dorkos/shared/room-schemas';
 import { getRoomService } from '../services/rooms/index.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { parseOrRefuse, roomRoute } from './room-route.js';
 
 /** Mounted at `/:id/members/:authorId` by the rooms router. */

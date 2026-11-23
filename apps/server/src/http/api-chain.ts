@@ -72,7 +72,8 @@ import {
 } from '../services/core/auth/oauth-callback-arrival.js';
 import { currentServerRole } from '../lib/server-role.js';
 import type { ClientFilesHandler } from './client-files.js';
-import { parseRequestBody, underMount, type BodyRule } from './request-body.js';
+import { underMount, type BodyRule } from '@dorkos/http-kit';
+import { apiRequestBody } from './request-body.js';
 import { answerUnclaimed } from './unclaimed.js';
 import { wifiLevelMiddleware } from '../services/core/auth/sessions/wifi-level.js';
 import { personSessionRefusal } from './person-session-refusal.js';
@@ -143,10 +144,33 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
       throw thrown instanceof Error ? thrown : new Error('', { cause: thrown });
     }
   });
+  // One line per request, written when its response finishes or its connection
+  // closes. First, ahead of every refusal, so a request from another device is
+  // on record accepted or refused (DOR-5042); `logRequest` keeps the query,
+  // headers and body off the line.
+  app.use(async (c, next) => {
+    const start = Date.now();
+    const { method } = c.req;
+    // As sent, not as Hono decoded it.
+    const path = rawUrl(c);
+    const { incoming, outgoing } = c.env;
+    const client = incoming.socket.remoteAddress ?? '(unknown)';
+    let written = false;
+    const write = (aborted: boolean) => {
+      if (written) return;
+      written = true;
+      logRequest(method, path, outgoing.statusCode, Date.now() - start, client, aborted);
+    };
+    outgoing.once('finish', () => write(false));
+    // A dropped stream (a closed tab's events, a cut-off upload) emits only `close`.
+    outgoing.once('close', () => write(true));
+    await next();
+  });
   app.use(admit(options.admission));
   // A managed remote-access hostname is served only through the managed
   // ingress, which checks the edge proof; on this listener it is refused before
-  // any logger or route sees it (`middleware/managed-host-guard.ts`).
+  // any route sees it (`middleware/managed-host-guard.ts`), and logged like any
+  // other refusal.
   app.use(async (c, next) => {
     if (bypassesManagedIngress(c.env.incoming)) return c.json(MANAGED_HOST_REFUSAL_BODY, 403);
     await next();
@@ -191,18 +215,7 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
 
   options.beforeBodyParsing?.(app);
 
-  app.use(parseRequestBody<ApiEnv>(options.bodyRules));
-  app.use(async (c, next) => {
-    const start = Date.now();
-    const { method } = c.req;
-    // As sent, not as Hono decoded it.
-    const path = rawUrl(c).split('?')[0] ?? c.req.path;
-    const { outgoing } = c.env;
-    outgoing.once('finish', () =>
-      logRequest(method, path, outgoing.statusCode, Date.now() - start)
-    );
-    await next();
-  });
+  app.use(apiRequestBody<ApiEnv>(options.bodyRules));
   // Before the session gate: bad remote MCP keys never reach the route limiter.
   app.use(buildMcpAuthThrottle());
   app.use(async (c, next) => {

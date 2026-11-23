@@ -14,6 +14,8 @@ status: ideation
 **Decision:** ADR [261015-042933](../../decisions/261015-042933-everything-is-a-space-hubs-space-servers-and-agent-computers.md)
 **Status:** Agreed. The design below was reviewed over six rounds by four reviewers (architecture, product, security and open source, DorkOS Cloud), and Dorian approved it with all the recommended picks on 2026-10-15. Do not reopen it; change it only through a new decision.
 
+> **Changed 2026-11-22 by ADR [`261122-173853`](../../decisions/261122-173853-one-space-model.md) (one space model).** Two kinds of state, not two kinds of place. A space holds its members' data (agents' identity, rules, memory and schedules, conversations, connections, settings, documents, extensions); only execution state (workspaces, runtime transcripts and sign-ins, running processes) stays on the computer that runs turns. A hub is a one-tenant space server, and the private space (today `LOCAL_COMMUNITY` on SQLite) becomes a tenant on the space store after launch, domain by domain, agents last. "No hub runs agents" is a hosting policy read from the role setting; the wall that stays is that a shared host never holds a member's credentials or a key to a member's computer. "The Mac's own rooms stay the Mac's" describes launch, not the end state.
+
 "Hub" is the internal word for a person's own DorkOS. It never appears in anything a person reads. The app says **Private** for the private space and **space** for everything else.
 
 ## 1) What Dorian asked for (#dorkos, 2026-10-14 and 15)
@@ -76,7 +78,7 @@ Until the after-launch merge it is still two programs (the DorkOS server and the
   - making a hub needs a verified account and is rate-limited;
   - an unauthenticated request never wakes a hub.
 - **A hub never holds hosting-supplier credentials.** It asks Cloud's API to start or stop its own computers, and Cloud makes the call, so a compromised hub cannot reach anyone else's machines.
-- **No hub runs agents.**
+- **No hub runs agents.** (A hosting policy since ADR `261122-173853`, not an architectural wall.)
 
 **Cloud team spaces:** members sign in with a DorkOS account. "Continue with DorkOS" can itself offer Google. Every member is then hub-eligible, which gives a teammate with no computer the full app.
 

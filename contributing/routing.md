@@ -92,6 +92,9 @@ Accessible Claude Code account/project JSONL, local Codex thread stores and the 
 | `/marketplace`         | Validated marketplace search.                                             |
 | `/marketplace/sources` | Independent sibling page; never renders inside the marketplace page.      |
 | `/feedback-requests`   | Inherited root search.                                                    |
+| `/apps`                | Every app, behind the sidebar's Apps door; inherited root search.         |
+| `/todos`               | The to-do list; inherited root search.                                    |
+| `/signed-in`           | Outside the shell: a sign-in's OAuth callback lands here (`?landing=`).   |
 | `/x/$extensionId`      | Registered extension base page; arbitrary string-valued search.           |
 | `/x/$extensionId/$`    | Extension splat; preserve exact strings such as `1.10`.                   |
 | `/dev/*`               | DEV-only `main.tsx` bypass; outside the generated tree.                   |

@@ -35,6 +35,7 @@ import type {
   TextPart,
   ToolCallPart,
 } from '@dorkos/shared/types';
+import { titleShownToPerson } from '@dorkos/shared/kickoff';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import { mapMessageError } from '../events/history-error-part.js';
 // Direct module import, NOT the attachments barrel: the barrel re-exports the
@@ -66,6 +67,8 @@ import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from '../runtime-constants.
 export interface OpenCodeSessionMapStore {
   /** Persist a binding, replacing any existing row on either key (strictly 1:1). */
   bind(sessionId: string, ocSessionId: string): void;
+  /** Strict prepared-birth lookup. null proves absence; unavailable reads must throw. */
+  readBinding?(sessionId: string): { ocSessionId: string } | null;
   /** All persisted bindings, for hydration at construction. */
   listAll(): { sessionId: string; ocSessionId: string }[];
 }
@@ -216,7 +219,8 @@ export function unwrap<T>(
 function mapSession(session: OpenCodeSession, dorkosId: string): Session {
   return {
     id: dorkosId,
-    title: session.title,
+    // A title OpenCode made from a greeting kickoff shows as untitled (DOR-4976).
+    title: titleShownToPerson(session.title),
     createdAt: toIso(session.time.created),
     updatedAt: toIso(session.time.updated),
     // OpenCode has no per-session permission mode; 'default' matches the
@@ -523,6 +527,16 @@ export class OpenCodeSessionMapper {
     );
     this.link(dorkosSessionId, created.id);
     return created.id;
+  }
+
+  /** Cache and durable absence are both required only for a prepared first settings write. */
+  hasUnboundPreparedIdentity(sessionId: string): boolean {
+    if (this.dorkosToOpenCode.has(sessionId) || !this.store?.readBinding) return false;
+    try {
+      return this.store.readBinding(sessionId) === null;
+    } catch {
+      return false;
+    }
   }
 
   /**

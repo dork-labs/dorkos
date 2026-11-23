@@ -18,7 +18,7 @@ import { randomBytes } from 'node:crypto';
 import type { Context, Hono } from 'hono';
 import { calledApps, type ExtensionManifest } from '@dorkos/extension-api';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { corsAllowsOrigin } from '../http/cors-policy.js';

@@ -1,6 +1,6 @@
 # Testing keep-awake on a real Mac
 
-`@dorkos/keep-awake` (`packages/keep-awake/`) holds the computer awake while agents work. On macOS the holder is one `/usr/bin/caffeinate -i -w <server pid> -t 300` process, replaced every 240 seconds, stopped 30 seconds after the last hold is released. The server wires it up in `apps/server/src/services/core/keep-awake/`; the user-facing story is `docs/guides/keep-awake.mdx`.
+`@dorkos/keep-awake` (`packages/keep-awake/`) holds the computer awake while agents work. On macOS the holder is one `/usr/bin/caffeinate -i -w <server pid> -t 300` process, replaced every 240 seconds, stopped three minutes after the last hold is released (`DEFAULT_LINGER_MS`; turns often come a minute or two apart). Linux (`systemd-inhibit`) and Windows holders live beside it in `packages/keep-awake/src/holders/`; this guide covers the Mac. The server wires it up in `apps/server/src/services/core/keep-awake/`; the user-facing story is `docs/guides/keep-awake.mdx`.
 
 The unit tests drive the engine with a fake spawner, so they prove the bookkeeping, never that macOS agrees. This guide covers the two checks that do: an automated smoke you can run in seconds, and four scenarios a person runs by hand.
 
@@ -33,10 +33,10 @@ It only looks at assertions made on behalf of its own owner pid, so other apps c
 ```text
 [smoke] hold → asserted by caffeinate pid 69587 in 14 ms
 [smoke] release → assertion gone in 130 ms
-[smoke] owner killed → assertion gone in 13 ms; holders spawned after the kill: 31
+[smoke] owner killed → assertion gone in 13 ms; holders spawned after the kill: 0
 ```
 
-The last number is a known engine quirk, not a test failure. A dead owner makes each new caffeinate exit 0 at once, and the engine reads exit 0 as its `-t` running out and starts another, until `dispose`. DOR-2919 fixes the engine to treat an early exit 0 as "owner gone"; once it lands, the count should be 0. In DorkOS the server watches its own pid, so the engine dies with the owner and this never happens either way.
+The last number should be 0. A dead owner makes each new caffeinate exit 0 at once. Since DOR-2919 (#2891) the engine treats an exit 0 in the first half of `-t` as a refusal (`denied`) and retries on a backoff (`RETRY_BACKOFF_MS`, 30 seconds first) instead of respawning at once, so nothing new starts before the test ends. A count above 0 means that check has regressed. (The comment above step 3 in the test still describes the pre-fix behavior.) In DorkOS the server watches its own pid, so the engine dies with the owner and this never happens either way.
 
 The script refuses to run anywhere but macOS. The test itself is gated on `DORKOS_KEEP_AWAKE_SMOKE=1` and `process.platform === 'darwin'`; everywhere else, `pnpm test` included, it is collected and skipped. No turbo task passes the variable through, so CI cannot arm it.
 
@@ -79,14 +79,14 @@ Note your sleep timers first (`pmset -g custom`): the `sleep` value for battery 
 2. Walk away; do not touch the keyboard or trackpad.
 3. Come back after 20 minutes and read the sleep log.
 
-Expect no `Sleep` line while the turn ran, and one about the battery `sleep` timer after it ended (plus the 30-second linger). Glance at the watch window before you leave and when you return: `"asserted":true` should hold for the whole turn, across the gap between the two `sleep` commands.
+Expect no `Sleep` line while the turn ran, and one about the battery `sleep` timer after it ended (plus the three-minute linger). Glance at the watch window before you leave and when you return: `"asserted":true` should hold for the whole turn, across the gap between the two `sleep` commands.
 
 ### B. Background helper outlives its turn
 
 1. On power, ask an agent to start a 10-minute background helper (a subagent that runs `sleep 540` with a 10-minute timeout) and end its reply.
 2. Watch the status.
 
-Today this shows `"asserted":false` about 30 seconds after the reply ends, while the helper is still working: background helpers are not held yet. When that is fixed, `"asserted":true` should stay until the helper finishes.
+Expect `"asserted":true` to stay after the reply ends, until the helper finishes, then go `false` after the three-minute linger. When a turn ends while its agent still holds background work (`AgentRuntime.holdsBackgroundWork`), `hold-during-turn.ts` keeps the hold until that work is done. Background work that is not a working helper (a server left in a background shell, a wake-up timer) is held for at most 20 minutes after the turn (`BACKGROUND_ONLY_CEILING_MS` in `keep-awake-service.ts`).
 
 ### C. Closed lid
 
@@ -97,7 +97,7 @@ Expect a `Sleep` line at the moment the lid closed. `caffeinate -i` prevents idl
 
 ### D. Recovering from "denied"
 
-This leaves the server unable to keep the Mac awake until it recovers or restarts. Never point it at a server someone else is using.
+This leaves the server unable to keep the Mac awake until it recovers. Never point it at a server someone else is using.
 
 1. Start a long turn so a holder is running.
 2. Kill this server's holder twice within a minute, by its pid only (the `${SERVER:?…}` refuses to run when no server was found):
@@ -107,4 +107,4 @@ This leaves the server unable to keep the Mac awake until it recovers or restart
    # wait for the replacement to show in the watch window, then run the kill line again
    ```
 
-Today the second unexpected exit marks keep-awake unsupported (`"supported":false,"reason":"denied"`) for the life of the server: the setting greys out and only a restart brings it back. A fix in flight makes it retry with backoff instead. Note what the status and the Settings switch show, and whether it recovers on its own or only after a restart.
+Expect the second unexpected exit to mark keep-awake `denied` (`"supported":false,"reason":"denied"`). A denial is not permanent: while the turn still wants a hold, the engine tries again on a backoff (30 seconds, then 1, 2, 5 and 10 minutes, the last repeating; `RETRY_BACKOFF_MS` in `packages/keep-awake/src/keep-awake.ts`), and turning the setting off and on tries at once. So within about 30 seconds a new holder should appear and `"asserted":true` return, with no restart. Note what the status and the Settings switch show while it is denied.

@@ -5,9 +5,12 @@
  * Every capability that declares an `http` surface auto-registers one path on
  * the existing `@asteasolutions/zod-to-openapi` registry so it appears in
  * `/api/docs` and the exported `docs/api/openapi.json`. The path is tagged by
- * the capability's domain, its request schema comes from the capability's Zod
- * `input` (query params for read methods, a JSON body for write methods), and
- * its response schema from the Zod `output`. Nothing is hand-mirrored: a
+ * the capability's domain, its `operationId` is the capability id (one
+ * definition, two documented doors: this path and the invoke endpoint), its
+ * request schema comes from the capability's Zod `input` (each `{name}` path
+ * segment as a path parameter, the remaining fields as query params for read
+ * methods or a JSON body for write methods), and its response schema from the
+ * Zod `output`. Nothing is hand-mirrored: a
  * capability's own schemas go straight onto the registry, so the `Local*Schema`
  * documentation shapes in `openapi-registry.ts` have no counterpart here.
  *
@@ -22,7 +25,8 @@
  * @module services/core/capabilities/openapi-projection
  */
 import type { OpenAPIRegistry, RouteConfig } from '@asteasolutions/zod-to-openapi';
-import { capabilityInputObject } from './input-projection.js';
+import type { z } from 'zod';
+import { capabilityInputObject, splitPathParams } from './input-projection.js';
 
 import type { CapabilityRegistry } from './registry.js';
 
@@ -56,13 +60,38 @@ function domainTag(domain: string): string {
 }
 
 /**
+ * Build the projected request: path parameters, then the remaining input fields
+ * as query parameters (read methods) or a JSON body (write methods).
+ *
+ * @param method - The capability's HTTP method.
+ * @param params - The path parameters, or `null` when the path has none.
+ * @param rest - The input fields the path does not carry.
+ * @returns The request config, or `undefined` when there is nothing to declare.
+ */
+function projectRequest(
+  method: string,
+  params: z.ZodObject<z.ZodRawShape> | null,
+  rest: z.ZodObject<z.ZodRawShape>
+): RouteConfig['request'] {
+  const request: NonNullable<RouteConfig['request']> = params ? { params } : {};
+  if (Object.keys(rest.shape).length > 0) {
+    const isWrite = method === 'post' || method === 'put' || method === 'patch';
+    if (isWrite) request.body = { content: { 'application/json': { schema: rest } } };
+    else request.query = rest;
+  }
+  return Object.keys(request).length > 0 ? request : undefined;
+}
+
+/**
  * Project every registry capability that declares an `http` surface onto the
  * OpenAPI document, one path each.
  *
  * Request schemas derive from the capability's Zod `input` (a `z.object(...)`):
- * read methods (`get`/`delete`) project its fields as query parameters, write
- * methods (`post`/`put`/`patch`) as a JSON request body. A capability whose
- * input object is empty projects no request. The response schema is the
+ * each `{name}` segment of the path is a path parameter, taking the input field
+ * of that name when there is one (see {@link splitPathParams}); the remaining
+ * fields project as query parameters for read methods (`get`/`delete`) and as a
+ * JSON request body for write methods (`post`/`put`/`patch`). A capability with
+ * no path parameters and an empty input object projects no request. The response schema is the
  * capability's Zod `output`; capabilities that still model `output` as
  * `z.unknown()` project an open response schema (honest-but-weak) that tightens
  * as their outputs are modelled — no separate hand-registration is added here.
@@ -93,19 +122,13 @@ export function registerCapabilitiesInOpenApi(
     taken.add(key);
 
     const domain = capability.id.slice(0, capability.id.indexOf('.'));
-    const inputObject = capabilityInputObject(capability);
-    const hasInputFields = Object.keys(inputObject.shape).length > 0;
-    const isWrite = http.method === 'post' || http.method === 'put' || http.method === 'patch';
-
-    const request: RouteConfig['request'] = hasInputFields
-      ? isWrite
-        ? { body: { content: { 'application/json': { schema: inputObject } } } }
-        : { query: inputObject }
-      : undefined;
+    const { params, rest } = splitPathParams(capabilityInputObject(capability), http.path);
+    const request = projectRequest(http.method, params, rest);
 
     registryDoc.registerPath({
       method: http.method,
       path: http.path,
+      operationId: capability.id,
       tags: [domainTag(domain)],
       summary: capability.title,
       description: capability.description,

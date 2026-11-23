@@ -6,24 +6,24 @@ DorkOS has one identity core — [Better Auth](https://better-auth.com) — embe
 
 ## Key Files
 
-| Concept                                    | Location                                                    |
-| ------------------------------------------ | ----------------------------------------------------------- |
-| Local Better Auth instance                 | `apps/server/src/services/core/auth/index.ts`               |
-| Session gate (the request gate)            | `apps/server/src/services/core/auth/session-gate.ts`        |
-| Who the owner is                           | `apps/server/src/services/core/auth/accounts.ts`            |
-| Which author id the owner IS               | `apps/server/src/routes/room-caller.ts`                     |
-| Exposure guard (tunnel / bind)             | `apps/server/src/services/core/auth/exposure-guard.ts`      |
-| Legacy MCP key seeding                     | `apps/server/src/services/core/auth/seed-legacy-mcp-key.ts` |
-| One-time reset token (DOR-1707)            | `apps/server/src/services/core/auth/reset-token.ts`         |
-| MCP auth middleware (4-tier)               | `apps/server/src/middleware/mcp-auth.ts`                    |
-| Trusted-origin resolver (CSRF)             | `apps/server/src/lib/trusted-origins.ts`                    |
-| Auth SQLite schema                         | `packages/db/src/schema/auth.ts`                            |
-| `auth.enabled` + `cloud.*` config          | `packages/shared/src/config-schema.ts`                      |
-| Config migrations (0.49–0.51)              | `apps/server/src/services/core/config-manager.ts`           |
-| CLI `dorkos auth <enable\|reset-password>` | `packages/cli/src/commands/auth-dispatcher.ts`              |
-| Client auth slice                          | `apps/client/src/layers/features/auth/`                     |
-| Cloud Better Auth instance (P2)            | `apps/site/src/lib/auth.ts`                                 |
-| Cloud device-link client (P2)              | `apps/server/src/services/core/auth/cloud-link.ts`          |
+| Concept                                    | Location                                                                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local Better Auth instance                 | `apps/server/src/services/core/auth/index.ts`                                                                                                           |
+| Session gate (the request gate)            | `apps/server/src/services/core/auth/session-gate.ts`                                                                                                    |
+| Who the owner is                           | `apps/server/src/services/core/auth/accounts.ts`                                                                                                        |
+| Which author id the owner IS               | `apps/server/src/routes/room-caller.ts`                                                                                                                 |
+| Exposure guard (tunnel / bind)             | `apps/server/src/services/core/auth/exposure-guard.ts`                                                                                                  |
+| Legacy MCP key seeding                     | `apps/server/src/services/core/auth/seed-legacy-mcp-key.ts`                                                                                             |
+| One-time reset token (DOR-1707)            | `apps/server/src/services/core/auth/reset-token.ts`                                                                                                     |
+| MCP auth middleware (4-tier)               | `apps/server/src/middleware/mcp-auth.ts`                                                                                                                |
+| Trusted-origin resolver (CSRF)             | `apps/server/src/lib/trusted-origins.ts`                                                                                                                |
+| Auth SQLite schema                         | `packages/db/src/schema/auth.ts`                                                                                                                        |
+| `auth.enabled` + `cloud.*` config          | `packages/shared/src/config-schema.ts`                                                                                                                  |
+| Config migrations + upgrade floor          | `apps/server/src/services/core/config-migrations/`, `apps/server/src/services/core/config/upgrade-floor.ts` (the 0.49–0.51 auth migrations are retired) |
+| CLI `dorkos auth <enable\|reset-password>` | `packages/cli/src/commands/auth-dispatcher.ts`                                                                                                          |
+| Client auth slice                          | `apps/client/src/layers/features/auth/`                                                                                                                 |
+| Cloud Better Auth instance (P2)            | `apps/site/src/lib/auth.ts`                                                                                                                             |
+| Cloud device-link client (P2)              | `apps/server/src/services/core/auth/cloud-link.ts`                                                                                                      |
 
 ## When to Use What
 
@@ -72,11 +72,11 @@ The gate runs as one step in the Hono chain (`http/api-chain.ts`), **after** bod
 
 The auth instance is always mounted (even when `auth.enabled` is `false`) so the enable-login flow can create the owner before flipping the flag. A `databaseHooks.user.create.before` hook enforces the policy: sign-up succeeds only while the `user` table is empty, and the first user is stamped `role: 'owner'`. Every later sign-up throws `FORBIDDEN` / `REGISTRATION_CLOSED`.
 
-**This holds until equal accounts land.** Spec `community-server` decision D6 (cited in code as "ADR 260727-184933 D6") keeps the local install single-user today: nobody else holds an account on the machine that runs your agents and spends your model quota, and multi-user lives in `apps/space`. ADR 261006-235239 (equal accounts, Owner/Admin/Member/Guest) retires that rule as after-launch work, and ADR 261006-235238 merges the two servers. Do not reopen registration piecemeal; it reopens with access levels.
+**This holds until equal accounts land.** Spec `community-server` decision D6 (cited in code as "ADR 260727-184933 D6") keeps the local install single-user today: nobody else holds an account on the machine that runs your agents and spends your model quota, and multi-user lives in the space server (`services/spaces`, packaged by `apps/space`), whose model the private space joins as a tenant after launch (ADR `261122-173853`). ADR 261006-235239 (equal accounts, Owner/Admin/Member/Guest) retires that rule as after-launch work, and ADR 261006-235238 merges the two servers. Do not reopen registration piecemeal; it reopens with access levels.
 
 ### There are no access levels here, and there is no gate for them
 
-A local install has exactly one person, so it has nothing to grant and nothing to withhold. `sessionGate` answers the only question there is ("is this the owner"), and every route behind it is the owner's. Community roles (`owner` / `admin` / `member`, the code names for what the vision now calls access levels) belong to `apps/space`, which has a roster; see D7. Do not add a role or access-level model to this app. ("Role" in the vision now means the job on a profile, its role and responsibilities, which is also roadmap.)
+A local install has exactly one person, so it has nothing to grant and nothing to withhold. `sessionGate` answers the only question there is ("is this the owner"), and every route behind it is the owner's. Community roles (`owner` / `admin` / `member`, the code names for what the vision now calls access levels) belong to the space server (`services/spaces`), which has a roster; see D7. Do not add a role or access-level model to this app. ("Role" in the vision now means the job on a profile, its role and responsibilities, which is also roadmap.)
 
 ### The owner is an identity, not a column
 
@@ -209,7 +209,7 @@ if (isOwnerAuthor(author.id)) allowEverything();
 
 // ❌ NEVER reopen registration on the local install
 if (invite) allowSecondSignUp(); // D6: nobody else holds an account on this machine
-// ✅ multi-user is `apps/space`, a different server with a roster
+// ✅ multi-user is the space server (services/spaces), a different role with a roster
 
 // ❌ NEVER mount Better Auth after the chain's body parser
 app.all('/api/auth/*', (c) => auth.handler(c.req.raw)); // body already consumed

@@ -63,8 +63,9 @@ export type TurnExecutionSettings = Omit<SessionSettings, 'permissionMode'> & {
  *   runtime is how a codex turn got handed a Claude model alias.
  * @param opts.agentDirectory - The addressed AGENT's project directory, the one
  *   holding `.dork/agent.json` — not necessarily where the turn runs, which a
- *   payload can move without changing who is answering. Absent when nothing
- *   resolved either, and the manifest tier then has nothing to read.
+ *   payload can move without changing who is answering. Absent when the
+ *   subject named no agent; the host then reads the chat's own agent, never a
+ *   folder the payload named (DOR-5057).
  * @param opts.requestedAccount - The Claude account (registry id) the message
  *   asked the conversation to launch on, from the payload's `account`. Set only
  *   when the turn starts a new conversation. It is the SENDER's words, and any

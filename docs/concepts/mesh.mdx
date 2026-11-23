@@ -15,7 +15,7 @@ Mesh finds the AI agents scattered across your projects and gathers them in one 
   while we catch up with real-world use.
 </Callout>
 
-**Try it:** open the **Team** page and click **New Agent**, then choose **Import Project**. Mesh scans your folders and shows you what it found. From the Team page you can also switch to the **Topology** view to see the network map, or the **Access** view to manage messaging rules between groups.
+**Try it:** open the **Team** page and click **New agent**, then choose **Bring in an existing project folder**. Click **Search for projects**, and Mesh scans your folders and shows you what it found. From the Team page you can also switch to the **Topology** view to see the network map, or the **Access** view to manage messaging rules between groups.
 
 ## The problem it solves
 
@@ -105,7 +105,7 @@ Mesh recognizes agent projects with pluggable **detection strategies**. Each str
 | **amazon-q**    | `.amazonq/` directory at the project root.                                                           | `amazon-q`    |
 | **continue**    | `.continue/` directory at the project root.                                                          | `continue`    |
 
-The `AgentRuntime` enum also carries placeholder values for tools that do not have a strategy yet: `augment`, `jetbrains-ai`, `kilo-code`, `trae`, and `other`.
+The `AgentRuntime` enum also carries values with no scan strategy: `opencode` and `doe` (runtimes DorkOS runs itself), and placeholders for tools that do not have a strategy yet: `augment`, `jetbrains-ai`, `kilo-code`, `trae`, and `other`.
 
 Any directory that already contains a `.dork/agent.json` manifest is **auto-imported** by the scanner rather than surfaced as a candidate. This is scanner behavior, not a detection strategy. The scan yields `DiscoveryCandidate` objects only for directories that match a strategy and are not yet registered or denied.
 

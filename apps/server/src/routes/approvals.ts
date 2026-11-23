@@ -140,7 +140,7 @@ import { writerForPosture } from './permissions.js';
 import { logger } from '../lib/logger.js';
 import { projectsOfFolders } from '../services/projects/project-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { NOT_FROM_WIFI } from '../services/core/auth/sessions/wifi-level.js';
 import { wifiTurnHeld } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
