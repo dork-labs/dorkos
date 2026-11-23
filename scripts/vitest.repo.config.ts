@@ -35,6 +35,7 @@ export const REPO_WIDE_SUITES = [
   '__tests__/binary-test-glob.test.ts',
   '__tests__/browser-proof-page.test.ts',
   '__tests__/browser-turbo-build-cache.test.ts',
+  '__tests__/build-cache-workflow.test.ts',
   '__tests__/check-boundary.test.ts',
   '__tests__/check-design-tokens.test.ts',
   '__tests__/check-own-mocks.test.ts',
