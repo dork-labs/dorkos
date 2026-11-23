@@ -62,7 +62,8 @@ case1b="$work/single"
 mkdir -p "$case1b"
 echo '00:00:05 used_mb=1234 avail_mb=14000 swap_used_mb=0 top=bash@.:4MB' > "$case1b/ci-memory-watch.log"
 report_in "$case1b"
-grep -A1 '^== peak of 1 samples' "$case1b/out.txt" | tail -1 | grep -q 'used_mb=1234 ' \
+single_line=$(grep -A1 '^== peak of 1 samples' "$case1b/out.txt" | tail -1)
+grep -q 'used_mb=1234 ' <<<"$single_line" \
   && ok "a single sample is its own peak" \
   || bad "a single sample did not come back as the peak"
 
