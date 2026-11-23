@@ -171,7 +171,7 @@ const AMBIENT_RELAY_ENABLED = process.env.DORKOS_RELAY_ENABLED;
 // developer whose shell exports it would otherwise red every unlocked assertion.
 const AMBIENT_A2A_ENABLED = process.env.DORKOS_A2A_ENABLED;
 // `DORKOS_TODOS_ENABLED` too: `todos.enabled` reports it, so a shell that exports it would
-// otherwise turn the off-by-default assertion into a measurement of the machine.
+// otherwise turn the on-by-default assertion into a measurement of the machine.
 const AMBIENT_TODOS_ENABLED = process.env.DORKOS_TODOS_ENABLED;
 delete process.env.DORKOS_TASKS_ENABLED;
 delete process.env.DORKOS_RELAY_ENABLED;
@@ -974,16 +974,16 @@ describe('PATCH /api/config', () => {
     expect(res.body.serverRole).toBe('computer');
   });
 
-  describe('the to-dos flag (DOR-3088)', () => {
-    it('reports to-dos as off when the environment does not switch them on', async () => {
+  describe('the to-dos flag (DOR-3088, on by default since DOR-5071)', () => {
+    it('reports to-dos as on when the environment does not switch them off', async () => {
       const res = await request(server).get('/api/config').expect(200);
-      expect(res.body.todos).toEqual({ enabled: false });
+      expect(res.body.todos).toEqual({ enabled: true });
     });
 
     it(
-      'reports to-dos as on when DORKOS_TODOS_ENABLED is set at boot',
+      'reports to-dos as off when DORKOS_TODOS_ENABLED=false is set at boot',
       async () => {
-        process.env.DORKOS_TODOS_ENABLED = 'true';
+        process.env.DORKOS_TODOS_ENABLED = 'false';
         try {
           vi.resetModules();
           const { initConfigManager } = await import('../../services/core/config-manager.js');
@@ -991,7 +991,7 @@ describe('PATCH /api/config', () => {
           const configRouter = (await import('../config.js')).default;
           target.mount(await configApp(configRouter));
           const res = await request(server).get('/api/config').expect(200);
-          expect(res.body.todos).toEqual({ enabled: true });
+          expect(res.body.todos).toEqual({ enabled: false });
         } finally {
           delete process.env.DORKOS_TODOS_ENABLED;
           // Drop the graph that captured the environment override before another fixture imports it.

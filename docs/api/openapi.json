@@ -1919,6 +1919,356 @@
           "answer"
         ]
       },
+      "ListTodosResponse": {
+        "type": "object",
+        "properties": {
+          "todos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Todo"
+            }
+          },
+          "doneCount": {
+            "type": "integer"
+          },
+          "badge": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "todos",
+          "doneCount",
+          "badge"
+        ]
+      },
+      "Todo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "what": {
+            "type": "string"
+          },
+          "assignee": {
+            "$ref": "#/components/schemas/TodoAssignee"
+          },
+          "assignedBy": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent",
+                  "person",
+                  "outsider"
+                ]
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ]
+          },
+          "to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dueAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "originalDueAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The first due date this to-do ever had."
+          },
+          "scoreDueAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The due date used to score on-time completion."
+          },
+          "moveCount": {
+            "type": "integer",
+            "description": "Changes made to an existing due date."
+          },
+          "state": {
+            "$ref": "#/components/schemas/TodoState"
+          },
+          "overdue": {
+            "type": "boolean"
+          },
+          "roomId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceEntryId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceAuthor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "titleFromSource": {
+            "type": "boolean"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rank": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chainDepth": {
+            "type": "integer"
+          },
+          "strangerBound": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "what",
+          "assignee",
+          "assignedBy",
+          "to",
+          "dueAt",
+          "originalDueAt",
+          "scoreDueAt",
+          "moveCount",
+          "state",
+          "overdue",
+          "roomId",
+          "sourceEntryId",
+          "sourceAuthor",
+          "titleFromSource",
+          "notes",
+          "note",
+          "rank",
+          "chainDepth",
+          "strangerBound",
+          "createdAt",
+          "closedAt"
+        ]
+      },
+      "TodoAssignee": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent"
+                ]
+              },
+              "agentId": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "kind",
+              "agentId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "person"
+                ]
+              },
+              "account": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "kind",
+              "account"
+            ]
+          }
+        ]
+      },
+      "TodoView": {
+        "type": "string",
+        "enum": [
+          "mine",
+          "by-me",
+          "agents",
+          "everyone"
+        ]
+      },
+      "TodoError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ]
+      },
+      "CreateTodoRequest": {
+        "type": "object",
+        "properties": {
+          "what": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "assignee": {
+            "$ref": "#/components/schemas/TodoAssignee"
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "roomId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "rank": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "sourceEntryId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "what",
+          "assignee"
+        ],
+        "additionalProperties": false
+      },
+      "TodoCard": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Todo"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "workSessionId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "workSessionId"
+            ]
+          }
+        ]
+      },
+      "UpdateTodoRequest": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "kept",
+              "dropped"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "what": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "dueAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "assignee": {
+            "$ref": "#/components/schemas/TodoAssignee"
+          },
+          "rank": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "from": {
+            "$ref": "#/components/schemas/TodoState"
+          }
+        },
+        "additionalProperties": false
+      },
       "WorkQueue": {
         "type": "object",
         "properties": {
@@ -25494,6 +25844,300 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TodoPromiseError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/todos": {
+      "get": {
+        "tags": [
+          "To-dos"
+        ],
+        "summary": "To-dos",
+        "description": "To-dos for a view (assigned to me by default), open first, with how many done ones the view hides and the rail badge.",
+        "parameters": [
+          {
+            "schema": {
+              "$ref": "#/components/schemas/TodoView"
+            },
+            "required": false,
+            "name": "view",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "roomId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "overdue",
+                "today",
+                "week",
+                "none"
+              ]
+            },
+            "required": false,
+            "name": "due",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "showDone",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "due",
+                "rank"
+              ]
+            },
+            "required": false,
+            "name": "sort",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The to-dos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListTodosResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "To-dos"
+        ],
+        "summary": "Make a to-do",
+        "description": "A person makes a to-do. Only the owner's own sign-in gives it their authority; an app window that is not signed in is asked to step up first. Agents use `todo_add`.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTodoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new to-do",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Todo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A bad body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Step up first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Past a daily cap",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/todos/{id}": {
+      "get": {
+        "tags": [
+          "To-dos"
+        ],
+        "summary": "One to-do",
+        "description": "One to-do, read with the same reach as the list, and the chat its latest turn ran in. A to-do's card in a Direct chat draws from this, never from the card entry itself.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The to-do",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoCard"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such to-do",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "To-dos"
+        ],
+        "summary": "Change a to-do",
+        "description": "Mark it done (`kept`) or declined (`dropped` with a note), reopen, edit, move or reassign it. A request that does not prove the person changes nothing.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTodoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The to-do",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Todo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A bad body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Step up first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not yours",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such to-do",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It changed since",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoError"
                 }
               }
             }

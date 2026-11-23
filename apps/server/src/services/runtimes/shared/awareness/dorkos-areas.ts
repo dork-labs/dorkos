@@ -172,8 +172,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'To-dos',
-    can: "record promises, read the team's, mark yours kept or dropped.",
-    covers: ['todo_promises.'],
+    can: "promises and to-dos: add, assign, read the team's, mark kept or dropped.",
+    covers: ['todo_promises.', 'todos.'],
     areas: ['todos'],
   },
   {

@@ -245,6 +245,39 @@ describe('contract: the person-only routes at this computer, with an owner', () 
     expect(proved.json.code).not.toBe(PERSON_SESSION_REQUIRED_CODE);
   });
 
+  // DOR-5071, Security's ask: a widget click from the app is a chat message too. With to-dos on
+  // by default, a click that can't prove the owner would otherwise start a Direct chat's turn at
+  // the stranger's bound with no step-up offered, capping the owner in their own chat. So the
+  // click asks for the step-up exactly as a typed message does: the same guard, in every chat.
+  it('asks the app for the step-up before a widget action, exactly as before a typed message', async () => {
+    const sessionId = randomUUID();
+    const click: PersonWrite = {
+      method: 'POST',
+      path: `/api/sessions/${sessionId}/ui-action`,
+      body: { actionId: 'made-up-approve', payload: {} },
+    };
+    const typed: PersonWrite = {
+      method: 'POST',
+      path: `/api/sessions/${sessionId}/messages`,
+      body: { content: 'hi' },
+    };
+    const window = { origin: server!.baseUrl, 'x-client-id': 'window-1' };
+    const askedClick = await send(click, window);
+    const askedTyped = await send(typed, window);
+    expect(askedClick.status).toBe(401);
+    expect(askedClick.json.code).toBe(PERSON_SESSION_REQUIRED_CODE);
+    expect({ status: askedClick.status, code: askedClick.json.code }).toEqual({
+      status: askedTyped.status,
+      code: askedTyped.json.code,
+    });
+    // After the owner's step-up the click goes on to the route, which answers for itself.
+    const proved = await send(click, { ...window, ...person });
+    expect(proved.json.code).not.toBe(PERSON_SESSION_REQUIRED_CODE);
+    // A program with no window is not asked, as with a typed message: the route answers it.
+    const program = await send(click, { origin: server!.baseUrl, 'x-api-key': apiKey });
+    expect(program.json.code).not.toBe(PERSON_SESSION_REQUIRED_CODE);
+  });
+
   it('asks the app for the step-up before scheduling a task, and arms nothing', async () => {
     const write: PersonWrite = {
       method: 'POST',
