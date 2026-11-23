@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261107-203000",
+ "file": "ci/ledger/261107-203000-pr-browser-smoke.md",
+ "pr": 3528,
+ "merged_at": "2026-11-08T08:39:50Z",
+ "sha": "820c1de6f1c3624cb25d3609cb65fdb643d7cae7",
+ "resolved_at": "2026-11-23T15:49:44.163Z"
+}

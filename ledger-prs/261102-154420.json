@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261102-154420",
+ "file": "ci/ledger/261102-154420-merge-tail-main-base-only.md",
+ "pr": 3427,
+ "merged_at": "2026-11-02T16:46:09Z",
+ "sha": "3fcc4dfec1bddbb57202ec7f39d7d510f2a92ddf",
+ "resolved_at": "2026-11-23T15:49:44.163Z"
+}

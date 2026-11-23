@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261104-040000",
+ "file": "ci/ledger/261104-040000-duration-aware-shards.md",
+ "pr": 3506,
+ "merged_at": "2026-11-08T03:31:31Z",
+ "sha": "d0ba3a5cf42c0442692cae03669786bb2671becf",
+ "resolved_at": "2026-11-23T15:49:44.163Z"
+}

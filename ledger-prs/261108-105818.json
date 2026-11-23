@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261108-105818",
+ "file": "ci/ledger/261108-105818-ci-install-skips-ffmpeg-download.md",
+ "pr": 3544,
+ "merged_at": "2026-11-08T11:57:37Z",
+ "sha": "6e680e8e04d1eeeabafc78682ddf6c13e41b054a",
+ "resolved_at": "2026-11-23T15:49:44.163Z"
+}

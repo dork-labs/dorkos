@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261102-144348",
+ "file": "ci/ledger/261102-144348-security-review-base-verdict.md",
+ "pr": 3426,
+ "merged_at": "2026-11-02T16:32:29Z",
+ "sha": "a4c8224051c74a10c4b69d61dcaeb8975c13558e",
+ "resolved_at": "2026-11-23T15:49:44.163Z"
+}

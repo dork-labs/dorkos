@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261102-164449",
+ "file": "ci/ledger/261102-164449-merge-tail-reads-security-review.md",
+ "pr": 3436,
+ "merged_at": "2026-11-02T17:50:07Z",
+ "sha": "11c117cc6cfc964bc93a55f508dbb9617bcd9e4b",
+ "resolved_at": "2026-11-23T15:49:44.163Z"
+}

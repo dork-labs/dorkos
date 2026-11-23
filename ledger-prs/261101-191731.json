@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261101-191731",
+ "file": "ci/ledger/261101-191731-pre-push-ratchets.md",
+ "pr": 3400,
+ "merged_at": "2026-11-01T20:47:42Z",
+ "sha": "6fce3f6d27fae4250666d25f0e3e87af004dc7cc",
+ "resolved_at": "2026-11-23T15:49:44.163Z"
+}

@@ -1,0 +1,33 @@
+{
+ "schema": 1,
+ "id": "261101-195139",
+ "verdict": "inconclusive",
+ "reason": "Too little data: n=0 in the after-window (2026-11-01T21:47:50Z to 2026-11-15T21:47:50Z), below the minimum of 10.",
+ "computed_at": "2026-11-23T15:49:44.163Z",
+ "hypothesis_hash": "b1dcde2c80a5071b",
+ "metric": "tracked.neon-preview-branches",
+ "anchor": "2026-11-01T21:47:50Z",
+ "prs": [
+  3404
+ ],
+ "baseline": {
+  "value": 164,
+  "source": "ledger"
+ },
+ "target": 10,
+ "min_n": 10,
+ "before": {
+  "from": "2026-10-25T21:47:50Z",
+  "to": "2026-11-01T21:47:50Z",
+  "n": 0,
+  "value": null
+ },
+ "after": {
+  "from": "2026-11-01T21:47:50Z",
+  "to": "2026-11-15T21:47:50Z",
+  "n": 0,
+  "value": null
+ },
+ "confounders": [],
+ "slo": null
+}

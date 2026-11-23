@@ -1,0 +1,35 @@
+{
+ "schema": 1,
+ "id": "261101-191731",
+ "verdict": "inconclusive",
+ "reason": "Confounded: 261102-072625 changed the same gate inside the after-window (2026-11-01T20:47:42Z to 2026-11-13T20:47:42Z), so the movement cannot be attributed to this change alone.",
+ "computed_at": "2026-11-23T15:49:44.163Z",
+ "hypothesis_hash": "f0933c70a4a2e30d",
+ "metric": "tracked.first-try-pr-pass-rate",
+ "anchor": "2026-11-01T20:47:42Z",
+ "prs": [
+  3400
+ ],
+ "baseline": {
+  "value": 0.57,
+  "source": "ledger"
+ },
+ "target": 0.8,
+ "min_n": 10,
+ "before": {
+  "from": "2026-10-25T20:47:42Z",
+  "to": "2026-11-01T20:47:42Z",
+  "n": 0,
+  "value": null
+ },
+ "after": {
+  "from": "2026-11-01T20:47:42Z",
+  "to": "2026-11-13T20:47:42Z",
+  "n": 0,
+  "value": null
+ },
+ "confounders": [
+  "261102-072625"
+ ],
+ "slo": null
+}

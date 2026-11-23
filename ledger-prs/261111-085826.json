@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261111-085826",
+ "file": "ci/ledger/261111-085826-docker-release-tag-check.md",
+ "pr": 3622,
+ "merged_at": "2026-11-11T11:21:29Z",
+ "sha": "78baefc5ac7aeac33c67f5e697fbe2f36179a960",
+ "resolved_at": "2026-11-23T15:49:44.163Z"
+}

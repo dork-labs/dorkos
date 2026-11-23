@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "updated_at": "2026-11-16T13:29:21.422Z",
+ "updated_at": "2026-11-23T15:49:44.163Z",
  "slos": {
   "headroom": {
    "floor": {
@@ -41,6 +41,10 @@
     },
     {
      "week": "2026-W46",
+     "status": "ok"
+    },
+    {
+     "week": "2026-W47",
      "status": "ok"
     }
    ],
@@ -86,6 +90,10 @@
     {
      "week": "2026-W46",
      "status": "ok"
+    },
+    {
+     "week": "2026-W47",
+     "status": "ok"
     }
    ],
    "moved": []
@@ -129,6 +137,10 @@
     },
     {
      "week": "2026-W46",
+     "status": "ok"
+    },
+    {
+     "week": "2026-W47",
      "status": "ok"
     }
    ],
@@ -180,6 +192,10 @@
     {
      "week": "2026-W46",
      "status": "unmeasured"
+    },
+    {
+     "week": "2026-W47",
+     "status": "unmeasured"
     }
    ],
    "moved": []
@@ -223,6 +239,10 @@
     },
     {
      "week": "2026-W46",
+     "status": "breach"
+    },
+    {
+     "week": "2026-W47",
      "status": "breach"
     }
    ],
@@ -268,6 +288,10 @@
     {
      "week": "2026-W46",
      "status": "ok"
+    },
+    {
+     "week": "2026-W47",
+     "status": "breach"
     }
    ],
    "moved": [
@@ -320,6 +344,10 @@
     {
      "week": "2026-W46",
      "status": "insufficient"
+    },
+    {
+     "week": "2026-W47",
+     "status": "insufficient"
     }
    ],
    "moved": []
@@ -363,6 +391,10 @@
     },
     {
      "week": "2026-W46",
+     "status": "breach"
+    },
+    {
+     "week": "2026-W47",
      "status": "breach"
     }
    ],
@@ -416,6 +448,10 @@
     {
      "week": "2026-W46",
      "status": "ok"
+    },
+    {
+     "week": "2026-W47",
+     "status": "ok"
     }
    ],
    "moved": []
@@ -460,6 +496,10 @@
     {
      "week": "2026-W46",
      "status": "breach"
+    },
+    {
+     "week": "2026-W47",
+     "status": "breach"
     }
    ],
    "moved": []
@@ -503,6 +543,10 @@
     },
     {
      "week": "2026-W46",
+     "status": "breach"
+    },
+    {
+     "week": "2026-W47",
      "status": "breach"
     }
    ],
@@ -557,6 +601,10 @@
     {
      "week": "2026-W46",
      "status": "ok"
+    },
+    {
+     "week": "2026-W47",
+     "status": "met"
     }
    ],
    "moved": [

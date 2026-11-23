@@ -1,0 +1,45 @@
+{
+ "schema": 1,
+ "id": "261112-185148",
+ "verdict": "pending",
+ "reason": "The after-window runs to 2026-11-26T20:51:43Z; the verdict is computed on 2026-11-27.",
+ "computed_at": "2026-11-23T15:49:44.163Z",
+ "hypothesis_hash": "c6e1448ba209a83e",
+ "metric": "gate.wf.scripts-test.harness.failure_rate",
+ "anchor": "2026-11-12T20:51:43Z",
+ "prs": [
+  3659
+ ],
+ "baseline": {
+  "value": 0.1818,
+  "source": "before-window"
+ },
+ "target": 0.05,
+ "min_n": 10,
+ "before": {
+  "from": "2026-11-05T20:51:43Z",
+  "to": "2026-11-12T20:51:43Z",
+  "n": 242,
+  "value": 0.1818
+ },
+ "after": {
+  "from": "2026-11-12T20:51:43Z",
+  "to": "2026-11-26T20:51:43Z",
+  "n": 808,
+  "value": 0.0458
+ },
+ "confounders": [
+  "261112-215525",
+  "261112-220224",
+  "261113-232124",
+  "261115-175742",
+  "261121-033128"
+ ],
+ "slo": {
+  "id": "main-green",
+  "stat": "red_episodes",
+  "before": 16,
+  "after": 33,
+  "movement": "worse"
+ }
+}

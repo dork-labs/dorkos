@@ -1,0 +1,35 @@
+{
+ "schema": 1,
+ "id": "261109-060757",
+ "verdict": "pending",
+ "reason": "The after-window runs to 2026-12-07T07:16:48Z; the verdict is computed on 2026-12-08.",
+ "computed_at": "2026-11-23T15:49:44.163Z",
+ "hypothesis_hash": "544e812e9f14f9e8",
+ "metric": "gate.wf.desktop-release.build-macos.failure_rate",
+ "anchor": "2026-11-09T07:16:48Z",
+ "prs": [
+  3582
+ ],
+ "baseline": {
+  "value": 0.067,
+  "source": "ledger"
+ },
+ "target": 0,
+ "min_n": 10,
+ "before": {
+  "from": "2026-11-02T07:16:48Z",
+  "to": "2026-11-09T07:16:48Z",
+  "n": 6,
+  "value": 0
+ },
+ "after": {
+  "from": "2026-11-09T07:16:48Z",
+  "to": "2026-12-07T07:16:48Z",
+  "n": 20,
+  "value": 0.05
+ },
+ "confounders": [
+  "261118-130500"
+ ],
+ "slo": null
+}

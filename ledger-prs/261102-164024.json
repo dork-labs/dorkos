@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261102-164024",
+ "file": "ci/ledger/261102-164024-security-gate-waits-and-stacked-bases.md",
+ "pr": 3435,
+ "merged_at": "2026-11-02T19:01:27Z",
+ "sha": "9541225d72b247f5b64a6d5552fc8fa0ebfffaff",
+ "resolved_at": "2026-11-23T15:49:44.163Z"
+}
