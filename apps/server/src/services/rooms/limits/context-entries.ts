@@ -7,7 +7,7 @@
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../author-registry.js';
-import { strangerMarkForEntries, type ReadEntry } from './turn-ceiling.js';
+import { answersOutsideWords, strangerMarkForEntries, type ReadEntry } from './turn-ceiling.js';
 
 /**
  * The id of every room message a built context shows the agent besides the one it answers: the
@@ -36,38 +36,60 @@ export function contextEntryIds(context: RoomContextData): string[] {
   ];
 }
 
-/** What {@link strangerMarkForShown} reads: the room log, its authors and who owns the install. */
+/** What {@link marksForShown} reads: the room log, its authors and who owns the install. */
 export interface ShownMarkDeps {
   store: { listEntriesByIds(roomId: string, ids: string[]): RoomEntry[] };
   authors: AuthorRegistry;
   isOwnerAuthor: (authorId: string) => boolean;
 }
 
+/** A message a room turn answers, with what says where its words came from. */
+type AnsweredEntry = Pick<RoomEntry, 'id' | 'authorId'> & Pick<ReadEntry, 'body'>;
+
 /**
- * The outsider mark over every message a room turn answers AND every message its context showed,
- * so a non-owner's unaddressed post in the window marks the turn as surely as one that named the
- * agent (DOR-3858, behind its boot flag), and so does a mini app's post or forward, whatever the
- * flag (DOR-4587, `strangerMarkForEntries`).
+ * What a room turn carries for every message it answers AND every message its context showed,
+ * read from the room log once:
+ *
+ * - the outsider mark (`carriedOutsider`): a non-owner's unaddressed post in the window marks the
+ *   turn as surely as one that named the agent (DOR-3858, behind its boot flag), and so does a
+ *   mini app's post or forward, whatever the flag (DOR-4587, `strangerMarkForEntries`);
+ * - the outside-words note (`outsideWords`): a turn shown outside words is marked the same as one
+ *   that answered them, so a later raise asks (DOR-4144). A stamp, never a ceiling: it lowers
+ *   nothing (Security M4).
+ *
+ * Both read the messages {@link contextEntryIds} names, so neither counts the agent's own recent
+ * posts. The note also leaves out any shown message the turn's own agent wrote, which today can
+ * only be the opener of a thread it started: a noted chat's posts are kept with the outsider mark,
+ * so counting its own post would keep the chat noted by what it wrote itself, turn after turn,
+ * for as long as the thread is in use. The mark still counts that opener (DOR-4453).
  *
  * @param enabled - Whether `DORKOS_MARK_STRANGER_TURNS` is on.
  * @param deps - See {@link ShownMarkDeps}.
  * @param roomId - The room the turn runs in.
  * @param answered - The messages the turn answers; empty for an aside, which answers nothing.
  * @param context - The context built for this turn.
+ * @param selfAuthorId - The author id of the agent taking the turn.
  */
-export function strangerMarkForShown(
+export function marksForShown(
   enabled: boolean,
   deps: ShownMarkDeps,
   roomId: string,
-  answered: readonly ReadEntry[],
-  context: RoomContextData
-): { carriedOutsider?: true } {
+  answered: readonly AnsweredEntry[],
+  context: RoomContextData,
+  selfAuthorId: string
+): { carriedOutsider?: true; outsideWords?: true } {
   const shown = deps.store.listEntriesByIds(roomId, contextEntryIds(context));
-  return strangerMarkForEntries(
-    enabled,
-    deps.authors,
-    [...answered, ...shown],
-    deps.isOwnerAuthor,
-    roomId
-  );
+  const others = shown.filter((entry) => entry.authorId !== selfAuthorId);
+  return {
+    ...strangerMarkForEntries(
+      enabled,
+      deps.authors,
+      [...answered, ...shown],
+      deps.isOwnerAuthor,
+      roomId
+    ),
+    ...(answersOutsideWords(deps.authors, [...answered, ...others], roomId)
+      ? { outsideWords: true as const }
+      : {}),
+  };
 }

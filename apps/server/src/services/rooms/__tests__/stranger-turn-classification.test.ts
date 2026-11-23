@@ -6,7 +6,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import type { AuthorRecord, AuthorRegistry } from '../author-registry.js';
 import { answersOutsideWords, strangerMarkForEntries } from '../limits/turn-ceiling.js';
 import { turnBoundsOf } from '../limits/teammate-turn.js';
-import { strangerMarkForShown } from '../limits/context-entries.js';
+import { marksForShown } from '../limits/context-entries.js';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import {
   lastTurnLevelOf,
@@ -162,8 +162,10 @@ describe('a mini app post only in the ambient window the turn is shown (DOR-4587
 
   it('marks the turn with stranger marking off', () => {
     noteEntryMarks(shownPost.id, { outsider: true }, room);
-    expect(strangerMarkForShown(false, deps, room, [{ authorId: owner.id }], context)).toEqual({
+    const answered = [{ id: 'entry-owner-ask', authorId: owner.id }];
+    expect(marksForShown(false, deps, room, answered, context, agent.id)).toEqual({
       carriedOutsider: true,
+      outsideWords: true,
     });
   });
 });
