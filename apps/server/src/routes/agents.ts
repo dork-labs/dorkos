@@ -64,7 +64,7 @@ import { trustedCaller } from '../services/core/capabilities/index.js';
 import { clearsTheAgentBar, readCallerAuthority } from '../lib/caller-authority.js';
 import { pinPersonCreatedAgent } from '../services/runtimes/claude-code/folder-settings/folder-config-consent.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { resolveAgentsDirectory } from '../lib/agents-home.js';
@@ -255,7 +255,7 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
     try {
       const result = ResolveAgentsRequestSchema.safeParse(readJsonBody(c));
       if (!result.success) {
-        return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
+        return validationProblem(c, result.error);
       }
       const agents: Record<string, AgentManifest | null> = {};
       await Promise.all(
@@ -281,7 +281,7 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
     try {
       const result = CreateAgentRequestSchema.safeParse(readJsonBody(c));
       if (!result.success) {
-        return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
+        return validationProblem(c, result.error);
       }
       const { path: rawAgentPath, name, displayName, description, runtime } = result.data;
       const agentPath = await validateBoundaryOrDorkHome(rawAgentPath);
@@ -437,10 +437,10 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
     const pkg = PackageCreationSchema.safeParse(body.package);
     const identity = PackageAgentIdentitySchema.safeParse(body);
     if (!pkg.success) {
-      return c.json({ error: 'Validation failed', details: z.flattenError(pkg.error) }, 400);
+      return validationProblem(c, pkg.error);
     }
     if (!identity.success) {
-      return c.json({ error: 'Validation failed', details: z.flattenError(identity.error) }, 400);
+      return validationProblem(c, identity.error);
     }
     // One agent per package: it lives where marketplace agents live, so a
     // second one would replace the first.
@@ -486,7 +486,7 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
       if (body?.package !== undefined) return await createFromPackage(c, body);
       const decision = TemplateDecisionSchema.safeParse(body ?? {});
       if (!decision.success) {
-        return c.json({ error: 'Validation failed', details: z.flattenError(decision.error) }, 400);
+        return validationProblem(c, decision.error);
       }
       // A template is cloned into a staging folder and shown before it lands
       // (DOR-2325): a person is disclosed what it brings; anyone else gets a

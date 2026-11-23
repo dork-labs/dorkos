@@ -163,7 +163,7 @@ describe('the session gate — /api/* and /mcp credential gate (integration)', (
           .set('Cookie', cookie)
           .send({});
         expect(refused.status).toBe(403);
-        expect(refused.body.code).toBe('ORIGIN_NOT_ALLOWED');
+        expect(refused.body.code).toBe('origin_not_allowed');
         expect(refused.headers['access-control-allow-origin']).toBeUndefined();
         expect(writes).not.toHaveBeenCalled();
       }

@@ -24,7 +24,7 @@ import {
   AuditTimelineQuerySchema,
   AuditVerifyQuerySchema,
 } from '@dorkos/shared/audit-schemas';
-import { errorBody, validationFailureBody } from '../lib/route-utils.js';
+import { errorBody } from '../lib/route-utils.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
@@ -39,6 +39,7 @@ import {
 } from '../services/audit/audit-session-scrub.js';
 import type { AuditReader } from '../services/audit/visibility.js';
 import { readerOfRequest } from './audit-reader.js';
+import { validationProblem } from '@dorkos/http-kit';
 
 /** The sessions `reader` may read, through the process-wide lookup. */
 function readableTo(reader: AuditReader): ReadableSessions {
@@ -64,13 +65,13 @@ export function createAuditRoutes(deps: AuditRouterDeps): Hono<ApiEnv> {
 
   router.get('/verify', (c) => {
     const query = AuditVerifyQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
     return c.json(deps.log.verify(query.data));
   });
 
   router.get('/', (c) => {
     const query = AuditQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
     const reader = readerOfRequest(honoRequestFacts(c), deps.accounts);
     return c.json(readAuditQuery(deps.log, query.data, reader, readableTo(reader)));
   });
@@ -80,7 +81,7 @@ export function createAuditRoutes(deps: AuditRouterDeps): Hono<ApiEnv> {
       ...readQuery(c),
       accountId: c.req.param('accountId'),
     });
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
     const reader = readerOfRequest(honoRequestFacts(c), deps.accounts);
     return c.json(readAuditTimeline(deps.log, query.data, reader, readableTo(reader)));
   });

@@ -19,19 +19,21 @@ import {
   type ComposedServer,
   type ContractCase,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../..');
 const UNKNOWN_ULID = '01JZZZZZZZZZZZZZZZZZZZZZZZ';
-const API_NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const API_NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 const HOST_NOT_ALLOWED = {
   error:
     'This instance does not answer to the address "evil.example". If that is how you reach DorkOS, list it in DORKOS_TRUSTED_HOSTS, or turn on login.',
   code: 'HOST_NOT_ALLOWED',
 };
-const VALIDATION_FAILED = z.object({
-  error: z.literal('Validation failed'),
-  details: z.object({}).loose(),
-});
+const VALIDATION_FAILED = z
+  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .loose();
 
 describe('contract: the terminal and heartbeat routes', () => {
   let server: ComposedServer | undefined;

@@ -14,9 +14,8 @@ import {
   ConnectorSessionAccessUpdateSchema,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import {
   requestAbortSignal,
   resolveConnectorOperator,
@@ -103,13 +102,9 @@ export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps
  */
 function resourceErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
   if (error instanceof ZodError) {
-    return c.json(
-      {
-        error: 'This connection request is invalid. Check the request and try again.',
-        details: error.issues,
-      },
-      400
-    );
+    return validationProblem(c, error, {
+      detail: 'This request is invalid. Check it and try again.',
+    });
   }
   if (error instanceof ConnectorAuthenticationFlowError) {
     const status =
@@ -260,7 +255,7 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
     const body = ConnectorAuthenticationFlowCreateRequestSchema.safeParse(
       readJsonBody(c, { emptyAs: {} })
     );
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     const { returnTo: requestedReturnTo, ...request } = body.data;
     const kept = returnTo(requestedReturnTo);
     const start = { ...request, ...(kept && { returnTo: kept }) };
@@ -305,7 +300,7 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
     const operator = owner(c);
     if (operator instanceof Response) return operator;
     const body = ConnectorReconnectRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     const parsedId = ConnectionIdSchema.safeParse(c.req.param('connectionId'));
     if (!parsedId.success) return resourceErrorResponse(c, parsedId.error);
     const connectionId = parsedId.data;
@@ -364,7 +359,7 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
     const operator = owner(c);
     if (operator instanceof Response) return operator;
     const body = ConnectorConnectionPatchSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     try {
       return c.json(deps.lifecycle.rename(operator, c.req.param('connectionId'), body.data.label));
     } catch (error) {
@@ -379,7 +374,7 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
       .object({})
       .strict()
       .safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     try {
       deps.lifecycle.remove(operator, c.req.param('connectionId'));
       return c.body(null, 204);
@@ -453,7 +448,7 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
     const operator = owner(c);
     if (operator instanceof Response) return operator;
     const body = ConnectorSessionAccessUpdateSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     try {
       return c.json(
         await deps.sessionAccess.setAccess(

@@ -32,7 +32,7 @@ vi.mock('../../lib/logger.js', () => ({
 }));
 
 import { createApiApp } from '../api-chain.js';
-import { readJsonBody, type BodyRule } from '@dorkos/http-kit';
+import { readJsonBody, type BodyRule, problemBody } from '@dorkos/http-kit';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { initAuditTrail, resetAuditTrail } from '../../services/audit/audit-trail.js';
 
@@ -123,10 +123,9 @@ describe('path-scoped body rules', () => {
       .set('Content-Type', 'application/json')
       .send(BIG_BODY);
     expect(res.status).toBe(413);
-    expect(res.body).toEqual({
-      error: 'That is too large to send in one request.',
-      code: 'REQUEST_TOO_LARGE',
-    });
+    expect(res.body).toEqual(
+      problemBody('request_too_large', { detail: 'That is too large to send in one request.' })
+    );
   });
 
   it('read a request with no body as what the route asks for', async () => {

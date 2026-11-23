@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { problemBody } from '@dorkos/http-kit';
 import { errorReply } from '../error-handler.js';
 
 vi.mock('../../lib/logger.js', () => ({
@@ -33,10 +34,7 @@ describe('errorReply production mode', () => {
     const reply = errorReply(error);
 
     expect(reply.status).toBe(500);
-    expect(reply.body).toEqual({
-      error: 'Internal Server Error',
-      code: 'INTERNAL_ERROR',
-    });
+    expect(reply.body).toEqual(problemBody('internal_error'));
   });
 
   it('includes err.message in development mode', () => {
@@ -46,10 +44,7 @@ describe('errorReply production mode', () => {
     const reply = errorReply(error);
 
     expect(reply.status).toBe(500);
-    expect(reply.body).toEqual({
-      error: 'Something broke',
-      code: 'INTERNAL_ERROR',
-    });
+    expect(reply.body).toEqual(problemBody('internal_error', { detail: 'Something broke' }));
   });
 
   it('includes err.message when NODE_ENV is undefined', () => {
@@ -59,10 +54,7 @@ describe('errorReply production mode', () => {
     const reply = errorReply(error);
 
     expect(reply.status).toBe(500);
-    expect(reply.body).toEqual({
-      error: 'Debug info visible',
-      code: 'INTERNAL_ERROR',
-    });
+    expect(reply.body).toEqual(problemBody('internal_error', { detail: 'Debug info visible' }));
   });
 
   it('returns generic message in production even with detailed error', () => {
@@ -71,9 +63,6 @@ describe('errorReply production mode', () => {
 
     const reply = errorReply(error);
 
-    expect(reply.body).toEqual({
-      error: 'Internal Server Error',
-      code: 'INTERNAL_ERROR',
-    });
+    expect(reply.body).toEqual(problemBody('internal_error'));
   });
 });

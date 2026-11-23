@@ -140,7 +140,7 @@ describe('Relay routes', () => {
       const res = await request(server).post('/api/relay/messages').send({ payload: {} });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
 
     it('returns 422 when publish throws', async () => {
@@ -407,7 +407,7 @@ describe('Relay routes', () => {
       const res = await request(server).get('/api/relay/messages?status=invalid');
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
   });
 
@@ -474,7 +474,7 @@ describe('Relay routes', () => {
       const res = await request(server).post('/api/relay/endpoints').send({});
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
 
     it('returns 422 when registration fails', async () => {
@@ -619,7 +619,7 @@ describe('Relay routes', () => {
       const res = await request(server).get('/api/relay/endpoints/relay.test/inbox?status=bogus');
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
       expect(vi.mocked(relayCore.readInbox)).not.toHaveBeenCalled();
     });
   });
@@ -1228,8 +1228,8 @@ describe('Adapter routes', () => {
       const res = await request(server).post('/api/relay/adapters').send({ type: 'webhook' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
-      expect(res.body.details).toBeDefined();
+      expect(res.body.code).toBe('malformed_request');
+      expect(res.body.issues).toBeDefined();
     });
 
     it('returns 409 when ID already exists (DUPLICATE_ID)', async () => {
@@ -1362,8 +1362,8 @@ describe('Adapter routes', () => {
       const res = await request(server).patch('/api/relay/adapters/tg-main/config').send({});
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
-      expect(res.body.details).toBeDefined();
+      expect(res.body.code).toBe('malformed_request');
+      expect(res.body.issues).toBeDefined();
     });
   });
 
@@ -1400,8 +1400,8 @@ describe('Adapter routes', () => {
       const res = await request(server).post('/api/relay/adapters/test').send({ type: 'telegram' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
-      expect(res.body.details).toBeDefined();
+      expect(res.body.code).toBe('malformed_request');
+      expect(res.body.issues).toBeDefined();
     });
 
     it('returns 500 when testConnection throws', async () => {
@@ -1553,7 +1553,7 @@ describe('Adapter routes', () => {
           sessionStrategy: 'invalid',
         });
         expect(res.status).toBe(400);
-        expect(res.body.error).toBe('Validation failed');
+        expect(res.body.code).toBe('malformed_request');
       });
 
       it('returns 404 for non-existent binding ID', async () => {

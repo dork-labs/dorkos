@@ -8,7 +8,8 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
 import { sendFileFromRoot } from '../http/send-file.js';
 import { isPassiveMedia, MEDIA_CONTENT_TYPES } from '../lib/file-route-guards.js';
-import { parseUploads, UploadLimitError, type UploadedFile } from '../http/uploads.js';
+import { parseUploads, type UploadedFile } from '../http/uploads.js';
+import { uploadRefusalProblem } from '../http/problems/upload-refusal.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -34,14 +35,9 @@ router.post('/', async (c) => {
     try {
       files = await parseUploads(c, uploadHandler.uploadOptions(validatedCwd, uploadConfig));
     } catch (err) {
-      if (err instanceof UploadLimitError) {
-        const message =
-          err.code === 'LIMIT_FILE_SIZE'
-            ? `File too large (max ${uploadConfig.maxFileSize / 1024 / 1024}MB)`
-            : err.message;
-        return c.json({ error: message, code: err.code }, 400);
-      }
-      return c.json({ error: (err as Error).message }, 400);
+      return uploadRefusalProblem(c, err, {
+        tooLargeDetail: `File too large (max ${uploadConfig.maxFileSize / 1024 / 1024}MB)`,
+      });
     }
 
     if (files.length === 0) {

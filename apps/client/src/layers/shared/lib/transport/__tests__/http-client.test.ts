@@ -49,6 +49,30 @@ describe('fetchJSON', () => {
     expect((broken as { noResponse?: unknown }).noResponse).toBeUndefined();
   });
 
+  it('reads a problem document: detail as the message, code, status and issues', async () => {
+    const issues = { formErrors: [], fieldErrors: { cwd: ['Required'] } };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: 'urn:dorkos:problem:malformed_request',
+          title: 'The request could not be read.',
+          status: 400,
+          code: 'malformed_request',
+          detail: 'Send the folder as cwd.',
+          issues,
+        }),
+        { status: 400, headers: { 'Content-Type': 'application/problem+json' } }
+      )
+    );
+    const error = await fetchJSON(BASE_URL, '/api/test').catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      message: 'Send the folder as cwd.',
+      code: 'malformed_request',
+      status: 400,
+      issues,
+    });
+  });
+
   it('defaults a JSON string body to application/json', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')

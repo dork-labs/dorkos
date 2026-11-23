@@ -39,7 +39,7 @@ import { BoundaryError } from '../../lib/boundary.js';
 import { DevLinkError } from '../../services/marketplace/dev-links/errors.js';
 import { AdapterError } from '../../services/relay/adapter-error.js';
 import { readQuery } from '../../http/request-query.js';
-import { validationFailureBody } from '../../lib/route-utils.js';
+import { validationProblem } from '@dorkos/http-kit';
 
 /** Machine-readable code on the 403 for a batch that would need approval per install. */
 export const BATCH_UPDATE_NEEDS_APPROVAL_CODE = 'batch_update_needs_approval';
@@ -106,7 +106,7 @@ export function errorResponse(c: Context, err: unknown): Response {
  * @returns The sent response.
  */
 export function validationFailed(c: Context, error: z.ZodError): Response {
-  return c.json(validationFailureBody(error), 400);
+  return validationProblem(c, error);
 }
 
 /**

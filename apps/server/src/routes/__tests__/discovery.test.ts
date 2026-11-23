@@ -56,7 +56,7 @@ describe('Discovery Route', () => {
         .send({ maxDepth: 100 });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
 
     it('returns 400 for timeout too small', async () => {
@@ -67,7 +67,7 @@ describe('Discovery Route', () => {
         .send({ timeout: 500 });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
 
     it('returns 400 for timeout too large', async () => {
@@ -78,7 +78,7 @@ describe('Discovery Route', () => {
         .send({ timeout: 200000 });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
 
     it('returns 400 for non-integer maxDepth', async () => {
@@ -89,7 +89,7 @@ describe('Discovery Route', () => {
         .send({ maxDepth: 3.5 });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
   });
 

@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
 import fs, { type FileHandle } from 'fs/promises';
 import { Readable } from 'node:stream';
 import path from 'path';
@@ -12,7 +11,6 @@ import {
   FileContentQuerySchema,
 } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
-
 import {
   MEDIA_CONTENT_TYPES,
   sha256,
@@ -24,7 +22,7 @@ import {
 import { FILE_LIMITS } from '../config/constants.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import fileEntryRoutes from './file-entries.js';
 import { honoRequestFacts } from '../http/request-facts.js';
@@ -60,7 +58,7 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
   router.get('/raw', async (c) => {
     const parsed = RawFileQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     const { cwd, path: relPath } = parsed.data;
 
@@ -160,7 +158,7 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
   router.get('/', async (c) => {
     const parsed = FileListQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     try {
       const validatedCwd = await validateBoundary(parsed.data.cwd);
@@ -190,7 +188,7 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
   router.put('/content', async (c) => {
     const parsed = WriteFileRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     try {
       const result = parsed.data.documentSave
@@ -244,7 +242,7 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
   router.get('/tree', async (c) => {
     const parsed = FileTreeQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     const { cwd, path: relPath, depth, showHidden } = parsed.data;
 
@@ -289,7 +287,7 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
   router.get('/content', async (c) => {
     const parsed = FileContentQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     const { cwd, path: relPath } = parsed.data;
 

@@ -5,6 +5,7 @@
  */
 import { setAuthRequired, setSignInWith } from '../auth-signal';
 import { getCommunityAuthority, invalidateCommunityAuthority } from '../community-authority-state';
+import { errorFromReading, readResponseError } from '../response-error';
 
 /**
  * Default timeout for fetchJSON requests (ms).
@@ -75,16 +76,13 @@ async function request(
     throw err;
   }
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: res.statusText }));
-    const err = new Error(error.error || `HTTP ${res.status}`) as Error & {
-      code?: string;
-      status?: number;
-      body?: unknown;
-      retryAfterMs?: number;
-    };
-    err.code = error.code;
-    err.status = res.status;
-    // Capture the actual numeric Retry-After header; body/payload fields cannot supply it.
+    // One reader for every failed answer: a problem document first, then the
+    // older `{ error, code }` shape (`shared/lib/response-error`).
+    const reading = await readResponseError(res);
+    const err = errorFromReading(reading);
+    // A body that was not JSON still leaves an object to read fields off.
+    if (err.body === undefined) err.body = {};
+    // The numeric Retry-After header wins over a body's `retryAfterMs`.
     const retryAfter = res.headers.get('Retry-After');
     if (res.status === 429 && retryAfter !== null && /^\d+(?:\.\d+)?$/.test(retryAfter.trim())) {
       const milliseconds = Number(retryAfter) * 1000;
@@ -93,16 +91,17 @@ async function request(
     // Some refusals carry data the caller must act on, not just describe: a
     // `CHAT_ALREADY_BOUND` 409 names the binding that already owns the chat,
     // which is the id the "move it instead?" dialog calls `moveBinding` with.
-    // `message`/`code`/`status` cannot carry it, so the parsed body rides along.
-    err.body = error;
+    // `message`/`code`/`status` cannot carry it, so the parsed body rides along
+    // as `err.body`.
+    const body = (reading.body ?? {}) as { signInWith?: unknown };
     // A gated request without a valid credential (server task 1.2) flips the
     // app-wide auth-required state so the AuthGuard renders the login screen.
-    if (res.status === 401 && error.code === 'AUTH_REQUIRED') {
-      const named = (error as { signInWith?: unknown }).signInWith;
+    if (res.status === 401 && reading.code === 'AUTH_REQUIRED') {
+      const named = body.signInWith;
       setSignInWith(named === 'dorkos' || named === 'wifi-code' ? named : 'password');
       setAuthRequired(true);
     }
-    if (res.status === 409 && error.code === 'COMMUNITY_OWNER_CHANGED') {
+    if (res.status === 409 && reading.code === 'COMMUNITY_OWNER_CHANGED') {
       invalidateCommunityAuthority();
     }
     throw err;

@@ -75,7 +75,7 @@ describe('the client build behind the chain', () => {
   it('returns the JSON API 404 for unknown /api routes, not the SPA shell', async () => {
     const res = await request(fixtureServer).get('/api/nope');
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('API_NOT_FOUND');
+    expect(res.body.code).toBe('not_found');
   });
 
   it('does not serve the SPA shell for non-GET requests', async () => {

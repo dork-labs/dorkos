@@ -42,6 +42,7 @@ import { DocChannelMetrics } from '../../services/observability/doc-channel-metr
 import { DocChannelService } from '../../services/canvas/doc-channel/service.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../env.js';
+import { problemBody } from '@dorkos/http-kit';
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
@@ -354,7 +355,9 @@ describe('document metrics through the full app', () => {
       .set('Cookie', cookies)
       .send({});
     expect(uppercase.status).toBe(404);
-    expect(uppercase.body).toEqual({ error: 'Not found', code: 'API_NOT_FOUND' });
+    expect(uppercase.body).toEqual(
+      problemBody('not_found', { detail: 'This server has no API route at that path.' })
+    );
     expect(attempts().rejectedRequestsByClass.invalid).toBe(scenario.reason === 'invalid' ? 3 : 1);
     expect((await debug().set('Cookie', cookies)).body.requestAttempts).toEqual(attempts());
   });

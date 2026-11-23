@@ -44,18 +44,21 @@ import {
   stepUpAt,
   confirmSetupAnswer,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const FOREIGN_HOST = { host: 'evil.example' };
 const VALIDATION_FAILED = z
-  .object({ error: z.literal('Validation failed'), details: z.unknown() })
-  .strict();
-const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
-const CORS_REFUSED = z.object({ code: z.literal('ORIGIN_NOT_ALLOWED') }).loose();
-const TOO_LARGE = z.object({ code: z.literal('REQUEST_TOO_LARGE') }).loose();
+  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .loose();
+const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
+const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
+const TOO_LARGE = z.object({ code: z.literal('request_too_large') }).loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 const MESSAGE_PAGE = z.object({ messages: z.array(z.unknown()) }).loose();
@@ -214,7 +217,7 @@ contractSuite('the Relay groups, login off, nothing set up', [
     path: '/api/relay/messages',
     headers: { 'content-type': 'application/json' },
     body: '{broken',
-    expect: { status: 500, schema: MALFORMED_JSON },
+    expect: { status: 400, schema: MALFORMED_JSON },
   },
   {
     name: 'POST /messages over the JSON limit is refused before parsing',
@@ -1075,7 +1078,8 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       method: 'PATCH',
       path: `/api/relay/bindings/${binding.id}`,
       body: { bridge: 'room', chatId: null },
-      expect: { status: 400, schema: VALIDATION_FAILED },
+      // The binding store's own refusal, still the older shape (DOR-4979).
+      expect: { status: 400, schema: z.object({ error: z.literal('Validation failed') }).loose() },
     });
     await check(server, {
       method: 'POST',

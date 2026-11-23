@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AmbiguousSessionError } from '../../services/session/resolution/session-lookup-error.js';
 import { corsRefusal } from '../../http/cors-policy.js';
+import { problemBody } from '@dorkos/http-kit';
+import { BoundaryError } from '../../lib/boundary.js';
+import { RuntimeNotRegisteredError } from '../../services/core/runtime-registry.js';
 import { errorReply, logRequestError } from '../error-handler.js';
 
 vi.mock('../../lib/logger.js', () => ({
@@ -32,10 +35,9 @@ describe('errorReply and logRequestError', () => {
   it('returns a clear conflict for ambiguous native session identities', () => {
     const reply = errorReply(new AmbiguousSessionError());
     expect(reply.status).toBe(409);
-    expect(reply.body).toEqual({
-      error: 'This chat ID matches multiple chats.',
-      code: 'SESSION_ID_AMBIGUOUS',
-    });
+    expect(reply.body).toEqual(
+      problemBody('conflict', { detail: 'This chat ID matches multiple chats.' })
+    );
   });
 
   it('reports a video link as its route, never its ticket (DOR-4321)', async () => {
@@ -76,11 +78,10 @@ describe('errorReply and logRequestError', () => {
     const error = corsRefusal('http://127.0.0.1:5173');
     expect(errorReply(error)).toEqual({
       status: 403,
-      body: {
-        error:
+      body: problemBody('origin_not_allowed', {
+        detail:
           'This instance does not answer to pages from "http://127.0.0.1:5173". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
-        code: 'ORIGIN_NOT_ALLOWED',
-      },
+      }),
     });
     logRequestError(error, 'POST', '/api/canvas/docs/d1/events');
     expect(logger.error).not.toHaveBeenCalled();
@@ -97,21 +98,15 @@ describe('errorReply and logRequestError', () => {
     const reply = errorReply(error);
 
     expect(reply.status).toBe(500);
-    expect(reply.body).toEqual({
-      error: 'Something broke',
-      code: 'INTERNAL_ERROR',
-    });
+    expect(reply.body).toEqual(problemBody('internal_error', { detail: 'Something broke' }));
   });
 
-  it('falls back to Internal Server Error for empty message', () => {
+  it('says only the title for an empty message', () => {
     const error = new Error('');
 
     const reply = errorReply(error);
 
-    expect(reply.body).toEqual({
-      error: 'Internal Server Error',
-      code: 'INTERNAL_ERROR',
-    });
+    expect(reply.body).toEqual(problemBody('internal_error'));
   });
 
   it('answers a body that never fit with 413 and a code, not 500', () => {
@@ -128,16 +123,14 @@ describe('errorReply and logRequestError', () => {
     const reply = errorReply(tooLarge);
 
     expect(reply.status).toBe(413);
-    expect(reply.body).toEqual({
-      error: 'That is too large to send in one request.',
-      code: 'REQUEST_TOO_LARGE',
-    });
+    expect(reply.body).toEqual(
+      problemBody('request_too_large', {
+        detail: 'That is too large to send in one request.',
+      })
+    );
   });
 
-  it('leaves every other body-parser failure the 500 it has always had', () => {
-    // Deliberately narrow: widening this to "any 4xx that says expose" would
-    // quietly restate every route's answer to a malformed body, which is a
-    // change nobody has argued for here.
+  it('answers a body that is not valid JSON 400, not 500', () => {
     const malformed = Object.assign(new Error('Unexpected token } in JSON'), {
       type: 'entity.parse.failed',
       status: 400,
@@ -146,7 +139,50 @@ describe('errorReply and logRequestError', () => {
 
     const reply = errorReply(malformed);
 
-    expect(reply.status).toBe(500);
+    expect(reply.status).toBe(400);
+    expect(reply.body).toEqual(
+      problemBody('malformed_request', { detail: 'The request body is not valid JSON.' })
+    );
+  });
+
+  it('answers a body in an encoding or charset it cannot read 415', () => {
+    for (const type of ['encoding.unsupported', 'charset.unsupported']) {
+      const unreadable = Object.assign(new Error('unsupported'), { type, status: 415 });
+      const reply = errorReply(unreadable);
+      expect(reply.status).toBe(415);
+      expect(reply.body.code).toBe('unsupported_media_type');
+    }
+  });
+
+  it('answers a body cut off or mis-sized 400', () => {
+    for (const type of ['request.aborted', 'request.size.invalid']) {
+      const broken = Object.assign(new Error('aborted'), { type, status: 400 });
+      const reply = errorReply(broken);
+      expect(reply.status).toBe(400);
+      expect(reply.body.code).toBe('malformed_request');
+    }
+  });
+
+  it('answers a path outside the boundary 403 outside_boundary, other boundary refusals 403 forbidden', () => {
+    const outside = errorReply(new BoundaryError('Access denied', 'OUTSIDE_BOUNDARY'));
+    expect(outside).toEqual({
+      status: 403,
+      body: problemBody('outside_boundary', {
+        detail: 'This chat is outside the allowed directory.',
+      }),
+    });
+    const denied = errorReply(new BoundaryError('Permission denied', 'PERMISSION_DENIED'));
+    expect(denied).toEqual({
+      status: 403,
+      body: problemBody('forbidden', { detail: 'Permission denied' }),
+    });
+  });
+
+  it('answers a chat on a program that is not running 503 runtime_not_available', () => {
+    const reply = errorReply(new RuntimeNotRegisteredError('opencode', 's1'));
+    expect(reply.status).toBe(503);
+    expect(reply.body.code).toBe('runtime_not_available');
+    expect(reply.body.detail).toContain("which isn't running on this machine");
   });
 
   it('logs the error via logger', async () => {

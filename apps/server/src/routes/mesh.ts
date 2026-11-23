@@ -29,7 +29,6 @@
 import { projectComputerPlacement, projectComputerPlacementById } from './computer-placement.js';
 import path from 'path';
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { isManifestGitTracked } from '@dorkos/mesh';
 import type { TopologyView } from '@dorkos/shared/mesh-schemas';
 import {
@@ -54,7 +53,7 @@ import {
   refuseAgentSelfFilesFromWifi,
 } from '../middleware/agent-execution-gate.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { enrichTopology, type TopologyEnrichmentDeps } from './mesh-topology.js';
@@ -81,7 +80,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   router.post('/discover', async (c) => {
     const result = DiscoverRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
+      return validationProblem(c, result.error);
     }
 
     // Validate each discovery root against boundary
@@ -127,7 +126,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   router.post('/agents', async (c) => {
     const result = RegisterAgentRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
+      return validationProblem(c, result.error);
     }
 
     const { path: projectPath, overrides, approver, scanRoot } = result.data;
@@ -287,7 +286,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   router.put('/topology/access', (c) => {
     const result = UpdateAccessRuleRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
+      return validationProblem(c, result.error);
     }
     const { sourceNamespace, targetNamespace, action } = result.data;
     try {
@@ -331,7 +330,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   router.get('/agents', (c) => {
     const result = AgentListQuerySchema.safeParse(readQuery(c));
     if (!result.success) {
-      return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
+      return validationProblem(c, result.error);
     }
     const paths = meshCore.listWithPaths();
     const agents = meshCore
@@ -524,7 +523,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   router.post('/deny', async (c) => {
     const result = DenyRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
+      return validationProblem(c, result.error);
     }
 
     let resolvedPath: string;

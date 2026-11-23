@@ -525,7 +525,7 @@ describe('Marketplace Routes', () => {
     it('returns 400 for invalid body', async () => {
       const res = await request(fixtureServer).post('/api/marketplace/sources').send({ name: '' });
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
 
     it('returns 400 and says what to use instead for an address git would run (DOR-1710)', async () => {
@@ -1352,7 +1352,7 @@ describe('Marketplace Routes', () => {
         .post('/api/marketplace/cache/prune')
         .send({ keepLastN: 1 });
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
   });
 
@@ -1735,7 +1735,7 @@ describe('Marketplace Routes', () => {
         .post('/api/marketplace/packages/sample-plugin/preview')
         .send({ force: 'not-a-boolean' });
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
 
     // A containment assertion fires deep in the cache, where its message names

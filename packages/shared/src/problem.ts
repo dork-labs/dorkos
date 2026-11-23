@@ -85,6 +85,12 @@ export const PROBLEM_CODE_LIST = [
   { code: 'rate_limited', status: 429, title: 'Too many requests. Try again shortly.' },
   // The server's own faults.
   { code: 'internal_error', status: 500, title: 'Something went wrong.' },
+  /** A chat pinned to an agent program this computer is not running. */
+  {
+    code: 'runtime_not_available',
+    status: 503,
+    title: 'This chat’s program isn’t running on this computer.',
+  },
   {
     code: 'temporarily_unavailable',
     status: 503,
@@ -198,4 +204,62 @@ export type Problem = z.infer<typeof ProblemSchema>;
  */
 export function isProblem(value: unknown): value is Problem {
   return ProblemSchema.safeParse(value).success;
+}
+
+/**
+ * What a failed response said, read the same way by every client: a message to
+ * show a person and, when the server gave one, a stable code to branch on.
+ */
+export interface ErrorBodyReading {
+  /** A sentence safe to show a person. */
+  message: string;
+  /** The machine-readable failure code, exactly as the server spelled it. */
+  code?: string;
+  /** The status the body itself named (a problem's `status`). */
+  status?: number;
+  /** What failed validation, in Zod's flattened form. */
+  issues?: ProblemIssues;
+  /** How long to wait before retrying, when the body says. */
+  retryAfterMs?: number;
+}
+
+/** Whether a value is a validation failure in Zod's flattened form. */
+function isFlattenedIssues(value: unknown): value is ProblemIssues {
+  return ProblemIssuesSchema.safeParse(value).success;
+}
+
+/**
+ * Read a failed response's parsed JSON body: a problem document first
+ * (`detail`, else `title`), then the old `{ error, code, details }` shape.
+ *
+ * The old shape is read only while DOR-4979 moves the routes over, folder by
+ * folder; the series' last change removes that branch.
+ *
+ * @param body - The parsed body, of unknown shape (or nothing, when it was not JSON).
+ * @param fallbackMessage - The message when the body says none, such as `HTTP 500`.
+ * @returns The reading.
+ */
+export function readErrorBody(body: unknown, fallbackMessage: string): ErrorBodyReading {
+  if (isProblem(body)) {
+    return {
+      message: body.detail ?? body.title,
+      code: body.code,
+      status: body.status,
+      ...(body.issues === undefined ? {} : { issues: body.issues }),
+      ...(body.retryAfterMs === undefined ? {} : { retryAfterMs: body.retryAfterMs }),
+    };
+  }
+  if (typeof body !== 'object' || body === null) return { message: fallbackMessage };
+  const old = body as { error?: unknown; message?: unknown; code?: unknown; details?: unknown };
+  const message =
+    typeof old.error === 'string' && old.error !== ''
+      ? old.error
+      : typeof old.message === 'string' && old.message !== ''
+        ? old.message
+        : fallbackMessage;
+  return {
+    message,
+    ...(typeof old.code === 'string' ? { code: old.code } : {}),
+    ...(isFlattenedIssues(old.details) ? { issues: old.details } : {}),
+  };
 }

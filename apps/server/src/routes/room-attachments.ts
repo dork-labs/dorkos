@@ -32,6 +32,7 @@ import { parseUploads, UploadLimitError, type UploadedFile } from '../http/uploa
 import { discardStream, errorBody } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 import { roomRoute } from './room-route.js';
+import { uploadRefusalProblem } from '../http/problems/upload-refusal.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -94,11 +95,10 @@ router.post('/:id/attachments', (c) =>
       });
     } catch (err) {
       if (err instanceof UploadLimitError) {
-        if (err.code === 'LIMIT_FILE_SIZE') {
-          const megabytes = uploadConfig.maxFileSize / 1024 / 1024;
-          return c.json(errorBody(`File too large (max ${megabytes}MB)`, err.code), 413);
-        }
-        return c.json(errorBody(err.message, err.code), 400);
+        const megabytes = uploadConfig.maxFileSize / 1024 / 1024;
+        return uploadRefusalProblem(c, err, {
+          tooLargeDetail: `File too large (max ${megabytes}MB)`,
+        });
       }
       // Every other refusal: the type filter's, or a body the parser could not read.
       return c.json(errorBody((err as Error).message, 'ATTACHMENT_TYPE_NOT_ALLOWED'), 415);

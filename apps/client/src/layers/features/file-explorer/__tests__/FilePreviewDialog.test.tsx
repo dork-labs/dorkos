@@ -430,7 +430,7 @@ describe('when the room refuses the save', () => {
   it('says the request was too large in words, not as a server error', async () => {
     const transport = createMockTransport();
     transport.readRoomFileContent = vi.fn().mockResolvedValue(markdownFile('# Rules\n'));
-    transport.saveRoomFile = vi.fn().mockRejectedValue(refusal('REQUEST_TOO_LARGE', 413));
+    transport.saveRoomFile = vi.fn().mockRejectedValue(refusal('request_too_large', 413));
     renderDialog(transport);
 
     const box = await startEditing();

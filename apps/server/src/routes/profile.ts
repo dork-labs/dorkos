@@ -28,10 +28,10 @@ import {
   type ProfileUpdateResponse,
 } from '@dorkos/shared/team-schemas';
 import { logError, logger } from '../lib/logger.js';
-import { discardStream, errorBody, validationFailureBody } from '../lib/route-utils.js';
+import { discardStream, errorBody } from '../lib/route-utils.js';
 import type { AuthorRecord, AuthorRegistry } from '../services/rooms/author-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { parseUploads, UploadLimitError, type UploadedFile } from '../http/uploads.js';
@@ -45,6 +45,7 @@ import {
   sniffAvatarContentType,
   type AvatarStore,
 } from '../services/identity/avatar-store.js';
+import { uploadRefusalProblem } from '../http/problems/upload-refusal.js';
 
 /** What the profile router needs. Every seam is injected; none is reached for. */
 export interface ProfileRouterDeps {
@@ -319,7 +320,7 @@ export function createProfileRouter(deps: ProfileRouterDeps): Hono<ApiEnv> {
     const operator = ownerOrRefuse(c, 'name');
     if ('refusal' in operator) return operator.refusal;
     const parsed = ProfileUpdateRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const body = parsed.data;
 
     const owner = deps.ownerAccount();
@@ -462,14 +463,14 @@ function uploadRefusal(c: Context<ApiEnv>, err: unknown): Response {
   if (err instanceof UploadLimitError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       const megabytes = MAX_AVATAR_BYTES / 1024 / 1024;
-      const body = errorBody(`That image is larger than ${megabytes} MB.`, 'AVATAR_TOO_LARGE');
-      return c.json(body, 413);
+      return uploadRefusalProblem(c, err, {
+        tooLargeDetail: `That image is larger than ${megabytes} MB.`,
+      });
     }
-    const body = errorBody(`Send one image as '${AVATAR_FIELD}'.`, 'AVATAR_UPLOAD_REJECTED');
-    return c.json(body, 400);
+    return problem(c, 'malformed_request', { detail: `Send one image as '${AVATAR_FIELD}'.` });
   }
   logger.error('[Profile] avatar upload failed', logError(err));
-  return c.json(errorBody('That upload could not be read.', 'AVATAR_UPLOAD_REJECTED'), 400);
+  return problem(c, 'malformed_request', { detail: 'That upload could not be read.' });
 }
 
 /** Turn a store failure into a status. An unusable id is the caller's fault. */

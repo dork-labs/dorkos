@@ -285,7 +285,7 @@ describe('Extension Secrets Routes', () => {
         .send({ value: '' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
 
     it('rejects missing value field with 400', async () => {
@@ -297,7 +297,7 @@ describe('Extension Secrets Routes', () => {
         .send({});
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
 
     it('returns 404 for non-existent extension', async () => {

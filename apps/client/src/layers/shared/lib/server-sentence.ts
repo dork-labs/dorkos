@@ -5,11 +5,14 @@
  * network failure reads "Failed to fetch" or "Load failed", and a response
  * with no JSON body falls back to its status text or "HTTP 500". Only a
  * message the server wrote is passed through — the request got an answer (a
- * numeric `status`), the answer's own JSON `error` field is the message, and
- * it is a sentence (status texts and bare codes never end in one).
+ * numeric `status`), the answer's own words are the message (a problem
+ * document's `detail` or `title`, or the older body's `error`, as
+ * `readErrorBody` reads them), and it is a sentence (status texts and bare
+ * codes never end in one).
  *
  * @module shared/lib/server-sentence
  */
+import { readErrorBody } from '@dorkos/shared/problem';
 
 /**
  * The server's own sentence for a failed request, or `null`.
@@ -23,7 +26,7 @@ export function serverSentence(error: unknown): string | null {
     typeof status === 'number' &&
     typeof body === 'object' &&
     body !== null &&
-    (body as { error?: unknown }).error === error.message &&
+    readErrorBody(body, '').message === error.message &&
     /[.!?]$/.test(error.message.trim());
   return written ? error.message : null;
 }

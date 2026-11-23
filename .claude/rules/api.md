@@ -14,7 +14,7 @@ Always validate the request body with Zod before processing, reading it through 
 
 ```typescript
 import { z } from 'zod';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
@@ -22,10 +22,7 @@ const createSchema = z.object({
 
 router.post('/', async (c) => {
   const result = createSchema.safeParse(readJsonBody(c));
-
-  if (!result.success) {
-    return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
-  }
+  if (!result.success) return validationProblem(c, result.error); // 400 malformed_request
 
   // Use result.data (typed and validated)
 });
@@ -33,21 +30,23 @@ router.post('/', async (c) => {
 
 ### Error Handling
 
-Return consistent error responses:
+Every failure is an RFC 9457 problem document (`application/problem+json`), sent with `problem()` from `@dorkos/http-kit` and a code from `PROBLEM_CODE_LIST` (`packages/shared/src/problem.ts`). The full contract is the Errors section of `contributing/api-reference.md`.
 
 ```typescript
+import { problem } from '@dorkos/http-kit';
+
 // Success
 c.json(data);
 c.json(created, 201);
 
-// Client errors
-c.json({ error: 'Validation failed' }, 400);
-c.json({ error: 'Unauthorized' }, 401);
-c.json({ error: 'Not found' }, 404);
+// Failures: a code from the list, and a sentence for a person
+problem(c, 'not_found', { detail: 'No agent is registered at that path.' });
+problem(c, 'conflict', { detail: 'Someone else changed this. Reload and try again.' });
 
-// Server errors
-c.json({ error: 'Internal server error' }, 500);
+// Server errors: throw, and let the error handler answer 500 internal_error
 ```
+
+Never write `c.json({ error: '…' }, 4xx)` or a hand-built `{ error, code }` body in new code. Older routes still do; they move to problem documents folder by folder (DOR-4979), and each one that moves changes its callers in the same PR.
 
 ### Use Service Functions
 
@@ -66,5 +65,5 @@ const workspaces = await getWorkspaceManager().list({ projectKey });
 
 - [ ] Validate all input with Zod
 - [ ] Use service layer functions (not direct file/data access)
-- [ ] Return appropriate status codes
+- [ ] Answer failures with `problem()` / `validationProblem()`, never `{ error }`
 - [ ] Don't expose internal error details to clients

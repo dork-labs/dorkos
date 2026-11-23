@@ -295,7 +295,7 @@ describe('signed Relay JSON through the finalized application', () => {
       const headers = signed(body);
       const result = await send(body, headers);
       expect(result.status).toBe(413);
-      expect(result.body.code).toBe('REQUEST_TOO_LARGE');
+      expect(result.body.code).toBe('request_too_large');
       expect(inbound).toHaveBeenCalledTimes(0);
       expect(publish).toHaveBeenCalledTimes(0);
       const control = await send(EXACT, signed(EXACT, headers['X-Nonce']));
@@ -310,13 +310,13 @@ describe('signed Relay JSON through the finalized application', () => {
       .post('/api/ordinary-json-probe')
       .set('Content-Type', 'application/json')
       .send('{broken');
-    expect(malformed.status).toBe(500);
-    expect(malformed.body.code).toBe('INTERNAL_ERROR');
+    expect(malformed.status).toBe(400);
+    expect(malformed.body.code).toBe('malformed_request');
     const oversized = await request(target.server)
       .post('/api/ordinary-json-probe')
       .send({ padding: 'x'.repeat(1024 * 1024) });
     expect(oversized.status).toBe(413);
-    expect(oversized.body.code).toBe('REQUEST_TOO_LARGE');
+    expect(oversized.body.code).toBe('request_too_large');
     expect(inbound).toHaveBeenCalledTimes(0);
     expect(publish).toHaveBeenCalledTimes(0);
   });
@@ -438,7 +438,7 @@ describe('signed Relay JSON through the finalized application', () => {
           ? 'HOST_NOT_ALLOWED'
           : gate === 'admission'
             ? 'SERVER_STOPPING'
-            : 'ORIGIN_NOT_ALLOWED'
+            : 'origin_not_allowed'
       );
       expect(inbound).toHaveBeenCalledTimes(0);
       expect(publish).toHaveBeenCalledTimes(0);

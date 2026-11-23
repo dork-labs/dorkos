@@ -26,13 +26,13 @@ import {
   UpdateTodoRequestSchema,
 } from '@dorkos/shared/todo-schemas';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
-import { errorBody, validationFailureBody } from '../lib/route-utils.js';
+import { errorBody } from '../lib/route-utils.js';
 import {
   isPersonWithoutSession,
   PERSON_SESSION_REQUIRED_MESSAGE,
 } from '../lib/person-without-session.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import {
@@ -149,7 +149,7 @@ export function createTodosRoutes(deps: TodoRouterDeps): Hono<ApiEnv> {
 
   router.get('/', (c) => {
     const query = ListTodosQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
     return c.json(deps.todos.list(query.data));
   });
 
@@ -163,7 +163,7 @@ export function createTodosRoutes(deps: TodoRouterDeps): Hono<ApiEnv> {
 
   router.post('/', (c) => {
     const body = CreateTodoRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     const caller = personActor(c, deps);
     if ('refused' in caller) return caller.refused;
     const { sourceEntryId, ...input } = body.data;
@@ -197,7 +197,7 @@ export function createTodosRoutes(deps: TodoRouterDeps): Hono<ApiEnv> {
 
   router.patch('/:id', (c) => {
     const body = UpdateTodoRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     const caller = personActor(c, deps);
     if ('refused' in caller) return caller.refused;
     try {

@@ -14,7 +14,7 @@
  *
  * **Two ceilings, two answers.** The server accepts 1 MB of request body, which
  * is well under a room's own per-file cap — so a very large save is refused
- * `REQUEST_TOO_LARGE` by the parser and never reaches the room's `FILE_TOO_LARGE`
+ * `request_too_large` by the parser and never reaches the room's `FILE_TOO_LARGE`
  * at all. Both are here because a person hitting either has hit "too big", and
  * being told which ceiling it was is the difference between "split this up" and
  * "this does not belong in a room's files".
@@ -34,7 +34,7 @@ import { ROOM_REPO_CONFIG_UNSAFE_CODE, ROOM_REPO_CONFIG_UNSAFE_FALLBACK } from '
  * not a sentence.
  */
 const SAVE_REFUSAL_COPY = new Map<string, string>([
-  ['REQUEST_TOO_LARGE', 'Too much text to save here. Put big files in the room’s attachments.'],
+  ['request_too_large', 'Too much text to save here. Put big files in the room’s attachments.'],
   ['FILE_TOO_LARGE', 'This file is bigger than the room allows, so it wasn’t saved.'],
   ['REPO_CAP_EXCEEDED', 'This room’s files are full, so nothing was saved.'],
   [

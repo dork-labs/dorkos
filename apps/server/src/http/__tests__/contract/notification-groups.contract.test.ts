@@ -55,9 +55,12 @@ import {
   stepUpAt,
   confirmSetupAt,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 /** The header a caller holding an approval token sends. */
@@ -90,7 +93,9 @@ const DECISION_AGENT_REFUSAL = {
   message:
     'DorkOS changed nothing. Only a person can answer this. Ask them to answer it in DorkOS.',
 };
-const VALIDATION_FAILED = z.object({ error: z.literal('Validation failed') }).loose();
+const VALIDATION_FAILED = z
+  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .loose();
 
 /** A push subscription body `POST /api/push/subscriptions` accepts. */
 const SUBSCRIPTION = {
@@ -219,7 +224,10 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     path: '/api/push/subscriptions',
     headers: { 'content-type': 'application/json' },
     body: '{"endpoint":',
-    expect: { status: 500, schema: z.object({ code: z.literal('INTERNAL_ERROR') }).loose() },
+    expect: {
+      status: 400,
+      body: problemBody('malformed_request', { detail: 'The request body is not valid JSON.' }),
+    },
   },
   {
     name: 'POST /api/push/subscriptions stores a device and never echoes its endpoint',
@@ -401,7 +409,10 @@ contractSuite('notification, push, approval, extension-decision, permission and 
   {
     name: 'GET /api/extension-decisions refuses a repeated filter',
     path: '/api/extension-decisions?extensionId=a&extensionId=b',
-    expect: { status: 400, body: { error: 'Invalid query' } },
+    expect: {
+      status: 400,
+      schema: z.object({ code: z.literal('malformed_request'), issues: z.unknown() }).loose(),
+    },
   },
   {
     name: 'POST /api/extension-decisions/:id/action answers 404 for an id that is not a decision id',
@@ -428,11 +439,10 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     body: { action: 'approve' },
     expect: {
       status: 403,
-      body: {
-        error:
+      body: problemBody('origin_not_allowed', {
+        detail:
           'This instance does not answer to pages from "http://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
-        code: 'ORIGIN_NOT_ALLOWED',
-      },
+      }),
     },
   },
   {

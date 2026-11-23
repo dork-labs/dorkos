@@ -46,7 +46,7 @@ _openapi:
           the room's copy, and `ROOM_ARCHIVED`. **Two ceilings, two answers**:
           the request body limit is 1 MB, below the default file cap, so a very
           large save never reaches the room's own cap at all — it is refused 413
-          `REQUEST_TOO_LARGE` by the request parser, where a save that fits the
+          `request_too_large` by the request parser, where a save that fits the
           request and not the room is refused 409 `FILE_TOO_LARGE`."
 ---
 

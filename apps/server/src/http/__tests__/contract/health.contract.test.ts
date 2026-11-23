@@ -10,8 +10,11 @@
 import { HealthResponseSchema } from '@dorkos/shared/schemas';
 import { DeepHealthResponseSchema } from '@dorkos/shared/health-schemas';
 import { contractSuite, SERVER_ORIGIN } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 
 contractSuite('health', [
   {
@@ -59,11 +62,10 @@ contractSuite('health', [
     expect: {
       status: 403,
       headers: { 'access-control-allow-origin': null },
-      body: {
-        error:
+      body: problemBody('origin_not_allowed', {
+        detail:
           'This instance does not answer to pages from "https://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
-        code: 'ORIGIN_NOT_ALLOWED',
-      },
+      }),
     },
   },
   {

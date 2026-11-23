@@ -401,9 +401,9 @@ describe('main HTTP admission through the real app', () => {
           .set('content-type', 'application/json')
           .send('{invalid')
       ).status
-      // The parser refuses it: the chain answers a body it cannot parse with
-      // the generic 500, as the server always has outside a route's own check.
-    ).toBe(500);
+      // The parser refuses it: the chain answers a body it cannot parse
+      // 400 malformed_request, the caller's mistake (DOR-4979).
+    ).toBe(400);
     expect(
       (
         await request(target.server)

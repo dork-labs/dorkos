@@ -8,6 +8,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { extensionQueryKeys } from '@/layers/entities/extension';
 import { extensionApiUrl } from '../model/extension-api-url';
+import { readResponseError } from '@/layers/shared/lib';
 
 /** An approval left behind by an extension that is no longer installed. */
 export interface StaleApproval {
@@ -25,8 +26,8 @@ export const staleApprovalsKey = [...extensionQueryKeys.all, 'stale-approvals'] 
 /** Read the server's answer, or throw its sentence. */
 async function answer<T>(res: Response, fallback: string): Promise<T> {
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `${fallback} The server answered ${res.status}.`);
+    const body = await readResponseError(res, `${fallback} The server answered ${res.status}.`);
+    throw new Error(body.message);
   }
   return (res.status === 204 ? undefined : res.json()) as Promise<T>;
 }

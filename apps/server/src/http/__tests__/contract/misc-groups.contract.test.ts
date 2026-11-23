@@ -44,6 +44,7 @@ import {
   stepUpAt,
   confirmSetupAt,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 /** Nothing reaches the site: feedback history reads a closed local port. */
 const NO_SITE = { DORKOS_CLOUD_URL: 'http://127.0.0.1:9', NGROK_AUTHTOKEN: '' };
@@ -52,18 +53,20 @@ const REMOTE_HOST = 'dorkos.contract.example';
 const BASE_ENV = { ...NO_SITE, DORKOS_TRUSTED_HOSTS: REMOTE_HOST };
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json$/ };
 const HTML_TYPE = { 'content-type': /^text\/html\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
-const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
-const TOO_LARGE = {
-  error: 'That is too large to send in one request.',
-  code: 'REQUEST_TOO_LARGE',
-};
+const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
+const TOO_LARGE = problemBody('request_too_large', {
+  detail: 'That is too large to send in one request.',
+});
 const VALIDATION_FAILED = z
-  .object({ error: z.literal('Validation failed'), details: z.object({}).loose() })
-  .strict();
+  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .loose();
 const UUID = '00000000-0000-4000-8000-000000000000';
 
 /** A JSON body of about `bytes` bytes. */
@@ -245,7 +248,7 @@ contractSuite(
       path: '/api/config',
       headers: { 'content-type': 'application/json' },
       body: '{bad',
-      expect: { status: 500, schema: MALFORMED_JSON },
+      expect: { status: 400, schema: MALFORMED_JSON },
     },
     {
       name: 'PATCH /api/config refuses a body above the app-wide limit',
@@ -253,7 +256,7 @@ contractSuite(
       path: '/api/config',
       headers: { 'content-type': 'application/json' },
       body: BETWEEN_LIMITS,
-      expect: { status: 413, headers: JSON_TYPE, body: TOO_LARGE },
+      expect: { status: 413, headers: PROBLEM_TYPE, body: TOO_LARGE },
     },
     {
       name: 'PATCH /api/config refuses an agent a protected setting',
@@ -433,7 +436,7 @@ contractSuite(
       path: '/api/feedback',
       headers: { 'content-type': 'application/json' },
       body: ABOVE_FEEDBACK_LIMIT,
-      expect: { status: 413, headers: JSON_TYPE, body: TOO_LARGE },
+      expect: { status: 413, headers: PROBLEM_TYPE, body: TOO_LARGE },
     },
     {
       name: 'POST /api/feedback refuses malformed JSON in the chain',
@@ -441,7 +444,7 @@ contractSuite(
       path: '/api/feedback',
       headers: { 'content-type': 'application/json' },
       body: '{bad',
-      expect: { status: 500, schema: MALFORMED_JSON },
+      expect: { status: 400, schema: MALFORMED_JSON },
     },
     {
       name: 'GET /api/feedback/mine answers 502 when the site cannot be reached',
@@ -725,7 +728,7 @@ contractSuite(
       method: 'POST',
       path: '/api/test/scenario',
       body: {},
-      expect: { status: 400, headers: JSON_TYPE, schema: VALIDATION_FAILED },
+      expect: { status: 400, headers: PROBLEM_TYPE, schema: VALIDATION_FAILED },
     },
     {
       name: 'POST /api/test/scenario refuses a scenario it does not know',

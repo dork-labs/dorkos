@@ -14,7 +14,7 @@ import {
 import { logger } from '../lib/logger.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 
 const CreateDirectoryBodySchema = z.object({
@@ -28,7 +28,7 @@ const router = new Hono<ApiEnv>();
 router.get('/', async (c) => {
   const parsed = BrowseDirectoryQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { path: userPath, showHidden } = parsed.data;
 
@@ -116,7 +116,7 @@ router.get('/default', (c) => {
 router.post('/', async (c) => {
   const parsed = CreateDirectoryBodySchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Validation failed', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
 
   const { parentPath, folderName } = parsed.data;

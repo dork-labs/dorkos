@@ -50,8 +50,8 @@ import {
 } from '../services/core/auth/sessions/wifi-level.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { logger } from '../lib/logger.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import type { ApiEnv } from '../http/api-chain.js';
+import { validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 
 /** The refusal codes that mean "not you", whoever asks again. */
@@ -164,7 +164,7 @@ export async function dispatchCapability(
       return c.json(err.decision.payload, status);
     }
     if (err instanceof z.ZodError) {
-      return c.json(validationFailureBody(err), 400);
+      return validationProblem(c, err);
     }
     // The capability refused (agent not found, system agent protected, …):
     // its own payload goes back verbatim, at the status its code names.

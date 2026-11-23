@@ -44,6 +44,7 @@ import {
   contractSuite,
   type ComposedServer,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 /** The repository root: the composed server's directory boundary. */
 const REPO_ROOT = realpathSync(
@@ -85,11 +86,19 @@ const OUTSIDE = {
   code: 'OUTSIDE_BOUNDARY',
 };
 const NULL_BYTE = { error: 'Invalid path: null bytes not allowed', code: 'NULL_BYTE' };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
-const INTERNAL = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
-const INVALID_QUERY = z.object({ error: z.literal('Invalid query'), details: z.unknown() });
-const INVALID_BODY = z.object({ error: z.literal('Invalid body'), details: z.unknown() });
-const VALIDATION_FAILED = z.object({ error: z.literal('Validation failed') }).loose();
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
+const INTERNAL = z.object({ code: z.literal('internal_error') }).loose();
+const INVALID_QUERY = z
+  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .loose();
+const INVALID_BODY = z
+  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .loose();
+const VALIDATION_FAILED = z
+  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .loose();
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const SESSION = '3f1c2a64-8d3e-4b5f-9a7c-1e2d3c4b5a69';
@@ -371,7 +380,10 @@ contractSuite('file, diff, upload and profile groups', [
     path: '/api/files/content',
     headers: { 'content-type': 'application/json' },
     body: '{"cwd":',
-    expect: { status: 500, schema: INTERNAL },
+    expect: {
+      status: 400,
+      body: problemBody('malformed_request', { detail: 'The request body is not valid JSON.' }),
+    },
   },
   {
     name: 'POST /api/files creates a file',
@@ -731,8 +743,10 @@ contractSuite('file, diff, upload and profile groups', [
       { field: 'files', filename: 'big.txt', type: 'text/plain', content: 'b'.repeat(65) },
     ]),
     expect: {
-      status: 400,
-      body: { error: `File too large (max ${64 / 1024 / 1024}MB)`, code: 'LIMIT_FILE_SIZE' },
+      status: 413,
+      body: problemBody('request_too_large', {
+        detail: `File too large (max ${64 / 1024 / 1024}MB)`,
+      }),
     },
   },
   {
@@ -758,7 +772,7 @@ contractSuite('file, diff, upload and profile groups', [
       { field: 'files', filename: '2.txt', type: 'text/plain', content: '2' },
       { field: 'files', filename: '3.txt', type: 'text/plain', content: '3' },
     ]),
-    expect: { status: 400, body: { error: 'Too many files', code: 'LIMIT_FILE_COUNT' } },
+    expect: { status: 400, body: problemBody('malformed_request', { detail: 'Too many files' }) },
   },
   {
     name: 'POST /api/uploads refuses a file in another field',
@@ -768,7 +782,7 @@ contractSuite('file, diff, upload and profile groups', [
     body: multipart([{ field: 'other', filename: 'o.txt', type: 'text/plain', content: 'o' }]),
     expect: {
       status: 400,
-      body: { error: 'Unexpected file field', code: 'LIMIT_UNEXPECTED_FILE' },
+      body: problemBody('malformed_request', { detail: 'Unexpected file field' }),
     },
   },
   {
@@ -777,7 +791,10 @@ contractSuite('file, diff, upload and profile groups', [
     path: `/api/uploads?cwd=${q(CWD)}`,
     headers: MULTIPART,
     body: multipart([{ field: 'files', filename: 'p.png', type: 'image/png', content: 'png' }]),
-    expect: { status: 400, body: { error: 'File type not allowed: image/png' } },
+    expect: {
+      status: 400,
+      body: problemBody('malformed_request', { detail: 'File type not allowed: image/png' }),
+    },
   },
   {
     name: 'POST /api/uploads refuses a multipart type with no boundary',
@@ -785,7 +802,10 @@ contractSuite('file, diff, upload and profile groups', [
     path: `/api/uploads?cwd=${q(CWD)}`,
     headers: { 'content-type': 'multipart/form-data' },
     body: 'nothing',
-    expect: { status: 400, body: { error: 'Multipart: Boundary not found' } },
+    expect: {
+      status: 400,
+      body: problemBody('malformed_request', { detail: 'Multipart: Boundary not found' }),
+    },
   },
   {
     name: 'POST /api/uploads refuses a body cut off before its closing boundary',
@@ -795,7 +815,10 @@ contractSuite('file, diff, upload and profile groups', [
     body: multipart([{ field: 'files', filename: 'cut.txt', type: 'text/plain', content: 'c' }], {
       close: false,
     }),
-    expect: { status: 400, body: { error: 'Unexpected end of form' } },
+    expect: {
+      status: 400,
+      body: problemBody('malformed_request', { detail: 'Unexpected end of form' }),
+    },
   },
   {
     name: 'POST /api/uploads refuses an empty multipart body',
@@ -803,7 +826,10 @@ contractSuite('file, diff, upload and profile groups', [
     path: `/api/uploads?cwd=${q(CWD)}`,
     headers: MULTIPART,
     body: '',
-    expect: { status: 400, body: { error: 'Unexpected end of form' } },
+    expect: {
+      status: 400,
+      body: problemBody('malformed_request', { detail: 'Unexpected end of form' }),
+    },
   },
   {
     name: 'GET /api/uploads/:filename refuses a missing cwd',
@@ -896,7 +922,7 @@ contractSuite('file, diff, upload and profile groups', [
     ]),
     expect: {
       status: 413,
-      body: { error: 'That image is larger than 2 MB.', code: 'AVATAR_TOO_LARGE' },
+      body: problemBody('request_too_large', { detail: 'That image is larger than 2 MB.' }),
     },
   },
   {
@@ -910,7 +936,7 @@ contractSuite('file, diff, upload and profile groups', [
     ]),
     expect: {
       status: 400,
-      body: { error: "Send one image as 'avatar'.", code: 'AVATAR_UPLOAD_REJECTED' },
+      body: problemBody('malformed_request', { detail: "Send one image as 'avatar'." }),
     },
   },
   {
@@ -921,7 +947,7 @@ contractSuite('file, diff, upload and profile groups', [
     body: multipart([{ field: 'photo', filename: 'a.webp', type: 'image/webp', content: WEBP }]),
     expect: {
       status: 400,
-      body: { error: "Send one image as 'avatar'.", code: 'AVATAR_UPLOAD_REJECTED' },
+      body: problemBody('malformed_request', { detail: "Send one image as 'avatar'." }),
     },
   },
   {
@@ -932,7 +958,7 @@ contractSuite('file, diff, upload and profile groups', [
     body: 'nothing',
     expect: {
       status: 400,
-      body: { error: 'That upload could not be read.', code: 'AVATAR_UPLOAD_REJECTED' },
+      body: problemBody('malformed_request', { detail: 'That upload could not be read.' }),
     },
   },
   {

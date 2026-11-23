@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
 import { PROBLEM_CONTENT_TYPE, isProblem } from '@dorkos/shared/problem';
-import { problem, problemBody, validationProblem } from '../problem.js';
+import { problem, problemBody, sendProblem, validationProblem } from '../problem.js';
 
 describe('problemBody', () => {
   it('takes the status and title from the code list', () => {
@@ -46,6 +46,19 @@ describe('problem', () => {
     const body: unknown = await res.json();
     expect(isProblem(body)).toBe(true);
     expect(body).toMatchObject({ code: 'rate_limited', retryAfterMs: 1500 });
+  });
+});
+
+describe('sendProblem', () => {
+  it('answers a built document with its own status and the problem media type', async () => {
+    const app = new Hono();
+    const body = problemBody('request_too_large', { detail: 'Too big.' });
+    app.get('/', (c) => sendProblem(c, body));
+    const res = await app.request('/');
+    expect(res.status).toBe(413);
+    expect(res.headers.get('content-type')).toBe(PROBLEM_CONTENT_TYPE);
+    expect(res.headers.get('retry-after')).toBeNull();
+    expect(await res.json()).toEqual(body);
   });
 });
 

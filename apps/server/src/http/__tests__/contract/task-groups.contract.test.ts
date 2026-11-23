@@ -47,6 +47,7 @@ import {
   stepUpAt,
   confirmSetupAt,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 /** The repository root: the composed server's directory boundary. */
 const REPO_ROOT = realpathSync(
@@ -95,7 +96,9 @@ async function startOllamaStub(): Promise<{ url: string; close: () => Promise<vo
 }
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 const TASK_NOT_FOUND = { error: 'Scheduled task not found' };
 const RUN_NOT_FOUND = { error: 'Run not found' };
 /** An agent header this machine never minted: the caller is a machine, unverified. */
@@ -103,8 +106,10 @@ const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 /** A caller holding an approval token is the requester, never the person. */
 const REQUESTER = { 'X-DorkOS-Approval': 'not-a-real-approval' };
 const UNKNOWN_ID = '01JZZZZZZZZZZZZZZZZZZZZZZZ';
-const VALIDATION_FAILED = z.object({ error: z.literal('Validation failed') }).loose();
-const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
+const VALIDATION_FAILED = z
+  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .loose();
+const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const TASK = TaskSchema.loose();
 const TASK_LIST = z.array(TASK);
 const OPERATOR_ONLY_TASK = (fields: string[]) =>
@@ -219,7 +224,9 @@ contractSuite(
       name: 'POST /api/tasks refuses an empty body',
       method: 'POST',
       path: '/api/tasks',
-      expect: { status: 400, schema: VALIDATION_FAILED },
+      // The task service's own refusal, still the older shape until the tasks
+      // folder moves (DOR-4979).
+      expect: { status: 400, schema: z.object({ error: z.literal('Validation failed') }).loose() },
     },
     {
       name: 'POST /api/tasks refuses a schedule croner cannot read',
@@ -266,7 +273,7 @@ contractSuite(
       path: '/api/tasks',
       headers: { 'content-type': 'application/json' },
       body: '{"name":',
-      expect: { status: 500, schema: MALFORMED_JSON },
+      expect: { status: 400, schema: MALFORMED_JSON },
     },
     {
       name: 'PATCH /api/tasks/:id answers 404 for an unknown schedule',
@@ -565,7 +572,10 @@ contractSuite(
     {
       name: 'GET /api/runtimes/claude-code/account-eligibility refuses an empty project',
       path: '/api/runtimes/claude-code/account-eligibility?project=',
-      expect: { status: 400, schema: z.object({ error: z.literal('Invalid query') }).loose() },
+      expect: {
+        status: 400,
+        schema: z.object({ code: z.literal('malformed_request'), issues: z.unknown() }).loose(),
+      },
     },
     {
       name: 'PUT /api/runtimes/claude-code/project-accounts refuses an agent',
@@ -583,11 +593,10 @@ contractSuite(
       body: { project: PROJECT, allow: null },
       expect: {
         status: 403,
-        body: {
-          error:
+        body: problemBody('origin_not_allowed', {
+          detail:
             'This instance does not answer to pages from "https://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
-          code: 'ORIGIN_NOT_ALLOWED',
-        },
+        }),
       },
     },
     {
@@ -596,7 +605,9 @@ contractSuite(
       path: '/api/runtimes/claude-code/project-accounts',
       expect: {
         status: 400,
-        schema: z.object({ error: z.string(), details: z.unknown() }).strict(),
+        schema: z
+          .object({ code: z.literal('malformed_request'), detail: z.string(), issues: z.unknown() })
+          .loose(),
       },
     },
     {
@@ -646,7 +657,7 @@ contractSuite(
       path: '/api/runtimes/claude-code/project-accounts/without-credits',
       expect: {
         status: 400,
-        schema: z.object({ error: z.literal('Send the session as `sessionId`.') }).loose(),
+        schema: z.object({ detail: z.literal('Send the chat as `sessionId`.') }).loose(),
       },
     },
 

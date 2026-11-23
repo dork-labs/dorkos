@@ -226,14 +226,14 @@ describe('Mesh routes', () => {
       const res = await request(fixtureServer).post('/api/mesh/discover').send({});
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
 
     it('returns 400 when roots is empty array', async () => {
       const res = await request(fixtureServer).post('/api/mesh/discover').send({ roots: [] });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
 
     it('returns 500 when discovery throws', async () => {
@@ -545,7 +545,7 @@ describe('Mesh routes', () => {
         });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
 
     it('returns 400 when overrides.name is missing', async () => {
@@ -751,7 +751,7 @@ describe('Mesh routes', () => {
       const res = await request(fixtureServer).get('/api/mesh/agents?runtime=invalid-runtime');
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
   });
 
@@ -1560,7 +1560,7 @@ describe('Mesh routes', () => {
       const res = await request(fixtureServer).post('/api/mesh/deny').send({});
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
 
     it('returns 422 when deny throws', async () => {

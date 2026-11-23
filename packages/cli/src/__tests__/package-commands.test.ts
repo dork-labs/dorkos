@@ -65,6 +65,17 @@ describe('shellWord', () => {
 });
 
 describe('isOlderServer', () => {
+  it("recognises the app's unknown-route problem document", () => {
+    const notFound = {
+      type: 'urn:dorkos:problem:not_found',
+      title: 'Not found.',
+      status: 404,
+      code: 'not_found',
+      detail: 'This server has no API route at that path.',
+    };
+    expect(isOlderServer(new ApiError(404, notFound))).toBe(true);
+  });
+
   it("recognises the app's unknown-route 404 by its code", () => {
     expect(isOlderServer(new ApiError(404, { error: 'Not found', code: 'API_NOT_FOUND' }))).toBe(
       true

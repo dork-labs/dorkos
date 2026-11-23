@@ -42,11 +42,13 @@ import {
   stepUpAt,
   confirmSetupAt,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 /** Stands for this server's local MCP token, which is only known once it boots. */
 const LOCAL_TOKEN = '{{local-token}}';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json$/ };
 const NOSNIFF = { 'x-content-type-options': 'nosniff' };
 /** A JSON-RPC error envelope, as every `/mcp` refusal is written. */
 const rpcError = (code: number, message: string) => ({
@@ -95,12 +97,14 @@ const REMOTE_AUTH_REQUIRED = {
     'In DorkOS, open Settings → Login & security, turn on "Ask for a password on this computer too", ' +
     'then create a key under API keys. Send it as "Authorization: Bearer <key>".',
 };
-const NOT_ALLOWED_BY_CORS = (origin: string) => ({
-  error: `This instance does not answer to pages from "${origin}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`,
-  code: 'ORIGIN_NOT_ALLOWED',
+const NOT_ALLOWED_BY_CORS = (origin: string) =>
+  problemBody('origin_not_allowed', {
+    detail: `This instance does not answer to pages from "${origin}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`,
+  });
+const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
+const TOO_LARGE = problemBody('request_too_large', {
+  detail: 'That is too large to send in one request.',
 });
-const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR'), error: z.string() }).strict();
-const TOO_LARGE = { error: 'That is too large to send in one request.', code: 'REQUEST_TOO_LARGE' };
 
 /** A JSON-RPC request. */
 const rpc = (method: string, params?: unknown, id: number | null = 1) => ({
@@ -324,14 +328,14 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
 
   // Bodies the chain refuses before any gate of `/mcp`'s own.
   {
-    name: 'POST /mcp answers malformed JSON with the error handler’s 500',
+    name: 'POST /mcp answers malformed JSON with the error handler’s 400',
     method: 'POST',
     path: '/mcp',
     headers: { ...WITH_TOKEN, 'content-type': 'application/json' },
     body: '{"jsonrpc":',
     expect: {
-      status: 500,
-      headers: { ...JSON_TYPE, ...NOT_COUNTED },
+      status: 400,
+      headers: { ...PROBLEM_TYPE, ...NOT_COUNTED },
       schema: MALFORMED_JSON,
     },
   },
@@ -341,7 +345,7 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     path: '/mcp',
     headers: { 'content-type': 'application/json' },
     body: '"initialize"',
-    expect: { status: 500, schema: MALFORMED_JSON },
+    expect: { status: 400, schema: MALFORMED_JSON },
   },
   {
     name: 'POST /mcp refuses a body over a megabyte, with no token',
@@ -349,7 +353,7 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     path: '/mcp',
     headers: MCP_CLIENT,
     body: { ...INITIALIZE, padding: 'x'.repeat(1_100_000) },
-    expect: { status: 413, headers: { ...JSON_TYPE, ...NOT_COUNTED }, body: TOO_LARGE },
+    expect: { status: 413, headers: { ...PROBLEM_TYPE, ...NOT_COUNTED }, body: TOO_LARGE },
   },
   {
     name: 'POST /mcp refuses a body over a megabyte, with the token',

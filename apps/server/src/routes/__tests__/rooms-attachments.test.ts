@@ -203,7 +203,8 @@ describe('/api/rooms/:id/attachments', () => {
       const res = await upload(Buffer.alloc(uploadConfig.maxFileSize + 1, 7), 'big.bin');
 
       expect(res.status).toBe(413);
-      expect(res.body.error).toContain(`${uploadConfig.maxFileSize / 1024 / 1024}MB`);
+      expect(res.body.code).toBe('request_too_large');
+      expect(res.body.detail).toContain(`${uploadConfig.maxFileSize / 1024 / 1024}MB`);
     });
 
     it('refuses a type outside the configured allowlist', async () => {

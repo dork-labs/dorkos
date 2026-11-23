@@ -15,7 +15,6 @@
  * @module routes/docs-links
  */
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
-import { z } from 'zod';
 import {
   DocIndexQuerySchema,
   DocResolveQuerySchema,
@@ -31,6 +30,8 @@ import { DocPathError, resolveDocSpace } from '../services/docs/doc-space.js';
 import { docsEnabled } from '../services/docs/docs-enabled.js';
 import { buildDocIndex } from '../services/docs/links/doc-index.js';
 import { resolveDocTarget } from '../services/docs/links/doc-resolve.js';
+import { validationProblem } from '@dorkos/http-kit';
+import { apiNotFound } from '../http/unclaimed.js';
 
 /** What the routes read, injectable for tests. */
 export interface DocLinkRouteDeps {
@@ -66,7 +67,7 @@ export function createDocLinkRoutes(deps: DocLinkRouteDeps = liveDeps): Hono<Api
 
   // Gates only this file's routes, so the other `/api/documents` groups keep their own.
   const whileEnabled: MiddlewareHandler<ApiEnv> = async (c, next) => {
-    if (!deps.enabled()) return c.json(errorBody('Not found', 'API_NOT_FOUND'), 404);
+    if (!deps.enabled()) return apiNotFound(c);
     c.header('Cache-Control', 'no-store');
     await next();
   };
@@ -74,7 +75,7 @@ export function createDocLinkRoutes(deps: DocLinkRouteDeps = liveDeps): Hono<Api
   router.get('/index', whileEnabled, async (c) => {
     const parsed = DocIndexQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     try {
       return c.json(await deps.index(parsed.data.cwd));
@@ -86,7 +87,7 @@ export function createDocLinkRoutes(deps: DocLinkRouteDeps = liveDeps): Hono<Api
   router.get('/resolve', whileEnabled, async (c) => {
     const parsed = DocResolveQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     const { cwd, target, from } = parsed.data;
     try {

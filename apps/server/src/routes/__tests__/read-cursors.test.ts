@@ -422,7 +422,7 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
       .send({ lastReadSeq: 1 })
       .expect(400);
 
-    expect(res.body.error).toBe('Validation failed');
+    expect(res.body.code).toBe('malformed_request');
   });
 
   it('refuses an empty body rather than throwing on it', async () => {
@@ -430,7 +430,7 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
     // is a 400 here and not a 500.
     const res = await request(testServer).put('/api/read-cursors/room/room-1').expect(400);
 
-    expect(res.body.error).toBe('Validation failed');
+    expect(res.body.code).toBe('malformed_request');
     expect(store.get(callerId(), 'room', 'room-1')).toBeNull();
   });
 
@@ -566,7 +566,7 @@ describe('GET /api/read-cursors/:kind/:id', () => {
   it('refuses an unknown kind rather than answering null for it', async () => {
     const res = await request(testServer).get('/api/read-cursors/mailbox/thing-1').expect(400);
 
-    expect(res.body.error).toBe('Validation failed');
+    expect(res.body.code).toBe('malformed_request');
   });
 
   it('is in the OpenAPI export the app serves', async () => {

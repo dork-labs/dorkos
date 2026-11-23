@@ -6,12 +6,9 @@
  * @module routes/file-entries
  */
 import { Hono } from 'hono';
-import { z } from 'zod';
 import crypto from 'crypto';
 import fs from 'fs/promises';
-
 import path from 'path';
-
 import {
   CreateEntryRequestSchema,
   DeleteEntryQuerySchema,
@@ -19,13 +16,11 @@ import {
   CopyEntryRequestSchema,
   RevealEntryRequestSchema,
 } from '@dorkos/shared/schemas';
-
 import { revealInFileManager } from '../lib/reveal-in-file-manager.js';
 import { resolveWithinCwd, pathErrorReply } from '../lib/file-route-guards.js';
-
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 
 const router = new Hono<ApiEnv>();
@@ -39,7 +34,7 @@ const router = new Hono<ApiEnv>();
 router.post('/', async (c) => {
   const parsed = CreateEntryRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { cwd, path: relPath, type, content } = parsed.data;
 
@@ -103,7 +98,7 @@ router.post('/', async (c) => {
 router.delete('/', async (c) => {
   const parsed = DeleteEntryQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { cwd, path: relPath, recursive } = parsed.data;
 
@@ -167,7 +162,7 @@ router.delete('/', async (c) => {
 router.post('/rename', async (c) => {
   const parsed = RenameEntryRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { cwd, from, to } = parsed.data;
 
@@ -233,7 +228,7 @@ router.post('/rename', async (c) => {
 router.post('/copy', async (c) => {
   const parsed = CopyEntryRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { cwd, from, to } = parsed.data;
 
@@ -339,7 +334,7 @@ router.post('/copy', async (c) => {
 router.post('/reveal', async (c) => {
   const parsed = RevealEntryRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { cwd, path: relPath } = parsed.data;
 

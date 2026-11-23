@@ -514,7 +514,7 @@ describe('Extension Routes', () => {
         .send({ invalid: true });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
   });
 });

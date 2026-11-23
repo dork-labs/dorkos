@@ -29,6 +29,7 @@ export {
 export {
   problem,
   problemBody,
+  sendProblem,
   validationProblem,
   type ProblemOptions,
   type ProblemStatus,

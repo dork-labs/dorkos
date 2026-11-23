@@ -23,18 +23,15 @@
  */
 import type { Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-
 import {
   AdapterConfigUpdateSchema,
   AdapterCreateRequestSchema,
   AdapterTestRequestSchema,
 } from '@dorkos/shared/relay-schemas';
-
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import { env } from '../env.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
@@ -274,7 +271,7 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
 
   router.post('/adapters/test', async (c) => {
     const parsed = AdapterTestRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const { type, config } = parsed.data;
     // A test connects with what it is given, so it is held to the add's rule (DOR-3858).
     const markedRefusal = markedAdapterSecretRefusal(c, adapterManager, type, config);
@@ -300,7 +297,7 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
 
   router.post('/adapters', async (c) => {
     const parsed = AdapterCreateRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const { type, id, config, enabled, label: topLabel } = parsed.data;
     const markedRefusal = markedAdapterSecretRefusal(c, adapterManager, type, config);
     if (markedRefusal instanceof AdapterError) return sendAdapterError(c, markedRefusal);
@@ -349,7 +346,7 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
 
   router.patch('/adapters/:id/config', async (c) => {
     const parsed = AdapterConfigUpdateSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const id = c.req.param('id') ?? '';
     const { config } = parsed.data;
     const existing = adapterManager.getAdapter(id)?.config;

@@ -27,9 +27,8 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import type { ConnectorProviderBootstrapper } from '../services/connectors/bootstrap.js';
@@ -104,7 +103,7 @@ export function createConnectorProvidersRoutes(deps: ConnectorProvidersRouterDep
     // An empty PUT has no body — read it as {} so the schema reports the
     // missing `secret` as a validation error, not a crash.
     const parsed = CredentialBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const { secret } = parsed.data;
 
     // A new key waits for the owner to confirm it's them (DOR-4355). The held

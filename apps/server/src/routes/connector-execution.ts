@@ -6,7 +6,7 @@ import {
   ConnectorExecutionTargetSchema,
 } from '@dorkos/shared/connector-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
@@ -153,13 +153,9 @@ function programErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
     return c.json({ error: error.message, code: error.code }, status);
   }
   if (error instanceof z.ZodError) {
-    return c.json(
-      {
-        error: 'This service call is invalid. Check the request and try again.',
-        details: z.flattenError(error),
-      },
-      400
-    );
+    return validationProblem(c, error, {
+      detail: 'This service call is invalid. Check the request and try again.',
+    });
   }
   if (error instanceof CapabilityToolError) {
     const payload = error.payload;

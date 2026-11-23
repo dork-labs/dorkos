@@ -169,7 +169,7 @@ export async function runMarketplaceAdd(args: MarketplaceAddArgs): Promise<numbe
       if (err.body.code === SOURCE_NEEDS_APP) {
         // Says what it needs and where in the app to do it instead (DOR-3330);
         // one line, as written for a person.
-        console.error(String(err.body.error ?? err.message));
+        console.error(err.message);
       } else if (err.status === 409) {
         console.error(
           `Error: marketplace '${name}' already exists. Pass --name to choose another.`

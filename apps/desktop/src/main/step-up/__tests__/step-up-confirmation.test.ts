@@ -170,6 +170,24 @@ describe('StepUpConfirmation', () => {
     });
   });
 
+  it('reads a refusal sent as a problem document', async () => {
+    const { confirmation } = server({
+      'POST /password': [
+        403,
+        {
+          type: 'urn:dorkos:problem:forbidden',
+          title: 'You can’t do this.',
+          status: 403,
+          code: 'forbidden',
+          detail: 'Only the owner can confirm this.',
+        },
+      ],
+    });
+    expect(await confirmation.submit({ kind: 'password', password: 'no' })).toMatchObject({
+      message: 'Only the owner can confirm this.',
+    });
+  });
+
   it('turns a too-short password into a change, and posts the change', async () => {
     const { confirmation, calls } = server({
       'POST /password': [409, { code: 'password-too-short', error: 'x', minLength: 8 }],

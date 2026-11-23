@@ -18,7 +18,6 @@ import { Hono } from 'hono';
 import type { Db } from '@dorkos/db';
 import { mountSessionSettingsPatch } from './session-settings-patch.js';
 import { mountSessionSendMessage } from './session-send-message.js';
-import { z } from 'zod';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { openedChatToolWarnings } from '../services/session/launch/session-tool-warnings.js';
 import {
@@ -39,7 +38,7 @@ import { stampHistory } from '../services/session/chat-messages/chat-message-sta
 import * as historyWindow from '../services/session/history/history-window.js';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { forkPlace } from './session-launcher.js';
 import { readQuery } from '../http/request-query.js';
@@ -157,7 +156,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   router.get('/', async (c) => {
     const parsed = ListSessionsQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     const { limit, cwd, runtime: runtimeFilter } = parsed.data;
     const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
@@ -205,7 +204,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   router.get('/recent', async (c) => {
     const parsed = RecentSessionsQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     const { limit, touchedSince } = parsed.data;
 
@@ -247,7 +246,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   router.get('/daily-counts', async (c) => {
     const parsed = SessionDailyCountsQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     const { days } = parsed.data;
 

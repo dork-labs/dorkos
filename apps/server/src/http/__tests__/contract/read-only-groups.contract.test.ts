@@ -25,9 +25,12 @@ import { AuditEventSchema, AuditVerifyResultSchema } from '@dorkos/shared/audit-
 import { SearchResponseSchema } from '@dorkos/shared/search-schemas';
 import { TeamRosterResponseSchema } from '@dorkos/shared/team-schemas';
 import { contractSuite } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 /** A page of the capability catalog. */
 const CATALOG_PAGE = z
   .object({ catalogVersion: z.string(), total: z.number().int().positive() })
@@ -67,13 +70,12 @@ contractSuite('read-only and system groups', [
     path: '/api/commands?refresh=maybe',
     expect: {
       status: 400,
-      body: {
-        error: 'Invalid query',
-        details: {
-          errors: [],
-          properties: { refresh: { errors: ['Invalid option: expected one of "true"|"false"'] } },
+      body: problemBody('malformed_request', {
+        issues: {
+          formErrors: [],
+          fieldErrors: { refresh: ['Invalid option: expected one of "true"|"false"'] },
         },
-      },
+      }),
     },
   },
   {
@@ -136,13 +138,12 @@ contractSuite('read-only and system groups', [
     path: '/api/capabilities/catalog?limit=0',
     expect: {
       status: 400,
-      body: {
-        error: 'Validation failed',
-        details: {
+      body: problemBody('malformed_request', {
+        issues: {
           formErrors: [],
           fieldErrors: { limit: ['Too small: expected number to be >=1'] },
         },
-      },
+      }),
     },
   },
   {
@@ -259,13 +260,12 @@ contractSuite('read-only and system groups', [
     path: '/api/activity?limit=abc',
     expect: {
       status: 400,
-      body: {
-        error: 'Validation failed',
-        details: {
+      body: problemBody('malformed_request', {
+        issues: {
           formErrors: [],
           fieldErrors: { limit: ['Invalid input: expected number, received NaN'] },
         },
-      },
+      }),
     },
   },
 
@@ -284,13 +284,12 @@ contractSuite('read-only and system groups', [
     path: '/api/audit?limit=abc',
     expect: {
       status: 400,
-      body: {
-        error: 'Validation failed',
-        details: {
+      body: problemBody('malformed_request', {
+        issues: {
           formErrors: [],
           fieldErrors: { limit: ['Invalid input: expected number, received NaN'] },
         },
-      },
+      }),
     },
   },
   {
@@ -393,13 +392,12 @@ contractSuite('read-only and system groups', [
     body: { limit: 0 },
     expect: {
       status: 400,
-      body: {
-        error: 'Validation failed',
-        details: {
+      body: problemBody('malformed_request', {
+        issues: {
           formErrors: [],
           fieldErrors: { limit: ['Too small: expected number to be >=1'] },
         },
-      },
+      }),
     },
   },
 
@@ -413,7 +411,7 @@ contractSuite('read-only and system groups', [
   {
     name: 'GET /api/commands reads a repeated runtime as none',
     path: '/api/commands?runtime=test-mode&runtime=nope',
-    expect: { status: 400, body: expect.objectContaining({ error: 'Invalid query' }) },
+    expect: { status: 400, body: expect.objectContaining({ code: 'malformed_request' }) },
   },
   {
     name: 'GET /api/subagents reads a repeated session as none',
@@ -445,8 +443,8 @@ contractSuite('read-only and system groups', [
     headers: { 'content-type': 'application/json' },
     body: '{"limit":',
     expect: {
-      status: 500,
-      body: { error: 'Unexpected end of JSON input', code: 'INTERNAL_ERROR' },
+      status: 400,
+      body: problemBody('malformed_request', { detail: 'The request body is not valid JSON.' }),
     },
   },
   {
@@ -464,8 +462,8 @@ contractSuite('read-only and system groups', [
     headers: { 'content-type': 'application/json' },
     body: '{"message":',
     expect: {
-      status: 500,
-      body: { error: 'Unexpected end of JSON input', code: 'INTERNAL_ERROR' },
+      status: 400,
+      body: problemBody('malformed_request', { detail: 'The request body is not valid JSON.' }),
     },
   },
   // The tier gate on invoke

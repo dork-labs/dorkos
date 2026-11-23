@@ -253,7 +253,7 @@ describe('owner notification HTTP boundary', () => {
       .get(`${prefix}/definitions`)
       .set('origin', 'https://evil.example');
     expect(res.status).toBe(403);
-    expect(res.body.error).toBe(
+    expect(res.body.detail).toBe(
       'This instance does not answer to pages from "https://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.'
     );
     expect(f.discover).not.toHaveBeenCalled();

@@ -18,6 +18,7 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { bridgeExpressRouter } from '../../services/extensions/http/express-bridge.js';
 import type { ExtensionHttpHandler } from '../../services/extensions/http/extension-http.js';
 import { createExtensionApiRoutes, splitExtensionMount } from '../extension-api.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -148,7 +149,9 @@ describe('/api/ext/:id/*', () => {
     const res = await request(fixtureServer).get('/api/ext/my-ext/nothing');
 
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: 'Not found', code: 'API_NOT_FOUND' });
+    expect(res.body).toEqual(
+      problemBody('not_found', { detail: 'This server has no API route at that path.' })
+    );
   });
 
   it('answers a route that throws, rejects or hands on an error with the chain’s error', async () => {
@@ -169,7 +172,7 @@ describe('/api/ext/:id/*', () => {
     ]) {
       const res = await request(fixtureServer).get(`/api/ext/my-ext${path}`);
       expect(res.status).toBe(500);
-      expect(res.body).toEqual({ error: message, code: 'INTERNAL_ERROR' });
+      expect(res.body).toMatchObject({ code: 'internal_error', status: 500, detail: message });
     }
   });
 

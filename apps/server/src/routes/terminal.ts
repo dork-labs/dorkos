@@ -1,9 +1,8 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { CreateTerminalRequestSchema } from '@dorkos/shared/terminal-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { registerWithSignIn } from '../http/raw-node-stream.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { TerminalLimitError, type TerminalManager } from '../services/terminal/index.js';
@@ -29,7 +28,7 @@ export function createTerminalRoutes(manager: TerminalManager): Hono<ApiEnv> {
   router.post('/', async (c) => {
     const parsed = CreateTerminalRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'Validation failed', details: z.flattenError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     try {
       // The socket attaches by this id alone, so ending the sign-in that made

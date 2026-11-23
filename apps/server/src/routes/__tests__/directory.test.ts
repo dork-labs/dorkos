@@ -353,7 +353,7 @@ describe('Directory Routes', () => {
       const res = await request(testServer).post('/api/directory').send({ folderName: 'my-agent' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
   });
 });

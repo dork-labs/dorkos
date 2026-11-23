@@ -19,8 +19,7 @@ import { PERMISSION_AREA_IDS } from '@dorkos/shared/permissions';
 import { hashApprovalInput } from '../services/core/approvals/index.js';
 import { isRepoPinCapabilityId } from '../services/runtimes/claude-code/repo-settings/repo-config-approval.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
-import { validationFailureBody } from '../lib/route-utils.js';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import type { TestControlDeps } from './test-control.js';
 
 /** What `POST /api/test/seed-approval` needs to raise one request card. */
@@ -61,7 +60,7 @@ export function registerSeedApprovalRoute(
   router.post('/seed-approval', async (c) => {
     const parsed = seedApprovalSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json(validationFailureBody(parsed.error), 400);
+      return validationProblem(c, parsed.error);
     }
     const { capabilityId, agentPath, area, summary } = parsed.data;
     const agent = deps.meshCore?.()?.getByPath(agentPath);

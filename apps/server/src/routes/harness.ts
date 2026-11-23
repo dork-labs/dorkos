@@ -163,7 +163,6 @@ import { Hono, type Context } from 'hono';
 import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
-import { z } from 'zod';
 import {
   HARNESS_MANIFEST_PATH,
   applyAdopt,
@@ -183,7 +182,7 @@ import { BoundaryError, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
@@ -407,7 +406,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
   router.get('/status', async (c) => {
     const parsed = HarnessStatusQuery.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     const resolved = await resolveProject(c, parsed.data.projectPath, 'GET /status');
     if (typeof resolved !== 'string') return resolved;
@@ -463,7 +462,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
 
     const parsed = HarnessSyncBody.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid body', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
 
     const resolved = await resolveProject(c, parsed.data.projectPath, 'POST /sync');
@@ -612,7 +611,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
 
     const parsed = HarnessAdoptBody.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid body', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
 
     const resolved = await resolveProject(c, parsed.data.projectPath, 'POST /adopt');

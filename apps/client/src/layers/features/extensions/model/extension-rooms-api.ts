@@ -19,6 +19,7 @@ import {
 } from '@dorkos/extension-api';
 import { resolveStableClientId } from '@/layers/shared/lib/transport';
 import { extensionApiUrl } from './extension-api-url';
+import { readResponseError } from '@/layers/shared/lib';
 
 /** The codes the server answers with that `api.rooms` throws as themselves. */
 const ROOM_ACCESS_CODES: ReadonlySet<string> = new Set<RoomAccessErrorCode>([
@@ -32,7 +33,7 @@ const ROOM_ACCESS_CODES: ReadonlySet<string> = new Set<RoomAccessErrorCode>([
 
 /** A refused response, as a {@link RoomAccessError}. */
 async function refusal(res: Response): Promise<RoomAccessError> {
-  const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+  const body = await readResponseError(res, 'DorkOS could not do that. Try again.');
   const code: RoomAccessErrorCode =
     body.code && ROOM_ACCESS_CODES.has(body.code)
       ? (body.code as RoomAccessErrorCode)
@@ -41,7 +42,7 @@ async function refusal(res: Response): Promise<RoomAccessError> {
         : res.status === 403
           ? 'person_required'
           : 'unavailable';
-  return new RoomAccessError(code, body.error ?? 'DorkOS could not do that. Try again.');
+  return new RoomAccessError(code, body.message);
 }
 
 /**

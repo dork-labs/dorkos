@@ -76,6 +76,7 @@ import {
   mountHubComputerLinkRoutes,
   type HubComputerLinkDeps,
 } from './hub-computer-links.js';
+import { apiNotFound } from '../http/unclaimed.js';
 
 /** The part of a computer's connection these routes use. */
 export type RelayedComputer = Pick<
@@ -125,9 +126,6 @@ const COMPUTER_TURNED_AWAY: RelayError = {
   code: 'computer_refused',
   message: 'Your computer turned this request away.',
 };
-
-/** The `/api` 404, which a computer this hub does not serve answers too. */
-const NOT_FOUND = errorBody('Not found', 'API_NOT_FOUND');
 
 /** Answer a refusal in the relay's own words. */
 function relayFailure(c: Context<ApiEnv>, error: RelayError): Response {
@@ -204,7 +202,7 @@ export function createHubComputerRoutes(
   const router = new Hono<ApiEnv>();
 
   router.use('*', async (c, next) => {
-    if (!deps.isHub()) return c.json(NOT_FOUND, 404);
+    if (!deps.isHub()) return apiNotFound(c);
     if (presentsAgentIdentity(honoRequestFacts(c))) {
       return c.json(errorBody("Agents can't reach your computers.", 'FORBIDDEN'), 403);
     }
@@ -253,7 +251,7 @@ export function createHubComputerRoutes(
   /** The computer's live connection, or the answer to give instead. */
   function reach(c: Context<ApiEnv>, computerId: string): RelayedComputer | Response {
     if (!deps.linkedComputerIds().includes(computerId)) {
-      return c.json(NOT_FOUND, 404);
+      return apiNotFound(c);
     }
     const computer = deps.connection(computerId);
     if (computer?.connected) return computer;

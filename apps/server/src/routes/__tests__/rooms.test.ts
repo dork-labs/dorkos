@@ -143,7 +143,7 @@ describe('/api/rooms', () => {
     it('rejects a body with neither a title nor a slug', async () => {
       const res = await request(testServer).post('/api/rooms').send({ kind: 'channel' });
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
 
     it('seeds a direct message with several agents in one call', async () => {
@@ -1428,7 +1428,7 @@ describe('/api/rooms', () => {
     it('400s a limit outside the allowed range', async () => {
       const res = await request(testServer).get('/api/rooms/threads').query({ limit: 5000 });
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('malformed_request');
     });
   });
 

@@ -278,6 +278,52 @@ describe('apiCall 401 guidance', () => {
     expect(err.message).not.toContain('super-secret-key');
   });
 
+  it('reads a problem document: detail as the message, code and issues', async () => {
+    const issues = { formErrors: [], fieldErrors: { name: ['Required'] } };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              type: 'urn:dorkos:problem:malformed_request',
+              title: 'The request could not be read.',
+              status: 400,
+              code: 'malformed_request',
+              detail: 'Name the task.',
+              issues,
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/problem+json' } }
+          )
+      )
+    );
+
+    const err = (await apiCall('POST', '/api/tasks', {}).catch((e: unknown) => e)) as ApiError;
+
+    expect(err.status).toBe(400);
+    expect(err.message).toBe('Name the task.');
+    expect(err.code).toBe('malformed_request');
+    expect(err.issues).toEqual(issues);
+  });
+
+  it('guides a 401 problem the login gate answers', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ title: 'Sign in to continue.', status: 401, code: 'unauthenticated' }),
+            { status: 401 }
+          )
+      )
+    );
+
+    const err = (await apiCall('GET', '/api/tasks').catch((e: unknown) => e)) as ApiError;
+
+    expect(err.message).toContain('DORKOS_API_KEY');
+    expect(err.code).toBe('unauthenticated');
+  });
+
   it('leaves non-401 error bodies untouched', async () => {
     vi.stubGlobal(
       'fetch',

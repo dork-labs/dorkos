@@ -29,6 +29,7 @@ import {
   type LinkedComputer,
   type MintedLinkCode,
 } from '../services/core/hub-relay/index.js';
+import { apiNotFound } from '../http/unclaimed.js';
 
 /** What the owner's link routes read and write, injectable for tests. */
 export interface HubComputerLinkDeps {
@@ -101,7 +102,7 @@ export function mountHubComputerLinkRoutes(
     const computerId = c.req.param('computerId');
     const name = deps.record(computerId)?.computerName;
     const removed = await deps.forget(computerId);
-    if (!removed) return c.json(errorBody('Not found', 'API_NOT_FOUND'), 404);
+    if (!removed) return apiNotFound(c);
     auditLinkChange({
       action: 'hub.relay.computer.unlink',
       operation: 'remove',

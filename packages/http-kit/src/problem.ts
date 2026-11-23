@@ -74,7 +74,19 @@ export function problemBody(code: ProblemCode, options: ProblemOptions = {}): Pr
  * @returns The response.
  */
 export function problem(c: Context, code: ProblemCode, options: ProblemOptions = {}): Response {
-  const body = problemBody(code, options);
+  return sendProblem(c, problemBody(code, options));
+}
+
+/**
+ * Answer a request with a problem document already built, such as one the
+ * server's error handler chose: its status, the problem media type, and a
+ * `Retry-After` header when it says how long to wait.
+ *
+ * @param c - The Hono context.
+ * @param body - The document, from {@link problemBody}.
+ * @returns The response.
+ */
+export function sendProblem(c: Context, body: Problem): Response {
   const headers: Record<string, string> = { 'Content-Type': PROBLEM_CONTENT_TYPE };
   if (body.retryAfterMs !== undefined) {
     headers['Retry-After'] = String(Math.ceil(body.retryAfterMs / 1000));

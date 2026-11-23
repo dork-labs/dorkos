@@ -47,6 +47,7 @@ import {
   type ComposedServer,
   type ContractCase,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 /** The repository root: the composed server's directory boundary. */
 const REPO_ROOT = realpathSync(
@@ -58,16 +59,20 @@ mkdirSync(WORK, { recursive: true });
 afterAll(() => rmSync(WORK, { recursive: true, force: true }));
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 const AGENT_NOT_FOUND = { error: 'Agent not found' };
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 /** A ULID nothing in a fresh install has. */
 const UNKNOWN_ULID = '01JZZZZZZZZZZZZZZZZZZZZZZZ';
-const VALIDATION_FAILED = z.object({ error: z.literal('Validation failed') }).loose();
+const VALIDATION_FAILED = z
+  .object({ code: z.literal('malformed_request'), issues: z.unknown() })
+  .loose();
 const BOUNDARY_REFUSAL = z.object({ error: z.string(), code: z.string() }).strict();
 const NEEDS_APPROVAL = z.object({ error: z.string(), code: z.literal('NEEDS_APPROVAL') }).strict();
-const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
+const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const AGENT_LIST = z.object({ agents: z.array(z.object({ id: z.string() }).loose()) }).strict();
 const EVENT_STREAM = {
   'content-type': 'text/event-stream',
@@ -197,7 +202,7 @@ contractSuite('mesh, agent and discovery groups', [
     path: '/api/mesh/discover',
     headers: { 'content-type': 'application/json' },
     body: '{"roots":',
-    expect: { status: 500, schema: MALFORMED_JSON },
+    expect: { status: 400, schema: MALFORMED_JSON },
   },
   {
     name: 'POST /api/mesh/agents refuses an empty body',
@@ -394,7 +399,7 @@ contractSuite('mesh, agent and discovery groups', [
     path: '/api/agents/',
     headers: { 'content-type': 'application/json' },
     body: '{"path":',
-    expect: { status: 500, schema: MALFORMED_JSON },
+    expect: { status: 400, schema: MALFORMED_JSON },
   },
   {
     name: 'POST /api/agents/create refuses a template and a package together',
