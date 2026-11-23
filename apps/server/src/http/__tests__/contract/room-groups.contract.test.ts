@@ -69,7 +69,6 @@ const VALIDATION_FAILED = z
   .loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
 const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
-const INTERNAL_ERROR = z.object({ code: z.literal('internal_error') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 /** A ULID nobody minted: a well-formed room id for a room that does not exist. */
 const NO_ROOM = '01HZZZZZZZZZZZZZZZZZZZZZZZ';

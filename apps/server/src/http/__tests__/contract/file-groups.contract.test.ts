@@ -89,7 +89,6 @@ const NULL_BYTE = { error: 'Invalid path: null bytes not allowed', code: 'NULL_B
 const NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
 });
-const INTERNAL = z.object({ code: z.literal('internal_error') }).loose();
 const INVALID_QUERY = z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose();
 const INVALID_BODY = z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose();
 const VALIDATION_FAILED = z
