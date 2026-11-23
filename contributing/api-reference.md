@@ -435,7 +435,7 @@ The `warnings` field is only present when the patch includes keys listed in `SEN
 
 ## Task Scheduler (`routes/tasks.ts`)
 
-Feature-flag guarded via `DORKOS_TASKS_ENABLED`. Router is mounted at `/api/tasks`.
+Mounted at `/api/tasks` when the scheduler is on (`scheduler.enabled`, default `true`, or the `DORKOS_TASKS_ENABLED` override; see [Feature Flags](#feature-flags)).
 
 | Method | Path                         | Description               |
 | ------ | ---------------------------- | ------------------------- |
@@ -678,7 +678,7 @@ Change one agent's own areas, actions, or Files & commands stop.
 
 ## Relay Endpoints
 
-All relay endpoints are under `/api/relay/` and require `DORKOS_RELAY_ENABLED=true`. When disabled, the relay router is not mounted and requests return 404.
+All relay endpoints are under `/api/relay/` and are mounted only when Relay is on (`relay.enabled`, default `true`, or the `DORKOS_RELAY_ENABLED` override; see [Feature Flags](#feature-flags)). When Relay is off, the relay router is not mounted and requests return 404.
 
 ### POST /api/relay/messages
 
@@ -827,7 +827,7 @@ SSE event stream for real-time relay activity. Supports server-side subject filt
 
 ### GET /api/relay/messages/:id/trace
 
-Get delivery trace for a specific message. Requires `DORKOS_RELAY_ENABLED=true`.
+Get delivery trace for a specific message. Available only when Relay is on.
 
 **Responses:**
 
@@ -854,7 +854,7 @@ Get delivery trace for a specific message. Requires `DORKOS_RELAY_ENABLED=true`.
 
 ### GET /api/relay/trace/metrics
 
-Aggregate delivery metrics for the Relay system. Requires `DORKOS_RELAY_ENABLED=true`.
+Aggregate delivery metrics for the Relay system. Available only when Relay is on.
 
 **Responses:**
 
@@ -872,7 +872,7 @@ Aggregate delivery metrics for the Relay system. Requires `DORKOS_RELAY_ENABLED=
 
 ## Adapter Catalog Endpoints
 
-All adapter catalog endpoints are under `/api/relay/adapters/` and require `DORKOS_RELAY_ENABLED=true`. They are only mounted when `AdapterManager` is available.
+All adapter catalog endpoints are under `/api/relay/adapters/` and are available only when Relay is on. They are only mounted when `AdapterManager` is available.
 
 ### GET /api/relay/adapters/catalog
 
@@ -1012,7 +1012,7 @@ Both `type` and `config` are required.
 
 ## Binding Endpoints
 
-All binding endpoints are under `/api/relay/bindings/` and require `DORKOS_RELAY_ENABLED=true`. They manage adapter-to-agent routing rules.
+All binding endpoints are under `/api/relay/bindings/` and are available only when Relay is on. They manage adapter-to-agent routing rules.
 
 ### GET /api/relay/bindings
 

@@ -160,32 +160,43 @@ tracker API or a tracker-specific state name.
 
 ## Autonomous mode & the server dependency
 
-The autonomous loop is seated on **Pulse**: the plugin-shipped
-`skills/flow-drain/` skill with a croner schedule (`cron` + `enabled: false` in
-v1). One tick = one issue, in a fresh resumable session. **Autonomous mode depends
-on a running DorkOS server (Pulse) to host the chokidar watcher + croner; manual
-mode (`/flow:flow`, `/flow:<stage>`, `/flow:flow auto`) does not.** This honest
-dependency statement ships in the plugin README. Wiring the autonomous tick to
-fire inside dorkos (the server task system discovering plugin-shipped tasks) is a
-deferred follow-up, out of v1 scope.
+The autonomous loop is the plugin-shipped `skills/flow-drain/` skill, whose
+`schedule:` block (hourly, `enabled: false`) makes it a scheduled task. One tick
+carries one item to its review gate, in a fresh resumable session. **Autonomous
+mode needs a running DorkOS server (or a scheduler you wire yourself) to fire its
+schedules; manual mode (`/flow:flow`, `/flow:<stage>`, `/flow:flow auto`) does
+not.** DorkOS discovers the schedules: every project that has flow set up (it
+holds `.agents/flow/config.json`) gets its own copy of `flow-drain`, `flow-groom`,
+`flow-triage` and `flow-retro` on that project's **Schedules** page, switched off,
+and a person approves each one there. Nothing is switched on for you.
 
-**The merge tail is inside that boundary, and it is easy to miss.**
+**Who arms the merge.** The plugin arms in three places, and each runs the same
+pre-arm guard first (the plugin's `config/CONFIG.md`, "Before every arm"):
+
+- **A person's `flow review --approve`.** With `gates.review.mergeOnApproval`
+  (default `true`, and on in this repo's `.agents/flow/config.json`), approving
+  at the review gate arms auto-merge. The command refuses when run from inside an
+  agent (Claude Code, Codex, OpenCode or a DorkOS agent turn) or from a session
+  that worked the item, so an agent cannot approve as you.
+- **The reviewer agent (`flow review --approve --by reviewer-agent`).** It needs a
+  clean review recorded at the head and, by default, Security's
+  `security-reviewed` label on every PR first.
+- **`flow pr --arm` and the drain's re-arm**, only with `drain.armAutoMerge`
+  (default `false`).
+
+The guard refuses when, among others, a required check failed, the PR's head is
+not the commit that was reviewed or no full commit SHA was recorded (flow arms
+nothing it cannot tie to the approved commit), the PR does not target the default
+branch, or Security's label is missing or older than the head.
 [ADR-0276](../decisions/0276-auto-merge-on-approval-recovery-ladder.md)'s
-auto-merge recovery ladder (`gates.ts`, `recovery.ts`) runs only in the
-autonomous loop. With `enabled: false`, nothing merges anything: `flow-drain`
-carries an issue to its review gate and stops there by design, and the
-`gh pr merge --auto` step in the `creating-pull-requests` skill is prose, not
-code. Reading ADR-0276 as "finished pull requests merge themselves here" is
-therefore wrong outside autonomous mode, and the gap is invisible because
-everything upstream of the merge looks complete.
+recovery ladder (`gates.ts`, `recovery.ts`) handles what happens after an arm.
 
-That misreading is what left six green, reviewed, armed pull requests unmerged
-for up to nine hours on 2026-07-28. In this repo, outside the autonomous loop,
-an agent arms a finished pull request only through `arm.sh`, which runs every gate
-first, and the merge queue lands it (ADR 260728-112203). `merge-tail.yml`, which
-once armed finished PRs on a schedule, is off since 2026-11-18. See
+In this repo, an agent outside the plugin's own approve path still arms only
+through `arm.sh`, which runs this repo's gates (Security's review files, waivers,
+freezes, the verify proof) that the plugin cannot see, and the merge queue lands
+it. The queue's door (`arm-door.yml`) holds a plugin-armed PR to the same Security,
+proof, QA and design gates. `merge-tail.yml` is off. See
 [CI Pipeline Guide → Arming](ci.md#arming-armsh-the-doors-and-merge-tail-off).
-The plugin's ladder still owns the merge tail whenever the autonomous loop is on.
 
 ## The backlog groom (`/flow:groom`)
 
