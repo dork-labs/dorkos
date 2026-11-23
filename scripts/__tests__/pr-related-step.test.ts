@@ -225,7 +225,7 @@ describe('the wiring', () => {
   it('the queue sweep never reads it', () => {
     const sweep = stepText(
       'test-shard',
-      "Run every package's test suite (shard ${{ matrix.shard }}/6)"
+      "Run every package's test suite (shard ${{ matrix.shard }}/${{ strategy.job-total }})"
     );
     expect(sweep).not.toContain('RELATED');
     expect(sweep).not.toContain('pr-related');
