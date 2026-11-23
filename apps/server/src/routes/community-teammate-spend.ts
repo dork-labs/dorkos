@@ -19,7 +19,7 @@ import {
   CommunityTeammateSpendSchema,
 } from '@dorkos/shared/community-teammates';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { RemoteConnectionNotFoundError } from '../services/communities/remote/connection-store.js';
 import type { TeammateSpend } from '../services/communities/remote/wake/teammate-spend.js';
 import { getRemoteCommunityEnrollmentStore } from '../services/communities/remote/state.js';

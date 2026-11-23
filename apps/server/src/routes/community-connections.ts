@@ -28,7 +28,7 @@ import {
   CommunityNavigationStateSchema,
 } from '@dorkos/shared/community-navigation';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { configManager } from '../services/core/config-manager.js';

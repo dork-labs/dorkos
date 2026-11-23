@@ -23,7 +23,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { ExtensionManifest } from '@dorkos/extension-api';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { corsAllowsOrigin } from '../http/cors-policy.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';

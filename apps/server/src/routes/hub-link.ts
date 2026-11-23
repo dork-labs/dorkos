@@ -43,8 +43,8 @@ import {
 } from '@dorkos/shared/session-relay-link';
 import type { AuditActor } from '@dorkos/shared/audit-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import type { BodyRule } from '../http/request-body.js';
-import { readJsonBody } from '../http/request-body.js';
+import type { BodyRule } from '@dorkos/http-kit';
+import { readJsonBody } from '@dorkos/http-kit';
 import { errorBody } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 import { currentServerRole } from '../lib/server-role.js';

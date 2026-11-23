@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { LocalBrowserProfileIdSchema } from '@dorkos/shared/local-browser';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { requirePersonAtThisComputer } from '../lib/caller-authority.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import type { LocalBrowserService } from '../services/session/local-browser/service.js';

@@ -28,7 +28,7 @@ import { createRelayWebhookRoutes, relayWebhookBodyRule } from '../routes/relay-
 import { composedListener } from '../http/__tests__/composed-listener.js';
 import { frontDoorListener } from '../http/front-door.js';
 import { composeFrontDoor } from '../http/hono-api.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import type { Context } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoGroupListener } from '../http/__tests__/hono-group-listener.js';

@@ -54,7 +54,7 @@ import {
   type SessionRelayPasskeyList,
 } from '@dorkos/shared/session-relay-link';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { classifyRequest } from '../lib/request-classifier.js';
 import { currentServerRole } from '../lib/server-role.js';

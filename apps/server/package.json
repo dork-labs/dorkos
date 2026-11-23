@@ -43,6 +43,7 @@
     "@dorkos/doe": "workspace:*",
     "@dorkos/extension-api": "workspace:*",
     "@dorkos/harness": "workspace:*",
+    "@dorkos/http-kit": "workspace:*",
     "@dorkos/keep-awake": "workspace:*",
     "@dorkos/marketplace": "workspace:*",
     "@dorkos/memory": "workspace:*",

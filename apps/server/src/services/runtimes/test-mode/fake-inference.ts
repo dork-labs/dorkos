@@ -19,7 +19,7 @@
 import { Hono } from 'hono';
 import type { ApiEnv } from '../../../http/api-chain.js';
 import { streamToNodeResponse } from '../../../http/raw-node-stream.js';
-import { readJsonBody } from '../../../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { env } from '../../../env.js';
 import { FAKE_CLOUD_MODEL } from './fake-cloud-v1.js';
 

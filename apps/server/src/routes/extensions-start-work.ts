@@ -23,7 +23,7 @@ import type { ExtensionManager } from '../services/extensions/extension-manager.
 import { getStartWorkService, StartWorkInputError } from '../services/extensions/start-work.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';

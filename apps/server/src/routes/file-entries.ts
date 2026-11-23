@@ -25,7 +25,7 @@ import { resolveWithinCwd, pathErrorReply } from '../lib/file-route-guards.js';
 
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 
 const router = new Hono<ApiEnv>();

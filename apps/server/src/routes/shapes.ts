@@ -31,7 +31,7 @@ import { ForkShapeRequestSchema } from '@dorkos/shared/schemas';
 import { validationFailureBody } from '../lib/route-utils.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { APPROVAL_TOKEN_HEADER, trustedCaller } from '../services/core/capabilities/index.js';
 import {

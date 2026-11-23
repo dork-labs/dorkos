@@ -32,7 +32,7 @@ vi.mock('../../lib/logger.js', () => ({
 }));
 
 import { createApiApp } from '../api-chain.js';
-import { readJsonBody, type BodyRule } from '../request-body.js';
+import { readJsonBody, type BodyRule } from '@dorkos/http-kit';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { initAuditTrail, resetAuditTrail } from '../../services/audit/audit-trail.js';
 

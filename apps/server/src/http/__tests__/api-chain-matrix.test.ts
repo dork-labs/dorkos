@@ -63,7 +63,7 @@ vi.mock('../../services/core/agent-identity/agent-identity-service.js', async (o
 
 import { createApiApp, type ApiEnv } from '../api-chain.js';
 import { frontDoorListener } from '../front-door.js';
-import { readJsonBody } from '../request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
 import { currentAuditActor } from '../../services/audit/audit-context.js';

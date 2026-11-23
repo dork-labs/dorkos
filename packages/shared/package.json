@@ -601,6 +601,10 @@
       "types": "./src/process-liveness.ts",
       "default": "./dist/process-liveness.js"
     },
+    "./problem": {
+      "types": "./src/problem.ts",
+      "default": "./dist/problem.js"
+    },
     "./instance-lock": {
       "types": "./src/instance-lock.ts",
       "default": "./dist/instance-lock.js"

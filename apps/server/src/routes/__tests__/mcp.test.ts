@@ -31,7 +31,7 @@ vi.mock('../../lib/logger.js', () => ({
 import type { Server } from 'node:http';
 import { honoListener, swappableServer } from '@dorkos/test-utils/listening-server';
 import type { ApiEnv } from '../../http/api-chain.js';
-import { parseRequestBody } from '../../http/request-body.js';
+import { apiRequestBody } from '../../http/request-body.js';
 import { MCP_MAX_REQUEST_BODY_BYTES } from '../../services/core/capabilities/mcp-input/limits.js';
 import { createMcpEndpoint } from '../mcp.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -71,7 +71,7 @@ function createTestApp(mockServerFactory: () => unknown, ingress?: 'own-tunnel')
       markIngress(c.env.incoming, ingress);
       await next();
     });
-  app.use(parseRequestBody());
+  app.use(apiRequestBody());
   app.route(
     '/mcp',
     createMcpEndpoint(mockServerFactory as Parameters<typeof createMcpEndpoint>[0])
@@ -151,7 +151,7 @@ describe('MCP Route Handler', () => {
     const factory = vi.fn(createMockServer);
     const app = new Hono<ApiEnv>();
     app.onError((_error, c) => c.json({ error: 'too large' }, 413));
-    app.use(parseRequestBody());
+    app.use(apiRequestBody());
     app.route(
       '/mcp',
       createMcpEndpoint(factory as unknown as Parameters<typeof createMcpEndpoint>[0])

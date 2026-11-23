@@ -19,7 +19,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { validationFailureBody } from '../lib/route-utils.js';
 import { runningHeartbeats } from '../services/heartbeats/heartbeats-wiring.js';
 

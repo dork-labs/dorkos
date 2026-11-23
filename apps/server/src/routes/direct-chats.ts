@@ -15,7 +15,7 @@
 import { Hono } from 'hono';
 import { OpenDirectChatRequestSchema } from '@dorkos/shared/room-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { getDirectChats, type DirectChat } from '../services/rooms/direct-chat/index.js';
 import { RoomError } from '../services/rooms/index.js';
 import { isOwnerCaller } from './room-error-response.js';

@@ -67,7 +67,7 @@ import {
 } from '../services/core/capabilities/index.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
 import { validationFailureBody } from '../lib/route-utils.js';

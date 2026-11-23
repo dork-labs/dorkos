@@ -26,9 +26,6 @@ vi.mock('../../lib/caller-authority.js', () => ({
   requirePersonAtThisComputer: () => (bar.person ? undefined : 'agent'),
   refuseUnlessAccountOwner: () => (bar.owner ? undefined : 'not-the-owner'),
 }));
-vi.mock('../../http/request-body.js', () => ({
-  readJsonBody: (c: { get(key: string): unknown }) => c.get('body' as never),
-}));
 vi.mock('../../http/request-facts.js', () => ({
   honoRequestFacts: () => ({ user: { sessionId: 'sess-a' } }),
 }));

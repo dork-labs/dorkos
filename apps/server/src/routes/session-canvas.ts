@@ -44,7 +44,7 @@ import { peekProjector } from '../services/session/session-state-projector.js';
 import { knownSessionCwd } from '../services/session/index.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { callerAccessOf } from './caller-access.js';
 import { resolveCaller } from './room-caller.js';

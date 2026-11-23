@@ -47,7 +47,7 @@ import {
 } from '@dorkos/shared/step-up';
 
 import type { ApiEnv } from '../../http/api-chain.js';
-import { readJsonBody } from '../../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { recordAudit } from '../../services/audit/audit-trail.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';

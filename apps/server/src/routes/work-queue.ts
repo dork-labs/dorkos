@@ -24,7 +24,7 @@ import {
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { errorBody, validationFailureBody } from '../lib/route-utils.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import {
   WorkQueueError,

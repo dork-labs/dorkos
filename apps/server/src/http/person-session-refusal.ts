@@ -30,7 +30,7 @@ import {
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { errorBody } from '../lib/route-utils.js';
 import type { ApiEnv } from './api-chain.js';
-import { readJsonBody } from './request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from './request-facts.js';
 
 /**

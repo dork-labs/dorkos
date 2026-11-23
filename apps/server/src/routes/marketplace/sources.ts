@@ -16,7 +16,7 @@ import {
   refreshSourceListing,
 } from '../../services/marketplace/sources/source-listing.js';
 import type { MarketplaceSource } from '../../services/marketplace/types.js';
-import { readJsonBody } from '../../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../../http/request-query.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceContext, MarketplaceRouteContext } from './context.js';

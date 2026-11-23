@@ -14,7 +14,7 @@ import {
 import { logger } from '../lib/logger.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 
 const CreateDirectoryBodySchema = z.object({

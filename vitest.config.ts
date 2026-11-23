@@ -128,6 +128,7 @@ export default defineConfig({
       'packages/evals',
       'packages/extension-api',
       'packages/harness',
+      'packages/http-kit',
       'packages/keep-awake',
       'packages/marketplace',
       'packages/memory',

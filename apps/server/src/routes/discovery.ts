@@ -14,7 +14,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import type { ExistingAgent } from '@dorkos/shared/mesh-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { validationFailureBody } from '../lib/route-utils.js';
 import { isWithinBoundary, getBoundary } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';

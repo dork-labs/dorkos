@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import {
   delegateRuntimeLogin,
   LOGIN_RUNTIME_TYPES,

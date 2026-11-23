@@ -26,7 +26,7 @@ import { COMMAND_INTENTS } from '@dorkos/shared/command-intents';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { errorBody, parseSessionId } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';

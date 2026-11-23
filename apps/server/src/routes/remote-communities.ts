@@ -23,7 +23,7 @@ import {
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { resolveCommunityOwner } from './community-connections.js';
 import {

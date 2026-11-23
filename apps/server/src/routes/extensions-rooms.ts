@@ -55,7 +55,7 @@ import { SseStreamSink } from '../services/core/streams/durable-stream-sink.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { wifiTurnBound } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { logger } from '../lib/logger.js';

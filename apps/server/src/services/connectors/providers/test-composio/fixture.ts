@@ -5,7 +5,7 @@ import { getRequestListener } from '@hono/node-server';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { ApiEnv } from '../../../../http/api-chain.js';
-import { readJsonBody } from '../../../../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { stableStringify } from '@dorkos/shared/capabilities';
 import { legacyDefaultProviderInstanceId } from '../../legacy-connection-migration.js';
 import {
