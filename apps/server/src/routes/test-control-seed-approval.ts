@@ -19,7 +19,7 @@ import { PERMISSION_AREA_IDS } from '@dorkos/shared/permissions';
 import { hashApprovalInput } from '../services/core/approvals/index.js';
 import { isRepoPinCapabilityId } from '../services/runtimes/claude-code/repo-settings/repo-config-approval.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { validationFailureBody } from '../lib/route-utils.js';
 import type { TestControlDeps } from './test-control.js';
 

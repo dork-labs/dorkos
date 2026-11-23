@@ -27,8 +27,8 @@ import { readOperatorTimeZone } from '../core/config/operator-time-zone.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { onProjectorTurnBoundary } from '../session/session-state-projector.js';
 import { watchRoomAwaiting } from './awaiting/room-awaiting.js';
-import { ReadCursorService } from '../core/read-cursor-service.js';
-import { ReadCursorStore } from '../core/read-cursor-store.js';
+import type { ReadCursorService } from '../core/read-cursor-service.js';
+import { roomReadCursors } from './service/room-audience.js';
 import { readOwnerAccount } from '../core/auth/index.js';
 import { indexRoomEntry, roomsSource, searchMessages } from '../search/index.js';
 import { BridgeStore } from '../relay/chat-bridge/bridge-store.js';
@@ -555,8 +555,9 @@ export function createRoomSubsystem(opts: {
     ...(opts.canvasNow ? { now: opts.canvasNow } : {}),
   });
   setCanvasService(canvas);
-  const readCursors = opts.readCursors ?? new ReadCursorService(new ReadCursorStore(opts.db));
-  const service = new RoomService({
+  // Asks for `service` only when a cursor moves, long after it exists.
+  const readCursors = opts.readCursors ?? roomReadCursors(opts.db, () => service);
+  const service: RoomService = new RoomService({
     store,
     ...((mirrorRuntime?.mirrorAccess ?? opts.mirrorAccess)
       ? { mirrorAccess: mirrorRuntime?.mirrorAccess ?? opts.mirrorAccess }

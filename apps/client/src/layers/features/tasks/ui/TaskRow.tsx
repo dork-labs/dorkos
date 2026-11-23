@@ -51,7 +51,7 @@ import {
 } from './TaskHealthParts';
 import { isFailing } from '../lib/schedule-health';
 import { TaskApproveButtons, TaskFileSaysOnNote } from './TaskSwitchOffers';
-import { TaskAgentModeNote, TaskFileCapNote } from './TaskAgentModeNote';
+import { TaskAgentModeNote, TaskFileCapNote, TaskFileReviewNote } from './TaskAgentModeNote';
 import {
   describeCronSchedule,
   describeTaskTiming,
@@ -405,12 +405,9 @@ export function TaskRow({
             )}
             {!isMinimal && <TaskFileCapNote task={task} />}
             {/* The row's Approve and switch show no content, so they approve no
-                file: the person is told before they press (DOR-3703, M4). */}
-            {!isMinimal && task.fileCapNext === true && !task.fileCap && (
-              <div data-slot="task-file-cap-next" className="text-status-warning-fg text-xs">
-                The next run is capped until you approve the file.
-              </div>
-            )}
+                file: the person is told before they press, and reviews the
+                file to approve it (DOR-3703, M4; DOR-5060). */}
+            {!isMinimal && <TaskFileReviewNote task={task} />}
             {!isMinimal && isQuietlyParkedFromFile && task.filePath && (
               <div
                 data-slot="task-quiet-source"

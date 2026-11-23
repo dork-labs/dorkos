@@ -34,7 +34,7 @@ import {
   type GlobalMcpServerPatch,
 } from '@dorkos/shared/global-mcp-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { clearsTheAgentBar, refuseFrontDoorChange } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';

@@ -149,6 +149,21 @@ describe('ApprovalCard with a Marketplace summary', () => {
     expect(warning).toHaveClass('text-status-warning-fg');
   });
 
+  it('shows a package-wide note under the verdict, outside every row (DOR-4895)', () => {
+    const summary = structuredClone(UPDATE);
+    summary.packages[0]!.note =
+      'All 5 mini apps: any new code waits in Activity, unless you trust its source.';
+    renderCard(buildApproval(summary));
+    const note = screen.getByText(summary.packages[0]!.note);
+    expect(note).toHaveAttribute('data-slot', 'marketplace-package-note');
+    expect(note).toHaveClass('text-muted-foreground');
+    expect(note.closest('li')).toBeNull();
+    const verdict = screen.getByText('1 change gives it more power.');
+    const firstRow = screen.getAllByText(/Runs a command/)[0]!;
+    expect(verdict.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(note.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('shows the rows that add power instead of the detail', () => {
     renderCard(buildApproval(UPDATE));
 

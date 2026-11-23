@@ -4,7 +4,8 @@ name: test
 # monorepo on merge groups, where it is a REQUIRED check of the merge queue
 # (ruleset "main: merge queue"), and the affected packages on pull requests,
 # where the same required context has to report before a PR may enqueue at all.
-# Both are split six ways; see TWO EVENTS, TWO DEPTHS below.
+# The queue and the canary split it ten ways, a pull request six, two or one;
+# see TWO EVENTS, TWO DEPTHS below.
 #
 # Before this workflow existed, NO CI job ran the tests. The only enforcement
 # was the lefthook `pre-push` gate — and that gate ran every package's suite in
@@ -24,13 +25,16 @@ name: test
 # tip catches it. `--continue` so one red package still reports every other
 # package's result instead of hiding behind the first failure.
 #
-# SHARDED ACROSS SIX RUNNERS (four since 2026-09-06; six-way experiment 2026-10-16).
+# SHARDED ACROSS TEN RUNNERS IN THE QUEUE (four since 2026-09-06; six-way
+# experiment 2026-10-16; ten-way in the queue and canary, DOR-5113, ledger
+# 261123-194400).
 # The queue leg previously ran as a single serialized job and took 19–29 minutes
 # wall clock — the ceiling comment below said "split the job rather than raising
 # this again", and this is that split. Every shard runs the FULL `turbo test`
-# task graph; the split happens inside vitest (`--shard=N/6`), which partitions
-# each package's test FILES across the six runners. Coverage is unchanged: the
-# union of the six shards is exactly the old single run, and each shard still
+# task graph; the split happens inside vitest (`--shard=N/<total>`, the total
+# being `strategy.job-total`), which partitions each package's test FILES across
+# the runners. Coverage is unchanged: the union of the shards is exactly the old
+# single run, and each shard still
 # executes every package's suite (so the per-shard assert step below keeps its
 # "every package with a `test` script ran" guarantee). File-level sharding was
 # chosen over package-level filters because the suite's wall clock is dominated
@@ -60,7 +64,7 @@ name: test
 # `ulimit` or `maxWorkers` on this evidence.
 #
 # `--passWithNoTests` rides ONLY the sharded legs: a package with three
-# test files legitimately contributes zero files to one of six shards, and
+# test files legitimately contributes zero files to one of ten shards, and
 # without the flag vitest exits 1 on an empty selection. The flag also removes
 # vitest's zero-collected-files safety net, so the net is rebuilt one level up
 # where it can actually discriminate: every shard records the test files
@@ -177,7 +181,7 @@ name: test
 # two same-named runs on one commit is not documented anywhere we could pin.
 # Do not rename this job's rendered name without updating the ruleset.
 #
-# The `test-shard (N/6)` checks the matrix renders are NOT required contexts
+# The `test-shard (N/<total>)` checks the matrix renders are NOT required contexts
 # and must not become them — they already existed on `merge_group` and, since
 # DOR-1731, appear on pull requests too (where they previously reported as a
 # single skipped `test-shard (${{ matrix.shard }}/6)`). Nothing depends on
@@ -222,49 +226,38 @@ name: test
 # is attached to no PR and to no queue build, and opens and arms nothing. The
 # worst a red canary can do is print a red run and a line in the daily report.
 #
-# WHAT FOUR CRONS A DAY ACTUALLY BUY, given GitHub's throttling.
+# ONE CRON A DAY (DOR-5114, ledger 261123-195020-canary-once-a-day). Until
+# 2026-11-23 there were four slots (00, 05, 10 and 21 UTC), and GitHub
+# delivered two of them a day (02:xx and 14:xx UTC on 2026-11-18..22). The
+# canary was also the only writer of main's build caches; build-cache.yml now
+# saves those after every merge. What is left for the canary is what the queue
+# cannot see on its own: drift with no code change (runner images, the npm
+# registry, date- and time-dependent tests), flake data and shard durations.
+# One round a day covers all three.
 #
-# THE EVIDENCE IS `evals.yml`, not merge-tail. merge-tail asks for a run every
-# ten minutes and gets about seven a day; the "162-minute median" often quoted
-# from it is the GAP BETWEEN DELIVERED RUNS, which is a statement about how
-# many requests GitHub drops, not about how late any one of them is. A canary
-# cron is low-frequency, and the right comparable is `evals.yml`'s `0 8 * * *`:
-# 57 runs, 100% DELIVERED, lateness p50 2.60 h, p90 5.61 h, max 11.88 h.
-#
-# Two consequences, and they pull in opposite directions:
-#
-#   * a low-frequency cron is not dropped. All four rounds arrive, so the
-#     canary does not quietly stop;
-#   * but each arrives hours late, and the delay is SHARED across the day's
-#     slots rather than drawn fresh for each, because it tracks how busy the
-#     Actions scheduler is. Four slots are therefore four correlated shots at a
-#     window, not four independent ones.
+# THE EVIDENCE FOR HOW LATE A CRON IS: `evals.yml`, not merge-tail. merge-tail
+# asks for a run every ten minutes and gets about seven a day; the "162-minute
+# median" often quoted from it is the GAP BETWEEN DELIVERED RUNS, which is a
+# statement about how many requests GitHub drops, not about how late any one of
+# them is. A canary cron is low-frequency, and the right comparable is
+# `evals.yml`'s `0 8 * * *`: 57 runs, 100% DELIVERED, lateness p50 2.60 h, p90
+# 5.61 h, max 11.88 h.
 #
 # So a cron here is a request, not an appointment, and NO cron schedule on this
-# repo can promise a run inside a named two-hour window. What these four buy:
+# repo can promise a run inside a named two-hour window. What one buys:
 #
-#   * a break on `main` is found in hours rather than days — nominal 6 h
-#     spacing, plus skew, plus the run itself;
-#   * the 00:00-02:00 UTC window, where the 09-20 bug lived, is hit on about
-#     one day in three. Over a week that is ~86% (empirical, NOT the 95% an
-#     independence assumption gives: lag-1 autocorrelation of the daily lateness
-#     is 0.754, and the longest measured blind streak is 12 days). Two weeks is
-#     the honest near-certainty.
+#   * drift on `main` found within about a day: 24 h spacing, plus up to about
+#     12 h of lateness, plus the run itself. ci/config.yaml's
+#     `canary_silent_hours` (40) allows for exactly that before it calls the
+#     canary stopped;
+#   * the 00:00-02:00 UTC window, where the 09-20 bug lived, is hit only on the
+#     days the round is close to on time. A real time-of-day bug is caught by
+#     repetition over weeks, not by an appointment; the queue builds that run
+#     in that window are the faster net.
 #
-# THE SLOTS ARE CHOSEN AGAINST THAT SKEW, not against the clock face. A run
-# fired at hour H lands near H+2.6 at the median, so `0` lands in the window
-# when close to on time and `21` lands in it at the median; `5` lands near
-# 07:36, inside the 07:00-11:00 trough where the queue is quietest, and `10`
-# fills the afternoon. Throttling only ever DELAYS a run, never advances it, so
-# an earlier slot is also a later one. Two of the four — `21:3x` and `00:3x` —
-# are nominally inside the queue's own busiest stretch, 17:00-02:00, and that
-# is unavoidable rather than an oversight: they are the pair that BRACKETS the
-# dark window, and the dark window sits inside the busy stretch. The other two
-# are deliberately outside it, one of them in the 07:00-11:00 trough.
-#
-# That is the coverage claim, and it is deliberately weaker than "we watch the
-# dark window". A real time-of-day bug is caught here by repetition over about
-# a fortnight, not by one appointment.
+# WHY 00 UTC. A run fired at 00:3x landed at 01:30-03:00 on recent days, in or
+# just after the dark window and as the queue's busiest stretch (17:00-02:00)
+# tails off. Throttling only ever DELAYS a run, never advances it.
 #
 # `workflow_dispatch` is the on-demand leg: run this whole suite against `main`
 # now, from the Actions tab or `gh workflow run test.yml --ref main`.
@@ -289,15 +282,17 @@ name: test
 # does SAVE turbo's local cache for the shards (DOR-4190), trimmed to `build`
 # entries first, so what it hands on is builds and never a test result. The canary
 # also re-warms the `refs/heads/main` Actions caches (pnpm store, Playwright
-# browsers), which have had no writer since the push-to-main legs were retired
-# on 2026-09-19 and which every PR branch restores from.
+# browsers), which every PR branch restores from. Since DOR-4627, build-cache.yml
+# saves the same build entries and pnpm stores after every merge, so the
+# canary's saves are a backstop rather than the only writer.
 # PULL REQUESTS INTO A RELEASE BRANCH RUN THE FULL SWEEP (DOR-4639).
 #
 # Releases ship from `release/v<X.Y.Z>` branches cut from a QA-pinned main
 # commit (decision DOR-4636), and changes reach one only by pull request. Such
 # a pull request is the last gate before npm and the desktop app, and there is
 # no merge queue behind it to run the full suite, so it runs what the queue
-# runs: every suite on six shards, the binary and community jobs, the retry
+# runs: every suite on six shards (not the queue's ten: the arm script's CI
+# proof counts at most six on a pull request), the binary and community jobs, the retry
 # budget, the quarantine lane and the union proof. Nothing is scoped: no shard
 # plan, no no-code skip, no two-shard matrix.
 #
@@ -323,7 +318,7 @@ on:
   schedule:
     # Staggered by minute against its three sibling canaries, so four workflows
     # do not ask GitHub for runners in the same second.
-    - cron: '37 0,5,10,21 * * *'
+    - cron: '37 0 * * *'
   workflow_dispatch:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
@@ -640,8 +635,10 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
 
-  # HOW MANY SHARDS THE TEST JOB GETS (ledger 261031-150702). Six in the queue
-  # and on the canary, always. On a pull request, two, unless the change
+  # HOW MANY SHARDS THE TEST JOB GETS (ledger 261031-150702). Ten in the queue
+  # and on the canary, always (DOR-5113); six on a pull request into a release
+  # branch, which runs the full sweep but is armed on a pull request's CI proof,
+  # and that proof counts at most six shards. On a pull request, two, unless the change
   # touches apps/server/** or packages/shared/**: those make the affected sweep
   # nearly the whole monorepo, which on two shards ran into the 30-minute
   # ceiling (release PR #3357, #3221), so they get six. So does a change to
@@ -664,7 +661,7 @@ jobs:
   # the `test` tasks whose turbo hash the change moved, and hands the shards the
   # list. A plan of every suite, or one that reaches the server or shared, gets
   # six shards like a wide diff does. The merge queue and the canary never
-  # plan: they run every suite on six.
+  # plan: they run every suite on ten.
   test-shard-count:
     runs-on: ubuntu-latest
     # Two turbo dry runs and a second checkout on a pull request.
@@ -674,6 +671,10 @@ jobs:
       scope: ${{ steps.plan.outputs.scope }}
       packages: ${{ steps.plan.outputs.packages }}
       tests: ${{ steps.noscope.outputs.run }}
+      text_only: ${{ steps.textonly.outputs.text_only || 'false' }}
+      vitest_files: ${{ steps.textonly.outputs.text_only == 'true' && steps.textonly.outputs.vitest_files || steps.related.outputs.vitest_files || '[]' }}
+      related: ${{ steps.related.outputs.related || 'false' }}
+      dirs: ${{ steps.plan.outputs.dirs }}
     steps:
       # A canary run is against `main` or it is nothing.
       #
@@ -719,6 +720,57 @@ jobs:
         with:
           fetch-depth: 2
           persist-credentials: false
+      # THE TEXT-ONLY LANE (DOR-4834, ledger 261120-043306). Decides, from
+      # scripts/text-only-scope.mjs, whether this change only rewrites strings,
+      # comments and Markdown, by comparing both sides' TypeScript syntax
+      # trees. When it does, ON A PULL REQUEST ONLY, the test sweep and the
+      # browser suites stand down and `vitest related` and the browser specs
+      # that quote the old text run instead; the required fan-ins read that as
+      # they read any green. No `if:`: every other event answers false without
+      # looking, a release pull request included, and so does the merge queue,
+      # which runs every shard and the whole browser suite exactly as for any
+      # other change: the queue is the safety net under a wrong "text only".
+      #
+      # The classifier and the security list it reads come from the BASE
+      # commit, never this checkout (Security, #3238), with the TypeScript the
+      # base pins installed beside that copy. A pull request diffs the
+      # test-merge commit against its first parent. Every failure answers
+      # false, which runs everything as before. Keep this block identical in
+      # test.yml and browser-test.yml.
+      - name: Decide whether this change only rewrites text
+        id: textonly
+        env:
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
+        run: |
+          set -uo pipefail
+          not_text_only() {
+            echo "not text only ($1); every suite runs"
+            printf 'text_only=false\nvitest_files=[]\nbrowser=full\nspecs=[]\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          case $EVENT in
+            pull_request)
+              if ! git rev-parse --verify --quiet 'HEAD^2' >/dev/null || ! base=$(git rev-parse --verify --quiet 'HEAD^1'); then
+                not_text_only 'no test-merge commit to diff'
+              fi
+              ;;
+            merge_group) not_text_only 'a merge queue build; the queue runs every suite' ;;
+            *) not_text_only "a $EVENT run" ;;
+          esac
+          lane=$RUNNER_TEMP/text-only
+          mkdir -p "$lane"
+          git archive "$base" scripts/text-only-scope.mjs .github/scripts .github/workflows/security-gate.yml | tar -x -C "$lane" ||
+            not_text_only 'the base commit has no scripts/text-only-scope.mjs'
+          version=$(git cat-file blob "$base:package.json" | jq -er '.devDependencies.typescript') ||
+            not_text_only 'the base package.json pins no typescript'
+          npm install --silent --no-save --no-package-lock --no-audit --no-fund --prefix "$lane" "typescript@$version" ||
+            not_text_only 'typescript did not install'
+          node "$lane/scripts/text-only-scope.mjs" "$base" HEAD > "$lane/outputs" || not_text_only 'the classifier failed'
+          reason=$(sed -n 's/^reason=//p' "$lane/outputs")
+          [ -n "$reason" ] || not_text_only 'the classifier printed no answer'
+          grep -qx 'text_only=true' "$lane/outputs" || not_text_only "$reason"
+          echo "::notice title=Text-only lane::$reason. The test sweep and the browser suites stand down; vitest related and the specs that quote the old text run instead."
+          cat "$lane/outputs" >> "$GITHUB_OUTPUT"
       # Decides whether a pull request can affect any test, from
       # scripts/no-code-scope.sh, and hands test-shard and test-binary the
       # answer as `tests`. A release PR bumps "version" in package.json files,
@@ -743,6 +795,7 @@ jobs:
         id: noscope
         env:
           EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
+          TEXT_ONLY: ${{ steps.textonly.outputs.text_only }}
         run: |
           set -uo pipefail
           if [ "$EVENT" != 'pull_request' ]; then
@@ -761,12 +814,56 @@ jobs:
           else
             echo "cannot diff this pull request against its base (no test-merge commit); running the tests"
           fi
-          if [ "$verdict" != false ]; then
+          if [ "${TEXT_ONLY:-}" = true ]; then
+            verdict=false
+            echo 'a text-only change: test-shard runs vitest related instead of the affected suites, and test-binary runs nothing.'
+          elif [ "$verdict" != false ]; then
             verdict=true
           else
             echo "::notice title=No-code scope::only changelog, docs or version lines changed, so test-shard and test-binary run no suite here. The merge queue runs the full suite."
           fi
           echo "run=$verdict" >> "$GITHUB_OUTPUT"
+      # TESTS CHOSEN BY IMPORT (DOR-5110, ledger 261123-195117). Decides, from
+      # scripts/pr-related-scope.sh, whether a pull request's tests can be
+      # picked by Vitest's import graph rather than by whole suite. When it
+      # can, and the plan below is `selected`, each shard runs
+      # scripts/pr-related-tests.sh: in every planned suite, only the test
+      # files that import (or name) a changed file, split across the same
+      # shards. It answers false, and every planned suite runs whole as
+      # before, for any config, test tooling, setup file, fixture, mock,
+      # deleted file, or file outside the packages that is not prose; the
+      # script's header has the list. The changed-file list rides the same
+      # `vitest_files` output the text-only lane uses.
+      #
+      # No `if:`: every event but pull_request answers false without looking,
+      # a release pull request included, so the merge queue and the canary run
+      # every suite exactly as before. The script comes from the BASE commit,
+      # never this checkout (Security, #3238). Every failure answers false.
+      - name: Decide whether this change's tests can be chosen by import
+        id: related
+        env:
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
+          TEXT_ONLY: ${{ steps.textonly.outputs.text_only }}
+        run: |
+          set -uo pipefail
+          not_related() {
+            echo "tests are not chosen by import ($1); the planned suites run whole"
+            printf 'related=false\nvitest_files=[]\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          [ "$EVENT" = 'pull_request' ] || not_related "a $EVENT run"
+          [ "${TEXT_ONLY:-}" != true ] || not_related 'the text-only lane has this change'
+          if ! git rev-parse --verify --quiet 'HEAD^2' >/dev/null || ! base=$(git rev-parse --verify --quiet 'HEAD^1'); then
+            not_related 'no test-merge commit to diff'
+          fi
+          git cat-file blob "$base:scripts/pr-related-scope.sh" > "$RUNNER_TEMP/pr-related-scope.sh" 2>/dev/null ||
+            not_related 'the base commit has no scripts/pr-related-scope.sh'
+          bash "$RUNNER_TEMP/pr-related-scope.sh" "$base" HEAD > "$RUNNER_TEMP/related-outputs" || not_related 'the decision failed'
+          reason=$(sed -n 's/^reason=//p' "$RUNNER_TEMP/related-outputs")
+          grep -qx 'related=true' "$RUNNER_TEMP/related-outputs" || not_related "${reason:-no answer}"
+          grep -q '^vitest_files=\[' "$RUNNER_TEMP/related-outputs" || not_related 'the decision printed no file list'
+          echo "::notice title=Tests chosen by import::$reason. Each planned suite runs the test files that import or name a changed file; the merge queue runs every suite."
+          grep -E '^(related|vitest_files)=' "$RUNNER_TEMP/related-outputs" >> "$GITHUB_OUTPUT"
       # Writes scope=full, or scope=selected with the chosen suites' package
       # names and directories. No `if:`: on every event but pull_request it
       # answers full without looking, and those legs never read it.
@@ -812,12 +909,17 @@ jobs:
           EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
           SCOPE: ${{ steps.plan.outputs.scope }}
           DIRS: ${{ steps.plan.outputs.dirs }}
+          TEXT_ONLY: ${{ steps.textonly.outputs.text_only }}
         run: |
           set -uo pipefail
           six='[1, 2, 3, 4, 5, 6]'
+          ten='[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]'
           matrix=$six
-          if [ "$EVENT" != 'pull_request' ]; then
-            echo "$EVENT run: six shards, always"
+          if [ "$EVENT" = 'release_pull_request' ]; then
+            echo "$EVENT run: six shards, always (a pull request's CI proof counts at most six)"
+          elif [ "$EVENT" != 'pull_request' ]; then
+            matrix=$ten
+            echo "$EVENT run: ten shards, always"
           elif git rev-parse --verify --quiet 'HEAD^2' >/dev/null &&
             base=$(git rev-parse --verify --quiet 'HEAD^1') &&
             changed=$(git -c core.quotePath=false diff --no-renames --name-only "$base" HEAD); then
@@ -841,9 +943,15 @@ jobs:
               echo "the test plan reaches apps/server or packages/shared: six shards"
             fi
           fi
+          # A text-only pull request runs `vitest related` on one shard; the queue
+          # never gets here (its decision is always false) and keeps ten.
+          if [ "${TEXT_ONLY:-}" = true ]; then
+            matrix='[1]'
+            echo "a text-only change: one shard, for vitest related"
+          fi
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
-  # The suite, split six ways at the vitest file level (see the header), on
+  # The suite, split ten ways in the queue at the vitest file level (see the header), on
   # BOTH events: the full monorepo sweep on `merge_group`, the affected-only
   # sweep on `pull_request`. What differs between the two is one `run:` step
   # and the four proof steps that only the queue leg carries; everything above
@@ -852,11 +960,11 @@ jobs:
   test-shard:
     needs: [test-shard-count]
     strategy:
-      # All six shards report even when one is red — the matrix equivalent of
+      # Every shard reports even when one is red — the matrix equivalent of
       # `--continue`, and the same reason: one red package must not hide the
       # other seventeen packages' results.
       fail-fast: false
-      # SIX IN THE QUEUE, TWO ON MOST PULL REQUESTS (ledger 261030-233825). A PR
+      # TEN IN THE QUEUE, TWO ON MOST PULL REQUESTS (ledger 261030-233825). A PR
       # push started six shards for an affected-only sweep, and PR pushes were
       # starving the queue of runners: 46 PR runs were active at 23:30 on
       # 2026-10-30 while a queue build that started at 22:45 still had none, and
@@ -867,15 +975,18 @@ jobs:
       # minutes after all: a change to apps/server or packages/shared still hit
       # the 30-minute ceiling on two (ledger 261031-150702), so those PRs get six
       # again. test-shard-count above picks the list; the queue and the canary
-      # always get six. The queue leg's own lines below still name their total as
-      # a literal 6, which scripts/__tests__/unit-shard-workdivision.test.ts holds
-      # equal to the queue's list.
+      # always get ten (DOR-5113: the build is cached once and the suites run
+      # `--only`, so a shard's fixed cost is about three minutes and a wider split
+      # cuts the longest one; ten queue shards make a build about 34 jobs, not
+      # 30, so revert to six if queue wait or runner queueing rises). Every line
+      # below names its total as `strategy.job-total`, never a literal, which
+      # scripts/__tests__/unit-shard-workdivision.test.ts holds.
       matrix:
         shard: ${{ fromJSON(needs.test-shard-count.outputs.matrix) }}
     name: test-shard (${{ matrix.shard }}/${{ strategy.job-total }})
     # Same opt-in queue-only runner as `community-pg` above.
     runs-on: ${{ github.event_name == 'merge_group' && vars.RUNNER_LABEL || 'ubuntu-latest' }}
-    # Six file partitions reduce suite work; fixed checkout/install/build
+    # File partitions reduce suite work; fixed checkout/install/build
     # still repeats on every runner. 45 is a stopgap (DOR-3767), not the new
     # normal: the worst parts seen on 2026-11-03 add up to about 43 minutes
     # (a 15.6-minute full-history checkout, a 26-minute sweep, 1.5 of the rest).
@@ -1072,13 +1183,13 @@ jobs:
       # `test` entry ever did get through, "Prove the suite actually executed"
       # refuses the replay; it is not weakened here.
       #
-      # WHO WRITES IT. Only the main canary, at the end of this job. GitHub
-      # scopes caches by branch with a read fallback to `main`, and the
-      # canary is the only run of this workflow on `main`'s scope, so its entry
-      # is the one every queue build and every pull request can read. A queue
-      # build's own scope is deleted with its ref, so a save there would be
-      # waste. Builds that changed since the last canary still miss and
-      # rebuild, so a busy day sees partial hits.
+      # WHO WRITES IT. Runs on `main` only: build-cache.yml after every merge
+      # (DOR-4627, ledger 261123-194610), and the main canary at the end of
+      # this job. GitHub scopes caches by branch with a read fallback to
+      # `main`, so main's entry is the one every queue build and every pull
+      # request can read. A queue build's own scope is deleted with its ref, so
+      # a save there would be waste. Builds the PR itself changed still miss
+      # and rebuild.
       #
       # ONE ENTRY FOR EVERY TEST JOB (DOR-4625, ledger 261118-140000). Turbo
       # passes the `--` arguments of `turbo test` to EVERY task in the run, the
@@ -1090,7 +1201,8 @@ jobs:
       # first through scripts/build-test-deps.sh, a `turbo run build` with no
       # `--` arguments, and the suites run with `--only`, so the same builds
       # hash the same in every shard, the pull request leg and test-binary.
-      # One entry serves them all; shard 1 of the canary saves it.
+      # One entry serves them all; build-cache.yml saves it after every merge,
+      # and shard 1 of the canary saves it too.
       - name: Restore the builds the last main canary made
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -1142,10 +1254,10 @@ jobs:
             --runner vitest \
             --out "$RUNNER_TEMP/quarantine.json" \
             --lines "$RUNNER_TEMP/quarantine.txt" \
-            --title "Quarantine lane — test shard ${{ matrix.shard }}/6"
+            --title "Quarantine lane — test shard ${{ matrix.shard }}/${{ strategy.job-total }}"
           # Its own shard identity beside it, so the fan-in can prove it has a
           # COMPLETE set of copies before intersecting them.
-          printf '%s/6\n' '${{ matrix.shard }}' > "$RUNNER_TEMP/shard.txt"
+          printf '%s/%s\n' '${{ matrix.shard }}' '${{ strategy.job-total }}' > "$RUNNER_TEMP/shard.txt"
 
       # Commit time is identical across runners and reruns, unlike Date.now().
       # Hash only fresh/fallback mode into test tasks; builds keep their cache.
@@ -1165,19 +1277,20 @@ jobs:
         id: deps
         env:
           EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
+          TEXT_ONLY: ${{ needs.test-shard-count.outputs.text_only }}
         run: |
-          if [ "$EVENT" = 'pull_request' ]; then
-            echo 'the pull request leg builds its own set, inside its suite step below.'
+          if [ "$EVENT" = 'pull_request' ] || [ "${TEXT_ONLY:-}" = true ]; then
+            echo 'the pull request leg and the text-only lane build their own set, inside their steps below.'
             exit 0
           fi
           bash scripts/build-test-deps.sh
 
-      - name: Run every package's test suite (shard ${{ matrix.shard }}/6)
+      - name: Run every package's test suite (shard ${{ matrix.shard }}/${{ strategy.job-total }})
         id: sweep
         if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           set +e
-          pnpm exec turbo test --summarize --continue --concurrency=1 --only -- --run --shard=${{ matrix.shard }}/6 --config=../../scripts/sharding/config.ts --retry=1 --passWithNoTests --exclude='**/*.binary.test.ts' --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
+          pnpm exec turbo test --summarize --continue --concurrency=1 --only -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --config=../../scripts/sharding/config.ts --retry=1 --passWithNoTests --exclude='**/*.binary.test.ts' --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
           code=$?
           echo "exit-code=$code" >> "$GITHUB_OUTPUT"
           if [ "$code" -ne 0 ]; then
@@ -1213,7 +1326,7 @@ jobs:
             --suite-exit "${{ steps.sweep.outputs.exit-code }}" \
             --list "$RUNNER_TEMP/quarantine.json" \
             "${args[@]}" \
-            --title "Quarantine gate — test shard ${{ matrix.shard }}/6"
+            --title "Quarantine gate — test shard ${{ matrix.shard }}/${{ strategy.job-total }}"
 
       # Decides whether the PR leg's tests run at all. test-shard-count makes
       # the decision (its "Decide whether this change can affect a test" step,
@@ -1235,11 +1348,15 @@ jobs:
         env:
           EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
           TESTS: ${{ needs.test-shard-count.outputs.tests }}
+          TEXT_ONLY: ${{ needs.test-shard-count.outputs.text_only }}
         run: |
           set -uo pipefail
           if [ "$EVENT" != 'pull_request' ]; then
             echo "$EVENT run: the shards always run here"
             run=true
+          elif [ "${TEXT_ONLY:-}" = true ]; then
+            echo "A text-only change, so the affected suites did not run here; vitest related runs below instead."
+            run=false
           elif [ "${TESTS:-}" = false ]; then
             echo "Only changelog, docs or version lines changed, so the shards did not run here. The merge queue runs the full suite."
             run=false
@@ -1287,7 +1404,16 @@ jobs:
         env:
           SCOPE: ${{ needs.test-shard-count.outputs.scope }}
           PACKAGES: ${{ needs.test-shard-count.outputs.packages }}
+          DIRS: ${{ needs.test-shard-count.outputs.dirs }}
+          RELATED: ${{ needs.test-shard-count.outputs.related }}
+          VITEST_FILES: ${{ needs.test-shard-count.outputs.vitest_files }}
         run: |
+          # Tests chosen by import (DOR-5110): only on a `selected` plan, and
+          # scripts/pr-related-tests.sh runs a package's whole suite whenever
+          # the graph cannot answer for it.
+          if [ "$SCOPE" = 'selected' ] && [ "${RELATED:-}" = true ]; then
+            exec bash scripts/pr-related-tests.sh '${{ matrix.shard }}/${{ strategy.job-total }}' "$VITEST_FILES"
+          fi
           filters=()
           if [ "$SCOPE" = 'selected' ]; then
             for package in $PACKAGES; do filters+=("--filter=$package"); done
@@ -1300,6 +1426,24 @@ jobs:
           # (`--only`). scripts/build-test-deps.sh says why (DOR-4625).
           bash scripts/build-test-deps.sh "${filters[@]}"
           pnpm exec turbo test --continue --concurrency=1 --only "${filters[@]}" -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --config=../../scripts/sharding/config.ts --passWithNoTests --exclude='**/*.binary.test.ts'
+
+      # THE TEXT-ONLY LANE (DOR-4834). On a pull request test-shard-count found
+      # to rewrite only strings, comments and Markdown (never in the queue,
+      # which runs every suite), this is the whole of the one shard: `vitest
+      # related` in each package that owns a file the classifier named, which
+      # includes every test that quotes a changed string's old text
+      # (scripts/text-only-tests.sh says how). Gated in the script, not with a step `if:`, so this required
+      # job never skips it; on any other change it says so and exits 0.
+      - name: Run the tests a text-only change can reach
+        env:
+          TEXT_ONLY: ${{ needs.test-shard-count.outputs.text_only }}
+          VITEST_FILES: ${{ needs.test-shard-count.outputs.vitest_files }}
+        run: |
+          if [ "${TEXT_ONLY:-}" != true ]; then
+            echo 'not a text-only change; the suites run in the steps beside this one.'
+            exit 0
+          fi
+          bash scripts/text-only-tests.sh "$VITEST_FILES"
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 31 successful, 31 total" — one per package declaring a `test`
@@ -1316,7 +1460,7 @@ jobs:
       # Per SHARD, unchanged from the single-job era: every shard runs the full
       # task graph (the split is inside vitest, not across packages), so "every
       # package declaring a `test` script executed, none from cache" holds on
-      # each of the six runners independently. What this step CANNOT see is a package whose
+      # each runner independently. What this step CANNOT see is a package whose
       # vitest collected zero files — that is the union check's job, in the
       # fan-in below.
       #
@@ -1382,14 +1526,14 @@ jobs:
             exit 1
           fi
           if [ -z "$named" ]; then
-            echo "shard ${{ matrix.shard }}/6: no test needed a retry to pass."
+            echo "shard ${{ matrix.shard }}/${{ strategy.job-total }}: no test needed a retry to pass."
             exit 0
           fi
           count=$(printf '%s\n' "$named" | wc -l | tr -d ' ')
           printf 'WARNING — %s test(s) only passed on a retry:\n' "$count"
           printf '%s\n' "$named" | sed 's/^/  /'
           {
-            printf '### Shard %s/6 — %s test(s) only passed on a retry\n\n' '${{ matrix.shard }}' "$count"
+            printf '### Shard %s/%s — %s test(s) only passed on a retry\n\n' '${{ matrix.shard }}' '${{ strategy.job-total }}' "$count"
             printf '%s\n' "$named" | sed 's/^/- `/; s/$/`/'
             printf '\nA test named here three times over is a flake to fix (DOR-1007), not a retry budget to widen.\n\n'
           } >> "$GITHUB_STEP_SUMMARY"
@@ -1635,6 +1779,7 @@ jobs:
           SCOPE: ${{ needs.test-shard-count.outputs.scope }}
           PACKAGES: ${{ needs.test-shard-count.outputs.packages }}
           TESTS: ${{ needs.test-shard-count.outputs.tests }}
+          TEXT_ONLY: ${{ needs.test-shard-count.outputs.text_only }}
         run: |
           set -uo pipefail
           all=$(git ls-files -- 'apps/*.binary.test.ts' 'packages/*.binary.test.ts') ||
@@ -1651,6 +1796,9 @@ jobs:
           if [ ! -s "$RUNNER_TEMP/binary-files.txt" ]; then
             run=false
             echo "no binary suite outside codex/ in this tree; nothing to run"
+          elif [ "${TEXT_ONLY:-}" = true ]; then
+            run=false
+            echo "a text-only change (DOR-4834): test-shard runs vitest related, and no binary suite runs here."
           elif [ "$EVENT" = 'pull_request' ] && [ "${TESTS:-}" = false ]; then
             run=false
             echo "only changelog, docs or version lines changed, so the shards run no suite here and neither does this job."
@@ -1926,7 +2074,8 @@ jobs:
   # scoped Linux Codex suite.
   # `always()` lets it report a failure rather than skip when a dependency is red.
   test:
-    needs: [test-shard, test-binary, community-pg, community-packaged, codex-sandbox]
+    needs:
+      [test-shard-count, test-shard, test-binary, community-pg, community-packaged, codex-sandbox]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     # This job runs no tests any more, so this is a ceiling on a gate, an
@@ -2040,6 +2189,14 @@ jobs:
       # when a shard is red — without it, GitHub would skip this job and a
       # SKIPPED check run satisfies a required check, which is precisely the
       # false green this workflow exists to prevent.
+      # The shard plan, the shard count and the text-only decision all come
+      # from test-shard-count, and the steps below read its outputs.
+      - name: Require the shard plan green
+        run: |
+          result="${{ needs.test-shard-count.result }}"
+          echo "shard plan result: $result"
+          [ "$result" = "success" ]
+
       - name: Require all shards green
         run: |
           result="${{ needs.test-shard.result }}"
@@ -2097,7 +2254,7 @@ jobs:
           path: shard-files
 
       # Every package that declares a `test` script must have contributed at
-      # least one collected test file across the union of all six shards —
+      # least one collected test file across the union of all the shards —
       # the zero-collected-files net --passWithNoTests removed, rebuilt at the
       # only level that can tell "empty because sharded" from "empty because
       # broken". Fixtures: scripts/test-assert-shard-union.sh.

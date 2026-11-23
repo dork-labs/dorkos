@@ -21,6 +21,8 @@ vi.mock('../../../../../lib/boundary.js', () => ({
   validateBoundaryOrDorkHome: vi.fn().mockResolvedValue(undefined),
 }));
 
+import { wrapKickoff } from '@dorkos/shared/kickoff';
+import { expectNoDorkMarkup } from '../../../shared/__tests__/no-dork-markup.js';
 import { TranscriptReader } from '../transcript-reader.js';
 
 /** A realistic head/user JSONL line carrying the first prompt, cwd, and a timestamp. */
@@ -114,6 +116,93 @@ describe('TranscriptReader title precedence (DOR-2083)', () => {
 
     const [session] = await reader.listSessionsInDir(dir);
     expect(session?.title).toBe('@agent do the thing');
+  });
+
+  it('skips a new agent’s greeting kickoff and titles from the person’s first message (DOR-4976)', async () => {
+    await writeTranscript(dir, 'sess-kickoff', [
+      userLine(wrapKickoff('Read your SOUL.md and say hello.')),
+      userLine('Fix the build'),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expect(session?.title).toBe('Fix the build');
+  });
+
+  it('shows a chat with only the greeting kickoff as untitled, never its tag or "Chat …"', async () => {
+    await writeTranscript(dir, 'sess-kickoff-only', [
+      userLine(wrapKickoff('Read your SOUL.md and say hello.')),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expectNoDorkMarkup(session);
+    expect(session?.title).toBe('');
+  });
+
+  it('never shows an ai-title that is itself DorkOS markup', async () => {
+    await writeTranscript(dir, 'sess-markup-ai', [
+      userLine('Fix the build'),
+      aiTitleLine('sess-markup-ai', '<dork-kickoff>'),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expectNoDorkMarkup(session);
+  });
+
+  it('ignores an ai-title made from the greeting before the person wrote', async () => {
+    await writeTranscript(dir, 'sess-kickoff-ai', [
+      userLine(wrapKickoff('Read your SOUL.md and say hello.')),
+      aiTitleLine('sess-kickoff-ai', 'Agent introduces itself'),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expect(session?.title).toBe('');
+  });
+
+  it('trusts the ai-title once the person has written', async () => {
+    await writeTranscript(dir, 'sess-kickoff-replied', [
+      userLine(wrapKickoff('Read your SOUL.md and say hello.')),
+      userLine('Fix the build'),
+      aiTitleLine('sess-kickoff-replied', 'Fixing the build'),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expect(session?.title).toBe('Fixing the build');
+  });
+
+  it('finds the person’s words past a greeting longer than the head read', async () => {
+    // A real kickoff turn opens with a large setup record, and the kickoff line
+    // itself runs past the 8 KB head the list reads.
+    await writeTranscript(dir, 'sess-kickoff-long', [
+      JSON.stringify({ type: 'queue-operation', content: 'x'.repeat(4000) }),
+      userLine(wrapKickoff(`Read your SOUL.md. ${'Context. '.repeat(700)}`)),
+      userLine('Fix the build'),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expect(session?.title).toBe('Fix the build');
+  });
+
+  it('scans on when context before the greeting pushes its tag past the head', async () => {
+    // DorkOS puts the turn's context blocks in front of the words, so the tag
+    // itself can sit past the 8 KB head, with no whole user record inside it.
+    const context = `<git_status>\n${'branch detail\n'.repeat(700)}</git_status>\n`;
+    await writeTranscript(dir, 'sess-kickoff-context', [
+      userLine(`${context}${wrapKickoff('Read your SOUL.md and say hello.')}`),
+      aiTitleLine('sess-kickoff-context', 'Agent introduces itself'),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expect(session?.title).toBe('');
+  });
+
+  it('keeps a /rename even on a chat that only has the greeting', async () => {
+    await writeTranscript(dir, 'sess-kickoff-renamed', [
+      userLine(wrapKickoff('Read your SOUL.md and say hello.')),
+      customTitleLine('sess-kickoff-renamed', 'My new agent'),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expect(session?.title).toBe('My new agent');
   });
 
   it('/rename still wins over a later ai-title', async () => {

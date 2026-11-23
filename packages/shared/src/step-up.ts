@@ -30,6 +30,15 @@ import { z } from 'zod';
 /** The base path of the step-up routes. */
 export const STEP_UP_PATH = '/api/step-up';
 
+/**
+ * The header a step-up request carries its page's stamp in (DOR-5026): the
+ * server writes one into each app page it sends, and checks it on confirm.
+ */
+export const PAGE_STAMP_HEADER = 'x-dorkos-page-stamp';
+
+/** The `<meta name>` the app page carries its stamp under. */
+export const PAGE_STAMP_META = 'dorkos-page-stamp';
+
 /** The code a guarded action answers with while it waits for a step-up. */
 export const STEP_UP_REQUIRED_CODE = 'step_up_required';
 
@@ -236,10 +245,24 @@ export const StepUpPasswordUnavailableSchema = z.enum([
    * sheet. Named in {@link HeldStepUpView.blockedBy}.
    */
   'extension-risk',
+  /**
+   * A risky mini app cleared after this sign-in began, so a page it opened may
+   * still run that code: sign in again (Security's M1 on #3401, DOR-5086).
+   */
+  'stale-sign-in',
+  /**
+   * This page can't show it loaded after a risky mini app cleared: no page
+   * stamp, an old one, or one for another sign-in. A reload brings a fresh
+   * one (DOR-5026, DOR-5086).
+   */
+  'stale-page',
 ]);
 
 /** Why a held action cannot be confirmed by password from here. */
 export type StepUpPasswordUnavailable = z.infer<typeof StepUpPasswordUnavailableSchema>;
+
+/** The two ways a confirm can come from before a risky mini app cleared. */
+export type StepUpStaleConfirm = Extract<StepUpPasswordUnavailable, 'stale-sign-in' | 'stale-page'>;
 
 /** One loaded extension that keeps step-up off, and why. */
 export const StepUpExtensionRiskSchema = z.object({
@@ -277,6 +300,12 @@ export const HeldStepUpViewSchema = z.object({
   passwordUnavailable: StepUpPasswordUnavailableSchema.optional(),
   /** For `extension-risk`: the extensions to fix first, in Settings → Extensions. */
   blockedBy: z.array(StepUpExtensionRiskSchema).optional(),
+  /**
+   * When the confirm comes from before the last mini app risk cleared: which
+   * part is too old (DOR-5086). Always set then, even where a page from before
+   * this field is answered with `extension-risk` and an empty `blockedBy`.
+   */
+  stale: z.enum(['stale-sign-in', 'stale-page']).optional(),
   /** Wrong passwords left before the held action is dropped. */
   triesLeft: z.number().int().min(0),
 });
@@ -338,6 +367,10 @@ export const STEP_UP_REFUSAL_CODES = [
   'insecure-connection',
   /** A loaded extension an agent can rewrite, or that changed since it was approved. */
   'extension-risk',
+  /** A risky mini app cleared after this sign-in began: sign in again. */
+  'stale-sign-in',
+  /** This page can't show it loaded after a risky mini app cleared: reload it. */
+  'stale-page',
   /** Not the app's own page, or a program rather than a person. */
   'not-a-person',
   /** Another browser held this action. */

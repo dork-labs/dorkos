@@ -36,6 +36,10 @@ import { configManager } from '../../core/config-manager.js';
 import { agentRunsOnCredits } from '../../core/cloud/credits-model-gate.js';
 import { creditsIsDefaultFor } from '../../core/cloud/credits-defaults.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
+import {
+  hasPreparedSettingsMutation,
+  savePreparedSettings,
+} from '../../core/runtime-seam/prepared-settings-write.js';
 import { DoeInferenceConfigSchema } from '@dorkos/shared/config-schema';
 import { homeOf, resolveAgentHome, readHomeManifest } from '../../core/agent-identity/index.js';
 import { peekProjector } from '../../session/session-state-projector.js';
@@ -91,6 +95,19 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
   }
   /** Persist first; permission changes to an active turn apply on its next turn. */
   async updateSession(id: string, opts: SessionSettings): Promise<SessionUpdateResult> {
+    if (hasPreparedSettingsMutation(id)) {
+      const port = this.settingsPort;
+      // The first turn already loads these settings from core. Creating a Doe
+      // record here would also create its native model-store session early.
+      return savePreparedSettings(id, opts, port, {
+        isCurrent: () =>
+          this.settingsPort === port &&
+          !this.closing &&
+          !this.active.has(id) &&
+          !this.hasSession(id),
+        publish: () => undefined,
+      });
+    }
     const updated = this.sessions.update(id, opts);
     if (!updated) return { updated: false };
     this.settingsRevision.set(id, (this.settingsRevision.get(id) ?? 0) + 1);

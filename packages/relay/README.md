@@ -10,10 +10,11 @@ This package is transport and storage; the higher-level wiring (which agents, wh
 
 ## Exports
 
-| Export      | Purpose                                                                      |
-| ----------- | ---------------------------------------------------------------------------- |
-| `.`         | `RelayCore` + the full public surface (stores, adapters, reliability, types) |
-| `./testing` | Compliance suite and mocks for adapter authors and integration tests         |
+| Export                 | Purpose                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------ |
+| `.`                    | `RelayCore` + the full public surface (stores, adapters, reliability, types)         |
+| `./approver-allowlist` | `mayApprove`, `toIdList`: who may approve a tool call that came from a chat platform |
+| `./testing`            | Compliance suite and mocks for adapter authors and integration tests                 |
 
 Key pieces under the `.` barrel:
 
@@ -32,15 +33,15 @@ Key pieces under the `.` barrel:
 ```ts
 import { RelayCore } from '@dorkos/relay';
 
-const relay = new RelayCore({ dorkHome: '/abs/path/.dork' });
-await relay.publish('relay.agent.<sessionId>', { text: 'CI is green' });
+const relay = new RelayCore({ dataDir: '/abs/path/.dork/relay' });
+await relay.publish('relay.agent.<sessionId>', { text: 'CI is green' }, { from: 'relay.agent.ci' });
 const unsubscribe = relay.subscribe('relay.agent.>', (msg) => handle(msg));
 ```
 
 Authoring a channel adapter? Extend `BaseRelayAdapter` and validate it against the shared compliance suite:
 
 ```ts
-import { runComplianceSuite } from '@dorkos/relay/testing';
+import { runAdapterComplianceSuite } from '@dorkos/relay/testing';
 ```
 
 ## Conventions

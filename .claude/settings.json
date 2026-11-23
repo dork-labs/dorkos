@@ -73,6 +73,10 @@
           {
             "type": "command",
             "command": "cd \"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}\" && .claude/hooks/run-node-hook.sh .claude/hooks/pr-create-guard.mjs || exit 2"
+          },
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}\" && .claude/hooks/run-node-hook.sh .claude/hooks/heavy-command-guard.mjs || exit 2"
           }
         ]
       }

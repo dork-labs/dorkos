@@ -2,12 +2,13 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { HeldStepUpView } from '@dorkos/shared/step-up';
 import {
   finishActionStepUp,
   getActionStepUpShowing,
+  noteStepUpReload,
   openActionStepUpFromLink,
   requestActionStepUp,
   type ActionStepUpOutcome,
@@ -25,6 +26,9 @@ const VIEW: HeldStepUpView = {
   triesLeft: 5,
 };
 
+/** What the Mac app's sheet says while the shell's own window asks (designer, DOR-4909). */
+const DESKTOP_SHEET_LINE = 'Finish in the “Confirm it’s you” window. Closing it changes nothing.';
+
 afterEach(() => {
   act(() => {
     for (let id = getActionStepUpShowing(); id !== null; id = getActionStepUpShowing()) {
@@ -33,6 +37,8 @@ afterEach(() => {
   });
   cleanup();
   vi.restoreAllMocks();
+  window.sessionStorage.clear();
+  document.body.innerHTML = '';
 });
 
 /** Open the sheet for one held action, and what it ends with. */
@@ -364,15 +370,36 @@ describe('ActionStepUpHost', () => {
     await expect(outcome).resolves.toEqual({ kind: 'not-confirmed' });
   });
 
-  it('after a mini app ran since sign-in, drops this hold and asks to sign in again', async () => {
-    const fetchSpy = heldWith(
-      { ...VIEW, methods: [], passwordUnavailable: 'extension-risk', blockedBy: [] },
+  it('shows a mini app’s name as plain text: its author picks it (DOR-4906)', async () => {
+    const name = '<img src="x" alt="planted">Notes';
+    heldWith(
+      {
+        ...VIEW,
+        methods: [],
+        passwordUnavailable: 'extension-risk',
+        blockedBy: [{ id: 'notes', name, reason: 'changed' }],
+      },
       [200, { ok: true, status: 200, result: {} }]
     );
     render(<ActionStepUpHost />);
+    void ask();
+    expect(
+      await screen.findByText(`Confirming is off while ${name} has changed since you approved it.`)
+    ).toBeTruthy();
+    expect(screen.queryByAltText('planted')).toBeNull();
+  });
+
+  it('after a mini app ran since sign-in, drops this hold and asks to sign in again', async () => {
+    const fetchSpy = heldWith({ ...VIEW, methods: [], passwordUnavailable: 'stale-sign-in' }, [
+      200,
+      { ok: true, status: 200, result: {} },
+    ]);
+    render(<ActionStepUpHost />);
     const outcome = ask();
     expect(
-      await screen.findByText('A mini app has run since you signed in. Sign in again to confirm.')
+      await screen.findByText(
+        'Something changed after you signed in. Sign in again, then try once more.'
+      )
     ).toBeTruthy();
     expect(screen.queryByLabelText('DorkOS password')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Sign in again' }));
@@ -381,6 +408,157 @@ describe('ActionStepUpHost', () => {
       ([, init]) => (init as RequestInit)?.method === 'DELETE'
     );
     expect(String(dropped?.[0])).toMatch(/\/step-up\/held-1$/);
+  });
+
+  describe('a page too old to confirm from (DOR-5086)', () => {
+    const STALE: HeldStepUpView = { ...VIEW, methods: [], passwordUnavailable: 'stale-page' };
+    const STALE_LINE = 'This page opened before a change. Reload it, then try again.';
+
+    /** Wait past the moment the page would have reloaded by itself. */
+    const pastTheReload = () => new Promise((resolve) => setTimeout(resolve, 600));
+
+    it('says so, then reloads once by itself and reopens this action there', async () => {
+      heldWith(STALE, [200, {}]);
+      const navigate = vi.fn();
+      render(<ActionStepUpHost navigate={navigate} />);
+      void ask();
+      expect(await screen.findByText('Updating this page…')).toBeVisible();
+      expect(screen.queryByLabelText('DorkOS password')).toBeNull();
+      await waitFor(() => expect(navigate).toHaveBeenCalledOnce());
+      const url = new URL(String(navigate.mock.calls[0]?.[0]));
+      // Only the id travels: the new page asks the server what it is.
+      expect(url.searchParams.get('confirm')).toBe('held-1');
+      expect(url.origin).toBe(window.location.origin);
+    });
+
+    it('never reloads twice for one action: the second time it offers the Reload button', async () => {
+      heldWith(STALE, [200, {}]);
+      expect(noteStepUpReload('held-1')).toBe(true);
+      const navigate = vi.fn();
+      render(<ActionStepUpHost navigate={navigate} />);
+      void ask();
+      expect(await screen.findByText(STALE_LINE)).toBeVisible();
+      await pastTheReload();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(screen.queryByLabelText('DorkOS password')).toBeNull();
+      await userEvent.click(screen.getByRole('button', { name: 'Reload' }));
+      expect(navigate).toHaveBeenCalledOnce();
+    });
+
+    it('never reloads by itself when nothing could record that it did', async () => {
+      heldWith(STALE, [200, {}]);
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('QuotaExceededError');
+      });
+      const navigate = vi.fn();
+      render(<ActionStepUpHost navigate={navigate} />);
+      void ask();
+      expect(await screen.findByText(STALE_LINE)).toBeVisible();
+      await pastTheReload();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('keeps what was typed on the page: no reload by itself, and Reload says what it clears', async () => {
+      const draft = document.createElement('textarea');
+      draft.value = 'A half-written made-up message';
+      document.body.append(draft);
+      heldWith(STALE, [200, {}]);
+      const navigate = vi.fn();
+      render(<ActionStepUpHost navigate={navigate} />);
+      void ask();
+      expect(await screen.findByText(STALE_LINE)).toBeVisible();
+      expect(screen.getByText('Reloading clears what you typed on this page.')).toBeVisible();
+      await pastTheReload();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(draft.value).toBe('A half-written made-up message');
+    });
+
+    it('reopens the same held action on the reloaded page', async () => {
+      const id = '01M83PFTJC1PT56MGDM44ZXQ7W';
+      heldWith({ ...STALE, heldActionId: id }, [200, {}]);
+      const navigate = vi.fn();
+      render(<ActionStepUpHost navigate={navigate} />);
+      void ask(id);
+      await waitFor(() => expect(navigate).toHaveBeenCalledOnce());
+      act(() => finishActionStepUp(id, { kind: 'not-confirmed' }));
+      // The fresh page reads the address it was loaded with.
+      const replaceState = vi.fn();
+      let opened = false;
+      act(() => {
+        opened = openActionStepUpFromLink(
+          { href: String(navigate.mock.calls[0]?.[0]) },
+          { replaceState, state: null }
+        );
+      });
+      expect(opened).toBe(true);
+      expect(getActionStepUpShowing()).toBe(id);
+      expect(String(replaceState.mock.calls[0]?.[2])).not.toContain('confirm=');
+    });
+
+    it('never reloads by itself while another confirm waits behind this one', async () => {
+      heldWith(STALE, [200, {}]);
+      const navigate = vi.fn();
+      render(<ActionStepUpHost navigate={navigate} />);
+      void ask('held-1');
+      void ask('held-2');
+      expect(await screen.findByText(STALE_LINE)).toBeVisible();
+      await pastTheReload();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('shows the Reload body when the password step is refused as too old', async () => {
+      heldWith(VIEW, [409, { code: 'stale-page', error: STALE_LINE, stale: 'stale-page' }]);
+      const navigate = vi.fn();
+      render(<ActionStepUpHost navigate={navigate} />);
+      void ask();
+      await confirmWith('correct horse battery');
+      expect(await screen.findByText(STALE_LINE)).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Reload' })).toBeVisible();
+      expect(screen.queryByLabelText('DorkOS password')).toBeNull();
+    });
+
+    it('reads the named reason first, in the shape a page with no stamp gets', async () => {
+      heldWith(
+        {
+          ...VIEW,
+          methods: [],
+          passwordUnavailable: 'extension-risk',
+          blockedBy: [],
+          stale: 'stale-sign-in',
+        },
+        [200, {}]
+      );
+      render(<ActionStepUpHost />);
+      void ask();
+      expect(
+        await screen.findByText(
+          'Something changed after you signed in. Sign in again, then try once more.'
+        )
+      ).toBeVisible();
+      expect(screen.queryByRole('button', { name: 'How to fix' })).toBeNull();
+    });
+
+    it('never reloads for a mini app that is really there: it stays named', async () => {
+      heldWith(
+        {
+          ...VIEW,
+          methods: [],
+          passwordUnavailable: 'extension-risk',
+          blockedBy: [{ id: 'notes', name: 'Made-up Notes', reason: 'changed' }],
+        },
+        [200, {}]
+      );
+      const navigate = vi.fn();
+      render(<ActionStepUpHost navigate={navigate} />);
+      void ask();
+      expect(
+        await screen.findByText(
+          'Confirming is off while Made-up Notes has changed since you approved it.'
+        )
+      ).toBeVisible();
+      await pastTheReload();
+      expect(navigate).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps terminal commands off a remote sheet with no password', async () => {
@@ -431,14 +609,34 @@ describe('ActionStepUpHost', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
-    it('says where to confirm while the shell’s window is open', async () => {
+    // Purpose: on Nov 21 the owner lost the password window and nothing said
+    // where it was or what closing it did (DOR-4909).
+    it('names the shell’s window, and says closing it changes nothing', async () => {
       (window as { electronAPI?: unknown }).electronAPI = {
         confirmStepUp: () => new Promise(() => undefined),
       };
       render(<ActionStepUpHost />);
       void ask();
-      expect(await screen.findByText('Confirm in the window that just opened.')).toBeTruthy();
+      expect(await screen.findByText(DESKTOP_SHEET_LINE)).toBeTruthy();
       expect(screen.queryByLabelText('DorkOS password')).toBeNull();
+    });
+
+    it('ends unconfirmed when the shell’s window is closed, so the caller can say so', async () => {
+      let closeWindow: (outcome: { kind: 'not-confirmed' }) => void = () => undefined;
+      (window as { electronAPI?: unknown }).electronAPI = {
+        confirmStepUp: () =>
+          new Promise((resolve) => {
+            closeWindow = resolve;
+          }),
+      };
+      render(<ActionStepUpHost />);
+      // Its own id: the shell is asked once per held action, and the test above
+      // leaves its window open on `held-1`.
+      const outcome = ask('held-closed');
+      expect(await screen.findByText(DESKTOP_SHEET_LINE)).toBeTruthy();
+      act(() => closeWindow({ kind: 'not-confirmed' }));
+      await expect(outcome).resolves.toEqual({ kind: 'not-confirmed' });
+      await waitFor(() => expect(screen.queryByText(DESKTOP_SHEET_LINE)).toBeNull());
     });
 
     it('never falls back to a password field on an older app', async () => {

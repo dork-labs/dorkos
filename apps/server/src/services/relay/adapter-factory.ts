@@ -7,6 +7,7 @@
  * @module services/relay/adapter-factory
  */
 import { createTurnDeskCheck } from '../core/agent-identity/turn-desk-check.js';
+import { sessionAgentById } from '../core/agent-identity/session-agent.js';
 import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
 import { dirname } from 'node:path';
 import type {
@@ -370,8 +371,10 @@ export async function createAdapter(
         // The desk guard for a folder a payload names (spec `agent-home-desk`
         // §3.4): any agent can publish a `cwd`, so the answering agent stands
         // there only when it is that agent's desk.
+        // The session's agent is the recorded one, else its folder's (DOR-5038):
+        // a chat started in an agent's folder from the command line records none.
         checkTurnDesk: createTurnDeskCheck({
-          sessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
+          sessionAgentPath: async (sessionId) => (await sessionAgentById(sessionId)) ?? null,
           placementOf: (agentPath) => resolveSessionCwd({ agentPath }),
         }),
         // Who answers a message addressed to an AGENT rather than a session —

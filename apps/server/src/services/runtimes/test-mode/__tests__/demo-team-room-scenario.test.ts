@@ -42,9 +42,13 @@ const { DEMO_TEAM_ROOM_SCENARIOS, DEMO_TEAM_ROOM_SCENARIO, TEAM_ROOM_REPLIES } =
   await import('../demo-team-room-scenario.js');
 const scenario = DEMO_TEAM_ROOM_SCENARIOS[DEMO_TEAM_ROOM_SCENARIO]!;
 
+/** The session the turn runs on, which every post must name (DOR-5032). */
+const SEAT = 'team-seat';
+
 /** A context whose waits return at once, counting how many were asked for. */
 function context(onDelay?: () => void): ScenarioContext {
   return {
+    sessionId: SEAT,
     signal: new AbortController().signal,
     delay: vi.fn(async () => {
       onDelay?.();
@@ -84,7 +88,7 @@ describe('demo-team-room', () => {
 
   it('posts the pinned line for the agent answering', async () => {
     await run(context(), roomTurn('a-lens'));
-    expect(sayInRoom).toHaveBeenCalledWith(expect.anything(), replyOf('Lens'));
+    expect(sayInRoom).toHaveBeenCalledWith(expect.anything(), SEAT, replyOf('Lens'));
   });
 
   it('says nothing for an agent it has no line for', async () => {
@@ -111,12 +115,12 @@ describe('demo-team-room', () => {
     await run(ctx, roomTurn('a-forge'));
     // Three polls before Lens landed, then the beat before posting.
     expect(waits).toBe(4);
-    expect(sayInRoom).toHaveBeenCalledWith(expect.anything(), replyOf('Forge'));
+    expect(sayInRoom).toHaveBeenCalledWith(expect.anything(), SEAT, replyOf('Forge'));
   });
 
   it('still answers when the reply before it never comes', async () => {
     await run(context(), roomTurn('a-sentinel'));
-    expect(sayInRoom).toHaveBeenCalledWith(expect.anything(), replyOf('Sentinel'));
+    expect(sayInRoom).toHaveBeenCalledWith(expect.anything(), SEAT, replyOf('Sentinel'));
   });
 
   it('fails the turn, saying nothing, when the room refuses the post', async () => {

@@ -44,6 +44,7 @@ import {
   setPersonRecordStore,
 } from '../../services/extensions/person-record/person-record.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import { chatFolderById } from '../../services/core/agent-identity/session-agent.js';
 import { setContinuationHoldDb } from '../../services/core/turn-power/continuation-hold.js';
 import {
   createChatRiseFacts,
@@ -225,8 +226,20 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
         return undefined;
       }
     },
-    resolveCwd: async (sessionId) =>
-      (await runtimeRegistry.getSessionAgentPath(sessionId).catch(() => null)) ?? DEFAULT_CWD,
+    // A chat that recorded no agent runs in its own folder, not the default (DOR-5038).
+    resolveCwd: async (sessionId) => {
+      let folder: string | undefined;
+      try {
+        folder = chatFolderById(sessionId);
+      } catch {
+        folder = undefined; // An unreadable folder falls back like a missing one.
+      }
+      return (
+        (await runtimeRegistry.getSessionAgentPath(sessionId).catch(() => null)) ??
+        folder ??
+        DEFAULT_CWD
+      );
+    },
   });
   onSessionAccountLaunched((sessionId, root, perToken) =>
     sessionStatusHydration.noteAccountLaunched(sessionId, root, perToken)

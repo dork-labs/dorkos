@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
 import { useMarkRead } from '@/layers/entities/notifications';
-import { signedInDevicesKey } from '@/layers/shared/lib';
+import { STEP_UP_NOT_CONFIRMED_MESSAGE, signedInDevicesKey } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 
@@ -46,11 +46,17 @@ export function RemoteStepUpAction({
       >
         Sign it out
       </Button>
-      {signOut.isError && (signOut.error as { code?: string }).code !== STEP_UP_REQUIRED_CODE && (
-        <p role="alert" className="text-destructive text-xs">
-          Couldn’t sign that device out. Try again.
-        </p>
-      )}
+      {/* "Confirm it's you" closed unconfirmed is a choice, said calmly (DOR-4909). */}
+      {signOut.isError &&
+        ((signOut.error as { code?: string }).code === STEP_UP_REQUIRED_CODE ? (
+          <p role="status" className="text-status-warning-fg text-xs font-medium">
+            {STEP_UP_NOT_CONFIRMED_MESSAGE}
+          </p>
+        ) : (
+          <p role="alert" className="text-destructive text-xs">
+            Couldn’t sign that device out. Try again.
+          </p>
+        ))}
     </div>
   );
 }

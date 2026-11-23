@@ -1,12 +1,12 @@
 /**
- * Owner-only app-view protocol, deliberately absent from the developer OpenAPI catalog:
+ * Owner-only, this-computer-only app-view protocol, deliberately absent from the developer OpenAPI catalog:
  * API keys/programs cannot use it. Person inputs use six finite guarded verbs.
  */
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { parseViewerJson } from './browser-viewer-body.js';
 export { browserViewerBodyRule } from './browser-viewer-body.js';
 import { mountViewerControls } from './browser-viewer-controls.js';

@@ -41,6 +41,7 @@ dorkos/
 │   ├── ci-steward/       # @dorkos/ci-steward — CI Steward engine (census, ledger, verdicts)
 │   ├── typescript-config/ # Shared tsconfig presets
 │   ├── eslint-config/    # @dorkos/eslint-config — Shared ESLint presets
+│   ├── heavy-slot/       # @dorkos/heavy-slot: owns the turbo task that takes a host-wide heavy-run slot
 │   └── test-utils/       # Mock factories, test helpers
 ├── turbo.json
 ├── vitest.config.ts
@@ -128,8 +129,8 @@ src/
 │   │   ├── notifications/ # Notification center UI
 │   │   ├── marketplace/ # Marketplace UI — Marketplace, PackageCard, PackageDetailSheet, InstallConfirmationDialog, etc.
 │   │   └── status/      # StatusLine, GitStatusItem, ModelItem
-│   └── widgets/         # Large UI compositions (~19 slices; highlights below)
-│       ├── app-layout/  # Header, Layout, main workspace
+│   └── widgets/         # Large UI compositions (25 slices; highlights below)
+│       ├── app-layout/  # DialogHost (registry-driven dialogs), FeedbackDialogHost, dialog contributions
 │       │   ├── ui/
 │       │   └── index.ts
 │       ├── activity/    # ActivityPage (/activity) — feed, week summary, "From your extensions"
@@ -295,7 +296,7 @@ import { useSessionDetail } from '@/layers/entities/session/model/query/use-sess
 
 6. **Use in widget or app:**
    ```typescript
-   // widgets/app-layout/ui/Layout.tsx
+   // widgets/session/ui/SessionPage.tsx (or AppShell.tsx at the app root)
    import { MyFeature } from '@/layers/features/my-feature';
    ```
 
@@ -410,7 +411,7 @@ apps/server/src/
 │   │   └── session-bindings/     # Session ↔ room binding
 │   ├── communities/               # CommunityAdapter backends: local/ (this machine's SQLite rooms,
 │   │   │                          #   registered LOCAL_COMMUNITY) + remote-community aggregation
-│   ├── spaces/                    # Hosted space server, migrations and routes (apps/space package)
+│   ├── spaces/                    # Space server: the one space model (apps/space = image, migrations, tests)
 │   ├── connectors/                # Connections: connector accounts, agent-access requests/cleanup
 │   ├── marketplace/               # Package install/uninstall/update pipeline
 │   │   ├── installer/                # Orchestrator: staging, dispatch per kind, update, metadata
@@ -453,10 +454,10 @@ Routes are thin HTTP handlers — they delegate to services. Routes resolve a se
 
 ```typescript
 // FSD layer imports (within apps/client)
-import { ChatPanel } from '@/layers/features/chat';
+import { SessionPage } from '@/layers/widgets/session';
 import { useSessionDetail } from '@/layers/entities/session';
 import { Button } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib/utils';
+import { cn } from '@/layers/shared/lib';
 
 // Cross-package imports (monorepo level — always allowed)
 import type { Session, StreamEvent } from '@dorkos/shared/types';
@@ -465,14 +466,14 @@ import { SessionSchema } from '@dorkos/shared/schemas';
 
 ## File Naming
 
-| Type             | Convention                  | Example                             |
-| ---------------- | --------------------------- | ----------------------------------- |
-| React components | PascalCase                  | `ChatPanel.tsx`, `SessionBadge.tsx` |
-| Hooks            | `use-` prefix, kebab-case   | `use-chat-session.ts`               |
-| Stores           | `-store` suffix, kebab-case | `app-store.ts`                      |
-| Types            | `types.ts` in `model/`      | `entities/session/model/types.ts`   |
-| Utilities        | kebab-case                  | `stream-parser.ts`                  |
-| Index            | `index.ts`                  | Public API barrel export            |
+| Type             | Convention                  | Example                              |
+| ---------------- | --------------------------- | ------------------------------------ |
+| React components | PascalCase                  | `ChatPanel.tsx`, `SessionPage.tsx`   |
+| Hooks            | `use-` prefix, kebab-case   | `use-chat-session.ts`                |
+| Stores           | `-store` suffix, kebab-case | `app-store.ts`                       |
+| Types            | `types.ts` in `model/`      | `features/extensions/model/types.ts` |
+| Utilities        | kebab-case                  | `session-link.ts`                    |
+| Index            | `index.ts`                  | Public API barrel export             |
 
 `layers/shared/ui/` is the exception: files are kebab-case regardless of
 shadcn-vs-custom origin (`button.tsx`, `mention-pill.tsx`, `trust-dial.tsx`).
@@ -483,13 +484,13 @@ exceptions.
 
 ```typescript
 // NEVER import upward in layer hierarchy
-// In entities/session/model/hooks.ts
-import { ChatPanel } from '@/layers/features/chat'; // features is higher!
+// In entities/session/model/query/use-sessions.ts
+import { SessionPage } from '@/layers/widgets/session'; // widgets is higher!
 
 // NEVER import across same-level modules
-// In features/chat/ui/ChatPanel.tsx
+// In features/composer/ui/ComposerInput.tsx
 import { SlashCommandList } from '@/layers/features/slash-commands'; // Cross-feature!
-// FIX: Compose both in widgets/app-layout/
+// FIX: Compose both in a widget (e.g. widgets/session/)
 
 // NEVER import from internal paths
 import { Button } from '@/layers/shared/ui/button'; // WRONG
@@ -497,7 +498,7 @@ import { Button } from '@/layers/shared/ui'; // CORRECT (from index)
 
 // NEVER put business logic in shared/
 // shared/lib/session-utils.ts → WRONG
-// entities/session/model/helpers.ts → CORRECT
+// entities/session/lib/ (or the slice's model/) → CORRECT
 ```
 
 ## Transport & FSD Integration

@@ -1,6 +1,11 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
-import { getActionStepUpShowing, subscribeActionStepUp, cn } from '@/layers/shared/lib';
+import {
+  STEP_UP_NOT_CONFIRMED_MESSAGE,
+  getActionStepUpShowing,
+  subscribeActionStepUp,
+  cn,
+} from '@/layers/shared/lib';
 import { Button, Input, Label } from '@/layers/shared/ui';
 import { fieldValueOf, parseSpendAmount } from '../../lib/spending-lines';
 
@@ -49,6 +54,9 @@ export function SpendAmountField({
   const [draft, setDraft] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
+  // "Confirm it's you" closed unconfirmed: the saved value came back, and a
+  // calm line says so, so the field never looks saved (DOR-4909).
+  const [notConfirmed, setNotConfirmed] = useState(false);
   const stepUp = useSyncExternalStore(subscribeActionStepUp, getActionStepUpShowing);
   const saved = fieldValueOf(savedMicro);
   const value = draft ?? saved;
@@ -63,6 +71,7 @@ export function SpendAmountField({
     if (!parsed.ok || !changed || pending || !online) return;
     setPending(true);
     setFailed(false);
+    setNotConfirmed(false);
     try {
       await onSave(parsed.micro);
       setDraft(null);
@@ -70,6 +79,7 @@ export function SpendAmountField({
       if ((error as { code?: unknown } | null)?.code === STEP_UP_REQUIRED_CODE) {
         // Not confirmed: the saved value comes back at once, and so does focus.
         setDraft(null);
+        setNotConfirmed(true);
         input.current?.focus();
       } else {
         setFailed(true);
@@ -137,6 +147,11 @@ export function SpendAmountField({
       {failed && (
         <p role="alert" className="text-destructive text-xs">
           Couldn’t save. Try again.
+        </p>
+      )}
+      {notConfirmed && (
+        <p role="status" className="text-status-warning-fg text-xs font-medium">
+          {STEP_UP_NOT_CONFIRMED_MESSAGE}
         </p>
       )}
     </form>

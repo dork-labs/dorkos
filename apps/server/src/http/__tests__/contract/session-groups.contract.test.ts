@@ -59,6 +59,11 @@ const S = '/api/sessions';
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
 const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
 const SESSION_NOT_FOUND = { error: 'Session not found', code: 'SESSION_NOT_FOUND' };
+const SESSION_CWD_REQUIRED = {
+  error:
+    "Could not determine this session's working directory. Pass ?cwd= with the session's project directory.",
+  code: 'SESSION_CWD_REQUIRED',
+};
 const INVALID_SESSION_ID = { error: 'Invalid session ID', code: 'INVALID_SESSION_ID' };
 const INVALID_REQUEST = { error: 'Invalid request', code: 'VALIDATION_ERROR' };
 /** An agent header this machine never minted: the caller is a machine, unverified. */
@@ -251,8 +256,15 @@ contractSuite('the session routes, login off, nothing started', [
     expect: { status: 403, headers: JSON_TYPE, body: OUTSIDE_BOUNDARY },
   },
   {
-    name: 'GET /api/sessions/:id/messages of a session nobody started is empty',
+    // The runtime knows each chat's folder, as Claude Code does (DOR-5035), so an id it never
+    // ran has no folder to read from, and the caller is told to name one.
+    name: 'GET /api/sessions/:id/messages of a session nobody started asks for its folder',
     path: `${S}/${UNKNOWN}/messages`,
+    expect: { status: 404, headers: JSON_TYPE, body: SESSION_CWD_REQUIRED },
+  },
+  {
+    name: 'GET /api/sessions/:id/messages of a session nobody started, with its folder, is empty',
+    path: `${S}/${UNKNOWN}/messages?cwd=${encodeURIComponent(WORK)}`,
     expect: { status: 200, headers: JSON_TYPE, body: { messages: [] } },
   },
   {

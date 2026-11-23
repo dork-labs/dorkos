@@ -113,6 +113,25 @@ curl -sf -X POST http://localhost:4243/api/test/finish-turn
 
 Both are mounted only when `DORKOS_TEST_RUNTIME` is on (`apps/server/src/routes/test-control.ts`); in production every `/api/test/*` path is a 404. `POST /api/test/reset` returns the default scenario to `simple-text`.
 
+**Starting a real hand-off (DOR-5032).** Only an agent's seat posts in a room; a post from any other chat of that agent is handed to the seat (DOR-3397). Nothing outside the server can start one, so the `rooms-post-to` scenario does it from inside a direct chat. Set it on that one chat, so the seat keeps `simple-text`, then send the chat `<roomId> <text>`:
+
+```bash
+# A direct chat with the agent (not its seat in the room): set the scenario on that chat only.
+curl -sf -X POST "http://localhost:$API_PORT/api/test/scenario" \
+  -H 'content-type: application/json' -d '{"name":"rooms-post-to","sessionId":"<direct chat id>"}'
+# Then send that chat the message: <roomId> <text>
+```
+
+Start that chat with only the agent's folder as `cwd`: no `agentPath` is needed. A chat that records no agent belongs to the agent whose home its folder is (DOR-5035).
+
+The chat answers `HANDED-OFF: <handoff id>` at once, without waiting for the seat. The seat's own `simple-text` turn then posts exactly the words it was handed, with "Shared from another chat.", and the hand-off ends `posted` (a word-for-word hand-off too). Read it with `room_handoff_status` by that id. A busy seat (put it on `long-turn` with a per-session scenario) queues the hand-off. Other answers:
+
+- `POST-TO-USAGE`: the message wasn't `<roomId> <text>`.
+- `POST-TO-NO-AGENT`: the chat stands in no agent's folder.
+- `POST-TO-FAILED: <why>`: the room refused it, e.g. the agent isn't a member.
+- `NOT-POSTED: <the room's answer>`: the room didn't accept the hand-off. Its `reason` and `instruction` say why. `admission-policy-unavailable` with "can’t confirm this chat is yours" means the chat's folder is not the agent's home; with "Start a new turn" it means no turn level was recorded yet.
+- `POSTED: <entry id>`: the chat was the seat after all.
+
 **One honest caveat for check 3a in sandbox:** `TestModeRuntime.interruptQuery` returns `false` — there is no process to signal. So a halt in sandbox is observable through the **claim being dropped and the `halted` notice being written**, not through a killed process. Do not read the no-op interrupt as a halt bug; that is exactly why `finish-turn` exists. The "the model actually stopped mid-sentence" half of A-16 is `live` only.
 
 Then set `API_PORT=4243`, `TEST_URL=http://localhost:4248/channels`, `DORK_DIR=/tmp/dorkos-test-mode-4243`, `DORK_DB=$DORK_DIR/dork.db`, and record `Model: n/a (test-mode)`.

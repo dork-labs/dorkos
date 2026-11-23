@@ -86,7 +86,7 @@ Never review from source alone. Review the rendered page, measured. `/ui-audit:m
 
 - **5.1** Hover, focus-visible, active, disabled, loading (a skeleton for anything over 300ms), empty, error and offline are each designed, and none is left at the default.
 - **5.2** **Empty states** say what this is and give one action. No illustration needed.
-- **5.3** **Errors use `ProblemNotice`:** what happened, then whose it is, then one action. No "Something went wrong" and no raw codes; details sit behind "Details".
+- **5.3** **Errors say what happened, then whose it is, then give one action.** A failed load uses `QueryErrorState` (`shared/ui/query-error-state.tsx`); an inline error uses `Notice` with `tone="error"` (`packages/ui/src/notice.tsx`). No "Something went wrong" and no raw codes; details sit behind "Details".
 - **5.4** Active, selected and hover can always be told apart, including while the pointer is over the strip.
 
 ## 6. Motion

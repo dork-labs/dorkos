@@ -15,9 +15,11 @@
  * already armed, so each held message runs exactly once, however often the
  * rearm runs. A person's own held row waits in their composer until they send.
  *
- * A resume rebuilds the turn from the row alone, so a plan whose limits lived
- * only in memory (an outsider mark, a ceiling, an unattended turn) has its row
- * held to the runtime's default before it is let go: stricter, never looser.
+ * A resume rebuilds the turn from the row alone. The row keeps the limits a plan
+ * carried in memory (an outsider mark, a ceiling, an unattended turn, DOR-4350),
+ * so the resumed turn carries the same ones. A limit the row cannot keep (a
+ * continuation's hold) has the row held to the runtime's default before it is
+ * let go: stricter, never looser.
  *
  * A pause can also land after the turn started (its row already off the queue)
  * but before the agent read the message (DOR-4353). That turn is stopped like
@@ -168,6 +170,25 @@ function carriesPlanOnlyLimits(plan: DispatchPlan): boolean {
 }
 
 /**
+ * Whether a row keeps every limit its plan carried, so a resume rebuilds the same turn: the mark,
+ * the very ceiling and the unattended answer. A continuation's hold is never kept on a row.
+ *
+ * @param row - The queued row.
+ * @param plan - The message being held.
+ */
+function rowKeepsLimits(row: QueuedMessageRecord, plan: DispatchPlan): boolean {
+  const { turn } = plan;
+  const kept = row.carriedLimits;
+  if (turn.continuationHold === true) return false;
+  if (turn.carriedMarks?.outsider === true && kept?.outsider !== true) return false;
+  if (turn.unattended === true && kept?.unattended !== true) return false;
+  return (
+    turn.permissionCeiling === undefined ||
+    JSON.stringify(turn.permissionCeiling) === JSON.stringify(kept?.ceiling)
+  );
+}
+
+/**
  * Hold a queued message for its paused agent: keep the row, let go of it here,
  * and record the hold once per pause.
  *
@@ -179,11 +200,12 @@ function carriesPlanOnlyLimits(plan: DispatchPlan): boolean {
  * @param agent - The paused agent it is for
  */
 export function holdForPause(plan: DispatchPlan, agent: PausedAgentRef): void {
-  // Fail closed (Security M1): the row is all a resume rebuilds the turn from,
-  // so limits only the plan carried would be lost. Hold its turn to the default.
+  // Fail closed (Security M1): the row is all a resume rebuilds the turn from. It keeps the
+  // turn's mark, ceiling and unattended answer (DOR-4350); a limit it does not keep (a
+  // continuation's hold) would be lost, so that turn is held to the default.
   const store = getMessageQueueStore();
   const row = store?.get(plan.messageId);
-  if (row && !row.heldToDefault && carriesPlanOnlyLimits(plan)) {
+  if (row && !row.heldToDefault && carriesPlanOnlyLimits(plan) && !rowKeepsLimits(row, plan)) {
     store?.updateContent(plan.messageId, row.content, { holdToDefault: true });
   }
   if (row && isPersonWindowClientId(row.enqueuedBy) && !heldForPerson.has(row.id)) {

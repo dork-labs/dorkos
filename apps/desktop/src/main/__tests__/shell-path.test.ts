@@ -318,3 +318,73 @@ describe('resolveChildPath', () => {
     });
   });
 });
+
+describe('resolveChildTelemetryEnv (DOR-4990)', () => {
+  /** A login shell answer whose dump carries `lines` beside the PATH. */
+  async function answerWith(lines: string): Promise<void> {
+    const { LOGIN_SHELL_PATH_MARKER } = await import('../../shared/login-shell-path');
+    const { spawnSync } = await getChildProcessMock();
+    const dump = `SHLVL=1\nPATH=${LOGIN_PATH}\n${lines}HOME=/Users/kai\n`;
+    spawnSync.mockReturnValue({
+      status: 0,
+      signal: null,
+      stdout: `nvm: using node v22.14.0\n${LOGIN_SHELL_PATH_MARKER}${dump}${LOGIN_SHELL_PATH_MARKER}`,
+      stderr: '',
+    });
+  }
+
+  it('returns the switches the shell exports and the app was not started with', async () => {
+    await answerWith('DO_NOT_TRACK=1\nDORKOS_TELEMETRY_DISABLED=true\n');
+    const { resolveChildTelemetryEnv } = await import('../shell-path');
+
+    expect(resolveChildTelemetryEnv({})).toEqual({
+      DO_NOT_TRACK: '1',
+      DORKOS_TELEMETRY_DISABLED: 'true',
+    });
+  });
+
+  it('leaves a name the app already carries to the app', async () => {
+    await answerWith('DO_NOT_TRACK=1\nDORKOS_TELEMETRY_DISABLED=1\n');
+    const { resolveChildTelemetryEnv } = await import('../shell-path');
+
+    expect(resolveChildTelemetryEnv({ DO_NOT_TRACK: '0' })).toEqual({
+      DORKOS_TELEMETRY_DISABLED: '1',
+    });
+  });
+
+  it('returns nothing when the shell sets neither', async () => {
+    await answerWith('');
+    const { resolveChildTelemetryEnv } = await import('../shell-path');
+
+    expect(resolveChildTelemetryEnv({})).toEqual({});
+  });
+
+  it('shares the one probe with the PATH and leaves the PATH answer unchanged', async () => {
+    await answerWith('DO_NOT_TRACK=1\n');
+    const { resolveChildPath, resolveChildTelemetryEnv } = await import('../shell-path');
+    const { spawnSync } = await getChildProcessMock();
+
+    expect(resolveChildPath(LAUNCHD_PATH)).toBe(LOGIN_PATH);
+    expect(resolveChildTelemetryEnv({})).toEqual({ DO_NOT_TRACK: '1' });
+    expect(spawnSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('is never fatal: a shell that fails gives an empty result', async () => {
+    const { spawnSync } = await getChildProcessMock();
+    spawnSync.mockReturnValue({ status: 1, signal: null, stdout: '', stderr: 'boom' });
+    const { resolveChildTelemetryEnv, resolveChildPath } = await import('../shell-path');
+
+    expect(resolveChildTelemetryEnv({})).toEqual({});
+    expect(resolveChildPath(LAUNCHD_PATH)).toBe(LAUNCHD_PATH);
+  });
+
+  it('asks nothing in dev', async () => {
+    const { app } = await getElectronMock();
+    app.isPackaged = false;
+    const { spawnSync } = await getChildProcessMock();
+    const { resolveChildTelemetryEnv } = await import('../shell-path');
+
+    expect(resolveChildTelemetryEnv({})).toEqual({});
+    expect(spawnSync).not.toHaveBeenCalled();
+  });
+});

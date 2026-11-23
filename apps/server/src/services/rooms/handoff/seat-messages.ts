@@ -17,12 +17,12 @@ import {
   seatBatchStillCurrent,
 } from './seat-message-target.js';
 import {
-  joinSeatCarry,
   seatCarryOf,
   seatMessageBatch,
   seatMessageNotice,
   SEAT_MESSAGE_BATCH_MAX,
 } from './seat-message-prompt.js';
+import { joinSeatCarry } from './join-seat-carry.js';
 import type {
   RoomSeatMessagesPort,
   SeatMessageAdmission,
@@ -80,6 +80,11 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
   /** Resolve an authoritative current seat, never a historical seat-move redirect. */
   resolveSeatTarget(sessionId: string): SeatMessageTarget | null {
     return resolveSeatMessageTarget(this.core, sessionId);
+  }
+
+  /** The sender's live room turn, held now and marked only by an accepted send (DOR-4670). */
+  privateAnswerMark(sessionId: string, agentPath: string): (() => void) | undefined {
+    return this.core.triggers.privateAnswerMark(sessionId, agentPath);
   }
 
   /** Commit admission and any constant trace, reserve bounded ownership, then return promptly. */

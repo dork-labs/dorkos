@@ -22,6 +22,7 @@ const STEP_UP_WINDOW_VIEW_CHANNEL = 'step-up-window:view';
 const STEP_UP_WINDOW_SUBMIT_CHANNEL = 'step-up-window:submit';
 const STEP_UP_WINDOW_CLOSE_CHANNEL = 'step-up-window:close';
 const STEP_UP_WINDOW_SIGN_IN_CHANNEL = 'step-up-window:sign-in-again';
+const STEP_UP_WINDOW_RELOAD_CHANNEL = 'step-up-window:reload';
 
 const RESET_PASSWORD_COMMAND = 'dorkos auth reset-password';
 
@@ -67,15 +68,23 @@ function show(view: StepUpWindowView): void {
     return;
   }
   if (view.unavailable === 'extension-risk') {
-    if (view.blockedLines?.length) {
-      end(`${view.blockedLines.join(' ')} Fix it in Settings → Extensions.`);
-      return;
-    }
-    // None named: none is loaded now, but one ran since sign-in (M1 on #3401).
-    end('A mini app has run since you signed in. Sign in again to confirm.');
+    end(`${view.blockedLines?.join(' ') ?? ''} Fix it in Settings → Extensions.`.trim());
+    return;
+  }
+  // A mini app's risk cleared after this sign-in began (M1 on #3401, DOR-5086).
+  if (view.unavailable === 'stale-sign-in') {
+    end('Something changed after you signed in. Sign in again, then try once more.');
     byId('close').className = '';
     byId('sign-in-again').hidden = false;
     byId<HTMLButtonElement>('sign-in-again').focus();
+    return;
+  }
+  // The app window's page is from before a change (DOR-5026, DOR-5086).
+  if (view.unavailable === 'stale-page') {
+    end('This page opened before a change. Reload it, then try again.');
+    byId('close').className = '';
+    byId('reload').hidden = false;
+    byId<HTMLButtonElement>('reload').focus();
     return;
   }
   if (view.unavailable === 'no-password') {
@@ -146,6 +155,9 @@ window.addEventListener('DOMContentLoaded', () => {
   byId('close').addEventListener('click', close);
   byId('sign-in-again').addEventListener('click', () => {
     void ipcRenderer.invoke(STEP_UP_WINDOW_SIGN_IN_CHANNEL);
+  });
+  byId('reload').addEventListener('click', () => {
+    void ipcRenderer.invoke(STEP_UP_WINDOW_RELOAD_CHANNEL);
   });
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') close();

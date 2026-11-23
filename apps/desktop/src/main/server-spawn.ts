@@ -8,7 +8,7 @@ import { resolveDataDirectory } from './dork-home';
 import { SERVER_BIND_HOST } from '../shared/server-address';
 import { resolveServerCwd, type ServerWorkingDirectory } from './server-cwd';
 import { createStderrTail, type StderrTail } from './server-output';
-import { resolveChildPath } from './shell-path';
+import { resolveChildPath, resolveChildTelemetryEnv } from './shell-path';
 
 /**
  * Spawning the desktop app's Express server as a child process.
@@ -338,6 +338,9 @@ function buildServerEnv(
   // directories, which is why the packaged app could not find tools the same
   // machine's terminal finds instantly. See shell-path.ts; a no-op in dev.
   const childPath = resolveChildPath(process.env.PATH);
+  // A `DO_NOT_TRACK` set in the shell's rc files reaches the server too, the
+  // same way (DOR-4990). Only names this process does not already carry.
+  const telemetryEnv = resolveChildTelemetryEnv(process.env);
   // Dev only: tell the child which pid to watch so it can kill itself if the
   // shell dies without cleaning up (see server-entry.ts's exitWhenOrphaned).
   // It has to be handed down explicitly because the child cannot work it out
@@ -379,6 +382,7 @@ function buildServerEnv(
     ...(claudeCliPath ? { DORKOS_CLAUDE_CLI_PATH: claudeCliPath } : {}),
     ...(esbuildBinaryPath ? { ESBUILD_BINARY_PATH: esbuildBinaryPath } : {}),
     ...(childPath ? { PATH: childPath } : {}),
+    ...telemetryEnv,
     // Where the cockpit opens, decided here because the server cannot work it
     // out for itself inside an app bundle (see server-cwd.ts). Packaged only:
     // in dev the server's own resolution already lands on the repo.

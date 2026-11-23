@@ -178,9 +178,11 @@ export const serverEnvSchema = z.object({
   DORKOS_APPROVAL_TTL_MS: z.coerce.number().int().min(1000).optional(),
   // Feature flags (boolean after transform)
   DORKOS_A2A_ENABLED: boolFlag,
-  // To-dos v1 (DOR-3088): the to-do tools and routes, off until v1 is complete. The record, its
-  // caps and its turns are built either way; nothing reaches them while this is off.
-  DORKOS_TODOS_ENABLED: boolFlag,
+  // To-dos v1 (DOR-3088): the to-do tools and routes. On by default since DOR-5071; 'false' turns
+  // them off. The record, its caps and its turns are built either way; nothing reaches them while
+  // this is off. The tools follow the To-dos permission area (DOR-3953), and a turn that reads a
+  // to-do holding a stranger's words is marked (DOR-4666).
+  DORKOS_TODOS_ENABLED: boolFlagDefaultOn,
   // DOR-3858: turns from someone other than the owner on Telegram, Slack or in a room carry the
   // outsider mark, so raises, grants, connector sends and destructive actions ask a person or are
   // refused. The turn keeps its level. On by default since DOR-4453; 'false' turns it off. The

@@ -268,7 +268,8 @@ To contribute a new package to the Dork Labs seed:
    - `.claude-plugin/plugin.json` (CC manifest stub)
    - `README.md`
 3. Add the entry to `.claude-plugin/marketplace.json` with
-   `"source": "./<name>"` and CC-standard metadata.
+   `"source": "./plugins/<name>"` (the explicit `pluginRoot` form; see
+   above) and CC-standard metadata.
 4. Add the sidecar entry to `.claude-plugin/dorkos.json` with the
    DorkOS type, layers, and pricing.
 5. Run `dorkos marketplace validate .claude-plugin/marketplace.json`
@@ -327,8 +328,8 @@ parsing it.
 
 4. **Claude Code compatibility (strict).** Runs the same
    `marketplace.json` through DorkOS's port of the Claude Code validator
-   (`@dorkos/marketplace` `cc-validator.ts`, kept in sync with upstream
-   CC by a weekly cron — see ADR-0238). This is the load-bearing check
+   (`@dorkos/marketplace` `cc-validator.ts`, reconciled by hand against
+   upstream CC; ADR-0238's weekly sync cron was removed in 2026-06). This is the load-bearing check
    for the strict-superset invariant: whatever DorkOS publishes must
    also pass `claude plugin validate`, unmodified, so a vanilla Claude
    Code install can consume the same registry.

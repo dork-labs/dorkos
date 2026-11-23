@@ -29,6 +29,12 @@ import { AccountsAccessContext } from '../shared/accounts-access-context.js';
  *
  * @module services/runtimes/opencode/opencode-runtime
  */
+import { hasPreparedSettingsMutation } from '../../core/runtime-seam/prepared-settings-write.js';
+import { prepareOpenCodeSettingsUpdate } from './sessions/prepared-settings-update.js';
+import {
+  registerOpenCodeWithPersisted,
+  resolveOpenCodeTurnSettings,
+} from './sessions/session-settings.js';
 import type { OpencodeClient } from '@opencode-ai/sdk';
 import type {
   StreamEvent,
@@ -75,7 +81,6 @@ import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { homeOf, resolveAgentHome, turnAgentOf } from '../../core/agent-identity/index.js';
 import { logger, logError } from '../../../lib/logger.js';
-import { buildOpenCodeTurnParts } from './messaging/turn-context.js';
 import {
   checkOpenCodeDependencies,
   getConnectedOpenCodeProvider,
@@ -93,8 +98,11 @@ import {
   unwrap,
   type OpenCodeClientProvider,
 } from './sessions/session-mapper.js';
+import { OpenCodeToolTurnContext } from './tool-turn/context.js';
+import { dispatchOpenCodePrompt } from './tool-turn/prompt.js';
+import { isHostTurnEvent, type OpenCodeTurnEvent } from './tool-turn/host-events.js';
 import { OpenCodeGlobalEventHub, TurnEventQueue } from './events/global-event-hub.js';
-import { OpenCodeSessionRegistry, type OpenCodeSessionPatch } from './sessions/session-registry.js';
+import { OpenCodeSessionRegistry } from './sessions/session-registry.js';
 import {
   enforceApprovals,
   effectiveApprovalMode,
@@ -105,12 +113,6 @@ import {
 } from './messaging/approvals.js';
 import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constants.js';
 import { awaitAbortAck, delay } from './messaging/bounded-abort.js';
-import {
-  openCodeTurnBody,
-  parseModelSelection,
-  recordOpenCodeTurn,
-} from './messaging/turn-input.js';
-import { keepDorkosAsks } from './messaging/keep-asks.js';
 import { sessionDirectoryOf } from './sessions/session-directory.js';
 import { resolveCompactionModel } from './messaging/compaction-model.js';
 import type { OpenCodeTurnOptions } from './messaging/turn-options.js';
@@ -124,7 +126,7 @@ import { projectAddonsNotice } from './messaging/project-addons-notice.js';
 import { discoverOpenCodeModels } from './model-discovery.js';
 import { OpenCodeContextWindows } from './providers/context-windows.js';
 import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
-import { OpenCodeMcpManager } from './mcp/mcp-manager.js';
+import { OpenCodeMcpManager, type EnsureManagedResult } from './mcp/mcp-manager.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import { listOpenCodeSubagents } from './subagent-list.js';
 import { captureOpenCodeMedia } from './events/media-capture.js';
@@ -174,6 +176,7 @@ interface ActiveTurn {
   connectorBinding?: OpenConnectorTurnResult;
   connectorSupervisor?: ConnectorTurnLeaseSupervisorHandle;
   connectorRevocation?: Promise<void>;
+  toolTurn?: OpenCodeToolTurnContext;
 }
 
 /** A turn started but not yet tracked as active, by its session. Identity-compared. */
@@ -317,7 +320,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    *
    * Auto-creates untracked sessions (the PATCH-before-first-message path, and
    * every PATCH that follows a restart) through the shared hydration seam
-   * {@link OpenCodeRuntime.registerWithPersisted}, so a change to ONE setting
+   * {@link registerOpenCodeWithPersisted}, so a change to ONE setting
    * keeps the persisted others, then writes the operator's choice through the
    * durable settings store (ADR-0260) so it survives the next restart too. The
    * new mode applies to the very next permission request — enforcement reads
@@ -335,7 +338,24 @@ export class OpenCodeRuntime implements AgentRuntime {
     // Hydrate BEFORE the write-through, so the row this reads is the one that
     // stood before this PATCH: the settings it says nothing about are exactly
     // what has to be recovered, and the ones it names outrank them anyway.
-    await this.registerWithPersisted(sessionId, storable);
+    if (hasPreparedSettingsMutation(sessionId)) {
+      const preparedPort = this.settingsPort;
+      await prepareOpenCodeSettingsUpdate(
+        this.registry,
+        sessionId,
+        storable,
+        preparedPort,
+        () =>
+          this.settingsPort === preparedPort &&
+          this.mapper.hasUnboundPreparedIdentity(sessionId) &&
+          !this.binding.has(sessionId) &&
+          !this.activeTurns.has(sessionId) &&
+          ![...this.settingUp].some((turn) => turn.sessionId === sessionId)
+      );
+      await preparedPort?.saveSessionSettings(sessionId, storable);
+      return { updated: true };
+    }
+    await registerOpenCodeWithPersisted(this.registry, this.settingsPort, sessionId, storable);
     await this.settingsPort?.saveSessionSettings(sessionId, storable);
     return { updated: true };
   }
@@ -370,7 +390,12 @@ export class OpenCodeRuntime implements AgentRuntime {
     content: string,
     opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
-    let settings = await this.resolveTurnSettings(sessionId, opts);
+    let settings = await resolveOpenCodeTurnSettings(
+      this.registry,
+      this.settingsPort,
+      sessionId,
+      opts
+    );
     const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? this.modelDirectory;
     // Who a room turn is for, which every identity decision below is checked
     // against (DOR-2091). Absent on every turn a room did not trigger.
@@ -416,56 +441,18 @@ export class OpenCodeRuntime implements AgentRuntime {
       sessionId,
       cwd,
       opts?.title,
-      async (client, ocSessionId, dorkosApplied, connectionsApplied, plan) => {
-        // Build the prompt only after the leased MCP reconcile, so the room
-        // verbs describe what this exact turn can actually call.
-        // The agent this turn acts as — anchored, so a room worktree reads as its
-        // agent and a room turn as nobody but the agent it is for (DOR-2091).
-        const agentPath = homeOf(resolveAgentHome(cwd, forAgent));
-        const agentContext = await buildOpenCodeTurnParts(
-          cwd,
-          dorkosApplied,
-          agentPath,
-          !!opts?.roomTurn
-        );
-        // On credits the prompt always names the credits provider: the
-        // session's model when it is a credits model, else the default one.
-        const model =
-          plan.mode === 'credits'
-            ? creditsPromptModel(settings.model, plan)
-            : parseModelSelection(settings.model);
-        const agent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
-        const accessContext =
-          connectionsApplied && this.connectorRuntimeTools && agent
-            ? await this.accountsAccess.select(this.connectorRuntimeTools, agent.id, sessionId, {
-                serviceCatalog: dorkosApplied,
-              })
-            : undefined;
-        const turnOpts = accessContext
-          ? {
-              ...opts,
-              additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry],
-            }
-          : opts;
-        // The model's window, so a small one gets a trimmed system prompt (DOR-2839).
-        const at = await sessionDirectoryOf(this.directoryByOcId, client, ocSessionId);
-        // A project's opencode.json must not switch DorkOS's asks off (DOR-4394),
-        // and the model is told whenever its session refuses helpers (DOR-4447).
-        const asked = await keepDorkosAsks(client, ocSessionId, at, turnOpts);
-        const window = await this.contextWindows.lookup(
-          client,
-          at,
-          model?.providerID,
-          model?.modelID
-        );
-        const body = openCodeTurnBody(content, asked, agentContext, window, model, at);
-        // The exact body the sidecar is handed, for the turn's context record.
-        recordOpenCodeTurn(sessionId, body, turnOpts, settings);
-        const prompted = await client.session.promptAsync({ path: { id: ocSessionId }, body });
-        if (prompted.error !== undefined)
-          throw new Error(`OpenCode session.promptAsync failed: ${JSON.stringify(prompted.error)}`);
-        accessContext?.commit();
-      },
+      (client, ocSessionId, managed, plan, publishToolTurn) =>
+        dispatchOpenCodePrompt(
+          { sessionId, content, cwd, forAgent, settings, opts },
+          { client, ocSessionId, managed, plan, publishToolTurn },
+          {
+            directoryByOcId: this.directoryByOcId,
+            contextWindows: this.contextWindows,
+            accountsAccess: this.accountsAccess,
+            getMeshCore: () => this.meshCore,
+            getConnectorRuntimeTools: () => this.connectorRuntimeTools,
+          }
+        ),
       {
         connectorTurn: true,
         full:
@@ -475,7 +462,7 @@ export class OpenCodeRuntime implements AgentRuntime {
         grants: validatedGrants(opts?.additionalDirectories, cwd),
         // Held per ask, like the grants: a turn another agent's post or a
         // stranger's message started is answered at no looser a level than its
-        // sender's (spec `trusted-by-default-flip` §4).
+        // sender's (spec `trusted-by-default-flip` §4). Stored settings stay as they are.
         ...(opts?.permissionCeiling !== undefined
           ? { permissionCeiling: opts.permissionCeiling }
           : {}),
@@ -512,13 +499,18 @@ export class OpenCodeRuntime implements AgentRuntime {
     // Settings are resolved the same way a prompt resolves them (registry →
     // persisted store), because the model DorkOS would run the next TURN on is
     // the first rung of the compaction model ladder.
-    const settings = await this.resolveTurnSettings(sessionId, opts);
+    const settings = await resolveOpenCodeTurnSettings(
+      this.registry,
+      this.settingsPort,
+      sessionId,
+      opts
+    );
     const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? this.modelDirectory;
     yield* this.runOpenCodeTurn(
       sessionId,
       cwd,
       undefined,
-      async (client, ocSessionId, _d, _c, plan) => {
+      async (client, ocSessionId, _mcp, plan) => {
         const model =
           plan.mode === 'credits'
             ? creditsPromptModel(settings.model, plan)
@@ -581,8 +573,8 @@ export class OpenCodeRuntime implements AgentRuntime {
    * @param sessionId - DorkOS session id.
    * @param cwd - Working directory used to resolve the client and session.
    * @param title - Optional title used only when a new OpenCode session is created.
-   * @param trigger - Fires the turn after MCP registration settles, receiving
-   *   whether the room-tool server was actually applied.
+   * @param trigger - Fires after MCP registration and gets its actual result.
+   *   The prompt callback publishes live facts when its native request starts.
    * @param opts - Marks a model prompt that receives connector runtime tools,
    *   and names the agent a room turn is for (DOR-2091).
    */
@@ -593,9 +585,9 @@ export class OpenCodeRuntime implements AgentRuntime {
     trigger: (
       client: OpencodeClient,
       ocSessionId: string,
-      dorkosApplied: boolean,
-      connectionsApplied: boolean,
-      plan: OpenCodeSidecarPlan
+      managed: EnsureManagedResult,
+      plan: OpenCodeSidecarPlan,
+      publishToolTurn: () => void
     ) => Promise<void>,
     opts?: OpenCodeTurnOptions
   ): AsyncGenerator<StreamEvent> {
@@ -645,7 +637,15 @@ export class OpenCodeRuntime implements AgentRuntime {
       controller,
       phase: this.connectorRuntimeTools ? 'waiting' : 'setup',
     };
+    this.activeTurns.get(sessionId)?.toolTurn?.close();
     this.activeTurns.set(sessionId, turn);
+    const toolTurn = new OpenCodeToolTurnContext(
+      () => this.activeTurns.get(sessionId) === turn && turn.phase === 'running',
+      () => this.registry.get(sessionId)?.permissionMode,
+      opts?.permissionCeiling,
+      controller.signal
+    );
+    turn.toolTurn = toolTurn;
     this.settingUp.delete(settingUp);
     // Once per chat: the project's own add-ons the sidecar kept off (DOR-4404).
     yield* projectAddonsNotice(sessionId, directory);
@@ -686,7 +686,10 @@ export class OpenCodeRuntime implements AgentRuntime {
                 canonicalCwd: directory,
                 signal: controller.signal,
               },
-              { isCurrent: () => this.activeTurns.get(sessionId) === turn }
+              {
+                isCurrent: () => this.activeTurns.get(sessionId) === turn,
+                readToolTurn: () => toolTurn.read(),
+              }
             )
           : null;
       if (this.connectorRuntimeTools && opened) {
@@ -734,7 +737,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       // Read the model catalog now, so the reply's context reading finds its
       // window ready rather than waiting on it (bounded either way).
       this.contextWindows.prefetch(client, directory);
-      const queue = new TurnEventQueue<OpenCodeWireEvent>();
+      const queue = new TurnEventQueue<OpenCodeTurnEvent>(() => toolTurn.close());
       subscription = this.hub.subscribe({
         cwd,
         onEvent: (event) => {
@@ -743,7 +746,14 @@ export class OpenCodeRuntime implements AgentRuntime {
           const admit =
             matchesOpenCodeSession(event, directory, ocSessionId) ||
             matchesOpenCodeSubagentSession(event, directory, ctx);
-          if (admit) queue.push(event.payload as OpenCodeWireEvent);
+          if (admit) {
+            queue.push(event.payload as OpenCodeWireEvent);
+            if (
+              event.payload.type === 'session.idle' &&
+              matchesOpenCodeSession(event, directory, ocSessionId)
+            )
+              queue.end();
+          }
         },
         onStreamDrop: (error) => queue.fail(error),
       });
@@ -755,7 +765,10 @@ export class OpenCodeRuntime implements AgentRuntime {
       // elapses) — a fast turn must not complete before we can see its idle.
       await Promise.race([subscription.live, delay(STREAM_LIVE_TIMEOUT_MS)]);
 
-      await trigger(client, ocSessionId, mcpResult.dorkosApplied, mcpResult.connectorApplied, plan);
+      await trigger(client, ocSessionId, mcpResult, plan, () => {
+        if (mcpResult.connectorApplied && turn.connectorBinding)
+          toolTurn.attach((event) => queue.push(event));
+      });
 
       const routing: ApprovalRouting = {
         ...opts,
@@ -769,6 +782,10 @@ export class OpenCodeRuntime implements AgentRuntime {
       };
       // Says the turn is alive while a slow model is still answering (FB-68).
       for await (const mapped of mapLiveOpenCodeTurn(queue, ctx)) {
+        if (isHostTurnEvent(mapped)) {
+          yield mapped;
+          continue;
+        }
         // On credits, a refused token is the credits card, never an OpenCode
         // sign-in error: the person's own sign-in was not used.
         const event = await this.contextWindows.withWindow(
@@ -787,6 +804,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       }
       connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
     } finally {
+      toolTurn.close();
       if (controller.signal.aborted) connectorRevokeReason = 'turn_cancelled';
       turn.connectorSupervisor?.stop();
       try {
@@ -820,92 +838,6 @@ export class OpenCodeRuntime implements AgentRuntime {
         });
       }
     }
-  }
-
-  /**
-   * Register a session's settings, hydrating the durable row (ADR-0260) under
-   * the caller's own fields when the runtime has no memory of the session.
-   * Precedence: explicit → persisted, and for `permissionMode` alone a runtime
-   * default beneath both — a session always runs under SOME mode, while an
-   * unstated model or fastMode is honestly just absent (the sidecar's own
-   * default model, no fast mode) rather than a value this could invent.
-   *
-   * The ONE hydration seam, shared by the two cold entry points that need it —
-   * {@link OpenCodeRuntime.updateSession} and
-   * {@link OpenCodeRuntime.resolveTurnSettings} — because a session loses its
-   * in-memory state on every restart and EITHER a message or a settings PATCH
-   * can be the first thing to arrive afterwards. Registering only the fields a
-   * caller happened to name would drop the row's siblings — a PATCH that picks
-   * a model would reset an enforced `bypassPermissions` session to `default`
-   * while the stored settings (and the app, reading them) kept showing the
-   * operator's real choice (DOR-1152; the claude-code twin is DOR-1151).
-   *
-   * {@link OpenCodeRuntime.ensureSession} is a third cold path and deliberately
-   * does NOT come through here: `SessionOpts.permissionMode` is REQUIRED by the
-   * shared contract — "callers resolve the effective mode (per-send override →
-   * persisted → runtime default) before creating" (`SessionOpts`,
-   * `agent-runtime.ts`) — and its real callers do exactly that, the scheduler
-   * from the task's own mode and the relay from the binding's, on an id it mints
-   * one line earlier that no stored row can describe yet. Reading the store
-   * there would re-derive an answer the caller had already given, or invent one
-   * for a session that has no history.
-   *
-   * A session already tracked in memory reads nothing: its registration is the
-   * live truth, and only the stated fields change.
-   *
-   * @param sessionId - DorkOS session id.
-   * @param explicit - The fields this caller states, which outrank the stored ones.
-   */
-  private async registerWithPersisted(
-    sessionId: string,
-    explicit: OpenCodeSessionPatch = {}
-  ): Promise<void> {
-    const tracked = this.registry.has(sessionId);
-    const persisted = tracked ? null : await this.settingsPort?.getSessionSettings(sessionId);
-    // A tracked session keeps the mode it is running under unless this call
-    // names one; a cold one is born with the persisted mode, or the default.
-    const permissionMode = tracked
-      ? explicit.permissionMode
-      : (explicit.permissionMode ?? persisted?.permissionMode ?? 'default');
-    const model = explicit.model ?? persisted?.model;
-    const fastMode = explicit.fastMode ?? persisted?.fastMode;
-    this.registry.register(sessionId, {
-      ...(permissionMode !== undefined ? { permissionMode } : {}),
-      ...(model !== undefined ? { model } : {}),
-      ...(fastMode !== undefined ? { fastMode } : {}),
-      ...(explicit.cwd !== undefined ? { cwd: explicit.cwd } : {}),
-    });
-  }
-
-  /**
-   * Effective settings for one turn: per-send override → tracked session →
-   * persisted store (hydrated once for untracked sessions, e.g. resume after
-   * a server restart) → runtime default.
-   */
-  private async resolveTurnSettings(
-    sessionId: string,
-    opts?: MessageOpts
-  ): Promise<SessionSettings> {
-    if (!this.registry.has(sessionId)) {
-      // Only the mode and cwd are stated here. A per-send `model`/`fastMode` is
-      // a transient override for THIS turn (Tasks, relay) — it is applied to
-      // the returned settings below and deliberately never tracked, so the
-      // session keeps running on the operator's own choice afterwards.
-      await this.registerWithPersisted(sessionId, {
-        permissionMode: opts?.permissionMode,
-        cwd: opts?.cwd,
-      });
-    }
-    const tracked = this.registry.get(sessionId)!;
-    const model = opts?.model ?? tracked.model;
-    const fastMode = opts?.fastMode ?? tracked.fastMode;
-    return {
-      // A chat that follows its agent up starts from the agent's level this turn
-      // (DOR-3175); the tracked mode is left as it was.
-      permissionMode: opts?.levelPermissionMode ?? opts?.permissionMode ?? tracked.permissionMode,
-      ...(model !== undefined ? { model } : {}),
-      ...(fastMode !== undefined ? { fastMode } : {}),
-    };
   }
 
   // --- Interactive flows ---

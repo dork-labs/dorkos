@@ -2,7 +2,7 @@
 
 ## Overview
 
-Message search is a derived, rebuildable index over everything that was ever said — the room log, every Claude Code transcript, every Codex rollout, every OpenCode conversation. Adding a place to search is **one row in a registry array plus one pure projection**, because discovery, change detection and the incremental read are written once per _mechanism_ rather than once per source. This guide is what that costs, what it must not cost, and a worked example you can copy.
+Message search is a derived, rebuildable index over everything that was ever said — the room log, every Claude Code transcript, every Codex rollout, every OpenCode conversation, every conversation DorkOS's own engine (Doe) ran. Adding a place to search is **one row in a registry array plus one pure projection**, because discovery, change detection and the incremental read are written once per _mechanism_ rather than once per source. This guide is what that costs, what it must not cost, and a worked example you can copy.
 
 Read `specs/message-search/02-specification.md` §3 and §4 for the design, and ADR `260728-214214` for why it is a record rather than a port. This guide is the operating manual.
 
@@ -22,6 +22,7 @@ Read `specs/message-search/02-specification.md` §3 and §4 for the design, and 
 | The ranked query                      | `apps/server/src/services/search/query.ts`                        |
 | Tables (`messages`, `search_sources`) | `packages/db/src/schema/search.ts`                                |
 | The allowlist that makes M3 safe      | `apps/server/src/services/search/opencode-store.ts`               |
+| M3 over a DorkOS-owned store (Doe)    | `apps/server/src/services/search/doe-store.ts`                    |
 | **The worked example, pinned**        | `apps/server/src/services/search/__tests__/guide-example.test.ts` |
 
 ## When to Use What
@@ -32,7 +33,7 @@ Read `specs/message-search/02-specification.md` §3 and §4 for the design, and 
 | --------------------------------------------------------------------------------------------------- | ------------------------------------- | -------------------------------------- | ------------------------------------------------------------------ |
 | A **byte offset** into an append-only file it will not rewrite                                      | **M1** `jsonl`                        | `discover()` + `project()`             | `claude-code`, `codex`                                             |
 | A **monotonic ordinal** in a table DorkOS owns                                                      | **M2** `rows`                         | `listContainers()` + `readSince()`     | `rooms`                                                            |
-| **Neither** — but the data is bytes at rest in a file you may copy                                  | **M3** `sqlite-snapshot`              | `open()` returning a `ContainerReader` | `opencode`                                                         |
+| **Neither** — but the data is bytes at rest in a file you may copy                                  | **M3** `sqlite-snapshot`              | `open()` returning a `ContainerReader` | `opencode`, `doe`                                                  |
 | **None of the three** — e.g. an SDK that pages backwards from newest and needs a live child process | **Stop.** This is the port re-trigger | An ADR before any code                 | — (see [The port decision](#the-port-decision-inherited-not-open)) |
 
 Two follow-on questions the table does not answer:
@@ -58,7 +59,7 @@ A source is a plain record, never a class. Every mechanism's row carries the sam
 | M2 only     | `listContainers(db)`, `readSince(db, …)` | Discovery and change detection fold into one query — the container list carries each container's current high-water ordinal.                                                                                                    |
 | M3 only     | `open()`                                 | Copies the store, opens the copy read-only, hands back a `ContainerReader` the sweep must `close()`.                                                                                                                            |
 
-**Build the row from a factory that takes its roots as a parameter.** Every shipped source that reads a root does (`createClaudeCodeSource`, `createCodexSource`, `createOpenCodeSource`), for one reason: a test must be able to point the source at a fixture tree instead of at the operator's real history. The exported constant then binds the real resolver.
+**Build the row from a factory that takes its roots as a parameter.** Every shipped source that reads a root does (`createClaudeCodeSource`, `createCodexSource`, `createOpenCodeSource`, `createDoeSource`), for one reason: a test must be able to point the source at a fixture tree instead of at the operator's real history. The exported constant then binds the real resolver.
 
 **Resolve roots at the start of every sweep, never at module load.** An operator who registers an account or changes `$CODEX_HOME` mid-session must be indexed on the next tick rather than after a restart.
 
@@ -89,6 +90,7 @@ The index never parses it, never splits it, never makes it a foreign key. This i
 | `claude-code` | the session id (the filename stem) | the message's index within the file                  |
 | `codex`       | the session id from `session_meta` | the `response_item`'s index within the file          |
 | `opencode`    | the session id                     | the message's position in `(time_created, id)` order |
+| `doe`         | the session id (`sessions.id`)     | the message's `seq` (main-scope messages only)       |
 
 ### Landing on a message is a per-runtime FACT, not a shape
 
@@ -404,7 +406,7 @@ export function createJournalSource(resolveRoots: () => readonly string[]): File
 }
 ```
 
-`corpus` is the one field with a wrong answer that compiles. It says whether the bytes this source reads live inside the `DORK_HOME` this process owns (`'dorkos'`) or in another program's store on the machine (`'external'`), and it is required precisely so nobody can skip the question: a harness that must read nobody's history sets `DORKOS_SEARCH_NO_EXTERNAL_HISTORY=true`, and `selectSearchSources()` drops every `external` row before the sweep starts. Answer `'dorkos'` only if a fresh `DORK_HOME` really does mean a fresh corpus. Getting it wrong is how the browser suite spent weeks copying the operator's real transcripts into a world-readable temp directory (DOR-1551, spec Amendment 13).
+`corpus` is the one field with a wrong answer that compiles. It says whether the bytes this source reads live inside the `DORK_HOME` this process owns (`'dorkos'`) or in another program's store on the machine (`'external'`), and it is required precisely so nobody can skip the question: a harness that must read nobody's history sets `DORKOS_SEARCH_NO_EXTERNAL_HISTORY=true`, and `selectSearchSources()` drops every `external` row before the sweep starts. Answer `'dorkos'` only if a fresh `DORK_HOME` really does mean a fresh corpus. `doe` is the one shipped M3 source that answers `'dorkos'`: it copies `sessions.sqlite` and `models.sqlite` from `<DORK_HOME>/runtimes/doe`, so it stays in the sweep when external history is dropped. Getting it wrong is how the browser suite spent weeks copying the operator's real transcripts into a world-readable temp directory (DOR-1551, spec Amendment 13).
 
 That is the whole source. `jsonl-frontier.ts` is untouched by it: the byte offset, the partial-line rule, the shrink rebuild, the twin refusal, the prune suppression and the failure recording all apply without a line of new code.
 
@@ -420,6 +422,7 @@ export const SEARCH_SOURCES: readonly SearchSource[] = [
   claudeCodeSource,
   codexSource,
   openCodeSource,
+  doeSource,
   journalSource,
 ];
 ```

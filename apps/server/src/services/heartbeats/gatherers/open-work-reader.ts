@@ -4,7 +4,8 @@
  *
  * - **Lanes** are the chats a `session_start` from one of the agent's chats opened, read from
  *   `session_started_by` (kind `chat`) over the last {@link LANE_OPEN_MS}, matched to the agent
- *   by the starting chat's recorded agent. Older ones are no longer counted as its open work.
+ *   by the starting chat's agent (`session-agent`'s answer, so a chat started with only its
+ *   agent's folder counts, DOR-5038). Older ones are no longer counted as its open work.
  * - **Activity** is kept here, in memory, from every projector status change: a chat was active
  *   at the last change seen. A restart forgets it, so "since" then counts from when this process
  *   started watching, never from earlier than it can show.
@@ -13,7 +14,7 @@
  */
 import { and, desc, eq, gte } from 'drizzle-orm';
 import { sessionStartedBy, type Db } from '@dorkos/db';
-import { runtimeRegistry } from '../../core/runtime-registry.js';
+import { sessionAgentById } from '../../core/agent-identity/session-agent.js';
 import {
   listProjectorStatuses,
   onProjectorStatusChange,
@@ -37,7 +38,7 @@ const RUNNING = new Set(['streaming', 'blocked']);
 export interface OpenWorkReaderDeps {
   /** The agent working in a directory, or undefined. */
   agentIdForCwd: (cwd: string) => string | undefined;
-  /** The agent a chat was recorded for, or null. */
+  /** The chat's agent, or null; `session-agent`'s answer unless a test passes its own. */
   agentPathOf?: (sessionId: string) => Promise<string | null>;
   /** The clock (ms). */
   now?: () => number;
@@ -61,7 +62,8 @@ export function createOpenWorkReader(
   stop: () => void;
 } {
   const now = deps.now ?? Date.now;
-  const agentPathOf = deps.agentPathOf ?? ((id: string) => runtimeRegistry.getSessionAgentPath(id));
+  const agentPathOf =
+    deps.agentPathOf ?? (async (id: string) => (await sessionAgentById(id)) ?? null);
   const startedWatching = now();
   const seen = new Map<string, { at: number; cwd: string | undefined }>();
   const stop = onProjectorStatusChange((update: ProjectorStatusUpdate) => {

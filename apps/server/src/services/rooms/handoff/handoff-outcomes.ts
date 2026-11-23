@@ -5,9 +5,9 @@
  * more. A seat can then wait up to an hour, and an answer sent back can be refused, so the sender
  * could not tell a slow hand-off from a lost one. This is what the sender can always read.
  *
- * Process memory, like the hand-offs themselves: a restart drops both, which is why an id nobody
- * here knows reads as `unknown` and says a restart is one way to get there. An agent reads only its
- * own, and somebody else's id reads the same as one that never existed, so an id cannot be probed.
+ * Process-local waiting hints only. RoomHandoffs reads terminal truth from its durable outbox;
+ * eviction or restart of this projection never authorizes a resend. An agent reads only its own,
+ * and somebody else's id reads the same as one that never existed, so an id cannot be probed.
  *
  * @module server/services/rooms/handoff/handoff-outcomes
  */
@@ -34,9 +34,7 @@ const WAITING_REASON: Record<HandoffWaiting, string> = {
 
 const UNKNOWN: HandoffStatus = {
   status: 'unknown',
-  reason:
-    'No hand-off of yours has that id. A server restart drops waiting hand-offs, so if you ' +
-    'were given this id, post it again.',
+  reason: 'No handoff of yours has that id. Check the original request before sharing again.',
 };
 
 /** Every hand-off's standing, for one room service. */
@@ -52,6 +50,9 @@ export class HandoffOutcomes {
    * @param waitEndsAt - Epoch ms it stops trying, once known.
    */
   noteWaiting(id: string, authorId: string, waiting: HandoffWaiting, waitEndsAt?: number): void {
+    const previous = this.records.get(id);
+    if (previous && (previous.authorId !== authorId || previous.status.status !== 'pending'))
+      return;
     this.records.set(id, {
       authorId,
       status: {
@@ -75,6 +76,9 @@ export class HandoffOutcomes {
     authorId: string,
     status: Extract<HandoffStatus, { status: 'posted' | 'declined' }>
   ): void {
+    const previous = this.records.get(id);
+    if (previous && (previous.authorId !== authorId || previous.status.status !== 'pending'))
+      return;
     this.records.delete(id);
     this.records.set(id, { authorId, status });
     this.dropOldestSettled();

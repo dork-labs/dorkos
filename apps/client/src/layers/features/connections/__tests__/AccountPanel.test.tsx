@@ -25,6 +25,10 @@ import { AccountPanel } from '../ui/panel/AccountPanel';
 
 const navigate = vi.hoisted(() => vi.fn());
 const openSettings = vi.hoisted(() => vi.fn());
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => navigate,
+}));
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useSafeNavigate: () => navigate,
@@ -196,21 +200,36 @@ describe('AccountPanel', () => {
 
   it('opens a chat with the first agent that has access, the prompt typed and not sent', async () => {
     const user = userEvent.setup();
-    renderPanel(transportFor(summary()));
+    let resolveAcknowledgement!: (value: { sessionId: string }) => void;
+    const acknowledgement = new Promise<{ sessionId: string }>((resolve) => {
+      resolveAcknowledgement = resolve;
+    });
+    const transport = transportFor(summary());
+    vi.mocked(transport.allocateSession).mockReturnValueOnce(acknowledgement);
+    renderPanel(transport);
 
     const tryIt = await screen.findByRole('region', { name: 'Try it' });
     await waitFor(() => expect(tryIt).toHaveTextContent('Opens a chat with mailroom'));
     await user.click(within(tryIt).getByRole('button', { name: /Summarise today’s Gmail inbox/ }));
-    expect(navigate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: '/session',
-        search: expect.objectContaining({
-          agentId: 'mailroom',
-          draft: '1',
-          dir: undefined,
-          prompt: 'Summarise today’s Gmail inbox',
-        }),
-      })
+    expect(transport.allocateSession).toHaveBeenCalledExactlyOnceWith({
+      kind: 'registered-agent',
+      agentId: 'mailroom',
+    });
+    expect(navigate).not.toHaveBeenCalled();
+    resolveAcknowledgement({ sessionId: 'suggested-chat' });
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: '/session',
+          search: expect.objectContaining({
+            session: 'suggested-chat',
+            agentId: 'mailroom',
+            draft: '1',
+            dir: undefined,
+            prompt: 'Summarise today’s Gmail inbox',
+          }),
+        })
+      )
     );
     const [{ search }] = navigate.mock.calls[0] as [{ search: Record<string, unknown> }];
     expect(search.send).toBeUndefined();

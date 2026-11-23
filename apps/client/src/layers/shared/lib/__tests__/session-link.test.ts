@@ -2,10 +2,17 @@
 /**
  * The one builder for links into a conversation (DOR-2077).
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { defaultParseSearch, defaultStringifySearch } from '@tanstack/react-router';
 import { parseAppSearch } from '../router-search';
-import { sessionHref, sessionSearchSchema, toSession, type SessionSearch } from '../session-link';
+import {
+  newSessionTarget,
+  sessionHref,
+  sessionSearchSchema,
+  toSession,
+  type SessionSearch,
+} from '../session-link';
 
 describe('toSession', () => {
   it('is the session route with the params it was given', () => {
@@ -40,6 +47,72 @@ describe('directory privacy', () => {
       toSession({ session: 'existing', dir: '/private/project', agentPath: '/private/agent' })
         .search
     ).toMatchObject({ dir: undefined, agentPath: undefined });
+  });
+});
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
+
+describe('newSessionTarget', () => {
+  it('keeps two overlapping intentional drafts for the same source distinct', async () => {
+    const transport = createMockTransport();
+    const firstAck = deferred<{ sessionId: string }>();
+    const secondAck = deferred<{ sessionId: string }>();
+    vi.mocked(transport.allocateSession)
+      .mockReturnValueOnce(firstAck.promise)
+      .mockReturnValueOnce(secondAck.promise);
+    const first = newSessionTarget(transport, { launchRef: 'source', prompt: 'first' });
+    const second = newSessionTarget(transport, { launchRef: 'source', prompt: 'second' });
+    expect(transport.allocateSession).toHaveBeenCalledTimes(2);
+    secondAck.resolve({ sessionId: 'second-chat' });
+    firstAck.resolve({ sessionId: 'first-chat' });
+    expect((await first).search).toMatchObject({ session: 'first-chat', prompt: 'first' });
+    expect((await second).search).toMatchObject({ session: 'second-chat', prompt: 'second' });
+  });
+
+  it('uses the registered acknowledgement without reserving a folder', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.allocateSession).mockResolvedValue({ sessionId: 'known-ack' });
+    const target = await newSessionTarget(transport, { agentId: 'registered', prompt: 'hello' });
+    expect(transport.allocateSession).toHaveBeenCalledExactlyOnceWith({
+      kind: 'registered-agent',
+      agentId: 'registered',
+    });
+    expect(transport.createSessionLocation).not.toHaveBeenCalled();
+    expect(transport.getDefaultCwd).not.toHaveBeenCalled();
+    expect(target.search).toMatchObject({
+      agentId: 'registered',
+      session: 'known-ack',
+      draft: '1',
+      prompt: 'hello',
+    });
+  });
+
+  it('keeps the id of a direct seat or an already-acknowledged draft', async () => {
+    const transport = createMockTransport();
+    const direct = await newSessionTarget(transport, { session: 'server-seat', dir: '/agent' });
+    const draft = await newSessionTarget(transport, {
+      session: 'server-draft',
+      launchRef: 'folder',
+    });
+    expect(direct.search).toMatchObject({ session: 'server-seat', launchRef: 'test-location' });
+    expect(draft.search).toMatchObject({ session: 'server-draft', launchRef: 'folder' });
+    expect(transport.allocateSession).not.toHaveBeenCalled();
+  });
+
+  it('does not invent an id or retry when acknowledgement is refused', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.allocateSession).mockRejectedValue(new Error('allocation refused'));
+    await expect(newSessionTarget(transport, { launchRef: 'folder' })).rejects.toThrow(
+      'allocation refused'
+    );
+    expect(transport.allocateSession).toHaveBeenCalledTimes(1);
+    expect(transport.createSessionLocation).not.toHaveBeenCalled();
   });
 });
 

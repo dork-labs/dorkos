@@ -150,7 +150,7 @@ export interface PersonBarCopy {
 /** A refusal {@link assessPerson} decided on, not yet written. */
 export interface PersonRefusal {
   /** The HTTP status to answer with. */
-  status: number;
+  status: 403;
   /** The JSON body to answer with. */
   body: { error: string; code: string; message: string };
 }

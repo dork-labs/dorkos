@@ -21,7 +21,7 @@ The research behind these decisions is in `research/20261006_*.md`.
 
 **Considered and rejected:** giving every person and agent an always-on home server in the cloud. It would make a monthly fee the price of entry, which goes against ownership.
 
-**Refined 2026-10-15** (ADR `261015-042933`): an account may get its own DorkOS in the cloud, but only lazily, the first time the person opens the full app on the web. It sleeps when idle, runs no agents and costs little, so it is never the price of entry; local use stays free with no account.
+**Refined 2026-10-15** (ADR `261015-042933`): an account may get its own DorkOS in the cloud, but only lazily, the first time the person opens the full app on the web. It sleeps when idle, runs no agents and costs little, so it is never the price of entry; local use stays free with no account. (2026-11-22, ADR `261122-173853`: a hub is a one-tenant space server, and "runs no agents" is a hosting policy, not an architectural wall.)
 
 ## 3. A hard reset
 
@@ -98,7 +98,7 @@ The research behind these decisions is in `research/20261006_*.md`.
 - **Groups, projects, tasks and tiered goals** are built in, as our own simpler version inspired by Paperclip.
 - **The health check** is a linter for your organisation, with rules in TypeScript.
 - **Agents are co-workers, not assistants.** Every profile carries a role and responsibilities. "Access level" is the separate word for what someone may do. Agents can own their own outside accounts and create agents, if their access level allows.
-- **Everything is programmable** through a CLI, an SDK and API, and GraphQL with live subscriptions, using per-account API keys. MCP stays as the way agents get started.
+- **Everything is programmable** through a CLI, an SDK and API, and GraphQL with live subscriptions, using per-account API keys. MCP stays as the way agents get started. _Note, 2026-11-21:_ the surface now rests on the work graph and the one-source rule (every surface projected from the capability registry plus the entity-and-edge model; read-only GraphQL last; no raw database access). See the proposed ADR drafts in `research/20261121_architecture-target-design.md`; DOR-4966 and DOR-4973 replace the canceled DOR-2754.
 
 ## 16. Launch scope
 

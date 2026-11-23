@@ -391,7 +391,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   // `/:id/events` is an upgrade, answered before any route
   // (`routes/session-events-socket.ts`).
   app.route('/api/sessions/running', createRunningChatsRoutes(deps.sessions ?? {}));
-  app.route('/api/sessions', createSessionRoutes(deps.sessions ?? {}));
+  app.route('/api/sessions', createSessionRoutes(deps.sessions, deps.sessionLocations));
   // The global event stream over SSE. Its WebSocket twin on the same path is an
   // upgrade, answered before any route (`routes/events-socket.ts`).
   app.route('/api/events', eventsRoutes);
@@ -474,7 +474,11 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   // `/api/test/mcp-oauth/*` auth and MCP endpoints.
   if (env.DORKOS_TEST_RUNTIME) app.route('/', createMockMcpOAuthRoutes());
   if (deps.sessionLocations) {
-    app.route('/api/session-locations', createSessionLocationsRoutes(deps.sessionLocations));
+    const meshCore = deps.sessions?.meshCore;
+    app.route(
+      '/api/session-locations',
+      createSessionLocationsRoutes(deps.sessionLocations, { ...(meshCore && { meshCore }) })
+    );
   }
   if (deps.templates) app.route('/api/templates', createTemplateRoutes(deps.templates.dorkHome));
   if (deps.harness) app.route('/api/harness', createHarnessRoutes(deps.harness));

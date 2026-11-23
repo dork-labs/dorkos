@@ -2,12 +2,15 @@
 import { eq, isNull, sessionMetadata, sessionNativeBindings, type Db } from '@dorkos/db';
 import type { Session } from '@dorkos/shared/types';
 import { AmbiguousSessionError } from '../../session/resolution/session-lookup-error.js';
-import { withinSessionBirthWrite } from './session-birth-write.js';
+import { readDraftSource } from './person-draft-settings.js';
+import { SessionBirthWriteError, withinSessionBirthWrite } from './session-birth-write.js';
 
 /** Called only after the owning registry's caller and actual-directory checks. */
 export function writeNativeSession(db: Db, session: Session): void {
   db.transaction((tx) =>
     withinSessionBirthWrite(tx, session.id, undefined, (tx) => {
+      // A saved-folder draft can only be claimed by its first ordinary send.
+      if (readDraftSource(tx, session.id)) throw new SessionBirthWriteError('context');
       const existing = tx
         .select()
         .from(sessionMetadata)

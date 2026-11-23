@@ -7,7 +7,7 @@ import {
   viewerSecretSchema,
 } from '@dorkos/shared/browser-viewer-control';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import type { BrowserViewerRegistry } from '../services/session/browser-viewers/viewer-registry.js';
 import type { ViewerPrincipal } from '../services/session/browser-viewers/viewer-contract.js';
 import { BrowserViewerError } from '../services/session/browser-viewers/viewer-contract.js';

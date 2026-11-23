@@ -78,6 +78,15 @@ export interface UsageReporterOptions {
    */
   isConsentLive?: () => boolean;
   /**
+   * Whether this computer's analytics may join a person in PostHog, read on
+   * every flush: true only when it is linked to an account AND
+   * `telemetry.linkAnalyticsToAccount` is on (through the env kill switch).
+   * While false, or when it throws, every event carries
+   * `$process_person_profile: false` so PostHog builds no person profile from
+   * it (DOR-4989). Defaults to always-false.
+   */
+  isAnalyticsLinkedToAccount?: () => boolean;
+  /**
    * Debug mode (`DORKOS_TELEMETRY_DEBUG`): print each batch to stderr instead of
    * sending it over the network.
    */
@@ -109,6 +118,8 @@ interface ReporterState {
   flushing: boolean;
   /** See {@link UsageReporterOptions.isConsentLive}. */
   isConsentLive: () => boolean;
+  /** See {@link UsageReporterOptions.isAnalyticsLinkedToAccount}. */
+  isAnalyticsLinkedToAccount: () => boolean;
 }
 
 let state: ReporterState | null = null;
@@ -143,6 +154,7 @@ export function registerUsageReporter(options: UsageReporterOptions): void {
     instanceId: null,
     flushing: false,
     isConsentLive: options.isConsentLive ?? (() => true),
+    isAnalyticsLinkedToAccount: options.isAnalyticsLinkedToAccount ?? (() => false),
   };
 
   const intervalMs = options.flushIntervalMs ?? USAGE_FLUSH_INTERVAL_MS;
@@ -174,6 +186,15 @@ export function isUsageReporterActive(): boolean {
 function liveConsent(s: ReporterState): boolean {
   try {
     return s.isConsentLive();
+  } catch {
+    return false;
+  }
+}
+
+/** Read the account-link state; a reader that throws counts as not linked. */
+function analyticsLinked(s: ReporterState): boolean {
+  try {
+    return s.isAnalyticsLinkedToAccount();
   } catch {
     return false;
   }
@@ -233,11 +254,16 @@ export async function flushUsageEvents(): Promise<void> {
       }
     }
 
+    // Read at send time, so linking or unlinking mid-run takes effect on the
+    // next flush. Anonymous unless the account link and its opt-in both hold.
+    const anonymous = !analyticsLinked(s);
     const events: TelemetryEvent[] = [];
     for (const item of drained) {
       const candidate = {
         event: item.input.event,
-        properties: item.input.properties,
+        properties: anonymous
+          ? { ...item.input.properties, $process_person_profile: false as const }
+          : item.input.properties,
         distinctId: s.instanceId,
         timestamp: item.timestamp,
         dorkosVersion: s.dorkosVersion,

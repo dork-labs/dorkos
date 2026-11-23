@@ -20,11 +20,18 @@ export function startupFailureReason(sessionId: string, fallback?: string): stri
   return 'The runtime did not start its first turn within five minutes.';
 }
 
-/** Arm from session_start; clear only when the agent produces output or the chat disappears. */
-export function wireSpinOffStartup(reports: Pick<ChatReportBack, 'onNeverStarted'>): () => void {
+/**
+ * Arm from session_start; clear only when the agent produces output or the chat disappears.
+ * A start after a failure was sent is corrected through `onStartedLate`, when given.
+ */
+export function wireSpinOffStartup(
+  reports: Pick<ChatReportBack, 'onNeverStarted'> & Partial<Pick<ChatReportBack, 'onStartedLate'>>
+): () => void {
+  const startLate = reports.onStartedLate?.bind(reports);
   const startup = new SpinOffStartup({
     failureReason: startupFailureReason,
     report: (sessionId, reason, marks) => reports.onNeverStarted(sessionId, reason, marks),
+    ...(startLate ? { reportStartedLate: startLate } : {}),
   });
   setSpinOffStartup(startup);
   const offRekey = onProjectorRekey((from, to) => startup.rekey(from, to));

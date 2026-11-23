@@ -84,9 +84,33 @@ describe('personAwareFetch and a held action', () => {
   it('answers with the refusal when the person cancels, and never sends it again', async () => {
     const base = vi.fn(async () => held('held-1'));
     stops.push(answerWith({ kind: 'not-confirmed' }).stop);
-    const res = await personAwareFetch(base, ORIGIN)('/api/x', { method: 'POST', body: '{}' });
+    const reload = vi.fn();
+    const res = await personAwareFetch(
+      base,
+      ORIGIN,
+      reload
+    )('/api/x', {
+      method: 'POST',
+      body: '{}',
+    });
     expect(res.status).toBe(428);
     expect(base).toHaveBeenCalledTimes(1);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  // Purpose: the server's "Confirm it’s you to do this." was shown by every
+  // caller after the sheet had closed, reading as an order rather than "nothing
+  // changed" (DOR-4909). The code and held action stay, so callers still know.
+  it('says nothing changed once the person cancels, keeping the code', async () => {
+    const base = vi.fn(async () => held('held-1'));
+    stops.push(answerWith({ kind: 'not-confirmed' }).stop);
+    const res = await personAwareFetch(base, ORIGIN)('/api/x', { method: 'POST', body: '{}' });
+    expect(await res.json()).toEqual({
+      error: 'Not confirmed. Nothing changed.',
+      code: STEP_UP_REQUIRED_CODE,
+      heldActionId: 'held-1',
+      expiresAt: '2026-10-30T12:02:00.000Z',
+    });
   });
 
   it('asks for the action again after it expired, which holds it afresh', async () => {
@@ -209,15 +233,9 @@ describe('personAwareFetch and a held action', () => {
     expect(answer.asked).toEqual([]);
   });
 
-  it('signs in again, then asks afresh: the old hold never carries to the new session', async () => {
-    const base = vi
-      .fn<() => Promise<Response>>()
-      .mockResolvedValueOnce(held('held-old'))
-      .mockResolvedValueOnce(held('held-new'));
-    const answer = answerWith(
-      { kind: 'sign-in-again' },
-      { kind: 'confirmed', status: 200, result: { saved: true } }
-    );
+  it('signs in again, then loads a fresh page: the old hold never carries over (DOR-5026)', async () => {
+    const base = vi.fn<() => Promise<Response>>().mockResolvedValueOnce(held('held-old'));
+    const answer = answerWith({ kind: 'sign-in-again' });
     stops.push(answer.stop);
     let signIns = 0;
     stops.push(
@@ -227,16 +245,43 @@ describe('personAwareFetch and a held action', () => {
         queueMicrotask(() => finishPersonStepUp(true));
       })
     );
-    const res = await personAwareFetch(base, ORIGIN)('/api/relay/adapters/wh/config', {
+    const reload = vi.fn();
+    const res = await personAwareFetch(
+      base,
+      ORIGIN,
+      reload
+    )('/api/relay/adapters/wh/config', {
       method: 'PATCH',
       body: '{}',
     });
     expect(signIns).toBe(1);
-    // The call went again after sign-in, and the new sheet is for a new hold.
-    expect(base).toHaveBeenCalledTimes(2);
-    expect(answer.asked).toEqual(['held-old', 'held-new']);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ saved: true });
+    // A confirm counts only from a page loaded after the risk cleared, so the
+    // page reloads rather than asking again from this one.
+    expect(reload).toHaveBeenCalledOnce();
+    expect(base).toHaveBeenCalledTimes(1);
+    expect(answer.asked).toEqual(['held-old']);
+    expect(res.status).toBe(428);
+  });
+
+  it('reloads to reopen the same hold when the Mac window asks for a fresh page (DOR-5086)', async () => {
+    const base = vi.fn<() => Promise<Response>>().mockResolvedValueOnce(held('held-1'));
+    const answer = answerWith({ kind: 'reload' });
+    stops.push(answer.stop);
+    const reload = vi.fn();
+    const reopen = vi.fn();
+    const res = await personAwareFetch(
+      base,
+      ORIGIN,
+      reload,
+      reopen
+    )('/api/x', {
+      method: 'POST',
+      body: '{}',
+    });
+    expect(reopen).toHaveBeenCalledWith('held-1');
+    expect(reload).not.toHaveBeenCalled();
+    expect(base).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(428);
   });
 
   it('a sign-in cancelled after "Sign in again" sends nothing more', async () => {

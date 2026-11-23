@@ -9,7 +9,8 @@
  *
  * @vitest-environment node
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { env } from '../../../../env.js';
 import { z } from 'zod';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
@@ -58,6 +59,36 @@ async function ranAtFull(sessionId: string) {
 }
 
 describe('the census: every DorkOS tool is classed', () => {
+  // Flag-gated tools are counted too, so a to-do tool cannot land unclassed and ship that way when
+  // the flag flips (DOR-4666). The docs registry reads the flag each time it is composed.
+  const flags = env as { DORKOS_TODOS_ENABLED: boolean };
+  const ambientTodos = flags.DORKOS_TODOS_ENABLED;
+  beforeEach(() => {
+    flags.DORKOS_TODOS_ENABLED = true;
+  });
+  afterAll(() => {
+    flags.DORKOS_TODOS_ENABLED = ambientTodos;
+  });
+
+  it('counts the flag-gated to-do tools', () => {
+    const ids = composeCapabilityRegistryForDocs().capabilities.map((capability) => capability.id);
+    expect(ids).toEqual(expect.arrayContaining(['todos.add', 'todos.update', 'todos.list']));
+  });
+
+  it('classes every tool that hands back to-dos as marking itself (DOR-4666)', () => {
+    // A to-do can hold a stranger's words, so each such tool runs the one row check
+    // (`todos/todo-word-marks.ts`) before it returns. `local` would skip it; `outside` marks the
+    // team's own to-dos too.
+    const todoTools = composeCapabilityRegistryForDocs()
+      .capabilities.map((capability) => capability.id)
+      .filter((id) => /^todo/.test(id));
+    expect(todoTools.length).toBeGreaterThanOrEqual(6);
+    expect(
+      todoTools.filter((id) => dorkosToolReadOf(id) !== 'self'),
+      'A to-do tool must be `self` and call markTurnIfOutside on what it returns.'
+    ).toEqual([]);
+  });
+
   const reachable = () => [
     ...composeCapabilityRegistryForDocs().capabilities.map((capability) => capability.id),
     ...Object.keys(MCP_TOOL_TIERS),

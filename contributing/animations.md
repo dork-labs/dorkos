@@ -273,7 +273,7 @@ Key details:
 - Wrap the list in `<LayoutGroup>` to scope the `layoutId` and prevent conflicts with other layout animations
 - Spring config: `stiffness: 500`, `damping: 40` for a snappy feel
 
-**Session sidebar usage**: The `SessionItem` component uses `layoutId="active-session-bg"` for the active session background. The `SidebarContent` ancestor carries the `layout` prop to enable correct position measurement during list scroll. The spring preset for this indicator is `{ type: 'spring', stiffness: 280, damping: 32 }` (smooth slide, not the snappier button preset).
+**In the app**: the command palette's `AgentCommandItem` (`features/command-palette/ui/AgentCommandItem.tsx`) slides `layoutId="cmd-palette-selection"` between rows, scoped by the `LayoutGroup` in `CommandPaletteDialog.tsx`, with a short tween (`duration: 0.15`). The one-bar tab strip (`shared/ui/bar-tab-strip.tsx`) does the same for its active-tab indicator.
 
 - Respects `prefers-reduced-motion` via the existing `<MotionConfig reducedMotion="user">` wrapper in `AppShell.tsx`
 

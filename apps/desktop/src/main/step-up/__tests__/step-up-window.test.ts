@@ -93,6 +93,26 @@ beforeEach(() => {
 const handler = (channel: string) => electron.handlers.get(channel)!;
 
 describe('the step-up window handlers', () => {
+  it('reads the app window’s page stamp from its own page and sends it (DOR-5026)', async () => {
+    const executeJavaScript = vi.fn(async () => 'v1.made-up.stamp');
+    void handler(STEP_UP_CONFIRM_CHANNEL)(eventFrom({ id: 1, executeJavaScript } as never), ID);
+    const own = electron.windows[0]!.webContents;
+    await handler(STEP_UP_WINDOW_VIEW_CHANNEL)(eventFrom(own));
+    expect(executeJavaScript).toHaveBeenCalledWith(
+      expect.stringContaining('meta[name="dorkos-page-stamp"]')
+    );
+    const headers = fetch.mock.calls[0]![1].headers as Record<string, string>;
+    expect(headers['x-dorkos-page-stamp']).toBe('v1.made-up.stamp');
+  });
+
+  it('sends no stamp when the app window has none', async () => {
+    const executeJavaScript = vi.fn(async () => null);
+    void handler(STEP_UP_CONFIRM_CHANNEL)(eventFrom({ id: 1, executeJavaScript } as never), ID);
+    await handler(STEP_UP_WINDOW_VIEW_CHANNEL)(eventFrom(electron.windows[0]!.webContents));
+    const headers = fetch.mock.calls[0]![1].headers as Record<string, string>;
+    expect(headers['x-dorkos-page-stamp']).toBeUndefined();
+  });
+
   it('refuses a sender that is not the app’s own main frame, and opens nothing', async () => {
     ownSender = false;
     await expect(handler(STEP_UP_CONFIRM_CHANNEL)(eventFrom({ id: 1 }), ID)).resolves.toEqual({

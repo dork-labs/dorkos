@@ -52,10 +52,64 @@ const mcpOnly = defineCapability({
   invoke: async () => ({}),
 });
 
+/** A read capability whose path carries `{id}`, which its input also names. */
+const getThing = defineCapability({
+  id: 'demo.get',
+  title: 'Get thing',
+  description: 'Read one demo thing.',
+  tier: 'observe',
+  area: null,
+  input: z.object({
+    id: z.string().describe('The thing to read'),
+    verbose: z.boolean().optional(),
+  }),
+  output: z.unknown(),
+  surfaces: { http: { method: 'get', path: '/api/demo/things/{id}' } },
+  invoke: async () => ({}),
+});
+
+/** A write capability whose path carries `{agentId}`, which its input also names. */
+const pauseAgent = defineCapability({
+  id: 'demo.pause',
+  title: 'Pause agent',
+  description: 'Pause a demo agent.',
+  tier: 'act',
+  area: null,
+  input: z.object({ agentId: z.string(), reason: z.string() }),
+  output: z.unknown(),
+  surfaces: { http: { method: 'post', path: '/api/demo/agents/{agentId}/pause' } },
+  invoke: async () => ({}),
+});
+
+/** A capability whose path carries a param its (empty) input never names. */
+const resumeAgent = defineCapability({
+  id: 'demo.resume',
+  title: 'Resume agent',
+  description: 'Resume a demo agent.',
+  tier: 'act',
+  area: null,
+  input: z.object({}),
+  output: z.unknown(),
+  surfaces: { http: { method: 'post', path: '/api/demo/agents/{agentId}/resume' } },
+  invoke: async () => ({}),
+});
+
 const demoDomain: CapabilityDomain = {
   name: 'demo',
   capabilities: [listThings, createThing, mcpOnly],
 };
+
+const pathDomain: CapabilityDomain = {
+  name: 'demo',
+  capabilities: [getThing, pauseAgent, resumeAgent],
+};
+
+/** The parameters an operation declares, as `in:name` pairs. */
+function declared(operation: { parameters?: unknown[] } | undefined): string[] {
+  return ((operation?.parameters ?? []) as Array<{ name: string; in: string }>).map(
+    (p) => `${p.in}:${p.name}`
+  );
+}
 
 /** Generate the document so projected routes are observable as paths. */
 function generate(doc: OpenAPIRegistry) {
@@ -129,6 +183,50 @@ describe('registerCapabilitiesInOpenApi', () => {
     expect(() => registerCapabilitiesInOpenApi(composeRegistry([demoDomain], deps), doc)).toThrow(
       /already.*hand-registered/i
     );
+  });
+
+  it('names each projected operation by its capability id', () => {
+    const doc = new OpenAPIRegistry();
+    registerCapabilitiesInOpenApi(composeRegistry([demoDomain], deps), doc);
+    const paths = generate(doc).paths ?? {};
+
+    expect(paths['/api/demo/things']?.get?.operationId).toBe('demo.list');
+    expect(paths['/api/demo/things']?.post?.operationId).toBe('demo.create');
+  });
+
+  it('declares a read path segment as a path parameter, not a query parameter', () => {
+    const doc = new OpenAPIRegistry();
+    registerCapabilitiesInOpenApi(composeRegistry([pathDomain], deps), doc);
+    const get = generate(doc).paths?.['/api/demo/things/{id}']?.get;
+
+    expect(declared(get).sort()).toEqual(['path:id', 'query:verbose']);
+    const id = (
+      get?.parameters as Array<{ name: string; required?: boolean; description?: string }>
+    ).find((p) => p.name === 'id');
+    // The field's own description rides along, and a path segment is required.
+    expect(id).toMatchObject({ required: true, description: 'The thing to read' });
+  });
+
+  it('declares a write path segment as a path parameter and leaves it out of the body', () => {
+    const doc = new OpenAPIRegistry();
+    registerCapabilitiesInOpenApi(composeRegistry([pathDomain], deps), doc);
+    const post = generate(doc).paths?.['/api/demo/agents/{agentId}/pause']?.post;
+
+    expect(declared(post)).toEqual(['path:agentId']);
+    const body = JSON.stringify(post?.requestBody);
+    expect(body).toContain('reason');
+    expect(body).not.toContain('agentId');
+  });
+
+  it('declares a path segment the input never names as a plain string', () => {
+    const doc = new OpenAPIRegistry();
+    registerCapabilitiesInOpenApi(composeRegistry([pathDomain], deps), doc);
+    const post = generate(doc).paths?.['/api/demo/agents/{agentId}/resume']?.post;
+
+    expect(post?.parameters).toEqual([
+      expect.objectContaining({ name: 'agentId', in: 'path', schema: { type: 'string' } }),
+    ]);
+    expect(post?.requestBody).toBeUndefined();
   });
 
   it('does not collide when method differs on the same path', () => {

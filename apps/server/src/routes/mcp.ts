@@ -25,7 +25,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { closeResponseWithSignIn } from '../http/raw-node-stream.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { honoMcpAuth } from '../middleware/mcp-auth.js';

@@ -2506,7 +2506,7 @@ describe('OpenCodeRuntime', () => {
           canonicalCwd: DIRECTORY,
           signal: expect.any(AbortSignal),
         },
-        { isCurrent: expect.any(Function) }
+        { isCurrent: expect.any(Function), readToolTurn: expect.any(Function) }
       );
 
       for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {

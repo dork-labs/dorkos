@@ -861,6 +861,24 @@
       "reason": "DOR-2789. Real test file name in a file-tree component; a code path, not prose."
     },
     {
+      "path": "docs/contributing/testing.mdx",
+      "terms": ["session"],
+      "contains": "<Folder name=\"widgets/session\" defaultOpen>",
+      "reason": "DOR-2789. Real directory name in a file-tree component; a code path, not prose."
+    },
+    {
+      "path": "docs/contributing/architecture.mdx",
+      "terms": ["session"],
+      "contains": "'session/catalog/session-list-broadcaster.ts': {",
+      "reason": "DOR-2789. Source file path used as a TypeTable key; a code path, not prose."
+    },
+    {
+      "path": "docs/contributing/architecture.mdx",
+      "terms": ["session"],
+      "contains": "'session/browser-seat/ui-capabilities.ts': {",
+      "reason": "DOR-2789. Source file path used as a TypeTable key; a code path, not prose."
+    },
+    {
       "path": "docs/integrations/extensions.mdx",
       "terms": ["session"],
       "contains": "'session.started': {",

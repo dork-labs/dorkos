@@ -9,11 +9,11 @@ import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 
 // Mock sonner so toast calls don't error
 vi.mock('sonner', () => ({
-  toast: {
+  toast: Object.assign(vi.fn(), {
     info: vi.fn(),
     success: vi.fn(),
     error: vi.fn(),
-  },
+  }),
 }));
 
 // The approval queue's hook rides the global `/api/events` fan-out, which needs
@@ -1182,6 +1182,46 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
         })
       );
     });
+  });
+
+  // Purpose: a cancelled "Confirm it’s you" here showed two toasts, a failure
+  // and the generic one, about a choice the person made (DOR-4909).
+  it('says once, calmly, that nothing was allowed when Confirm it’s you is cancelled', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.includes('/approve')) {
+          return Promise.resolve({
+            ok: false,
+            status: 428,
+            json: () =>
+              Promise.resolve({
+                error: 'Not confirmed. Nothing changed.',
+                code: 'step_up_required',
+              }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve([
+              makeExtension({ id: 'full-stack', hasServerEntry: true, approvedToRun: false }),
+            ]),
+        });
+      })
+    );
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    await screen.findByTestId('extension-card-full-stack');
+    openRow('full-stack');
+    fireEvent.click(screen.getByTestId('extension-approve-run-full-stack'));
+
+    await waitFor(() =>
+      expect(vi.mocked(toast)).toHaveBeenCalledExactlyOnceWith(
+        'Not confirmed. Nothing was allowed.'
+      )
+    );
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
   });
 });
 

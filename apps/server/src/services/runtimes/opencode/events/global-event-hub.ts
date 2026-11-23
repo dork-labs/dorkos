@@ -253,6 +253,9 @@ export class TurnEventQueue<T> implements AsyncIterable<T> {
   private waiter: ((result: IteratorResult<T>) => void) | null = null;
   private rejectWaiter: ((error: unknown) => void) | null = null;
 
+  /** Notify the owning turn synchronously when this queue terminates. */
+  constructor(private readonly onClose?: () => void) {}
+
   /** Enqueue an event (dropped once the queue is terminated). */
   push(value: T): void {
     if (this.terminal) return;
@@ -269,6 +272,7 @@ export class TurnEventQueue<T> implements AsyncIterable<T> {
   fail(error: unknown): void {
     if (this.terminal) return;
     this.terminal = { error };
+    this.onClose?.();
     if (this.rejectWaiter) {
       const reject = this.rejectWaiter;
       this.clearWaiter();
@@ -280,6 +284,7 @@ export class TurnEventQueue<T> implements AsyncIterable<T> {
   end(): void {
     if (this.terminal) return;
     this.terminal = {};
+    this.onClose?.();
     if (this.waiter) {
       const resolve = this.waiter;
       this.clearWaiter();

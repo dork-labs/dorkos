@@ -17,7 +17,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { McpAppResourceRequestSchema } from '@dorkos/shared/schemas';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { errorBody, parseSessionId } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 import { getOrCreateProjector } from '../services/session/index.js';

@@ -31,7 +31,7 @@ import {
 } from '@dorkos/shared/read-cursor-schemas';
 import { errorBody, validationFailureBody } from '../lib/route-utils.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { getReadCursorService } from '../services/core/read-cursor-service.js';
 import {

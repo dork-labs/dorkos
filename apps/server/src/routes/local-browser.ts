@@ -1,8 +1,8 @@
+/** Human browser setup and controls. Agent actions travel through the capability gate. */
 import type { BrowserViewerRegistry } from '../services/session/browser-viewers/viewer-registry.js';
 import { BrowserViewerError } from '../services/session/browser-viewers/viewer-contract.js';
 import { viewerSecretSchema } from '@dorkos/shared/browser-viewer-control';
 import { browserViewerPrincipal } from '../services/session/browser-viewers/viewer-person.js';
-/** Human browser setup and controls. Agent actions travel through the capability gate. */
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 import {
@@ -13,7 +13,7 @@ import {
   LocalBrowserSignInRequestSchema,
 } from '@dorkos/shared/local-browser';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { refuseUnlessAccountOwner, requirePersonAtThisComputer } from '../lib/caller-authority.js';
 import {

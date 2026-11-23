@@ -1,12 +1,12 @@
 /**
  * Which session a working directory should open on.
  *
- * Every surface that points the cockpit at a project has to answer this, and
+ * Every surface that points the app at a project has to answer this, and
  * every one of them has to answer it the same way, because a `/session` URL
  * without `?session=` is a half-loaded page: the chat renders, but no stream
  * ever attaches and the composer cannot accept text.
  *
- * **The answer cannot come from this window's cache alone.** A cockpit
+ * **The answer cannot come from this window's cache alone.** A app
  * cold-loads the session list for the ONE directory it is pointed at; every
  * other agent in the roster has an empty cache entry until something happens to
  * it. So "nothing cached" is overwhelmingly the normal state, not evidence that
@@ -71,83 +71,17 @@ export interface ResolveSessionDeps {
   transport: Transport;
 }
 
-/**
- * The session a directory opens on: which one, whether it had to be invented,
- * and the directory its own reads have to name.
- */
-export interface ResolvedSession {
-  /** A session id that is always safe to put in a `/session` URL. */
-  sessionId: string;
-  /**
-   * True when the directory has no conversations and this id was minted for a
-   * brand-new one. The loader reads it to decide whether a launch-time
-   * `?prompt=` seed may ride along — a seed must never land in an existing
-   * conversation.
-   */
-  isNew: boolean;
-  /**
-   * **The directory this session's own reads have to name**, which is the
-   * session's own working directory rather than the one that was asked for.
-   *
-   * The two are not always the same. A project's session list covers the
-   * project's whole SUBTREE (DOR-1550): a conversation started in
-   * `<project>/apps/desktop` is filed under its own directory and appears in
-   * `<project>`'s list, carrying that directory in its row. Every per-session
-   * read on the server is addressed by id AND directory, so asking about such a
-   * session under `<project>` answers 404 for the detail row and an EMPTY
-   * transcript for the messages — a conversation that looks erased rather than
-   * misaddressed (measured 2026-09-07, DOR-1836).
-   *
-   * `null` when the answer was invented (there is no session yet, so no
-   * directory belongs to it) and the caller named no directory either.
-   *
-   * **Every caller that asked about a directory of its own keeps it, and none
-   * of them reads this** — switching agents means going to the agent you picked,
-   * not to wherever its newest conversation happens to live, and the row that
-   * names the agent would then be pointing somewhere the window is not. So
-   * `SidebarChrome`, `use-palette-actions`, `use-directory-state` and
-   * `switchAgentCwd` all navigate with the directory they were given and discard
-   * this one.
-   *
-   * That is a DELIBERATE trade, not an oversight, and it is worth stating what
-   * it costs: the empty-transcript symptom above is reachable from every one of
-   * those four surfaces, not only from `/session?dir=`. Picking an agent whose
-   * newest conversation was held one level down still reads under the agent's
-   * own directory and still comes back empty. The alternative — skipping any row
-   * whose directory is spelled differently from the one asked for — trades a
-   * recoverable empty transcript for DOR-928's own symptom, a spurious mint
-   * abandoning real work, on any path-spelling mismatch. Fixing it properly
-   * means addressing a session by id alone, which is a server-side change.
-   *
-   * The `/session` loader is the one caller with no directory to keep, so it is
-   * the one that adopts this.
-   */
-  cwd: string | null;
-}
+/** A directory lookup either finds an existing chat or leaves allocation to the caller. */
+export type ResolvedSession =
+  | { sessionId: string; isNew: false; cwd: string | null }
+  | { sessionId?: never; isNew: true; cwd: string | null };
 
 /**
- * The chat you were last in for `cwd`, or a freshly minted id when that
- * directory holds no chat of yours (see {@link agentClickTarget}, spec
- * `your-activity-first` D9).
+ * Find the chat you last opened in this directory. An empty list leaves
+ * allocation to the navigation that requested it. Lookup failure returns null.
  *
- * Answers from cache when the list is there and still believable, and asks the
- * server otherwise — the server's answer is then cached under the same key
- * `useSessions` reads, so switching back to that agent is free.
- *
- * A minted id is speculative by design: it becomes real on the first message,
- * and navigation alone never creates a session.
- *
- * **`null` means "could not find out", and is not a licence to mint.** If the
- * lookup fails, the only honest answers are to say so and stay put. Minting
- * there would open a blank chat for an agent that has work — DOR-928's own
- * symptom, wearing the fix as a disguise — and typing into it makes it real.
- * Callers must surface it rather than navigate.
- *
- * @param deps - Query client to read and fill, transport to ask over.
- * @param cwd - The target working directory, or `null` for the default one.
- * @returns The resolved session, whether it is brand-new, and the directory its
- *   reads must name (see {@link ResolvedSession.cwd}), or `null` when the lookup
- *   failed.
+ * @param deps - Query client to read and fill, and transport to ask.
+ * @param cwd - The target working directory, or null for the default.
  */
 export async function resolveSessionForCwd(
   deps: ResolveSessionDeps,
@@ -167,9 +101,7 @@ export async function resolveSessionForCwd(
       // place this session under; the asked-for one only as a fallback, for a
       // runtime whose listing does not report a directory at all.
       { sessionId: mostRecent.id, isNew: false, cwd: mostRecent.cwd ?? cwd }
-    : // Nothing exists yet, so no directory belongs to this id — the caller's own
-      // is the only honest answer, and `null` when it had none either.
-      { sessionId: crypto.randomUUID(), isNew: true, cwd };
+    : { isNew: true, cwd };
 }
 
 /**
@@ -183,7 +115,7 @@ export async function resolveSessionForCwd(
  *    server's answer comes back.
  * 2. Else the newest chat that is yours ({@link partitionSessionsByOwnership})
  *    by `updatedAt` — a chat you started before touch times were recorded.
- * 3. Else nothing, and the caller mints a fresh chat.
+ * 3. Else nothing, and the caller may request a fresh chat.
  *
  * **A spin-off or automated chat you never touched is never the target.** Taking
  * the newest session landed the operator inside a room-triggered run the moment

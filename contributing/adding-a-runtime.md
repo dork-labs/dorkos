@@ -8,29 +8,29 @@ Related ADRs: [0307](../decisions/0307-second-and-third-runtimes-opencode-and-co
 
 ## Key Files
 
-| Concept                            | Location                                                                                                                 |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| The contract                       | `packages/shared/src/agent-runtime.ts` (`AgentRuntime`, `RuntimeCapabilities`, `DependencyCheck`)                        |
-| StreamEvent vocabulary             | `packages/shared/src/schemas.ts` (`StreamEventSchema`, `StreamEventTypeSchema`)                                          |
-| Conformance suite                  | `packages/test-utils/src/runtime-conformance.ts` (`runtimeConformance`, `RuntimeConformanceOpts`)                        |
-| Capabilities matrix                | `packages/test-utils/src/runtime-capability-matrix.ts`, rendered to [capabilities/runtimes.md](capabilities/runtimes.md) |
-| Worked example: JSON-RPC child     | `apps/server/src/services/runtimes/codex/` (app-server by default; `exec`, one subprocess per turn, as the fallback)     |
-| Worked example: managed sidecar    | `apps/server/src/services/runtimes/opencode/`                                                                            |
-| Worked example: first-party engine | `apps/server/src/services/runtimes/doe/` (direct resources, authenticated MCP, independent model history)                |
-| Reference stateless implementation | `apps/server/src/services/runtimes/test-mode/`                                                                           |
-| Runtime registry (composition)     | `apps/server/src/services/core/runtime-registry.ts` (`runtimeRegistry`)                                                  |
-| Composition root registration      | `apps/server/src/index.ts` (registration blocks + `shutdownServices()`)                                                  |
-| SDK confinement (ESLint)           | `apps/server/eslint.config.js`                                                                                           |
-| Config schema                      | `packages/shared/src/config-schema.ts` (`runtimes` block)                                                                |
-| Config migrations                  | `apps/server/src/services/core/config-migrations/index.ts` (`CONFIG_MIGRATIONS`)                                         |
-| Shared session infrastructure      | `apps/server/src/services/session/` (lock manager, EventLog, projector, aggregation)                                     |
-| Status-line label bound            | `packages/shared/src/constants.ts` (`STATUS_VALUE_MAX_CHARS`)                                                            |
-| Status-line compaction             | `apps/client/src/layers/features/status/lib/status-labels.ts`                                                            |
-| Client visual identity             | `apps/client/src/layers/entities/runtime/config/runtime-descriptors.ts`                                                  |
-| Adapter icons                      | `packages/icons/src/adapter-logos.tsx`                                                                                   |
-| Needs-setup UX                     | `apps/client/src/layers/entities/runtime/ui/RuntimeSetupDialog.tsx`                                                      |
-| Runtime enum (mesh/discovery)      | `packages/shared/src/mesh-schemas.ts` (`AgentRuntimeSchema`)                                                             |
-| Connections turn lease             | `apps/server/src/services/runtimes/connectors/connector-turn-lease-supervisor.ts`                                        |
+| Concept                            | Location                                                                                                                            |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| The contract                       | `packages/shared/src/agent-runtime.ts` (`AgentRuntime`, `RuntimeCapabilities`, `DependencyCheck`)                                   |
+| StreamEvent vocabulary             | `packages/shared/src/schemas.ts` (`StreamEventSchema`, `StreamEventTypeSchema`)                                                     |
+| Conformance suite                  | `packages/test-utils/src/runtime-conformance.ts` (`runtimeConformance`, `RuntimeConformanceOpts`)                                   |
+| Capabilities matrix                | `packages/test-utils/src/runtime-capability-matrix.ts`, rendered to [capabilities/runtimes.md](capabilities/runtimes.md)            |
+| Worked example: JSON-RPC child     | `apps/server/src/services/runtimes/codex/` (app-server by default; `exec`, one subprocess per turn, as the fallback)                |
+| Worked example: managed sidecar    | `apps/server/src/services/runtimes/opencode/`                                                                                       |
+| Worked example: first-party engine | `apps/server/src/services/runtimes/doe/` (direct resources, authenticated MCP, independent model history)                           |
+| Reference stateless implementation | `apps/server/src/services/runtimes/test-mode/`                                                                                      |
+| Runtime registry (composition)     | `apps/server/src/services/core/runtime-registry.ts` (`runtimeRegistry`)                                                             |
+| Runtime registration + teardown    | `apps/server/src/startup/runtimes.ts` (`registerRuntimes()`), `apps/server/src/startup/shutdown-runtimes.ts` (`shutdownRuntimes()`) |
+| SDK confinement (ESLint)           | `apps/server/eslint.config.js`                                                                                                      |
+| Config schema                      | `packages/shared/src/config-schema/runtime-settings.ts` (`RuntimesConfigSchema`)                                                    |
+| Config migrations                  | `apps/server/src/services/core/config-migrations/index.ts` (`CONFIG_MIGRATIONS`)                                                    |
+| Shared session infrastructure      | `apps/server/src/services/session/` (lock manager, EventLog, projector, aggregation)                                                |
+| Status-line label bound            | `packages/shared/src/constants.ts` (`STATUS_VALUE_MAX_CHARS`)                                                                       |
+| Status-line compaction             | `apps/client/src/layers/features/status/lib/status-labels.ts`                                                                       |
+| Client visual identity             | `apps/client/src/layers/entities/runtime/config/runtime-descriptors.ts`                                                             |
+| Adapter icons                      | `packages/icons/src/adapter-logos.tsx`                                                                                              |
+| Needs-setup UX                     | `apps/client/src/layers/entities/runtime/ui/RuntimeSetupDialog.tsx`                                                                 |
+| Runtime enum (mesh/discovery)      | `packages/shared/src/mesh-schemas.ts` (`AgentRuntimeSchema`)                                                                        |
+| Connections turn lease             | `apps/server/src/services/runtimes/connectors/connector-turn-lease-supervisor.ts`                                                   |
 
 ## When to Use What
 
@@ -357,7 +357,7 @@ A bump also inherits behavior changes no compiler catches. Record the decision o
 
 **Subagent spawn depth (claude-agent-sdk 0.3.217, decided 2026-08-07 on the 0.3.177 → 0.3.224 bump).** Upstream dropped the default subagent nesting depth from 5 to 1 and added a cap of 20 concurrent subagents. **DorkOS accepts the new default.** Its documented orchestrator pattern (`claude-code/messaging/context-builder.ts`) is parent-driven and therefore depth-1, and its headline parallelism is multi-_session_ — each session gets its own CLI subprocess and its own depth budget, so only within-session `Task`-in-`Task` is capped at all. A runaway recursive agent tree is a worse failure for an operator than a refused nested spawn. The escape hatch, if a skill genuinely needs nesting: set `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` in the CLI subprocess env that `claude-code/messaging/message-sender.ts` already builds. Nothing in the repo sets it today.
 
-**Task and todo tools (claude-agent-sdk 0.3.233, restated 0.3.268; decided 2026-09-11 on the 0.3.224 → 0.3.268 bump).** Upstream took `TodoWrite`, `TaskCreate`, `TaskUpdate`, `TaskGet` and `TaskList` off the DEFAULT tool set for every model newer than Opus 4.7 / Sonnet 4.6 / Haiku 4.5. **DorkOS sets `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`** in the turn env (`claude-code/messaging/launch-resolver.ts`, allow-listed in `runtimes/shared/runtime-environment.ts`). It has to set something: DorkOS builds its whole task and todo surface by watching those exact tool names go past (`sdk/build-task-event.ts`, `sessions/task-reader.ts`, `sessions/transcript-reader.ts`), so with none of them on the surface the panel and the Tasks page stay empty forever and nothing errors. The env var is the only lever that costs nothing else. `allowedTools` is an auto-approval list rather than an access list, so naming tools there widens auto-approval — the finding DOR-519 is built on and `tooling/tool-filter.ts` argues at length. `tools` would mean declaring a whole base tool set DorkOS has never taken a position on, and re-centralising a name list in an SDK option is the shape `tool-filter.ts` exists to avoid. **No test can catch a regression here**: every fixture keeps feeding the tool_use blocks a real model would have stopped sending, so this is verified by one live turn on the default model per bump.
+**Task and todo tools (claude-agent-sdk 0.3.233, restated 0.3.268; decided 2026-09-11 on the 0.3.224 → 0.3.268 bump).** Upstream took `TodoWrite`, `TaskCreate`, `TaskUpdate`, `TaskGet` and `TaskList` off the DEFAULT tool set for every model newer than Opus 4.7 / Sonnet 4.6 / Haiku 4.5. **DorkOS sets `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`** in the turn env (`claude-code/messaging/launch-resolver.ts`, allow-listed in `runtimes/shared/runtime-environment.ts`). It has to set something: DorkOS builds its whole task and todo surface by watching those exact tool names go past (`sdk/build-task-event.ts`, `sessions/task-reader.ts`, `sessions/transcript-reader.ts`), so with none of them on the surface the panel and the Tasks page stay empty forever and nothing errors. The env var is the only lever that costs nothing else. `allowedTools` is an auto-approval list rather than an access list, so naming tools there widens auto-approval — the finding DOR-519 is built on (and why `claude-code/folder-settings/agent-folder-allows.ts` passes a folder's allows through flag-layer `settings`, never `allowedTools`). `tools` would mean declaring a whole base tool set DorkOS has never taken a position on, and re-centralising a name list in an SDK option is the shape DorkOS avoids: what an agent may use is decided per permission area by `resolvePermission`, and `shared/permission-tool-filter.ts` hides only what that gate would refuse. **No test can catch a regression here**: every fixture keeps feeding the tool_use blocks a real model would have stopped sending, so this is verified by one live turn on the default model per bump.
 
 **Multi-turn shell working directory (claude-agent-sdk 0.3.265, decided 2026-09-11 on the same bump).** Each user message used to reset the CLI's shell back to the `cwd` option; now an agent's `cd` persists for the life of the session. **DorkOS accepts the new behavior** — it is what the interactive app does, and it is what an operator who watched their agent `cd` somewhere expects the next command to do. The consequence worth writing down is that the per-dispatch boundary check in `sessions/persistent-dispatch.ts` validates the cwd DorkOS INTENDS, not where the shell currently sits; before 0.3.265 the two re-converged every turn for free. That grants no new access — `lib/boundary.ts` gates what a tool may touch, not where a shell stands — but the validated value stops describing the session, so do not read that check as the stronger claim.
 
@@ -605,11 +605,11 @@ Why the restating: flat-config rule entries **replace**, they do not merge. Any 
 
 ### 6. Config block + migration
 
-Add a `runtimes.<name>` object to `UserConfigSchema` in `packages/shared/src/config-schema.ts`, following the existing shape (`enabled`, `binaryPath`, plus backend-specific fields like OpenCode's `port`). Then add a semver-keyed backfill to `CONFIG_MIGRATIONS` in `apps/server/src/services/core/config-migrations/index.ts` (a named helper goes at the bottom of `config-migrations/v0-90-onward.ts`); use `seedMaxWarmProcesses` as a pattern for filling a nested runtime setting without replacing a stored choice. Key the migration to a NEW version strictly greater than the newest `v*` tag (`git tag -l 'v*' | sort -V | tail -1`), and never extend a key that has already shipped — `conf` runs a key only in `(storedVersion, projectVersion]`, so a key at or below a released version, or a body appended to one, never runs for anybody already on it. A guard compares every key's source text against the newest release and reddens CI if you get this wrong (`apps/server/src/services/core/__tests__/migration-safety.ts`). Full lifecycle: [configuration.md → Append-only rule](configuration.md#append-only-rule) and the `adding-config-fields` skill.
+Add a `<name>` object to `RuntimesConfigSchema` in `packages/shared/src/config-schema/runtime-settings.ts` (it becomes `runtimes.<name>` in `UserConfigSchema`), following the existing shape (`enabled`, `binaryPath`, plus backend-specific fields like OpenCode's `port`). Then add a semver-keyed backfill to `CONFIG_MIGRATIONS` in `apps/server/src/services/core/config-migrations/index.ts` (a named helper goes at the bottom of `config-migrations/v0-90-onward.ts`); use `seedMaxWarmProcesses` as a pattern for filling a nested runtime setting without replacing a stored choice. Key the migration to a NEW version strictly greater than the newest `v*` tag (`git tag -l 'v*' | sort -V | tail -1`), and never extend a key that has already shipped — `conf` runs a key only in `(storedVersion, projectVersion]`, so a key at or below a released version, or a body appended to one, never runs for anybody already on it. A guard compares every key's source text against the newest release and reddens CI if you get this wrong (`apps/server/src/services/core/__tests__/migration-safety.ts`). Full lifecycle: [configuration.md → Append-only rule](configuration.md#append-only-rule) and the `adding-config-fields` skill.
 
-### 7. Register in the composition root (+ teardown)
+### 7. Register at startup (+ teardown)
 
-In `apps/server/src/index.ts`, after the Claude registration block (search for "Codex runtime"):
+In `registerRuntimes()` in `apps/server/src/startup/runtimes.ts`, after the Claude registration block (search for "Codex runtime"):
 
 ```typescript
 const myConfig = configManager.get('runtimes').myruntime;
@@ -623,8 +623,8 @@ if (myConfig.enabled) {
 
 Two ordering rules, both load-bearing:
 
-- **Register before `sessionListBroadcaster.start(runtimeRegistry.listRuntimes())`** (further down in `index.ts`). Runtimes registered after `start()` are not fanned into the global session-list stream, so their sessions silently never appear in the sidebar.
-- **Wire teardown into `shutdownServices()`** if your adapter owns any process or open handle. The OpenCode sidecar's `await openCodeServerManager.shutdown()` (SIGTERM, then SIGKILL after a grace window) is the model; a no-op when never booted.
+- **Register before `sessionListBroadcaster.start(runtimeRegistry.listRuntimes(), runtimeRegistry)`** (in `apps/server/src/startup/steps/core-routes.ts`, which runs after `registerRuntimes()`). Runtimes registered after `start()` are not fanned into the global session-list stream, so their sessions silently never appear in the sidebar.
+- **Wire teardown into `shutdownRuntimes()`** (`apps/server/src/startup/shutdown-runtimes.ts`, which `shutdownServices()` in `index.ts` calls) if your adapter owns any process or open handle. The OpenCode sidecar's `await openCodeServerManager.shutdown()` (SIGTERM, then SIGKILL after a grace window) and `codexAppServerPool.shutdown(reason)` are the models; each is a no-op when never booted.
 
 Also add your runtime type to `AgentRuntimeSchema` in `packages/shared/src/mesh-schemas.ts` (the enum serves both discovery and execution; see its TSDoc).
 

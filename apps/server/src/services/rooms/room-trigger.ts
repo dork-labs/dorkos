@@ -762,6 +762,58 @@ export class RoomTriggerDispatcher {
   }
 
   /**
+   * Hold the room turn a chat is running right now, so a private message it is
+   * about to send can count as that turn's answer (DOR-4670).
+   *
+   * A turn that answers with `chat_send` has answered, just not in the room, so
+   * it must not earn an `agent_declined` line. It sets the reaction's mark rather
+   * than the post's: like a reaction it is an answer that put no words in the
+   * room, so a re-seat must not read it as "already posted" (see
+   * {@link ActiveClaim.reactedViaTool}).
+   *
+   * **The claim is taken when the send is entered, and checked again at the
+   * mark.** The caller asks before the send's first await and marks only once
+   * the send is accepted, so a refusal buys nothing, and a send that outlives its
+   * turn after that moment finds a different claim object and marks nothing.
+   * What makes that true is the capture: every claim is a fresh object, so the
+   * re-check at the mark is defence in depth (removing it leaves every test
+   * green, measured) that keeps the write on the live claim if claims are ever
+   * reused.
+   *
+   * **The gap: anything before the send is entered.** A tool call that waits on
+   * an approval card in the runtime reaches the server only once the person
+   * answers. If its turn ended meanwhile and a newer turn holds this seat, the
+   * older call is read as the newer turn's answer. Nothing on the server sees
+   * the call before that card, so closing it needs the runtime to carry the turn
+   * the call started in. The cost is one missing "did not reply" line.
+   *
+   * **Which turn: the one on the sending chat's session.** First the session the
+   * runner reported onto the claim ({@link RoomTriggerDispatcher.noteSessionBound}),
+   * then the room's own record of the seat, the same lookups
+   * `RoomHandoffs.isSeat` makes: on a first turn the claim has no session yet,
+   * and the ledger follows the runtime's rename. Either way a send from another
+   * seat (another room, or the seat it wrote to) never matches.
+   *
+   * @param sessionId - The sending chat, from the verified caller.
+   * @param agentPath - The sending agent, from the verified caller.
+   * @returns A mark to call once the send is accepted, or `undefined` when that
+   *   chat holds no room turn.
+   */
+  privateAnswerMark(sessionId: string, agentPath: string): (() => void) | undefined {
+    let key = [...this.claimed].find(([, held]) => held.sessionId === sessionId)?.[0];
+    if (key === undefined) {
+      const seat = this.deps.store.sessionLedger.bindingForSession(sessionId);
+      if (seat) key = agentKey(seat.roomId, seat.authorId);
+    }
+    const claim = key === undefined ? undefined : this.claimed.get(key);
+    // Defence in depth: a session is one agent's seat, so this never discriminates today.
+    if (key === undefined || claim === undefined || claim.agentPath !== agentPath) return undefined;
+    return () => {
+      if (this.claimed.get(key) === claim) claim.reactedViaTool = true;
+    };
+  }
+
+  /**
    * Take the "this agent has already spoken here" mark, if one is standing.
    *
    * **Consume-once, and the clear is defence in depth rather than a behaviour.**

@@ -48,6 +48,8 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/uploads',
     'POST /api/canvas/docs/:id/events',
     'POST /api/session-locations',
+    'POST /api/session-locations/:id/chats',
+    'POST /api/session-locations/chats',
   ],
   'Rooms: talking in a room and running it, the same chat level': [
     'POST /api/rooms',
@@ -186,6 +188,9 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/tasks/runs/:id/cancel',
     'PATCH /api/todo-promises/:id',
     'POST /api/todo-promises/:id/confirm',
+    // A to-do made or changed from Wi-Fi follows the Wi-Fi hold (DOR-5070).
+    'POST /api/todos',
+    'PATCH /api/todos/:id',
     'POST /api/agents/:id/pause',
     'POST /api/agents/:id/resume',
     'PATCH /api/agents/current',

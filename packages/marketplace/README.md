@@ -2,25 +2,28 @@
 
 ## Purpose
 
-Foundation package for the DorkOS marketplace — the first of a five-spec series (`01-foundation`, `02-install`, `03-browse`, `04-registry`, `05-agent-installer`). This package owns the canonical `.dork/manifest.json` Zod schema, a tolerant Claude Code-compatible `marketplace.json` parser, an on-disk package validator, and a scaffolder for the four installable package types (`agent`, `plugin`, `skill-pack`, `adapter`). It ships schemas, types, parsing, validation, and scaffolding only — zero install logic, zero registry logic, zero UI.
+Foundation package for the DorkOS marketplace — the first of a five-spec series (`01-foundation`, `02-install`, `03-browse`, `04-registry`, `05-agent-installer`). This package owns the canonical `.dork/manifest.json` Zod schema, a tolerant Claude Code-compatible `marketplace.json` parser, an on-disk package validator, and a scaffolder for the five installable package types (`agent`, `plugin`, `skill-pack`, `adapter`, `shape`). It ships schemas, types, parsing, validation, source resolution, and scaffolding only: no install logic and no UI.
 
 > **Not to be confused with** the `marketplace` _core extension_ (display name "Marketplace", at `apps/server/src/core-extensions/marketplace/`) or the _install runtime_ (`apps/server/src/services/marketplace/`). This package is the schema / validator / scaffolder library those two consume. See [`contributing/extension-authoring.md` → Concepts & naming](../../contributing/extension-authoring.md#concepts--naming).
 
 ## Exports
 
-| Export                      | Browser-safe | Purpose                                                                |
-| --------------------------- | ------------ | ---------------------------------------------------------------------- |
-| `.`                         | yes          | Barrel — schemas, parser, types, constants                             |
-| `./manifest-schema`         | yes          | Zod schema for `.dork/manifest.json` (discriminated union over `type`) |
-| `./manifest-types`          | yes          | TypeScript types derived from the manifest schema                      |
-| `./package-types`           | yes          | `PackageType` union, `PackageTypeSchema`, `requiresClaudePlugin()`     |
-| `./marketplace-json-schema` | yes          | Zod schema for `marketplace.json` registry files                       |
-| `./marketplace-json-parser` | yes          | Tolerant string-in / result-out parser for `marketplace.json`          |
-| `./constants`               | yes          | Filenames, paths, schema version                                       |
-| `./slug`                    | yes          | Package slug normalization and validation                              |
-| `./package-validator`       | no           | Node-only on-disk package validator (`fs`)                             |
-| `./package-scanner`         | no           | Node-only directory scanner that discovers packages                    |
-| `./scaffolder`              | no           | Node-only `createPackage()` for new package directories                |
+| Export                      | Browser-safe | Purpose                                                                      |
+| --------------------------- | ------------ | ---------------------------------------------------------------------------- |
+| `.`                         | yes          | Barrel — schemas, parser, types, constants                                   |
+| `./manifest-schema`         | yes          | Zod schema for `.dork/manifest.json` (discriminated union over `type`)       |
+| `./manifest-types`          | yes          | TypeScript types derived from the manifest schema                            |
+| `./package-types`           | yes          | `PackageType` union, `PackageTypeSchema`, `requiresClaudePlugin()`           |
+| `./marketplace-json-schema` | yes          | Zod schema for `marketplace.json` registry files                             |
+| `./marketplace-json-parser` | yes          | Tolerant string-in / result-out parser for `marketplace.json`                |
+| `./constants`               | yes          | Filenames, paths, schema version                                             |
+| `./slug`                    | yes          | Package slug normalization and validation                                    |
+| `./package-validator`       | no           | Node-only on-disk package validator (`fs`)                                   |
+| `./package-scanner`         | no           | Node-only directory scanner that discovers packages                          |
+| `./scaffolder`              | no           | Node-only `createPackage()` for new package directories                      |
+| `./package-links`           | no           | Node-only `findPackageLinks()`: symbolic links that will not install         |
+| `./package-size`            | no           | Node-only size limits and `measurePackageTree()`                             |
+| `./agent-workspace-config`  | no           | Node-only `findAgentWorkspaceConfig()`: config an agent package may not ship |
 
 Node-only modules are excluded from the barrel and must be imported via subpath.
 

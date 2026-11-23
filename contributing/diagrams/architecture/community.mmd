@@ -1,33 +1,41 @@
 flowchart TB
   accTitle: Local participation in a multi-space server
-  accDescr: Local rooms remain in SQLite. Remote spaces use owner-qualified adapters, background subscriptions, local dispatch mirrors and a durable delivery outbox. One independent space server has server-wide sign-in and tenant-scoped data. Server administration is separate from ordinary membership; scoped takedown and evidence operations are explicit exceptions. Installation grants own their enrolled agents. Authoritative removal purges local mirrors; unknown errors do not.
-  subgraph local["Local DorkOS"]
-    ui["Client · space switcher"]
-    rooms["Local RoomService + SQLite"]
-    adapter{{"Owner-qualified RemoteCommunityAdapter<br/>Pinned origin + space UUID<br/>Installation-owned grant + agent enrollment"}}
-    inbound["Background subscriptions<br/>Local mirrors + agent dispatch<br/>Purge on authoritative removal"]
-    outbound["Durable outbox<br/>Retry + receipt + authorization check"]
-    ui <-->|"HTTP + WebSocket"| rooms
-    ui <-->|"Qualified HTTP + SSE"| adapter
-    adapter -->|"Remote events, even without browser"| inbound
-    inbound -->|"Agent explicitly posts"| outbound
-    outbound -->|"Authorized delivery"| adapter
+  accDescr: Local rooms stay in SQLite. A remote space is reached through an owner-qualified adapter, background subscriptions, local dispatch mirrors, a durable delivery outbox and an availability report. The space server is an entry of the same server package with server-wide sign-in and tenant-scoped data; agents are members with an owner, and a member's agent is reached by DM or mention with the turn run on the owner's computer. Authoritative removal purges local mirrors; unknown errors do not. The space server's own internals are the hosted-spaces view.
+
+  subgraph localside["Your DorkOS"]
+    ui["<b>App</b><br/><span class='d'>Space switcher</span>"]
+    rooms["<b>Local rooms</b><br/><span class='d'>SQLite</span>"]
+    adapter["<b>Remote space adapter</b><br/><span class='d'>One per owner and space · pinned server<br/>Installation grant and agent enrollment</span>"]
+    inbound["<b>Background subscriptions</b><br/><span class='d'>Local mirrors · agent dispatch<br/>Purged on authoritative removal</span>"]
+    outbound["<b>Durable outbox</b><br/><span class='d'>Retry · receipt · permission check</span>"]
+    avail["<b>Availability report</b><br/><span class='d'>Where each agent runs · every few minutes</span>"]
+    ui <-->|"HTTP, WebSocket"| rooms
+    ui <-->|"HTTP, SSE"| adapter
+    adapter -->|"remote events, browser or not"| inbound
+    inbound -->|"an agent posts, or answers a DM or mention<br/><span class='d'>runs here, at the agent's level</span>"| outbound
+    outbound -->|"authorized delivery"| adapter
+    avail --> adapter
   end
-  subgraph remote["Independent space server"]
-    browser["Space website"]
-    api["Hono tenant API<br/>/api/v1/communities/:communityId/*"]
-    auth["Server-wide accounts<br/>Per-space membership + roles"]
-    db[("PostgreSQL<br/>Tenant-scoped content + grants")]
-    blobs["BlobStore<br/>Tenant-owned attachments + exports"]
-    browser <-->|"HTTP + resumable SSE"| api
+
+  subgraph remote["Space server"]
+    api["<b>Tenant API and SSE</b><br/><span class='d'>Per-space routes</span>"]
+    auth["<b>Server-wide sign-in</b><br/><span class='d'>Per-space membership · people and agents</span>"]
+    db[("<b>Postgres and blobs</b><br/><span class='d'>Tenant-scoped content, grants, files</span>")]
     auth --> api
     api --> db
-    api --> blobs
   end
-  adapter <-->|"HTTP + SSE<br/>Scoped personal / installation-agent credentials"| api
-  removal["Disconnect this installation<br/>Remove its active enrolled agents + grant<br/>Other installations remain independent"]
-  removal -->|"Qualified remote cleanup; report failures"| adapter
-  refusal["Authoritative denial / deletion / takedown<br/>Unknown 404 / outage / suspension is not deletion"]
+
+  browser["<b>Space website</b>"]
+  messaging["<b>Slack · Telegram</b>"]
+  removal["<b>Disconnect this installation</b><br/><span class='d'>Removes only its agents and grant</span>"]
+  refusal["<b>Authoritative removal</b><br/><span class='d'>Denial, deletion or takedown<br/>An unknown 404 or an outage is not deletion</span>"]
+
+  browser <-->|"HTTP, SSE"| api
+  api <-->|"HTTP and SSE<br/><span class='d'>scoped personal and agent credentials</span>"| adapter
+  messaging -->|"relay bridges"| rooms
+  removal -->|"remote cleanup · failures reported"| adapter
   api --> refusal
-  refusal -->|"Invalidate affected local mirrors"| inbound
-  messaging["Slack / Telegram"] -->|"Relay bridges"| rooms
+  refusal -->|"invalidate local mirrors"| inbound
+
+  classDef external fill:#ffffff,stroke:#8a9bab,color:#3b4a58
+  class messaging external

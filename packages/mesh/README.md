@@ -18,17 +18,23 @@ Single `.` barrel. Key pieces:
 | Manifest    | `readManifest`, `writeManifest`, `removeManifest`                                                                                                                                                                                                      |
 | Namespace   | `resolveNamespace`, `normalizeNamespace`, `validateNamespace`                                                                                                                                                                                          |
 | Topology    | `TopologyManager`                                                                                                                                                                                                                                      |
-| Budget      | `BudgetMapper`                                                                                                                                                                                                                                         |
 | Health      | `computeHealthStatus`                                                                                                                                                                                                                                  |
 | Lifecycle   | `reconcile`, `RelayBridge`                                                                                                                                                                                                                             |
 
 ## Usage
 
 ```ts
-import { unifiedScan } from '@dorkos/mesh';
+import { unifiedScan, ClaudeCodeStrategy } from '@dorkos/mesh';
 
-for await (const event of unifiedScan({ roots: ['/abs/projects'] })) {
-  if (event.type === 'agent-found') console.log(event.agent.name);
+// Build these with `new AgentRegistry(db)` and `new DenialList(db)`,
+// or pass any RegistryLike / DenialListLike.
+for await (const event of unifiedScan(
+  { root: '/abs/projects' },
+  [new ClaudeCodeStrategy()],
+  registry,
+  denialList
+)) {
+  if (event.type === 'candidate') console.log(event.data.path);
 }
 ```
 

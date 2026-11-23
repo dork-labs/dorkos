@@ -118,10 +118,28 @@ describe('mutation error toast policy', () => {
   );
 
   // DOR-3234: closing "Confirm it's you" without confirming is the person's
-  // choice, and nothing changed, so no failure toast, whatever the label.
-  it('stays silent when the person did not confirm it was them', () => {
+  // choice, and nothing changed, so no failure toast. DOR-4909: a change that
+  // reports through this toast still says nothing changed, calmly, because
+  // saying nothing left it looking as if the change went through.
+  it('says calmly that nothing changed when the person did not confirm it was them', () => {
     vi.mocked(toast).mockClear();
     fireMutationError({ errorLabel: 'Couldn’t confirm that setting' }, 'step_up_required');
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledExactlyOnceWith('Not confirmed. Nothing changed.');
+  });
+
+  it('leaves a change that shows it inline to its own words after a cancel', () => {
+    vi.mocked(toast).mockClear();
+    fireMutationError(
+      { errorLabel: 'Couldn’t give access back', isShownInline: () => true },
+      'step_up_required'
+    );
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it('leaves an unlabelled change to its own words after a cancel', () => {
+    vi.mocked(toast).mockClear();
+    fireMutationError(undefined, 'step_up_required');
     expect(toast.error).not.toHaveBeenCalled();
     expect(toast).not.toHaveBeenCalled();
   });

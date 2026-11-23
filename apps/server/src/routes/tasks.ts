@@ -52,7 +52,7 @@ import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withTaskFolderRules } from './task-approval-rules.js';

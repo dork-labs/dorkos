@@ -1,0 +1,82 @@
+name: pr-gates
+
+# Fails while Security's sign-off is missing at the PR's head (DOR-5107, DOR-5119,
+# under DOR-5098: every merge gate in the cloud, then auto-merge at PR open).
+#
+# Security signs off with its `security-reviewed` label added at or after the
+# head, or the cloud Security lens's passing `security-verdict` status
+# (security-verdict.yml, which re-runs this check after a pass). The decision is
+# arm-door's code (scripts/arm-door.sh with qa-real-data.sh and design-ok.sh), but
+# QA's `qa-real-data` and the designer's `design-ok` are printed as notes only:
+# no local agent reviews an open PR, and QA and the designer sweep each day's
+# merges instead (Dorian, Nov 23). arm-door's verify-proof reason is dropped:
+# the other required checks are the proof. scripts/pr-gates-check.sh has the rest.
+#
+# Why on the PR: arm-door asks this only once a PR is in the queue, and takes it
+# back out. Once PRs turn on auto-merge when they open, GitHub queues a PR as
+# soon as its required checks are green, so the sign-offs must be a required
+# check, or every PR would be queued and bounced. With `pr-gates` required,
+# auto-merge simply waits; adding the label re-runs this check.
+#
+# It is a required check (ci/required-checks.json), so open-pr.sh turns on
+# auto-merge when a PR opens.
+#
+# Read-only token. It checks out main's copy of its scripts (the queue's base on
+# a merge group), never the PR's. No job-level `if:` and no path filter: a
+# required job that is skipped reports success. No `concurrency:` group: a
+# cancelled run is a cancelled check, and each run reads the PR live.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  checks: read
+  statuses: read
+  actions: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  pr-gates:
+    runs-on: ubuntu-latest
+    # About eight paginated GitHub reads; a minute is generous.
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.merge_group.base_sha || github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/pr-gates-check.sh
+            scripts/arm-door.sh
+            scripts/qa-real-data.sh
+            scripts/design-ok.sh
+            scripts/queue-repeat-guard.sh
+            ci/required-checks.json
+          sparse-checkout-cone-mode: false
+
+      - name: Check the sign-off gates at the head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+        run: |
+          if [ "$EVENT" = merge_group ]; then
+            # One merge group per queue entry; its ref names that entry's PR.
+            pr=$(bash scripts/queue-repeat-guard.sh pr-from-ref "$HEAD_REF") || {
+              echo "::error::pr-gates: not a merge-queue ref: $HEAD_REF"
+              exit 2
+            }
+          else
+            pr=$PR_NUMBER
+          fi
+          bash scripts/pr-gates-check.sh run "$pr"

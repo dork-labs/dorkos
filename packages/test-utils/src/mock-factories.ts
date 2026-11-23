@@ -427,8 +427,6 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .fn()
       .mockResolvedValue({ days: 7, dailyCounts: [0, 0, 0, 0, 0, 0, 0], warnings: [] }),
     getSession: vi.fn(),
-    createSessionLocation: vi.fn().mockResolvedValue({ id: 'test-location' }),
-    getSessionLocation: vi.fn().mockResolvedValue({ cwd: '/test/project' }),
     markSessionOpened: vi.fn().mockResolvedValue(undefined),
     getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code'),
     // Nothing stored, which is what a brand-new session id genuinely has. A

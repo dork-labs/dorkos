@@ -190,10 +190,10 @@ describe('a relay turn runs on the agent it addressed', () => {
     expect(opts).not.toHaveProperty('forAgent');
   });
 
-  it("falls back to the payload's directory when no agent was resolved", async () => {
-    // A binding-created session whose subject Mesh cannot resolve still has a
-    // project directory, and a project directory is a better guess at a
-    // manifest than nothing.
+  it("never reads the agent's settings from the payload's directory (DOR-5057)", async () => {
+    // A payload's `cwd` says where the turn works, and a checkout there can carry
+    // a `.dork/agent.json` of its own. With no agent resolved, the host reads the
+    // chat's own agent, so nothing here names a folder.
     await adapter.start(relay);
     const envelope = createTestEnvelope({
       from: BINDING_SENDER,
@@ -205,7 +205,6 @@ describe('a relay turn runs on the agent it addressed', () => {
     expect(resolveExecutionSettings).toHaveBeenCalledWith({
       runtimeType: 'claude-code',
       sessionId: 'agent-ulid-1',
-      agentDirectory: '/projects/other',
     });
   });
 

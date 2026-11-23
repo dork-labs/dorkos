@@ -22,7 +22,7 @@ import { z } from 'zod';
 import { agents, sessionMetadata, eq, type Db } from '@dorkos/db';
 import { CanvasChannelDeclarationSchema } from '@dorkos/shared/canvas-channel-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import type { DocChannelHttp } from './canvas-doc-events.js';
 import type { DocChannelGrants } from '../services/canvas/doc-channel/grants.js';

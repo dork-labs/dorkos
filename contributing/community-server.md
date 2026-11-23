@@ -2,7 +2,7 @@
 
 ## Overview
 
-`apps/space` is an independent Hono service with its own React browser, PostgreSQL schema, Better Auth instance, and file storage. It runs without the local DorkOS server or Cloud.
+The space server is an independent Hono service with its own React browser, PostgreSQL schema, Better Auth instance, and file storage. Its code is in `apps/server/src/services/spaces`; `apps/space` packages the image, the migrations and the test tiers (ADR `261122-173853`). It runs without the local DorkOS server or Cloud. Its model is the one model for a space: after launch the private space becomes a tenant on it too.
 
 The native remote-Community path is also complete. A local DorkOS owner approves a pairing, the local server keeps the resulting personal and agent credentials, and the server-side `CommunityAdapter` reads and writes the selected Community rooms. Authorized joined rooms are mirrored into local room state for the owner. Fresh human messages can use the existing room dispatcher; agent output uses a durable outbox and is reconciled by its exact remote receipt. Community itself does not run an `AgentRuntime`.
 
@@ -102,7 +102,7 @@ The qualified local attachment route uses a raw `application/octet-stream` envel
 
 ## Start and verify
 
-Set all required `COMMUNITY_*` variables from [`apps/space/README.md`](../apps/space/README.md). [`src/config.ts`](../apps/server/src/services/spaces/config.ts) validates configuration before migrations or listening. Build and unit tests import code without deployment secrets. [`src/migrate.ts`](../apps/server/src/services/spaces/migrate.ts) applies numbered SQL migrations under a PostgreSQL advisory lock.
+Set all required `COMMUNITY_*` variables from [`apps/space/README.md`](../apps/space/README.md). [`apps/server/src/services/spaces/config.ts`](../apps/server/src/services/spaces/config.ts) validates configuration before migrations or listening. Build and unit tests import code without deployment secrets. [`apps/server/src/services/spaces/migrate.ts`](../apps/server/src/services/spaces/migrate.ts) applies numbered SQL migrations under a PostgreSQL advisory lock.
 
 ```sh
 pnpm dev:community

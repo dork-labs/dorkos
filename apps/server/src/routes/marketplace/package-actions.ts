@@ -35,7 +35,7 @@ import {
 } from '../../services/marketplace/lib/integrity/strict-record.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceContext, MarketplaceRouteContext } from './context.js';
-import { readJsonBody } from '../../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../../http/request-facts.js';
 import { runFrontDoorWrite } from '../front-door-step-up.js';
 import {

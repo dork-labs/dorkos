@@ -102,10 +102,10 @@ If that command fails to connect at all, the server process isn't running, or it
 
 This is almost always Mesh, DorkOS's discovery system, not having scanned the right folder yet. Discovery only runs when you ask it to, it doesn't watch your filesystem in the background.
 
-1. Open the **Mesh** tab and click **Scan for Agents**. This looks for marker files (`CLAUDE.md`, `AGENTS.md`, a `.dork/agent.json` file, and others) in the folders DorkOS already knows about.
-2. Check that your project is actually inside a folder DorkOS scans. By default that's DorkOS's working directory. If your project lives elsewhere, add its folder to the `mesh.scanRoots` list in `~/.dork/config.json` — run `dorkos config edit` to open the file, and put the paths in the list: `"mesh": { "scanRoots": ["/home/user/projects"] }`.
+1. Press `⌘K` (or `Ctrl+K`) to open the command palette, choose **Bring in existing projects**, and click **Search for projects**. If you have no agents yet, the **Team** page shows the same button. The search looks for marker files (`CLAUDE.md`, `AGENTS.md`, a `.dork/agent.json` file, and others). A folder with a `.dork/agent.json` is already a DorkOS agent, so DorkOS brings it in right away. Every other project waits for you to add it.
+2. Check that your project is inside a folder DorkOS searches. By default that's your boundary, which is your home folder unless you changed it. If your project lives elsewhere, open **Advanced** in the same window and add its folder. DorkOS remembers it for next time.
 3. Confirm the project has one of the marker files Mesh looks for (a `CLAUDE.md`, an `AGENTS.md`, or a `.dork/agent.json`). No marker, no match.
-4. If you approved or denied the project before, it won't show up as a new candidate again, check the Mesh tab's existing list rather than expecting it to reappear.
+4. If you approved the project before, it is already on the **Team** page. If you said no to it before, DorkOS skips it in later searches, so it won't reappear as a new project.
 
 See [Agent Discovery](/docs/guides/agent-discovery) for the full list of what Mesh looks for and how scanning works.
 

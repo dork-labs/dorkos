@@ -24,6 +24,7 @@ import { AccessCardFrame } from './AccessCardFrame';
 import type { ConnectionAccessCardProps } from './access-card-props';
 import { AccessEditor, ExactActionsLink } from './AccessEditor';
 import { AccessOutcome } from './AccessOutcome';
+import { AccessResultLine } from './AccessResultLine';
 import { AccountChoice } from './AccountChoice';
 import { savedSummary } from './saved-summary';
 import { StopSharingFallback } from './StopSharingFallback';
@@ -261,7 +262,6 @@ function AccessStep(
           setPicked={setPicked}
           who={who}
           setWho={setWho}
-          decision={decision}
           level={level}
           setLevel={(next) => {
             setLevel(next);
@@ -286,6 +286,17 @@ function AccessStep(
             Write access needs you.
           </p>
         )}
+      {props.mode === 'page' && preview && !outcome && !access.loadFailed && (
+        <AccessResultLine
+          serviceName={props.serviceName}
+          preview={preview}
+          picked={picked}
+          level={level}
+          decision={decision}
+          who={who}
+          every={every}
+        />
+      )}
       <div className="flex flex-wrap items-center justify-end gap-2">
         {access.needsReconciliation ? (
           <Button variant="secondary" onClick={access.refresh}>

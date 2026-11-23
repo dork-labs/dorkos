@@ -11,7 +11,7 @@ const REPORT = {
 
 /** Fakes for every lookup, each test overriding what it is about. */
 function deps(over: Partial<UndeliveredReportDeps> = {}) {
-  const notify = vi.fn().mockResolvedValue({ notification: null, deduped: false });
+  const notify = vi.fn().mockResolvedValue({ notification: null, deduped: true });
   const all: UndeliveredReportDeps = {
     titleOf: async () => 'Research follow-up',
     agentPathOf: async () => '/agents/research',
@@ -88,4 +88,38 @@ it('writes the undelivered report card with its exact copy and action', () => {
   expect(entry.actions?.(payload)).toEqual([
     { id: 'open-chat', label: 'Open chat', style: 'primary' },
   ]);
+});
+
+it('keeps the terminal cursor retryable when notification storage returns no receipt', async () => {
+  const { all, notify } = deps();
+  notify.mockResolvedValue({ notification: null, deduped: false });
+  await expect(notifyUndeliveredReport(REPORT, all)).rejects.toThrow('notification');
+});
+
+it('deduplicates a recovered notice by report identity and never claims ambiguous delivery was absent', async () => {
+  const { all, notify } = deps();
+  const report = {
+    ...REPORT,
+    reportId: 'durable-report',
+    at: '2026-11-20T12:00:00.000Z',
+    deliveryUnknown: true,
+  };
+  await notifyUndeliveredReport(report, all);
+  const payload = notify.mock.calls[0]![1];
+  const entry = REPORT_UNDELIVERED_ENTRIES['report.undelivered'];
+  expect(entry.dedupeKey?.(payload)).toBe('report-undelivered:durable-report');
+  expect(entry.title(payload)).toContain('needs checking');
+  expect(entry.body?.(payload)).toContain('couldn’t be confirmed');
+  expect(payload.at).toBe(report.at);
+});
+
+it('names a recovery save problem without claiming the live report was lost', async () => {
+  const { all, notify } = deps();
+  await notifyUndeliveredReport({ ...REPORT, recoveryUnavailable: true }, all);
+  const payload = notify.mock.calls[0]![1];
+  const entry = REPORT_UNDELIVERED_ENTRIES['report.undelivered'];
+  expect(entry.title(payload)).toBe('Report recovery unavailable');
+  expect(entry.body?.(payload)).toBe(
+    'This report can’t resume after a restart. Open the chat to check it.'
+  );
 });

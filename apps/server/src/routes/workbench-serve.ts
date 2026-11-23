@@ -61,7 +61,7 @@ import {
   bridgeKeyFor,
 } from '../services/workbench-serve/index.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 
 const router = new Hono<ApiEnv>();
 

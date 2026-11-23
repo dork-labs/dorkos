@@ -4,8 +4,8 @@ name: claude-code-review
 # lines where it finds issues. Runs on-demand, not on every push: a full review
 # fires when a PR is opened or marked ready-for-review, and re-reviews fire when
 # the author applies the `re-review` label (auto-cleared after, so it is a reusable
-# "re-request review" button). Pushes do NOT auto-review, so a round of feedback
-# commits does not trigger a fresh review each time. Controls (labels): `skip-review`
+# "re-request review" button). Since Nov 23 every push reviews too (see `on:`),
+# because the Security lens's verdict has to name the exact head. Controls (labels): `skip-review`
 # (no review at all), `review:light` / `review:deep` (intensity). See the
 # `creating-pull-requests` skill for the author-facing flow. This is the "auto"
 # half of the Claude review setup; claude.yml is the interactive "@claude" half.
@@ -186,10 +186,14 @@ name: claude-code-review
 # identically.
 
 on:
-  # On-demand, not on every push: no `synchronize`. A full review fires on open
-  # and on ready-for-review; re-reviews fire when the `re-review` label is added.
+  # Every push reviews too (`synchronize`, DOR-5099, Nov 23): the Security lens's
+  # verdict must name the exact head, and `pr-gates` accepts that verdict as
+  # Security's sign-off, so a head with no review would wait forever. On a push
+  # the reviewer is in re-review mode (only new or still-open Important
+  # findings). The concurrency group below is per head SHA, so a review of an
+  # older head still finishes. Re-reviews also fire on `re-review`.
   pull_request:
-    types: [opened, ready_for_review, reopened, labeled]
+    types: [opened, synchronize, ready_for_review, reopened, labeled]
 
   # Manual review of any open PR by number. Two jobs (DOR-457):
   #   1. Escape hatch for the conflicted-PR blind spot above — the only way to get
@@ -309,7 +313,7 @@ env:
 # SHA was cancelled when a newer trigger arrived. Under a per-SHA key it runs to
 # completion and posts its verdict, correctly attributed to the SHA it read. That
 # costs a little subscription budget in the rare case where two review triggers
-# straddle a push (reviews do not fire on `synchronize`, so this needs a push
+# straddle a push (this needs a push
 # BETWEEN two review triggers), and it buys a review that is never half-done.
 #
 # `workflow_dispatch` carries no head SHA in its payload, so a manual run is
@@ -661,6 +665,19 @@ jobs:
             refuse "the reviewer's GitHub helper could not be read from the $DEFAULT_BRANCH branch, and running this PR's copy of it is not an option."
           fi
           chmod 0500 "$HELPER_DIR/review-gh.sh"
+
+          # The Security lens (DOR-5099), from the default branch for the same
+          # reason as the helper: a PR must not edit the criteria it is judged by.
+          # Optional while the lens is new. Without it, the prompt tells the
+          # reviewer to skip the Security lens, and the advisory
+          # `security-verdict` job goes red for want of a verdict.
+          if git show "origin/$DEFAULT_BRANCH:ci/security/review-lens.md" >"$HELPER_DIR/security-lens.md" 2>/dev/null; then
+            chmod 0400 "$HELPER_DIR/security-lens.md"
+            echo "Materialized ci/security/review-lens.md from origin/$DEFAULT_BRANCH (read-only)"
+          else
+            rm -f "$HELPER_DIR/security-lens.md"
+            echo "::warning::ci/security/review-lens.md is not on $DEFAULT_BRANCH yet; the Security lens is skipped on this run."
+          fi
           chmod 0500 "$HELPER_DIR"
           echo "Materialized scripts/review-gh.sh from origin/$DEFAULT_BRANCH (read-only)"
 
@@ -817,6 +834,11 @@ jobs:
           # `VAR=x cmd` prefix that would let a tool call override it.
           REVIEW_REPO: ${{ github.repository }}
           REVIEW_PR: ${{ steps.target.outputs.number }}
+          # The head this review is about, stamped into the Security verdict by
+          # the helper (DOR-5099). Empty on a dispatch, where the helper resolves
+          # the PR's current head itself. A SHA from the event payload, never a
+          # path, so it cannot point anything into the workspace.
+          REVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           # DEFENCE IN DEPTH, not a control (DOR-464). These blunt one specific
           # escalation: git executes a `diff.external` / `GIT_EXTERNAL_DIFF` driver
           # through `sh -c`, and that driver is configurable from `$HOME/.gitconfig`
@@ -886,13 +908,15 @@ jobs:
               bash ${{ runner.temp }}/trusted/review-gh.sh view <jsonFields>
               bash ${{ runner.temp }}/trusted/review-gh.sh summary '<body>'
               bash ${{ runner.temp }}/trusted/review-gh.sh inline <file> <line> '<body>'
+              bash ${{ runner.temp }}/trusted/review-gh.sh security-verdict pass 0
+              bash ${{ runner.temp }}/trusted/review-gh.sh security-verdict fail <musts> <categories>
 
             `view` takes comma-separated JSON field names, e.g. `view labels`,
             `view comments` or `view files` for the changed-file list, and prints
             raw JSON for you to read — it takes no jq expression, and `diff` takes
             no flags. Nothing else about these commands is negotiable: extra
             flags, a different path, or `gh` on its own will all be refused. Below,
-            `review-gh.sh <args>` is shorthand for one of the four lines above —
+            `review-gh.sh <args>` is shorthand for one of the lines above —
             type the full command.
 
             To search the tree and read files, use the Grep, Glob and Read tools.
@@ -966,6 +990,24 @@ jobs:
             Only post GitHub comments; do not submit the review as a chat message.
             If there are no blocking issues, post a brief "No blocking issues
             found" summary comment.
+
+            SECURITY LENS (DOR-5099, advisory). After the summary, review the same
+            diff a second time as DorkOS Security. The criteria are in
+            `${{ runner.temp }}/trusted/security-lens.md`, which comes from the
+            default branch, not from this PR: read it with Read. If that file does
+            not exist, skip this whole section and post no security verdict.
+            - Apply its severity bar strictly. A Must names the attacker, the file
+              and line, and the concrete attack; anything else is not a Must.
+            - This repository is public. Never describe a Security Must, an attack
+              or an exploit path in any comment, inline or summary. Leave security
+              findings out of the code-review comments above as well.
+            - Post exactly one verdict, as your last action, for this head:
+              `review-gh.sh security-verdict pass 0` when there are no Musts, or
+              `review-gh.sh security-verdict fail <musts> <categories>`, where
+              <categories> is a comma-separated subset of auth, injection,
+              permissions, connectors, extensions, secrets, ci, supply-chain,
+              other. On a re-review, judge the whole diff again and post a fresh
+              verdict.
           # --setting-sources user (DOR-457, security): without it the SDK defaults
           # to ["user","project","local"] (base-action/src/parse-sdk-options.ts), so
           # the CLI loads the checkout's own `.claude/settings.json`,

@@ -13,6 +13,7 @@ import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import type { PendingInteractionDTO, Session, Task } from '@dorkos/shared/types';
 // The leaf, not the `shared/lib` barrel: this module is pure and stays that way.
 import { sessionHref } from '@/layers/shared/lib/session-link';
+import { sessionDisplayTitle } from '@/layers/entities/session';
 import type { AttentionSignal } from './attention-signal';
 import { describeInteraction } from './describe-interaction';
 import {
@@ -109,7 +110,7 @@ function sessionSignal(
   const who = whoOf(session, sources.agentNames);
   return {
     ...rest,
-    primary: who ?? session.title,
+    primary: who ?? sessionDisplayTitle(session.title),
     // The directory rides along when the session has one, so the route does
     // not have to guess it (DOR-1836).
     deepLink: sessionHref({ session: session.id, dir: session.cwd ?? undefined }),

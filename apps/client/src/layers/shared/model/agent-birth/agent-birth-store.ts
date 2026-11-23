@@ -84,20 +84,23 @@ interface AgentBirthState {
    */
   migrate: (oldId: string, newId: string) => void;
   /**
-   * Claim an UNFIRED birth registered for this agent directory but never
-   * visited under its original session id — the create path that records a
-   * birth without opening a session (e.g. onboarding advances instead of
-   * navigating). The first fresh session opened in that directory re-keys the
-   * record to itself, so the hello + certificate land on the agent's real
-   * first session. Synchronous re-key means only one session can ever claim
-   * a record. Returns the claimed record, or null when none matches.
+   * Greetings waiting for a chat, keyed by agent id: an agent created by a host
+   * flow, or one whose creator clicked away before its first chat opened.
    */
-  claimByPath: (path: string, sessionId: string) => AgentBirthRecord | null;
+  deferred: Record<string, Omit<AgentBirthRecord, 'fired'>>;
+  /** Park a greeting until the agent's next acknowledged new chat claims it. */
+  defer: (record: Omit<AgentBirthRecord, 'fired'>) => void;
+  /**
+   * Move a parked greeting onto a newly acknowledged chat, matched by agent id
+   * or, without one, by folder. No-op when the chat already has a record.
+   */
+  claimDeferred: (sessionId: string, source: { cwd?: string; agentId?: string }) => void;
 }
 
 /** Ephemeral store of newborn-agent birth records (M4). */
-export const useAgentBirthStore = create<AgentBirthState>((set, get) => ({
+export const useAgentBirthStore = create<AgentBirthState>((set) => ({
   records: {},
+  deferred: {},
   register: (sessionId, record) =>
     set((s) => ({ records: { ...s.records, [sessionId]: { ...record, fired: false } } })),
   markFired: (sessionId) =>
@@ -127,13 +130,18 @@ export const useAgentBirthStore = create<AgentBirthState>((set, get) => ({
       next[newId] = record;
       return { records: next };
     }),
-  claimByPath: (path, sessionId) => {
-    const entry = Object.entries(get().records).find(([, rec]) => rec.path === path && !rec.fired);
-    if (!entry) return null;
-    const [key, record] = entry;
-    if (key !== sessionId) get().migrate(key, sessionId);
-    return record;
-  },
+  defer: (record) => set((s) => ({ deferred: { ...s.deferred, [record.agentId]: record } })),
+  claimDeferred: (sessionId, { cwd, agentId }) =>
+    set((s) => {
+      if (s.records[sessionId]) return s;
+      const record = agentId
+        ? s.deferred[agentId]
+        : Object.values(s.deferred).find((entry) => entry.path === cwd);
+      if (!record) return s;
+      const deferred = { ...s.deferred };
+      delete deferred[record.agentId];
+      return { deferred, records: { ...s.records, [sessionId]: { ...record, fired: false } } };
+    }),
 }));
 
 /**

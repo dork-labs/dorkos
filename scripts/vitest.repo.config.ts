@@ -64,6 +64,10 @@ export const REPO_WIDE_SUITES = [
   '__tests__/mcp-exclude-copy.test.ts',
   '__tests__/merge-group-runner-label.test.ts',
   '__tests__/one-shot-routes.test.ts',
+  // Reads docs/api/openapi.json and the repo VERSION file.
+  '__tests__/openapi-version.test.ts',
+  // Walks every shipped app and package for network senders (DOR-4990).
+  '__tests__/outbound-census.test.ts',
   '__tests__/playwright-apt-debs.test.ts',
   // Reads test.yml, browser-test.yml, docs-openapi-check.yml,
   // release-branch-contents.yml and changelog-fragment-check.yml (DOR-4639).
@@ -75,6 +79,8 @@ export const REPO_WIDE_SUITES = [
   '__tests__/session-link-boundary.test.ts',
   '__tests__/space-page-versions.test.ts',
   '__tests__/space-server.test.ts',
+  // Reads .github/workflows/security-gate.yml through the classifier (DOR-4834).
+  '__tests__/text-only-scope.test.ts',
   '__tests__/tsconfig-extends-resolve.test.ts',
   '__tests__/vitest-projects.test.ts',
   'release-checks/__tests__/chromium-age.test.ts',

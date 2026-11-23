@@ -114,6 +114,18 @@ const envelopeFields = {
 };
 
 /**
+ * The one property the usage reporter adds to every event at send time
+ * (DOR-4989): `$process_person_profile: false` tells PostHog not to build a
+ * person profile for the event, so anonymous usage stays anonymous, like the
+ * crash and AI-run events. The reporter leaves it out only when this computer is
+ * linked to an account AND `telemetry.linkAnalyticsToAccount` is on. Producers
+ * never set it: {@link TelemetryEventInputSchema} does not accept it.
+ */
+const sendTimeUsageFields = {
+  $process_person_profile: z.literal(false).optional(),
+};
+
+/**
  * A single fully-enveloped telemetry event, discriminated on `event` so the
  * `properties` shape is correlated to the name at the type level. Strict at both
  * levels: unknown envelope keys and unknown property keys are both rejected.
@@ -122,28 +134,28 @@ export const TelemetryEventSchema = z.discriminatedUnion('event', [
   z
     .object({
       event: z.literal('app_started'),
-      properties: AppStartedProperties,
+      properties: AppStartedProperties.extend(sendTimeUsageFields).strict(),
       ...envelopeFields,
     })
     .strict(),
   z
     .object({
       event: z.literal('session_created'),
-      properties: SessionCreatedProperties,
+      properties: SessionCreatedProperties.extend(sendTimeUsageFields).strict(),
       ...envelopeFields,
     })
     .strict(),
   z
     .object({
       event: z.literal('first_run_completed'),
-      properties: FirstRunCompletedProperties,
+      properties: FirstRunCompletedProperties.extend(sendTimeUsageFields).strict(),
       ...envelopeFields,
     })
     .strict(),
   z
     .object({
       event: z.literal('instance_active'),
-      properties: InstanceActiveProperties,
+      properties: InstanceActiveProperties.extend(sendTimeUsageFields).strict(),
       ...envelopeFields,
     })
     .strict(),

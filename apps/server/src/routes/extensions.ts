@@ -39,11 +39,11 @@ import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import { resolveBlobPath } from '../services/extensions/extension-data-paths.js';
-import { currentStepUpExtensionRisks } from '../services/extensions/step-up/step-up-extension-risk.js';
+import { noteStepUpRisksBeforeServing } from '../services/extensions/step-up/step-up-extension-risk.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { registerExtensionApprovalRoutes } from './extensions-approval.js';
 import { registerExtensionStepUpRoutes } from './extensions-step-up.js';
@@ -377,9 +377,12 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
       const bundle = await extensionManager.readBundle(id);
       if (!bundle) return c.json({ error: `Bundle not available for '${id}'` }, 404);
-      // Code is entering a page: note its risk, so a later clear is remembered
-      // against every browser that loaded it (Security, M1 on #3401).
-      currentStepUpExtensionRisks();
+      // Code is entering a page: note its risk first, so a later clear is
+      // remembered against every browser that loaded it (Security, M1 on
+      // #3401). A reading that could not be kept serves nothing (DOR-4906).
+      if (!noteStepUpRisksBeforeServing(id)) {
+        return c.json({ error: 'Failed to serve bundle' }, 503);
+      }
       return c.body(bundle, 200, {
         'Content-Type': 'application/javascript; charset=utf-8',
         'Cache-Control': 'no-store',

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useConfig } from '@/layers/entities/config';
 import { resolveAgentVisual } from '@/layers/entities/agent';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
-import { useSessionListStore } from '@/layers/entities/session';
+import { sessionDisplayTitle, useSessionListStore } from '@/layers/entities/session';
 import { activityVerb } from '@/layers/shared/lib';
 import {
   buildTeamRows,
@@ -54,7 +54,7 @@ export function useTeamBoard(): TeamBoard {
       live.push({
         id,
         cwd,
-        title: sessions[id]?.title || 'Untitled chat',
+        title: sessionDisplayTitle(sessions[id]?.title),
         activity: activityVerb(lifecycle, activity),
         waiting: lifecycle === 'blocked',
         startedAt: null,

@@ -22,7 +22,7 @@
 import type { Context, Hono } from 'hono';
 import { UpdateQueuedMessageRequestSchema } from '@dorkos/shared/schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { wifiTurnHeld } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import {
@@ -32,7 +32,7 @@ import {
 } from '../services/session/index.js';
 import type { MeshCore } from '@dorkos/mesh';
 import { errorBody, parseSessionId } from '../lib/route-utils.js';
-import { chatPlaceRefusal } from './session-launcher.js';
+import { chatPlaceRefusal, limitedTurnQueueRefusal } from './session-launcher.js';
 import {
   noteRemovedByPerson,
   queuedChatRecordsOf,
@@ -89,8 +89,11 @@ export function sessionQueueUpdateHandler(meshCore: MeshCore | undefined) {
     if (!messageId) return c.json(INVALID_MESSAGE_ID, 400);
     // A waiting message runs as its chat's agent, so only a caller who could post
     // into that chat may reword or move it (DOR-3644 S1).
-    const refused = await chatPlaceRefusal(honoRequestFacts(c), meshCore, sessionId);
+    const facts = honoRequestFacts(c);
+    const refused = await chatPlaceRefusal(facts, meshCore, sessionId);
     if (refused) return c.json(errorBody(refused.message, 'DESK_NOT_OWN'), 403);
+    const limited = limitedTurnQueueRefusal(facts);
+    if (limited) return c.json(errorBody(limited, 'LIMITED_TURN'), 403);
     // An empty body is answered with the same 400 as a malformed one.
     const parsed = UpdateQueuedMessageRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
@@ -136,8 +139,11 @@ export function sessionQueueRemoveHandler(meshCore: MeshCore | undefined) {
     if (!messageId) return c.json(INVALID_MESSAGE_ID, 400);
     // Removing a person's waiting message from another agent's chat is that chat's
     // business, not a stranger's (DOR-3644 S1).
-    const refused = await chatPlaceRefusal(honoRequestFacts(c), meshCore, sessionId);
+    const facts = honoRequestFacts(c);
+    const refused = await chatPlaceRefusal(facts, meshCore, sessionId);
     if (refused) return c.json(errorBody(refused.message, 'DESK_NOT_OWN'), 403);
+    const limited = limitedTurnQueueRefusal(facts);
+    if (limited) return c.json(errorBody(limited, 'LIMITED_TURN'), 403);
     // Being sent into the running turn right now (Send now): it is on its way.
     if (isQueuedMessageSteering(messageId)) return c.json(ALREADY_STARTING, 409);
     // Another chat's message: read before it goes, so its sender can be told

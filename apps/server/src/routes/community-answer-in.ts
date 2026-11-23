@@ -24,7 +24,7 @@ import {
   CommunityWakeAgentsFromSchema,
 } from '@dorkos/shared/community-connections';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { RemoteConnectionNotFoundError } from '../services/communities/remote/connection-store.js';
 import type { RemoteWakePolicy } from '../services/communities/remote/wake/wake-policy.js';
 import { AnswerInChangedError } from '../services/communities/remote/wake/answer-in-store.js';

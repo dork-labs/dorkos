@@ -12,7 +12,7 @@
 import { Hono } from 'hono';
 import { TriageCreditsChoiceSchema } from '@dorkos/shared/heartbeat-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { validationFailureBody } from '../lib/route-utils.js';
 import { errorRefusalUnlessOwner, runAccountWrite } from './cloud-owner-bar.js';

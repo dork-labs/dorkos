@@ -32,6 +32,14 @@ import { RUNTIME_CREDITS_PROTOCOLS } from '@dorkos/shared/agent-runtime';
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
 import { registerDomainOpenApi } from './openapi/domains.js';
+import { assignOperationIds } from './openapi/operation-ids.js';
+import {
+  API_DESCRIPTION,
+  DOCUMENT_SECURITY,
+  assignOperationSecurity,
+  registerSecuritySchemes,
+} from './openapi/security-schemes.js';
+import { SERVER_VERSION } from '../../lib/version.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import { registerExtensionRemovalOpenApi } from '../extensions/removal/extension-removal-openapi.js';
 import { registerExtensionApprovalSetOpenApi } from '../extensions/groups/extension-approval-set-openapi.js';
@@ -2166,13 +2174,17 @@ registry.registerPath({
   description:
     'Lifts the cap a change outside the task tools put on a schedule: its runs go back to its ' +
     'own mode instead of Never ask (DOR-3703). The body names the cap you saw and the file ' +
-    'hash its diff showed (`capAt` and `hash`, from `fileCap`). Only a person can use it: an ' +
-    'agent is refused. Answers 409 once the file changed since that diff.',
+    'hash its diff showed (`capAt` and `hash`, from `fileCap`). With no cap standing, it ' +
+    'names the hash alone (from `fileReview`) and approves the file as it is now (DOR-5060). ' +
+    'Only a person can use it: an agent is refused. Answers 409 once the file changed since ' +
+    'that diff.',
   request: {
     params: z.object({ id: z.string() }),
     body: {
       content: {
-        'application/json': { schema: z.object({ capAt: z.string(), hash: z.string() }) },
+        'application/json': {
+          schema: z.object({ capAt: z.string().optional(), hash: z.string() }),
+        },
       },
     },
   },
@@ -3200,6 +3212,8 @@ registry.registerPath({
 registry.registerPath({
   method: 'delete',
   path: '/api/marketplace/sources',
+  // The query form of `DELETE /sources/{name}`, which keeps the derived id.
+  operationId: 'marketplace.deleteSourcesByQuery',
   tags: ['Marketplace'],
   summary: 'Remove a marketplace source (operator only)',
   description:
@@ -3265,6 +3279,8 @@ registry.registerPath({
 registry.registerPath({
   method: 'post',
   path: '/api/marketplace/sources/refresh',
+  // The query form of `POST /sources/{name}/refresh`, which keeps the derived id.
+  operationId: 'marketplace.refreshSourcesByQuery',
   tags: ['Marketplace'],
   summary: 'Force refetch of a source marketplace.json',
   description:
@@ -7859,7 +7875,8 @@ registry.registerPath({
     'the cursor as it now stands, which is the higher of the stored value and the requested one, ' +
     'so a refused write answers with what still holds rather than with an error. **Every write ' +
     'that actually moves the cursor broadcasts `read_cursor` on `GET /api/events`**, carrying the ' +
-    'user, the kind, the thread and the new position; a write that changes nothing broadcasts ' +
+    "user, the kind, the thread and the new position, to the caller's own streams only and never " +
+    'to an agent; a write that changes nothing broadcasts ' +
     "nothing. The cursor written is always the caller's own — there is no way to name a user in " +
     "this request, and therefore no way to read or move anybody else's read state. **Only people " +
     'have read state here** — a caller the server resolves as an agent (one presenting a valid ' +
@@ -8638,21 +8655,44 @@ registerExtensionMediaOpenApi(registry);
 registerConfigBackupsOpenApi(registry);
 
 documentFrontDoorStepUps(registry);
+registerSecuritySchemes(registry);
 
 // --- Generator ---
 
-/** Generate the full OpenAPI 3.1.0 document from registered paths and schemas. */
-export function generateOpenAPISpec(): ReturnType<
-  InstanceType<typeof OpenApiGeneratorV31>['generateDocument']
-> {
+/** Options for {@link generateOpenAPISpec}. */
+export interface GenerateOpenAPISpecOptions {
+  /**
+   * The document's `info.version`. Defaults to the running server's version;
+   * the committed export (`scripts/export-openapi.ts`) passes the repo's
+   * `VERSION`, since a source run's own version is the `0.0.0` dev sentinel.
+   */
+  version?: string;
+}
+
+/**
+ * Generate the full OpenAPI 3.1.0 document from registered paths and schemas,
+ * with an `operationId` on every operation (`openapi/operation-ids.ts`) and a
+ * `security` on each one that differs from the default
+ * (`openapi/security-schemes.ts`).
+ *
+ * @param options - See {@link GenerateOpenAPISpecOptions}.
+ * @throws If two operations share an `operationId`.
+ */
+export function generateOpenAPISpec(
+  options: GenerateOpenAPISpecOptions = {}
+): ReturnType<InstanceType<typeof OpenApiGeneratorV31>['generateDocument']> {
   const generator = new OpenApiGeneratorV31(registry.definitions);
-  return generator.generateDocument({
+  const document = generator.generateDocument({
     openapi: '3.1.0',
     info: {
       title: 'DorkOS API',
-      version: '0.2.0',
-      description: 'REST/SSE API for Claude Code sessions, built with the Claude Agent SDK.',
+      version: options.version ?? SERVER_VERSION,
+      description: API_DESCRIPTION,
     },
     servers: [{ url: `http://localhost:${env.DORKOS_PORT}` }],
+    security: DOCUMENT_SECURITY,
   });
+  assignOperationIds(document);
+  assignOperationSecurity(document);
+  return document;
 }

@@ -191,7 +191,7 @@ describe('ConnectionAccessCard — page mode', () => {
     expect(await screen.findByTestId('connector-access-outcome')).toHaveTextContent(
       'Access updated'
     );
-    expect(screen.getByText('Ada can use Gmail.')).toBeInTheDocument();
+    expect(screen.getByText('Ada gets Gmail (Read and write).')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Done' }));
     expect(onFinished).toHaveBeenCalledTimes(1);
   });
@@ -551,11 +551,11 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
     renderCard(transport, { mode: 'page', connectionId: 'connection-1', serviceName: 'Gmail' });
 
     expect(await screen.findByLabelText('Now: Exact actions')).toBeInTheDocument();
-    expect(screen.queryByText(/will lose access/)).not.toBeInTheDocument();
+    const line = screen.getByTestId('access-result-line');
+    expect(line).toHaveAttribute('aria-live', 'polite');
+    expect(line).toBeEmptyDOMElement();
     await user.click(screen.getByRole('checkbox', { name: 'Gus' }));
-    expect(screen.getByRole('checkbox', { name: 'Gus' })).toHaveAccessibleDescription(
-      'Gus will lose access to Gmail.'
-    );
+    expect(line).toHaveTextContent(/^Gus loses Gmail\.$/);
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() =>
@@ -564,9 +564,11 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
         grants: [{ agentId: 'agent-gus', operationRevisionIds: [] }],
       })
     );
-    expect(
-      await screen.findByText('Ada can use Gmail. Gus can no longer use it.')
-    ).toBeInTheDocument();
+    // After Save, the outcome repeats the line, and the line itself is gone.
+    expect((await screen.findByTestId('connector-access-outcome')).parentElement).toHaveTextContent(
+      'Gus loses Gmail.'
+    );
+    expect(screen.queryByTestId('access-result-line')).not.toBeInTheDocument();
   });
 
   it('shows each current level, selects no level while they differ, and only changes them on an explicit pick', async () => {
@@ -598,10 +600,10 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
     await user.click(screen.getByRole('checkbox', { name: 'Cy' }));
     expect(save).toBeDisabled();
 
-    expect(screen.queryByText('Ada will lose write access.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/drops to Read/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: 'Read' }));
-    expect(screen.getByRole('checkbox', { name: 'Ada' })).toHaveAccessibleDescription(
-      'Ada will lose write access.'
+    expect(screen.getByTestId('access-result-line')).toHaveTextContent(
+      'Cy gets Gmail (Read). Ada drops to Read.'
     );
     await user.click(save);
     await waitFor(() =>
@@ -616,9 +618,9 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
     expect(await screen.findByTestId('connector-access-outcome')).toHaveTextContent(
       'Access updated'
     );
-    expect(
-      screen.getByText('Ada, Bo and Cy can use Gmail. Ada can now only read.')
-    ).toBeInTheDocument();
+    expect(screen.getByTestId('connector-access-outcome').parentElement).toHaveTextContent(
+      'Cy gets Gmail (Read). Ada drops to Read.'
+    );
   });
 
   it('keeps showing the level the owner chose after the app changes its actions (DOR-2506)', async () => {
@@ -693,7 +695,7 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
 
     await user.click(await screen.findByRole('checkbox', { name: 'Flo' }));
     expect(screen.getByRole('checkbox', { name: 'Flo' })).not.toBeChecked();
-    expect(screen.getByText('Flo will lose access to Gmail.')).toBeInTheDocument();
+    expect(screen.getByTestId('access-result-line')).toHaveTextContent('Flo loses Gmail.');
     expect(screen.queryByRole('checkbox', { name: 'Gus' })).not.toBeInTheDocument();
   });
 });

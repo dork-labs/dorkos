@@ -16,7 +16,7 @@ import {
 import { trustedCaller } from '../../services/core/capabilities/index.js';
 import { resolveDecisionAuthority } from '../../services/core/approvals/index.js';
 import { OPERATOR_COOKIE_REQUIRED_CODE, readCallerAuthority } from '../../lib/caller-authority.js';
-import { readJsonBody } from '../../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../../http/request-facts.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceContext, MarketplaceRouteContext } from './context.js';

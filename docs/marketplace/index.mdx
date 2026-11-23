@@ -125,7 +125,7 @@ Click the **Marketplace** entry in the sidebar. In a browser you can also go str
 
 ### Browse and search
 
-The featured rail at the top highlights curated agents. Below it, the package grid lists every package in the registry. Filter by type (`agent`, `plugin`, `skill-pack`, `adapter`) or category, or search by name and tag. The browse page's URL reflects whatever search and filters you have set, so you can copy it and share the exact view with a teammate.
+The featured rail at the top highlights curated agents. Below it, the package grid lists every package in the registry. Filter by type (`agent`, `plugin`, `skill-pack`, `adapter`, `shape`) or category, or search by name and tag. The browse page's URL reflects whatever search and filters you have set, so you can copy it and share the exact view with a teammate.
 
 </Step>
 
@@ -390,7 +390,7 @@ DorkOS can report anonymous install events to dorkos.ai to power the public inst
 When telemetry is on, each successful install sends a single event containing:
 
 - The package name and marketplace source
-- The package type (`agent`, `plugin`, `skill-pack`, `adapter`)
+- The package type (`agent`, `plugin`, `skill-pack`, `adapter`, `shape`)
 - The outcome (`success`, `failure`, `cancelled`) and duration
 - A random per-install UUID, not tied to you or your machine
 - The DorkOS version, for compatibility analytics
@@ -403,7 +403,7 @@ To enable telemetry:
 dorkos telemetry enable --channel install
 ```
 
-Or toggle the **Help improve the marketplace** switch in the Marketplace settings panel.
+Or turn on the **Share anonymous install counts** switch in Settings, on the Privacy & Data tab.
 
 ## Submitting a package
 

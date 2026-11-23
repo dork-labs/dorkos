@@ -1,0 +1,33 @@
+{
+  "name": "@dorkos/http-kit",
+  "version": "0.0.0",
+  "description": "The HTTP pieces every DorkOS server chain shares: the facts a policy reads off a request, the bounded body and JSON reader, and the one error shape (RFC 9457 problem documents).",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@dorkos/shared": "workspace:*",
+    "@hono/node-server": "^2.1.6",
+    "body-parser": "^2.4.0",
+    "hono": "^4.13.16",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/typescript-config": "workspace:*",
+    "@types/body-parser": "^1.19.6",
+    "@types/node": "^24",
+    "vitest": "^4.1.11"
+  }
+}

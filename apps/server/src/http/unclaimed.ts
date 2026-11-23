@@ -22,7 +22,7 @@ import type { HttpBindings } from '@hono/node-server';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import type { Context, NotFoundHandler } from 'hono';
 import type { ClientFilesHandler } from './client-files.js';
-import { underMount } from './request-body.js';
+import { underMount } from '@dorkos/http-kit';
 
 /** The `/api` 404 body. */
 const API_NOT_FOUND_BODY = { error: 'Not found', code: 'API_NOT_FOUND' } as const;

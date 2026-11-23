@@ -64,7 +64,7 @@ import { trustedCaller } from '../services/core/capabilities/index.js';
 import { clearsTheAgentBar, readCallerAuthority } from '../lib/caller-authority.js';
 import { pinPersonCreatedAgent } from '../services/runtimes/claude-code/folder-settings/folder-config-consent.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { resolveAgentsDirectory } from '../lib/agents-home.js';

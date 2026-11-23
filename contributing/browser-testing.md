@@ -47,39 +47,53 @@ cd apps/e2e && PWDEBUG=1 npx playwright test tests/chat/send-message.spec.ts
 ```
 apps/e2e/
 ├── playwright.config.ts      # Multi-server config (Vite + the Hono server)
+├── playwright.*.config.ts    # Separate legs: first-run, widgets, blintz-heading
 ├── manifest.json              # Test registry + run history (regenerable, gitignored — DOR-726)
 ├── manifest-curated.json      # Hand-curated relatedCode/explorationNotes (tracked)
 ├── GOTCHAS.md                 # Known anti-patterns and hard-won lessons
 ├── BROWSER_TEST_PLAN.md       # Manual + automated test coverage checklist
 ├── global-setup.ts            # Dismisses first-run onboarding on every API leg
 ├── fixtures/
-│   ├── index.ts               # Extended test with DorkOS fixtures
+│   ├── base.ts                # Playwright's test + local Google Fonts stub
+│   ├── index.ts               # Extends base.ts with the DorkOS fixtures below
 │   ├── rooms-api.ts           # Seeds/cleans rooms and agents over REST
+│   ├── team-room-api.ts       # Writes to (and undoes) the one #team room
+│   ├── harness-repo.ts        # Stages an agent folder on disk before registering it
+│   ├── sole-access.ts         # Lock for specs that need the shared sidebar alone
 │   └── tasks-api.ts           # Seeds/cleans scheduled tasks over REST
 ├── pages/                     # Page Object Models
 │   ├── BasePage.ts            # Common navigation helpers
 │   ├── ChatPage.ts            # Chat interactions
 │   ├── command-palette.ts     # Shared opener every dialog POM uses
+│   ├── ConnectionsPage.ts     # The /connections page (one list of apps)
+│   ├── ControlCenterPage.ts   # The Control Center flyout
 │   ├── DashboardSidebarPage.ts # Sidebar roster, groups, drag-and-drop
+│   ├── HomeSurfacePage.ts     # Home tabs and their addresses
 │   ├── RightPanelPage.ts      # Right panel tabs (Pulse, Profile)
 │   ├── RoomsPage.ts           # Channels and DMs
 │   ├── SettingsPage.ts        # Settings dialog
 │   ├── TasksPage.ts           # Tasks Scheduler dialog
-│   └── RelayPage.ts           # Relay "Connections" dialog
+│   └── ...                    # Plus AuthPage, NewMenuPage, LocalBrowserPage and helpers
 ├── reporters/
 │   └── manifest-reporter.ts   # Custom reporter updating manifest.json
-└── tests/                     # Test specs organized by feature
+└── tests/                     # Test specs organized by feature (selected)
     ├── smoke/                 # @smoke — critical path, no SDK
-    ├── agents/                # The /agents fleet page (replaced mesh/)
     ├── chat/                  # send-message is @integration; status-line-fit is not
+    ├── connections/           # The Connections page, browser, Community access
     ├── dashboard-sidebar/     # Roster groups and drag-and-drop
-    ├── pulse/                 # Pulse panel tests
-    ├── relay/                 # Relay "Connections" dialog + adapter wizard
+    ├── pulse/                 # Pulse panel and right-panel tab strip
+    ├── relay/                 # Connections page, adapter wizard, bridged channels
     ├── production/            # The built app served by the server, real CSP
     ├── rooms/                 # Channels, DMs, mentions, palette
+    ├── team/                  # The /team page (replaced /agents and mesh/)
     ├── settings/
-    └── tasks/                 # Tasks Scheduler dialog
+    ├── tasks/                 # Tasks Scheduler dialog
+    └── ...                    # account-ui, control-center, conversation, extensions,
+                               # gen-ui, harness, home-surface, one-bar, overlays,
+                               # permissions, pip, profile, search, shapes, workbench
 ```
+
+Outside `tests/`, `multi-window/`, `community-two-desktop/`, `capture/`, `perf/` and `replay-demo/` are standalone runners, not part of the Playwright suite. Most have a script in `apps/e2e/package.json` (`pnpm --filter @dorkos/e2e multi-window`, `community-two-desktop`, `capture`, and `demo:replay` for `replay-demo/`). `perf/` has none: run it with `pnpm --filter @dorkos/e2e exec tsx perf/composer-latency.ts`.
 
 ## Writing Tests
 
@@ -91,8 +105,10 @@ Always import `test` and `expect` from the custom fixtures, never directly from 
 import { test, expect } from '../../fixtures';
 ```
 
+A spec that wants Playwright's bare `test` (no page objects, no sidebar lock) imports `fixtures/base.ts` instead, which still stubs Google Fonts on every page (DOR-4871).
+
 The fixture file (`fixtures/index.ts`) provides these pre-instantiated Page Objects,
-plus two seeding helpers:
+plus seeding helpers:
 
 | Fixture            | Class                  | Auto-navigates?                                                      |
 | ------------------ | ---------------------- | -------------------------------------------------------------------- |
@@ -103,12 +119,16 @@ plus two seeding helpers:
 | `rightPanel`       | `RightPanelPage`       | No                                                                   |
 | `settingsPage`     | `SettingsPage`         | No — call `settingsPage.open()` to open the dialog                   |
 | `tasksPage`        | `TasksPage`            | No — call `tasksPage.open()` to open the dialog                      |
-| `relayPage`        | `RelayPage`            | No — call `relayPage.open()` to open the dialog                      |
+| `connectionsPage`  | `ConnectionsPage`      | No: call `goto()` or `openFromPalette()` (a page, not a dialog)      |
+| `homeSurface`      | `HomeSurfacePage`      | No                                                                   |
+| `controlCenter`    | `ControlCenterPage`    | No: call `controlCenter.open()` to open the flyout                   |
 | `authPage`         | `AuthPage`             | No                                                                   |
 | `roomsApi`         | `RoomsApi`             | Seeds rooms/agents over REST; cleans up in teardown                  |
+| `teamRoomApi`      | `TeamRoomApi`          | Writes to the one #team room; undoes every write in teardown         |
+| `harnessRepo`      | `HarnessRepoApi`       | Stages an agent's folder on disk before it is registered             |
 | `tasksApi`         | `TasksApi`             | Seeds schedules over REST; cleans up in teardown                     |
 
-There is no `meshPage`: the Mesh dialog was replaced by the `/agents` page.
+`soleSidebar` is automatic: specs that carry its tag take the shared-sidebar lock (`fixtures/sole-access.ts`). There is no `relayPage` or `meshPage`: Connections is a page (`connectionsPage`) and the Mesh dialog became the `/team` page.
 
 ### Use Page Object Models
 
@@ -124,7 +144,7 @@ test('sends a message', async ({ chatPage }) => {
 });
 ```
 
-For dialog-based features (Settings, Tasks, Relay), call `open()` first:
+For dialog-based features (Settings, Tasks), call `open()` first:
 
 ```typescript
 test('tasks dialog opens @smoke', async ({ basePage, tasksPage }) => {
@@ -414,6 +434,8 @@ await request.post(`${API_URL}/api/test/scenario`, {
   data: { name: 'simple-text' },
 });
 ```
+
+To start a room hand-off, set `rooms-post-to` on one direct chat with an agent (`{ name: 'rooms-post-to', sessionId }`) and send that chat `<roomId> <text>`. It posts as the agent from that chat, so the room hands the words to the agent's seat there, and it answers `HANDED-OFF: <handoff id>`. Start the chat with the agent's folder as `cwd`; no `agentPath` is needed (DOR-5035). Details are in the `/chat:rooms-test` command (DOR-5032).
 
 The `seed-agent` endpoint creates a temporary `.dork/agent.json` under the mock DORK_HOME, registers that agent with the mesh, and returns `{ agentDir, agentId }`. Without it, the chat input's send button stays disabled because no agent is registered for the working directory.
 

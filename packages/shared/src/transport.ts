@@ -200,6 +200,7 @@ import type {
   LimitHistoryEntry,
 } from './account-usage.js';
 import type { TransportSlices } from './transport-slices.js';
+export type * from './transport-session-locations.js';
 import type { CanvasEditingResponse, UpdateCanvasDocumentRequest } from './room-schemas.js';
 import type { CanvasDocument } from './canvas-schemas.js';
 import type { ReadCursor, ReadCursorThreadKind } from './read-cursor-schemas.js';
@@ -728,10 +729,6 @@ export interface Transport extends TransportSlices {
    * @param sessionId - The chat being shown.
    */
   markSessionOpened(sessionId: string): Promise<void>;
-  /** Reserve a durable, caller-scoped opaque reference to a launch directory. */
-  createSessionLocation(cwd: string): Promise<{ id: string }>;
-  /** Resolve a launch reference without putting its private directory in a URL. */
-  getSessionLocation(id: string): Promise<{ cwd: string }>;
   /**
    * Resolve the runtime type string (e.g. `'claude-code'`, `'test-mode'`) that
    * owns the given session.

@@ -104,6 +104,7 @@ let actionResponse: Record<string, unknown>;
 let posts: Array<{ url: string; body: unknown }>;
 let historyRows: NotificationDTO[];
 let staleNext: boolean;
+let notConfirmedNext = false;
 
 /** An answered decision's history row, as the Activity list holds it. */
 function historyRow(decisionId: string, title: string): NotificationDTO {
@@ -136,6 +137,14 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
   if (init?.method === 'POST') {
     posts.push({ url, body: init.body ? JSON.parse(String(init.body)) : undefined });
     if (url.includes('/extension-decisions/') && url.endsWith('/action')) {
+      if (notConfirmedNext) {
+        // "Confirm it's you" closed unconfirmed: the window's fetch hands back this.
+        notConfirmedNext = false;
+        return json(
+          { error: 'Not confirmed. Nothing changed.', code: 'step_up_required', heldActionId: 'h' },
+          428
+        );
+      }
       if (staleNext) {
         staleNext = false;
         return json(
@@ -205,6 +214,7 @@ beforeEach(() => {
   posts = [];
   historyRows = [];
   staleNext = false;
+  notConfirmedNext = false;
   mockNavigate.mockReset();
   vi.stubGlobal('fetch', vi.fn(fakeFetch));
 });
@@ -427,6 +437,17 @@ describe('what extensions ask, in the bell', () => {
     await waitFor(() =>
       expect(toast).toHaveBeenCalledWith('This question changed. Take another look.')
     );
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  // Purpose: a cancelled "Confirm it’s you" said nothing, so the row read as
+  // answered (DOR-4909).
+  it('says calmly that nothing was allowed when Confirm it’s you is cancelled', async () => {
+    notConfirmedNext = true;
+    renderBell();
+    const { user } = await openBell();
+    await user.click(within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it'));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('Not confirmed. Nothing was allowed.'));
     expect(toast.error).not.toHaveBeenCalled();
   });
 

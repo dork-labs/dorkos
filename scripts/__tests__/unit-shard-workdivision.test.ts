@@ -93,7 +93,9 @@ function pick(
 }
 
 const SIX = [1, 2, 3, 4, 5, 6];
-// The queue's and the canary's list, read from the real step (ledger 261031-150702).
+const TEN = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+// The queue's and the canary's list, read from the real step (ledger 261031-150702,
+// ten since DOR-5113, ledger 261123-194400).
 const shardIds = pick('merge_group', { kind: 'none' });
 const prShardIds = pick('pull_request', { kind: 'merge', files: ['apps/client/src/a.ts'] });
 
@@ -127,7 +129,9 @@ function lane(copies: Copy[]) {
     for (const [index, copy] of copies.entries()) {
       const dir = path.join(cwd, 'lane', `copy-${index}`);
       mkdirSync(dir, { recursive: true });
-      const command = writer.replaceAll('${{ matrix.shard }}', String(copy.id));
+      const command = writer
+        .replaceAll('${{ matrix.shard }}', String(copy.id))
+        .replaceAll('${{ strategy.job-total }}', String(shardIds.length));
       const written = spawnSync('bash', ['-e', '-c', command], {
         cwd,
         encoding: 'utf8',
@@ -170,19 +174,22 @@ function lane(copies: Copy[]) {
 }
 
 const complete = () => shardIds.map((id) => ({ id }));
-describe('six-way unit file work division', () => {
+describe('ten-way unit file work division in the queue', () => {
   it('uses every matrix identity once and each sweep partitions its own leg', () => {
-    expect(shardIds).toEqual([1, 2, 3, 4, 5, 6]);
-    // The queue sweep names its total as a literal, which must be the queue list's length.
-    const denominators = [...workflow.matchAll(/--shard=\$\{\{ matrix\.shard \}\}\/(\d+)/g)].map(
-      (match) => Number(match[1])
-    );
-    expect(denominators).toEqual([shardIds.length]);
-    // A narrow pull request runs fewer shards and reads its total from the matrix itself.
+    expect(shardIds).toEqual(TEN);
+    // A narrow pull request runs fewer shards. Both sweeps read their total from
+    // the matrix itself, so no line can name a total the matrix did not run.
     expect(prShardIds).toEqual([1, 2]);
+    expect(workflow).not.toMatch(/--shard=\$\{\{ matrix\.shard \}\}\/\d/);
     expect(
       workflow.match(/--shard=\$\{\{ matrix\.shard \}\}\/\$\{\{ strategy\.job-total \}\}/g)
-    ).toHaveLength(1);
+    ).toHaveLength(2);
+    // Nothing in the shard job names a literal total: titles, shard.txt, the retry report.
+    const start = workflow.indexOf('\n  test-shard:\n');
+    expect(start).toBeGreaterThan(0);
+    const end = workflow.indexOf('\n  test-binary:\n', start);
+    const job = workflow.slice(start, end > start ? end : undefined);
+    expect(job).not.toMatch(/\$\{\{ matrix\.shard \}\}\/\d|%s\/\d/);
     const result = lane(complete());
     expect(result.status, result.output).toBe(0);
     expect(result.intersection).toBe('apps/client/shared.test.ts > same\n');
@@ -190,20 +197,20 @@ describe('six-way unit file work division', () => {
   it('refuses a missing matrix copy instead of widening the intersection', () => {
     const result = lane(complete().slice(0, -1));
     expect(result.status).not.toBe(0);
-    expect(result.output).toContain('only 5 handed over');
+    expect(result.output).toContain(`only ${shardIds.length - 1} handed over`);
   });
-  it('refuses duplicate identities even with six artifact directories', () => {
-    const result = lane([...complete().slice(0, -1), { id: 5 }]);
+  it('refuses duplicate identities even with a full set of artifact directories', () => {
+    const result = lane([...complete().slice(0, -1), { id: shardIds.length - 1 }]);
     expect(result.status).not.toBe(0);
-    expect(result.output).toContain('not shards 1..6 exactly');
+    expect(result.output).toContain(`not shards 1..${shardIds.length} exactly`);
   });
   it('refuses a stale denominator rather than mixing runs', () => {
-    const result = lane([...complete().slice(0, -1), { id: 6, total: 4 }]);
+    const result = lane([...complete().slice(0, -1), { id: shardIds.length, total: 6 }]);
     expect(result.status).not.toBe(0);
     expect(result.output).toContain('disagree about how many');
   });
   it('refuses a missing lane body even when every identity arrived', () => {
-    const result = lane([...complete().slice(0, -1), { id: 6, missingLane: true }]);
+    const result = lane([...complete().slice(0, -1), { id: shardIds.length, missingLane: true }]);
     expect(result.status).not.toBe(0);
     expect(result.output).toContain('not every shard handed over');
   });
@@ -217,12 +224,14 @@ describe('how many shards a run gets (ledger 261031-150702)', () => {
     );
     expect(workflow).toMatch(/^ {6}matrix: \$\{\{ steps\.count\.outputs\.matrix \}\}$/m);
   });
-  it.each(['merge_group', 'schedule', 'workflow_dispatch', 'release_pull_request'])(
-    '%s always gets six',
-    (event) => {
-      expect(pick(event, { kind: 'none' })).toEqual(SIX);
-    }
-  );
+  it.each(['merge_group', 'schedule', 'workflow_dispatch'])('%s always gets ten', (event) => {
+    expect(pick(event, { kind: 'none' })).toEqual(TEN);
+  });
+  // A release pull request runs the full sweep but is armed on a pull request's
+  // CI proof, which counts at most six shards.
+  it('release_pull_request always gets six', () => {
+    expect(pick('release_pull_request', { kind: 'none' })).toEqual(SIX);
+  });
   // The last four are files `turbo --affected` reads as touching every package
   // (#3361 ran all 33 suites on two shards for a turbo.json edit).
   it.each([

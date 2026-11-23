@@ -109,7 +109,9 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
         everyAgent: { operationRevisionIds: ['read-v1'], level: 'read' },
       })
     );
-    expect(await screen.findByText('Every agent can read Gmail.')).toBeInTheDocument();
+    expect((await screen.findByTestId('connector-access-outcome')).parentElement).toHaveTextContent(
+      'Every agent can read Gmail, including agents you add later.'
+    );
   });
 
   it('warns once, in plain words, when every agent could write, and leaves named agents alone', async () => {
@@ -144,7 +146,9 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
         everyAgent: { operationRevisionIds: ['read-v1', 'send-v1'], level: 'read-write' },
       })
     );
-    expect(await screen.findByText('Every agent can read and write in Gmail.')).toBeInTheDocument();
+    expect((await screen.findByTestId('connector-access-outcome')).parentElement).toHaveTextContent(
+      'Every agent can read and change Gmail, including agents you add later.'
+    );
   });
 
   it('starts on "Every agent" when shared, and stops sharing when switched back', async () => {
@@ -176,9 +180,9 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
         everyAgent: { operationRevisionIds: [] },
       })
     );
-    expect(
-      await screen.findByText('No agent can use Gmail. Gmail is no longer shared with every agent.')
-    ).toBeInTheDocument();
+    expect((await screen.findByTestId('connector-access-outcome')).parentElement).toHaveTextContent(
+      'No agent will be able to use Gmail.'
+    );
   });
 
   it('opens on "Only agents you pick" when a link asks, and writes nothing until Save', async () => {

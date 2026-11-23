@@ -1222,6 +1222,7 @@ describe('session_start records who started the new session (spec flow-multiproj
     wireChats(false);
     setRoomSeatReports({
       seatOf: (id: string) => (id === 'parent-chat' ? { roomId: 'r', authorId: 'a' } : null),
+      holdsSeat: (id: string) => id === 'parent-chat',
       deliver: () => true,
     });
     try {
@@ -1233,6 +1234,29 @@ describe('session_start records who started the new session (spec flow-multiproj
       // A plain chat that is no seat and takes no messages still gets none.
       const run = payloadOf(await fromChat('a-scheduled-run')(BASE)) as { sessionId: string };
       expect(store.get(run.sessionId)?.reportBack).toBe(false);
+    } finally {
+      setRoomSeatReports(undefined);
+    }
+  });
+
+  // DOR-3753: a seat's old session, reopened after the seat moved, is still known to the seat
+  // reports (so spin-offs it started before the move report in), but it holds no seat now. A
+  // spin-off started from it now is always after the move, so no report can reach that chat.
+  it('promises no report to a reopened chat whose room seat moved on (DOR-3753)', async () => {
+    wireChats(false);
+    setRoomSeatReports({
+      seatOf: (id: string) =>
+        id === 'former-seat' || id === 'parent-chat' ? { roomId: 'r', authorId: 'a' } : null,
+      holdsSeat: (id: string) => id === 'parent-chat',
+      deliver: () => true,
+    });
+    try {
+      const former = payloadOf(await fromChat('former-seat')(BASE)) as { sessionId: string };
+      expect(store.get(former.sessionId)?.reportBack).toBe(false);
+      const seed = vi.mocked(dispatchMessage).mock.calls.at(-1)![0].seedContext as string;
+      expect(seed).not.toContain('goes back to that chat on its own');
+      const current = payloadOf(await fromChat('parent-chat')(BASE)) as { sessionId: string };
+      expect(store.get(current.sessionId)?.reportBack).toBe(true);
     } finally {
       setRoomSeatReports(undefined);
     }

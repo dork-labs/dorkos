@@ -150,6 +150,7 @@ describe('the queue a person reads', () => {
       position: 1,
       context: null,
       heldToDefault: false,
+      carriedLimits: null,
     };
     setQueuedChatView((row) => queuedChatViewOf(() => [record()], row));
 

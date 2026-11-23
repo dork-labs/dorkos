@@ -520,11 +520,31 @@ export function describeProgramLine(command: string, args: readonly string[] = [
 
 /**
  * Characters that change how text around them is displayed without being seen:
- * bidirectional controls (which can make `rm -rf ~` read as something else) and
- * zero-width characters.
+ * bidirectional controls (which can make `rm -rf ~` read as something else),
+ * zero-width characters, the soft hyphen, the line and paragraph separators,
+ * variation selectors, and Unicode tag characters (U+E0000\u2013E007F). Tag
+ * characters show nothing to a person but read as text to a model, so they can
+ * carry instructions nobody approving the text could see (DOR-5060). Variation
+ * selectors are matched by their Unicode property, outside the class: inside
+ * one they would combine with the character before them.
+ *
+ * One selector is left alone: a single U+FE0F straight after an emoji, which
+ * only asks for the emoji's colour form (`\u2764\uFE0F`) and is in most emoji people
+ * type (DOR-5075). Any other selector, a U+FE0F after anything but an emoji,
+ * and a second selector after the first are still matched.
  */
 const HIDDEN_CHARACTERS =
-  /[\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+  /[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2028\u2029\u2060-\u2064\u2066-\u2069\uFEFF\u{E0000}-\u{E007F}]|(?<!\p{Extended_Pictographic})\uFE0F|(?!\uFE0F)\p{Variation_Selector}/gu;
+
+/**
+ * A hidden character's code point as a person reads it, `U+202E`: upper-case
+ * hex, at least four digits.
+ *
+ * @param ch - One hidden character, as {@link HIDDEN_CHARACTERS} matched it.
+ */
+function codePointLabel(ch: string): string {
+  return `U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`;
+}
 
 /**
  * Show every invisible or direction-changing character in a string a person is
@@ -537,10 +557,36 @@ const HIDDEN_CHARACTERS =
  * @returns The same text with each hidden character replaced by its code point.
  */
 export function revealHiddenCharacters(text: string): string {
-  return text.replace(
-    HIDDEN_CHARACTERS,
-    (ch) => `<U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}>`
-  );
+  return text.replace(HIDDEN_CHARACTERS, (ch) => `<${codePointLabel(ch)}>`);
+}
+
+/**
+ * One piece of {@link splitHiddenCharacters}' output: text shown as it is, or
+ * one hidden character, named by its code point (`U+202E`).
+ */
+export type HiddenCharacterSegment = { text: string } | { codePoint: string };
+
+/**
+ * Split text into what shows as written and each hidden character, matched
+ * exactly as {@link revealHiddenCharacters} matches them. For a surface that
+ * draws a hidden character as its own mark, which text a person typed into
+ * the prompt cannot imitate, where `<U+202E>` written out by hand could
+ * (DOR-5075).
+ *
+ * @param text - Text taken verbatim from its author.
+ * @returns The segments in order; adjacent text is one segment, and empty text
+ *   none.
+ */
+export function splitHiddenCharacters(text: string): HiddenCharacterSegment[] {
+  const segments: HiddenCharacterSegment[] = [];
+  let from = 0;
+  for (const match of text.matchAll(HIDDEN_CHARACTERS)) {
+    if (match.index > from) segments.push({ text: text.slice(from, match.index) });
+    segments.push({ codePoint: codePointLabel(match[0]) });
+    from = match.index + match[0].length;
+  }
+  if (from < text.length) segments.push({ text: text.slice(from) });
+  return segments;
 }
 
 /**

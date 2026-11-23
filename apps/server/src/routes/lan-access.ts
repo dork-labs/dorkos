@@ -20,7 +20,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import {
   readCallerAuthority,

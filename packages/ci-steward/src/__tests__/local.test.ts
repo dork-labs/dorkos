@@ -524,6 +524,11 @@ describe('the heavy-run lock agrees with ci/config.yaml', () => {
     ['TEST_MAX_LOAD', 'heavy_test_max_load'],
     ['LOAD_WAIT_SECONDS', 'heavy_load_wait_seconds'],
     ['LOAD_POLL_SECONDS', 'heavy_load_poll_seconds'],
+    ['SECOND_SWAP_MAX_MB', 'heavy_second_swap_max_mb'],
+    ['SECOND_FREE_MIN_PCT', 'heavy_second_free_min_pct'],
+    ['SECOND_SWAP_GROWTH_MAX_MB', 'heavy_second_swap_growth_max_mb'],
+    ['SECOND_MAX_LOAD', 'heavy_second_max_load'],
+    ['SECOND_DISK_MIN_GB', 'heavy_second_disk_min_gb'],
   ] as const)('%s falls back to the configured %s', (variable, key) => {
     const fallback = new RegExp(`^${variable}="\\$\\{${variable}:-(\\d+)\\}"$`, 'm').exec(script);
     expect(fallback, `heavy-run-lock.sh has no literal fallback for ${variable}`).not.toBeNull();
@@ -541,6 +546,11 @@ describe('the heavy-run lock agrees with ci/config.yaml', () => {
       'heavy_test_max_load',
       'heavy_load_wait_seconds',
       'heavy_load_poll_seconds',
+      'heavy_second_swap_max_mb',
+      'heavy_second_free_min_pct',
+      'heavy_second_swap_growth_max_mb',
+      'heavy_second_max_load',
+      'heavy_second_disk_min_gb',
     ])
       expect(script).toContain(`config_number ${key}`);
   });

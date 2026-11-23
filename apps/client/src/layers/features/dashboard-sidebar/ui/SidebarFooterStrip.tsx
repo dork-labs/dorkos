@@ -278,7 +278,7 @@ function DestinationButton({
  * renderings — a second copy would be a second chance for the seed or the
  * origin to be forgotten.
  *
- * `ready` is `false` until the roster answers with DorkBot's directory: a
+ * `ready` is `false` until the roster answers with DorkBot's registered ID: a
  * control that silently does nothing is worse than one that says it is not
  * ready yet.
  */
@@ -286,19 +286,17 @@ export function useAskDorkBot(): { ask: () => void; ready: boolean } {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const startNewSession = useStartNewSession();
   const { data: mesh } = useMeshAgentPaths();
-  const dorkbotPath = (mesh?.agents ?? []).find(
-    (agent) => agent.name === DORKBOT_AGENT_NAME
-  )?.projectPath;
+  const dorkbotId = mesh?.agents.find((agent) => agent.name === DORKBOT_AGENT_NAME)?.id;
 
   const ask = useCallback(() => {
-    if (dorkbotPath === undefined) return;
+    if (dorkbotId === undefined) return;
     // Recorded BEFORE the navigation, because after it the address bar says
     // `/session` and the page somebody came from is unrecoverable.
     setAskDorkBotOrigin(pathname);
-    startNewSession(dorkbotPath, { seed: 'dorkbot-help' });
-  }, [dorkbotPath, pathname, startNewSession]);
+    startNewSession(undefined, { agentId: dorkbotId, seed: 'dorkbot-help' });
+  }, [dorkbotId, pathname, startNewSession]);
 
-  return { ask, ready: dorkbotPath !== undefined };
+  return { ask, ready: dorkbotId !== undefined };
 }
 
 /**

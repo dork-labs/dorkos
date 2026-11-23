@@ -1,0 +1,1 @@
+ALTER TABLE `session_message_queue` ADD `carried_limits_json` text;

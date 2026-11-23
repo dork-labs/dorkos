@@ -25,8 +25,19 @@
  *
  * ## Permission
  *
- * `area: null`, as the promise tools are: a to-do is the agent's own record of work, and the caps
- * (5 a day to people, the turn caps) are what bound it.
+ * The To-dos area (`todos`), the same one the promise tools are in (DOR-3936), so the one row a
+ * person sets decides every to-do tool (DOR-3953). These are the stronger of the two: a to-do
+ * given to another agent starts its turn. One area rather than two, because a person thinks of
+ * both as "its to-dos"; the row's words name both. The caps (5 a day to people, the turn caps)
+ * still bound what an allowed call may do.
+ *
+ * ## Which calls mark the turn
+ *
+ * Each tool marks its own caller's turn (`self` in DORKOS_TOOL_READS, DOR-4666), and only when a
+ * to-do it hands back carries outside words: a stranger made or changed it, or it was made from a
+ * stranger's post (its stored marks hold the outsider mark). The team's and the person's own
+ * to-dos hand on nothing, so a turn that only makes, keeps and reads those stays clean, and its
+ * next send does not ask. Before, every call marked the turn.
  *
  * @module services/todos/todo-capabilities
  */
@@ -52,6 +63,7 @@ import { TodoPromiseError, PERSON_ASSIGNER } from './todo-promise-service.js';
 import type { TodoActor } from './todo-authority.js';
 import type { TodoAssignee, TodoParent, TodoService, TodoSource } from './todo-service.js';
 import { titleIsFromSource, type TodoSourceFacts } from './todo-source.js';
+import { markTurnIfOutside } from './todo-word-marks.js';
 import { changeToTell, type TodoChangeNotice } from './notice/todo-recipient-notice.js';
 
 /** The MCP tool names. */
@@ -79,6 +91,8 @@ declare module '../core/capabilities/capability-definition.js' {
       promiseOf?(id: string): TodoPromise | undefined;
       /** Tell whoever a promise was made to; the same hook `todo_promise_update` uses. */
       tellRecipient?: (notice: TodoChangeNotice) => Promise<void>;
+      /** Whether a to-do's stored words came from outside the team (DOR-4666). */
+      carriesOutsideWords?(id: string): boolean;
     };
   }
 }
@@ -173,6 +187,15 @@ function writingCall(
   };
 }
 
+/** Mark the caller's turn when a to-do it gets back carries outside words (DOR-4666). */
+function markIfOutside(
+  todoDeps: NonNullable<CapabilityDeps['todoDeps']>,
+  context: CapabilityHandlerContext,
+  ids: readonly string[]
+): void {
+  markTurnIfOutside(context, ids, todoDeps.carriesOutsideWords);
+}
+
 /** Run a to-do tool, answering a refusal the service raised. */
 function answer<T>(run: () => T): T | Refusal {
   try {
@@ -226,8 +249,11 @@ export const todosDomain: CapabilityDomain = {
         "turn that read words DorkOS can't vouch for, or one a capped to-do started: tell the " +
         'person instead.',
       tier: 'act',
-      area: null,
-      areaNote: 'bounded by the to-do caps: 5 a day to people, and the turn caps between agents',
+      area: 'todos',
+      // What a card shows if a person sets this to Ask: who gets it first, since an agent's to-do
+      // starts its turn, named rather than shown as an id ("person" shows as it is).
+      approvalDisplayFields: ['assignee', 'what', 'dueAt'],
+      approvalSubject: { field: 'assignee', kind: 'agent' },
       input: z.object({
         what: z.string().trim().min(1).max(TODO_WHAT_MAX).describe('One plain line.'),
         assignee: AssigneeInput,
@@ -275,7 +301,7 @@ export const todosDomain: CapabilityDomain = {
           };
           roomId = facts.roomId;
         }
-        return answer(() => ({
+        const made = answer(() => ({
           ok: true as const,
           todo: todoDeps.todos.create(
             call.actor,
@@ -291,6 +317,9 @@ export const todosDomain: CapabilityDomain = {
             call.parent
           ),
         }));
+        // A to-do made from a stranger's post hands their words back (DOR-4666).
+        if (made.ok) markIfOutside(todoDeps, context, [made.todo.id]);
+        return made;
       },
     }),
     defineCapability({
@@ -304,8 +333,9 @@ export const todosDomain: CapabilityDomain = {
         'you, and reassign only to-dos you made. In a marked or capped turn you can only close, ' +
         'reopen or reorder your own; the rest waits for the person.',
       tier: 'act',
-      area: null,
-      areaNote: 'only to-dos assigned to the agent, or made by it',
+      area: 'todos',
+      // As `todo_promises.update` names its fields, plus a hand-on's new assignee.
+      approvalDisplayFields: ['id', 'state', 'assignee', 'dueAt', 'note'],
       input: z.object({
         id: z.string().min(1).max(100).describe('The to-do id, from todos_list.'),
         state: z.enum(['open', 'kept', 'dropped']).optional(),
@@ -341,6 +371,8 @@ export const todosDomain: CapabilityDomain = {
             call.parent
           ),
         }));
+        // The row it hands back may be one a stranger wrote (DOR-4666).
+        if (result.ok) markIfOutside(todoDeps, context, [result.todo.id]);
         // A move, drop or keep through this tool is told the same way (DOR-3034).
         const after = result.ok ? todoDeps.promiseOf?.(id) : undefined;
         const change = after ? changeToTell(before, after) : null;
@@ -363,8 +395,7 @@ export const todosDomain: CapabilityDomain = {
         "Read to-dos: yours (`agentId` = your id), the agents', or everyone's. Open ones first, " +
         'soonest due first; `showDone` adds finished ones.',
       tier: 'observe',
-      area: null,
-      areaNote: 'to-dos are readable by everyone in the space',
+      area: 'todos',
       input: z.object({
         view: z.enum(['agents', 'everyone']).optional().describe('Defaults to everyone.'),
         agentId: z.string().min(1).max(100).optional(),
@@ -379,13 +410,20 @@ export const todosDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
-      invoke: async (deps, input) => {
-        const { todos } = requireTodoDeps(deps).todos.list({
+      invoke: async (deps, input, context) => {
+        const todoDeps = requireTodoDeps(deps);
+        const { todos } = todoDeps.todos.list({
           view: input.view ?? 'everyone',
           ...(input.agentId ? { agentId: input.agentId } : {}),
           ...(input.showDone ? { showDone: true } : {}),
           limit: input.limit ?? 50,
         });
+        // A stranger's to-do in the list hands their words on; the team's alone do not (DOR-4666).
+        markIfOutside(
+          todoDeps,
+          context,
+          todos.map((todo) => todo.id)
+        );
         return { todos };
       },
     }),

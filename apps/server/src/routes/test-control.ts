@@ -46,7 +46,7 @@ import { getRemoteConnectionStore } from '../services/communities/remote/state.j
 import type { AgentMcpServerService } from '../services/mesh/agent-mcp-server-service.js';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { validationFailureBody } from '../lib/route-utils.js';
 

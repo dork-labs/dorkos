@@ -49,5 +49,8 @@ export function useApplyShape() {
       };
       return applyShapeAction(name, { transport, queryClient, dispatch, switchAgent, label });
     },
+    // Named, so the shared toast reports a failure in these words, and a
+    // cancelled "Confirm it's you" as nothing changed rather than silence (DOR-4909).
+    meta: { errorLabel: 'Couldn’t apply that Shape' },
   });
 }

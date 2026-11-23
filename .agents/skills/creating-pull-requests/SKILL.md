@@ -442,7 +442,13 @@ minutes. It is a backstop. It arms a PR that is open, not a draft, no hold label
 re-arm a PR the queue has rejected twice for the same check on the same head commit;
 it comments on the PR once instead, and a new commit clears it. The decision
 is `scripts/should-arm-automerge.sh`. Arm your own green PR yourself instead of
-waiting for it; arming is idempotent and safe (one arming path arrives in phase 1b):
+waiting for it; arming is idempotent and safe (one arming path arrives in phase 1b).
+
+**Auto-merge at open (DOR-5107).** `scripts/open-pr.sh` turns auto-merge on by itself
+once main's `ci/required-checks.json` requires `not-held`, `release-window` and
+`pr-gates`. Those checks make a hold, a freeze or release, and a missing sign-off block
+the merge on their own. It never does this for a draft or a `--hold` PR, and it prints
+`auto-merge: on` or `auto-merge: off: <why>`. Until those checks are required, arm by hand:
 
 ```bash
 gh pr merge --auto <number>
@@ -551,6 +557,8 @@ this block byte for byte, so it cannot drift quietly):
 - `db-check`
 - `openapi-fresh`
 - `fixtures`
+- `not-held`
+- `release-window`
 - Required workflow: dork-labs/dorkos, `.github/workflows/security-gate.yml` from `refs/heads/main` (organization rule; no bypass actors).
 <!-- ci-steward:required-checks:end -->
 <!-- prettier-ignore-end -->

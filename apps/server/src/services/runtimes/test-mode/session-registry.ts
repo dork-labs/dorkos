@@ -16,6 +16,7 @@
  */
 import type { Session, PermissionModeId } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
+import { shownToPerson, titleShownToPerson } from '@dorkos/shared/kickoff';
 import { deriveSessionTitle } from '../shared/derive-title.js';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
@@ -111,7 +112,7 @@ export class TestModeSessionRegistry {
    */
   recordMessage(sessionId: string, content: string, patch: TrackedSessionPatch = {}): void {
     const session = this.upsert(sessionId, patch);
-    const preview = toPreview(content);
+    const preview = titleShownToPerson(toPreview(shownToPerson(content)));
     if (session.title === '')
       session.title = this.labelTitle(deriveSessionTitle(content) || preview);
     session.lastMessagePreview = preview;
@@ -132,6 +133,12 @@ export class TestModeSessionRegistry {
     session.title = this.labelTitle(title);
     session.updatedAt = new Date().toISOString();
     this.emit({ type: 'session_upserted', session: { ...session } });
+  }
+
+  /** Observe the exact pre-message settings entry without creating a session. */
+  observeDraftSettingsOwner(sessionId: string): () => boolean {
+    const pending = this.pendingSettings.get(sessionId);
+    return () => !this.sessions.has(sessionId) && this.pendingSettings.get(sessionId) === pending;
   }
 
   /**

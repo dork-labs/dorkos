@@ -35,7 +35,7 @@ import { readActivityActor } from '../services/activity/activity-actor.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { errorRefusalUnlessOwner, runAccountWrite } from './cloud-owner-bar.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { operatorOnlyTaskRefusal, namesCredits } from './task-route-answers.js';
 import { marksOf } from '../services/core/turn-power/turn-levels.js';

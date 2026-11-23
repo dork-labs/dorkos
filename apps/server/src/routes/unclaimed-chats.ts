@@ -37,7 +37,7 @@ import { RoomError } from '../services/rooms/room-errors.js';
 import { bridgeChatTypeForBinding } from './relay-adapters.js';
 import { holdBindingRaise, modeStartsLooser } from './relay-binding-step-up.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { validationFailureBody } from '../lib/route-utils.js';
 

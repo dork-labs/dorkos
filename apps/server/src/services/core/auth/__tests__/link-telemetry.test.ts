@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { resolveLinkTelemetryInstanceId } from '../link-telemetry.js';
+import { isAnalyticsLinkedToAccount, resolveLinkTelemetryInstanceId } from '../link-telemetry.js';
 import { INSTANCE_ID_FILENAME } from '../../../../lib/instance-id.js';
 
 /** A throwaway dorkHome so the per-install id file is written in isolation. */
@@ -65,5 +65,48 @@ describe('resolveLinkTelemetryInstanceId', () => {
       env: { DORKOS_TELEMETRY_DISABLED: 'true' },
     });
     expect(id).toBeUndefined();
+  });
+});
+
+describe('isAnalyticsLinkedToAccount (DOR-4989)', () => {
+  const manager = (linked: boolean) => () => ({ isLinked: () => linked });
+
+  it.each([
+    [true, true, true],
+    [true, false, false],
+    [false, true, false],
+    [false, false, false],
+  ])('opted in %s, linked %s: %s', (optedIn, linked, expected) => {
+    expect(
+      isAnalyticsLinkedToAccount({
+        linkAnalyticsToAccount: optedIn,
+        env: {},
+        getLinkManager: manager(linked),
+      })
+    ).toBe(expected);
+  });
+
+  it('is false under an env kill switch even when opted in and linked', () => {
+    for (const env of [{ DO_NOT_TRACK: '1' }, { DORKOS_TELEMETRY_DISABLED: 'true' }]) {
+      expect(
+        isAnalyticsLinkedToAccount({
+          linkAnalyticsToAccount: true,
+          env,
+          getLinkManager: manager(true),
+        })
+      ).toBe(false);
+    }
+  });
+
+  it('is false when the link manager is not set up yet', () => {
+    expect(
+      isAnalyticsLinkedToAccount({
+        linkAnalyticsToAccount: true,
+        env: {},
+        getLinkManager: () => {
+          throw new Error('CloudLinkManager not initialized');
+        },
+      })
+    ).toBe(false);
   });
 });
