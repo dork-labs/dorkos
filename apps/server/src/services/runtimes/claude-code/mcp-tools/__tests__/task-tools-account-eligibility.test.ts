@@ -32,6 +32,13 @@ import type { Task } from '@dorkos/shared/schemas';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
 import { getTasksTools } from '../tasks/task-tools.js';
+import {
+  NotificationService,
+  setNotificationService,
+} from '../../../../notifications/notification-service.js';
+import { NotificationStore } from '../../../../notifications/notification-store.js';
+import { setAccountUsageStore } from '../../../../core/usage/current-usage-store.js';
+import type { AccountUsageStore } from '../../../../core/usage/account-usage-store.js';
 
 interface SessionTool {
   name: string;
@@ -143,5 +150,76 @@ describe('tasks_update', () => {
     const { isError } = await call('tasks_update', { id, account: 'spare' });
     expect(isError).toBe(false);
     expect(store.getTask(id)?.account).toBe('spare');
+  });
+});
+
+describe('tasks_update moving an approved schedule to another account (DOR-5097)', () => {
+  let notifications: NotificationStore;
+
+  beforeEach(() => {
+    rules.claudeCode.accounts = [
+      ...(rules.claudeCode.accounts as unknown[]),
+      { id: 'spare', path: '/accounts/spare', label: 'Spare', onlyProjects: null },
+    ];
+    const account = (id: string, label: string, extra: Record<string, unknown> = {}) => ({
+      runtime: 'claude-code',
+      id,
+      label,
+      path: `/accounts/${id}`,
+      routable: true,
+      implicit: false,
+      isDefault: false,
+      ...extra,
+    });
+    setAccountUsageStore({
+      listAccounts: () => [
+        account('work', 'Work'),
+        account('spare', 'Spare'),
+        account('client', 'Client Work', { noAutoMove: true }),
+      ],
+    } as unknown as AccountUsageStore);
+    notifications = new NotificationStore(createTestDb());
+    setNotificationService(new NotificationService(notifications));
+  });
+
+  afterEach(() => {
+    setAccountUsageStore(undefined);
+    setNotificationService(null);
+  });
+
+  /** A schedule on `work`, approved by a person. */
+  async function approved(): Promise<string> {
+    const created = await call('tasks_create', { ...BASE, account: 'work' });
+    const id = (created.payload.schedule as Task).id;
+    store.updateTask(id, { status: 'active' });
+    expect(store.getTask(id)?.status).toBe('active');
+    return id;
+  }
+
+  it('keeps it approved and running, and says the person was told', async () => {
+    const id = await approved();
+
+    const { isError, payload } = await call('tasks_update', { id, account: 'spare' });
+
+    expect(isError).toBe(false);
+    expect(payload).toMatchObject({
+      schedule: { status: 'active', account: 'spare' },
+      accountNote: expect.stringContaining('stays approved'),
+    });
+    expect(payload).not.toHaveProperty('needsReapproval');
+    const told = notifications
+      .list({ limit: 10 } as Parameters<NotificationStore['list']>[0])
+      .notifications.filter((n) => n.kind === 'schedule.armed_by_agent');
+    expect(told).toHaveLength(1);
+    expect(told[0]!.title).toContain('to Spare');
+  });
+
+  it('pins and unpins a schedule to its account', async () => {
+    const id = await approved();
+
+    expect((await call('tasks_update', { id, accountPinned: true })).isError).toBe(false);
+    expect(store.getTask(id)).toMatchObject({ status: 'active', accountPinned: true });
+    await call('tasks_update', { id, accountPinned: false });
+    expect(store.getTask(id)?.accountPinned).toBeUndefined();
   });
 });

@@ -27,7 +27,8 @@ import {
 } from '../../../../tasks/agent-mode/agent-mode-run-origin.js';
 import type { TaskStore } from '../../../../tasks/task-store.js';
 import { agentIdOfHome } from '../../../../tasks/approvals/schedule-owner.js';
-import type { Task } from '@dorkos/shared/types';
+import type { PermissionMode, Task, UpdateTaskRequest } from '@dorkos/shared/types';
+import { announceAccountMove } from '../../../../tasks/approvals/account-move.js';
 
 /**
  * Who is proposing a schedule, read at CALL time rather than at registration.
@@ -302,4 +303,78 @@ export function emitAgentSwitchedOn(
     summary: `Switched on scheduled task ${updated.displayName ?? updated.name}`,
     linkPath: '/',
   });
+}
+
+/**
+ * Tell the person an agent's `tasks_update` moved an approved task to another
+ * account and it stayed approved (DOR-5097). Answers whether the move stands:
+ * a notice that could not be posted parks the task instead.
+ *
+ * @param deps - Shared MCP tool dependencies.
+ * @param before - The task before the edit.
+ * @param caller - The calling agent, by its home when DorkOS knows it.
+ */
+export async function announceTaskAccountMove(
+  deps: McpToolDeps,
+  before: Task,
+  caller: { agentPath?: string | null }
+): Promise<boolean> {
+  const store = deps.taskStore!;
+  const after = store.getTask(before.id);
+  if (!after) return false;
+  return announceAccountMove(store, { before, after, agentPath: caller.agentPath ?? null });
+}
+
+/** The agent-writable fields a `tasks_update` call may carry into the store. */
+type ToolUpdateFields = Pick<
+  UpdateTaskRequest,
+  | 'name'
+  | 'prompt'
+  | 'enabled'
+  | 'sticky'
+  | 'readsOutsideText'
+  | 'runtime'
+  | 'model'
+  | 'effort'
+  | 'account'
+  | 'accountPinned'
+  | 'requestedPermissionMode'
+  | 'requestedAllow'
+  | 'resetTiming'
+> & { cron?: string; timezone?: string; maxRuntime?: string };
+
+/**
+ * The patch a `tasks_update` call writes, assembled field by field rather than
+ * spread from the call, so nothing here could carry `permissionMode` to the
+ * store except the mode an approval decided (S-C).
+ *
+ * @param args - The call's fields.
+ * @param permissionMode - The mode a mode-only decision set, if any.
+ */
+export function toolUpdatePatch(
+  args: ToolUpdateFields,
+  permissionMode: PermissionMode | undefined
+): UpdateTaskRequest {
+  return {
+    ...(args.name !== undefined && { name: args.name }),
+    ...(args.prompt !== undefined && { prompt: args.prompt }),
+    ...(args.cron !== undefined && { cron: args.cron }),
+    ...(args.enabled !== undefined && { enabled: args.enabled }),
+    ...(args.timezone !== undefined && { timezone: args.timezone }),
+    ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
+    ...(args.sticky !== undefined && { sticky: args.sticky }),
+    // Only `true` gets here: the policy refused anything else first (DOR-3969).
+    ...(args.readsOutsideText === true && { readsOutsideText: true }),
+    ...(args.runtime !== undefined && { runtime: args.runtime }),
+    ...(args.model !== undefined && { model: args.model }),
+    ...(args.effort !== undefined && { effort: args.effort }),
+    ...(args.account !== undefined && { account: args.account }),
+    ...(args.accountPinned !== undefined && { accountPinned: args.accountPinned }),
+    ...(args.requestedPermissionMode !== undefined && {
+      requestedPermissionMode: args.requestedPermissionMode,
+    }),
+    ...(args.requestedAllow !== undefined && { requestedAllow: args.requestedAllow }),
+    ...(args.resetTiming === true && { resetTiming: true as const }),
+    ...(permissionMode !== undefined && { permissionMode }),
+  };
 }

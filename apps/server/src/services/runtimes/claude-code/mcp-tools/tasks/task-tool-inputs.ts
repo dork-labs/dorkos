@@ -11,6 +11,7 @@ import type { EffortLevel, PermissionMode } from '@dorkos/shared/types';
 import {
   ACCEPT_FILE_HASH_DESCRIPTION,
   ACCOUNT_DESCRIPTION,
+  ACCOUNT_PINNED_DESCRIPTION,
   EFFORT_DESCRIPTION,
   MODEL_DESCRIPTION,
   REASON_DESCRIPTION,
@@ -95,6 +96,7 @@ export const UPDATE_TASK_INPUT = {
   model: z.string().min(1).nullable().optional().describe(MODEL_DESCRIPTION),
   effort: EffortLevelSchema.nullable().optional().describe(EFFORT_DESCRIPTION),
   account: z.string().min(1).nullable().optional().describe(ACCOUNT_DESCRIPTION),
+  accountPinned: z.boolean().optional().describe(ACCOUNT_PINNED_DESCRIPTION),
   ...permissionProposalInputs,
   allowList: ALLOW_LIST_ARG,
   resetTiming: z.literal(true).optional().describe(RESET_TIMING_DESCRIPTION),

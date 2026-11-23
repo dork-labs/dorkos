@@ -70,14 +70,11 @@ every task:
 On \`tasks_update\`, sending \`null\` for any of the three **clears** it, so the task
 goes back to following its agent. Omitting a field leaves it as it was.
 
+**Which account pays, and what happens when it runs out.** \`account\` names the Claude account a task runs on (its id in DorkOS); left out, the agent's, then the default. When that account is out of usage or signed out, a run starts on another signed-in account with room, picked the way a room seat moves: never DorkOS credits, the main sign-in, or an account the person kept out of automatic moves. The run history says which account it used and why. Send \`accountPinned: true\` to keep runs on its own account: such a run then fails, with a sentence naming the account, instead of moving. \`false\` lets it move again. Changing only \`account\` on an approved task keeps it approved and running; the person is told, with an Undo. A move to DorkOS credits, the main sign-in, an account kept out of automatic moves or not signed in, or back to the agent's account (\`null\`) waits for their approval instead.
+
 ### Say why, in your own words
 
-\`reason\` is required and it is not the description. The description says what the
-task does; the reason says why it should exist at all, addressed to the person.
-Often all they see is your sentence, your name, and the times the cron would
-fire, so a blank or padded reason gets paused or rejected (an empty one is refused). Write the sentence you would say out loud: "You asked
-me to keep an eye on the overnight builds, and this checks them at 7am so the
-summary is waiting for you."
+\`reason\` is required and it is not the description. The description says what the task does; the reason says why it should exist at all, addressed to the person. Often all they see is your sentence, your name, and the times the cron would fire, so a blank or padded reason gets paused or rejected (an empty one is refused). Write the sentence you would say out loud: "You asked me to keep an eye on the overnight builds, and this checks them at 7am so the summary is waiting for you."
 
 ### Say where it lives, too
 
@@ -105,7 +102,7 @@ Moving a task to \`active\` IS a person's approval, so it is not yours to do:
 \`timezone\` of a task that came from a file or a package, or of any task on
 Careful, and DorkOS stops it at once and asks the person again. Your edit is
 saved and the reply says \`needsReapproval: true\`: tell them it is waiting on them.
-Otherwise your edit keeps it running. Every other field is free, \`enabled\` included: that is how you turn a task on or off.
+Otherwise your edit keeps it running. Every other field is free, \`enabled\` included: that is how you turn a task on or off. An account change has its own rule, under "Which account pays" above.
 
 This is the tasks scheduler's own gate, not the capability approval flow in
 operating-dorkos: there is no \`approvalToken\`, only telling the user and waiting.
@@ -117,7 +114,7 @@ Both are MCP tools with no \`dorkos task\` equivalent, so without them, neither.
 - Tool: \`tasks_update\` with the schedule \`id\` and any of \`name\`, \`prompt\`, \`cron\`,
   \`enabled\` (true/false to turn it on or off), \`timezone\`, \`maxRuntime\`
   (e.g. \`"5m"\`, \`"1h"\`), \`runtime\`, \`model\`, \`effort\` (\`null\` clears any of the
-  last three; see "Where it runs, and on what" above).
+  last three; see "Where it runs, and on what" above), \`account\` and \`accountPinned\`.
 
 A schedule that came with an installed package can only be turned on or off, or
 given a new \`cron\` or \`timezone\`; any other change is refused

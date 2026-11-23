@@ -32,6 +32,8 @@ export interface NamedChange {
   promptAt?: string;
   /** The agent's lift of a file cap (M4), by its time: Undo caps the task again. */
   fileLiftAt?: string;
+  /** The agent's account move that kept the approval (DOR-5097): Undo puts `from` back. */
+  account?: { at: string; from: string | null; to: string | null };
 }
 
 /** The outcome of one undo: what it put back. */
@@ -78,7 +80,7 @@ function undoableOf(
   task: Task,
   store: UndoDeps['store'],
   named: NamedChange
-): { permissionMode?: Task['permissionMode']; prompt?: string } {
+): { permissionMode?: Task['permissionMode']; prompt?: string; account?: string | null } {
   const record = task.agentModeRecord;
   const declared = liveAgentModeSources(undefined).declaredModes(task.runtime);
   const mode =
@@ -96,7 +98,16 @@ function undoableOf(
     named.promptAt !== undefined && undo?.at === named.promptAt && undo.written === task.prompt
       ? undo.previous
       : undefined;
-  return { ...(mode ? { permissionMode: mode } : {}), ...(prompt !== undefined ? { prompt } : {}) };
+  // Only while the task still names the account the move wrote.
+  const account =
+    named.account !== undefined && task.account === named.account.to
+      ? { account: named.account.from }
+      : {};
+  return {
+    ...(mode ? { permissionMode: mode } : {}),
+    ...(prompt !== undefined ? { prompt } : {}),
+    ...account,
+  };
 }
 
 /** A mode's name on the task's runtime, for the person. */
@@ -161,6 +172,14 @@ export async function undoAgentModeChange(
   if (!updated) return { ok: false, status: 404, body: { error: 'Scheduled task not found' } };
   if (data.permissionMode) store.approvals.recordAgentModeChange(id, null);
   if (data.prompt !== undefined) store.approvals.setPromptUndo(id, null);
+  // The account put back keeps the approval it had, as the move did (DOR-5097).
+  if (data.account !== undefined) {
+    store.approvals.settleApprovedWorkChange(
+      id,
+      { ...taskWorkOf(existing), status: existing.status },
+      { trusted: false, accountMayMoveTo: () => true }
+    );
+  }
   if (byPerson) {
     if (data.permissionMode) store.approvals.setPersonFloor(id, data.permissionMode);
     // Only content the person put back is theirs, and only as it now stands: a
@@ -173,7 +192,11 @@ export async function undoAgentModeChange(
     }
   }
   auditScheduleUpdate(now, updated);
-  const restored = [data.prompt !== undefined ? 'the old prompt' : '', data.permissionMode ?? '']
+  const restored = [
+    data.prompt !== undefined ? 'the old prompt' : '',
+    data.account !== undefined ? 'the old account' : '',
+    data.permissionMode ?? '',
+  ]
     .filter(Boolean)
     .join(' and ');
   return { ok: true, task: store.getTask(id) ?? updated, restored };

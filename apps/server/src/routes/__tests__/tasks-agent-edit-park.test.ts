@@ -45,6 +45,13 @@ import {
   AGENT_TIMING_CHANGE_REASON,
 } from '../../services/tasks/timing/effective-timing.js';
 import { raiseStanding } from '../../services/notifications/standing-events.js';
+import {
+  NotificationService,
+  setNotificationService,
+} from '../../services/notifications/notification-service.js';
+import { NotificationStore } from '../../services/notifications/notification-store.js';
+import { setAccountUsageStore } from '../../services/core/usage/current-usage-store.js';
+import type { AccountUsageStore } from '../../services/core/usage/account-usage-store.js';
 
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: (key: string) => (key === 'auth' ? { enabled: false } : undefined) },
@@ -517,6 +524,104 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
         .send({ account: null, description: 'Tidier words' });
 
       expect(res.status).toBe(200);
+    });
+  });
+
+  describe('an agent moving the schedule to another account (DOR-5097)', () => {
+    let notificationStore: NotificationStore;
+
+    beforeEach(() => {
+      setAccountUsageStore({
+        listAccounts: () => [
+          {
+            runtime: 'claude-code',
+            id: 'claude4',
+            label: 'Claude4',
+            path: '/accounts/claude4',
+            routable: true,
+            implicit: false,
+            isDefault: false,
+          },
+          {
+            runtime: 'claude-code',
+            id: 'claude5',
+            label: 'Claude5',
+            path: '/accounts/claude5',
+            routable: true,
+            implicit: false,
+            isDefault: false,
+          },
+          {
+            runtime: 'claude-code',
+            id: 'claude-ab1',
+            label: 'Lab',
+            path: '/accounts/claude-ab1',
+            routable: true,
+            implicit: false,
+            isDefault: false,
+            noAutoMove: true,
+          },
+        ],
+      } as unknown as AccountUsageStore);
+      notificationStore = new NotificationStore(db);
+      setNotificationService(new NotificationService(notificationStore));
+    });
+
+    afterEach(() => {
+      setAccountUsageStore(undefined);
+      setNotificationService(null);
+    });
+
+    /** The `schedule.armed_by_agent` notices stored for the person. */
+    const accountNotices = () =>
+      notificationStore
+        .list({ limit: 50 } as Parameters<NotificationStore['list']>[0])
+        .notifications.filter((n) => n.kind === 'schedule.armed_by_agent');
+
+    it('keeps it approved and running, records it, and tells the person with an Undo', async () => {
+      // Purpose: the ticket. Moving a task off a spent account used to send it
+      // back for approval; who pays is not what the run does.
+      const task = await approvedTask();
+
+      const res = await agentEdit(task.id, { account: 'claude5' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ status: 'active', account: 'claude5' });
+      expect(readFileSync(filePath, 'utf-8')).toContain('account: claude5');
+      // The next sync of that file keeps it live.
+      expect((await resync()).status).toBe('active');
+      expect(vi.mocked(raiseStanding)).not.toHaveBeenCalled();
+      const [notice] = accountNotices();
+      expect(notice).toMatchObject({
+        title: expect.stringContaining('to Claude5'),
+        actions: expect.arrayContaining([expect.objectContaining({ id: 'undo-mode' })]),
+      });
+
+      // The Undo puts the old account back, and it stays approved.
+      const undo = await request(fixtureTarget.server)
+        .post(`/api/tasks/${task.id}/undo-agent-mode`)
+        .send({ notificationId: notice!.id });
+      expect(undo.status).toBe(200);
+      expect(undo.body).toMatchObject({ status: 'active', account: null });
+      expect((await resync()).status).toBe('active');
+    });
+
+    it('still parks a move to an account a person kept out of automatic moves', async () => {
+      const task = await approvedTask();
+
+      const res = await agentEdit(task.id, { account: 'claude-ab1' });
+
+      expect(res.body).toMatchObject({ status: 'pending_approval', account: 'claude-ab1' });
+      expect(accountNotices()).toHaveLength(0);
+    });
+
+    it('parks instead when the person cannot be told', async () => {
+      setNotificationService(null);
+      const task = await approvedTask();
+
+      const res = await agentEdit(task.id, { account: 'claude5' });
+
+      expect(res.body.status).toBe('pending_approval');
     });
   });
 });

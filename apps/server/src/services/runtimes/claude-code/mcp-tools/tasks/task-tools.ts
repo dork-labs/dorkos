@@ -21,6 +21,7 @@ import { createDeleteScheduleHandler } from './task-delete-tool.js';
 import {
   PARKED_SCHEDULE_NOTE,
   armedScheduleNote,
+  ACCOUNT_MOVE_NOTE,
   REAPPROVAL_NOTE,
   TIMING_REAPPROVAL_NOTE,
   RESET_TIMING_DESCRIPTION,
@@ -67,6 +68,8 @@ import {
 import {
   agentModeCallerOf,
   emitAgentSwitchedOn,
+  announceTaskAccountMove,
+  toolUpdatePatch,
   AGENT_ID_ON_CREATE_REFUSAL,
   callerAgentPathOf,
   createGetRunHistoryHandler,
@@ -95,6 +98,7 @@ import {
 } from './task-tool-mode.js';
 import { createScheduledTask } from '../../../../tasks/lifecycle/create-task.js';
 import { agentSchedulesArmWithoutAsking } from '../../../../tasks/approvals/agent-trust.js';
+import { accountMayTakeMovedWork } from '../../../../tasks/approvals/account-move.js';
 import { auditScheduleUpdate, scheduleEdit } from '../../../../tasks/approvals/schedule-owner.js';
 import { applyTaskFileUpdate } from '../../../../tasks/lifecycle/update-task-file.js';
 import { taskCreateLifecycleDeps } from './task-create-deps.js';
@@ -372,6 +376,8 @@ export function createUpdateScheduleHandler(
     effort?: EffortLevel | null;
     /** Which Claude account the runs start on, or `null` to clear the override. */
     account?: string | null;
+    /** Whether runs stay on that account; see {@link ACCOUNT_PINNED_DESCRIPTION}. */
+    accountPinned?: boolean;
     /** Mode requested for person approval; never applied by this tool. */
     requestedPermissionMode?: PermissionMode;
     /** Task-run rules requested for person approval; never applied by this tool. */
@@ -504,28 +510,11 @@ export function createUpdateScheduleHandler(
     // straight into the permission-mode enum without validating it. A new
     // agent-writable field now has to be added in both places, which is the
     // trade: a forgotten field is a visible bug, a forwarded one was a hole.
-    const patch: UpdateTaskRequest = {
-      ...(args.name !== undefined && { name: args.name }),
-      ...(args.prompt !== undefined && { prompt: args.prompt }),
-      ...(args.cron !== undefined && { cron: args.cron }),
-      ...(args.enabled !== undefined && { enabled: args.enabled }),
-      ...(args.timezone !== undefined && { timezone: args.timezone }),
-      ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
-      ...(args.sticky !== undefined && { sticky: args.sticky }),
-      // Only `true` gets here: the policy refused anything else above (DOR-3969).
-      ...(args.readsOutsideText === true && { readsOutsideText: true }),
-      ...(args.runtime !== undefined && { runtime: args.runtime }),
-      ...(args.model !== undefined && { model: args.model }),
-      ...(args.effort !== undefined && { effort: args.effort }),
-      ...(args.account !== undefined && { account: args.account }),
-      ...(args.requestedPermissionMode !== undefined && {
-        requestedPermissionMode: args.requestedPermissionMode,
-      }),
-      ...(args.requestedAllow !== undefined && { requestedAllow: args.requestedAllow }),
-      ...(args.resetTiming === true && { resetTiming: true as const }),
+    const patch = toolUpdatePatch(
+      args,
       // An approval's mode is written when it is armed, not here (S-C).
-      ...(modeOnly(mode) && { permissionMode: mode.grant!.decision.mode }),
-    };
+      modeOnly(mode) ? mode.grant!.decision.mode : undefined
+    );
     // Never above the task's own agent's level, Bypass included (DOR-3938, Must 4).
     await capPatch(deps, forOther, existing, patch);
 
@@ -634,6 +623,8 @@ export function createUpdateScheduleHandler(
           ),
         // Its own agent's, or a Full one's, prompt edit from an ordinary turn stays live (M7).
         ownAgentVouches: (vouched || forOther.kind === 'allowed') && caller.scheduledRun !== true,
+        // A move to another account a person left open keeps the approval (DOR-5097).
+        accountMayMoveTo: accountMayTakeMovedWork,
       }
     );
     // An edit from a marked turn parks it for a person, whatever it changed, and keeps the marks
@@ -646,6 +637,10 @@ export function createUpdateScheduleHandler(
     const writesContent = changesApprovedWork({ ...args, permissionMode: undefined }, existing);
     const why = afterToolAgentEdit(deps, updated, mode, caller, { vouched, writesContent });
     if (why) settled = 'parked';
+    // A kept account move stands only once the person is told, with an Undo (DOR-5097).
+    const moved =
+      settled === 'account-moved' && (await announceTaskAccountMove(deps, existing, caller));
+    if (settled === 'account-moved' && !moved) settled = 'parked';
     if (settled === 'parked') {
       updated = deps.taskStore!.getTask(updated.id) ?? updated;
       // The standing condition and its escalation clock start here, as they do
@@ -706,7 +701,12 @@ export function createUpdateScheduleHandler(
             : REAPPROVAL_NOTE),
       });
     }
-    return jsonContent({ schedule: updated, ...fileReply, ...rulesReply });
+    return jsonContent({
+      schedule: updated,
+      ...fileReply,
+      ...rulesReply,
+      ...(moved && { accountNote: ACCOUNT_MOVE_NOTE }),
+    });
   };
 }
 

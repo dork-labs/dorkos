@@ -55,6 +55,11 @@ import {
 } from '../services/tasks/schedule-permission-clamp.js';
 import { changesApprovedWork } from '../services/tasks/task-file-update.js';
 import { auditScheduleUpdate, scheduleEdit } from '../services/tasks/approvals/schedule-owner.js';
+import {
+  accountMayTakeMovedWork,
+  announceAccountMove,
+} from '../services/tasks/approvals/account-move.js';
+import type { WorkChangeSettlement } from '../services/tasks/approvals/task-approvals.js';
 import { refuseStickyAccountChange } from '../services/tasks/session/sticky-session.js';
 import {
   scheduleAccountRefusal,
@@ -375,13 +380,16 @@ export async function updateTaskHttp(
   // Trusted install can keep other edits live, but prompt/runtime substitutions
   // always park for a person (DOR-3651). The park is then picked up by the
   // "entered `pending_approval`" edge below like any other.
+  let settled: WorkChangeSettlement = 'unchanged';
   if (!rearms || !changesFile) {
-    store.approvals.settleApprovedWorkChange(updated.id, before, {
+    settled = store.approvals.settleApprovedWorkChange(updated.id, before, {
       trusted: rearms,
       approval,
       // Only an agent's own schedule stays live through its edit (DOR-3640 R1),
       // and not one an agent approved or a person set looser than Don't ask (DOR-3703).
       armsAgentWork: !trusted && edit.armsAgentWork && agentEditMayStayLive(existing, store),
+      // A move to another account a person left open keeps the approval (DOR-5097).
+      accountMayMoveTo: accountMayTakeMovedWork,
     });
     updated = store.getTask(updated.id) ?? updated;
   }
@@ -398,6 +406,14 @@ export async function updateTaskHttp(
     data: { ...data, ...(approvedPromptHash !== undefined && { approvedPromptHash }) },
     updated,
   });
+
+  // A kept account move stands only once the person is told, with an Undo (DOR-5097).
+  if (settled === 'account-moved' && updated.status === 'active') {
+    const agentPath = caller.agentIdentity?.agentPath ?? null;
+    if (!(await announceAccountMove(store, { before: existing, after: updated, agentPath }))) {
+      updated = store.getTask(updated.id) ?? updated;
+    }
+  }
 
   // Re-register or unregister the cron job to match the new state, through the
   // shared seam — see the note on the create path above.

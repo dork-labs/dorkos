@@ -126,6 +126,7 @@ const AUDITED_FIELDS = [
   'model',
   'effort',
   'account',
+  'accountPinned',
   'permissionMode',
   'status',
 ] as const satisfies readonly (keyof Task)[];

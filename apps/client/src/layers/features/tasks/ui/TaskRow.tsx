@@ -49,6 +49,7 @@ import {
   TaskFailingSince,
   TaskOpenScheduleButton,
 } from './TaskHealthParts';
+import { TaskAccountLine } from './account/TaskAccountLine';
 import { isFailing } from '../lib/schedule-health';
 import { TaskApproveButtons, TaskFileSaysOnNote } from './TaskSwitchOffers';
 import { TaskAgentModeNote, TaskFileCapNote, TaskFileReviewNote } from './TaskAgentModeNote';
@@ -552,6 +553,7 @@ export function TaskRow({
                     {shortenHomePath(task.filePath)}
                   </p>
                 )}
+                <TaskAccountLine task={task} />
                 {task.timingOverridden && (
                   <div
                     data-slot="task-package-timing"

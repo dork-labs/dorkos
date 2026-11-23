@@ -63,6 +63,15 @@ function namedChangeOf(body: unknown, taskId: string): NamedChange | null {
     ...(payload.modeChange?.at ? { modeAt: payload.modeChange.at } : {}),
     ...(payload.promptChange?.at ? { promptAt: payload.promptChange.at } : {}),
     ...(payload.fileChange?.kind === 'lifted' ? { fileLiftAt: payload.fileChange.at } : {}),
+    ...(payload.accountChange
+      ? {
+          account: {
+            at: payload.accountChange.at,
+            from: payload.accountChange.fromId,
+            to: payload.accountChange.toId,
+          },
+        }
+      : {}),
   };
   return Object.keys(named).length > 0 ? named : null;
 }

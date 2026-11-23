@@ -42,6 +42,7 @@ import {
 } from '../timing/effective-timing.js';
 import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { clearOutsiderParks, markScheduleOrigin } from './marked-schedules.js';
+import { movesOnlyAccount } from './account-move-rule.js';
 import { patchAgentModeColumnOf, readAgentModeColumnOf } from './agent-mode-column.js';
 import {
   CLEARED_APPROVAL_RECEIPT,
@@ -97,7 +98,7 @@ export interface ScheduleAgentEdits {
  * What {@link TaskApprovals.settleApprovedWorkChange} did about a schedule whose
  * approved work changed.
  */
-export type WorkChangeSettlement = 'unchanged' | 'rekeyed' | 'parked';
+export type WorkChangeSettlement = 'unchanged' | 'rekeyed' | 'account-moved' | 'parked';
 
 /**
  * The approval rules for scheduled tasks, over the same database the store
@@ -361,6 +362,11 @@ export class TaskApprovals {
    *   grant no longer matches what would run, so nothing can arm it again
    *   without a person.
    *
+   * - **Only the account changed** (`caller.accountMayMoveTo` allows the new
+   *   one, DOR-5097): the approval follows it, as `account-moved`, and the
+   *   caller tells the person with an Undo. Who pays is not what the run does,
+   *   unless the person restricted that account, and then it parks as below.
+   *
    * It never touches `enabled`: a park stops a schedule, it never starts one.
    *
    * @param id - The schedule whose approved work may just have changed.
@@ -381,6 +387,8 @@ export class TaskApprovals {
       ownAgentVouches?: boolean;
       /** Who a trusted caller is, for the receipt of the work they re-keyed. */
       approval?: TaskApprovalInput;
+      /** Whether an account-only change to this account keeps the approval (DOR-5097). */
+      accountMayMoveTo?: (accountId: string | null) => boolean;
     }
   ): WorkChangeSettlement {
     const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
@@ -405,6 +413,10 @@ export class TaskApprovals {
       return 'rekeyed';
     }
 
+    const now = effectiveWork(row);
+    if (movesOnlyAccount(before, now) && caller.accountMayMoveTo?.(now.account) === true) {
+      return this.followAccountMove(row, before, previousKey, key);
+    }
     // Substituted work always needs a person; target/mode writes are refused at the doors (DOR-3651).
     const substitutesWork = before.prompt !== row.prompt || before.runtime !== row.runtime;
     // The task's own agent vouching for its own edit, from an ordinary turn, keeps
@@ -463,6 +475,46 @@ export class TaskApprovals {
       .where(eq(pulseSchedules.id, id))
       .run();
     return 'parked';
+  }
+
+  /**
+   * Carry the grant over an account-only change (DOR-5097): what a person
+   * approved still runs, only on another account. A sync that parked the row
+   * mid-request is undone, as for an agent's live edit. The receipt stays the
+   * person's (DorkOS's rule, when that sync cleared it), and so does a person's
+   * approval of the content.
+   */
+  private followAccountMove(
+    row: typeof pulseSchedules.$inferSelect,
+    before: { status: string },
+    previousKey: string,
+    key: string
+  ): WorkChangeSettlement {
+    const parkedMidRequest =
+      before.status === 'active' &&
+      row.status === 'pending_approval' &&
+      row.approvedContentKey === null &&
+      row.previousApprovalKey === previousKey;
+    if (row.approvedContentKey !== previousKey && !parkedMidRequest) return 'unchanged';
+    this.db
+      .update(pulseSchedules)
+      .set({
+        approvedContentKey: key,
+        previousApprovalKey: null,
+        ...(row.personApprovedKey === previousKey ? { personApprovedKey: key } : {}),
+        ...(parkedMidRequest
+          ? {
+              status: 'active' as const,
+              // The sync's park cleared the person's receipt: what keeps it now is DorkOS's rule.
+              ...taskApprovalReceiptColumns(completeTaskApproval()),
+              ...(row.reasonSource === 'dorkos' ? { reason: null, reasonSource: null } : {}),
+              updatedAt: new Date().toISOString(),
+            }
+          : {}),
+      })
+      .where(eq(pulseSchedules.id, row.id))
+      .run();
+    return 'account-moved';
   }
 
   /**
