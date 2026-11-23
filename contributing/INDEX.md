@@ -86,6 +86,7 @@ Maps source code patterns to the guides that document them. Patterns use `grep -
 | `sidebar-model.md` | The sidebar's pure model: section/row shape, the named rules and how they compose, reading a `reason`, adding a rule or a fixture, and the standing no-verbs-in-the-model rule | `features/dashboard-sidebar/model/\|entities/interactions/` |
 | `room-repos.md` | A room's own git repo: on-disk layout and file-first sidecar, the one-writer rule, turn cwd resolution, the merge contract and its refusals, human saves and dirty-main repair, `ROOM.md` delivery, the worktree reap, and the trust boundary | `apps/server/src/services/rooms/repo/\|packages/shared/src/room-repo\|packages/shared/src/room-files\|apps/client/src/layers/features/file-explorer/\|operating-skills/src/skills/working-in-room-repos` |
 | `ci.md` | The CI pipeline for agents: required checks (ruleset only), local ratchets, sharding, the merge queue, arming (arm.sh, the queue doors), the admin-merge guard, and CI Steward (ledger, census, deadlock invariant, fence) | `.github/workflows/\|lefthook.yml\|turbo.json\|^ci/\|packages/ci-steward/\|scripts/should-arm-automerge\|scripts/assert-\|.claude/hooks/merge-guard\|.claude/rules/ci-pipeline\|creating-pull-requests/` |
+| `paid-paths.md` | Every test, eval and server path that spends real money: its opt-in flag, its key, and why none can run from `pnpm test`, `pnpm verify`, pre-push or CI | `packages/evals/src/runner/credentials\|paid-provider\|scripts/harness-smoke/\|credits-inference\|test-community-deploy-live` |
 
 ## Pattern Syntax
 
