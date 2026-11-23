@@ -222,7 +222,13 @@
           "rate_limited",
           "internal_error",
           "runtime_not_available",
-          "temporarily_unavailable"
+          "temporarily_unavailable",
+          "method_not_allowed",
+          "disclosure_changed",
+          "declined",
+          "client_outdated",
+          "upstream_unavailable",
+          "outside_turn"
         ],
         "description": "The machine-readable failure code. Permanent once published."
       },
@@ -22409,26 +22415,6 @@
           "sessionId"
         ]
       },
-      "StartWorkErrorResponse": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string"
-          },
-          "code": {
-            "type": "string",
-            "enum": [
-              "not_a_project",
-              "account_not_allowed_here",
-              "start_limit"
-            ]
-          }
-        },
-        "required": [
-          "error",
-          "code"
-        ]
-      },
       "StartWorkRequest": {
         "type": "object",
         "properties": {
@@ -31662,111 +31648,51 @@
             }
           },
           "400": {
-            "description": "Invalid path, query or body",
+            "description": "`invalid_request`: invalid path, query or body",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Sign-in required",
+            "description": "`unauthenticated` or `agent_identity_unverified`: sign-in required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a person, or the document is out of reach",
+            "description": "`person_only` (not a person), `not_from_wifi` (allowing a route from Wi-Fi), or `forbidden` (the document is out of reach; `reason` says why)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Document, route or grant unavailable",
+            "description": "`not_found`: document, route or grant unavailable (`reason` says which)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Document routes are not composed on this server",
+            "description": "`temporarily_unavailable`: document routes are not composed on this server",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -32019,111 +31945,51 @@
             }
           },
           "400": {
-            "description": "Invalid path, query or body",
+            "description": "`invalid_request`: invalid path, query or body",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Sign-in required",
+            "description": "`unauthenticated` or `agent_identity_unverified`: sign-in required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a person, or the document is out of reach",
+            "description": "`person_only` (not a person), `not_from_wifi` (allowing a route from Wi-Fi), or `forbidden` (the document is out of reach; `reason` says why)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Document, route or grant unavailable",
+            "description": "`not_found`: document, route or grant unavailable (`reason` says which)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Document routes are not composed on this server",
+            "description": "`temporarily_unavailable`: document routes are not composed on this server",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -32138,7 +32004,7 @@
           "Canvas"
         ],
         "summary": "Allow a reviewed route",
-        "description": "Operator only. Writes also refuse an agent identity or approval token in every posture, and with login on accept only a signed-in session cookie, as approval decisions do. Records a person's approval through the approval service and grants it only while the current binding still matches reviewHash; otherwise 409 ROUTE_CHANGED.",
+        "description": "Operator only. Writes also refuse an agent identity or approval token in every posture, and with login on accept only a signed-in session cookie, as approval decisions do. Records a person's approval through the approval service and grants it only while the current binding still matches reviewHash; otherwise 409 conflict, reason route_changed.",
         "parameters": [
           {
             "schema": {
@@ -32499,111 +32365,51 @@
             }
           },
           "400": {
-            "description": "Invalid path, query or body",
+            "description": "`invalid_request`: invalid path, query or body",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Sign-in required",
+            "description": "`unauthenticated` or `agent_identity_unverified`: sign-in required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a person, or the document is out of reach",
+            "description": "`person_only` (not a person), `not_from_wifi` (allowing a route from Wi-Fi), or `forbidden` (the document is out of reach; `reason` says why)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Document, route or grant unavailable",
+            "description": "`not_found`: document, route or grant unavailable (`reason` says which)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The route changed since review, or is already on",
+            "description": "`conflict`: the route changed since review, or is already on (`reason` says which)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -32659,23 +32465,11 @@
             }
           },
           "503": {
-            "description": "Document routes are not composed on this server",
+            "description": "`temporarily_unavailable`: document routes are not composed on this server",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -33037,111 +32831,51 @@
             }
           },
           "400": {
-            "description": "Invalid path, query or body",
+            "description": "`invalid_request`: invalid path, query or body",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Sign-in required",
+            "description": "`unauthenticated` or `agent_identity_unverified`: sign-in required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a person, or the document is out of reach",
+            "description": "`person_only` (not a person), `not_from_wifi` (allowing a route from Wi-Fi), or `forbidden` (the document is out of reach; `reason` says why)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Document, route or grant unavailable",
+            "description": "`not_found`: document, route or grant unavailable (`reason` says which)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Document routes are not composed on this server",
+            "description": "`temporarily_unavailable`: document routes are not composed on this server",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -33248,111 +32982,51 @@
             }
           },
           "400": {
-            "description": "Invalid path, query or body",
+            "description": "`invalid_request`: invalid path, query or body",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Sign-in required",
+            "description": "`unauthenticated` or `agent_identity_unverified`: sign-in required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a person, or the document is out of reach",
+            "description": "`person_only` (not a person), `not_from_wifi` (allowing a route from Wi-Fi), or `forbidden` (the document is out of reach; `reason` says why)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Document, route or grant unavailable",
+            "description": "`not_found`: document, route or grant unavailable (`reason` says which)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Document routes are not composed on this server",
+            "description": "`temporarily_unavailable`: document routes are not composed on this server",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -33463,133 +33137,61 @@
             }
           },
           "400": {
-            "description": "Invalid path, query or body",
+            "description": "`invalid_request`: invalid path, query or body",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Sign-in required",
+            "description": "`unauthenticated` or `agent_identity_unverified`: sign-in required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a person, or the document is out of reach",
+            "description": "`person_only` (not a person), `not_from_wifi` (allowing a route from Wi-Fi), or `forbidden` (the document is out of reach; `reason` says why)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Document, route or grant unavailable",
+            "description": "`not_found`: document, route or grant unavailable (`reason` says which)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Already reviewed, not reviewable, still running, no current grant, route changed, newer work waiting, inputs gone, or confirmation missing",
+            "description": "`conflict`: already reviewed, not reviewable, still running, no current grant, route changed, newer work waiting, inputs gone, or confirmation missing (`reason` says which)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Document routes are not composed on this server",
+            "description": "`temporarily_unavailable`: document routes are not composed on this server",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -33693,133 +33295,61 @@
             }
           },
           "400": {
-            "description": "Invalid path, query or body",
+            "description": "`invalid_request`: invalid path, query or body",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Sign-in required",
+            "description": "`unauthenticated` or `agent_identity_unverified`: sign-in required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a person, or the document is out of reach",
+            "description": "`person_only` (not a person), `not_from_wifi` (allowing a route from Wi-Fi), or `forbidden` (the document is out of reach; `reason` says why)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Document, route or grant unavailable",
+            "description": "`not_found`: document, route or grant unavailable (`reason` says which)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Already reviewed, not reviewable, or still running",
+            "description": "`conflict`: already reviewed, not reviewable, or still running (`reason` says which)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Document routes are not composed on this server",
+            "description": "`temporarily_unavailable`: document routes are not composed on this server",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -34660,21 +34190,9 @@
           "400": {
             "description": "The profile id is invalid",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -34682,43 +34200,19 @@
           "403": {
             "description": "The caller is not the owner in person on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "The browser profile no longer exists",
+            "description": "`not_found` (`reason`: `profile_not_found`): the browser profile no longer exists",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -34726,21 +34220,9 @@
           "409": {
             "description": "A writer still holds the profile, or removal was incomplete",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -34748,21 +34230,9 @@
           "500": {
             "description": "The profile data could not be removed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -34814,21 +34284,9 @@
           "400": {
             "description": "The profile id is invalid",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -34836,43 +34294,19 @@
           "403": {
             "description": "The caller is not the owner in person on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "The browser profile no longer exists",
+            "description": "`not_found` (`reason`: `profile_not_found`): the browser profile no longer exists",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -34880,21 +34314,9 @@
           "409": {
             "description": "A writer still holds the profile, or removal was incomplete",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -34902,21 +34324,9 @@
           "500": {
             "description": "The profile data could not be removed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -34995,23 +34405,11 @@
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -35019,21 +34417,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -35378,45 +34764,21 @@
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The browser cannot complete this request in its current state",
+            "description": "`conflict`: the browser cannot do this now; `reason` names its refusal",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -35424,21 +34786,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -35807,65 +35157,29 @@
           "400": {
             "description": "The browser choice is invalid",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The browser cannot complete this request in its current state",
+            "description": "`conflict`: the browser cannot do this now; `reason` names its refusal",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -35873,21 +35187,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -36097,45 +35399,21 @@
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The browser cannot complete this request in its current state",
+            "description": "`conflict`: the browser cannot do this now; `reason` names its refusal",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -36143,21 +35421,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -36528,43 +35794,19 @@
           "400": {
             "description": "The web address or HTTP fallback choice is invalid",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -36572,21 +35814,9 @@
           "409": {
             "description": "The browser cannot complete the navigation (`navigation_timed_out`, `navigation_unreachable`, or `navigation_uncertain`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -36594,21 +35824,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -36953,45 +36171,21 @@
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The browser cannot complete this request in its current state",
+            "description": "`conflict`: the browser cannot do this now; `reason` names its refusal",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -36999,21 +36193,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -37383,65 +36565,29 @@
           "400": {
             "description": "The direction is not back or forward",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The browser cannot complete this request in its current state",
+            "description": "`conflict`: the browser cannot do this now; `reason` names its refusal",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -37449,21 +36595,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -37665,45 +36799,21 @@
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The browser cannot complete this request in its current state",
+            "description": "`conflict`: the browser cannot do this now; `reason` names its refusal",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -37711,21 +36821,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -38070,45 +37168,21 @@
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The browser cannot complete this request in its current state",
+            "description": "`conflict`: the browser cannot do this now; `reason` names its refusal",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -38116,21 +37190,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -38195,23 +37257,11 @@
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -38219,21 +37269,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -38249,23 +37287,11 @@
         "description": "Named profiles are cut for launch: the app can’t show one, so this always refuses with `profiles_closed`. Listing and deleting existing profiles still work.",
         "responses": {
           "403": {
-            "description": "New browser profiles aren’t available",
+            "description": "`forbidden`: new browser profiles aren’t available",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -38315,43 +37341,19 @@
           "400": {
             "description": "The request is invalid",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -38359,21 +37361,9 @@
           "404": {
             "description": "The browser profile or agent no longer exists",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -38420,21 +37410,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -38506,23 +37484,11 @@
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -38530,21 +37496,9 @@
           "404": {
             "description": "The browser profile or agent no longer exists",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -38552,21 +37506,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -38911,45 +37853,21 @@
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The browser cannot complete this request in its current state",
+            "description": "`conflict`: the browser cannot do this now; `reason` names its refusal",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -38957,21 +37875,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -39302,45 +38208,21 @@
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The browser cannot complete this request in its current state",
+            "description": "`conflict`: the browser cannot do this now; `reason` names its refusal",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -39348,21 +38230,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -39750,65 +38620,29 @@
           "400": {
             "description": "The request is invalid",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The browser cannot complete this request in its current state",
+            "description": "`conflict`: the browser cannot do this now; `reason` names its refusal",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -39816,21 +38650,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -39902,21 +38724,9 @@
           "400": {
             "description": "The request is invalid",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -39924,21 +38734,9 @@
           "403": {
             "description": "The caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -39946,21 +38744,9 @@
           "409": {
             "description": "No sign-in window of this handoff can be finished",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -39968,21 +38754,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -40335,65 +39109,29 @@
           "400": {
             "description": "The request is invalid",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The browser cannot complete this request in its current state",
+            "description": "`conflict`: the browser cannot do this now; `reason` names its refusal",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -40401,21 +39139,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -40768,65 +39494,29 @@
           "400": {
             "description": "The request is invalid",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the owner on this computer",
+            "description": "`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The browser cannot complete this request in its current state",
+            "description": "`conflict`: the browser cannot do this now; `reason` names its refusal",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -40834,21 +39524,9 @@
           "500": {
             "description": "The browser operation failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -52276,21 +50954,24 @@
             }
           },
           "400": {
-            "description": "Invalid body",
+            "$ref": "#/components/responses/ValidationProblem"
+          },
+          "403": {
+            "description": "`outside_boundary`: `cwd` or `path` is outside the folders DorkOS may use",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
-          "403": {
-            "description": "Access denied: cwd outside directory boundary",
+          "500": {
+            "description": "`internal_error`: the folder could not be checked or the preview opened",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -52327,11 +51008,14 @@
             }
           },
           "400": {
-            "description": "Invalid body",
+            "$ref": "#/components/responses/ValidationProblem"
+          },
+          "409": {
+            "description": "`conflict`: this computer does not look for dev servers (a hub or agent computer)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -52368,14 +51052,7 @@
             }
           },
           "400": {
-            "description": "Invalid body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
+            "$ref": "#/components/responses/ValidationProblem"
           }
         },
         "operationId": "workbench.createBridge"
@@ -52413,41 +51090,51 @@
             "description": "File contents, content-typed by extension"
           },
           "400": {
-            "description": "Invalid path (null byte, symlink loop, not a directory)",
+            "description": "`invalid_request`: a bad path (null byte, symlink loop, not a directory)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Token expired",
+            "description": "`unauthenticated`: the link expired",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Token forged/malformed, wrong scope, or path escapes the boundary",
+            "description": "`forbidden` (a forged or malformed link, the wrong kind of link, or a protected file) or `outside_boundary` (the path escapes `cwd`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "File not found",
+            "description": "`not_found`: no such file, a folder, or a computer that serves no previews",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: the file could not be read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -55019,50 +53706,31 @@
             }
           },
           "400": {
-            "description": "Validation error, a name DorkOS cannot use, or an address it will not fetch",
+            "description": "`invalid_request`: validation error, a name DorkOS cannot use, or an address it will not fetch",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Caller is not the operator",
+            "description": "`operator_only` (an agent, or not at this computer) or `person_only` (sign in to the app)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "operator_only_marketplace_source"
-                      ]
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "message"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Duplicate source name",
+            "description": "`conflict`: duplicate source name",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -55144,30 +53812,11 @@
             "description": "Source removed"
           },
           "403": {
-            "description": "Caller is not the operator",
+            "description": "`operator_only` (an agent, or not at this computer) or `person_only` (sign in to the app)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "operator_only_marketplace_source"
-                      ]
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "message"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -55197,30 +53846,11 @@
             "description": "Source removed"
           },
           "403": {
-            "description": "Caller is not the operator",
+            "description": "`operator_only` (an agent, or not at this computer) or `person_only` (sign in to the app)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "operator_only_marketplace_source"
-                      ]
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "message"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -55315,21 +53945,21 @@
             }
           },
           "404": {
-            "description": "Source not found",
+            "description": "`not_found`: source not found",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "502": {
-            "description": "Upstream fetch failure",
+            "description": "`upstream_unavailable`: the source could not be fetched and nothing is cached",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -55427,21 +54057,21 @@
             }
           },
           "404": {
-            "description": "Source not found",
+            "description": "`not_found`: source not found",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "502": {
-            "description": "Upstream fetch failure",
+            "description": "`upstream_unavailable`: the source could not be fetched and nothing is cached",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -55692,21 +54322,21 @@
             }
           },
           "400": {
-            "description": "projectPath given more than once",
+            "description": "`invalid_request`: `projectPath` given more than once",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "projectPath outside the directory boundary",
+            "description": "`outside_boundary`: `projectPath` is outside the folders DorkOS may use",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -55985,11 +54615,11 @@
             }
           },
           "404": {
-            "description": "Package not installed",
+            "description": "`not_found`: package not installed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -56143,11 +54773,11 @@
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "`invalid_request`: validation error",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -56211,11 +54841,11 @@
             }
           },
           "500": {
-            "description": "Aggregation failure",
+            "description": "`internal_error`: aggregation failure",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -57026,21 +55656,21 @@
             }
           },
           "400": {
-            "description": "Validation error or invalid package",
+            "description": "`invalid_request`: validation error or invalid package (`errors` and `codes` say what failed)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Marketplace or package not found",
+            "description": "`not_found`: marketplace or package not found",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -58121,21 +56751,21 @@
             }
           },
           "400": {
-            "description": "Validation error or invalid package",
+            "description": "`invalid_request`: validation error or invalid package (`errors` and `codes` say what failed)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Marketplace or package not found",
+            "description": "`not_found`: marketplace or package not found",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -59030,82 +57660,78 @@
             }
           },
           "400": {
-            "description": "Validation error or invalid package",
+            "description": "`invalid_request`: validation error or invalid package (`errors` and `codes` say what failed)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Marketplace or package not found",
+            "description": "`not_found`: marketplace or package not found",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Install blocked by conflicts, or (`code: disclosure_changed`) the package now runs something other than `approvedDisclosure`",
+            "description": "`conflict` (blocked by `conflicts`), or `disclosure_changed`: the package now runs something other than `approvedDisclosure`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
                     },
-                    "conflicts": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "level": {
-                            "type": "string",
-                            "enum": [
-                              "error",
-                              "warning"
+                    {
+                      "type": "object",
+                      "properties": {
+                        "conflicts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "level": {
+                                "type": "string",
+                                "enum": [
+                                  "error",
+                                  "warning"
+                                ]
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "package-name",
+                                  "slot",
+                                  "skill-name",
+                                  "task-name",
+                                  "cron-collision",
+                                  "adapter-id"
+                                ]
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "conflictingPackage": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "level",
+                              "type",
+                              "description"
                             ]
-                          },
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "package-name",
-                              "slot",
-                              "skill-name",
-                              "task-name",
-                              "cron-collision",
-                              "adapter-id"
-                            ]
-                          },
-                          "description": {
-                            "type": "string"
-                          },
-                          "conflictingPackage": {
-                            "type": "string"
                           }
-                        },
-                        "required": [
-                          "level",
-                          "type",
-                          "description"
-                        ]
+                        }
                       }
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "disclosure_changed"
-                      ]
                     }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  ],
+                  "description": "The error document every failed API request is answered with (RFC 9457)."
                 }
               }
             }
@@ -59231,21 +57857,21 @@
             }
           },
           "400": {
-            "description": "Validation error or an invalid package name",
+            "description": "`invalid_request`: validation error or an invalid package name",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Package not installed",
+            "description": "`not_found`: package not installed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -59260,7 +57886,7 @@
           "Marketplace"
         ],
         "summary": "Keep the files an update couldn't sort as the person's",
-        "description": "Make the files an update kept, because it could not tell whether they were the person's or left over from the earlier version, the person's: the record stops listing them, and nothing is moved or deleted (DOR-2341). Only a person may do this: an agent is refused (`operator_only`), and under login so is anything but a signed-in session (`operator_cookie_required`). Bound to `keepKey` as the installed list showed it: when a kept file or the installed version changed since, the answer is 409 `kept_files_changed` and nothing is written. For a global package held back from sessions, `review` (exactly as `GET /held-back` listed it) also approves what the package discloses now, like a Review.",
+        "description": "Make the files an update kept, because it could not tell whether they were the person's or left over from the earlier version, the person's: the record stops listing them, and nothing is moved or deleted (DOR-2341). Only a person may do this: an agent is refused (`operator_only`), and under login so is anything but a signed-in session (`person_only`). Bound to `keepKey` as the installed list showed it: when a kept file or the installed version changed since, the answer is 409 `conflict` and nothing is written. For a global package held back from sessions, `review` (exactly as `GET /held-back` listed it) also approves what the package discloses now, like a Review.",
         "parameters": [
           {
             "schema": {
@@ -59589,41 +58215,41 @@
             }
           },
           "400": {
-            "description": "Validation error or an invalid package name",
+            "description": "`invalid_request`: validation error or an invalid package name",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a person (`operator_only`, `operator_cookie_required`)",
+            "description": "`operator_only` (an agent) or `person_only` (sign-in is on and this is not a signed-in session)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Package not installed",
+            "description": "`not_found`: package not installed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The kept files changed since they were shown (`kept_files_changed`)",
+            "description": "`conflict`: the kept files changed since they were shown",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -59763,21 +58389,21 @@
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "`invalid_request`: validation error",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Package not installed",
+            "description": "`not_found`: package not installed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -59893,31 +58519,31 @@
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "`invalid_request`: validation error",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Package not installed",
+            "description": "`not_found`: package not installed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "502": {
-            "description": "The package's git remote could not be reached, or its fetch failed",
+            "description": "`upstream_unavailable`: the package's git remote could not be reached, or its fetch failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -60643,21 +59269,21 @@
             }
           },
           "400": {
-            "description": "projectPath given more than once",
+            "description": "`invalid_request`: `projectPath` given more than once",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "projectPath outside the directory boundary",
+            "description": "`outside_boundary`: `projectPath` is outside the folders DorkOS may use",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -61707,83 +60333,84 @@
             }
           },
           "400": {
-            "description": "Validation error (a body without `apply: true`, no targets, or a retired selector)",
+            "description": "`client_outdated` (a body only an older CLI sends) or `invalid_request`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused by the permission check, a person declined the card, or projectPath outside the boundary",
+            "description": "`needs_approval` (a batch that would need a card per package), `declined` (a person said no), `outside_boundary`, or the permission check’s refusal",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "A target install path is not installed in view",
+            "description": "`not_found`: a target install path is not installed in view",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
                     },
-                    "packageNames": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "installPaths": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
+                    {
+                      "type": "object",
+                      "properties": {
+                        "packageNames": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "installPaths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "packageNames",
+                        "installPaths"
+                      ]
                     }
-                  },
-                  "required": [
-                    "error",
-                    "packageNames",
-                    "installPaths"
-                  ]
+                  ],
+                  "description": "The error document every failed API request is answered with (RFC 9457)."
                 }
               }
             }
           },
           "409": {
-            "description": "A new version, or what it runs, is not what was shown (`disclosure_changed`); nothing ran",
+            "description": "`disclosure_changed`: a new version, or what it runs, is not what was shown; nothing ran",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
                     },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "disclosure_changed"
+                    {
+                      "type": "object",
+                      "properties": {
+                        "changed": {
+                          "type": "array",
+                          "items": {}
+                        }
+                      },
+                      "required": [
+                        "changed"
                       ]
-                    },
-                    "changed": {
-                      "type": "array",
-                      "items": {}
                     }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "changed"
-                  ]
+                  ],
+                  "description": "The error document every failed API request is answered with (RFC 9457)."
                 }
               }
             }
@@ -61839,11 +60466,11 @@
             }
           },
           "502": {
-            "description": "The package's git remote could not be reached, or its fetch failed",
+            "description": "`upstream_unavailable`: the package's git remote could not be reached, or its fetch failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -62211,11 +60838,11 @@
             }
           },
           "409": {
-            "description": "Not held back, or cannot be shown on a card (the error says what to do)",
+            "description": "`conflict`: not held back, or cannot be shown on a card (`detail` says what to do)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -62518,21 +61145,21 @@
             "description": "Recorded"
           },
           "403": {
-            "description": "Not the person (`operator_only`), or sign-in is on and this is not a signed-in session (`operator_cookie_required`)",
+            "description": "`operator_only` (an agent) or `person_only` (sign-in is on and this is not a signed-in session)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Not held back, unreadable, or changed since it was shown",
+            "description": "`conflict`: not held back, unreadable, or changed since it was shown",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -62836,75 +61463,31 @@
             }
           },
           "400": {
-            "description": "Not linkable, or a malformed body",
+            "description": "`invalid_request`: not linkable (`reason` says why), or a malformed body",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "description": "One plain sentence: what did not happen and what to do."
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "realPath": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "installedVersion": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused by the gate, or outside the folders DorkOS may use",
+            "description": "Refused by the permission check, or `forbidden`/`outside_boundary`: outside the folders DorkOS may use",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The slot or the name is taken, or the folder changed after it was approved (`dev_link_changed`)",
+            "description": "`conflict`: the slot or name is taken, or the folder changed after it was approved (`reason`: `dev_link_changed`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "description": "One plain sentence: what did not happen and what to do."
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "realPath": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "installedVersion": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -63329,97 +61912,31 @@
             }
           },
           "400": {
-            "description": "Not linkable (`code` says why)",
+            "description": "`invalid_request`: not linkable; `reason` says why",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "description": "One plain sentence: what did not happen and what to do."
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "realPath": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "installedVersion": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Outside the folders DorkOS may use",
+            "description": "`forbidden` (`reason` says why) or `outside_boundary`: outside the folders DorkOS may use",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "description": "One plain sentence: what did not happen and what to do."
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "realPath": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "installedVersion": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The slot or the name is taken",
+            "description": "`conflict`: the slot or the name is taken; `reason` says which",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "description": "One plain sentence: what did not happen and what to do."
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "realPath": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "installedVersion": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -63506,43 +62023,21 @@
             }
           },
           "403": {
-            "description": "Not the person (`operator_only`), or not a signed-in session under sign-in",
+            "description": "`operator_only` (an agent) or `person_only` (sign-in is on and this is not a signed-in session)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No such dev link",
+            "description": "`not_found`: no such dev link (`reason`: `dev_link_not_found`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "description": "One plain sentence: what did not happen and what to do."
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "realPath": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "installedVersion": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -64441,12 +62936,22 @@
               }
             }
           },
-          "404": {
-            "description": "Shape is not installed",
+          "400": {
+            "description": "`invalid_request`: not a Shape name",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found`: the Shape is not installed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -64542,22 +63047,32 @@
               }
             }
           },
-          "404": {
-            "description": "Source Shape is not installed",
+          "400": {
+            "description": "`invalid_request`: not a Shape name, or the forked manifest is not valid",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found`: the source Shape is not installed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Fork name is invalid or already taken",
+            "description": "`conflict`: the fork name is taken or the same as the source",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -97414,7 +95929,7 @@
           "Extensions"
         ],
         "summary": "Turn on an extension waiting to run",
-        "description": "Records that a person allowed this extension to run code inside DorkOS, bound to the copy on disk (its folder and the plugin that carried it), and starts it. The body is optional: send the path, version and plugin of the copy the person was shown (the Activity inbox always does), and the approval is refused with `stale_approval` unless the copy on disk is still exactly that one, so an old row can never turn on a copy that took its place. Clears any \"Not now\" for this id. A caller naming itself an agent is refused in every posture, and a signed-in person is required when login is on. There is no MCP tool for this. When the copy provably came from a source the person does not trust yet (DorkOS’s own installer recorded where it fetched it from), the response carries `trustOffer`: the app shows \"Next time, trust everything from <source>?\" once, right after the answer.",
+        "description": "Records that a person allowed this extension to run code inside DorkOS, bound to the copy on disk (its folder and the plugin that carried it), and starts it. The body is optional: send the path, version and plugin of the copy the person was shown (the Activity inbox always does), and the approval is refused with `409 conflict`, `reason: stale_approval`, unless the copy on disk is still exactly that one, so an old row can never turn on a copy that took its place. Clears any \"Not now\" for this id. A caller naming itself an agent is refused in every posture, and a signed-in person is required when login is on. There is no MCP tool for this. When the copy provably came from a source the person does not trust yet (DorkOS’s own installer recorded where it fetched it from), the response carries `trustOffer`: the app shows \"Next time, trust everything from <source>?\" once, right after the answer.",
         "parameters": [
           {
             "schema": {
@@ -97459,51 +95974,51 @@
             }
           },
           "400": {
-            "description": "Invalid extension id or body",
+            "description": "`invalid_request`: an invalid extension id or body",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Login is enabled and the caller is not signed in",
+            "description": "`unauthenticated`: login is on and the caller is not signed in",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused: an agent or another site cannot turn an extension on",
+            "description": "`person_only`: an agent or another site cannot turn an extension on",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No such extension",
+            "description": "`not_found`: no such extension",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The extension ships with DorkOS, or the copy changed since the person saw it (`stale_approval`)",
+            "description": "`conflict`: the extension ships with DorkOS, or the copy changed since the person saw it (`reason: stale_approval`) or cannot be checked (`reason: extension_unpinnable`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -97518,7 +96033,7 @@
           "Extensions"
         ],
         "summary": "Say \"Not now\" to an extension waiting to be turned on",
-        "description": "Records that a person declined this copy of the extension at this version, so the Activity inbox stops asking until its path, plugin or version changes. Never destructive: nothing is uninstalled, turned off or revoked, and Settings → Extensions can still turn it on. The body names the copy the person was shown; if the copy on disk is no longer that one the answer is refused with `stale_approval`. The same person bar as approving applies: a caller naming itself an agent is refused in every posture, and a signed-in person is required when login is on. There is no MCP tool for this.",
+        "description": "Records that a person declined this copy of the extension at this version, so the Activity inbox stops asking until its path, plugin or version changes. Never destructive: nothing is uninstalled, turned off or revoked, and Settings → Extensions can still turn it on. The body names the copy the person was shown; if the copy on disk is no longer that one the answer is refused with `409 conflict`, `reason: stale_approval`. The same person bar as approving applies: a caller naming itself an agent is refused in every posture, and a signed-in person is required when login is on. There is no MCP tool for this.",
         "parameters": [
           {
             "schema": {
@@ -97543,51 +96058,51 @@
             "description": "Declined for now"
           },
           "400": {
-            "description": "Invalid extension id or body",
+            "description": "`invalid_request`: an invalid extension id or body",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Login is enabled and the caller is not signed in",
+            "description": "`unauthenticated`: login is on and the caller is not signed in",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused: an agent or another site cannot answer this",
+            "description": "`person_only`: an agent or another site cannot answer this",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No such extension",
+            "description": "`not_found`: no such extension",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The extension ships with DorkOS, or the copy changed since the person saw it (`stale_approval`)",
+            "description": "`conflict`: the extension ships with DorkOS, or the copy changed since the person saw it (`reason: stale_approval`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -97644,41 +96159,41 @@
             }
           },
           "400": {
-            "description": "The body does not name a GitHub `owner/repo`",
+            "description": "`invalid_request`: the body does not name a GitHub `owner/repo`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Login is enabled and the caller is not signed in",
+            "description": "`unauthenticated`: login is on and the caller is not signed in",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused: an agent or another site cannot change which sources are trusted",
+            "description": "`person_only` (an agent or another site) or `operator_only` (not the owner at this computer)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Nothing installed provably comes from that source (`unproven_source`)",
+            "description": "`conflict`: nothing installed provably comes from that source (`reason: unproven_source`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -97763,41 +96278,41 @@
             }
           },
           "400": {
-            "description": "The body does not name a GitHub `owner/repo`",
+            "description": "`invalid_request`: the body does not name a GitHub `owner/repo`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Login is enabled and the caller is not signed in",
+            "description": "`unauthenticated`: login is on and the caller is not signed in",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused: an agent or another site cannot change which sources are trusted",
+            "description": "`person_only` (an agent or another site) or `operator_only` (not the owner at this computer)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "That source is not trusted",
+            "description": "`not_found`: that source is not trusted",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -110910,11 +109425,14 @@
             }
           },
           "400": {
-            "description": "The query is malformed",
+            "$ref": "#/components/responses/ValidationProblem"
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the inbox is not ready yet",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -110963,41 +109481,41 @@
             }
           },
           "400": {
-            "description": "The answer does not fit the decision, or a note is over 2000 characters",
+            "description": "`invalid_request`: the answer does not fit the decision, or a note is over 2000 characters",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a person",
+            "description": "`person_only`: not a person; `not_from_wifi`: a yes sent over Wi-Fi",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No such decision",
+            "description": "`not_found`: no such decision",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "`not_running` (the extension is not running) or `already_resolved`",
+            "description": "`conflict`, with `reason` `not_running`, `already_resolved`, `stale_decision` or `busy`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -111042,21 +109560,31 @@
             }
           },
           "502": {
-            "description": "The extension could not take the answer; the decision stays open",
+            "description": "`temporarily_unavailable`, `reason` `extension_error`: the decision stays open",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the inbox is not ready yet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "504": {
-            "description": "`extension_timeout`: the extension did not answer in time; the decision stays open",
+            "description": "`temporarily_unavailable`, `reason` `extension_timeout`: the decision stays open",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -111104,42 +109632,42 @@
               }
             }
           },
-          "403": {
-            "description": "Not a person",
+          "400": {
+            "description": "`invalid_request`: not `{ accept: true | false }`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`person_only`: not a person; `not_from_wifi`: a yes sent over Wi-Fi",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No such decision",
+            "description": "`not_found`: no such decision",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "`offer_gone`: used, dismissed, or older than 15 minutes; or `not_running`",
+            "description": "`conflict`, `reason` `offer_gone` (used, dismissed or over 15 minutes old) or `not_running`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The settings change could not be made; nothing changed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -111182,6 +109710,26 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "`internal_error`, `reason` `offer_failed`: the settings change failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the inbox is not ready yet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "extensionDecisions.createOffer"
@@ -111213,6 +109761,26 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ListExtensionDecisionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: not a valid extension id",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the inbox is not ready yet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -111269,41 +109837,41 @@
             }
           },
           "400": {
-            "description": "The answer does not fit the decision",
+            "description": "`invalid_request`: the answer does not fit the decision",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a person",
+            "description": "`person_only`: not a person; `not_from_wifi`: a yes sent over Wi-Fi",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No such decision for this extension",
+            "description": "`not_found`: no such decision for this extension",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "`not_running` or `already_resolved`",
+            "description": "`conflict`, with `reason` `not_running` or `already_resolved`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -111348,21 +109916,31 @@
             }
           },
           "502": {
-            "description": "The extension could not take the answer",
+            "description": "`temporarily_unavailable`, `reason` `extension_error`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the inbox is not ready yet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "504": {
-            "description": "`extension_timeout`",
+            "description": "`temporarily_unavailable`, `reason` `extension_timeout`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -111410,12 +109988,22 @@
               }
             }
           },
-          "403": {
-            "description": "The folder is outside the server’s directory boundary",
+          "400": {
+            "description": "`invalid_request`: no `project` query, or not a valid extension id",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`outside_boundary`: the folder is outside the server’s directory boundary",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -111455,41 +110043,41 @@
             "description": "Saved"
           },
           "400": {
-            "description": "Not `{ project, value }`, or the value is not JSON",
+            "description": "`invalid_request`: not `{ project, value }`, or the value is not JSON",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a person",
+            "description": "`person_only`: not a person",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No such extension, or it is not set up in that project",
+            "description": "`not_found`: no such extension, or it is not set up in that project",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "413": {
-            "description": "The value is larger than 16 KiB",
+            "description": "`request_too_large`: the value is larger than 16 KiB",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -111538,51 +110126,61 @@
             }
           },
           "400": {
-            "description": "The body breaks a length rule",
+            "description": "`invalid_request`: the body breaks a length rule",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a person",
+            "description": "`person_only`: not a person",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No such extension (plain error), or `not_a_project`",
+            "description": "`not_found`: no such extension, or `reason` `not_a_project`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StartWorkErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The extension is turned off (plain error), or `account_not_allowed_here`",
+            "description": "`conflict`: the extension is off, or `reason` `account_not_allowed_here`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StartWorkErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "429": {
-            "description": "`start_limit`: too many starts this hour, or too many chats working",
+            "description": "`rate_limited`, `reason` `start_limit`: too many starts or working chats",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StartWorkErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: chats cannot be started yet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -111621,11 +110219,11 @@
             }
           },
           "500": {
-            "description": "The list could not be read",
+            "description": "`internal_error`: the list could not be read",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -111671,51 +110269,51 @@
             }
           },
           "400": {
-            "description": "Invalid extension id",
+            "description": "`invalid_request`: an invalid extension id",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Login is enabled and the caller is not signed in",
+            "description": "`unauthenticated`: login is on and the caller is not signed in",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused: an agent or another site cannot remove an extension",
+            "description": "`person_only`: an agent or another site cannot remove an extension",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No such extension",
+            "description": "`not_found`: no such extension",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "It ships with DorkOS (`core`), came with a plugin (`plugin`), runs from a dev link (`dev_link`), or its folder is not one DorkOS would delete (`unexpected_folder`)",
+            "description": "`conflict`, with `reason`: it ships with DorkOS (`core`), came with a plugin (`plugin`), runs from a dev link (`dev_link`), or its folder is not one DorkOS would delete (`unexpected_folder`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -111746,51 +110344,51 @@
             "description": "Forgotten"
           },
           "400": {
-            "description": "Invalid extension id",
+            "description": "`invalid_request`: an invalid extension id",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Login is enabled and the caller is not signed in",
+            "description": "`unauthenticated`: login is on and the caller is not signed in",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused: an agent or another site cannot forget an approval",
+            "description": "`person_only`: an agent or another site cannot forget an approval",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No approval is left for this id",
+            "description": "`not_found`: no approval is left for this id",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "It is still installed (`installed`): stop it running or remove it instead",
+            "description": "`conflict`, `reason: installed`: stop it running or remove it instead",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -111829,11 +110427,11 @@
             }
           },
           "500": {
-            "description": "The sets could not be read",
+            "description": "`internal_error`: the sets could not be read",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -111904,41 +110502,41 @@
             }
           },
           "400": {
-            "description": "The body is not a set",
+            "description": "`invalid_request`: the body is not a set",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Login is enabled and the caller is not signed in",
+            "description": "`unauthenticated`: login is on and the caller is not signed in",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused: an agent or another site cannot allow extensions",
+            "description": "`person_only` (an agent or another site), `not_from_wifi`, or `forbidden` (several at once from another device)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Nothing was turned on: a member was not installed by this plugin (`not_in_set`), the set or a member’s files or permissions changed (`stale_set`), or more than 10 wait (`too_many_in_set`)",
+            "description": "`conflict`, nothing was turned on. `reason`: a member was not installed by this plugin (`not_in_set`), the set or a member’s files or permissions changed (`stale_set`), or more than 10 wait (`too_many_in_set`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -111985,41 +110583,41 @@
             }
           },
           "400": {
-            "description": "Invalid extension id, or a path that is not plainly inside the app",
+            "description": "`invalid_request`: an invalid extension id, or a path outside the app",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Login is enabled and the caller is not signed in",
+            "description": "`unauthenticated`: login is enabled and the caller is not signed in",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not a person’s DorkOS window, or a write stamped by another app",
+            "description": "`origin_not_allowed`, `person_only` or `forbidden`: not a person’s DorkOS window, or a write stamped by another app",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "The app is not running, does not use the frame, or cannot stream video",
+            "description": "`not_found`: the app is not running, does not use the frame, or cannot stream",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -112083,21 +110681,21 @@
             "description": "The range asked for"
           },
           "404": {
-            "description": "The link is unknown or has expired (the same answer for both)",
+            "description": "`not_found`: the link is unknown or has expired (the same answer for both)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "405": {
-            "description": "Only GET and HEAD",
+            "description": "`method_not_allowed`: only GET and HEAD",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }

@@ -29,12 +29,10 @@
 import type { Context } from 'hono';
 import { honoRequestFacts, type RequestFactsEnv } from '../http/request-facts.js';
 import { requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
+import { problem } from '@dorkos/http-kit';
 
 /** The header the extension API stamps on every write it makes for an extension. */
 export const EXTENSION_ID_HEADER = 'x-dorkos-extension';
-
-/** The code a refused write answers with. */
-export const EXTENSION_WRITE_REFUSED = 'extension_write_refused';
 
 /**
  * Decide whether this caller may write extension `id`'s data, secrets or
@@ -53,14 +51,9 @@ export function refusedExtensionWrite(
   const facts = honoRequestFacts(c);
   const claimed = facts.headers[EXTENSION_ID_HEADER];
   if (claimed !== undefined && claimed !== id) {
-    return c.json(
-      {
-        error: 'An extension can only change its own data',
-        code: EXTENSION_WRITE_REFUSED,
-        message: `This write came from a different extension than "${id}", so it was not saved.`,
-      },
-      403
-    );
+    return problem(c, 'forbidden', {
+      detail: `Not saved. Another extension can’t change ${id}’s data.`,
+    });
   }
   // A VERIFIED agent identity, not merely the header: a key holder who adds a
   // made-up `X-DorkOS-Agent` must not step around the cookie bar.
@@ -71,8 +64,5 @@ export function refusedExtensionWrite(
     isLoginEnabled
   );
   if (!refusal) return undefined;
-  return c.json(
-    { error: refusal.error, code: EXTENSION_WRITE_REFUSED, message: refusal.error },
-    refusal.status as 403
-  );
+  return problem(c, 'person_only', { detail: `${refusal.error}.` });
 }

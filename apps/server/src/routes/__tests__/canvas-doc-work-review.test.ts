@@ -304,7 +304,7 @@ describe('document work review over the mounted app', () => {
     // Double submit: the second is refused and creates nothing.
     const again = await act(batchId, 'replay');
     expect(again.status).toBe(409);
-    expect(again.body.code).toBe('WORK_ALREADY_REVIEWED');
+    expect(again.body.reason).toBe('work_already_reviewed');
     expect(batchCount()).toBe(2);
     expect((await list()).body.items).toEqual([]);
   });
@@ -314,7 +314,7 @@ describe('document work review over the mounted app', () => {
     const batchId = await work('in_doubt');
     const unconfirmed = await act(batchId, 'replay');
     expect(unconfirmed.status).toBe(409);
-    expect(unconfirmed.body.code).toBe('CONFIRM_REPEAT_REQUIRED');
+    expect(unconfirmed.body.reason).toBe('confirm_repeat_required');
     expect(batchRow(batchId)!.status).toBe('in_doubt');
     expect((await act(batchId, 'replay', { confirmRepeat: false })).status).toBe(400);
     const confirmed = await act(batchId, 'replay', { confirmRepeat: true });
@@ -330,7 +330,7 @@ describe('document work review over the mounted app', () => {
     expect((await list()).body.items[0].replay).toBe('no_grant');
     const refused = await act(expired, 'replay');
     expect(refused.status).toBe(409);
-    expect(refused.body.code).toBe('GRANT_REQUIRED');
+    expect(refused.body.reason).toBe('grant_required');
     expect(batchCount()).toBe(1);
     const cleared = await act(expired, 'clear');
     expect(cleared.status).toBe(200);
@@ -344,7 +344,7 @@ describe('document work review over the mounted app', () => {
     const batchId = await work('expired');
     const unknown = await act(randomUUID(), 'replay');
     expect(unknown.status).toBe(404);
-    expect(unknown.body.code).toBe('WORK_NOT_FOUND');
+    expect(unknown.body.reason).toBe('work_not_found');
     // Another document's work is as absent as none.
     const other = rooms.canvas.open(`session:${sessionId}`, 'owner', {
       type: 'url',
@@ -374,7 +374,7 @@ describe('document work review over the mounted app', () => {
         .set('X-DorkOS-Agent', token)
         .send({});
       expect(refused.status).toBe(403);
-      expect(refused.body.code).toBe('AGENT_CANNOT_DECIDE');
+      expect(refused.body.reason).toBe('agent_cannot_decide');
       const unverified = await request(server)
         .post(`${endpoint()}/work/${batchId}/${action}`)
         .set('X-DorkOS-Agent', 'not-a-token')
@@ -385,10 +385,10 @@ describe('document work review over the mounted app', () => {
       .post(`${endpoint()}/work/${batchId}/replay`)
       .set('X-DorkOS-Approval', 'held-token')
       .send({});
-    expect(requester.body.code).toBe('REQUESTER_CANNOT_DECIDE');
+    expect(requester.body.reason).toBe('requester_cannot_decide');
     const read = await list().set('X-DorkOS-Agent', token);
     expect(read.status).toBe(403);
-    expect(read.body.code).toBe('PERSON_REQUIRED');
+    expect(read.body.reason).toBe('person_required');
     expect(batchRow(batchId)!.errorCode).toBe('manual_replay_required');
     expect(batchCount()).toBe(1);
   });
@@ -437,7 +437,8 @@ describe('document work review over the mounted app', () => {
     expect(created.status).toBe(200);
     const keyed = await act(batchId, 'replay').set('Authorization', `Bearer ${created.body.key}`);
     expect(keyed.status).toBe(403);
-    expect(keyed.body.code).toBe('operator_cookie_required');
+    expect(keyed.body.reason).toBe('operator_cookie_required');
+    expect(keyed.body.code).toBe('person_only');
     const signedIn = await act(batchId, 'replay').set('Cookie', cookies);
     expect(signedIn.status).toBe(200);
   });
@@ -468,7 +469,7 @@ describe('document work review over the mounted app', () => {
       .set('x-test-ingress', 'wifi')
       .set('Cookie', wifi);
     expect(unconfirmed.status).toBe(409);
-    expect(unconfirmed.body.code).toBe('CONFIRM_REPEAT_REQUIRED');
+    expect(unconfirmed.body.reason).toBe('confirm_repeat_required');
     const confirmed = await act(uncertain, 'replay', { confirmRepeat: true })
       .set('x-test-ingress', 'wifi')
       .set('Cookie', wifi);
@@ -489,9 +490,11 @@ describe('document work review over the mounted app', () => {
       .send({ v: 1, id: randomUUID(), type: 'task.changed', payload: {} });
     const refused = await act(uncertain, 'replay', { confirmRepeat: true });
     expect(refused.status).toBe(409);
-    expect(refused.body).toEqual({
-      code: 'ROUTE_BUSY',
-      error: 'Newer work is waiting on this route, so this can’t run again now.',
+    expect(refused.headers['content-type']).toContain('application/problem+json');
+    expect(refused.body).toMatchObject({
+      code: 'conflict',
+      reason: 'route_busy',
+      detail: 'Newer work is waiting on this route, so this can’t run again now.',
     });
     expect(batchRow(uncertain)!.status).toBe('in_doubt');
     expect(batchCount()).toBe(2);
@@ -528,7 +531,7 @@ describe('document work review over the mounted app', () => {
     expect((await list()).body.items[0].replay).toBe('route_changed');
     const refused = await act(expired, 'replay');
     expect(refused.status).toBe(409);
-    expect(refused.body.code).toBe('ROUTE_CHANGED');
+    expect(refused.body.reason).toBe('route_changed');
     expect(batchCount()).toBe(1);
   });
 });

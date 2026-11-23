@@ -109,10 +109,10 @@ export function createAppCaller(caller: ExtensionManifest) {
   };
 }
 
-/** Whether a refusal says the caller token is no longer known. */
+/** Whether a refusal says the caller token is no longer known: a problem whose `reason` names it. */
 async function isTokenRefusal(response: Response): Promise<boolean> {
   try {
-    return ((await response.json()) as { code?: unknown }).code === TOKEN_INVALID;
+    return ((await response.json()) as { reason?: unknown }).reason === TOKEN_INVALID;
   } catch {
     return false;
   }

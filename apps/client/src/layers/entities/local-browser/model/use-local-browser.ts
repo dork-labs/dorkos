@@ -20,7 +20,7 @@ export function useLocalBrowserState(enabled = true, sessionId: string | null = 
     queryFn: () => transport.getLocalBrowserState(sessionId),
     refetchInterval: (query) => {
       const code = (query.state.error as { code?: string } | null)?.code;
-      return code === 'local_only' || code === 'owner_only' ? false : 1000;
+      return code === 'operator_only' || code === 'owner_only' ? false : 1000;
     },
     retry: false,
   });

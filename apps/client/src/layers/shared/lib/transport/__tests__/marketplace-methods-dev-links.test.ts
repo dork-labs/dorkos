@@ -69,17 +69,25 @@ describe('createMarketplaceMethods() dev links (DOR-2696)', () => {
     expect(JSON.parse(String(init?.body))).toEqual({ scope: 'project', projectPath: '/work/app' });
   });
 
-  it('carries the refusal code from a preview the server refused', async () => {
-    // Purpose: the dialog acts on `code` (dev_link_changed) and shows the sentence.
+  it('carries the refusal from a preview the server refused', async () => {
+    // Purpose: the dialog acts on the dev link's `reason` (dev_link_changed) and shows the sentence.
     answerWith(
-      { error: 'That path is a link. Use /real instead.', code: 'dev_link_path_not_real' },
+      {
+        type: 'urn:dorkos:problem:invalid_request',
+        title: 'The request didn’t pass its checks.',
+        status: 400,
+        code: 'invalid_request',
+        detail: 'That path is a link. Use /real instead.',
+        reason: 'dev_link_path_not_real',
+      },
       400
     );
     await expect(
       createMarketplaceMethods('/api').previewDevLink({ path: '/link', scope: 'global' })
     ).rejects.toMatchObject({
       message: 'That path is a link. Use /real instead.',
-      code: 'dev_link_path_not_real',
+      code: 'invalid_request',
+      body: { reason: 'dev_link_path_not_real' },
     });
   });
 });

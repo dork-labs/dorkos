@@ -12,3 +12,4 @@ export {
   SIGN_IN_SAVING,
   signInOpenLine,
 } from './lib/sign-in-copy';
+export { browserRefusalCode } from './lib/browser-refusal';

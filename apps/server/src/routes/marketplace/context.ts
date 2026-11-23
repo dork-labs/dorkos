@@ -29,7 +29,8 @@ import {
   type TierEnforcementDecision,
 } from '../../services/core/capabilities/index.js';
 import { resolveDecisionAuthority } from '../../services/core/approvals/index.js';
-import { NEEDS_PERSON_AT_THIS_COMPUTER, readCallerAuthority } from '../../lib/caller-authority.js';
+import { readCallerAuthority } from '../../lib/caller-authority.js';
+import { problem } from '@dorkos/http-kit';
 import { isAtThisComputer, personSessionRequired } from '../../services/core/auth/gate-policy.js';
 import { notePersonSessionMissing } from '../../lib/person-without-session.js';
 import { presentsAgentIdentity } from '../../middleware/agent-identity.js';
@@ -37,11 +38,8 @@ import type { ApiEnv } from '../../http/api-chain.js';
 import { honoRequestFacts } from '../../http/request-facts.js';
 import { readQuery } from '../../http/request-query.js';
 import {
-  OPERATOR_ONLY_MARKETPLACE_SOURCE_CODE,
   describeMarketplaceSourceRefusal,
-  MARKETPLACE_SOURCE_NEEDS_APP_CODE,
   marketplaceSourceNeedsApp,
-  marketplaceSourceRefusalError,
   type MarketplaceSourceAction,
 } from '../../services/marketplace/sources/source-write-policy.js';
 import type { MarketplaceRouteDeps } from '../marketplace.js';
@@ -200,7 +198,9 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
     } catch (err) {
       if (err instanceof BoundaryError) {
         return {
-          refused: c.json({ error: 'Access denied: projectPath outside boundary' }, 403),
+          refused: problem(c, 'outside_boundary', {
+            detail: '`projectPath` is outside the folders DorkOS may use.',
+          }),
         };
       }
       throw err;
@@ -229,7 +229,9 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
     if (value === undefined || typeof value === 'string') {
       return value ? { projectPath: value } : {};
     }
-    return { refused: c.json({ error: 'projectPath may be given only once' }, 400) };
+    return {
+      refused: problem(c, 'invalid_request', { detail: 'Send `projectPath` only once.' }),
+    };
   };
 
   /**
@@ -283,31 +285,17 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
       presentsAgentIdentity(facts) || facts.headers[APPROVAL_TOKEN_HEADER] !== undefined;
     if (!namesAMachine && facts.user?.credential !== 'cookie' && personSessionRequired(facts)) {
       if (!facts.user) notePersonSessionMissing(facts);
-      return c.json(
-        { error: marketplaceSourceNeedsApp(action), code: MARKETPLACE_SOURCE_NEEDS_APP_CODE },
-        403
-      );
+      return problem(c, 'person_only', { detail: marketplaceSourceNeedsApp(action) });
     }
     if (resolveDecisionAuthority(readCallerAuthority(facts)).allowed) {
       // A person; package sources are a front-door setting, so they change only
       // at this computer (DOR-2969). With no owner yet, locality alone.
       if (isAtThisComputer(facts)) return undefined;
-      return c.json(
-        {
-          error: 'Change where packages come from on the computer DorkOS runs on.',
-          code: NEEDS_PERSON_AT_THIS_COMPUTER,
-        },
-        403
-      );
+      return problem(c, 'operator_only', {
+        detail: 'Change where packages come from on the computer DorkOS runs on.',
+      });
     }
-    return c.json(
-      {
-        error: marketplaceSourceRefusalError(action),
-        code: OPERATOR_ONLY_MARKETPLACE_SOURCE_CODE,
-        message: describeMarketplaceSourceRefusal(action),
-      },
-      403
-    );
+    return problem(c, 'operator_only', { detail: describeMarketplaceSourceRefusal(action) });
   };
 
   /**
@@ -401,10 +389,9 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
     }
     if (answer.status === 'declined') {
       return {
-        refused: c.json(
-          { status: 'declined', reason: answer.reason ?? 'The install was not approved.' },
-          403
-        ),
+        refused: problem(c, 'declined', {
+          detail: 'A person said no, or the approval ended. Nothing was installed.',
+        }),
       };
     }
     return {

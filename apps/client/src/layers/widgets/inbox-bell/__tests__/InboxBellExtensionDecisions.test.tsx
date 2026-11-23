@@ -148,7 +148,14 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
       if (staleNext) {
         staleNext = false;
         return json(
-          { error: 'This question changed. Take another look.', code: 'stale_decision' },
+          {
+            type: 'urn:dorkos:problem:conflict',
+            title: 'That clashes with a change made meanwhile.',
+            status: 409,
+            code: 'conflict',
+            detail: 'This question changed. Take another look.',
+            reason: 'stale_decision',
+          },
           409
         );
       }

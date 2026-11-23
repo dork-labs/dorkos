@@ -243,14 +243,14 @@ describe('reading a thread', () => {
 
     const res = await request(server).get(base());
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('room_not_allowed');
+    expect(res.body).toMatchObject({ code: 'forbidden', reason: 'room_not_allowed' });
   });
 
   it('refuses a room picked for another mini app', async () => {
     state.extensions = { roomAccess: { other: [roomId] } };
     const res = await request(server).get(base());
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('room_not_allowed');
+    expect(res.body).toMatchObject({ code: 'forbidden', reason: 'room_not_allowed' });
   });
 
   it('follows room membership: a picked room the person is not in reads as not found', async () => {
@@ -272,7 +272,7 @@ describe('reading a thread', () => {
       `/api/extensions/plain/rooms/${roomId}/threads/${rootId}`
     );
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('room_not_allowed');
+    expect(res.body).toMatchObject({ code: 'forbidden', reason: 'room_not_allowed' });
   });
 
   it('refuses a room reply from a mini app that does not declare rooms, posting nothing', async () => {
@@ -305,7 +305,8 @@ describe('reading a thread', () => {
     allow(roomId);
     const res = await request(server).get(base()).set('X-DorkOS-Agent', 'any-token');
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('person_required');
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body.code).toBe('person_only');
   });
 
   it('refuses a mini app that is turned off', async () => {
@@ -391,7 +392,8 @@ describe('replying as the person', () => {
   async function expectRefused(req: ReturnType<ReturnType<typeof request>['post']>, text: string) {
     const res = await req.send({ text });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('person_required');
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body.code).toBe('person_only');
     expect(storedReplies().some((e) => e.body.text === text)).toBe(false);
     return res;
   }
@@ -462,7 +464,7 @@ describe('replying as the person', () => {
       .set(APP)
       .send({ text: 'sneaky' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('room_not_allowed');
+    expect(res.body).toMatchObject({ code: 'forbidden', reason: 'room_not_allowed' });
     expect(storedReplies(otherRoot).length).toBe(0);
   });
 

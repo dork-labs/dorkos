@@ -201,7 +201,11 @@ describe('adding a server', () => {
     const id = heldId(await post());
     await store.add(stored());
     const res = await confirm(id);
-    expect(res.body).toMatchObject({ ok: true, status: 409, result: { code: 'name_taken' } });
+    expect(res.body).toMatchObject({
+      ok: true,
+      status: 409,
+      result: { code: 'conflict', reason: 'name_taken' },
+    });
   });
 
   it('a confirm whose write was refused is audited as not applied, never as Confirmed (DOR-3836)', async () => {
@@ -732,7 +736,11 @@ describe('replacing a server', () => {
     const id = heldId(res);
     expect((await patch({ excludedAgents: ['agent-a'] })).status).toBe(200);
     const done = await confirm(id);
-    expect(done.body).toMatchObject({ ok: true, status: 409, result: { code: 'changed' } });
+    expect(done.body).toMatchObject({
+      ok: true,
+      status: 409,
+      result: { code: 'conflict', reason: 'changed' },
+    });
     expect(store.list()[0]!.excludedAgents).toEqual(['agent-a']);
     expect(store.injectableFor('agent-b').github).toMatchObject({ env: { GITHUB_TOKEN: SECRET } });
   });
@@ -899,7 +907,11 @@ describe('switching a server', () => {
     const id = heldId(await patch({ enabled: true }));
     expect((await patch({ excludedAgents: [] })).status).toBe(200);
     const res = await confirm(id);
-    expect(res.body).toMatchObject({ ok: true, status: 409, result: { code: 'changed' } });
+    expect(res.body).toMatchObject({
+      ok: true,
+      status: 409,
+      result: { code: 'conflict', reason: 'changed' },
+    });
     expect(store.list()[0]!.enabled).toBe(false);
   });
 });
@@ -911,7 +923,7 @@ describe('a mask sent back', () => {
       connection: { ...SERVER.connection, args: ['-y', '@made-up/server', '--token=•••'] },
     });
     expect(res.status).toBe(422);
-    expect(res.body.code).toBe('masked_value');
+    expect(res.body).toMatchObject({ code: 'invalid_request', reason: 'masked_value' });
     expect(store.list()).toEqual([]);
   });
 });
@@ -927,9 +939,11 @@ describe('removing a server', () => {
     await store.add(stored());
     const res = await request(app()).delete('/api/mcp-servers/github').set('Origin', OWN_ORIGIN);
     expect(res.status).toBe(500);
+    expect(res.headers['content-type']).toBe('application/problem+json');
     expect(res.body).toMatchObject({
-      code: 'secret_left',
-      error: "github is removed, but its saved key couldn't be deleted.",
+      code: 'internal_error',
+      reason: 'secret_left',
+      detail: "The server is removed, but its saved key couldn't be deleted.",
     });
     expect(store.list()).toEqual([]);
     expect(store.injectableFor('agent-a')).toEqual({});

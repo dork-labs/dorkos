@@ -1,3 +1,4 @@
+import { browserRefusalCode } from '@/layers/entities/local-browser';
 import type { LocalBrowserHandoff, LocalBrowserSignIn } from '@dorkos/shared/local-browser';
 
 /**
@@ -59,8 +60,8 @@ const PERSON_READABLE_REFUSALS: ReadonlySet<string> = new Set([
  * @param cause - The error the transport threw.
  */
 export function handoffErrorMessage(cause: unknown): string {
-  const error = cause as { code?: string; message?: string } | null;
-  if (error?.code && error.message && PERSON_READABLE_REFUSALS.has(error.code))
-    return error.message;
+  const code = browserRefusalCode(cause);
+  const message = (cause as { message?: string } | null)?.message;
+  if (code && message && PERSON_READABLE_REFUSALS.has(code)) return message;
   return 'Couldn’t reach the browser. Try again.';
 }

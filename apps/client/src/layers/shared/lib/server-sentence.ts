@@ -45,10 +45,17 @@ function writtenSentenceOf(body: object): string | undefined {
 
 /**
  * Refusal codes for an action this device may not take by design: the Wi-Fi
- * level (`NOT_FROM_WIFI`) and the owner-at-this-computer bar. Neither is a
- * fault, so a surface shows the server's sentence calmly, never as an error.
+ * level (`not_from_wifi`) and the owner-at-this-computer bar (`operator_only`).
+ * Neither is a fault, so a surface shows the server's sentence calmly, never as
+ * an error. The SCREAMING spellings are read until the routes that still send
+ * them move to problem documents (DOR-4979).
  */
-const AWAY_FROM_THE_COMPUTER_CODES = new Set(['NOT_FROM_WIFI', 'NEEDS_PERSON_AT_THIS_COMPUTER']);
+const AWAY_FROM_THE_COMPUTER_CODES = new Set([
+  'not_from_wifi',
+  'operator_only',
+  'NOT_FROM_WIFI',
+  'NEEDS_PERSON_AT_THIS_COMPUTER',
+]);
 
 /**
  * The server's sentence for an action refused because of where this device

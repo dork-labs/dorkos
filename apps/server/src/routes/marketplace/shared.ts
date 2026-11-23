@@ -4,7 +4,6 @@
  * @module routes/marketplace/shared
  */
 import type { Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { readdir } from 'node:fs/promises';
 import { z } from 'zod';
 import {
@@ -39,10 +38,9 @@ import { BoundaryError } from '../../lib/boundary.js';
 import { DevLinkError } from '../../services/marketplace/dev-links/errors.js';
 import { AdapterError } from '../../services/relay/adapter-error.js';
 import { readQuery } from '../../http/request-query.js';
-import { validationProblem } from '@dorkos/http-kit';
-
-/** Machine-readable code on the 403 for a batch that would need approval per install. */
-export const BATCH_UPDATE_NEEDS_APPROVAL_CODE = 'batch_update_needs_approval';
+import { logger } from '../../lib/logger.js';
+import { problem, problemBody, sendProblem, validationProblem } from '@dorkos/http-kit';
+import type { Problem } from '@dorkos/shared/problem';
 
 /**
  * Body schema for `POST /api/marketplace/packages/:name/preview` and
@@ -69,13 +67,6 @@ export const InstallRequestBodySchema = z.object({
 });
 
 /**
- * Machine-readable code on the 409 when what a package runs is not what the
- * caller was shown: an update whose new version moved since the check, or an
- * install whose package changed since the preview (DOR-2306).
- */
-const DISCLOSURE_CHANGED_CODE = 'disclosure_changed';
-
-/**
  * Whether a list request asked for each install's integrity (`?verify=true`,
  * DOR-2197). Opt-in, because verifying hashes every shipped file. A repeated
  * `verify` reads as an array, which is not a yes.
@@ -87,15 +78,14 @@ export function wantsVerify(c: Context): boolean {
 }
 
 /**
- * Answer with the status and body {@link mapErrorToStatus} chose.
+ * Answer with the problem document {@link mapErrorToProblem} chose.
  *
  * @param c - The request to answer.
  * @param err - What was thrown.
  * @returns The sent response.
  */
 export function errorResponse(c: Context, err: unknown): Response {
-  const mapped = mapErrorToStatus(err);
-  return c.json(mapped.body, mapped.status as ContentfulStatusCode);
+  return sendProblem(c, mapErrorToProblem(err));
 }
 
 /**
@@ -110,120 +100,132 @@ export function validationFailed(c: Context, error: z.ZodError): Response {
 }
 
 /**
- * Centralized error → HTTP status mapping. Shared by every install-related
- * handler so the translation rules stay in one place and the telemetry
- * remains consistent across endpoints.
+ * Centralized error → problem document mapping. Shared by every
+ * install-related handler so the translation rules stay in one place and the
+ * telemetry remains consistent across endpoints.
+ *
+ * Every `detail` is a fixed sentence: an error's own message can name a cache
+ * folder under the operator's home, a remote, or a staged path, so it goes to
+ * the server log and never to the caller (DOR-4979). Structured facts the
+ * caller acts on (`errors`, `codes`, `conflicts`, `packageNames`) ride as
+ * extension members.
  *
  * @param err - The error thrown by the installer, uninstall flow, update
  *   flow, resolver, or fetcher.
- * @returns The HTTP status and response body to send.
+ * @returns The problem document to send; its `status` is the HTTP status.
  */
-export function mapErrorToStatus(err: unknown): { status: number; body: Record<string, unknown> } {
+export function mapErrorToProblem(err: unknown): Problem {
+  const mapped = knownProblem(err);
+  if (mapped) {
+    logger.info('[Marketplace] request refused', {
+      code: mapped.code,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return mapped;
+  }
+  logger.error('[Marketplace] request failed', err);
+  return problemBody('internal_error', {
+    detail: 'Something went wrong on the DorkOS side. Try again.',
+  });
+}
+
+/** The problem for an error the marketplace knows, or `null` for a fault of its own. */
+function knownProblem(err: unknown): Problem | null {
   if (err instanceof InvalidPackageError) {
-    return {
-      status: 400,
-      body: {
-        error: err.message,
-        errors: err.errors,
-        ...(err.codes.length > 0 ? { codes: err.codes } : {}),
-      },
-    };
+    return problemBody('invalid_request', {
+      detail: "That package isn't valid. `errors` lists what failed.",
+      extensions: { errors: err.errors, ...(err.codes.length > 0 ? { codes: err.codes } : {}) },
+    });
   }
-  // A containment assertion fired somewhere below. Its message names the root
-  // the path escaped — a cache directory under dorkHome, which spells the
-  // operator's home directory and therefore their username — so the body says
-  // the path was refused and nothing about where anything lives. The full
-  // message still reaches the server log through the handler's `logger.error`.
+  // A containment assertion fired somewhere below: its message names the root
+  // the path escaped, which spells the operator's home directory.
   if (err instanceof PathEscapeError) {
-    return { status: 400, body: { error: 'Refused: that path resolves outside its own folder' } };
+    return problemBody('invalid_request', {
+      detail: 'That path resolves outside its own folder. Nothing was changed.',
+    });
   }
-  // A name the caller may not use. Echoed back on purpose, unlike the above:
-  // the only thing this message contains is the name the caller just sent, and
-  // saying which one was rejected is what makes the 400 actionable.
   if (err instanceof MarketplacePathError) {
-    return { status: 400, body: { error: err.message } };
+    return problemBody('invalid_request', {
+      detail: "That package or marketplace name can't be used. Pick another.",
+    });
   }
   // Reached when the boundary refusal comes from INSIDE the install pipeline —
   // a `./local/path` install identifier pointing outside the boundary — rather
-  // than from the body's `projectPath`, which each handler checks up front with
-  // its own message.
+  // than from the body's `projectPath`, which each handler checks up front.
   if (err instanceof BoundaryError) {
-    return { status: 403, body: { error: 'Access denied: path outside directory boundary' } };
+    return problemBody('outside_boundary', { detail: 'Pick a folder DorkOS may use.' });
   }
   if (err instanceof ConflictError) {
-    return { status: 409, body: { error: err.message, conflicts: err.conflicts } };
+    return problemBody('conflict', {
+      detail: 'Installing would clash with what is already here. See `conflicts`.',
+      extensions: { conflicts: err.conflicts },
+    });
   }
   // A dev link refused, or an install, update or uninstall that would have
-  // replaced one (DOR-2696). The message is one plain sentence and names only
-  // the package and the folder the caller already sent.
-  if (err instanceof DevLinkError) {
-    return { status: err.status, body: err.toBody() };
-  }
-  // An adapter package whose name a connection the person already has is
-  // using (DOR-2607). The preview reports it as a conflict first; this is what
-  // a forced install, or a connection made after the preview, gets instead of
-  // a 500 naming an internal id.
+  // replaced one (DOR-2696).
+  if (err instanceof DevLinkError) return err.toProblem();
+  // An adapter package whose name an app the person already connected is using
+  // (DOR-2607): what a forced install gets instead of a 500 naming an internal id.
   if (err instanceof AdapterError && err.code === 'DUPLICATE_ID') {
-    const named = err.adapterId ? ` named "${err.adapterId}"` : ' with that name';
-    return {
-      status: 409,
-      body: {
-        error: `You already have a connection${named}. Remove or rename it, then install again.`,
-      },
-    };
+    return problemBody('conflict', {
+      detail:
+        'An app with that name is already connected. Remove or rename it, then install again.',
+    });
   }
-  // A package that ships DorkOS's own settings, secrets or records path, or a file
-  // whose bytes cannot be pinned: refused before anything is written, and the
-  // message says which path (DOR-2306). Package-relative, so nothing about
-  // where it was staged leaks.
+  // A package that ships DorkOS's own settings, secrets or records path, or a
+  // file whose bytes cannot be pinned (DOR-2306).
   if (err instanceof ShipsRuntimeStateError || err instanceof TreeUnhashableError) {
-    return { status: 400, body: { error: err.message } };
+    return problemBody('invalid_request', {
+      detail: "This package ships files DorkOS can't install. Nothing was written.",
+    });
   }
-  // The package that resolved for the install is not the one the person was
-  // shown. Nothing was written; the next move is to look again.
+  // The package that resolved for the install is not the one the person was shown.
   if (err instanceof DisclosureChangedError) {
-    return { status: 409, body: { error: err.message, code: DISCLOSURE_CHANGED_CODE } };
-  }
-  if (err instanceof PackageNotInstalledError) {
-    return { status: 404, body: { error: err.message } };
+    return problemBody('disclosure_changed', {
+      detail: 'This package changed what it runs since you looked. Review it again.',
+    });
   }
   if (err instanceof PackageNotInstalledForUpdateError) {
-    return {
-      status: 404,
-      body: { error: err.message, packageNames: err.packageNames, installPaths: err.installPaths },
-    };
+    return problemBody('not_found', {
+      detail: "Some of those packages aren't installed here.",
+      extensions: { packageNames: err.packageNames, installPaths: err.installPaths },
+    });
+  }
+  if (err instanceof PackageNotInstalledError) {
+    return problemBody('not_found', { detail: "That package isn't installed here." });
   }
   if (err instanceof PackageNotFoundError) {
-    return { status: 404, body: { error: err.message } };
+    return problemBody('not_found', { detail: 'No configured marketplace lists that package.' });
   }
   if (err instanceof MarketplaceNotFoundError) {
-    return { status: 404, body: { error: err.message } };
+    return problemBody('not_found', { detail: "That marketplace isn't configured. Add it first." });
   }
-  // A configured marketplace whose address is not one we will hand to `git`
-  // (DOR-1710). Its message is written for the person reading it and says which
-  // forms do work, so it goes back verbatim.
-  if (err instanceof UnsupportedSourceUrlError) {
-    return { status: 400, body: { error: err.message } };
-  }
-  // Git's own failures (DOR-2248). A branch, tag or commit the repository does
-  // not have is a not-found; a remote that could not be reached, or a fetch that
-  // failed or could not be verified, is the upstream's fault — a bad gateway.
-  // Each message already says what went wrong in words, and names the remote
-  // without credentials, so it goes back verbatim.
+  // A configured marketplace whose address is not one DorkOS hands to `git` (DOR-1710).
+  if (err instanceof UnsupportedSourceUrlError) return unsupportedSourceProblem();
+  // Git's own failures (DOR-2248): a missing branch, tag or commit is a
+  // not-found; a remote that could not be reached or verified is a bad gateway.
   if (err instanceof GitRefNotFoundError || err instanceof GitCommitNotFoundError) {
-    return { status: 404, body: { error: err.message } };
+    return problemBody('not_found', { detail: "That version isn't in the package's repository." });
   }
   if (err instanceof GitRemoteUnreachableError || err instanceof GitFetchError) {
-    return { status: 502, body: { error: err.message } };
+    return problemBody('upstream_unavailable', {
+      detail: "Couldn't reach the package's repository. Try again.",
+    });
   }
-  return {
-    status: 500,
-    body: { error: err instanceof Error ? err.message : String(err) },
-  };
+  return null;
 }
 
-/** Machine-readable code for a request only an older dorkos CLI sends. */
-const OUTDATED_CLIENT_CODE = 'client_outdated';
+/**
+ * The refusal for a marketplace address DorkOS will not fetch from: the forms
+ * that do work, never the address itself.
+ *
+ * @returns The problem document.
+ */
+export function unsupportedSourceProblem(): Problem {
+  return problemBody('invalid_request', {
+    detail: "DorkOS can't fetch from that address. Use an https:// or file:// address.",
+  });
+}
 
 /**
  * Whether a `POST /updates` body is one only an older client sends: an apply
@@ -241,16 +243,9 @@ export function fromOutdatedClient(body: unknown): boolean {
  * each new version runs before anything is applied, which an old client cannot.
  */
 export function outdatedClientResponse(c: Context): Response {
-  return c.json(
-    {
-      error:
-        'This dorkos CLI is older than the DorkOS it is talking to, so nothing was updated. ' +
-        'Update the CLI (npm install -g dorkos), then run the update again: it now shows what ' +
-        'each new version runs before it installs anything.',
-      code: OUTDATED_CLIENT_CODE,
-    },
-    400
-  );
+  return problem(c, 'client_outdated', {
+    detail: 'Nothing was updated. Run npm install -g dorkos, then run the update again.',
+  });
 }
 
 /** Why `POST /updates` ran nothing, as its gate decided. */
@@ -274,16 +269,10 @@ export type UpdateRefusal =
 export function updateRefusalResponse(c: Context, refusal: UpdateRefusal): Response {
   switch (refusal.kind) {
     case 'changed':
-      return c.json(
-        {
-          error:
-            'What an update would install is not what was shown: a newer version arrived, or the ' +
-            'new version now runs something else. Nothing was changed. Check again and review it.',
-          code: DISCLOSURE_CHANGED_CODE,
-          changed: refusal.changed,
-        },
-        409
-      );
+      return problem(c, 'disclosure_changed', {
+        detail: 'Nothing was changed. A newer version arrived. Check again and review it.',
+        extensions: { changed: refusal.changed },
+      });
     case 'pending':
       return c.json(
         {
@@ -298,7 +287,9 @@ export function updateRefusalResponse(c: Context, refusal: UpdateRefusal): Respo
         202
       );
     case 'declined':
-      return c.json({ status: 'declined', reason: refusal.reason }, 403);
+      return problem(c, 'declined', {
+        detail: 'A person said no, or the approval ended. Nothing was updated.',
+      });
   }
 }
 

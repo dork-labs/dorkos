@@ -121,13 +121,11 @@ const OPERATOR_ONLY_TASK = (fields: string[]) =>
       message: z.string(),
     })
     .strict();
-const ACCOUNT_RULES_AGENT = {
-  error: 'Only a person can change where an account may be used.',
-  code: 'operator_only_config',
-  message:
+const ACCOUNT_RULES_AGENT = problemBody('operator_only', {
+  detail:
     'DorkOS changed nothing. Which projects a Claude account may work in is a decision ' +
     'only a person makes. Ask them to change it in Settings → Runtimes.',
-};
+});
 const CONNECT_LOCAL_ONLY = { error: 'Runtime connect actions are only available locally' };
 const PROVISION_LOCAL_ONLY = { error: 'Runtime provisioning is only available locally' };
 const DOE_LOCAL_ONLY = { error: 'Model setup is only available on this computer.' };
@@ -1167,6 +1165,7 @@ describe('contract: the same groups with login on', () => {
 
   const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
   const COOKIE_REQUIRED = z.object({ code: z.literal('operator_cookie_required') }).loose();
+  const PERSON_ONLY = z.object({ code: z.literal('person_only') }).loose();
 
   it('refuses a caller with no credential at the session gate', async () => {
     for (const [method, url] of [
@@ -1294,7 +1293,7 @@ describe('contract: the same groups with login on', () => {
       path: '/api/runtimes/claude-code/project-accounts',
       headers: apiKey,
       body: { project: PROJECT, allow: null },
-      expect: { status: 403, schema: COOKIE_REQUIRED },
+      expect: { status: 403, schema: PERSON_ONLY },
     });
     await check(server, {
       method: 'POST',

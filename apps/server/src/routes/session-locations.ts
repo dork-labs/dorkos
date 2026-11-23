@@ -18,7 +18,7 @@ import { AgentManifestSchema } from '@dorkos/shared/mesh-schemas';
 import type { MeshCore } from '@dorkos/mesh';
 import { BoundaryError, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, sendProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { assessSessionLocationPerson, sessionLocationOwnerId } from './session-person-birth.js';
 

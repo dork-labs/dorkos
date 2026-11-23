@@ -42,14 +42,13 @@ import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { configManager } from '../../services/core/config-manager.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { NEEDS_PERSON_AT_THIS_COMPUTER } from '../../lib/caller-authority.js';
 import type { CredentialStore } from '../../services/core/credential-provider.js';
 import { GlobalMcpStore } from '../../services/mesh/global-mcp/global-mcp-store.js';
 import {
   checkServerTools,
   GlobalMcpToolLedger,
 } from '../../services/mesh/global-mcp/global-mcp-tools.js';
-import { createMcpServerRoutes, MCP_SERVERS_PERSON_ONLY } from '../mcp-servers.js';
+import { createMcpServerRoutes } from '../mcp-servers.js';
 
 const target = swappableServer();
 const mockConfigGet = vi.mocked(configManager.get) as unknown as ReturnType<typeof vi.fn>;
@@ -121,14 +120,14 @@ describe('/api/mcp-servers', () => {
     await store.add({ ...SERVER, secretNames: [], excludedAgents: [] } as never);
     const read = await request(app()).get('/api/mcp-servers').set('x-dorkos-agent', 'agent-token');
     expect(read.status).toBe(403);
-    expect(read.body.code).toBe(MCP_SERVERS_PERSON_ONLY);
+    expect(read.body.code).toBe('person_only');
 
     const write = await request(app())
       .post('/api/mcp-servers')
       .set('x-dorkos-agent', 'agent-token')
       .send({ ...SERVER, name: 'other' });
     expect(write.status).toBe(403);
-    expect(write.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
+    expect(write.body.code).toBe('operator_only');
 
     const remove = await request(app())
       .delete('/api/mcp-servers/github')
@@ -155,7 +154,7 @@ describe('/api/mcp-servers', () => {
         .set('x-dorkos-agent', 'agent-token')
         .send({ args: ['--token=made-up'] });
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe(MCP_SERVERS_PERSON_ONLY);
+      expect(res.body.code).toBe('person_only');
     });
 
     it('refuses a body that is not arguments, or too big to read', async () => {
@@ -186,7 +185,7 @@ describe('/api/mcp-servers', () => {
       .set('Host', 'box.ngrok.app')
       .send(SERVER);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
+    expect(res.body.code).toBe('operator_only');
     expect(store.list()).toEqual([]);
   });
 
@@ -221,7 +220,7 @@ describe('/api/mcp-servers', () => {
       ];
       for (const res of await Promise.all(writes)) {
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
+        expect(res.body.code).toBe('operator_only');
       }
       expect(store.list().map((s) => [s.name, s.enabled])).toEqual([['github', true]]);
       expect(readFileSync(file).equals(before)).toBe(true);
@@ -262,13 +261,13 @@ describe('/api/mcp-servers', () => {
       .post('/api/mcp-servers')
       .send({ ...SERVER, connection: { ...SERVER.connection, command: './server.sh' } });
     expect(relative.status).toBe(422);
-    expect(relative.body.code).toBe('unsafe_command');
+    expect(relative.body).toMatchObject({ code: 'invalid_request', reason: 'unsafe_command' });
 
     const preload = await request(app())
       .post('/api/mcp-servers')
       .send({ ...SERVER, connection: { ...SERVER.connection, env: { LD_PRELOAD: '/tmp/x.so' } } });
     expect(preload.status).toBe(422);
-    expect(preload.body.code).toBe('unsafe_env');
+    expect(preload.body).toMatchObject({ code: 'invalid_request', reason: 'unsafe_env' });
     expect(store.list()).toEqual([]);
   });
 
@@ -291,9 +290,12 @@ describe('/api/mcp-servers', () => {
         .post('/api/mcp-servers')
         .send({ ...SERVER, name });
       expect(res.status).toBe(409);
-      expect(res.body).toEqual({
-        error: `${name} is one of DorkOS's own names. Pick another.`,
-        code: 'reserved_name',
+      expect(res.headers['content-type']).toBe('application/problem+json');
+      expect(res.body).toMatchObject({
+        status: 409,
+        code: 'conflict',
+        reason: 'reserved_name',
+        detail: "That name is one of DorkOS's own. Pick another.",
       });
       expect(store.list()).toEqual([]);
     }
@@ -503,7 +505,7 @@ describe('the server sheet (DOR-4118)', () => {
       .set('Host', 'box.ngrok.app')
       .send({ agentId: 'agent-quill', rule: 'mcp__github' });
     expect(remote.status).toBe(403);
-    expect(remote.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
+    expect(remote.body.code).toBe('operator_only');
     expect(checked).toEqual([]);
     expect(readFileSync(localFile(), 'utf8')).toBe(before);
   });

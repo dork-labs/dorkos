@@ -40,9 +40,19 @@ function answers(...replies: Array<[number, unknown]>) {
   return fn;
 }
 
+/** A problem document, as the server answers a refusal (DOR-4979). */
+const problem = (code: string, status: number, detail: string, extra: object = {}) => ({
+  type: `urn:dorkos:problem:${code}`,
+  title: 'Refused.',
+  status,
+  code,
+  detail,
+  ...extra,
+});
+
 const CONSENT = {
-  code: 'no_agent',
-  error: 'Not allowed yet.',
+  ...problem('conflict', 409, 'Not allowed yet.'),
+  reason: 'no_agent',
   consent: {
     id: 'p1',
     agent: { id: 'pm', name: 'DorkOS PM', handle: 'dorkos-pm' },
@@ -97,13 +107,25 @@ describe('api.forward', () => {
   it('throws the server’s refusal as a ForwardError with its code', async () => {
     vi.stubGlobal(
       'fetch',
-      answer(409, { error: 'Pick an agent for this mini app first.', code: 'no_agent' })
+      answer(
+        409,
+        problem('conflict', 409, 'Pick an agent for this mini app first.', { reason: 'no_agent' })
+      )
     );
     const err = await createExtensionForwardApi('dorian-desk')
       .send({ text: 'hi', itemId: 'i' })
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ForwardError);
     expect((err as ForwardError).code).toBe('no_agent');
+    expect((err as ForwardError).message).toBe('Pick an agent for this mini app first.');
+  });
+
+  it('reads a list code back as the SDK’s word', async () => {
+    vi.stubGlobal('fetch', answer(400, problem('invalid_request', 400, 'Send { text, itemId }.')));
+    const err = await createExtensionForwardApi('dorian-desk')
+      .send({ text: 'hi', itemId: 'i' })
+      .catch((e: unknown) => e);
+    expect((err as ForwardError).code).toBe('invalid_input');
   });
 
   it('asks in the core prompt the first time, then lets DorkOS send what it kept', async () => {

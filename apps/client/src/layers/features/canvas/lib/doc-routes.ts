@@ -4,6 +4,7 @@
  *
  * @module features/canvas/lib/doc-routes
  */
+import { docRefusalReason } from './doc-refusal';
 import type {
   CanvasDocRoute,
   CanvasDocRouteDestination,
@@ -113,8 +114,8 @@ export function routeChangeAnnouncement(route: CanvasDocRoute): string {
 
 /** Whether a refusal means the reviewed details went stale. */
 export function isRouteChanged(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === 'string' && ROUTE_CHANGED_CODES.has(code);
+  const code = docRefusalReason(error);
+  return code !== undefined && ROUTE_CHANGED_CODES.has(code);
 }
 
 /** How many routes are on, and how many wait on a person. */
@@ -128,32 +129,34 @@ export function routesSummary(routes: readonly CanvasDocRoute[]): { on: number; 
 const CHANGED = 'This route changed. Review it again.';
 /** Refusals that mean the reviewed details are stale, so the review is read again. */
 export const ROUTE_CHANGED_CODES: ReadonlySet<string> = new Set([
-  'ROUTE_CHANGED',
-  'GRANT_BINDING_CHANGED',
-  'DECLARATION_HASH_MISMATCH',
-  'MANIFEST_CHANGED',
+  'route_changed',
+  'grant_binding_changed',
+  'declaration_hash_mismatch',
+  'manifest_changed',
 ]);
 const NOT_A_PERSON = 'Only a signed-in person can change routes.';
 const REFUSALS: Record<string, string> = {
-  ROUTE_CHANGED: CHANGED,
-  GRANT_BINDING_CHANGED: CHANGED,
-  DECLARATION_HASH_MISMATCH: CHANGED,
-  MANIFEST_CHANGED: CHANGED,
-  ROUTE_UNDECLARED: 'This document no longer declares that route.',
-  ROUTE_ALREADY_ON: 'This route is already on.',
-  ROUTE_ALREADY_GRANTED: 'This route is already on.',
-  APPROVAL_NOT_RECORDED: 'Couldn’t record the approval. Nothing was allowed.',
-  TARGET_UNAVAILABLE: 'The agent for this route isn’t available.',
-  TARGET_IDENTITY_MISMATCH: 'The agent for this route isn’t available.',
-  TARGET_SCOPE_MISMATCH: 'The agent for this route isn’t available.',
-  ROOM_ROUTE_UNAVAILABLE: 'This room can’t take events right now.',
-  ORIGIN_AUTHORITY_LOST: 'The agent that opened this isn’t available.',
-  GRANT_EXPIRED: 'That end time has passed. Pick another.',
-  AGENT_CANNOT_DECIDE: NOT_A_PERSON,
-  REQUESTER_CANNOT_DECIDE: NOT_A_PERSON,
-  PERSON_REQUIRED: NOT_A_PERSON,
+  route_changed: CHANGED,
+  grant_binding_changed: CHANGED,
+  declaration_hash_mismatch: CHANGED,
+  manifest_changed: CHANGED,
+  route_undeclared: 'This document no longer declares that route.',
+  route_already_on: 'This route is already on.',
+  route_already_granted: 'This route is already on.',
+  approval_not_recorded: 'Couldn’t record the approval. Nothing was allowed.',
+  target_unavailable: 'The agent for this route isn’t available.',
+  target_identity_mismatch: 'The agent for this route isn’t available.',
+  target_scope_mismatch: 'The agent for this route isn’t available.',
+  room_route_unavailable: 'This room can’t take events right now.',
+  origin_authority_lost: 'The agent that opened this isn’t available.',
+  grant_expired: 'That end time has passed. Pick another.',
+  agent_cannot_decide: NOT_A_PERSON,
+  requester_cannot_decide: NOT_A_PERSON,
+  person_required: NOT_A_PERSON,
   operator_cookie_required: NOT_A_PERSON,
+  // The app's login gate, which answers before the document routes do.
   AUTH_REQUIRED: 'Sign in to change routes.',
+  unauthenticated: 'Sign in to change routes.',
 };
 
 /**
@@ -162,8 +165,8 @@ const REFUSALS: Record<string, string> = {
  * @param error - The thrown error, carrying the server's `code` when there is one.
  */
 export function routeRefusal(error: unknown): string {
-  const code = (error as { code?: unknown } | null)?.code;
-  if (typeof code === 'string' && REFUSALS[code]) return REFUSALS[code];
+  const code = docRefusalReason(error);
+  if (code !== undefined && Object.hasOwn(REFUSALS, code)) return REFUSALS[code];
   if (error instanceof TypeError) return 'Couldn’t reach DorkOS. Check your connection.';
   return 'Couldn’t change this route. Try again.';
 }

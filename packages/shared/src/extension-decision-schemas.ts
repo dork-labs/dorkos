@@ -393,13 +393,3 @@ export const StartWorkRequestSchema = z
 
 /** Body of `POST /api/extensions/:id/start-work`. */
 export type StartWorkRequest = z.infer<typeof StartWorkRequestSchema>;
-
-/** A refused start: the sentence to show, and which rule refused it. */
-export const StartWorkErrorResponseSchema = z
-  .object({
-    /** Plain words, safe to show as they are. */
-    error: z.string(),
-    /** Which rule refused it. */
-    code: z.enum(START_WORK_ERROR_CODES),
-  })
-  .openapi('StartWorkErrorResponse');

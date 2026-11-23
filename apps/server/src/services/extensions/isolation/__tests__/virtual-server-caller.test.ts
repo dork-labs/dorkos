@@ -7,15 +7,17 @@ import { describe, expect, it } from 'vitest';
 import { callerFrom } from '../child/virtual-server.js';
 
 const REFUSAL = {
-  error: "Only a person can change Probe's settings.",
-  code: 'extension_person_required',
-  message: 'DorkOS changed nothing.',
+  type: 'urn:dorkos:problem:person_only',
+  title: 'Only a person can do that, not an agent.',
+  status: 403,
+  code: 'person_only',
+  detail: 'DorkOS changed nothing.',
 };
 
 describe('callerFrom', () => {
   it('passes a verdict the host sent', () => {
     expect(callerFrom(JSON.stringify({ ok: true }), REFUSAL)).toEqual({ person: { ok: true } });
-    const refused = { ok: false, status: 403, body: { ...REFUSAL, message: 'From the host.' } };
+    const refused = { ok: false, status: 403, body: { ...REFUSAL, detail: 'From the host.' } };
     expect(callerFrom(JSON.stringify(refused), REFUSAL)).toEqual({ person: refused });
   });
 
@@ -25,6 +27,10 @@ describe('callerFrom', () => {
     ['garbled JSON', '{ok:true'],
     ['a truthy non-boolean', JSON.stringify({ ok: 'yes' })],
     ['a refusal with a success status', JSON.stringify({ ok: false, status: 200, body: REFUSAL })],
+    [
+      'a refusal in the old shape',
+      JSON.stringify({ ok: false, status: 403, body: { error: 'No.', code: 'x', message: 'No.' } }),
+    ],
   ])('refuses %s, failing closed', (_label, raw) => {
     expect(callerFrom(raw, REFUSAL)).toEqual({
       person: { ok: false, status: 403, body: REFUSAL },

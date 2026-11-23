@@ -24,7 +24,7 @@ import { readResponseError } from '@/layers/shared/lib';
 /**
  * Which copy the person answered — the one their row showed — and the name to
  * use if it goes wrong. The server acts only if the copy on disk is still
- * exactly this one, and answers `409 stale_approval` otherwise.
+ * exactly this one, and answers `409 conflict`, `reason: stale_approval`, otherwise.
  */
 export interface ExtensionAnswerInput {
   /** Extension id. */
@@ -62,8 +62,10 @@ export type DismissExtensionInput = ExtensionAnswerInput;
 class AnswerRefused extends Error {
   constructor(
     message: string,
-    /** The server's refusal code, e.g. `stale_approval`. */
-    readonly code: string | undefined
+    /** The server's refusal code, e.g. `step_up_required`. */
+    readonly code: string | undefined,
+    /** The finer reason under it, e.g. `stale_approval` under `conflict`. */
+    readonly reason?: string
   ) {
     super(message);
   }
@@ -74,12 +76,12 @@ async function failureOf(res: Response): Promise<AnswerRefused> {
   const body = await readResponseError(res, `The server answered ${res.status}`, {
     oldMessageFirst: true,
   });
-  return new AnswerRefused(body.message, body.code);
+  return new AnswerRefused(body.message, body.code, body.reason);
 }
 
 /** Whether a refusal says the row went out of date while it was on screen. */
 function isStale(err: Error): boolean {
-  return err instanceof AnswerRefused && err.code === STALE_APPROVAL_CODE;
+  return err instanceof AnswerRefused && err.reason === STALE_APPROVAL_CODE;
 }
 
 /**
@@ -175,7 +177,7 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
         return;
       }
       // Trying again cannot help a copy DorkOS cannot check (DOR-3068).
-      if (err instanceof AnswerRefused && err.code === UNPINNABLE_APPROVAL_CODE) {
+      if (err instanceof AnswerRefused && err.reason === UNPINNABLE_APPROVAL_CODE) {
         toast.error(`${name} can’t be turned on yet.`, { description: err.message });
         return;
       }

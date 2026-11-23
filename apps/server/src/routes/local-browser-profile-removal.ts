@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { LocalBrowserProfileIdSchema } from '@dorkos/shared/local-browser';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { requirePersonAtThisComputer } from '../lib/caller-authority.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import type { LocalBrowserService } from '../services/session/local-browser/service.js';
@@ -19,9 +19,12 @@ export function mountLocalBrowserProfileRemoval(
   const person = (c: Context<ApiEnv>) =>
     requirePersonAtThisComputer(honoRequestFacts(c)) === undefined;
   const refused = (c: Context<ApiEnv>) =>
-    c.json({ error: 'Only you can do this, from DorkOS.', code: 'person_only' }, 403);
+    problem(c, 'person_only', { detail: 'Only you can do this, from DorkOS.' });
   const missing = (c: Context<ApiEnv>) =>
-    c.json({ error: 'That browser profile no longer exists.', code: 'profile_not_found' }, 404);
+    problem(c, 'not_found', {
+      detail: 'That browser profile no longer exists. Refresh and try again.',
+      extensions: { reason: 'profile_not_found' },
+    });
   const audit = (id: string, deleted: boolean) =>
     recordAudit({
       action: deleted ? 'local_browser.profile.delete' : 'local_browser.sign_ins.forget',

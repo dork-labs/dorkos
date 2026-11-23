@@ -15,6 +15,7 @@
  *
  * @module services/extensions/http/media-fetch
  */
+import { problemBody } from '@dorkos/http-kit';
 import type { ExtensionFetchHandler, PersonRefusal } from '@dorkos/extension-api/server';
 
 /**
@@ -37,11 +38,11 @@ export type ExtensionMediaFetch = (
 export const NO_PERSON: PersonRefusal = Object.freeze({
   ok: false,
   status: 403,
-  body: Object.freeze({
-    error: 'A video link can only play the video.',
-    code: 'extension_person_required',
-    message: 'A video link can only play the video. Ask a person to do this in DorkOS.',
-  }),
+  body: Object.freeze(
+    problemBody('person_only', {
+      detail: 'A video link can only play the video. Ask a person to do this in DorkOS.',
+    })
+  ),
 });
 
 /**

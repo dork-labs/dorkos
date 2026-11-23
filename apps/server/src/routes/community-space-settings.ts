@@ -13,6 +13,7 @@
  */
 import type { Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { problemBody, sendProblem } from '@dorkos/http-kit';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import {
   COMMUNITY_SPACE_READS,
@@ -32,8 +33,7 @@ import {
 
 /** What these reads say when the caller is not the person at the app. */
 const PERSON_BAR: PersonBarCopy = {
-  error: 'Only a person can read a space’s settings, in the app.',
-  code: 'NOT_A_PERSON',
+  code: 'person_only',
   subject: 'a space’s settings',
   crossSite: (origin) => `A page on ${origin} tried to read a space’s settings.`,
   agent: 'Only a person can read a space’s settings, not an agent.',
@@ -55,11 +55,9 @@ export function refuseNonPerson(c: Context<ApiEnv>): PersonRefusal | null {
   if (facts.user?.credential === 'api-key' || facts.headers.authorization !== undefined)
     return {
       status: 403,
-      body: {
-        error: PERSON_BAR.error,
-        code: PERSON_BAR.code,
-        message: 'Read a space’s settings in the app, not with a key.',
-      },
+      body: problemBody(PERSON_BAR.code, {
+        detail: 'Read a space’s settings in the app, not with a key.',
+      }),
     };
   return null;
 }
@@ -81,7 +79,7 @@ export function addSpaceSettingsRoutes(
       // Nothing here, answer or refusal, is for any cache between the app and this server.
       c.header('Cache-Control', 'no-store');
       const refused = refuseNonPerson(c);
-      if (refused) return c.json(refused.body, refused.status as ContentfulStatusCode);
+      if (refused) return sendProblem(c, refused.body);
       const owner = resolveCommunityOwner(c);
       if (typeof owner !== 'string') return owner;
       const ref = CommunityRefSchema.safeParse(c.req.param('ref'));

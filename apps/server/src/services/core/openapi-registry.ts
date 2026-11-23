@@ -299,6 +299,8 @@ import {
   LEDGER_RUNTIMES,
 } from '@dorkos/shared/account-usage';
 import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects.js';
+import { problemResponse } from './openapi/problem-openapi.js';
+import { PROBLEM_CONTENT_TYPE, ProblemSchema } from '@dorkos/shared/problem';
 import {
   CanvasChannelEventSchema,
   CanvasChannelFrameSchema,
@@ -626,9 +628,8 @@ const LocalInstallationUpdateCheckSchema = LocalUpdateCheckResultSchema.extend({
     .describe('What the installed version runs now; null when it could not be read.'),
 });
 
-/** The 404 body when an update names packages or installations not in view. */
-const NotInstalledForUpdateSchema = z.object({
-  error: z.string(),
+/** The 404 `not_found` problem when an update names packages or installations not in view. */
+const NotInstalledForUpdateSchema = ProblemSchema.extend({
   packageNames: z.array(z.string()),
   installPaths: z.array(z.string()),
 });
@@ -1896,14 +1897,11 @@ registry.registerPath({
       description: 'Signed URL to load, or a null url with an honest reason',
       content: { 'application/json': { schema: WorkbenchSignResponseSchema } },
     },
-    400: {
-      description: 'Invalid body',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Access denied: cwd outside directory boundary',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: { $ref: '#/components/responses/ValidationProblem' },
+    403: problemResponse(
+      '`outside_boundary`: `cwd` or `path` is outside the folders DorkOS may use'
+    ),
+    500: problemResponse('`internal_error`: the folder could not be checked or the preview opened'),
   },
 });
 
@@ -1926,10 +1924,10 @@ registry.registerPath({
       description: 'Whether something accepted a connection on that port',
       content: { 'application/json': { schema: WorkbenchProbeResponseSchema } },
     },
-    400: {
-      description: 'Invalid body',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: { $ref: '#/components/responses/ValidationProblem' },
+    409: problemResponse(
+      '`conflict`: this computer does not look for dev servers (a hub or agent computer)'
+    ),
   },
 });
 
@@ -1953,10 +1951,7 @@ registry.registerPath({
       description: 'The recorded decision for that page',
       content: { 'application/json': { schema: WorkbenchBridgeStatusResponseSchema } },
     },
-    400: {
-      description: 'Invalid body',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: { $ref: '#/components/responses/ValidationProblem' },
   },
 });
 
@@ -1980,22 +1975,17 @@ registry.registerPath({
   },
   responses: {
     200: { description: 'File contents, content-typed by extension' },
-    400: {
-      description: 'Invalid path (null byte, symlink loop, not a directory)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    401: {
-      description: 'Token expired',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Token forged/malformed, wrong scope, or path escapes the boundary',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'File not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: a bad path (null byte, symlink loop, not a directory)'
+    ),
+    401: problemResponse('`unauthenticated`: the link expired'),
+    403: problemResponse(
+      '`forbidden` (a forged or malformed link, the wrong kind of link, or a protected file) or `outside_boundary` (the path escapes `cwd`)'
+    ),
+    404: problemResponse(
+      '`not_found`: no such file, a folder, or a computer that serves no previews'
+    ),
+    500: problemResponse('`internal_error`: the file could not be read'),
   },
 });
 
@@ -3138,16 +3128,6 @@ registry.registerPath({
   },
 });
 
-/**
- * The refusal both package-source WRITE routes answer with when the caller is not
- * the operator (DOR-502). Not an approval gate: there is no token that unlocks it.
- */
-const MarketplaceSourceRefusalSchema = z.object({
-  error: z.string(),
-  code: z.literal('operator_only_marketplace_source'),
-  message: z.string(),
-});
-
 registry.registerPath({
   method: 'post',
   path: '/api/marketplace/sources',
@@ -3170,18 +3150,13 @@ registry.registerPath({
       description: 'Source added, with how the first fetch of its listing went',
       content: { 'application/json': { schema: AddedMarketplaceSourceSchema } },
     },
-    400: {
-      description: 'Validation error, a name DorkOS cannot use, or an address it will not fetch',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Caller is not the operator',
-      content: { 'application/json': { schema: MarketplaceSourceRefusalSchema } },
-    },
-    409: {
-      description: 'Duplicate source name',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: validation error, a name DorkOS cannot use, or an address it will not fetch'
+    ),
+    403: problemResponse(
+      '`operator_only` (an agent, or not at this computer) or `person_only` (sign in to the app)'
+    ),
+    409: problemResponse('`conflict`: duplicate source name'),
   },
 });
 
@@ -3201,10 +3176,9 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Source removed' },
-    403: {
-      description: 'Caller is not the operator',
-      content: { 'application/json': { schema: MarketplaceSourceRefusalSchema } },
-    },
+    403: problemResponse(
+      '`operator_only` (an agent, or not at this computer) or `person_only` (sign in to the app)'
+    ),
   },
 });
 
@@ -3228,10 +3202,9 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Source removed' },
-    403: {
-      description: 'Caller is not the operator',
-      content: { 'application/json': { schema: MarketplaceSourceRefusalSchema } },
-    },
+    403: problemResponse(
+      '`operator_only` (an agent, or not at this computer) or `person_only` (sign in to the app)'
+    ),
   },
 });
 
@@ -3264,14 +3237,10 @@ registry.registerPath({
         },
       },
     },
-    404: {
-      description: 'Source not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    502: {
-      description: 'Upstream fetch failure',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('`not_found`: source not found'),
+    502: problemResponse(
+      '`upstream_unavailable`: the source could not be fetched and nothing is cached'
+    ),
   },
 });
 
@@ -3308,14 +3277,10 @@ registry.registerPath({
         },
       },
     },
-    404: {
-      description: 'Source not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    502: {
-      description: 'Upstream fetch failure',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('`not_found`: source not found'),
+    502: problemResponse(
+      '`upstream_unavailable`: the source could not be fetched and nothing is cached'
+    ),
   },
 });
 
@@ -3347,14 +3312,8 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'projectPath given more than once',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'projectPath outside the directory boundary',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: `projectPath` given more than once'),
+    403: problemResponse('`outside_boundary`: `projectPath` is outside the folders DorkOS may use'),
   },
 });
 
@@ -3384,10 +3343,7 @@ registry.registerPath({
         },
       },
     },
-    404: {
-      description: 'Package not installed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('`not_found`: package not installed'),
   },
 });
 
@@ -3431,10 +3387,7 @@ registry.registerPath({
       description: 'Prune result',
       content: { 'application/json': { schema: PruneMarketplaceCacheResponseSchema } },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: validation error'),
   },
 });
 
@@ -3452,10 +3405,7 @@ registry.registerPath({
         },
       },
     },
-    500: {
-      description: 'Aggregation failure',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    500: problemResponse('`internal_error`: aggregation failure'),
   },
 });
 
@@ -3486,14 +3436,10 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error or invalid package',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Marketplace or package not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: validation error or invalid package (`errors` and `codes` say what failed)'
+    ),
+    404: problemResponse('`not_found`: marketplace or package not found'),
   },
 });
 
@@ -3527,14 +3473,10 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error or invalid package',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Marketplace or package not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: validation error or invalid package (`errors` and `codes` say what failed)'
+    ),
+    404: problemResponse('`not_found`: marketplace or package not found'),
   },
 });
 
@@ -3569,23 +3511,17 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error or invalid package',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Marketplace or package not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: validation error or invalid package (`errors` and `codes` say what failed)'
+    ),
+    404: problemResponse('`not_found`: marketplace or package not found'),
     409: {
       description:
-        'Install blocked by conflicts, or (`code: disclosure_changed`) the package now runs something other than `approvedDisclosure`',
+        '`conflict` (blocked by `conflicts`), or `disclosure_changed`: the package now runs something other than `approvedDisclosure`',
       content: {
-        'application/json': {
-          schema: z.object({
-            error: z.string(),
+        [PROBLEM_CONTENT_TYPE]: {
+          schema: ProblemSchema.extend({
             conflicts: z.array(LocalConflictReportSchema).optional(),
-            code: z.literal('disclosure_changed').optional(),
           }),
         },
       },
@@ -3639,14 +3575,8 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error or an invalid package name',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Package not installed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: validation error or an invalid package name'),
+    404: problemResponse('`not_found`: package not installed'),
   },
 });
 
@@ -3660,8 +3590,8 @@ registry.registerPath({
     "or left over from the earlier version, the person's: the record stops listing them, and " +
     'nothing is moved or deleted (DOR-2341). Only a person may do this: an agent is refused ' +
     '(`operator_only`), and under login so is anything but a signed-in session ' +
-    '(`operator_cookie_required`). Bound to `keepKey` as the installed list showed it: when a ' +
-    'kept file or the installed version changed since, the answer is 409 `kept_files_changed` ' +
+    '(`person_only`). Bound to `keepKey` as the installed list showed it: when a ' +
+    'kept file or the installed version changed since, the answer is 409 `conflict` ' +
     'and nothing is written. For a global package held back from sessions, `review` (exactly as ' +
     '`GET /held-back` listed it) also approves what the package discloses now, like a Review.',
   request: {
@@ -3698,22 +3628,12 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error or an invalid package name',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Not a person (`operator_only`, `operator_cookie_required`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Package not installed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'The kept files changed since they were shown (`kept_files_changed`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: validation error or an invalid package name'),
+    403: problemResponse(
+      '`operator_only` (an agent) or `person_only` (sign-in is on and this is not a signed-in session)'
+    ),
+    404: problemResponse('`not_found`: package not installed'),
+    409: problemResponse('`conflict`: the kept files changed since they were shown'),
   },
 });
 
@@ -3740,14 +3660,8 @@ registry.registerPath({
       description: 'Uninstall result',
       content: { 'application/json': { schema: LocalUninstallResultSchema } },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Package not installed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: validation error'),
+    404: problemResponse('`not_found`: package not installed'),
   },
 });
 
@@ -3774,18 +3688,11 @@ registry.registerPath({
       description: 'The check for the installation the name means in this scope',
       content: { 'application/json': { schema: LocalUpdateResultSchema } },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Package not installed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    502: {
-      description: "The package's git remote could not be reached, or its fetch failed",
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: validation error'),
+    404: problemResponse('`not_found`: package not installed'),
+    502: problemResponse(
+      "`upstream_unavailable`: the package's git remote could not be reached, or its fetch failed"
+    ),
   },
 });
 
@@ -3809,14 +3716,8 @@ registry.registerPath({
       description: 'One check per installation, in scan order',
       content: { 'application/json': { schema: LocalInstallationUpdatesResultSchema } },
     },
-    400: {
-      description: 'projectPath given more than once',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'projectPath outside the directory boundary',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: `projectPath` given more than once'),
+    403: problemResponse('`outside_boundary`: `projectPath` is outside the folders DorkOS may use'),
   },
 });
 
@@ -3878,37 +3779,26 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description:
-        'Validation error (a body without `apply: true`, no targets, or a retired selector)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description:
-        'Refused by the permission check, a person declined the card, or projectPath outside the boundary',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`client_outdated` (a body only an older CLI sends) or `invalid_request`'),
+    403: problemResponse(
+      '`needs_approval` (a batch that would need a card per package), `declined` (a person said no), `outside_boundary`, or the permission check’s refusal'
+    ),
     404: {
-      description: 'A target install path is not installed in view',
-      content: { 'application/json': { schema: NotInstalledForUpdateSchema } },
+      description: '`not_found`: a target install path is not installed in view',
+      content: { [PROBLEM_CONTENT_TYPE]: { schema: NotInstalledForUpdateSchema } },
     },
     409: {
       description:
-        'A new version, or what it runs, is not what was shown (`disclosure_changed`); nothing ran',
+        '`disclosure_changed`: a new version, or what it runs, is not what was shown; nothing ran',
       content: {
-        'application/json': {
-          schema: z.object({
-            error: z.string(),
-            code: z.literal('disclosure_changed'),
-            changed: z.array(z.unknown()),
-          }),
+        [PROBLEM_CONTENT_TYPE]: {
+          schema: ProblemSchema.extend({ changed: z.array(z.unknown()) }),
         },
       },
     },
-    502: {
-      description: "The package's git remote could not be reached, or its fetch failed",
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    502: problemResponse(
+      "`upstream_unavailable`: the package's git remote could not be reached, or its fetch failed"
+    ),
   },
 });
 
@@ -3956,10 +3846,9 @@ registry.registerPath({
       description: 'The card is raised; a person decides on it',
       content: { 'application/json': { schema: z.object({ status: z.literal('asked') }) } },
     },
-    409: {
-      description: 'Not held back, or cannot be shown on a card (the error says what to do)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse(
+      '`conflict`: not held back, or cannot be shown on a card (`detail` says what to do)'
+    ),
   },
 });
 
@@ -3991,16 +3880,10 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Recorded' },
-    403: {
-      description:
-        'Not the person (`operator_only`), or sign-in is on and this is not a signed-in ' +
-        'session (`operator_cookie_required`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'Not held back, unreadable, or changed since it was shown',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse(
+      '`operator_only` (an agent) or `person_only` (sign-in is on and this is not a signed-in session)'
+    ),
+    409: problemResponse('`conflict`: not held back, unreadable, or changed since it was shown'),
   },
 });
 
@@ -4021,14 +3904,6 @@ const LocalDevLinkStatusSchema = z.object({
     .describe('The installed copy set aside for the link, or null.'),
   linkedAt: z.string(),
   lastReloadAt: z.string().optional(),
-});
-
-const LocalDevLinkErrorSchema = z.object({
-  error: z.string().describe('One plain sentence: what did not happen and what to do.'),
-  code: z.string(),
-  realPath: z.string().optional(),
-  name: z.string().optional(),
-  installedVersion: z.string().optional(),
 });
 
 const DevLinkScopeBody = {
@@ -4112,18 +3987,11 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Not linkable (`code` says why)',
-      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
-    },
-    403: {
-      description: 'Outside the folders DorkOS may use',
-      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
-    },
-    409: {
-      description: 'The slot or the name is taken',
-      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
-    },
+    400: problemResponse('`invalid_request`: not linkable; `reason` says why'),
+    403: problemResponse(
+      '`forbidden` (`reason` says why) or `outside_boundary`: outside the folders DorkOS may use'
+    ),
+    409: problemResponse('`conflict`: the slot or the name is taken; `reason` says which'),
   },
 });
 
@@ -4171,20 +4039,15 @@ registry.registerPath({
       description: 'A person has been asked; retry with the approval token',
       content: { 'application/json': { schema: z.object({ status: z.string() }).passthrough() } },
     },
-    400: {
-      description: 'Not linkable, or a malformed body',
-      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
-    },
-    403: {
-      description: 'Refused by the gate, or outside the folders DorkOS may use',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        'The slot or the name is taken, or the folder changed after it was approved ' +
-        '(`dev_link_changed`)',
-      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: not linkable (`reason` says why), or a malformed body'
+    ),
+    403: problemResponse(
+      'Refused by the permission check, or `forbidden`/`outside_boundary`: outside the folders DorkOS may use'
+    ),
+    409: problemResponse(
+      '`conflict`: the slot or name is taken, or the folder changed after it was approved (`reason`: `dev_link_changed`)'
+    ),
   },
 });
 
@@ -4220,14 +4083,10 @@ registry.registerPath({
         },
       },
     },
-    403: {
-      description: 'Not the person (`operator_only`), or not a signed-in session under sign-in',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No such dev link',
-      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
-    },
+    403: problemResponse(
+      '`operator_only` (an agent) or `person_only` (sign-in is on and this is not a signed-in session)'
+    ),
+    404: problemResponse('`not_found`: no such dev link (`reason`: `dev_link_not_found`)'),
   },
 });
 
@@ -4716,10 +4575,8 @@ registry.registerPath({
         'Apply result (chrome + activated extensions + created schedules, warnings, offers)',
       content: { 'application/json': { schema: LocalApplyShapeResultSchema } },
     },
-    404: {
-      description: 'Shape is not installed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: not a Shape name'),
+    404: problemResponse('`not_found`: the Shape is not installed'),
   },
 });
 
@@ -4739,14 +4596,11 @@ registry.registerPath({
       description: 'The forked Shape descriptor',
       content: { 'application/json': { schema: LocalForkShapeResultSchema } },
     },
-    404: {
-      description: 'Source Shape is not installed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'Fork name is invalid or already taken',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: not a Shape name, or the forked manifest is not valid'
+    ),
+    404: problemResponse('`not_found`: the source Shape is not installed'),
+    409: problemResponse('`conflict`: the fork name is taken or the same as the source'),
   },
 });
 
@@ -5668,7 +5522,7 @@ registry.registerPath({
     'Records that a person allowed this extension to run code inside DorkOS, bound to the copy on ' +
     'disk (its folder and the plugin that carried it), and starts it. The body is optional: send ' +
     'the path, version and plugin of the copy the person was shown (the Activity inbox always ' +
-    'does), and the approval is refused with `stale_approval` unless the copy on disk is still ' +
+    'does), and the approval is refused with `409 conflict`, `reason: stale_approval`, unless the copy on disk is still ' +
     'exactly that one, so an old row can never turn on a copy that took its place. Clears any ' +
     '"Not now" for this id. A caller naming itself an agent is refused in every posture, and a ' +
     'signed-in person is required when login is on. There is no MCP tool for this. When the ' +
@@ -5694,28 +5548,14 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Invalid extension id or body',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    401: {
-      description: 'Login is enabled and the caller is not signed in',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Refused: an agent or another site cannot turn an extension on',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No such extension',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        'The extension ships with DorkOS, or the copy changed since the person saw it ' +
-        '(`stale_approval`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: an invalid extension id or body'),
+    401: problemResponse('`unauthenticated`: login is on and the caller is not signed in'),
+    403: problemResponse('`person_only`: an agent or another site cannot turn an extension on'),
+    404: problemResponse('`not_found`: no such extension'),
+    409: problemResponse(
+      '`conflict`: the extension ships with DorkOS, or the copy changed since the person saw ' +
+        'it (`reason: stale_approval`) or cannot be checked (`reason: extension_unpinnable`)'
+    ),
   },
 });
 
@@ -5729,7 +5569,7 @@ registry.registerPath({
     'inbox stops asking until its path, plugin or version changes. Never destructive: nothing is ' +
     'uninstalled, turned off or revoked, and Settings → Extensions can still turn it on. The body ' +
     'names the copy the person was shown; if the copy on disk is no longer that one the answer is ' +
-    'refused with `stale_approval`. The same person bar as approving applies: a caller naming ' +
+    'refused with `409 conflict`, `reason: stale_approval`. The same person bar as approving applies: a caller naming ' +
     'itself an agent is refused in every posture, and a signed-in person is required when login ' +
     'is on. There is no MCP tool for this.',
   request: {
@@ -5738,44 +5578,23 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Declined for now' },
-    400: {
-      description: 'Invalid extension id or body',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    401: {
-      description: 'Login is enabled and the caller is not signed in',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Refused: an agent or another site cannot answer this',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No such extension',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        'The extension ships with DorkOS, or the copy changed since the person saw it ' +
-        '(`stale_approval`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: an invalid extension id or body'),
+    401: problemResponse('`unauthenticated`: login is on and the caller is not signed in'),
+    403: problemResponse('`person_only`: an agent or another site cannot answer this'),
+    404: problemResponse('`not_found`: no such extension'),
+    409: problemResponse(
+      '`conflict`: the extension ships with DorkOS, or the copy changed since the person saw ' +
+        'it (`reason: stale_approval`)'
+    ),
   },
 });
 
 const TRUSTED_SOURCE_BAR_RESPONSES = {
-  400: {
-    description: 'The body does not name a GitHub `owner/repo`',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
-  401: {
-    description: 'Login is enabled and the caller is not signed in',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
-  403: {
-    description: 'Refused: an agent or another site cannot change which sources are trusted',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
+  400: problemResponse('`invalid_request`: the body does not name a GitHub `owner/repo`'),
+  401: problemResponse('`unauthenticated`: login is on and the caller is not signed in'),
+  403: problemResponse(
+    '`person_only` (an agent or another site) or `operator_only` (not the owner at this computer)'
+  ),
 } as const;
 
 registry.registerPath({
@@ -5815,10 +5634,9 @@ registry.registerPath({
       content: { 'application/json': { schema: TrustedSourcesResponseSchema } },
     },
     ...TRUSTED_SOURCE_BAR_RESPONSES,
-    409: {
-      description: 'Nothing installed provably comes from that source (`unproven_source`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse(
+      '`conflict`: nothing installed provably comes from that source (`reason: unproven_source`)'
+    ),
   },
 });
 
@@ -5840,10 +5658,7 @@ registry.registerPath({
       content: { 'application/json': { schema: TrustedSourcesResponseSchema } },
     },
     ...TRUSTED_SOURCE_BAR_RESPONSES,
-    404: {
-      description: 'That source is not trusted',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('`not_found`: that source is not trusted'),
   },
 });
 

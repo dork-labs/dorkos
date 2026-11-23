@@ -56,11 +56,11 @@ function usersOf(tool: string, allows: readonly GlobalMcpStandingAllow[]): strin
  * never anything read from the settings file it left alone.
  */
 function refusal(error: unknown, agentName: string): string {
-  const code = (error as { code?: unknown } | null)?.code;
-  if (code === 'not-a-real-file') {
+  const reason = (error as { body?: { reason?: unknown } } | null)?.body?.reason;
+  if (reason === 'not_a_real_file') {
     return `${agentName}’s settings file isn’t a plain file in its folder, so it was left alone.`;
   }
-  if (code === 'unreadable') return `${agentName}’s settings file couldn’t be read.`;
+  if (reason === 'unreadable') return `${agentName}’s settings file couldn’t be read.`;
   return changeError(error);
 }
 

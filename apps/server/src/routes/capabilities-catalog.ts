@@ -25,7 +25,7 @@ import {
   listCapabilitiesInputSchema,
   projectCatalog,
 } from '../services/core/self-description/catalog-projection.js';
-import { validationProblem } from '@dorkos/http-kit';
+import { problem, validationProblem } from '@dorkos/http-kit';
 
 /**
  * The capability-catalog routes over a composed registry.
@@ -41,7 +41,10 @@ export function createCapabilitiesCatalogRoutes(registry: CapabilityRegistry): H
     try {
       return c.json(projectCatalog(registry.catalog(), parsed.data));
     } catch (err) {
-      if (err instanceof InvalidCursorError) return c.json({ error: err.message }, 400);
+      if (err instanceof InvalidCursorError)
+        return problem(c, 'invalid_request', {
+          detail: 'That cursor isn’t one DorkOS gave out. Use the last page’s nextCursor.',
+        });
       throw err;
     }
   });

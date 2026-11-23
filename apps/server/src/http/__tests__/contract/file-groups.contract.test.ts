@@ -86,6 +86,26 @@ const OUTSIDE = {
   code: 'OUTSIDE_BOUNDARY',
 };
 const NULL_BYTE = { error: 'Invalid path: null bytes not allowed', code: 'NULL_BYTE' };
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json$/ };
+const PATH_NUL = problemBody('invalid_request', {
+  detail: 'That path has a character paths can’t hold.',
+});
+const UPLOAD_CWD_MISSING = problemBody('invalid_request', {
+  detail: 'Send `cwd`: the chat’s folder.',
+});
+const UPLOAD_OUTSIDE = problemBody('outside_boundary', {
+  detail: 'That folder is outside the folders DorkOS may use.',
+});
+const UPLOAD_NO_FILES = problemBody('invalid_request', {
+  detail: 'Attach at least one file in `files`.',
+});
+const UPLOAD_MISSING = problemBody('not_found', { detail: 'That upload doesn’t exist.' });
+const SERVE_OUTSIDE = problemBody('outside_boundary', {
+  detail: 'That file is outside the folders DorkOS may use.',
+});
+const SERVE_START_OUTSIDE = problemBody('outside_boundary', {
+  detail: 'Pick a file inside the chat’s folder.',
+});
 const NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
 });
@@ -595,7 +615,7 @@ contractSuite('file, diff, upload and profile groups', [
     name: 'POST /api/uploads refuses a missing cwd',
     method: 'POST',
     path: '/api/uploads',
-    expect: { status: 400, body: { error: 'Missing required parameter: cwd' } },
+    expect: { status: 400, headers: PROBLEM_TYPE, body: UPLOAD_CWD_MISSING },
   },
   {
     name: 'POST /api/uploads refuses a folder outside the boundary before reading the body',
@@ -603,26 +623,26 @@ contractSuite('file, diff, upload and profile groups', [
     path: `/api/uploads?cwd=${q(OUTSIDE_DIR)}`,
     headers: MULTIPART,
     body: multipart([{ field: 'files', filename: 'a.txt', type: 'text/plain', content: 'a' }]),
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: UPLOAD_OUTSIDE },
   },
   {
     name: 'POST /api/uploads refuses a NUL byte in the cwd',
     method: 'POST',
     path: `/api/uploads?cwd=${q(CWD)}%00`,
-    expect: { status: 403, body: NULL_BYTE },
+    expect: { status: 400, body: PATH_NUL },
   },
   {
     name: 'POST /api/uploads answers no files for a request with no body',
     method: 'POST',
     path: `/api/uploads?cwd=${q(CWD)}`,
-    expect: { status: 400, body: { error: 'No files provided' } },
+    expect: { status: 400, body: UPLOAD_NO_FILES },
   },
   {
     name: 'POST /api/uploads answers no files for a JSON body',
     method: 'POST',
     path: `/api/uploads?cwd=${q(CWD)}`,
     body: { files: ['a.txt'] },
-    expect: { status: 400, body: { error: 'No files provided' } },
+    expect: { status: 400, body: UPLOAD_NO_FILES },
   },
   {
     name: 'POST /api/uploads answers no files for a multipart body with only fields',
@@ -630,7 +650,7 @@ contractSuite('file, diff, upload and profile groups', [
     path: `/api/uploads?cwd=${q(CWD)}`,
     headers: MULTIPART,
     body: multipart([{ field: 'note', content: 'just a field' }]),
-    expect: { status: 400, body: { error: 'No files provided' } },
+    expect: { status: 400, body: UPLOAD_NO_FILES },
   },
   {
     name: 'POST /api/uploads saves one file under a sanitized, prefixed name',
@@ -837,22 +857,22 @@ contractSuite('file, diff, upload and profile groups', [
   {
     name: 'GET /api/uploads/:filename refuses a missing cwd',
     path: '/api/uploads/one.txt',
-    expect: { status: 400, body: { error: 'Missing required parameter: cwd' } },
+    expect: { status: 400, body: UPLOAD_CWD_MISSING },
   },
   {
     name: 'GET /api/uploads/:filename refuses a folder outside the boundary',
     path: `/api/uploads/one.txt?cwd=${q(OUTSIDE_DIR)}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: UPLOAD_OUTSIDE },
   },
   {
     name: 'GET /api/uploads/:filename is a 404 for a missing file',
     path: `/api/uploads/missing.txt?cwd=${q(CWD)}`,
-    expect: { status: 404, headers: JSON_TYPE, body: { error: 'File not found' } },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: UPLOAD_MISSING },
   },
   {
     name: 'GET /api/uploads/:filename keeps only the last segment of an encoded path',
     path: `/api/uploads/${q('../../notes.txt')}?cwd=${q(CWD)}`,
-    expect: { status: 404, body: { error: 'File not found' } },
+    expect: { status: 404, body: UPLOAD_MISSING },
   },
 
   // profile
@@ -1017,28 +1037,28 @@ contractSuite('file, diff, upload and profile groups', [
     method: 'POST',
     path: '/api/workbench/sign',
     body: { kind: 'serve', cwd: OUTSIDE_DIR },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: SERVE_OUTSIDE },
   },
   {
     name: 'POST /api/workbench/sign refuses a NUL byte',
     method: 'POST',
     path: '/api/workbench/sign',
     body: { kind: 'serve', cwd: `${CWD}\0` },
-    expect: { status: 400, body: NULL_BYTE },
+    expect: { status: 400, body: PATH_NUL },
   },
   {
     name: 'POST /api/workbench/sign refuses a start path out of the folder',
     method: 'POST',
     path: '/api/workbench/sign',
     body: { kind: 'serve', cwd: CWD, path: '../outside.html' },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: SERVE_START_OUTSIDE },
   },
   {
     name: 'POST /api/workbench/sign refuses the folder itself as a start path',
     method: 'POST',
     path: '/api/workbench/sign',
     body: { kind: 'serve', cwd: CWD, path: '.' },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: SERVE_START_OUTSIDE },
   },
   {
     name: 'POST /api/workbench/sign refuses a port out of range',
@@ -1085,8 +1105,8 @@ contractSuite('file, diff, upload and profile groups', [
     path: '/api/workbench/serve/not-a-token/index.html',
     expect: {
       status: 403,
-      headers: { ...JSON_TYPE, 'content-security-policy': /^sandbox allow-scripts / },
-      schema: z.object({ error: z.string(), code: z.string() }).strict(),
+      headers: { ...PROBLEM_TYPE, 'content-security-policy': /^sandbox allow-scripts / },
+      schema: z.object({ code: z.literal('forbidden'), detail: z.string() }).loose(),
     },
   },
   {
@@ -1233,12 +1253,16 @@ describe('contract: tokens, stored photos and saved uploads', () => {
       [
         `/api/workbench/serve/${token}/missing.html`,
         404,
-        { error: 'File not found', code: 'NOT_FOUND' },
+        problemBody('not_found', { detail: 'That file doesn’t exist.' }),
       ],
-      [`/api/workbench/serve/${token}/css`, 404, { error: 'Not a file', code: 'NOT_A_FILE' }],
-      [`/api/workbench/serve/${token}/escape.html`, 403, OUTSIDE],
-      [`/api/workbench/serve/${token}/a%00b.html`, 400, NULL_BYTE],
-      [`/api/workbench/serve/${token}/%2e%2e%2F%2e%2e%2Fpackage.json`, 403, OUTSIDE],
+      [
+        `/api/workbench/serve/${token}/css`,
+        404,
+        problemBody('not_found', { detail: 'That path is a folder, not a file.' }),
+      ],
+      [`/api/workbench/serve/${token}/escape.html`, 403, SERVE_OUTSIDE],
+      [`/api/workbench/serve/${token}/a%00b.html`, 400, PATH_NUL],
+      [`/api/workbench/serve/${token}/%2e%2e%2F%2e%2e%2Fpackage.json`, 403, SERVE_OUTSIDE],
     ];
     for (const [target, status, body] of cases) {
       const res = await call(base, 'GET', target);

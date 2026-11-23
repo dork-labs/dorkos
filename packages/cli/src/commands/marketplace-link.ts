@@ -274,7 +274,7 @@ export async function runMarketplaceLink(args: MarketplaceLinkArgs): Promise<num
     }
     return 0;
   } catch (err) {
-    if (err instanceof ApiError && err.body.code === 'dev_link_changed') {
+    if (err instanceof ApiError && err.body.reason === 'dev_link_changed') {
       console.error(
         'Nothing was linked. The folder changed since you checked it. Run the command again.'
       );

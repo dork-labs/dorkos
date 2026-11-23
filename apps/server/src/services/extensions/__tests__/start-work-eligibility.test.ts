@@ -137,12 +137,15 @@ describe('starting work where no account may work', () => {
     expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(0);
   });
 
-  it('refuses api.startWork’s route with 409 account_not_allowed_here, and launches nothing', async () => {
+  it('refuses api.startWork’s route with 409 conflict (account_not_allowed_here), and launches nothing', async () => {
     const res = await request(server).post('/api/extensions/flow/start-work').send(INPUT);
 
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('account_not_allowed_here');
-    expect(res.body.error).toMatch(SENTENCE);
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body).toMatchObject({ code: 'conflict', reason: 'account_not_allowed_here' });
+    // A fixed sentence: the service's own words name the project, so they stay in the log.
+    expect(res.body.detail).toMatch(/^That account can’t be used in this pr/);
+    expect(res.body.detail).not.toMatch(SENTENCE);
     expect(launches).toHaveLength(0);
     expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(0);
   });

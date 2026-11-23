@@ -519,7 +519,7 @@ describe('Marketplace Routes', () => {
         .send({ name: 'dup', source: 'https://example.com/two' });
 
       expect(res.status).toBe(409);
-      expect(res.body.error).toBeTruthy();
+      expect(res.body.detail).toBeTruthy();
     });
 
     it('returns 400 for invalid body', async () => {
@@ -536,8 +536,9 @@ describe('Marketplace Routes', () => {
       expect(res.status).toBe(400);
       // The whole point of the refusal is that the person reading it learns
       // which addresses do work — not just that this one did not.
-      expect(res.body.error).toMatch(/isn't one DorkOS can fetch a marketplace from/);
-      expect(res.body.error).toMatch(/https:\/\//);
+      expect(res.body.detail).toBe(
+        "DorkOS can't fetch from that address. Use an https:// or file:// address."
+      );
 
       const listRes = await request(fixtureServer).get('/api/marketplace/sources');
       const names = listRes.body.sources.map((s: { name: string }) => s.name);
@@ -618,7 +619,7 @@ describe('Marketplace Routes', () => {
         .send({ name: 'x/..', source: 'https://example.com/m' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/letters, numbers, dots, dashes and underscores/);
+      expect(res.body.detail).toMatch(/letters, numbers, dots, dashes and underscores/);
       expect(fetcher.fetchMarketplaceJson).not.toHaveBeenCalled();
       const list = await request(fixtureServer).get('/api/marketplace/sources');
       expect(list.body.sources.map((s: { name: string }) => s.name)).not.toContain('x/..');
@@ -787,7 +788,9 @@ describe('Marketplace Routes', () => {
         const res = await request(fixtureServer).post('/api/marketplace/sources/gone/refresh');
 
         expect(res.status).toBe(502);
-        expect(res.body.error).toBe("there's no marketplace listing at that address");
+        expect(res.body.detail).toBe(
+          "Couldn't fetch that source's listing, and none is saved. Try again."
+        );
       });
 
       it('gives up after the marketplace timeout and still saves the source', async () => {
@@ -1339,8 +1342,8 @@ describe('Marketplace Routes', () => {
       const res = await request(fixtureServer).post('/api/marketplace/cache/prune').send({});
 
       expect(res.status).toBe(503);
-      expect(res.body.error).toMatch(/nothing was removed/);
-      expect(res.body.error).not.toContain(dorkHome);
+      expect(res.body.detail).toMatch(/Nothing was removed/);
+      expect(res.body.detail).not.toContain(dorkHome);
       const statusRes = await request(fixtureServer).get('/api/marketplace/cache');
       expect(statusRes.body.packages).toBe(1);
     });
@@ -1679,7 +1682,9 @@ describe('Marketplace Routes', () => {
       const res = await request(fixtureServer).get('/api/marketplace/packages/sample-plugin');
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/isn't one DorkOS can fetch a marketplace from/);
+      expect(res.body.detail).toBe(
+        "DorkOS can't fetch from that address. Use an https:// or file:// address."
+      );
       // The hostile address is never echoed back to the caller.
       expect(JSON.stringify(res.body)).not.toContain('ext::');
     });
@@ -1694,7 +1699,10 @@ describe('Marketplace Routes', () => {
         .send({});
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('.dork/secrets.json');
+      expect(res.body.detail).toBe(
+        "This package ships files DorkOS can't install. Nothing was written."
+      );
+      expect(JSON.stringify(res.body)).not.toContain('.dork/secrets.json');
     });
 
     it('returns the preview shape on success', async () => {
@@ -1766,7 +1774,7 @@ describe('Marketplace Routes', () => {
         .send({});
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('Bad Name');
+      expect(res.body.detail).toBe("That package or marketplace name can't be used. Pick another.");
     });
   });
 
@@ -2083,9 +2091,8 @@ describe('Marketplace Routes', () => {
 
     it('returns 400 and the refusal sentence when the address is not one we install from (DOR-1799)', async () => {
       // A `name@<address>` install spec the pipeline refused at the git seam.
-      // The sentence goes back verbatim because it is what the CLI and the app
-      // both print — and it names the address forms that DO work, which is the
-      // whole reason it is written for a person rather than for a log.
+      // A fixed sentence that names the address forms that DO work; the
+      // error's own text stays in the log (DOR-4979).
       installer.install.mockRejectedValue(
         new UnsupportedSourceUrlError(
           "ext::sh -c 'id > /tmp/pwned'",
@@ -2098,7 +2105,9 @@ describe('Marketplace Routes', () => {
         .send({ source: "ext::sh -c 'id > /tmp/pwned'" });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe(UNSUPPORTED_GIT_REMOTE_MESSAGE);
+      expect(res.body.detail).toBe(
+        "DorkOS can't fetch from that address. Use an https:// or file:// address."
+      );
       // The hostile address is never echoed back to the caller.
       expect(JSON.stringify(res.body)).not.toContain('ext::');
     });
@@ -2379,11 +2388,12 @@ describe('Marketplace Routes', () => {
         .send({ name: 'attacker', source: 'https://attacker.example/marketplace' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('operator_only_marketplace_source');
-      expect(res.body.error).toBe('Only the person running DorkOS can add a package source');
+      expect(res.headers['content-type']).toBe('application/problem+json');
+      expect(res.body.code).toBe('operator_only');
       // Legible to a model: it must learn to ask the person, not to retry.
-      expect(res.body.message).toContain('Marketplace sources page');
-      expect(res.body.message).toContain('Retrying will not help');
+      expect(res.body.detail).toBe(
+        "DorkOS added nothing. Package sources are the person's to choose. Ask them; retrying won't help."
+      );
 
       expect(await listSourceNames()).not.toContain('attacker');
     });
@@ -2397,9 +2407,8 @@ describe('Marketplace Routes', () => {
       const res = await request(fixtureServer).delete('/api/marketplace/sources/keeper');
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('operator_only_marketplace_source');
-      expect(res.body.error).toBe('Only the person running DorkOS can remove a package source');
-      expect(res.body.message).toContain('Marketplace sources page');
+      expect(res.body.code).toBe('operator_only');
+      expect(res.body.detail).toContain('DorkOS removed nothing.');
 
       expect(await listSourceNames()).toContain('keeper');
     });
@@ -2413,8 +2422,8 @@ describe('Marketplace Routes', () => {
       const res = await request(fixtureServer).post('/api/marketplace/sources').send({ name: '' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('operator_only_marketplace_source');
-      expect(res.body.details).toBeUndefined();
+      expect(res.body.code).toBe('operator_only');
+      expect(res.body.issues).toBeUndefined();
     });
 
     it('lets the person in the cockpit add and then remove a source', async () => {
@@ -2444,10 +2453,10 @@ describe('Marketplace Routes', () => {
         .post('/api/marketplace/sources')
         .send({ name: 'from-cli', source: 'https://example.com/from-cli' });
       expect(refused.status).toBe(403);
-      expect(refused.body).toEqual({
-        error:
-          'Adding a marketplace needs you signed in. In the DorkOS app, open Marketplace sources and click Add marketplace source.',
-        code: 'marketplace_source_needs_app',
+      expect(refused.body).toMatchObject({
+        status: 403,
+        code: 'person_only',
+        detail: "Adding a source needs you signed in. Add it in the app's Marketplace sources.",
       });
       expect(await listSourceNames()).not.toContain('from-cli');
 
@@ -2791,7 +2800,7 @@ describe('Marketplace Routes', () => {
         .send({});
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/package name/i);
+      expect(res.body.detail).toMatch(/package or marketplace name/);
       expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
       expect(onPluginsChanged).not.toHaveBeenCalled();
     });
@@ -2804,7 +2813,7 @@ describe('Marketplace Routes', () => {
         .send({});
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toContain('missing-pkg');
+      expect(res.body.detail).toBe("That package isn't installed here.");
       expect(onPluginsChanged).not.toHaveBeenCalled();
     });
   });
@@ -2826,7 +2835,7 @@ describe('Marketplace Routes', () => {
         .send({});
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Package not installed: ghost-plugin');
+      expect(res.body.detail).toBe("Some of those packages aren't installed here.");
       expect(updateFlow.run).not.toHaveBeenCalled();
     });
 
@@ -2915,25 +2924,46 @@ describe('Marketplace Routes', () => {
       expect(onPluginsChanged).not.toHaveBeenCalled();
     });
 
-    it("answers git's own failures with honest statuses and plain messages, not a 500", async () => {
+    it("answers git's own failures with honest statuses and fixed sentences, not a 500", async () => {
       // Purpose: a missing branch or commit is a not-found and an unreachable
-      // or failed fetch is a bad gateway; each message already says what went
-      // wrong in words, so it goes back as-is.
+      // or failed fetch is a bad gateway. Git's own words name the remote, so
+      // they stay in the log; the caller gets a fixed sentence (DOR-4979).
       const url = 'https://github.com/dork-labs/marketplace.git';
-      const cases: [Error, number][] = [
-        [new GitRefNotFoundError('release', url), 404],
-        [new GitCommitNotFoundError('a'.repeat(40), url), 404],
-        [new GitRemoteUnreachableError(url, 'connection timed out'), 502],
-        [new GitFetchError(url, 'the fetched tree did not match its commit'), 502],
+      const notFound = "That version isn't in the package's repository.";
+      const unreachable = "Couldn't reach the package's repository. Try again.";
+      const cases: [Error, number, string][] = [
+        [new GitRefNotFoundError('release', url), 404, notFound],
+        [new GitCommitNotFoundError('a'.repeat(40), url), 404, notFound],
+        [new GitRemoteUnreachableError(url, 'connection timed out'), 502, unreachable],
+        [new GitFetchError(url, 'the fetched tree did not match its commit'), 502, unreachable],
       ];
-      for (const [error, status] of cases) {
+      for (const [error, status, detail] of cases) {
         updateFlow.run.mockRejectedValueOnce(error);
         const res = await request(fixtureServer)
           .post('/api/marketplace/packages/sample-plugin/update')
           .send({});
         expect(res.status).toBe(status);
-        expect(res.body).toEqual({ error: error.message });
+        expect(res.body).toMatchObject({ status, detail });
+        expect(JSON.stringify(res.body)).not.toContain(url);
       }
+    });
+
+    it('answers a fault of its own with a fixed sentence, never the error text', async () => {
+      // Purpose: an unexpected error's message can name a path under the
+      // operator's home; it goes to the log, and the caller learns nothing of it.
+      updateFlow.run.mockRejectedValueOnce(
+        new Error('EACCES: permission denied, open /Users/someone/.dork/cache/x')
+      );
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/sample-plugin/update')
+        .send({});
+      expect(res.status).toBe(500);
+      expect(res.headers['content-type']).toBe('application/problem+json');
+      expect(res.body).toMatchObject({
+        code: 'internal_error',
+        detail: 'Something went wrong on the DorkOS side. Try again.',
+      });
+      expect(JSON.stringify(res.body)).not.toMatch(/EACCES|\/Users\/someone/);
     });
 
     it('returns the advisory check result when apply is omitted', async () => {
@@ -3251,7 +3281,7 @@ describe('Marketplace Routes', () => {
         const res = await request(fixtureServer).post('/api/marketplace/updates').send(body);
         expect(res.status).toBe(400);
         expect(res.body.code).toBe('client_outdated');
-        expect(res.body.error).toContain('Update the CLI');
+        expect(res.body.detail).toContain('npm install -g dorkos');
       }
       const perPackage = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/update')
@@ -3324,7 +3354,12 @@ describe('Marketplace Routes', () => {
         .send({ ...body, confirmationToken: first.body.confirmationToken });
 
       expect(res.status).toBe(403);
-      expect(res.body).toEqual({ status: 'declined', reason: 'not now' });
+      expect(res.headers['content-type']).toBe('application/problem+json');
+      expect(res.body).toMatchObject({
+        status: 403,
+        code: 'declined',
+        detail: 'A person said no, or the approval ended. Nothing was updated.',
+      });
       expect(updateFlow.applyPlan).not.toHaveBeenCalled();
     });
 
@@ -3421,7 +3456,7 @@ describe('Marketplace Routes', () => {
         .send({ apply: true, targets: [shown(globalRoot())] });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('batch_update_needs_approval');
+      expect(res.body.code).toBe('needs_approval');
       expect(updateFlow.planInstallations).not.toHaveBeenCalled();
       expect(installGateInputs()).toEqual([]);
       expect(approvals.listPending()).toEqual([]);
@@ -3541,7 +3576,7 @@ describe('Marketplace Routes', () => {
         expect.objectContaining({ capabilityId: 'marketplace.activate_global_plugin' }),
       ]);
       expect(missing.status).toBe(409);
-      expect(missing.body.error).toBe('nope is not held back.');
+      expect(missing.body.detail).toBe('This package has nothing to review right now.');
     });
 
     it('takes a decision only from the person, bound to what they were shown (login off)', async () => {
@@ -3595,8 +3630,8 @@ describe('Marketplace Routes', () => {
       signedInUser = { userId: 'user_cli', credential: 'api-key' };
       const byKey = await decide();
       expect(byKey.status).toBe(403);
-      expect(byKey.body.code).toBe('operator_cookie_required');
-      expect(byKey.body.error).toContain('press Review on the package');
+      expect(byKey.body.code).toBe('person_only');
+      expect(byKey.body.detail).toContain('press Review');
       expect(
         (configManager.get('harness') as { approvedHooks?: string[] } | undefined)?.approvedHooks ??
           []
@@ -3705,8 +3740,8 @@ describe('Marketplace Routes', () => {
       signedInUser = { userId: 'user_cli', credential: 'api-key' };
       const byKey = await keep({ keepKey });
       expect(byKey.status).toBe(403);
-      expect(byKey.body.code).toBe('operator_cookie_required');
-      expect(byKey.body.error).toContain('Keep these as mine');
+      expect(byKey.body.code).toBe('person_only');
+      expect(byKey.body.detail).toContain('Keep these as mine');
       expect(await unprovenOnDisk(root)).toBeDefined();
 
       // A browser session clears this bar. Keeping them then needs the install
@@ -3728,7 +3763,7 @@ describe('Marketplace Routes', () => {
       const res = await keep({ keepKey });
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('kept_files_changed');
+      expect(res.body.code).toBe('conflict');
       expect(await unprovenOnDisk(root)).toBeDefined();
     });
 

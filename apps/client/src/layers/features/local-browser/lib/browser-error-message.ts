@@ -1,3 +1,4 @@
+import { browserRefusalCode } from '@/layers/entities/local-browser';
 const MESSAGES: Record<string, string> = {
   stale_page: 'Page changed. Read it again before continuing.',
   navigation_uncertain: 'Check what happened before continuing.',
@@ -19,9 +20,9 @@ const MESSAGES: Record<string, string> = {
 };
 /** Refusals the server writes for a person, so its own words show. The fallback covers an empty one. */
 const SERVER_WORDED: Record<string, string> = {
-  local_only: 'Use DorkOS on this computer to control its browser.',
+  operator_only: 'Use DorkOS on this computer to control its browser.',
   person_only: 'Only you can do this, from DorkOS.',
-  bad_request: 'Check your browser choice and try again.',
+  invalid_request: 'Check your browser choice and try again.',
   unsupported: 'This browser can’t open here.',
 };
 const STORAGE_MESSAGES = [
@@ -29,9 +30,19 @@ const STORAGE_MESSAGES = [
   'Check folder permissions, then open the browser again.',
 ];
 
+/** The refusal to word (`browserRefusalCode`), with the server's own sentence. */
+function refusalOf(cause: unknown): { code?: string; message?: string } | null {
+  if (!cause) return null;
+  const code = browserRefusalCode(cause);
+  return {
+    ...(code === undefined ? {} : { code }),
+    message: (cause as { message?: string }).message,
+  };
+}
+
 /** Render known recovery guidance, keeping arbitrary process messages out of the app. */
 export function browserErrorMessage(cause: unknown): string {
-  const error = cause as { code?: string; message?: string } | null;
+  const error = refusalOf(cause);
   if (
     error?.code === 'busy' &&
     error.message === 'The browser is still closing. Wait before opening it again.'

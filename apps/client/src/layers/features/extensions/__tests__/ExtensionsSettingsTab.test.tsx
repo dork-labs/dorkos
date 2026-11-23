@@ -607,13 +607,13 @@ describe('ExtensionsSettingsTab', () => {
     }
 
     it("shows the server's own sentence, with nothing prefixed to it", async () => {
-      const refusal =
-        'DorkOS changed nothing. Turning an extension on or off decides which code runs ' +
-        'inside DorkOS, so it is a decision only a person makes.';
+      const refusal = 'Nothing changed. Only a person turns extensions on or off, in Settings.';
       mockRefusedToggle({
-        error: 'Only a person can change this',
-        code: 'operator_only_config',
-        message: refusal,
+        type: 'urn:dorkos:problem:operator_only',
+        title: 'Only the person at this computer can do that.',
+        status: 403,
+        code: 'operator_only',
+        detail: refusal,
       });
 
       const { headline, description } = await toggleAndCatchToast();
@@ -1430,7 +1430,13 @@ describe('what an extension can reach (DOR-2686)', () => {
             ok: false,
             status: 409,
             json: () =>
-              Promise.resolve({ error: 'This extension changed.', code: 'stale_approval' }),
+              Promise.resolve({
+                title: 'That clashes with a change made meanwhile.',
+                status: 409,
+                code: 'conflict',
+                detail: 'This extension changed.',
+                reason: 'stale_approval',
+              }),
           });
         }
         return Promise.resolve({

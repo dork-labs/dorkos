@@ -381,7 +381,7 @@ describe('useApplyUpdatesWithToast', () => {
     // act on; the refusal's code gets a sentence of its own.
     const refusal = Object.assign(
       new Error('Update them one at a time with POST /api/marketplace/packages/:name/update.'),
-      { code: 'batch_update_needs_approval', status: 403 }
+      { code: 'needs_approval', status: 403 }
     );
     await runApply([makeCheck(), FLOW], { error: refusal });
 
@@ -419,7 +419,7 @@ describe('useApplyUpdatesWithToast', () => {
     // Purpose: the refusal carries its next step, and for one package the
     // command is ready to paste.
     const refusal = Object.assign(new Error('refused'), {
-      code: 'batch_update_needs_approval',
+      code: 'needs_approval',
       status: 403,
     });
     await runApply([makeCheck()], { error: refusal });

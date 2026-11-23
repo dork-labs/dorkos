@@ -332,10 +332,10 @@ describe('contract: the person-only routes at this computer, with an owner', () 
       );
       const res = await send(add, headers);
       expect(res.status).toBe(403);
-      expect(res.json).toEqual({
-        error:
-          'Adding a marketplace needs you signed in. In the DorkOS app, open Marketplace sources and click Add marketplace source.',
-        code: 'marketplace_source_needs_app',
+      expect(res.json).toMatchObject({
+        status: 403,
+        code: 'person_only',
+        detail: "Adding a source needs you signed in. Add it in the app's Marketplace sources.",
       });
     });
 
@@ -343,7 +343,7 @@ describe('contract: the person-only routes at this computer, with an owner', () 
       const asked = await send(add, { origin: server!.baseUrl, 'x-client-id': 'window-1' });
       expect(asked.json.code).toBe(PERSON_SESSION_REQUIRED_CODE);
       const owner = await send(add, { origin: server!.baseUrl, ...person });
-      expect(owner.json.code).not.toBe('marketplace_source_needs_app');
+      expect(owner.json.code).not.toBe('person_only');
       expect(owner.json.code).not.toBe(PERSON_SESSION_REQUIRED_CODE);
     });
   });

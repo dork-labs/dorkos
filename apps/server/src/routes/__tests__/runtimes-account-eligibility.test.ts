@@ -307,7 +307,7 @@ describe('PUT /api/runtimes/claude-code/project-accounts', () => {
       .set('x-dorkos-agent', 'agent-token-abc')
       .send({ project: dotted, allow: ['work'] });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('operator_only_config');
+    expect(res.body.code).toBe('operator_only');
     expect(state.sets).toBe(0);
     expect(claudeCode().projectAccounts).toEqual({});
     expect(emit).not.toHaveBeenCalled();
@@ -399,7 +399,7 @@ describe('PUT /api/runtimes/claude-code/accounts/:id/only-projects', () => {
       .set('x-dorkos-agent', 'agent-token-abc')
       .send({ projects: [other] });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('operator_only_config');
+    expect(res.body.code).toBe('operator_only');
     expect(state.sets).toBe(0);
     expect(claudeCode().defaultAccountOnlyProjects).toBeNull();
     expect(emit).not.toHaveBeenCalled();
@@ -491,8 +491,9 @@ describe('PUT /api/runtimes/claude-code/accounts/:id/no-auto-move', () => {
       .set('x-dorkos-agent', 'agent-token-abc')
       .send({ noAutoMove: true });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('operator_only_config');
-    expect(res.body.error).toBe('Only a person can choose whether agents move here automatically.');
+    expect(res.body.code).toBe('operator_only');
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body.detail).toBeTruthy();
     expect(state.sets).toBe(0);
     expect(rows()[0]).not.toHaveProperty('noAutoMove');
     expect(emit).not.toHaveBeenCalled();

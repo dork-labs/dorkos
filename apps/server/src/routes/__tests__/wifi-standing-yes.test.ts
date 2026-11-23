@@ -131,7 +131,7 @@ describe("an extension's next-time offer", () => {
       .post(`/api/extension-decisions/${DECISION_ID}/offer`)
       .send({ accept: true });
     expect(yes.status).toBe(403);
-    expect(yes.body.code).toBe(NOT_FROM_WIFI);
+    expect(yes.body.code).toBe('not_from_wifi');
     expect(inbox.answerOffer).not.toHaveBeenCalled();
     const no = await request(app('wifi'))
       .post(`/api/extension-decisions/${DECISION_ID}/offer`)

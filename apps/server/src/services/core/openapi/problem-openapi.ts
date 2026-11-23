@@ -31,6 +31,19 @@ const CHAIN_RESPONSES = [
 ] as const;
 
 /**
+ * One route's own error answer in the API document: a problem document, with
+ * what this route means by it. Use it in a `registerPath` call's `responses`
+ * for every error status the route itself sends; point at a chain answer
+ * (`{ $ref: '#/components/responses/ValidationProblem' }`) when it is one.
+ *
+ * @param description - What this answer means on this route, naming its code.
+ * @returns The response object.
+ */
+export function problemResponse(description: string) {
+  return { description, content: { [PROBLEM_CONTENT_TYPE]: { schema: ProblemSchema } } };
+}
+
+/**
  * Register the `Problem` schema, its code list and the chain's own answers.
  *
  * @param registry - The server's OpenAPI registry.

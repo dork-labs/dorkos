@@ -144,6 +144,8 @@ const DEAD_TOKEN_STATES: DeadTokenState[] = ['fabricated', 'revoked', 'expired']
 
 /** The code every room seam now answers a token it cannot verify with. */
 const REFUSAL_CODE = 'AGENT_IDENTITY_UNVERIFIED';
+/** The same refusal over HTTP: a problem document's code. */
+const HTTP_REFUSAL_CODE = 'agent_identity_unverified';
 
 const ANA_PATH = '/agents/ana';
 
@@ -308,7 +310,7 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
       // Either this seam's own code, or none because the tier gate answered
       // first with its `denied` payload. Asserting the value itself rather than
       // a ternary over it — the ternary was a tautology that could not fail.
-      expect([REFUSAL_CODE, undefined]).toContain(refused.body.code);
+      expect([HTTP_REFUSAL_CODE, undefined]).toContain(refused.body.code);
       expect(refused.body.posted).toBeUndefined();
       // The half that matters: nothing was written under anybody's name.
       expect(entryCount()).toBe(1);
@@ -338,7 +340,7 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
           .send({ roomId, limit: 5 });
 
         expect(refused.status).toBe(400);
-        expect(refused.body.code).toBe(REFUSAL_CODE);
+        expect(refused.body.code).toBe(HTTP_REFUSAL_CODE);
         expect(refused.body).not.toHaveProperty('entries');
         expect(JSON.stringify(refused.body)).not.toContain('a private note');
       }

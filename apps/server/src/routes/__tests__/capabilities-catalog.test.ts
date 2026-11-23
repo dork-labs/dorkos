@@ -170,6 +170,10 @@ describe('GET /api/capabilities/catalog', () => {
       `/api/capabilities/catalog?cursor=${bad}`
     );
     expect(res.status).toBe(400);
-    expect(String(res.body.error)).toContain('cursor');
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body.code).toBe('invalid_request');
+    expect(res.body.detail).toBe(
+      'That cursor isn’t one DorkOS gave out. Use the last page’s nextCursor.'
+    );
   });
 });

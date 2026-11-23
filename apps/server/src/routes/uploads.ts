@@ -1,5 +1,5 @@
 import path from 'path';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { uploadHandler } from '../services/core/upload-handler.js';
 import { configManager } from '../services/core/config-manager.js';
@@ -10,8 +10,21 @@ import { sendFileFromRoot } from '../http/send-file.js';
 import { isPassiveMedia, MEDIA_CONTENT_TYPES } from '../lib/file-route-guards.js';
 import { parseUploads, type UploadedFile } from '../http/uploads.js';
 import { uploadRefusalProblem } from '../http/problems/upload-refusal.js';
+import { problem } from '@dorkos/http-kit';
 
 const router = new Hono<ApiEnv>();
+
+/** The answer for a request with no `cwd` to find the uploads folder in. */
+const missingCwd = (c: Context<ApiEnv>) =>
+  problem(c, 'invalid_request', { detail: 'Send `cwd`: the chat’s folder.' });
+
+/** The answer for a folder the boundary refused: a NUL byte is a bad path, else a refusal. */
+const boundaryRefusal = (c: Context<ApiEnv>, err: BoundaryError) =>
+  err.code === 'NULL_BYTE'
+    ? problem(c, 'invalid_request', { detail: 'That path has a character paths can’t hold.' })
+    : problem(c, 'outside_boundary', {
+        detail: 'That folder is outside the folders DorkOS may use.',
+      });
 
 /**
  * Upload files to a session's working directory for agent access.
@@ -25,7 +38,7 @@ router.post('/', async (c) => {
   try {
     const cwd = readQuery(c).cwd;
     if (!cwd || typeof cwd !== 'string') {
-      return c.json({ error: 'Missing required parameter: cwd' }, 400);
+      return missingCwd(c);
     }
 
     const validatedCwd = await validateBoundary(cwd);
@@ -41,7 +54,7 @@ router.post('/', async (c) => {
     }
 
     if (files.length === 0) {
-      return c.json({ error: 'No files provided' }, 400);
+      return problem(c, 'invalid_request', { detail: 'Attach at least one file in `files`.' });
     }
 
     return c.json({
@@ -54,11 +67,9 @@ router.post('/', async (c) => {
       })),
     });
   } catch (err) {
-    if (err instanceof BoundaryError) {
-      return c.json({ error: err.message, code: err.code }, 403);
-    }
+    if (err instanceof BoundaryError) return boundaryRefusal(c, err);
     logger.error('[uploads] POST / failed', { err });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error', { detail: 'Couldn’t save the upload. Try again.' });
   }
 });
 
@@ -73,7 +84,7 @@ router.get('/:filename', async (c) => {
   try {
     const cwd = readQuery(c).cwd;
     if (!cwd || typeof cwd !== 'string') {
-      return c.json({ error: 'Missing required parameter: cwd' }, 400);
+      return missingCwd(c);
     }
 
     const validatedCwd = await validateBoundary(cwd);
@@ -85,7 +96,8 @@ router.get('/:filename', async (c) => {
     if (!(type && isPassiveMedia(type))) downloadOnly(c.env.outgoing);
     const sent = await sendFileFromRoot(c, uploadHandler.getUploadDir(validatedCwd), filename);
     if (sent.kind === 'sent') return sent.response;
-    if (sent.kind === 'outside') return c.json({ error: 'Access denied' }, 403);
+    if (sent.kind === 'outside')
+      return problem(c, 'outside_boundary', { detail: 'That file is outside the uploads folder.' });
     // `send` reports not-found via err.status (404). err.code is only 'ENOENT'
     // when the parent dir exists, so check both to stay robust.
     const status = sent.error.status === 404 || sent.error.code === 'ENOENT' ? 404 : 500;
@@ -93,15 +105,18 @@ router.get('/:filename', async (c) => {
     // end) is the caller's, not the server's.
     const refused = sent.error.status;
     if (status === 500 && refused && refused >= 400 && refused < 500) {
-      return c.json({ error: 'Not a file that can be sent' }, refused as 400);
+      return problem(c, 'invalid_request', {
+        detail: 'That file can’t be sent as asked.',
+        status: refused as 400,
+      });
     }
-    return c.json({ error: status === 404 ? 'File not found' : 'Internal error' }, status);
+    return status === 404
+      ? problem(c, 'not_found', { detail: 'That upload doesn’t exist.' })
+      : problem(c, 'internal_error', { detail: 'Couldn’t send that upload. Try again.' });
   } catch (err) {
-    if (err instanceof BoundaryError) {
-      return c.json({ error: err.message, code: err.code }, 403);
-    }
+    if (err instanceof BoundaryError) return boundaryRefusal(c, err);
     logger.error('[uploads] GET /:filename failed', { err });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error', { detail: 'Couldn’t send that upload. Try again.' });
   }
 });
 

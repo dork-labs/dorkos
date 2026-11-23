@@ -168,7 +168,7 @@ describe('trusted sources', () => {
       .post('/api/extensions/trusted-sources')
       .send({ source: 'someone/else' });
     expect(unproven.status).toBe(409);
-    expect(unproven.body.code).toBe('unproven_source');
+    expect(unproven.body).toMatchObject({ code: 'conflict', reason: 'unproven_source' });
 
     const junk = await request(fixtureServer)
       .post('/api/extensions/trusted-sources')
@@ -189,7 +189,8 @@ describe('trusted sources', () => {
           .set('x-dorkos-agent', 'agent-token')
           .send({ source: SOURCE });
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('trusted_source_person_only');
+        expect(res.headers['content-type']).toBe('application/problem+json');
+        expect(res.body.code).toBe('person_only');
       }
       expect(manager.trustSource).not.toHaveBeenCalled();
       expect(manager.untrustSource).not.toHaveBeenCalled();

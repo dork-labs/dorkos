@@ -19,8 +19,7 @@ import { runFrontDoorWrite } from './front-door-step-up.js';
 
 /** What the person bar says when anything but a person tries to change a rule. */
 export const ACCOUNT_RULES_BAR: PersonBarCopy = {
-  error: 'Only a person can change where an account may be used.',
-  code: 'operator_only_config',
+  code: 'operator_only',
   subject: 'where each Claude account may be used',
   crossSite: (origin) =>
     `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
@@ -33,8 +32,7 @@ export const ACCOUNT_RULES_BAR: PersonBarCopy = {
 
 /** What the person bar says when anything but a person flips an account's automatic-move switch. */
 export const NO_AUTO_MOVE_BAR: PersonBarCopy = {
-  error: 'Only a person can choose whether agents move here automatically.',
-  code: 'operator_only_config',
+  code: 'operator_only',
   subject: 'whether agents move to each Claude account automatically',
   crossSite: (origin) =>
     `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +

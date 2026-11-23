@@ -83,7 +83,7 @@ import { checkClaudeLaunchAccount } from '../services/runtimes/claude-code/launc
 import { projectRegistry } from '../services/projects/project-registry.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
@@ -223,7 +223,7 @@ function refuseIfNotAPerson(
   copy: PersonBarCopy = ACCOUNT_RULES_BAR
 ): Response | undefined {
   const refusal = assessPerson(caller, copy);
-  return refusal ? c.json(refusal.body, refusal.status as ContentfulStatusCode) : undefined;
+  return refusal ? sendProblem(c, refusal.body) : undefined;
 }
 
 /**

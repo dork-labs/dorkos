@@ -56,11 +56,16 @@ export interface ExtensionDecisionsState {
   isError: boolean;
 }
 
+/** A refused answer: the problem's code, and its finer `reason` (`stale_decision`). */
+type DecisionFailure = Error & { code?: string; reason?: string };
+
 /** A failed request's own sentence, or the status when it sent none. */
-async function failureOf(res: Response): Promise<Error & { code?: string }> {
+async function failureOf(res: Response): Promise<DecisionFailure> {
   const body = await readResponseError(res, `The server answered ${res.status}`);
-  const error: Error & { code?: string } = new Error(body.message);
+  const error: DecisionFailure = new Error(body.message);
   if (body.code) error.code = body.code;
+  const reason = (body.body as { reason?: unknown } | null | undefined)?.reason;
+  if (typeof reason === 'string') error.reason = reason;
   return error;
 }
 
@@ -251,7 +256,7 @@ export function useExtensionDecisionActions(): ExtensionDecisionActions {
           return null;
         }
         // A question that changed is not a failure to shout about.
-        if (err.code === DECISION_STALE_CODE) toast(err.message);
+        if (err.reason === DECISION_STALE_CODE) toast(err.message);
         else toast.error(err.message);
         return null;
       }
@@ -303,13 +308,13 @@ export function useExtensionDecisionActions(): ExtensionDecisionActions {
       if (localOffers.delete(decisionId)) publishOffers();
       if (message) toast(message);
     },
-    onError: (err: Error & { code?: string }, { accept }) => {
+    onError: (err: DecisionFailure, { accept }) => {
       if (err.code === STEP_UP_REQUIRED_CODE) {
         toast(accept ? STEP_UP_NOT_ALLOWED_MESSAGE : STEP_UP_NOT_CONFIRMED_MESSAGE);
         return;
       }
       // A dismiss of an offer that already lapsed is not news.
-      if (!accept && err.code === DECISION_OFFER_GONE_CODE) return;
+      if (!accept && err.reason === DECISION_OFFER_GONE_CODE) return;
       toast.error(err.message);
     },
     onSettled: (_data, _error, { decisionId }) => {

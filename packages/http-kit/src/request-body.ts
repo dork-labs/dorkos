@@ -24,6 +24,8 @@ import bodyParser from 'body-parser';
 import type { Context, MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { HttpBindings } from '@hono/node-server';
+import { isProblem } from '@dorkos/shared/problem';
+import { sendProblem } from './problem.js';
 
 /** A Node body parser: `body-parser`'s `json`, `raw` and the like. */
 export type NodeBodyParser = (
@@ -79,7 +81,10 @@ export interface RefusedBodyRequest {
 export interface RefusedBodyAnswer {
   /** The status. */
   status: ContentfulStatusCode;
-  /** The JSON body. */
+  /**
+   * The JSON body. A problem document (`problemBody`) is sent as
+   * `application/problem+json` with its own status; anything else as JSON.
+   */
   body: object;
 }
 
@@ -141,6 +146,7 @@ export function parseRequestBody<E extends RequestBodyEnv>(
     if (failure) {
       const { method, path } = c.req;
       const answer = rule!.answerFailure!(failure.error, { method, path, outgoing });
+      if (isProblem(answer.body)) return sendProblem(c, answer.body);
       return c.json(answer.body, answer.status);
     }
     // `body-parser` leaves `body` unset when it read nothing (no body, or a

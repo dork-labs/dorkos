@@ -13,7 +13,7 @@ import {
   LocalBrowserSignInRequestSchema,
 } from '@dorkos/shared/local-browser';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { refuseUnlessAccountOwner, requirePersonAtThisComputer } from '../lib/caller-authority.js';
 import {
@@ -28,10 +28,24 @@ import {
   type LocalBrowserProfileRouteDeps,
 } from './local-browser-profiles.js';
 
+/**
+ * The browser refusals whose words name a page or a site (a page's title, the
+ * host it moved to), and the fixed sentence an answer carries instead: text a
+ * page controls never rides in a problem's `detail` (DOR-4979 review). A test
+ * fails when a new refusal builds its words from a template and is not here.
+ */
+export const PAGE_WORDED_REFUSALS: Readonly<Record<string, string>> = {
+  load_failed: 'The page didn’t load. Read the page again.',
+  site_changed: 'The page moved to another site. Check the browser, then try again.',
+};
+
+/** What a browser viewer that lost its standing is told. */
+const VIEWER_DENIED = 'Open the browser view again.';
+
 /** Refuse anything but the owner, in person, at this computer. */
 const personOnly: MiddlewareHandler<ApiEnv> = async (c, next) => {
   if (requirePersonAtThisComputer(honoRequestFacts(c)) !== undefined)
-    return c.json({ error: 'Only you can do this, from DorkOS.', code: 'person_only' }, 403);
+    return problem(c, 'person_only', { detail: 'Only you can do this, from DorkOS.' });
   return next();
 };
 
@@ -45,28 +59,28 @@ export function createLocalBrowserRoutes(
   router.use('*', async (c, next) => {
     const facts = honoRequestFacts(c);
     if (!isAtThisComputer(facts))
-      return c.json(
-        { error: 'Use DorkOS on this computer to control its browser.', code: 'local_only' },
-        403
-      );
+      return problem(c, 'operator_only', {
+        detail: 'Use DorkOS on this computer to control its browser.',
+      });
     if (refuseUnlessAccountOwner(facts) !== undefined)
-      return c.json(
-        { error: 'Only this DorkOS owner can choose its browser.', code: 'owner_only' },
-        403
-      );
+      return problem(c, 'owner_only', { detail: 'Only this DorkOS owner can choose its browser.' });
     return next();
   });
   router.onError((error, c) => {
+    // A viewer that lost its standing opens the view again; it is never told why.
     if (error instanceof BrowserViewerError)
-      return c.json({ code: 'viewer_denied', error: 'Open the browser view again.' }, 403);
+      return problem(c, 'forbidden', { detail: VIEWER_DENIED });
+    // The browser's own refusal rides as `reason`, which the app words for a person.
+    // Its words are DorkOS's own fixed sentences, except the few that name a
+    // page or site, which a page controls: those get a fixed sentence here.
     if (error instanceof LocalBrowserError)
-      return c.json({ error: error.message, code: error.code }, 409);
+      return problem(c, 'conflict', {
+        detail: PAGE_WORDED_REFUSALS[error.code] ?? error.message,
+        extensions: { reason: error.code },
+      });
     if (error instanceof z.ZodError)
-      return c.json(
-        { error: 'Check your browser choice and try again.', code: 'bad_request' },
-        400
-      );
-    return c.json({ error: 'Couldn’t use the browser. Try again.', code: 'browser_error' }, 500);
+      return problem(c, 'invalid_request', { detail: 'Check your browser choice and try again.' });
+    return problem(c, 'internal_error', { detail: 'Couldn’t use the browser. Try again.' });
   });
   const selector = (c: Context<ApiEnv>) =>
     z.string().min(1).max(256).optional().parse(c.req.query('sessionId')) ?? null;
@@ -87,7 +101,7 @@ export function createLocalBrowserRoutes(
       !id ||
       !nonce
     )
-      return c.json({ code: 'viewer_denied', error: 'Open the browser view again.' }, 403);
+      return problem(c, 'forbidden', { detail: VIEWER_DENIED });
     const selected = selector(c);
     const state = await viewers.address(person, id, nonce, selected, () =>
       service.personState(selected)

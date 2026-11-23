@@ -147,7 +147,9 @@ contractSuite('read-only and system groups', [
     path: '/api/capabilities/catalog?cursor=zzz',
     expect: {
       status: 400,
-      body: { error: 'Invalid cursor "zzz"; use the nextCursor from a previous response.' },
+      body: problemBody('invalid_request', {
+        detail: 'That cursor isn’t one DorkOS gave out. Use the last page’s nextCursor.',
+      }),
     },
   },
   {
@@ -157,7 +159,9 @@ contractSuite('read-only and system groups', [
     body: {},
     expect: {
       status: 404,
-      body: { error: 'Unknown capability: nope.nope', code: 'UNKNOWN_CAPABILITY' },
+      body: problemBody('unknown_capability', {
+        detail: 'No action has that id. List them at /api/capabilities.',
+      }),
     },
   },
 

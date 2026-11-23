@@ -124,6 +124,8 @@ if (!parsed.success) return validationProblem(c, parsed.error); // 400 invalid_r
 
 `validationProblem` writes `detail` from the first failing field ("`name`: Required.", plus "(and N more)"); pass `detail` when the route can say what to send in plainer words. Two 400 codes, two meanings: `invalid_request` is a body that was read and failed its checks; `malformed_request` is a body that could not be read at all (the chain sends it). `problem()` takes the status and title from the list; pass `status` only when this occurrence needs a different one, and `retryAfterMs` for a transient failure. `detail` is for a person: write it with the `writing-for-humans` skill, and never put a path, a stack or a secret in it.
 
+**Extra fields** a client acts on (the id of a held action, the packages that conflict, when a window ends) ride as RFC 9457 extension members: `problem(c, 'conflict', { detail, extensions: { conflicts } })`, named in camelCase. A finer reason a client branches on, where no code on the list means it, rides as the extension member `reason`, in `lower_snake` (the document routes send `reason: 'route_changed'` under `409 conflict`). An extension member never replaces a standard one.
+
 **What the chain answers for you.** An error a route throws reaches the error handler (`middleware/error-handler.ts`): a body over the limit is `413 request_too_large`, broken JSON `400 malformed_request`, a body in an encoding or charset the parser cannot read `415 unsupported_media_type`, a path outside the boundary `403 outside_boundary`, a path with a NUL byte `400 invalid_request`, and anything else `500 internal_error`. Every `detail` the chain writes is a fixed sentence: an exception's message or stack never goes on the wire, in any environment (it is logged instead). The upload refusals follow the same rule. A path no route claims under `/api` is `404 not_found`; a route that must look like such a path answers `apiNotFound(c)` (`http/unclaimed.ts`). A multipart upload the parser refused is `uploadRefusalProblem(c, err)` (`http/problems/upload-refusal.ts`).
 
 **Reading one.** Every client reads failures through `readErrorBody` in `@dorkos/shared/problem` (the web client through `shared/lib/response-error`, the CLI through `ApiError`, the desktop shell directly): `detail`, else `title`, as the message; `code` as the kind. A surface that shows the server's own sentence in place of its own copy (`serverSentence`) takes `detail` only, never the generic `title`.
@@ -243,7 +245,7 @@ The marketplace routes are mounted at `/api/marketplace` and backed by injected 
 
 A source name rides in the path or, from the app, in `?name=`: a name saved by an older DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL path (DOR-4212). Both forms run the same handler.
 
-**Error responses** use a centralised `mapErrorToStatus` helper — `400` for invalid manifests, `409` for file conflicts, `404` for missing packages/sources, `500` for unexpected failures.
+**Error responses** are problem documents from a centralised `mapErrorToProblem` helper — `400 invalid_request` for invalid manifests, `409 conflict` for file conflicts, `404 not_found` for missing packages/sources, `500 internal_error` for unexpected failures.
 
 See `contributing/marketplace-installs.md` for the full install pipeline, transaction semantics, and per-kind flow details.
 

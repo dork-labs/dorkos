@@ -5,6 +5,7 @@
  * @module features/canvas/lib/doc-work
  */
 import type { CanvasDocWorkItem } from '@dorkos/shared/canvas-doc-routes';
+import { docRefusalReason } from './doc-refusal';
 
 /** A piece of work's state as a short status word. */
 export function workStatusLabel(status: CanvasDocWorkItem['status']): string {
@@ -51,33 +52,35 @@ export function workSummary(count: number): string {
 const NOT_A_PERSON = 'Only a signed-in person can change this.';
 const STALE = 'This work changed. The list is up to date now.';
 const REFUSALS: Record<string, string> = {
-  WORK_ALREADY_REVIEWED: 'This was already run again or cleared.',
-  WORK_STILL_RUNNING: 'It may still be running. Try again once it stops.',
-  WORK_NOT_FOUND: STALE,
-  WORK_NOT_REVIEWABLE: STALE,
-  CONFIRM_REPEAT_REQUIRED: 'Confirm before running this again.',
-  GRANT_REQUIRED: 'This route is off. Allow it first.',
-  GRANT_REVOKED: 'This route is off. Allow it first.',
-  GRANT_EXPIRED: 'This route’s approval ended. Allow it again first.',
-  MANIFEST_CHANGED: 'The document’s app changed. Allow the route again.',
-  ROUTE_CHANGED: 'The route changed, so this can’t run again.',
-  INPUTS_GONE: 'Some of its events are no longer kept.',
-  ROUTE_BUSY: 'Newer work is waiting on this route.',
-  AGENT_CANNOT_DECIDE: NOT_A_PERSON,
-  REQUESTER_CANNOT_DECIDE: NOT_A_PERSON,
-  PERSON_REQUIRED: NOT_A_PERSON,
+  work_already_reviewed: 'This was already run again or cleared.',
+  work_still_running: 'It may still be running. Try again once it stops.',
+  work_not_found: STALE,
+  work_not_reviewable: STALE,
+  confirm_repeat_required: 'Confirm before running this again.',
+  grant_required: 'This route is off. Allow it first.',
+  grant_revoked: 'This route is off. Allow it first.',
+  grant_expired: 'This route’s approval ended. Allow it again first.',
+  manifest_changed: 'The document’s app changed. Allow the route again.',
+  route_changed: 'The route changed, so this can’t run again.',
+  inputs_gone: 'Some of its events are no longer kept.',
+  route_busy: 'Newer work is waiting on this route.',
+  agent_cannot_decide: NOT_A_PERSON,
+  requester_cannot_decide: NOT_A_PERSON,
+  person_required: NOT_A_PERSON,
   operator_cookie_required: NOT_A_PERSON,
+  // The app's login gate, which answers before the document routes do.
   AUTH_REQUIRED: 'Sign in to change this.',
+  unauthenticated: 'Sign in to change this.',
 };
 
 /**
  * What to tell a person when a replay or clear was refused.
  *
- * @param error - The thrown error, carrying the server's `code` when there is one.
+ * @param error - The thrown error, carrying the server's `reason` or `code` when there is one.
  */
 export function workRefusal(error: unknown): string {
-  const code = (error as { code?: unknown } | null)?.code;
-  if (typeof code === 'string' && REFUSALS[code]) return REFUSALS[code];
+  const code = docRefusalReason(error);
+  if (code !== undefined && Object.hasOwn(REFUSALS, code)) return REFUSALS[code];
   if (error instanceof TypeError) return 'Couldn’t reach DorkOS. Check your connection.';
   return 'Couldn’t change this work. Try again.';
 }

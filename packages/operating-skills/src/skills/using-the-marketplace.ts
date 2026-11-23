@@ -138,7 +138,7 @@ always checks again; if a source can't be reached it says so, and how old the
 copy still shown is. Pass that on rather than calling it refreshed.
 
 \`dorkos marketplace add\` and \`remove\` refuse you with a 403 and
-\`code: "operator_only_marketplace_source"\`. No approval unlocks it, so do not
+\`code: "operator_only"\`. No approval unlocks it, so do not
 retry or look for another route. Hand the person the line instead, then wait:
 
 \`\`\`

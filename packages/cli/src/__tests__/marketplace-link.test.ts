@@ -301,8 +301,12 @@ describe('runMarketplaceLink', () => {
     confirmMock.mockResolvedValueOnce(true);
     fetchMock.mockResolvedValueOnce(mockResponse(200, preview())).mockResolvedValueOnce(
       mockResponse(409, {
-        error: 'The folder changed after you approved it. Ask again.',
-        code: 'dev_link_changed',
+        type: 'urn:dorkos:problem:conflict',
+        title: 'That clashes with a change made meanwhile.',
+        status: 409,
+        code: 'conflict',
+        detail: 'The folder changed after you approved it. Ask again.',
+        reason: 'dev_link_changed',
       })
     );
 
@@ -331,8 +335,12 @@ describe('runMarketplaceLink', () => {
   it('prints the server refusal as it is', async () => {
     fetchMock.mockResolvedValueOnce(
       mockResponse(400, {
-        error: "That folder isn't a package.",
-        code: 'dev_link_not_a_package',
+        type: 'urn:dorkos:problem:invalid_request',
+        title: 'The request didn’t pass its checks.',
+        status: 400,
+        code: 'invalid_request',
+        detail: "That folder isn't a package.",
+        reason: 'dev_link_not_a_package',
       })
     );
 

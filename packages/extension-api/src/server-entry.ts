@@ -21,6 +21,13 @@
  *
  * @module server-entry
  */
+import {
+  PROBLEM_CODES,
+  PROBLEM_CONTENT_TYPE,
+  isProblem,
+  problemType,
+  type Problem,
+} from '@dorkos/shared/problem';
 import type { DataProviderContext } from './server-extension-api.js';
 
 /** What DorkOS answers a caller who is not a person with. */
@@ -29,8 +36,11 @@ export interface PersonRefusal {
   readonly ok: false;
   /** The HTTP status to answer with. */
   readonly status: number;
-  /** The JSON body to answer with. */
-  readonly body: { readonly error: string; readonly code: string; readonly message: string };
+  /**
+   * The problem document to answer with (RFC 9457, `application/problem+json`):
+   * `code` to branch on, `detail` to show a person.
+   */
+  readonly body: Problem;
 }
 
 /**
@@ -148,9 +158,11 @@ const UNKNOWN_CALLER: PersonRefusal = {
   ok: false,
   status: 403,
   body: {
-    error: 'Only a person can do this.',
-    code: 'extension_person_required',
-    message: 'DorkOS changed nothing. Only a person can do this. Ask them to do it in DorkOS.',
+    type: problemType('person_only'),
+    title: PROBLEM_CODES.person_only.title,
+    status: 403,
+    code: 'person_only',
+    detail: 'DorkOS changed nothing. Ask a person to do this in DorkOS.',
   },
 };
 
@@ -174,7 +186,10 @@ export function checkPerson(caller: unknown): Response | null {
   const person = (caller as { person?: unknown } | null | undefined)?.person;
   const check: PersonCheck = isPersonCheck(person) ? person : UNKNOWN_CALLER;
   if (check.ok) return null;
-  return Response.json(check.body, { status: check.status });
+  return new Response(JSON.stringify(check.body), {
+    status: check.status,
+    headers: { 'Content-Type': PROBLEM_CONTENT_TYPE },
+  });
 }
 
 /**
@@ -209,16 +224,11 @@ function isPersonCheck(value: unknown): value is PersonCheck {
   const check = value as { ok?: unknown; status?: unknown; body?: unknown };
   if (check.ok === true) return true;
   if (check.ok !== false) return false;
-  const body = check.body as { error?: unknown; code?: unknown; message?: unknown } | null;
   return (
     typeof check.status === 'number' &&
     Number.isInteger(check.status) &&
     check.status >= 400 &&
     check.status <= 599 &&
-    !!body &&
-    typeof body === 'object' &&
-    typeof body.error === 'string' &&
-    typeof body.code === 'string' &&
-    typeof body.message === 'string'
+    isProblem(check.body)
   );
 }

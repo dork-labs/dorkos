@@ -41,7 +41,7 @@ import { PermissionItem } from './PermissionPreviewSection';
 /** Where the link runs, the same two choices the install dialog offers. */
 type LinkScope = 'global' | 'agent-local';
 
-/** The refusal code for a folder that no longer reads as the card did. */
+/** The refusal `reason` for a folder that no longer reads as the card did. */
 const DEV_LINK_CHANGED = 'dev_link_changed';
 
 /** The card the server answered with, and what it was asked with. */
@@ -73,10 +73,14 @@ export interface LinkFolderDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-/** The message on an error the transport raised, and its `code`. */
-function refusalOf(err: unknown): { message: string; code?: string } {
-  const error = err as Error & { code?: string };
-  return { message: error?.message || 'Couldn’t check this folder. Try again.', code: error?.code };
+/** The message on an error the transport raised, and the dev link's own refusal (`reason`). */
+function refusalOf(err: unknown): { message: string; reason?: string } {
+  const error = err as Error & { body?: { reason?: unknown } };
+  const reason = error?.body?.reason;
+  return {
+    message: error?.message || 'Couldn’t check this folder. Try again.',
+    ...(typeof reason === 'string' ? { reason } : {}),
+  };
 }
 
 /**
@@ -191,7 +195,7 @@ export function LinkFolderDialog({ open, onOpenChange }: LinkFolderDialogProps) 
       close();
     } catch (err) {
       const refusal = refusalOf(err);
-      if (refusal.code === DEV_LINK_CHANGED) {
+      if (refusal.reason === DEV_LINK_CHANGED) {
         // The folder no longer reads as the card did: say so, and show the
         // card for what it holds now. The tick stays as the person left it.
         setChangedNotice(true);

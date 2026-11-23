@@ -486,8 +486,11 @@ export interface OperatingSkill {
  *   must act, and a room hears only started, blocked on a person, and shipped, plus
  *   an answer or a result somebody there asked for. An agent seeded at 70 would post
  *   every report and status relay into the room.
+ * - 72: errors are problem documents (DOR-4979). `using-the-marketplace` named the
+ *   refusal of `dorkos marketplace add|remove` by its old code; it is now
+ *   `operator_only`. An agent seeded at 71 would look for a code that never comes.
  */
-export const OPERATING_SKILLS_VERSION = 71;
+export const OPERATING_SKILLS_VERSION = 72;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

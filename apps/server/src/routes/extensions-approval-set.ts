@@ -13,22 +13,31 @@ import { holdExtensionPowerChange } from './extension-decision-step-up.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { refuseApprovalYesFromWifi } from '../services/core/approvals/model/approval-answer-policy.js';
 import type { RequestFacts } from '../http/request-facts.js';
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
 import { ApproveExtensionSetRequestSchema } from '@dorkos/shared/extension-approval-schemas';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import {
   approveExtensionSet,
   checkExtensionSetApproval,
   listApprovalSets,
+  type ApprovalSetRefusal,
 } from '../services/extensions/groups/extension-approval-set.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { logger } from '../lib/logger.js';
 import { broadcastExtensionReloaded } from './extensions.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+
+/**
+ * A set refused before anything ran: `409 conflict`, with the set's own reason
+ * (`stale_set`, `not_in_set`, `too_many_in_set`) as `reason`.
+ */
+function setRefused(c: Context<ApiEnv>, refusal: ApprovalSetRefusal): Response {
+  return problem(c, 'conflict', { detail: refusal.error, extensions: { reason: refusal.code } });
+}
 
 /**
  * Mount the approval-set routes onto the extensions router.
@@ -52,7 +61,7 @@ export function registerExtensionApprovalSetRoutes(
       return c.json({ sets: await listApprovalSets(extensionManager) });
     } catch (err) {
       logger.error('[Extensions] Failed to list extension sets waiting for approval', err);
-      return c.json({ error: 'Failed to list extension sets waiting for approval' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t list sets waiting. Try again.' });
     }
   });
 
@@ -65,23 +74,21 @@ export function registerExtensionApprovalSetRoutes(
 
       const body = ApproveExtensionSetRequestSchema.safeParse(readJsonBody(c));
       if (!body.success) {
-        return c.json({ error: 'Send the plugin and the extensions you were shown' }, 400);
+        return problem(c, 'invalid_request', {
+          detail: 'Send the plugin and the extensions you were shown.',
+        });
       }
 
       const checked = await checkExtensionSetApproval(extensionManager, body.data);
-      if (!checked.ok) return c.json({ error: checked.error, code: checked.code }, 409);
+      if (!checked.ok) return setRefused(c, checked);
 
       // Wi-Fi may only deny, so it hears where to answer before any batch rule.
       const wifi = refuseApprovalYesFromWifi(honoRequestFacts(c));
-      if (wifi) return c.json(wifi, 403);
+      if (wifi) return problem(c, 'not_from_wifi', { detail: wifi.error });
       if (body.data.members.length > 1 && !isAtThisComputer(honoRequestFacts(c)))
-        return c.json(
-          {
-            error: 'Confirm each request separately.',
-            code: 'APPROVALS_REQUIRE_SEPARATE_CONFIRMATION',
-          },
-          403
-        );
+        return problem(c, 'forbidden', {
+          detail: 'From another device, allow each extension on its own.',
+        });
       const run = async (facts: RequestFacts): Promise<Response> => {
         // Each member's Activity entry is written the moment it is allowed, so
         // nothing that runs is ever missing from the record (Security, Nov 8, M2).
@@ -96,7 +103,7 @@ export function registerExtensionApprovalSetRoutes(
             summary: `Allowed ${result.name} to run code inside DorkOS, with ${body.data.plugin}`,
           });
         });
-        if (!outcome.ok) return c.json({ error: outcome.error, code: outcome.code }, 409);
+        if (!outcome.ok) return setRefused(c, outcome);
 
         const allowed = outcome.results.filter((result) => result.ok);
         if (allowed.length > 0) broadcastExtensionReloaded(allowed.map((result) => result.id));
@@ -126,7 +133,7 @@ export function registerExtensionApprovalSetRoutes(
       return held ?? (await run(honoRequestFacts(c)));
     } catch (err) {
       logger.error('[Extensions] Failed to approve an extension set', err);
-      return c.json({ error: 'Failed to approve extension set' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t allow the set. Try again.' });
     }
   });
 }

@@ -135,7 +135,7 @@ describe('POST /api/extensions/:id/move-out', () => {
       .post('/api/extensions/notes/move-out')
       .set('Origin', OWN_ORIGIN);
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('not-movable');
+    expect(res.body).toMatchObject({ code: 'conflict', reason: 'not_movable' });
   });
 
   it('refuses a plugin’s copy', async () => {

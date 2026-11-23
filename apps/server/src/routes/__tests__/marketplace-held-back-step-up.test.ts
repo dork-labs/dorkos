@@ -119,9 +119,10 @@ describe('held-back package and kept files confirmation', () => {
       .call('post', '/api/marketplace/held-back/northwind-nowhere/decision', 'own-tunnel')
       .send({ decision: 'allow', effects: RUNS_NOTHING, bindsTo: 'sha256:none' });
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({
-      error: 'northwind-nowhere is not held back.',
-      code: 'not_decidable',
+    expect(res.body).toMatchObject({
+      status: 409,
+      code: 'conflict',
+      detail: "That package isn't held back as shown. Check again, then decide.",
     });
   });
 

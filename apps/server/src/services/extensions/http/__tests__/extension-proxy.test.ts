@@ -44,7 +44,12 @@ const limiter = vi.hoisted(() => ({ hits: 0, refuse: false }));
 
 vi.mock('../../../../middleware/extension-proxy-rate-limit.js', () => ({
   EXTENSION_PROXY_RATE_LIMIT_DEFAULT: 120,
-  EXTENSION_PROXY_RATE_LIMITED_BODY: { error: 'Too many requests', code: 'PROXY_RATE_LIMITED' },
+  EXTENSION_PROXY_RATE_LIMITED_BODY: {
+    type: 'urn:dorkos:problem:rate_limited',
+    title: 'Too many requests. Wait a moment, then try again.',
+    status: 429,
+    code: 'rate_limited',
+  },
   buildExtensionProxyRateLimiter: () => () => {
     limiter.hits += 1;
     return { allowed: !limiter.refuse, headers: { 'RateLimit-Limit': '120' } };
@@ -167,7 +172,7 @@ function getProxyHandler(
     });
     res.status(answer.status);
     for (const [name, value] of Object.entries(answer.headers)) res.setHeader(name, value);
-    if (answer.json !== undefined) res.json(answer.json);
+    if (answer.problem !== undefined) res.json(answer.problem);
     else res.send(answer.text);
   };
 }
@@ -400,9 +405,10 @@ describe('the extension data proxy', () => {
       await handler(makeReq(), res);
 
       expect(res._status).toBe(503);
-      expect(res._body).toEqual({
-        error: "Secret 'api_key' not configured for extension 'test-ext'",
-        hint: 'Set the secret via PUT /api/extensions/test-ext/secrets/api_key',
+      expect(res._body).toMatchObject({
+        code: 'temporarily_unavailable',
+        status: 503,
+        detail: 'Set the api_key secret for this extension in Settings.',
       });
       // fetch should not have been called
       expect(globalThis.fetch).toBe(originalFetch);
@@ -420,10 +426,9 @@ describe('the extension data proxy', () => {
       await handler(makeReq(), res);
 
       expect(res._status).toBe(502);
-      expect(res._body).toEqual({
-        error: 'Proxy request failed',
-        details: 'ECONNREFUSED',
-      });
+      expect(res._body).toMatchObject({ code: 'upstream_unavailable', status: 502 });
+      // The upstream's own error stays in the server log, never in the answer.
+      expect(JSON.stringify(res._body)).not.toContain('ECONNREFUSED');
     });
   });
 
@@ -764,7 +769,7 @@ describe('the extension data proxy', () => {
       await handler(makeReq({ params: { splat: ['..', 'admin'] } }), res);
 
       expect(res._status).toBe(400);
-      expect((res._body as { code: string }).code).toBe('PROXY_PATH_NOT_ALLOWED');
+      expect(res._body).toMatchObject({ code: 'outside_boundary', status: 400 });
       expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 
@@ -882,7 +887,7 @@ describe('the extension data proxy', () => {
       await handler(makeReq({ params: { splat: ['legacy', '..', 'admin'] } }), res);
 
       expect(res._status).toBe(400);
-      expect((res._body as { code: string }).code).toBe('PROXY_PATH_NOT_ALLOWED');
+      expect(res._body).toMatchObject({ code: 'outside_boundary', status: 400 });
       expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 

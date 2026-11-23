@@ -91,8 +91,6 @@ export const PROBLEM_CODE_LIST = [
   /**
    * Refused until a person approves. A refusal, so 403: the capability gate's
    * `approval_required` is a held request (a `202` body), never a problem.
-   * `extensions-restart` answers this code with a `409` today; it moves to
-   * `403` when DOR-4979 switches the routes.
    */
   { code: 'needs_approval', status: 403, title: 'This waits for a person to approve it.' },
   { code: 'precondition_failed', status: 412, title: 'Something changed since you last looked.' },
@@ -110,6 +108,22 @@ export const PROBLEM_CODE_LIST = [
     status: 503,
     title: 'That’s not available right now. Try again soon.',
   },
+  /** The path exists, and does not answer that HTTP method. */
+  { code: 'method_not_allowed', status: 405, title: 'That method isn’t allowed here.' },
+  /** What an install or update would bring is not what the person was shown. */
+  {
+    code: 'disclosure_changed',
+    status: 409,
+    title: 'What this installs changed since you looked.',
+  },
+  /** A person was asked, and said no. */
+  { code: 'declined', status: 403, title: 'A person said no to this.' },
+  /** A request only an older client sends; updating the client fixes it. */
+  { code: 'client_outdated', status: 400, title: 'This client is too old. Update it.' },
+  /** A remote DorkOS fetches from (a git host, a package feed) failed or didn’t answer. */
+  { code: 'upstream_unavailable', status: 502, title: 'A remote source didn’t answer. Try again.' },
+  /** Something an agent's running turn blocks: asked before that turn ended. */
+  { code: 'outside_turn', status: 403, title: 'Wait until the agent’s turn ends.' },
 ] as const satisfies readonly ProblemCodeDefinition[];
 
 /** A failure code from {@link PROBLEM_CODE_LIST}. */
@@ -235,6 +249,17 @@ export interface ErrorBodyReading {
   issues?: ProblemIssues;
   /** How long to wait before retrying, when the body says. */
   retryAfterMs?: number;
+  /**
+   * A problem's `reason` extension member: the finer refusal a route names
+   * under a broader code (`stale_approval` under `conflict`), `lower_snake`.
+   */
+  reason?: string;
+}
+
+/** A problem's `reason` extension member, when it carries a string one. */
+function problemReason(body: Problem): { reason?: string } {
+  const reason = (body as { reason?: unknown }).reason;
+  return typeof reason === 'string' ? { reason } : {};
 }
 
 /** Whether a value is a validation failure in Zod's flattened form. */
@@ -261,6 +286,7 @@ export function readErrorBody(body: unknown, fallbackMessage: string): ErrorBody
       status: body.status,
       ...(body.issues === undefined ? {} : { issues: body.issues }),
       ...(body.retryAfterMs === undefined ? {} : { retryAfterMs: body.retryAfterMs }),
+      ...problemReason(body),
     };
   }
   if (typeof body !== 'object' || body === null) return { message: fallbackMessage };
