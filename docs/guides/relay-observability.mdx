@@ -22,7 +22,7 @@ Haven't turned Relay on yet? Start with [Relay Messaging](/docs/guides/relay-mes
 
 ## The Fastest Way to Check Delivery Health
 
-Open the **Relay** tab in the DorkOS sidebar. The Delivery Metrics Dashboard there shows how many messages delivered, failed, or landed in the dead letter queue, no terminal required. For most people, that's as deep as you'll ever need to go.
+Open **Settings → Connections** and, under **Chat apps**, expand **Message history**. It shows how many messages delivered, failed, or landed in the dead letter queue, no terminal required. It appears only while Relay is on. For most people, that's as deep as you'll ever need to go.
 
 Everything below this point is deep reference: raw API calls, JSON shapes, and internals for anyone debugging a stuck message by hand.
 
@@ -124,12 +124,13 @@ For messages that fan out to multiple endpoints, the trace contains one span per
 
 #### Trace Statuses
 
-| Status      | Meaning                                                                                                        |
-| ----------- | -------------------------------------------------------------------------------------------------------------- |
-| `sent`      | Message published, delivery in progress                                                                        |
-| `delivered` | Message delivered and processed successfully                                                                   |
-| `failed`    | Subscription handler threw an error                                                                            |
-| `timeout`   | Message rejected (budget exceeded, access denied, TTL expired, no matching endpoints, or circuit breaker open) |
+| Status          | Meaning                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| `sent`          | Message published, delivery in progress                                                          |
+| `delivered`     | Message delivered and processed successfully                                                     |
+| `failed`        | Delivery failed or was refused (for example, a handler error, an access rule, or a spent budget) |
+| `timeout`       | Message expired unread in its endpoint's inbox                                                   |
+| `no_subscriber` | Nobody was listening on the subject. Nothing went wrong, and nothing needs fixing                |
 
 A healthy message moves from `sent` to `delivered`. The time between `sentAt` and `deliveredAt` is delivery latency. The time between `deliveredAt` and `processedAt` is processing latency, which includes the time the receiving side (e.g., Claude Code) takes to handle the message.
 
@@ -159,6 +160,7 @@ curl http://localhost:4242/api/relay/trace/metrics
   "totalMessages": 1542,
   "deliveredCount": 1480,
   "failedCount": 12,
+  "noSubscriberCount": 4,
   "deadLetteredCount": 50,
   "avgDeliveryLatencyMs": 45.2,
   "p50DeliveryLatencyMs": 28.6,
@@ -182,11 +184,16 @@ curl http://localhost:4242/api/relay/trace/metrics
     deliveredCount: { type: 'number', description: 'Messages successfully delivered or processed' },
     failedCount: {
       type: 'number',
-      description: 'Messages where the subscriber handler threw an error',
+      description: 'Messages whose delivery failed or was refused',
+    },
+    noSubscriberCount: {
+      type: 'number',
+      description:
+        'Messages that reached nobody because no one was listening on the subject. Counted apart from failures, because nothing went wrong',
     },
     deadLetteredCount: {
       type: 'number',
-      description: 'Messages rejected to the dead letter queue',
+      description: 'Messages in the dead letter queue from the same window',
     },
     avgDeliveryLatencyMs: {
       type: 'number | null',
@@ -243,8 +250,6 @@ A healthy bus has a high delivered-to-total ratio and low dead letter counts.
 
 <Callout type="info">
   Relay metrics cover the last 24 hours by default, not the full history of the database.
-  `budgetRejections` counters return `0` in this endpoint. They're tracked at the RelayCore level
-  but not yet aggregated into trace store metrics.
 </Callout>
 
 ## When a Message Goes Missing

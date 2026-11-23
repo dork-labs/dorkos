@@ -83,13 +83,17 @@ Under that is a list of rows. A row with a **›** opens a full page; a row with
 
 - **About**: its name and description, plus the capabilities you have tagged it with.
 - **Runs on**: which runtime it uses, which model, and how hard that model thinks. All three in one picker. If you've registered more than one Claude account, a fourth row lets you send this agent's work to one of them, so its runs bill to that account instead of your default. See [Choose an Account](/docs/guides/runtimes#choose-an-account).
-- **Personality**: eight ready-made characters and six sliders behind them. See the [Persona Injection](/docs/guides/persona) guide.
+- **Personality**: eight ready-made characters and six sliders behind them. See [Shape How Your Agent Behaves](/docs/guides/persona).
 - **Folder**: copies the agent's directory to your clipboard.
+- **Reports to**: who gets this agent's reports and the problems it can't solve alone: you, or another agent. See [Heartbeats](/docs/concepts/heartbeats#reports).
 
 ### Its work
 
 - **Chats**: every chat this agent has had, newest first, with a search box.
-- **Tasks**: its scheduled runs, and what ran recently.
+- **Schedules**: its scheduled runs, and what ran recently. See [Schedules](/docs/guides/task-scheduler).
+- **To-dos**: the things it has promised to do, and how many are overdue. Anyone on the team can read them.
+- **Work queue**: an ordered list of work for it to start, one item after another. It is off until you turn it on, and only you see it on your own agents.
+- **Heartbeat**: how and when it wakes up on its own to check in. See [Heartbeats](/docs/concepts/heartbeats).
 - **Rooms**: the channels and DMs it sits in.
 - **Activity**: everything this agent did, or had done to it, newest first, from [the record](/docs/guides/audit-trail).
 
@@ -97,14 +101,15 @@ Under that is a list of rows. A row with a **›** opens a full page; a row with
 
 - **Skills**: every skill this agent's folder holds — the ones you wrote, the ones a package brought, and the ones that only live in one tool's own folder — and, beside each, what every coding tool you run does with it: reads it, has a shared copy, is out of date, cannot see it, or needs a decision from you. When some of those files are out of date, a line at the top of the page says so and offers a **Sync now** button that writes them. If syncing would also remove anything — a link to a skill you deleted, the files a package left behind when you uninstalled it — the page names every one of those files, and why each is going, _before_ you click, and lists them again afterwards. Below the list, a panel per tool listing every agent file it cannot see — skills, rules, commands and more, which is why that count is usually bigger than the number of skills. Where a tool cannot see one, the reason is the same sentence `dorkos harness sync` prints in your terminal, so the two can never tell you different things. There is a link to browse for more. If DorkOS finds files for a tool in the folder that it is not sharing to, the page says so and gives you the one command that turns it on. The row above says how many skills there are once you have opened the page — before that it says nothing, because counting them means reading your folder and it would rather not do that every time you open a profile.
 - **Permissions**: what this agent may do on its own, what waits for your yes, and what it cannot do at all — opening and arranging rooms, installing a package, changing settings, and how often it stops to check with you while it edits files and runs commands. A row says "Same as everyone" until you set this agent differently. It changes only through this page or Settings; an edit to the agent's settings file made some other way still takes effect, and the history records it as changed outside DorkOS. See the [Permissions guide](/docs/guides/permissions).
+- **Notifications**: everything this agent has sent you, newest first. It is the same list as the bell, showing only this agent.
 - **MCP servers**: the MCP servers this agent runs. (MCP is the protocol that lets Claude call into DorkOS and other tools.) What the agent may actually do with them is decided on its Permissions page above, not here.
 - **Connections**: what accounts this agent can use, and the chat apps (like Slack or Telegram) it can reach you and be reached on. This is the same access you manage on the [Connections](/docs/connections) page, scoped to this one agent.
-- **Instructions** and **Boundaries**: the two files you write an agent's behavior into, each with the whole page to itself. Both pages link to a page named for your agent, like **What Scout knows** for an agent called Scout. It starts with what your agent can do: every area from its Permissions page, with the level it has there right now, and a link to change them. Below that is everything your agent is told, in the order the model reads it, written by the same code a real chat uses. See the [Persona Injection](/docs/guides/persona) guide.
+- **Instructions** and **Boundaries**: the two files you write an agent's behavior into, each with the whole page to itself. Both pages link to a page named for your agent, like **What Scout knows** for an agent called Scout. It starts with what your agent can do: every area from its Permissions page, with the level it has there right now, and a link to change them. Below that is everything your agent is told, in the order the model reads it, written by the same code a real chat uses. See [Shape How Your Agent Behaves](/docs/guides/persona).
+- **Memory**: the agent's own notes, which it keeps between chats. See [Agent Memory](/docs/guides/agent-memory).
 
 <Callout type="info">
-  Mesh and Relay power discovery and cross-agent routing, and Rooms — DorkOS's multi-agent channels
-  and DMs — are generally available. Test your specific multi-agent setup before leaning on it for
-  anything time-sensitive.
+  Mesh finds and lists your agents, and Rooms (DorkOS's multi-agent channels and DMs) are generally
+  available. Test your specific multi-agent setup before leaning on it for anything time-sensitive.
 </Callout>
 
 ## Pausing an Agent
