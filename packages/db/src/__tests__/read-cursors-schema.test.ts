@@ -43,26 +43,17 @@ describe('read_cursors', () => {
     expect(() => db.insert(readCursors).values(cursor()).run()).toThrow(/UNIQUE/i);
   });
 
-  it('gives two people independent cursors in the same thread', () => {
+  it.each([
+    ['two people in the same thread', { userId: 'user-priya' }],
+    ['a session and a room that share a thread id', { threadKind: 'session' as const }],
+  ])('keeps independent cursors for %s', (_, second) => {
     db.insert(readCursors).values(cursor()).run();
     db.insert(readCursors)
-      .values(cursor({ userId: 'user-priya', lastReadSeq: 3 }))
+      .values(cursor({ ...second, lastReadSeq: 3 }))
       .run();
 
     const rows = db.select().from(readCursors).all();
-    expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.lastReadSeq).sort((a, b) => a - b)).toEqual([3, 12]);
-  });
-
-  it('does not collide a session and a room that share a thread id', () => {
-    db.insert(readCursors)
-      .values(cursor({ threadId: 'shared-id' }))
-      .run();
-    db.insert(readCursors)
-      .values(cursor({ threadKind: 'session', threadId: 'shared-id', lastReadSeq: 99 }))
-      .run();
-
-    expect(db.select().from(readCursors).all()).toHaveLength(2);
   });
 
   it('refuses a thread_kind outside room | session | inbox', () => {

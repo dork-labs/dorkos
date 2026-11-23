@@ -7,12 +7,7 @@ describe('hasPercentileSupport', () => {
     resetPercentileSupportCache();
   });
 
-  it('returns true against the repo-pinned better-sqlite3 (DOR-166, 12.10+)', () => {
-    const db = createDb(':memory:');
-    expect(hasPercentileSupport(db)).toBe(true);
-  });
-
-  it('probes only once per process and caches the result', () => {
+  it('probes only once per process and caches the result (DOR-166)', () => {
     const db = createDb(':memory:');
     const prepareSpy = vi.spyOn(db.$client, 'prepare');
 

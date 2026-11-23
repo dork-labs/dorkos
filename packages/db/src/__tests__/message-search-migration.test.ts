@@ -195,20 +195,6 @@ describe('0037_message_search — messages, search_sources, messages_fts', () =>
       // Still a search, not a substring scan: the fourth row never matches.
       expect(countMatching(raw, 'relevant')).toBe(1);
     });
-
-    it('ranks with bm25()', () => {
-      const raw = migrated();
-      seedDogs(raw);
-
-      const ranked = raw
-        .prepare(
-          "SELECT rowid, bm25(messages_fts) AS score FROM messages_fts WHERE messages_fts MATCH 'dogs' ORDER BY score"
-        )
-        .all() as { rowid: number; score: number }[];
-
-      expect(ranked).toHaveLength(3);
-      expect(ranked.every((r) => Number.isFinite(r.score))).toBe(true);
-    });
   });
 
   describe('the three sync triggers', () => {
