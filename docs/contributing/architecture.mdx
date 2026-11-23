@@ -202,8 +202,8 @@ interface Transport {
   postMessage(sessionId, content, cwd?, options?) → Promise<{ sessionId: string }>
   // trigger-only (202); resolves to the canonical session id, which may
   // differ from the id passed in on session creation
-  stopTask(sessionId, taskId) → Promise<{ success: boolean; taskId: string }>
-  approveTool(sessionId, toolCallId, alwaysAllow?) → Promise<{ ok: boolean }>
+  stopTask(sessionId, taskId) → Promise<{ receipt: InterruptReceipt; taskId: string }>
+  approveTool(sessionId, toolCallId, alwaysAllow?: boolean | 'tool' | 'server') → Promise<{ ok: boolean }>
   denyTool(sessionId, toolCallId, reason?) → Promise<{ ok: boolean }>
   getCommands(refresh?)    → Promise<CommandRegistry>
   getModels(opts?)         → Promise<ModelOption[]>
@@ -343,7 +343,7 @@ The services behind those routes, grouped by domain (also not exhaustive):
       type: 'runtime',
       description: 'Reads SDK JSONL transcript files: source of truth for Claude Code chat data',
     },
-    'session/session-list-broadcaster.ts': {
+    'session/catalog/session-list-broadcaster.ts': {
       type: 'core',
       description: 'Fans every runtime chat-list stream onto the global GET /api/events feed',
     },
@@ -404,10 +404,10 @@ The services behind those routes, grouped by domain (also not exhaustive):
       type: 'extensions',
       description: 'Discovers extensions from filesystem paths and workspace directories',
     },
-    'ui-tools.ts': {
-      type: 'mcp-tools',
+    'session/browser-seat/ui-capabilities.ts': {
+      type: 'capabilities',
       description:
-        'MCP tools for agent UI control: control_ui dispatches UI commands, get_ui_state returns current UI state',
+        'The ui capability domain: control_ui drives the window (canvas, panels, browser tab), get_ui_state reports what is open, plus the browser_* preview tools',
     },
     'extension-tools.ts': {
       type: 'mcp-tools',

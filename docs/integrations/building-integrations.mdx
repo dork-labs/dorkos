@@ -28,7 +28,7 @@ The browser, phone web app, and desktop renderer use HttpTransport. Tests can in
 
 ## The Transport Interface
 
-The Transport interface (`packages/shared/src/transport.ts`) defines all client-server communication. It is large (100+ methods spanning chats, tasks, relay, mesh, and marketplace) and still evolving alongside the product, so treat it as an internal contract rather than a versioned public API: method signatures can change between releases without a deprecation cycle. All request and response types are exported from `@dorkos/shared`.
+The Transport interface (`packages/shared/src/transport.ts`) defines all client-server communication. It is large (100+ methods spanning chats, tasks, relay, mesh, and marketplace) and still evolving alongside the product, so treat it as an internal contract rather than a versioned public API: method signatures can change between releases without a deprecation cycle. All request and response types are exported from subpaths of `@dorkos/shared` (for example `@dorkos/shared/transport`); the package has no root entry, so `import ... from '@dorkos/shared'` fails.
 
 Here is the chat-and-tool slice, the part most custom clients touch first:
 
@@ -62,8 +62,10 @@ interface Transport {
   approveTool(
     sessionId: string,
     toolCallId: string,
-    alwaysAllow?: boolean
+    alwaysAllow?: boolean | 'tool' | 'server'
   ): Promise<{ ok: boolean }>;
+  // `true` saves the approval for next time. On a card that offered a whole MCP
+  // server, pass 'tool' or 'server' to say which one the person picked.
   denyTool(sessionId: string, toolCallId: string, reason?: string): Promise<{ ok: boolean }>;
   // `reason` is optional free text (max 1000 chars) handed to the agent with the
   // refusal, so it can adjust instead of retrying the same call.
@@ -220,12 +222,13 @@ class MyCustomTransport implements Transport {
 </Tab>
 
 <Tab value="React Integration">
-Inject your Transport via context:
+The DorkOS client (`apps/client`) takes its Transport from React context. `TransportProvider` lives in the client's own source, not in `@dorkos/shared`, so this works when you build on the DorkOS client code (a fork, or a new entry point inside `apps/client`):
 
 ```typescript
-import { TransportProvider } from '@dorkos/shared';
+// Inside apps/client/src
+import { TransportProvider } from '@/layers/shared/model';
 
-const transport = new MyCustomTransport();
+const transport = new MyCustomTransport('http://localhost:4242');
 
 function App() {
   return (

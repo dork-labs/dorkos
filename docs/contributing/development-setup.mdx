@@ -17,7 +17,7 @@ Get DorkOS running locally for development.
 
 - **Node.js 22.22.3 or later**
 - **pnpm 10+**
-- **A Claude API key** from [console.anthropic.com](https://console.anthropic.com/)
+- **A way to sign in to Claude**: a `claude` CLI login, or an API key from [console.anthropic.com](https://console.anthropic.com/)
 
 ## Installation
 
@@ -40,7 +40,7 @@ pnpm install
 cp .env.example .env
 ```
 
-Edit `.env` and set `ANTHROPIC_API_KEY=your-key-here`.
+If you use an API key rather than a `claude` CLI login, add `ANTHROPIC_API_KEY=your-key-here` to `.env`.
 
 </Step>
 
@@ -78,14 +78,26 @@ This starts both the server (port 6242) and the Vite dev server (port 6241). Ope
       description:
         'Run the hot-reloading dev preview (:6241) alongside the built CLI in production mode (:4242): work in one, build the other',
     },
-    'pnpm test': { type: 'command', description: 'Run all tests (Vitest, watch mode)' },
-    'pnpm test -- --run': { type: 'command', description: 'Single test run (no watch)' },
+    'pnpm test': {
+      type: 'command',
+      description: "Run every package's tests once (Vitest through Turborepo, no watch)",
+    },
+    'pnpm test -- --run': { type: 'command', description: 'Same full run, the form CI uses' },
+    'pnpm vitest run <path>': { type: 'command', description: 'Run one test file (fastest)' },
     'pnpm build': { type: 'command', description: 'Build all packages' },
     'pnpm typecheck': { type: 'command', description: 'Type-check all packages' },
     'pnpm lint': { type: 'command', description: 'ESLint across all packages' },
     'pnpm lint -- --fix': { type: 'command', description: 'Auto-fix ESLint issues' },
     'pnpm format': { type: 'command', description: 'Prettier format all files' },
     'pnpm format:check': { type: 'command', description: 'Check formatting without writing' },
+    'pnpm verify:preopen': {
+      type: 'command',
+      description: 'The lighter check to run before you open a pull request (no package tests)',
+    },
+    'pnpm verify': {
+      type: 'command',
+      description: 'The full gate: typecheck, lint and tests for what your branch changed',
+    },
   }}
 />
 
