@@ -49,7 +49,6 @@ import { createAgentsRoutes, type AgentsRouterDeps } from '../routes/agents.js';
 import { createApprovalsRoutes, type ApprovalsRouterOptions } from '../routes/approvals.js';
 import { createApiDocsRoutes } from '../routes/api-docs.js';
 import { createConnectorRoutes, type ConnectorRoutesDeps } from '../routes/connectors.js';
-import { CONNECTORS_MOUNT } from '../services/connectors/principal/program-key-routes.js';
 import { createAuditRoutes, type AuditRouterDeps } from '../routes/audit.js';
 import {
   canvasDocBodyRule,
@@ -494,7 +493,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     app.use('/api/tasks/*', askForPersonBeforeTaskWrite());
     app.route('/api/tasks', createTasksRoutes(deps.tasks));
   }
-  if (deps.connectors) app.route(CONNECTORS_MOUNT, createConnectorRoutes(deps.connectors));
+  if (deps.connectors) app.route('/api/connectors', createConnectorRoutes(deps.connectors));
   if (deps.notifications) {
     app.route('/api/notifications', createNotificationsRoutes(deps.notifications));
   }

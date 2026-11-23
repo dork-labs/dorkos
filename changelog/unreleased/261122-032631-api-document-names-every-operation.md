@@ -5,6 +5,7 @@ covers:
   - 'fix(api): a GET that pages by limit or cursor is named list (DOR-4980)'
   - 'fix(api): the hub link path is checked against a real hub gate, and pinning an id is documented (DOR-4980)'
   - 'fix(api): the hub link description passes the vocabulary gate (DOR-4980)'
+  - 'fix(api): the connectors group mounts by its literal path, so the mount census still reads it (DOR-4980)'
 ---
 
 ### Added
