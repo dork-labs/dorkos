@@ -128,9 +128,9 @@ describe('credential-free-build workflow', () => {
     // green. Change it deliberately when you add or remove a step.
     expect(
       commands.length,
-      `${WORKFLOW_REL} has ${commands.length} \`run:\` steps, expected 6. If you added or ` +
+      `${WORKFLOW_REL} has ${commands.length} \`run:\` steps, expected 8. If you added or ` +
         `removed one on purpose, update this number; if you did not, a step went missing.`
-    ).toBe(6);
+    ).toBe(8);
     const unscrubbed = commands.filter((c) => !c.startsWith(`bash ${SCRUB_REL}`));
     expect(
       unscrubbed,
@@ -138,6 +138,44 @@ describe('credential-free-build workflow', () => {
         `${unscrubbed.join(' | ')}. Each one runs in the ambient environment, so the check ` +
         `keeps passing while it silently stops proving anything about an unset variable.`
     ).toEqual([]);
+  });
+
+  it('runs the build step at most two tasks at a time (DOR-4813)', () => {
+    // Four of this repo's biggest compilers at once outgrew the runner's 16 GB
+    // and killed it mid-build (ledger 261123-005727 has the measurements). A
+    // bump back to 4 is a one-character edit that stays green until the day an
+    // affected set reaches the server, the CLI and desktop together.
+    const build = runCommands().find((c) => /\bturbo build typecheck lint\b/.test(c));
+    expect(build, `${WORKFLOW_REL} has no turbo build/typecheck/lint step`).toBeDefined();
+    const concurrency = Number(build?.match(/--concurrency=(\d+)/)?.[1] ?? NaN);
+    expect(
+      concurrency,
+      `the build step in ${WORKFLOW_REL} runs --concurrency=${concurrency}. Above 2, the server, ` +
+        `CLI and desktop compilers can run at once and exhaust the runner's memory. Raise it only ` +
+        `with the memory watch's peaks in hand, and update ledger 261123-005727.`
+    ).toBeLessThanOrEqual(2);
+  });
+
+  it('reports the runner memory last, on every run, red or green (DOR-4813)', () => {
+    // The memory watch is the proof of what killed a run, so it has to run when
+    // the build fails (`always()`), and after everything else, so its peak covers
+    // the whole job. Its start must come before the build step it measures.
+    const commands = runCommands();
+    const start = commands.findIndex((c) => /ci-memory-watch\.sh start$/.test(c));
+    const build = commands.findIndex((c) => /\bturbo build typecheck lint\b/.test(c));
+    expect(start, `${WORKFLOW_REL} never starts scripts/ci-memory-watch.sh`).toBeGreaterThan(-1);
+    expect(start, 'the memory watch starts after the build step it measures').toBeLessThan(build);
+    expect(commands.at(-1), `the last step of ${WORKFLOW_REL} must be the memory report`).toMatch(
+      /ci-memory-watch\.sh report$/
+    );
+    const reportStep = workflow.match(
+      /^\s+- name: [^\n]*\n\s+if: ([^\n]*)\n\s+run: .*ci-memory-watch\.sh report$/m
+    );
+    expect(
+      reportStep?.[1]?.trim(),
+      `the memory report in ${WORKFLOW_REL} must run with \`if: always()\`, or a killed build ` +
+        `leaves no proof behind`
+    ).toBe('always()');
   });
 
   it('runs the boot probe on both events, not only in the queue', () => {
