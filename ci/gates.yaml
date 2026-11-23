@@ -260,6 +260,16 @@ gates:
     source: .github/workflows/not-held.yml
     purpose: Fails while a PR or merge-queue entry carries the hold label, so a hold stops a merge by itself once PRs auto-merge at open (DOR-5103). Advisory until added to the ruleset.
 
+  # --- release-window.yml ---
+  - id: wf.release-window.release-window
+    source: .github/workflows/release-window.yml
+    purpose: Fails while a freeze (MERGE_FREEZE variable) excludes the PR, while a release PR is not alone in its merge group, or while the version a PR would land on is not on npm (DOR-5102). Advisory until added to the ruleset.
+
+  # --- release-window-refresh.yml ---
+  - id: wf.release-window-refresh.refresh
+    source: .github/workflows/release-window-refresh.yml
+    purpose: Not a gate; re-runs failed release-window checks on open PRs once no freeze is set and main's VERSION is on npm, since GitHub raises no event for either.
+
   # --- scripts-test.yml ---
   - id: wf.scripts-test.fixtures
     source: .github/workflows/scripts-test.yml
