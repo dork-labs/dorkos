@@ -111,9 +111,6 @@ gates:
   - id: wf.claude-code-review.review
     source: .github/workflows/claude-code-review.yml
     purpose: Automated Claude review of a PR against REVIEW.md; a red result stops merge-tail from arming, and merge-tail re-requests the review up to three times per head SHA.
-  - id: wf.claude-code-review.security-verdict
-    source: .github/workflows/claude-code-review.yml
-    purpose: Advisory; green only when the review's Security lens posted a pass verdict for the exact head (DOR-5099). Compared with the local Security review before it becomes required.
 
   # --- claude.yml ---
   - id: wf.claude.claude
@@ -252,6 +249,11 @@ gates:
   - id: wf.queue-repeat-guard.door
     source: .github/workflows/queue-repeat-guard.yml
     purpose: On every merge-queue entry, takes a PR back out when its head already failed the same required check in two queue builds, and tells the author once.
+
+  # --- security-verdict.yml ---
+  - id: wf.security-verdict.security-verdict
+    source: .github/workflows/security-verdict.yml
+    purpose: Advisory; after each Claude review run, posts a security-verdict commit status that is success only when the review's Security lens posted a pass for that exact head (DOR-5099). Compared with the local Security review before it becomes required.
 
   # --- hold-reason.yml ---
   - id: wf.hold-reason.hold-reason

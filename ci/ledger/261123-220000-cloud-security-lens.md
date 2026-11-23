@@ -5,7 +5,7 @@ kind: hygiene
 status: proposed
 actor: agent
 gates:
-  - wf.claude-code-review.security-verdict
+  - wf.security-verdict.security-verdict
 prs: []
 ratchet-release: []
 field-changes: []
@@ -24,8 +24,12 @@ its own. The whole path also stops when the laptop does.
 - **The verdict.** The reviewer posts it through `review-gh.sh security-verdict`, choosing only
   pass or fail, a Must count and categories from a fixed list. The helper writes every other byte
   of the comment, including the head SHA from the workflow, so a verdict never carries a finding.
-- **The check.** A new `security-verdict` job reads that verdict with
-  `scripts/security-verdict-check.sh`. It passes only on a bot's `pass` for this exact head.
+- **The check.** A new `security-verdict.yml` workflow runs after each review run
+  (`workflow_run`, so it is always main's copy). It reads the verdict with
+  `scripts/security-verdict-check.sh` and posts a `security-verdict` commit status, which is
+  success only on a bot's `pass` for that exact head. It is a separate workflow so that the review
+  run's own conclusion, which the review-completes SLO and the re-dispatch gate read, means what it
+  did before.
 
 **Advisory.** The local Security agent keeps reviewing. The comparison is on heads both reviewed:
 cloud verdict against Security's label, with a target of 100% agreement on Musts. Before the check

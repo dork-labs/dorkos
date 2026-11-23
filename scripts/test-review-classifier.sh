@@ -742,11 +742,7 @@ check "workflow: allowed_bots is exactly these two bots" \
 # figure, and 5 minutes covers checkout, the two `git show` materializations and
 # the action's own startup.
 max_turns_ceiling=$(sed -n "s/^ *REVIEW_MAX_TURNS_MAX: *'\([0-9]*\)'$/\1/p" "$workflow")
-# The `review` job's own timeout: the workflow has other jobs (security-verdict)
-# with timeouts of their own, so read only between `  review:` and the next job.
-job_timeout=$(awk '/^  review:$/ { in_job = 1; next }
-  in_job && /^  [a-z][a-z0-9-]*:$/ { exit }
-  in_job && /^ *timeout-minutes: *[0-9]+$/ { sub(/^ *timeout-minutes: */, ""); print; exit }' "$workflow")
+job_timeout=$(sed -n 's/^ *timeout-minutes: *\([0-9]*\)$/\1/p' "$workflow")
 check "workflow: the turn ceiling was found" yes \
   "$([ -n "$max_turns_ceiling" ] && [ -n "$job_timeout" ] && echo yes || echo no)"
 check "workflow: the job timeout covers the turn ceiling at 10s a turn" yes \
