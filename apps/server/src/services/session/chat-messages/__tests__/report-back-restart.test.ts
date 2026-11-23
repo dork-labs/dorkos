@@ -24,7 +24,7 @@ import { notifyUndeliveredReport } from '../report-undelivered.js';
 import { noteRoomTurnWords } from '../../../core/turn-power/outside-words.js';
 import type { TurnMarks } from '../../../core/turn-power/turn-marks.js';
 import { HandoffOutboxStore } from '../../../rooms/handoff/outbox/handoff-outbox-store.js';
-import { ChatReportBack, type ChatReportBackDeps } from '../chat-report-back.js';
+import { ChatReportBack, REPORT_DETAIL_MAX, type ChatReportBackDeps } from '../chat-report-back.js';
 
 const AT = '2026-11-20T12:00:00.000Z';
 const PATH = '/agents/river';
@@ -162,6 +162,25 @@ it('prunes settled reports after seven days while keeping unacknowledged notices
   outbox.reports.pruneSettled(Date.parse(AT) + 7 * 24 * 60 * 60_000);
   expect(outbox.reports.get(delivered.id)).toBeUndefined();
   for (const id of ['unacked', 'waiting', 'recent']) expect(outbox.reports.get(id)).toBeDefined();
+});
+
+it('saves a very long error already cut, so the outbox row stays small (DOR-3535)', async () => {
+  const { db, send, deps } = fixture();
+  const outbox = new HandoffOutboxStore(db);
+  const reporter = new ChatReportBack({ ...deps, holdsBackgroundWork: async () => false, outbox });
+  const failed = {
+    lifecycle: 'error',
+    limit: null,
+    lastError: { message: 'Error detail. '.repeat(20_000) },
+  } as SessionStatus;
+  await reporter.onTurnEnd('child', failed, { to: Date.parse(AT) });
+  const row = db.select().from(roomReportOutbox).get()!;
+  const saved = outbox.reports.decode(row);
+  expect(saved.detail).toHaveLength(REPORT_DETAIL_MAX);
+  expect(saved.detail!.endsWith('… (Details cut short.)')).toBe(true);
+  expect(row.payloadJson.length).toBeLessThan(20_000);
+  expect(send).toHaveBeenCalledOnce();
+  expect(send.mock.calls[0]![1].message).toContain(saved.detail);
 });
 
 it('keeps a cross-runtime spin-off report durable under the session runtime', async () => {
