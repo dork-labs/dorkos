@@ -125,6 +125,8 @@ export const agentPauseDomain: CapabilityDomain = {
       tier: 'act',
       area: null,
       areaNote: 'emergency stop: never asks',
+      // The stop button works from any device: pausing only lowers power.
+      allowFromWifi: true,
       input: AgentPauseRequestSchema,
       output: AgentPauseResultSchema,
       surfaces: {

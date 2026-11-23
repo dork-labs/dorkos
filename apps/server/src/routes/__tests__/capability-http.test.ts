@@ -50,6 +50,7 @@ import {
   createCapabilityHttpRoutes,
   mountedCapabilities,
 } from '../capability-http.js';
+import { createCapabilitiesInvokeRoutes } from '../capabilities-invoke.js';
 
 // The routes are served through the `/api` chain, whose host guard and session
 // gate read the login setting: off, as on a fresh install.
@@ -342,6 +343,98 @@ describe('agent pause, served by the mount', () => {
     ).post(`/api/agents/${SCOUT.id}/resume`);
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('CANNOT_RESUME_SELF');
+  });
+});
+
+describe('agent pause from a Wi-Fi sign-in, through both doors', () => {
+  let registry: CapabilityRegistry;
+  let pauses: AgentPauseService;
+
+  beforeEach(() => {
+    const db = createTestDb();
+    const now = new Date().toISOString();
+    db.insert(agents)
+      .values({
+        id: SCOUT.id,
+        name: 'scout',
+        runtime: 'claude-code',
+        projectPath: SCOUT.home,
+        registeredAt: now,
+        updatedAt: now,
+      })
+      .run();
+    vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
+    initAuditTrail({
+      log: new AuditLog(db),
+      accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
+    });
+    initCapabilityTierGate({ approvals: new ApprovalService(createTestDb()) });
+    pauses = new AgentPauseService({ db });
+    registry = composeRegistry([agentPauseDomain], {
+      logger: noopLogger,
+      agentPauseDeps: { pauses },
+    });
+  });
+
+  afterEach(() => {
+    resetCapabilityTierGate();
+    resetAuditTrail();
+    vi.restoreAllMocks();
+  });
+
+  /** The mount and the invoke endpoint, reached by the owner signed in over Wi-Fi. */
+  function overWifi() {
+    return target.mount(
+      honoGroupListener(
+        [
+          {
+            path: '/',
+            routes: createCapabilityHttpRoutes({
+              registry: () => registry,
+              capabilities: agentPauseDomain.capabilities,
+            }),
+          },
+          { path: '/api/capabilities', routes: createCapabilitiesInvokeRoutes(registry) },
+        ],
+        {
+          before: async (c, next) => {
+            markIngress(c.env.incoming, 'wifi');
+            c.set('user', {
+              userId: 'owner',
+              credential: 'cookie',
+              sessionId: 'wifi-sign-in',
+              route: 'wifi',
+            });
+            await next();
+          },
+        }
+      )
+    );
+  }
+
+  it('pauses at its REST path, and refuses the resume', async () => {
+    const listener = overWifi();
+    await request(listener).post(`/api/agents/${SCOUT.id}/pause`).send({}).expect(200);
+    expect(pauses.isPaused(SCOUT.id)).toBeDefined();
+    const resume = await request(target.server).post(`/api/agents/${SCOUT.id}/resume`).send({});
+    expect(resume.status).toBe(403);
+    expect(resume.body.code).toBe(NOT_FROM_WIFI);
+    expect(pauses.isPaused(SCOUT.id)).toBeDefined();
+  });
+
+  it('pauses through the invoke endpoint, and refuses the resume', async () => {
+    const listener = overWifi();
+    await request(listener)
+      .post('/api/capabilities/agent.pause/invoke')
+      .send({ agentId: SCOUT.id })
+      .expect(200);
+    expect(pauses.isPaused(SCOUT.id)).toBeDefined();
+    const resume = await request(target.server)
+      .post('/api/capabilities/agent.resume/invoke')
+      .send({ agentId: SCOUT.id });
+    expect(resume.status).toBe(403);
+    expect(resume.body.code).toBe(NOT_FROM_WIFI);
+    expect(pauses.isPaused(SCOUT.id)).toBeDefined();
   });
 });
 

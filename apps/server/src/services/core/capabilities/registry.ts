@@ -249,6 +249,13 @@ export const CANCEL_WINDOW_CAPABILITY_IDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The only capabilities that may declare `allowFromWifi`: actions that lower
+ * an agent's power, which a person on Wi-Fi must be able to take.
+ * `composeRegistry` refuses any other, so a new one is a reviewed edit here.
+ */
+export const WIFI_ALLOWED_CAPABILITY_IDS: ReadonlySet<string> = new Set(['agent.pause']);
+
+/**
  * The hand-registered MCP tools one MCP server built, reachable by the request
  * tool (`permissions.request_access`) even when a Blocked permission left them
  * out of the list the agent sees (spec `agent-permissions` D8).
@@ -608,6 +615,11 @@ export function composeRegistry(
       // declare one (see `CANCEL_WINDOW_CAPABILITY_IDS`).
       if (capability.cancelWindow && !CANCEL_WINDOW_CAPABILITY_IDS.has(id)) {
         throw new Error(`Capability registry: "${id}" may not declare a cancel window.`);
+      }
+      // Only an action that lowers an agent's power may run from Wi-Fi (see
+      // `WIFI_ALLOWED_CAPABILITY_IDS`).
+      if (capability.allowFromWifi && !WIFI_ALLOWED_CAPABILITY_IDS.has(id)) {
+        throw new Error(`Capability registry: "${id}" may not run from a Wi-Fi sign-in.`);
       }
       if (!id.startsWith(`${domain.name}.`)) {
         throw new Error(

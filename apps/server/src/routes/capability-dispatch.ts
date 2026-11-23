@@ -15,7 +15,7 @@
  * | The capability ran | the route's success status (`200` unless declared) |
  * | A person must approve first | `202`, the approval payload |
  * | The gate refused for good | `403`, the refusal payload |
- * | A Wi-Fi sign-in asked for an `act` or `destructive` one | `403` `NOT_FROM_WIFI` |
+ * | A Wi-Fi sign-in asked for an `act` or `destructive` one without `allowFromWifi` | `403` `NOT_FROM_WIFI` |
  * | The input failed the capability's schema | `400` `Validation failed` |
  * | The capability refused (`CapabilityToolError`) | {@link toolErrorStatus} of its code |
  * | Unknown id / a stopped extension's tool | `404` / `503` |
@@ -127,8 +127,9 @@ export async function dispatchCapability(
 
   const facts = honoRequestFacts(c);
   // A Wi-Fi sign-in reads through capabilities, but acts at the computer
-  // (DOR-2969): an `act` or `destructive` one is refused before it runs.
-  if (isFromWifi(facts) && capability.tier !== 'observe') {
+  // (DOR-2969): an `act` or `destructive` one is refused before it runs,
+  // unless it only lowers an agent's power (`allowFromWifi`, e.g. a pause).
+  if (isFromWifi(facts) && capability.tier !== 'observe' && !capability.allowFromWifi) {
     return c.json({ error: WIFI_ACTION_REFUSAL, code: NOT_FROM_WIFI }, 403);
   }
 
