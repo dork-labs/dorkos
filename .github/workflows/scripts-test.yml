@@ -294,6 +294,12 @@ jobs:
       - name: Reviewer shell-script fixtures
         run: bash scripts/test-review-classifier.sh
 
+      # security-verdict-check.sh reads the cloud Security lens verdict that
+      # review-gh.sh posts (DOR-5099): a bot's `pass` marker for the exact head,
+      # or red. Stubbed `gh`, bash and jq.
+      - name: Security verdict fixtures
+        run: bash scripts/test-security-verdict-check.sh
+
       - name: Git-guard hook fixtures
         run: bash scripts/test-git-guard.sh
 
@@ -326,13 +332,17 @@ jobs:
       # for 9 hours). open-pr.sh holds the rules (cap, computed labels,
       # provenance, hold only with a reason), pr-create-guard refuses a bare
       # `gh pr create`, and hold-reason-check.sh is the advisory hold-reason
-      # workflow's decision. Stubbed `gh`, throwaway git repos, node for the
-      # guard and the security-path classifier.
-      - name: Open-PR script, PR-create guard and hold-reason fixtures
+      # workflow's decision. not-held-check.sh is the not-held check (DOR-5103),
+      # which fails while `hold` is on, and release-window-check.sh is the
+      # release-window check (DOR-5102): freezes and releases. Stubbed `gh`,
+      # throwaway git repos, node for the guard and the security-path classifier.
+      - name: Open-PR script, PR-create guard, hold-reason, not-held and release-window fixtures
         run: |
           bash scripts/test-pr-create-guard.sh
           bash scripts/test-open-pr.sh
           bash scripts/test-hold-reason-check.sh
+          bash scripts/test-not-held-check.sh
+          bash scripts/test-release-window-check.sh
 
       # in-project.sh is the wrapper every working-tree hook in settings.json
       # runs through; it decides whether a hook runs at all once a session has
@@ -438,6 +448,13 @@ jobs:
       # stamped or unreadable one taken out.
       - name: Arm-door fixtures
         run: bash scripts/test-arm-door.sh
+
+      # pr-gates-check.sh runs arm-door's decision on the pull request (minus
+      # the verify-proof reason), so auto-merge can wait for the sign-offs
+      # (DOR-5107). End to end through the real arm-door.sh, qa-real-data.sh and
+      # design-ok.sh, with a stubbed `gh`.
+      - name: PR-gates fixtures
+        run: bash scripts/test-pr-gates-check.sh
 
       # QA's real-data gate (DOR-4904), shared by the arm script and arm-door:
       # a config or migration change that slips past QA, and an ordinary one

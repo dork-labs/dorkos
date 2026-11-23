@@ -14,6 +14,8 @@ supersedes: 260723-013233
 
 Accepted
 
+**Amended by** [261123-170830](261123-170830-http-api-is-a-projection-of-capabilities.md) (2026-11-23): the HTTP projection becomes a served route, not only a document entry. A capability's `http` surface carries the full route description, one generic mount serves it through `registry.invoke`, and the hand registry shrinks to zero. Nothing here is retired.
+
 ## Context
 
 ADR 260723-013233 committed to a Capability Registry subsuming phase 1's hand-registered tool tables. Phase 2 shipped it. The design questions settled during implementation: where composition happens, what handlers return, how the read-only security list is maintained, and how the static docs export relates to the live server.

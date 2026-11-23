@@ -1,0 +1,72 @@
+name: not-held
+
+# Fails while a pull request carries the `hold` label (DOR-5103).
+#
+# Part of DOR-5098: every merge gate runs in the cloud, and PRs turn on
+# auto-merge when they open. Today `hold` stops a merge only because the local
+# arm script and merge-tail refuse to arm a held PR; once PRs auto-merge, that
+# refusal is gone. This check makes `hold` a gate GitHub enforces: while it is
+# red, GitHub neither merges nor enqueues the PR, and on a merge-queue entry it
+# takes the held PR back out. Taking the label off re-runs it and the PR goes on.
+#
+# It lands advisory. Dorian adds `not-held` to the ruleset's required checks
+# (ci/required-checks.json) once it has reported on PRs and queue entries.
+#
+# The decision is scripts/not-held-check.sh (fixtures:
+# scripts/test-not-held-check.sh). It reads labels and comments through `gh api`
+# with a read-only token and checks out main's copy of the two scripts it runs,
+# never the pull request's code. hold-reason.yml is the separate advisory rule
+# that a hold must say why.
+#
+# No job-level `if:` and no path filter: a required job that is skipped reports
+# success, so every PR event and every queue entry runs it. No `concurrency:`
+# group either: a cancelled run is a cancelled check, and each run reads the
+# labels live, so the newest run is always right.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  not-held:
+    runs-on: ubuntu-latest
+    # Two GitHub reads; a minute is generous.
+    timeout-minutes: 5
+    steps:
+      # Main's copy (the queue's base on a merge group), never the PR's.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.merge_group.base_sha || github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/not-held-check.sh
+            scripts/queue-repeat-guard.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Fail while the PR is held
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+        run: |
+          if [ "$EVENT" = merge_group ]; then
+            # One merge group per queue entry; its ref names that entry's PR.
+            pr=$(bash scripts/queue-repeat-guard.sh pr-from-ref "$HEAD_REF") || {
+              echo "::error::not-held: not a merge-queue ref: $HEAD_REF"
+              exit 2
+            }
+          else
+            pr=$PR_NUMBER
+          fi
+          bash scripts/not-held-check.sh "$pr"

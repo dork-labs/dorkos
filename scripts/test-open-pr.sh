@@ -52,6 +52,7 @@ case "$1 $2" in
     echo "https://github.com/made-up/repo/pull/42"
     ;;
   "pr comment") ;;
+  "pr merge") ;;
   "pr view")
     jq -cn --arg head "$(git rev-parse HEAD)" --rawfile l "$GH_STATE.labels" \
       '{headRefOid: $head, labels: [$l | split("\n")[] | select(. != "") | {name: .}]}'
@@ -294,6 +295,62 @@ check 'an unknown flag is a usage error' 2 "$rc"
 (cd "$work" && git push -qf origin topic 2>/dev/null)
 FAKE_FAIL=create open
 check 'a failed gh pr create is exit 3' 3 "$rc"
+
+# --- auto-merge (DOR-5107) ----------------------------------------------------
+# Every case above ran against an origin with no ci/required-checks.json, so
+# none turned auto-merge on. It switches on only once main requires the three
+# gates that make it safe, and never for a draft or a hold.
+merged() { grep -q '^pr merge https://github.com/made-up/repo/pull/42 --auto$' "$GH_LOG" && echo yes || echo no; }
+set_required() { # the contexts main's ci/required-checks.json lists
+  (
+    cd "$tmp/seed" || exit 1
+    git pull -q origin main 2>/dev/null
+    mkdir -p ci
+    jq -n '{ruleset: 1, contexts: $ARGS.positional}' --args "$@" >ci/required-checks.json
+    git add -A && git commit -qm 'ci: required checks' && git push -q origin main
+  ) || { echo "could not update the fixture origin" >&2; exit 1; }
+}
+
+branch 'feat(server): x' apps/server/src/services/widgets/a.ts changelog/unreleased/261123-000000-x.md
+open
+check 'no required-checks file on main: auto-merge stays off' no "$(merged)"
+check 'and it says why' yes "$(has "$out" 'auto-merge: off: origin/main has no ci/required-checks.json')"
+
+set_required typecheck test not-held release-window
+branch 'feat(server): x' apps/server/src/services/widgets/a.ts changelog/unreleased/261123-000001-x.md
+open
+check 'main missing pr-gates: auto-merge stays off' no "$(merged)"
+check 'and it names the missing gate' yes "$(has "$out" 'does not require pr-gates yet')"
+
+set_required typecheck test not-held release-window pr-gates
+branch 'feat(server): x' apps/server/src/services/widgets/a.ts changelog/unreleased/261123-000002-x.md
+open
+check 'main requires all three gates: opens' 0 "$rc"
+check 'auto-merge is turned on, with no strategy flag' yes "$(merged)"
+check 'and it says so' yes "$(has "$out" 'auto-merge: on')"
+
+open --draft
+check 'a draft never gets auto-merge' no "$(merged)"
+check 'and it says how to turn it on later' yes "$(has "$out" 'auto-merge: off: a draft')"
+
+open --hold 'waiting on the migration plan'
+check 'a held PR never gets auto-merge' no "$(merged)"
+
+open --dry-run
+check 'a dry run only says it would turn it on' no "$(merged)"
+check 'and prints the command' yes "$(has "$out" 'would run: ')"
+check 'naming pr merge --auto' yes "$(has "$out" 'pr merge \<new\ PR\> --auto')"
+
+# The branch's own copy of the file is never what decides.
+branch 'ci: x' ci/required-checks.json
+(cd "$work" && jq -n '{ruleset: 1, contexts: ["typecheck"]}' >ci/required-checks.json &&
+  git commit -qam 'ci: drop the gates' && git push -qf origin topic 2>/dev/null)
+open
+check 'a branch that drops the gates from its own copy still gets main'\''s answer' yes "$(merged)"
+
+FAKE_FAIL=merge open
+check 'a failed auto-merge is exit 3' 3 "$rc"
+check 'and it says how to turn it on' yes "$(has "$out" 'gh pr merge --auto')"
 
 echo "open-pr fixtures: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

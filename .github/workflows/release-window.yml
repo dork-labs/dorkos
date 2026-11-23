@@ -1,0 +1,71 @@
+name: release-window
+
+# Fails while a PR may not merge because of a freeze or a release (DOR-5102).
+#
+# Part of DOR-5098: every merge gate runs in the cloud, and PRs turn on
+# auto-merge when they open. These rules used to live only in the local arm
+# script (.temp/coord/arm.sh), so they held only while one laptop armed every
+# PR. scripts/release-window-check.sh has the three rules and why:
+#   1. while the MERGE_FREEZE repository variable is set, only the PR it names
+#      may merge (it replaces .temp/coord/FREEZE);
+#   2. a release PR (one that changes VERSION) goes into the queue alone;
+#   3. no other PR merges until main's VERSION is on npm.
+#
+# It lands advisory. Dorian adds `release-window` to the ruleset's required
+# checks (ci/required-checks.json) once it has reported on PRs and queue
+# entries. Nothing re-runs a check when a freeze lifts or a publish lands, so
+# release-window-refresh.yml does that.
+#
+# Read-only token. It checks out main's copy of its scripts (the queue's base
+# on a merge group), never the pull request's code. No job-level `if:` and no
+# path filter: a required job that is skipped reports success.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  release-window:
+    runs-on: ubuntu-latest
+    # Three GitHub reads and one npm read; a minute is generous.
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.merge_group.base_sha || github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/release-window-check.sh
+            scripts/queue-repeat-guard.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Check the release window
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          MERGE_FREEZE: ${{ vars.MERGE_FREEZE }}
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        run: |
+          if [ "$EVENT" = merge_group ]; then
+            # One merge group per queue entry; its ref names that entry's PR.
+            pr=$(bash scripts/queue-repeat-guard.sh pr-from-ref "$HEAD_REF") || {
+              echo "::error::release-window: not a merge-queue ref: $HEAD_REF"
+              exit 2
+            }
+            bash scripts/release-window-check.sh group "$pr" "$BASE_SHA" "$HEAD_SHA"
+          else
+            bash scripts/release-window-check.sh pr "$PR_NUMBER"
+          fi

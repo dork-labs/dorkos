@@ -250,10 +250,35 @@ gates:
     source: .github/workflows/queue-repeat-guard.yml
     purpose: On every merge-queue entry, takes a PR back out when its head already failed the same required check in two queue builds, and tells the author once.
 
+  # --- security-verdict.yml ---
+  - id: wf.security-verdict.security-verdict
+    source: .github/workflows/security-verdict.yml
+    purpose: Advisory; after each Claude review run, posts a security-verdict commit status that is success only when the review's Security lens posted a pass for that exact head (DOR-5099). Compared with the local Security review before it becomes required.
+
+  # --- pr-gates.yml ---
+  - id: wf.pr-gates.pr-gates
+    source: .github/workflows/pr-gates.yml
+    purpose: Fails while the head lacks a sign-off arm-door would pull it for (security-reviewed after the head, qa-real-data and design-ok where needed), so auto-merge waits for them (DOR-5107). Advisory until added to the ruleset.
+
   # --- hold-reason.yml ---
   - id: wf.hold-reason.hold-reason
     source: .github/workflows/hold-reason.yml
     purpose: Advisory; flags a PR carrying the hold label with no comment starting hold, so every hold says why and who lifts it.
+
+  # --- not-held.yml ---
+  - id: wf.not-held.not-held
+    source: .github/workflows/not-held.yml
+    purpose: Fails while a PR or merge-queue entry carries the hold label, so a hold stops a merge by itself once PRs auto-merge at open (DOR-5103). Advisory until added to the ruleset.
+
+  # --- release-window.yml ---
+  - id: wf.release-window.release-window
+    source: .github/workflows/release-window.yml
+    purpose: Fails while a freeze (MERGE_FREEZE variable) excludes the PR, while a release PR is not alone in its merge group, or while the version a PR would land on is not on npm (DOR-5102). Advisory until added to the ruleset.
+
+  # --- release-window-refresh.yml ---
+  - id: wf.release-window-refresh.refresh
+    source: .github/workflows/release-window-refresh.yml
+    purpose: Not a gate; re-runs failed release-window checks on open PRs once no freeze is set and main's VERSION is on npm, since GitHub raises no event for either.
 
   # --- scripts-test.yml ---
   - id: wf.scripts-test.fixtures
