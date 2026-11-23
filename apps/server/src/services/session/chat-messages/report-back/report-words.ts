@@ -9,6 +9,13 @@
 /** The longest last message a report carries; the parent reads more with `chat_read`. */
 export const REPORT_TEXT_MAX = 6_000;
 
+/**
+ * The longest error, startup reason or question a report carries, its "…"
+ * included. A runtime's error can be any length, and a report past the send
+ * limit is refused whole, so the parent would hear nothing (DOR-3535).
+ */
+export const REPORT_DETAIL_MAX = 1_000;
+
 /** Why a report went. */
 export type ReportReason =
   'finished' | 'failed' | 'stopped' | 'limit' | 'needs-you' | 'holding' | 'never-started';
@@ -45,20 +52,30 @@ export const SUMMARY: Record<ReportNotice, string> = {
   holding: 'Still working',
 };
 
+/** A detail cut to {@link REPORT_DETAIL_MAX}, never splitting a character made of two code units. */
+function cutDetail(detail: string): string {
+  let end = REPORT_DETAIL_MAX - 1;
+  const last = detail.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${detail.slice(0, end)}…`;
+}
+
 /**
  * The report a spin-off sends its parent.
  *
  * @param reason - Why it goes.
  * @param text - The spin-off's last words.
- * @param detail - A further line, when there is one (the question it waits on).
+ * @param detail - A further line, when there is one (the error, startup reason or question).
  */
 export function composeReport(reason: ReportNotice, text: string, detail?: string): string {
   const parts = [STATUS_LINE[reason]];
-  if (detail) parts.push(detail);
+  const detailCut = detail !== undefined && detail.length > REPORT_DETAIL_MAX;
+  if (detail) parts.push(detailCut ? cutDetail(detail) : detail);
   if (text) {
     const cut = text.length > REPORT_TEXT_MAX;
     parts.push(cut ? `${text.slice(0, REPORT_TEXT_MAX)}…` : text);
     if (cut) parts.push('(Cut short. Read the rest with chat_read.)');
   }
+  if (detailCut) parts.push('Details shortened. Use chat_read to inspect the chat.');
   return parts.join('\n\n');
 }
