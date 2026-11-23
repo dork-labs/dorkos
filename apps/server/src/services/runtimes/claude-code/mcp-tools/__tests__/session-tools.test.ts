@@ -164,10 +164,7 @@ import {
   __resetAccountAdvisorForTests,
   registerAccountAdvisor,
 } from '../../../../core/usage/account-advisor.js';
-import {
-  ADVISOR_FAILED_REASON,
-  NO_ADVISOR_REASON,
-} from '../../../../core/usage/account-ranking.js';
+import { ADVISOR_FAILED_REASON } from '../../../../core/usage/account-ranking.js';
 import {
   agentLaunchCapMessage,
   AGENT_LAUNCH_MAX_LIVE,
@@ -539,9 +536,23 @@ describe('session_start', () => {
       expect(dispatchMessage).not.toHaveBeenCalled();
     });
 
-    it('an account, when no advisor is registered', async () => {
-      expect(await expectRefused({ ...BASE, account: 'work' })).toMatchObject({
-        error: NO_ADVISOR_REASON,
+    it('the main sign-in, when no advisor is registered (DOR-5033)', async () => {
+      installStore([account('work'), { ...account('main-row'), isDefault: true }]);
+      expect(await expectRefused({ ...BASE, account: 'main-row' })).toMatchObject({
+        code: 'ACCOUNT_REFUSED',
+        error: 'Agents can’t pick the main sign-in. Name another account.',
+      });
+      // `default` names the same row, and is refused the same way.
+      expect(await expectRefused({ ...BASE, account: 'default' })).toMatchObject({
+        error: 'Agents can’t pick the main sign-in. Name another account.',
+      });
+    });
+
+    it('an account a person kept agents off, when no advisor is registered', async () => {
+      installStore([account('work'), { ...account('client'), noAutoMove: true }]);
+      expect(await expectRefused({ ...BASE, account: 'client' })).toMatchObject({
+        code: 'ACCOUNT_REFUSED',
+        error: 'A person kept agents off this account.',
       });
     });
   });
@@ -710,6 +721,24 @@ describe('session_start', () => {
   it('starts in its own home, and accepts its own agentPath', async () => {
     const result = await asScout()({ ...BASE, cwd: AGENT_HOME, agentPath: AGENT_HOME });
     expect(result.isError).toBeUndefined();
+  });
+
+  it('starts on a named account with no advisor registered, by core’s own rule (DOR-5033)', async () => {
+    const result = await asScout()({ ...BASE, account: 'client' });
+    expect(payloadOf(result)).toMatchObject({ account: { id: 'client', label: 'CLIENT' } });
+    expect(vi.mocked(dispatchMessage).mock.calls[0]![0].accountHint).toBe('client');
+  });
+
+  it('still starts a session with no account when no advisor is registered', async () => {
+    const result = await asScout()(BASE);
+    expect(result.isError).toBeUndefined();
+    expect(dispatchMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts `default` on a runtime with no accounts, and sends no hint', async () => {
+    const result = await asScout()({ ...BASE, runtime: 'codex', account: 'default' });
+    expect(payloadOf(result)).toMatchObject({ runtime: 'codex', account: null });
+    expect(vi.mocked(dispatchMessage).mock.calls[0]![0].accountHint).toBeUndefined();
   });
 
   it('writes the granted mode on the settings row with the model and effort, before the send', async () => {

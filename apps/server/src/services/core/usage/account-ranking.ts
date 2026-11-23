@@ -5,9 +5,11 @@
  * {@link rankAccounts} asks the account advisor when one is registered and
  * validates its answer; without one, or when it fails, core's default ranks by
  * weekly headroom. {@link checkAccountLaunch} is the gate for an account an
- * AGENT or a RELAY message names: it needs an advisor, because routing policy
- * is the Flow extension's and nothing is spent until the operator opts in. A
- * person's own pick never goes through it.
+ * AGENT or a RELAY message names. With an advisor registered, the advisor
+ * decides. Without one, an agent's pick follows core's own rule, the one
+ * core's own automatic picks follow (DOR-5033), and a relay message's pick is
+ * refused, because anyone outside can write one. A person's own pick never
+ * goes through it.
  *
  * **Only accounts that may work in the project are ever ranked** (spec
  * `flow-multiproject` §8.4). The candidates are filtered by the account rules
@@ -18,6 +20,8 @@
  * @module services/core/usage/account-ranking
  */
 import {
+  CREDITS_ACCOUNT_ID,
+  IMPLICIT_ACCOUNT_ID,
   LEDGER_RUNTIMES,
   type AccountUsage,
   type LedgerRuntime,
@@ -113,9 +117,18 @@ export interface AccountLaunchRequest {
 /** The answer to {@link checkAccountLaunch}. */
 export type AccountLaunchDecision = { allowed: true } | { allowed: false; reason: string };
 
-/** Refusal when no advisor is registered (spec D5). */
+/** Refusal of a relay message's account when no advisor is registered (spec D6). */
 export const NO_ADVISOR_REASON =
-  'Agents can pick an account only after Flow is set up to say which accounts they may use.';
+  'A message can pick an account only when a mini app such as Flow says which accounts it may use.';
+
+/** Refusal of the runtime's main sign-in for an agent, with no advisor registered (DOR-5033). */
+const MAIN_ACCOUNT_REASON = 'Agents can’t pick the main sign-in. Name another account.';
+
+/** Refusal of an account a person kept agents off (`noAutoMove`), with no advisor registered. */
+const KEPT_OFF_REASON = 'A person kept agents off this account.';
+
+/** Refusal of DorkOS credits for an agent: only a person picks them. */
+const CREDITS_REASON = 'Only a person can pick DorkOS credits.';
 
 /** Refusal when the advisor throws, times out or answers nonsense (spec D5). */
 export const ADVISOR_FAILED_REASON = 'The account policy could not be checked.';
@@ -527,10 +540,11 @@ export function notAllowedReason(verdict: Ineligible, project: ProjectRef | null
 /**
  * Whether an agent (`session_start`) or a relay message may launch a session on
  * the account it names. Refused first when the account may not work in the
- * folder's project, with the plain sentence. Then refused with no advisor registered, refused when the
- * advisor fails, and otherwise allowed only when the advisor's `launch` ranking
- * marks the account eligible and it was not last seen signed out (refused with
- * its reason when not).
+ * folder's project, with the plain sentence. Then, with an advisor registered:
+ * refused when the advisor fails, and otherwise allowed only when the advisor's
+ * `launch` ranking marks the account eligible and it was not last seen signed
+ * out (refused with its reason when not). With no advisor registered: an
+ * agent's pick follows {@link coreAgentLaunch}; a relay message's is refused.
  *
  * @param request - The account named, where, on which runtime, and by whom.
  */
@@ -557,7 +571,13 @@ export async function checkAccountLaunch(
     },
     project
   );
-  if (advised === null) return { allowed: false, reason: NO_ADVISOR_REASON };
+  if (advised === null) {
+    // A relay payload can come from anyone outside (an A2A peer, a chat
+    // bridge), so only an advisor the operator set up may let it pick.
+    return request.caller === 'agent'
+      ? coreAgentLaunch(request.runtime, request.accountId, project)
+      : { allowed: false, reason: NO_ADVISOR_REASON };
+  }
   if (advised === 'failed') return { allowed: false, reason: ADVISOR_FAILED_REASON };
   const row = advised.accounts.find(
     (a) => a.runtime === request.runtime && a.id === request.accountId
@@ -565,5 +585,38 @@ export async function checkAccountLaunch(
   if (!row) return { allowed: false, reason: ACCOUNT_HIDDEN_REASON };
   // An agent or a relay message is not a person: a signed-out account is
   // refused with "Signed out", as any automatic pick skips it.
+  return mayAutoPick(row) ? { allowed: true } : { allowed: false, reason: row.reason };
+}
+
+/**
+ * Core's own answer to an agent naming an account when no advisor is
+ * registered (DOR-5033; spec `claude-account-fleet` D5, as amended): the rule
+ * core's own automatic picks already follow (a room seat's move, the work
+ * queue), plus the main sign-in, which an agent never picks. Allowed only for
+ * an account core ranks for the project that is not the main sign-in, not DorkOS
+ * credits, not one a person kept agents off (its "Move agents here
+ * automatically" switch), and that DorkOS may pick on its own (not out of usage,
+ * a sign-in that needs no look, not last seen signed out). Never asks an
+ * extension, so a mini app that is off or broken cannot block it.
+ *
+ * @param runtime - The session's runtime.
+ * @param accountId - The account the agent named.
+ * @param project - The folder's project, or null; the account rules already allowed it.
+ */
+function coreAgentLaunch(
+  runtime: string,
+  accountId: string,
+  project: ProjectRef | null
+): AccountLaunchDecision {
+  if (accountId === CREDITS_ACCOUNT_ID) return { allowed: false, reason: CREDITS_REASON };
+  const row = coreRanking(runtime, project).find((a) => a.id === accountId);
+  if (!row) return { allowed: false, reason: ACCOUNT_HIDDEN_REASON };
+  if (row.isDefault === true || row.id === IMPLICIT_ACCOUNT_ID) {
+    return { allowed: false, reason: MAIN_ACCOUNT_REASON };
+  }
+  if (runtime === 'claude-code' && row.usage.path !== null && isCreditsClaudeRoot(row.usage.path)) {
+    return { allowed: false, reason: CREDITS_REASON };
+  }
+  if (row.noAutoMove === true) return { allowed: false, reason: KEPT_OFF_REASON };
   return mayAutoPick(row) ? { allowed: true } : { allowed: false, reason: row.reason };
 }
