@@ -19,6 +19,7 @@ import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-powe
 import { modeRaises } from '../services/core/auth/sessions/wifi-raise-guard.js';
 import { taskReviewRevision } from '../services/tasks/approvals/person-review.js';
 import type { TaskStore } from '../services/tasks/task-store.js';
+import { problem } from '@dorkos/http-kit';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 
 /** What the confirmation sheet's refusals name. */
@@ -142,10 +143,7 @@ export function holdTaskRaise(
     run: async (confirming) => {
       const current = store.getTask(existing.id);
       if (!current || taskReviewRevision(current) !== revision)
-        return c.json(
-          { error: 'The scheduled task changed. Try again.', code: 'TASK_CHANGED' },
-          409
-        );
+        return problem(c, 'conflict', { detail: 'The scheduled task changed. Try again.' });
       return hold.run(confirming);
     },
   });

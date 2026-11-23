@@ -11,6 +11,7 @@
  * @module routes/account-eligibility-hold
  */
 import type { Context } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
@@ -61,10 +62,7 @@ export const NO_AUTO_MOVE_FAILED = 'Could not save whether agents move to this a
  * @param c - The request.
  */
 export function accountRulesChanged(c: Context<ApiEnv>): Response {
-  return c.json(
-    { error: 'Where this account may work changed. Try again.', code: 'ACCOUNT_RULES_CHANGED' },
-    409
-  );
+  return problem(c, 'conflict', { detail: 'Where this account may work changed. Try again.' });
 }
 
 /** One widening of an account rule, held. */
@@ -99,7 +97,7 @@ export function holdAccountWidening(c: Context<ApiEnv>, hold: AccountWidening): 
         return await run(who);
       } catch (err) {
         logger.error('[Runtimes] could not save an account rule', { err: String(err) });
-        return c.json({ error: failure }, 500);
+        return problem(c, 'internal_error', { detail: failure });
       }
     },
   });

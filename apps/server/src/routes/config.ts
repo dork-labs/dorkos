@@ -1,7 +1,7 @@
 import { approvalAnswerContext } from '../services/core/auth/sessions/remote-answer-device.js';
 import { Hono, type Context } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from '../services/core/config/tunnel-settings.js';
@@ -598,7 +598,9 @@ router.put('/agents/defaultAgent', (c) => {
   try {
     const { value } = readJsonBody(c, { emptyAs: {} }) as { value?: unknown };
     if (typeof value !== 'string' || !value.trim()) {
-      return c.json({ error: 'Body must include a non-empty "value" string' }, 400);
+      return problem(c, 'invalid_request', {
+        detail: 'Send the agent’s name as a non-empty `value`.',
+      });
     }
 
     // Falls back to the schema's own defaults rather than a second copy of them,
@@ -615,9 +617,16 @@ router.put('/agents/defaultAgent', (c) => {
     return c.json({ success: true, defaultAgent: value.trim() });
   } catch (err) {
     logger.error('[Config] PUT agents/defaultAgent failed', logError(err));
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 });
+
+/** Why the local MCP token can't be shown or replaced while `MCP_API_KEY` is set. */
+const MCP_TOKEN_OVERRIDDEN = 'MCP_API_KEY is set, so clients use it instead of the local token.';
+
+/** Why the local MCP token can't be shown or replaced for a caller the gate doesn't leave open. */
+const MCP_TOKEN_NOT_HERE =
+  'The local token works only on this computer without a password. Use an API key.';
 
 /**
  * Only the person sees or replaces the local MCP token over HTTP (DOR-3330):
@@ -630,13 +639,9 @@ router.put('/agents/defaultAgent', (c) => {
  */
 function refuseLocalTokenToAProgram(c: Context<ApiEnv>): Response | undefined {
   if (clearsTheAgentBar(honoRequestFacts(c))) return undefined;
-  return c.json(
-    {
-      error: 'Only you can see or change this token. Do it in the DorkOS app.',
-      code: 'person_required',
-    },
-    403
-  );
+  return problem(c, 'person_only', {
+    detail: 'Only you can see or change this token. Do it in the DorkOS app.',
+  });
 }
 
 /**
@@ -655,25 +660,13 @@ function refuseLocalTokenToAProgram(c: Context<ApiEnv>): Response | undefined {
 router.post('/mcp/rotate-token', async (c) => {
   try {
     if (env.MCP_API_KEY?.trim()) {
-      return c.json(
-        {
-          error:
-            'The local MCP token does not apply while MCP_API_KEY is set — that environment variable is the bearer clients use.',
-        },
-        409
-      );
+      return problem(c, 'conflict', { detail: MCP_TOKEN_OVERRIDDEN });
     }
     // The token works only for a caller the gate leaves open: this computer,
     // not asking for a password. Anyone else (another device, or this computer
     // when it asks) has no use for it, so it is neither shown nor replaced.
     if (gateAccessFor(honoRequestFacts(c)) !== 'open') {
-      return c.json(
-        {
-          error:
-            'The local MCP token works only on this computer when it asks for no password. Clients elsewhere use their personal API keys.',
-        },
-        409
-      );
+      return problem(c, 'conflict', { detail: MCP_TOKEN_NOT_HERE });
     }
     const notYou = refuseLocalTokenToAProgram(c);
     if (notYou) return notYou;
@@ -686,7 +679,7 @@ router.post('/mcp/rotate-token', async (c) => {
       subject: 'the local MCP token',
       run: async (confirming) => {
         if (env.MCP_API_KEY?.trim() || gateAccessFor(confirming) !== 'open')
-          return c.json({ error: 'The local token settings changed. Try again.' }, 409);
+          return problem(c, 'conflict', { detail: 'The local token settings changed. Try again.' });
         const dorkHome = resolveDorkHome();
         const localToken = rotateMcpLocalToken(dorkHome);
         return c.json({ localToken });
@@ -694,7 +687,7 @@ router.post('/mcp/rotate-token', async (c) => {
     });
   } catch (err) {
     logger.error('[Config] POST mcp/rotate-token failed', logError(err));
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 });
 
@@ -714,38 +707,22 @@ router.post('/mcp/rotate-token', async (c) => {
 router.post('/mcp/reveal-token', async (c) => {
   try {
     if (env.MCP_API_KEY?.trim()) {
-      return c.json(
-        {
-          error:
-            'The local MCP token does not apply while MCP_API_KEY is set — that environment variable is the bearer clients use.',
-        },
-        409
-      );
+      return problem(c, 'conflict', { detail: MCP_TOKEN_OVERRIDDEN });
     }
     // The token works only for a caller the gate leaves open: this computer,
     // not asking for a password. Anyone else (another device, or this computer
     // when it asks) has no use for it, so it is neither shown nor replaced.
     if (gateAccessFor(honoRequestFacts(c)) !== 'open') {
-      return c.json(
-        {
-          error:
-            'The local MCP token works only on this computer when it asks for no password. Clients elsewhere use their personal API keys.',
-        },
-        409
-      );
+      return problem(c, 'conflict', { detail: MCP_TOKEN_NOT_HERE });
     }
     const notYou = refuseLocalTokenToAProgram(c);
     if (notYou) return notYou;
 
     const localToken = getMcpLocalToken();
     if (!localToken) {
-      return c.json(
-        {
-          error:
-            'No local MCP token has been generated for this instance. Restart DorkOS to generate one.',
-        },
-        404
-      );
+      return problem(c, 'not_found', {
+        detail: 'This DorkOS has no local MCP token yet. Restart DorkOS to make one.',
+      });
     }
     return await runFrontDoorWrite(c, {
       kind: 'mcp-token.reveal',
@@ -755,19 +732,16 @@ router.post('/mcp/reveal-token', async (c) => {
       subject: 'the local MCP token',
       run: async (confirming) => {
         if (env.MCP_API_KEY?.trim() || gateAccessFor(confirming) !== 'open')
-          return c.json({ error: 'The local token settings changed. Try again.' }, 409);
+          return problem(c, 'conflict', { detail: 'The local token settings changed. Try again.' });
         const current = getMcpLocalToken();
         if (current !== localToken)
-          return c.json(
-            { error: 'The local token changed. Try again.', code: 'TOKEN_CHANGED' },
-            409
-          );
+          return problem(c, 'conflict', { detail: 'The local token changed. Try again.' });
         return c.json({ localToken: current });
       },
     });
   } catch (err) {
     logger.error('[Config] POST mcp/reveal-token failed', logError(err));
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 });
 

@@ -15,12 +15,7 @@ import {
   ProjectAccountsRequestSchema,
   ProjectWithoutCreditsRequestSchema,
 } from '@dorkos/shared/project-schemas';
-import { ErrorResponseSchema } from '@dorkos/shared/schemas';
-
-const error = (description: string) => ({
-  description,
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-});
+import { problemResponse as error } from '../openapi/problem-openapi.js';
 
 /** The `{id}` an account route names: the account's id, `default` for Main. */
 const ACCOUNT_PARAMS = z.object({

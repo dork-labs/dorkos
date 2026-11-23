@@ -13,7 +13,7 @@ _openapi:
       - content: "A click on an `agent`-kind widget action. Injects a structured
           `<ui_action>` block as the next user turn (trigger-only, 202; the turn
           streams over /events). Unlike the message trigger (which queues
-          instead), this route answers 409 SESSION_LOCKED while the agent is
+          instead), this route answers 409 `session_locked` while the agent is
           still PRODUCING a turn: a widget click is not a person's words waiting
           to be said, so it is refused rather than queued. A click that lands
           after the turn ended is accepted, even if the runtime is still closing

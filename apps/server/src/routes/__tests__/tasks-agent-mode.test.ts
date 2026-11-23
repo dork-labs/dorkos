@@ -87,18 +87,21 @@ taskRuntimeCapabilitiesFixture();
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
-/** Today's refusal of one field, exactly as the route sends it. */
-function refusalText(field: 'permissionMode' | 'status'): string {
-  return JSON.stringify({
-    error: 'Only a person can decide how a scheduled task runs',
-    code: 'operator_only_task_field',
+/** Today's refusal of one field, exactly as the route sends it (a problem document). */
+function refusalBody(field: 'permissionMode' | 'status'): Record<string, unknown> {
+  return {
+    type: 'urn:dorkos:problem:person_only',
+    title: 'Only a person can do that, not an agent.',
+    status: 403,
+    code: 'person_only',
+    detail: 'Only a person can decide how a scheduled task runs',
     fields: [field],
     message:
       'DorkOS changed nothing — not one field of this task. A scheduled task runs later, on its ' +
       "own, with nobody watching, so how much it may do without asking is the person's to choose, " +
       `not yours: ${field}. Send the rest of your changes again without that field and they will go ` +
       'through. To change it, ask the person to open the task in DorkOS.',
-  });
+  };
 }
 
 describe('the HTTP door and an agent’s mode or approval', () => {
@@ -191,13 +194,13 @@ describe('the HTTP door and an agent’s mode or approval', () => {
             .set(headers)
             .send({ permissionMode: 'dontAsk' });
           expect(mode.status).toBe(403);
-          expect(mode.text).toBe(refusalText('permissionMode'));
+          expect(JSON.parse(mode.text)).toEqual(refusalBody('permissionMode'));
           const status = await request(fixtureServer)
             .patch(`/api/tasks/${existing.id}`)
             .set(headers)
             .send({ status: 'active' });
           expect(status.status).toBe(403);
-          expect(status.text).toBe(refusalText('status'));
+          expect(JSON.parse(status.text)).toEqual(refusalBody('status'));
           const create = await request(fixtureServer).post('/api/tasks').set(headers).send({
             name: 'other',
             description: 'other',
@@ -208,14 +211,14 @@ describe('the HTTP door and an agent’s mode or approval', () => {
             permissionMode: 'dontAsk',
           });
           expect(create.status).toBe(403);
-          expect(create.text).toBe(refusalText('permissionMode'));
+          expect(JSON.parse(create.text)).toEqual(refusalBody('permissionMode'));
           // Approving a changed SKILL file is the person's too, with the same words (M4).
           const file = await request(fixtureServer)
             .post(`/api/tasks/${existing.id}/approve-file`)
             .set(headers)
             .send({ capAt: '2026-11-03T03:00:00.000Z', hash: 'sha256:x' });
           expect(file.status).toBe(403);
-          expect(file.text).toBe(refusalText('status'));
+          expect(JSON.parse(file.text)).toEqual(refusalBody('status'));
           expect(store.getTask(existing.id)).toMatchObject({
             status: 'pending_approval',
             permissionMode: 'acceptEdits',
@@ -335,7 +338,7 @@ describe('the HTTP door and an agent’s mode or approval', () => {
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({ notificationId: 'note-1' });
       expect(res.status).toBe(403);
-      expect(res.text).toBe(refusalText('permissionMode'));
+      expect(JSON.parse(res.text)).toEqual(refusalBody('permissionMode'));
       expect(store.getTask(existing.id)?.permissionMode).toBe('bypassPermissions');
     });
 
@@ -355,7 +358,7 @@ describe('the HTTP door and an agent’s mode or approval', () => {
         .post(`/api/tasks/${existing.id}/undo-agent-mode`)
         .send({ notificationId: 'note-1' });
       expect(again.status).toBe(409);
-      expect(again.body.code).toBe('nothing_to_undo');
+      expect(again.body.code).toBe('conflict');
     });
 
     it('undoes nothing once the mode changed again since', async () => {
@@ -377,7 +380,7 @@ describe('the HTTP door and an agent’s mode or approval', () => {
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({ capAt: '2026-11-03T03:00:00.000Z', hash: 'sha256:x' });
       expect(res.status).toBe(403);
-      expect(res.text).toBe(refusalText('status'));
+      expect(JSON.parse(res.text)).toEqual(refusalBody('status'));
     });
 
     it('refuses an agent approving the file as it is, with no cap named (DOR-5060)', async () => {
@@ -387,7 +390,7 @@ describe('the HTTP door and an agent’s mode or approval', () => {
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({ hash: 'sha256:x' });
       expect(res.status).toBe(403);
-      expect(res.text).toBe(refusalText('status'));
+      expect(JSON.parse(res.text)).toEqual(refusalBody('status'));
       expect(store.approvals.agentModeColumnOf(existing.id).fileAttest).toBeUndefined();
     });
 
@@ -396,7 +399,7 @@ describe('the HTTP door and an agent’s mode or approval', () => {
         .post(`/api/tasks/${existing.id}/approve-file`)
         .send({});
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('approve_needs_cap');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('refuses a cap that is not text', async () => {
@@ -411,7 +414,7 @@ describe('the HTTP door and an agent’s mode or approval', () => {
         .post(`/api/tasks/${existing.id}/approve-file`)
         .send({ hash: 'sha256:x' });
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('file_changed_since');
+      expect(res.body.code).toBe('conflict');
     });
 
     it('refuses a person on Wi-Fi: approving a file is approving a schedule (DOR-3037)', async () => {
@@ -438,7 +441,7 @@ describe('the HTTP door and an agent’s mode or approval', () => {
         .post(`/api/tasks/${existing.id}/approve-file`)
         .send({ capAt: '2026-11-03T03:00:00.000Z', hash: 'sha256:x' });
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('file_changed_since');
+      expect(res.body.code).toBe('conflict');
     });
   });
 
@@ -450,7 +453,7 @@ describe('the HTTP door and an agent’s mode or approval', () => {
       .send({ approvedPromptHash: 'sha256:x' });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({
-      code: 'operator_only_task_field',
+      code: 'person_only',
       fields: ['approvedPromptHash'],
     });
   });

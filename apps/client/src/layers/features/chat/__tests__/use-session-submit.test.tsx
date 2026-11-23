@@ -1269,11 +1269,18 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
 
   it('carries a paused agent’s code and id to the error, so the app can offer Resume', async () => {
     // Spec `audit-trail` PR5: the server refuses a message to a paused agent
-    // with `AGENT_PAUSED` and the agent's id; the composer reads both.
+    // with `agent_paused` and the agent's id; the composer reads both.
     const refusal = Object.assign(new Error('Scout is paused.'), {
-      code: 'AGENT_PAUSED',
+      code: 'agent_paused',
       status: 409,
-      body: { error: 'Scout is paused.', code: 'AGENT_PAUSED', agentId: 'agent-1' },
+      body: {
+        type: 'urn:dorkos:problem:agent_paused',
+        title: 'This agent is paused.',
+        status: 409,
+        code: 'agent_paused',
+        detail: 'Scout is paused.',
+        agentId: 'agent-1',
+      },
     });
     const transport = createMockTransport({ postMessage: vi.fn().mockRejectedValue(refusal) });
     const { result } = renderHook(() => useChatSession('s1'), {
@@ -1288,7 +1295,7 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
       await result.current.handleSubmit();
     });
 
-    expect(result.current.error).toMatchObject({ code: 'AGENT_PAUSED', agentId: 'agent-1' });
+    expect(result.current.error).toMatchObject({ code: 'agent_paused', agentId: 'agent-1' });
   });
 
   it('a failed KICKOFF raises no error banner (no dead Retry) and marks the greeting failed', async () => {

@@ -26,8 +26,9 @@ import { COMMAND_INTENTS } from '@dorkos/shared/command-intents';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
-import { errorBody, parseSessionId } from '../lib/route-utils.js';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { parseSessionId } from '../lib/route-utils.js';
+import { invalidSessionId, sessionLocked, sessionNotFound } from './session-route-replies.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import {
@@ -69,26 +70,23 @@ function parseRuntimeIntent(param: unknown): RuntimeCommandIntentId | null {
  */
 export async function sessionCommandIntentHandler(c: Context<ApiEnv>): Promise<Response> {
   const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+  if (!sessionId) return invalidSessionId(c);
 
   // Validate the intent against the runtime-fulfilled set. An unknown token (or a
   // client-native intent that shouldn't reach the server) is a client bug → 422.
   const intent = parseRuntimeIntent(c.req.param('intent'));
   if (!intent) {
-    return c.json(
-      errorBody(
-        `Unknown command intent: ${String(c.req.param('intent'))}`,
-        'INVALID_COMMAND_INTENT'
-      ),
-      422
-    );
+    return problem(c, 'invalid_request', {
+      detail: `Unknown command intent: ${String(c.req.param('intent'))}`,
+      status: 422,
+    });
   }
 
   // Optional body: trailing instructions after the intent token. An empty
   // POST has no body, so absence is valid.
   const parsedBody = CommandIntentBodySchema.safeParse(readJsonBody(c));
   if (!parsedBody.success) {
-    return c.json(errorBody('Invalid request body', 'VALIDATION_ERROR'), 400);
+    return validationProblem(c, parsedBody.error);
   }
   const instructions = parsedBody.data?.instructions;
 
@@ -103,7 +101,7 @@ export async function sessionCommandIntentHandler(c: Context<ApiEnv>): Promise<R
     const probeCwd = peekProjector(sessionId)?.cwd ?? DEFAULT_CWD;
     const stored = await runtime.getSession(probeCwd, sessionId);
     if (!stored) {
-      return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
+      return sessionNotFound(c);
     }
   }
 
@@ -112,13 +110,10 @@ export async function sessionCommandIntentHandler(c: Context<ApiEnv>): Promise<R
   // client; this is the server half of that honesty).
   const caps = runtime.getCapabilities();
   if (!caps.commandIntents[intent].supported) {
-    return c.json(
-      errorBody(
-        `${caps.type} does not support the ${intent} command intent`,
-        'COMMAND_INTENT_UNSUPPORTED'
-      ),
-      422
-    );
+    return problem(c, 'not_supported', {
+      detail: `${caps.type} does not support the ${intent} command intent`,
+      status: 422,
+    });
   }
 
   const clientId = c.req.header('x-client-id') || crypto.randomUUID();
@@ -165,15 +160,7 @@ export async function sessionCommandIntentHandler(c: Context<ApiEnv>): Promise<R
       sessionId,
       lockedBy: lockInfo?.clientId ?? 'unknown',
     });
-    return c.json(
-      {
-        error: 'Session locked',
-        code: 'SESSION_LOCKED',
-        lockedBy: lockInfo?.clientId ?? 'unknown',
-        lockedAt: lockInfo ? new Date(lockInfo.acquiredAt).toISOString() : new Date().toISOString(),
-      },
-      409
-    );
+    return sessionLocked(c, lockInfo?.clientId, lockInfo?.acquiredAt ?? Date.now());
   }
 
   return c.json({ sessionId }, 202);

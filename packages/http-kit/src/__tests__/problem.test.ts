@@ -28,6 +28,14 @@ describe('problemBody', () => {
 });
 
 describe('problemBody options', () => {
+  it('carries extension members, and never lets one replace a standard member', () => {
+    const body = problemBody('conflict', {
+      detail: 'Paused.',
+      extensions: { agentId: 'a1', code: 'other', status: 200 },
+    });
+    expect(body).toMatchObject({ agentId: 'a1', code: 'conflict', status: 409, detail: 'Paused.' });
+  });
+
   it('accepts only error statuses', () => {
     // @ts-expect-error a problem never carries a success status
     expect(() => problemBody('not_found', { status: 200 })).not.toThrow();

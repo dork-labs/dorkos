@@ -328,7 +328,7 @@ describe('ChannelCreateDialog', () => {
 
   /** A `SLUG_TAKEN` refusal, shaped the way `HttpTransport` throws it. */
   function slugTakenError(message: string): Error & { code: string } {
-    return Object.assign(new Error(message), { code: 'SLUG_TAKEN' });
+    return Object.assign(new Error(message), { code: 'slug_taken' });
   }
 
   it('renders a name conflict inline at the field, with no toast', async () => {

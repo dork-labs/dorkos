@@ -845,7 +845,7 @@ describe('CanvasSlice — the server’s table, as this window holds it', () => 
     /** The refusal the route answers for an id it cannot place. */
     function sessionNotFound(): Error & { code: string; status: number } {
       return Object.assign(new Error('Session not found'), {
-        code: 'SESSION_NOT_FOUND',
+        code: 'session_not_found',
         status: 404,
       });
     }

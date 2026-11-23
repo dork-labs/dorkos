@@ -191,8 +191,11 @@ it('refuses actual HTTP close after rename before receipt, preserving original i
   const physical = await fs.stat(f.h.path, { bigint: true });
   expect(await fs.readFile(f.h.path, 'utf8')).toBe(raw.content);
   const response = await request(server.server).delete(f.endpoint).expect(409);
-  expect(response.body).toMatchObject({ code: 'DOC_SAVE_RECOVERY_REQUIRED' });
-  expect(response.body.error).toContain('Keep it open');
+  expect(response.body).toMatchObject({
+    code: 'conflict',
+    recoveryCode: 'DOC_SAVE_RECOVERY_REQUIRED',
+  });
+  expect(response.body.detail).toContain('Keep it open');
   expect(f.retained()).toBeDefined();
   expect(f.h.http.channels.getChannel(f.doc.id)?.closedAt).toBeNull();
   b.release();

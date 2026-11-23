@@ -65,7 +65,7 @@ describe('terminal routes', () => {
   it('returns 403 when cwd escapes the boundary', async () => {
     const res = await request(fixtureServer).post('/api/terminal').send({ cwd: '/etc' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
   });
 
   it('returns 201 with an id for a valid cwd', async () => {
@@ -78,7 +78,8 @@ describe('terminal routes', () => {
     await request(fixtureServer).post('/api/terminal').send({ cwd: boundary }).expect(201);
     const res = await request(fixtureServer).post('/api/terminal').send({ cwd: boundary });
     expect(res.status).toBe(429);
-    expect(res.body.code).toBe('TERMINAL_LIMIT');
+    expect(res.type).toBe('application/problem+json');
+    expect(res.body.code).toBe('terminal_limit');
   });
 
   it('returns 204 on teardown (idempotent)', async () => {

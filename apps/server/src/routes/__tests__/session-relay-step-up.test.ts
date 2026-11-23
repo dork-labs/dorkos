@@ -133,7 +133,7 @@ describe('chat from the web confirmation', () => {
     expect(confirmed.body).toMatchObject({
       ok: true,
       status: 409,
-      result: { code: 'LINK_CHANGED' },
+      result: { code: 'conflict', detail: 'The link changed. Try again.' },
     });
     expect(updatePin).not.toHaveBeenCalled();
   });

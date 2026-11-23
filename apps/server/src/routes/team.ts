@@ -25,7 +25,7 @@ import { projectComputerPlacement } from './computer-placement.js';
 import { Hono } from 'hono';
 import type { DisplayNameSource } from '@dorkos/shared/config-schema';
 import { logError, logger } from '../lib/logger.js';
-import { errorBody } from '../lib/route-utils.js';
+import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import type { AuthorRegistry } from '../services/rooms/author-registry.js';
@@ -172,7 +172,7 @@ export function createTeamRoutes(deps: TeamRouterDeps): Hono<ApiEnv> {
       // the aggregation. This is the backstop for the response itself failing,
       // and it stays, because "unreachable" is a claim about today's code.
       logger.error('[Team] roster read failed', logError(err));
-      return c.json(errorBody('Failed to read the team roster', 'TEAM_ROSTER_FAILED'), 500);
+      return problem(c, 'internal_error', { detail: 'The team list couldn’t be read.' });
     }
   });
 
@@ -186,11 +186,11 @@ export function createTeamRoutes(deps: TeamRouterDeps): Hono<ApiEnv> {
     // the titles of every DM the operator has with every other agent — the
     // exact enumeration `RoomStore.listRoomsForMember` exists to prevent, walked
     // around by asking about somebody else. `read-cursors` draws the same
-    // boundary with the same `PEOPLE_ONLY` code, though it asks a different
+    // boundary with the same refusal, though it asks a different
     // question to get there — see {@link callerIsAgent}. 403 rather than 404:
     // there is nothing to hide about the route existing.
     if (callerIsAgent(honoRequestFacts(c))) {
-      return c.json(errorBody('Only people read a profile', 'PEOPLE_ONLY'), 403);
+      return problem(c, 'person_only', { detail: 'Only people read a profile.' });
     }
 
     const memberId = c.req.param('memberId');
@@ -203,7 +203,7 @@ export function createTeamRoutes(deps: TeamRouterDeps): Hono<ApiEnv> {
         isRegisteredAgent: (id) => knowsAgent(deps.meshCore, id),
       });
       if (rooms === null) {
-        return c.json(errorBody('No member with that id', 'MEMBER_NOT_FOUND'), 404);
+        return problem(c, 'not_found', { detail: 'No member with that id.' });
       }
       return c.json(rooms);
     } catch (err) {
@@ -212,7 +212,7 @@ export function createTeamRoutes(deps: TeamRouterDeps): Hono<ApiEnv> {
       // rooms" is a sentence a profile draws, and it must never mean "the
       // database did not answer".
       logger.error('[Team] member rooms read failed', logError(err));
-      return c.json(errorBody('Failed to read this member’s rooms', 'MEMBER_ROOMS_FAILED'), 500);
+      return problem(c, 'internal_error', { detail: 'This member’s rooms couldn’t be read.' });
     }
   });
 

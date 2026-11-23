@@ -110,7 +110,8 @@ describe('POST /api/sessions/:id/submit-answers', () => {
       .send({ toolCallId: 'tc-1', answers: { '0': 'Option A' } });
 
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe('No pending question');
+    expect(res.body.code).toBe('not_found');
+    expect(res.body.detail).toBe('No question is waiting for an answer here.');
   });
 
   it('returns 409 when session exists but question already resolved', async () => {
@@ -122,8 +123,7 @@ describe('POST /api/sessions/:id/submit-answers', () => {
       .send({ toolCallId: 'tc-1', answers: { '0': 'Option A' } });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe('Interaction already resolved');
-    expect(res.body.code).toBe('INTERACTION_ALREADY_RESOLVED');
+    expect(res.body.code).toBe('interaction_already_resolved');
   });
 
   it('returns 400 when toolCallId is missing', async () => {
@@ -132,7 +132,8 @@ describe('POST /api/sessions/:id/submit-answers', () => {
       .send({ answers: { '0': 'Option A' } });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Invalid request');
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('returns 400 when answers is missing', async () => {
@@ -141,7 +142,8 @@ describe('POST /api/sessions/:id/submit-answers', () => {
       .send({ toolCallId: 'tc-1' });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Invalid request');
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body.code).toBe('invalid_request');
   });
 });
 
@@ -169,7 +171,7 @@ describe('POST /api/sessions/:id/approve', () => {
       .send({ toolCallId: 'tc-1' });
 
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe('No pending approval');
+    expect(res.body.code).toBe('not_found');
   });
 
   it('returns 409 when session exists but approval already resolved', async () => {
@@ -181,8 +183,7 @@ describe('POST /api/sessions/:id/approve', () => {
       .send({ toolCallId: 'tc-1' });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe('Interaction already resolved');
-    expect(res.body.code).toBe('INTERACTION_ALREADY_RESOLVED');
+    expect(res.body.code).toBe('interaction_already_resolved');
   });
 });
 
@@ -217,7 +218,7 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
     // runtime's single-resolve semantics — approveTool returns true once (the
     // real entry is found and its resolve closure deletes it), then false on
     // every subsequent call (the entry is gone). The route must surface the
-    // first as success and the stale second as 409 INTERACTION_ALREADY_RESOLVED.
+    // first as success and the stale second as 409 interaction_already_resolved.
     fakeRuntime.hasSession.mockReturnValue(true);
     fakeRuntime.approveTool.mockReturnValueOnce(true).mockReturnValue(false);
 
@@ -231,7 +232,7 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1' });
     expect(second.status).toBe(409);
-    expect(second.body.code).toBe('INTERACTION_ALREADY_RESOLVED');
+    expect(second.body.code).toBe('interaction_already_resolved');
 
     // Exactly-once semantics: the route forwarded both calls to the runtime, but
     // only the first returned true. The guard — not a re-entrant SDK callback —
@@ -263,7 +264,7 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1' });
     expect(staleApprove.status).toBe(409);
-    expect(staleApprove.body.code).toBe('INTERACTION_ALREADY_RESOLVED');
+    expect(staleApprove.body.code).toBe('interaction_already_resolved');
 
     // First call was the deny (approved=false), second the stale approve.
     expect(fakeRuntime.approveTool).toHaveBeenNthCalledWith(1, SESSION_ID, 'tc-1', false, {
@@ -278,7 +279,7 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
   it('cross-surface stale answer on a session that has since ended is 404, not 409', async () => {
     // Purpose: post-restart safety. If the session itself is gone (server
     // restart dropped the in-memory pending map, or the query ended), a stale
-    // answer must report 404 NO_PENDING_APPROVAL rather than 409 — the client
+    // answer must report 404 not_found rather than 409 — the client
     // treats both as "already handled", but the distinct code keeps the contract
     // honest about whether the session still exists.
     fakeRuntime.approveTool.mockReturnValue(false);
@@ -289,8 +290,8 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
       .send({ toolCallId: 'tc-1' });
 
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe('No pending approval');
-    expect(res.body.code).toBe('NO_PENDING_APPROVAL');
+    expect(res.body.code).toBe('not_found');
+    expect(res.body.detail).toBe('No request is waiting for an answer here.');
   });
 
   it('stale /submit-answers after the question resolved is 409 (no double-resolve)', async () => {
@@ -310,7 +311,7 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
       .post(`/api/sessions/${SESSION_ID}/submit-answers`)
       .send({ toolCallId: 'tc-1', answers: { '0': 'Option A' } });
     expect(second.status).toBe(409);
-    expect(second.body.code).toBe('INTERACTION_ALREADY_RESOLVED');
+    expect(second.body.code).toBe('interaction_already_resolved');
     expect(fakeRuntime.submitAnswers).toHaveBeenCalledTimes(2);
   });
 
@@ -330,15 +331,15 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
       .post(`/api/sessions/${SESSION_ID}/submit-elicitation`)
       .send({ interactionId: 'el-1', action: 'accept', content: { apiKey: 'x' } });
     expect(second.status).toBe(409);
-    expect(second.body.code).toBe('INTERACTION_ALREADY_RESOLVED');
+    expect(second.body.code).toBe('interaction_already_resolved');
     expect(fakeRuntime.submitElicitation).toHaveBeenCalledTimes(2);
   });
 
-  it('stale /deny on a session that has since ended is 404 NO_PENDING_APPROVAL, not 409', async () => {
+  it('stale /deny on a session that has since ended is 404 not_found, not 409', async () => {
     // Purpose: completes the single-resolve matrix for the deny verb. The
     // existing cross-surface test covers deny→stale-approve (409); this pins the
     // post-restart branch — when the session itself is gone (in-memory pending
-    // map dropped), a stale /deny must report 404 NO_PENDING_APPROVAL, the same
+    // map dropped), a stale /deny must report 404 not_found, the same
     // session-gone code the approve verb returns, keeping the two verbs
     // contract-symmetric. Not previously covered: no /deny test exercised the
     // hasSession=false branch.
@@ -350,11 +351,11 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
       .send({ toolCallId: 'tc-1' });
 
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe('No pending approval');
-    expect(res.body.code).toBe('NO_PENDING_APPROVAL');
+    expect(res.body.code).toBe('not_found');
+    expect(res.body.detail).toBe('No request is waiting for an answer here.');
   });
 
-  it('stale /submit-elicitation on a session that has since ended is 404 NO_PENDING_ELICITATION, not 409', async () => {
+  it('stale /submit-elicitation on a session that has since ended is 404 not_found, not 409', async () => {
     // Purpose: completes the single-resolve matrix for elicitations. The stale
     // (409) branch is covered above; this pins the session-gone (404) branch so
     // all three resolve verbs (approve/deny, submit-answers, submit-elicitation)
@@ -368,7 +369,7 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
       .send({ interactionId: 'el-1', action: 'accept', content: { apiKey: 'x' } });
 
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe('No pending elicitation');
-    expect(res.body.code).toBe('NO_PENDING_ELICITATION');
+    expect(res.body.code).toBe('not_found');
+    expect(res.body.detail).toBe('No form is waiting for an answer here.');
   });
 });

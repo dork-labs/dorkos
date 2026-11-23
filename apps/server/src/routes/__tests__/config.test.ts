@@ -277,10 +277,9 @@ describe('PATCH /api/config', () => {
       .send({ server: { port: 80 } })
       .expect(400);
 
-    expect(response.body.error).toBe('Validation failed');
-    expect(response.body.details).toBeDefined();
-    expect(response.body.details.length).toBeGreaterThan(0);
-    expect(response.body.details[0]).toContain('server.port');
+    expect(response.body.code).toBe('invalid_request');
+    // The first field's problem, not the headline.
+    expect(response.body.detail).toContain('server.port');
   });
 
   it('includes warning for sensitive key', async () => {
@@ -324,7 +323,7 @@ describe('PATCH /api/config', () => {
       .send([{ server: { port: 5000 } }])
       .expect(400);
 
-    expect(response.body.error).toContain('JSON object');
+    expect(response.body.detail).toContain('JSON object');
   });
 
   it('persists changes across reads', async () => {
@@ -1307,7 +1306,7 @@ describe('PATCH /api/config', () => {
       .send({ ui: { theme: 'invalid-theme' } })
       .expect(400);
 
-    expect(response.body.error).toBe('Validation failed');
+    expect(response.body.code).toBe('invalid_request');
   });
 
   it('deep merges nested config objects', async () => {
@@ -1350,7 +1349,7 @@ describe('PATCH /api/config', () => {
       .send({ server: { port: 70000 } })
       .expect(400);
 
-    expect(response.body.error).toBe('Validation failed');
+    expect(response.body.code).toBe('invalid_request');
   });
 
   describe('the answer never carries a stored secret (DOR-1740)', () => {
@@ -1512,7 +1511,7 @@ describe('PATCH /api/config', () => {
         .patch('/api/config')
         .send({ cloud: { remote: { mode: 'managed' } } });
       expect(response.status).toBe(400);
-      expect(response.body.code).toBe('USE_REMOTE_ACCESS_API');
+      expect(response.body.code).toBe('invalid_request');
       const { configManager } = await import('../../services/core/config-manager.js');
       expect(configManager.get('cloud').remote.mode).toBe('off');
     });
@@ -2567,7 +2566,7 @@ describe('PUT /api/config/agents/defaultAgent', () => {
   it('returns 400 when value is missing', async () => {
     const res = await request(server).put('/api/config/agents/defaultAgent').send({}).expect(400);
 
-    expect(res.body.error).toContain('non-empty');
+    expect(res.body.detail).toContain('non-empty');
   });
 
   it('returns 400 when value is empty string', async () => {
@@ -2576,7 +2575,7 @@ describe('PUT /api/config/agents/defaultAgent', () => {
       .send({ value: '  ' })
       .expect(400);
 
-    expect(res.body.error).toContain('non-empty');
+    expect(res.body.detail).toContain('non-empty');
   });
 
   it('returns 400 when value is not a string', async () => {
@@ -2585,7 +2584,7 @@ describe('PUT /api/config/agents/defaultAgent', () => {
       .send({ value: 123 })
       .expect(400);
 
-    expect(res.body.error).toContain('non-empty');
+    expect(res.body.detail).toContain('non-empty');
   });
 
   it('trims whitespace from agent name', async () => {
@@ -2631,7 +2630,7 @@ describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
       .patch('/api/config')
       .send({ auth: { enabled: false } })
       .expect(403);
-    expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+    expect(res.body.code).toBe('needs_person_at_this_computer');
     expect(res.body.paths).toEqual(['auth.enabled']);
   });
 
@@ -2656,7 +2655,7 @@ describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
       .patch('/api/config')
       .send({ server: { lanAccess: true } })
       .expect(403);
-    expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+    expect(res.body.code).toBe('needs_person_at_this_computer');
   });
 
   it('still lets a Wi-Fi sign-in change an ordinary setting', async () => {
@@ -2704,9 +2703,9 @@ describe('PATCH /api/config, a Files & commands stop from Wi-Fi (DOR-3037)', () 
       .patch('/api/config')
       .send({ runtimes: { defaultTrustStop: 'autonomy' } })
       .expect(403);
-    expect(everyone.body).toEqual({
-      error: 'Raising permissions works only at this computer.',
-      code: 'NOT_FROM_WIFI',
+    expect(everyone.body).toMatchObject({
+      detail: 'Raising permissions works only at this computer.',
+      code: 'not_from_wifi',
     });
     await request(server)
       .patch('/api/config')

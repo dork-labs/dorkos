@@ -37,7 +37,6 @@
  * @module routes/runtimes-account-eligibility
  */
 import type { Context, Hono } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { KEPT_FROM_AUTO_MOVES } from '@dorkos/shared/permissions';
 import {
@@ -83,7 +82,7 @@ import { checkClaudeLaunchAccount } from '../services/runtimes/claude-code/launc
 import { projectRegistry } from '../services/projects/project-registry.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
@@ -99,10 +98,16 @@ import {
 } from './account-eligibility-hold.js';
 
 /** The refusal for a folder outside the directory boundary. */
-const OUTSIDE_BOUNDARY = {
-  error: 'That folder is outside the folders DorkOS may open.',
-  code: 'OUTSIDE_BOUNDARY',
-};
+function outsideBoundary(c: Context): Response {
+  return problem(c, 'outside_boundary', {
+    detail: 'That folder is outside the folders DorkOS may open.',
+  });
+}
+
+/** The refusal for an account id that names no Claude account. */
+function unknownAccount(c: Context, accountId: string): Response {
+  return problem(c, 'not_found', { detail: `There is no Claude account named "${accountId}".` });
+}
 
 /**
  * The project a folder a person named belongs to: `'outside'` when the folder
@@ -223,7 +228,11 @@ function refuseIfNotAPerson(
   copy: PersonBarCopy = ACCOUNT_RULES_BAR
 ): Response | undefined {
   const refusal = assessPerson(caller, copy);
-  return refusal ? c.json(refusal.body, refusal.status as ContentfulStatusCode) : undefined;
+  // The bar's own sentence for this caller (cross-site, signed out, or an
+  // agent) is the detail; every one of them is a person-only refusal here.
+  return refusal
+    ? problem(c, 'person_only', { detail: refusal.body.message ?? refusal.body.error })
+    : undefined;
 }
 
 /**
@@ -255,14 +264,16 @@ export function mountAccountEligibilityRoutes(
       const project = parsed.data.project
         ? await peekProjectOfNamedFolder(parsed.data.project)
         : null;
-      if (project === 'outside') return c.json(OUTSIDE_BOUNDARY, 403);
+      if (project === 'outside') return outsideBoundary(c);
       return c.json({
         ...eligibilityFor(project),
         launch: await launchFor(parsed.data.project, project),
       });
     } catch (err) {
       logger.error('[Runtimes] could not read account eligibility', { err: String(err) });
-      return c.json({ error: 'Could not read which accounts may work here.' }, 500);
+      return problem(c, 'internal_error', {
+        detail: 'Could not read which accounts may work here.',
+      });
     }
   });
 
@@ -278,28 +289,20 @@ export function mountAccountEligibilityRoutes(
     }
     try {
       const project = await projectOfNamedFolder(parsed.data.project);
-      if (project === 'outside') return c.json(OUTSIDE_BOUNDARY, 403);
+      if (project === 'outside') return outsideBoundary(c);
       if (project === null) {
-        return c.json(
-          {
-            error: `${parsed.data.project} isn't in a project (a git repository), so it has no account list.`,
-            code: 'not_a_project',
-          },
-          404
-        );
+        return problem(c, 'not_found', {
+          detail: 'That folder isn’t in a project (a git repository), so it has no account list.',
+        });
       }
       const { allow } = parsed.data;
       if (allow !== null) {
         const known = knownAccountIds();
         const unknown = allow.filter((id) => !known.has(id));
         if (unknown.length > 0) {
-          return c.json(
-            {
-              error: `There is no Claude account named ${joinNames(unknown.map((id) => `"${id}"`))}.`,
-              code: 'unknown_account',
-            },
-            400
-          );
+          return problem(c, 'invalid_request', {
+            detail: `There is no Claude account named ${joinNames(unknown.map((id) => `"${id}"`))}.`,
+          });
         }
       }
       const widensNow = () => {
@@ -348,7 +351,7 @@ export function mountAccountEligibilityRoutes(
       });
     } catch (err) {
       logger.error('[Runtimes] could not save a project account list', { err: String(err) });
-      return c.json({ error: PROJECT_ACCOUNTS_FAILED }, 500);
+      return problem(c, 'internal_error', { detail: PROJECT_ACCOUNTS_FAILED });
     }
   });
 
@@ -363,23 +366,18 @@ export function mountAccountEligibilityRoutes(
     try {
       const folder = await folderOfSession(parsed.data.sessionId);
       if (folder === null) {
-        return c.json(
-          { error: 'DorkOS couldn’t find that chat’s folder.', code: 'unknown_session' },
-          404
-        );
+        return problem(c, 'session_not_found', {
+          detail: 'DorkOS couldn’t find that chat’s folder.',
+        });
       }
       const project = await projectOfNamedFolder(folder);
-      if (project === 'outside') return c.json(OUTSIDE_BOUNDARY, 403);
+      if (project === 'outside') return outsideBoundary(c);
       if (project === null) {
-        return c.json(
-          {
-            error:
-              'This folder isn’t in a project (a git repository), so there is no project to ' +
-              'keep credits out of. Use your own sign-in for this chat instead.',
-            code: 'not_a_project',
-          },
-          409
-        );
+        return problem(c, 'conflict', {
+          detail:
+            'This folder isn’t in a project (a git repository), so there is no project to ' +
+            'keep credits out of. Use your own sign-in for this chat instead.',
+        });
       }
       // The project's own list, or every account it may use today: credits is
       // never a listed account, so either list leaves it out, and nothing that
@@ -410,7 +408,9 @@ export function mountAccountEligibilityRoutes(
       return c.json({ ...eligibilityFor(project), launch: await launchFor(folder, project) });
     } catch (err) {
       logger.error('[Runtimes] could not keep credits out of a project', { err: String(err) });
-      return c.json({ error: 'Could not save which accounts this project may use.' }, 500);
+      return problem(c, 'internal_error', {
+        detail: 'Could not save which accounts this project may use.',
+      });
     }
   });
 
@@ -425,11 +425,7 @@ export function mountAccountEligibilityRoutes(
       });
     }
     const accountId = c.req.param('id');
-    const unknownAccount = {
-      error: `There is no Claude account named "${accountId}".`,
-      code: 'unknown_account',
-    };
-    if (!knownAccountIds().has(accountId)) return c.json(unknownAccount, 404);
+    if (!knownAccountIds().has(accountId)) return unknownAccount(c, accountId);
     try {
       let roots: string[] | null = null;
       if (parsed.data.projects !== null) {
@@ -445,13 +441,9 @@ export function mountAccountEligibilityRoutes(
           }
           const project = await projectOfNamedFolder(folder);
           if (project === 'outside' || project === null) {
-            return c.json(
-              {
-                error: `${folder} isn't a project DorkOS can use (a git repository inside the folders it may open).`,
-                code: 'not_a_project',
-              },
-              400
-            );
+            return problem(c, 'invalid_request', {
+              detail: 'A folder isn’t a project DorkOS can use (a git repository it may open).',
+            });
           }
           roots.push(project.root);
         }
@@ -466,7 +458,7 @@ export function mountAccountEligibilityRoutes(
         // A free change is judged again where it writes (Security S5 on DOR-4355 M3).
         if (free && widensNow()) return accountRulesChanged(c);
         const before = configManager.get('runtimes');
-        if (!writeOnlyProjects(configManager, accountId, next)) return c.json(unknownAccount, 404);
+        if (!writeOnlyProjects(configManager, accountId, next)) return unknownAccount(c, accountId);
         logConfigWrite(
           'the only-projects route',
           'runtimes',
@@ -503,7 +495,7 @@ export function mountAccountEligibilityRoutes(
       });
     } catch (err) {
       logger.error('[Runtimes] could not save an account project list', { err: String(err) });
-      return c.json({ error: ONLY_PROJECTS_FAILED }, 500);
+      return problem(c, 'internal_error', { detail: ONLY_PROJECTS_FAILED });
     }
   });
 
@@ -516,24 +508,20 @@ export function mountAccountEligibilityRoutes(
       return validationProblem(c, parsed.error, { detail: 'Send `noAutoMove` as true or false.' });
     }
     const accountId = c.req.param('id');
-    const unknownAccount = {
-      error: `There is no Claude account named "${accountId}".`,
-      code: 'unknown_account',
-    };
     // Only a registered row carries the flag: Main with no row of its own is
     // not one, so it answers like an account that does not exist.
     const before = configAutoMoveFlagPort(configManager).flagOf(accountId);
-    if (before === 'gone') return c.json(unknownAccount, 404);
+    if (before === 'gone') return unknownAccount(c, accountId);
     const { noAutoMove } = parsed.data;
     const run = async (caller: RequestFacts, free = false) => {
       const stored = configManager.get('runtimes');
       // Read again: a confirmation can come after the flag moved.
       const prior = configAutoMoveFlagPort(configManager).flagOf(accountId);
-      if (prior === 'gone') return c.json(unknownAccount, 404);
+      if (prior === 'gone') return unknownAccount(c, accountId);
       // Turning moves back on was free only while they were on (Security S5 on DOR-4355 M3).
       if (free && !noAutoMove && prior !== null) return accountRulesChanged(c);
       if (!writeNoAutoMove(configManager, accountId, noAutoMove)) {
-        return c.json(unknownAccount, 404);
+        return unknownAccount(c, accountId);
       }
       logConfigWrite('the no-auto-move route', 'runtimes', stored, configManager.get('runtimes'));
       const after = noAutoMove ? KEPT_FROM_AUTO_MOVES : null;
@@ -577,7 +565,7 @@ export function mountAccountEligibilityRoutes(
       logger.error('[Runtimes] could not save an account automatic-move flag', {
         err: String(err),
       });
-      return c.json({ error: NO_AUTO_MOVE_FAILED }, 500);
+      return problem(c, 'internal_error', { detail: NO_AUTO_MOVE_FAILED });
     }
   });
 }

@@ -148,7 +148,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
       } catch (err) {
         // If the server says the interaction was already resolved (409), treat as success.
         const code = (err as { code?: string }).code;
-        if (code === 'INTERACTION_ALREADY_RESOLVED') {
+        if (code === 'interaction_already_resolved') {
           setSubmitted(true);
           onDecided?.(answers);
         } else {

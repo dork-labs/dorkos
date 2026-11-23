@@ -348,8 +348,8 @@ describe('export-openapi', () => {
     // The access rule is the half a reader most needs from the reference, since
     // no request shape reveals it — the route takes no body at all.
     expect(repo?.post?.description).toContain('Any member of the room may call it');
-    expect(repo?.post?.description).toContain('ROOM_REPO_EXISTS');
-    expect(repo?.post?.description).toContain('ROOM_REPOS_DISABLED');
+    expect(repo?.post?.description).toContain('room_repo_exists');
+    expect(repo?.post?.description).toContain('room_repos_disabled');
   });
 });
 

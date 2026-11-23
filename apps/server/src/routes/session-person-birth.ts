@@ -11,20 +11,28 @@ import {
 } from '../services/core/runtime-seam/person-draft-settings.js';
 import { SessionBirthWriteError } from '../services/core/runtime-seam/session-birth-write.js';
 import { primaryOf } from '../services/session/resolution/session-key-registry.js';
-import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { problemBody } from '@dorkos/http-kit';
+import type { Problem } from '@dorkos/shared/problem';
+import { assessPerson, type PersonBarCopy, type PersonRefusal } from './extensions-person-bar.js';
 
 const PERSON_BAR: PersonBarCopy = {
-  error: 'Only a person can choose a chat folder.',
-  code: 'SESSION_LOCATION_PERSON_REQUIRED',
+  code: 'person_only',
   subject: 'chat folders',
   crossSite: () => 'Open DorkOS to choose a chat folder.',
   agent: 'Only a person can choose a chat folder.',
 };
 
-/** Preserve the existing person and site checks for all uses of a saved folder. */
-export function assessSessionLocationPerson(facts: RequestFacts) {
-  if (facts.headers['sec-fetch-site'] === 'cross-site')
-    return { status: 403 as const, body: { error: PERSON_BAR.error, code: PERSON_BAR.code } };
+/**
+ * Preserve the existing person and site checks for all uses of a saved folder.
+ *
+ * @param facts - The request's facts.
+ * @returns The refusal as a problem document, or `null` when a person is asking.
+ */
+export function assessSessionLocationPerson(facts: RequestFacts): PersonRefusal | null {
+  if (facts.headers['sec-fetch-site'] === 'cross-site') {
+    const body = problemBody('person_only', { detail: PERSON_BAR.crossSite('another site') });
+    return { status: body.status, body };
+  }
   return assessPerson(facts, PERSON_BAR);
 }
 
@@ -36,7 +44,7 @@ export function sessionLocationOwnerId(facts: RequestFacts): string {
 /** The same response for a missing or differently owned acknowledged chat. */
 export const personChatMissing = {
   status: 404 as const,
-  body: { error: 'Session not found', code: 'SESSION_NOT_FOUND' },
+  body: problemBody('session_not_found', { detail: 'No chat with that id.' }),
 };
 
 /** A source or draft rejected before its settings or runtime could be stored. */
@@ -48,12 +56,7 @@ export function isPersonChatWriteRefusal(error: unknown): boolean {
   );
 }
 
-type PersonChatRefusal =
-  | typeof personChatMissing
-  | {
-      status: 403;
-      body: { error: string; code: string };
-    };
+type PersonChatRefusal = { status: number; body: Problem };
 
 type PreparedPersonChat =
   | { binding: PersonChatBinding; cwd: string; registeredAgentPath?: never }
@@ -140,8 +143,16 @@ export async function preparePersonChat(
     )
       return { refusal: personChatMissing };
   } catch (error) {
-    if (error instanceof BoundaryError)
-      return { refusal: { status: 403, body: { error: error.message, code: error.code } } };
+    if (error instanceof BoundaryError) {
+      // A fixed sentence: the boundary's own message can name the path.
+      const body =
+        error.code === 'NULL_BYTE'
+          ? problemBody('invalid_request', { detail: 'That path has a character paths can’t hold.' })
+          : problemBody('outside_boundary', {
+              detail: 'Pick a folder inside the ones DorkOS may use.',
+            });
+      return { refusal: { status: body.status, body } };
+    }
     throw error;
   }
   if (draft) {

@@ -97,7 +97,10 @@ const SAVED = z.object({ success: z.literal(true), config: z.object({}).loose() 
 const OPERATOR_ONLY = (paths: string[]) =>
   z
     .object({
-      error: z.literal('Only a person can change those settings'),
+      type: z.literal('urn:dorkos:problem:operator_only_config'),
+      title: z.string(),
+      status: z.literal(403),
+      detail: z.literal('Only a person can change those settings'),
       code: z.literal('operator_only_config'),
       paths: z.array(z.string()).refine((have) => have.join() === paths.join()),
       message: z.string(),
@@ -233,14 +236,22 @@ contractSuite(
       name: 'PATCH /api/config with no body fails as it always has',
       method: 'PATCH',
       path: '/api/config',
-      expect: { status: 500, headers: JSON_TYPE, body: { error: 'Internal server error' } },
+      expect: {
+        status: 500,
+        headers: PROBLEM_TYPE,
+        body: problemBody('internal_error', { detail: 'The settings weren’t saved. Try again.' }),
+      },
     },
     {
       name: 'PATCH /api/config refuses a body that is not an object',
       method: 'PATCH',
       path: '/api/config',
       body: [1],
-      expect: { status: 400, body: { error: 'Request body must be a JSON object' } },
+      expect: {
+        status: 400,
+        headers: PROBLEM_TYPE,
+        body: problemBody('invalid_request', { detail: 'Request body must be a JSON object' }),
+      },
     },
     {
       name: 'PATCH /api/config refuses malformed JSON in the chain',
@@ -264,7 +275,7 @@ contractSuite(
       path: '/api/config',
       headers: AGENT,
       body: { auth: { enabled: false } },
-      expect: { status: 403, headers: JSON_TYPE, schema: OPERATOR_ONLY(['auth.enabled']) },
+      expect: { status: 403, headers: PROBLEM_TYPE, schema: OPERATOR_ONLY(['auth.enabled']) },
     },
     {
       name: 'PATCH /api/config refuses an approval token the same way',
@@ -295,7 +306,9 @@ contractSuite(
       body: {},
       expect: {
         status: 400,
-        body: { error: 'Body must include a non-empty "value" string' },
+        body: problemBody('invalid_request', {
+          detail: 'Send the agent’s name as a non-empty `value`.',
+        }),
       },
     },
     {
@@ -304,7 +317,9 @@ contractSuite(
       path: '/api/config/agents/defaultAgent',
       expect: {
         status: 400,
-        body: { error: 'Body must include a non-empty "value" string' },
+        body: problemBody('invalid_request', {
+          detail: 'Send the agent’s name as a non-empty `value`.',
+        }),
       },
     },
     {
@@ -1567,13 +1582,14 @@ describe('contract: the same groups with login on', () => {
       body: { auth: { enabled: false } },
       expect: {
         status: 403,
-        body: {
-          error: 'Only a person can change those settings',
-          code: 'operator_cookie_required',
-          paths: ['auth.enabled'],
-          message:
-            'Only a person signed in to DorkOS can change the settings that protect this instance',
-        },
+        body: problemBody('operator_cookie_required', {
+          detail: 'Only a person can change those settings',
+          extensions: {
+            paths: ['auth.enabled'],
+            message:
+              'Only a person signed in to DorkOS can change the settings that protect this instance',
+          },
+        }),
       },
     });
     await check(server, {
@@ -1593,10 +1609,10 @@ describe('contract: the same groups with login on', () => {
         headers: cookie,
         expect: {
           status: 409,
-          body: {
-            error:
-              'The local MCP token works only on this computer when it asks for no password. Clients elsewhere use their personal API keys.',
-          },
+          body: problemBody('conflict', {
+            detail:
+              'The local token works only on this computer without a password. Use an API key.',
+          }),
         },
       });
     }

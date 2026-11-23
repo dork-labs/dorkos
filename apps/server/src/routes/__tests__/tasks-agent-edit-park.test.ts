@@ -447,9 +447,9 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
         .send({ account: 'work' });
 
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({
-        code: 'STICKY_ACCOUNT_LOCKED',
-        error:
+      expect(res.body).toMatchObject({
+        code: 'invalid_request',
+        detail:
           "This schedule picks up where its last run left off, so it stays on the account it started on. Turn off 'Remember the last run' to change it.",
       });
       expect(store.getTask(task.id)!.account).toBeNull();
@@ -491,7 +491,7 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
         .send({ sticky: true, account: 'work' });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('STICKY_ACCOUNT_LOCKED');
+      expect(res.body.code).toBe('invalid_request');
       expect(store.getTask(task.id)).toMatchObject({ sticky: false, account: null });
     });
 

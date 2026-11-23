@@ -287,7 +287,7 @@ describe('PUT /api/runtimes/claude-code/project-accounts', () => {
       .put('/api/runtimes/claude-code/project-accounts')
       .send({ project: dotted, allow: ['work', 'ghost'] });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('unknown_account');
+    expect(res.body.code).toBe('invalid_request');
     expect(state.sets).toBe(0);
     expect(emit).not.toHaveBeenCalled();
   });
@@ -297,7 +297,7 @@ describe('PUT /api/runtimes/claude-code/project-accounts', () => {
       .put('/api/runtimes/claude-code/project-accounts')
       .send({ project: loose, allow: ['work'] });
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('not_a_project');
+    expect(res.body.code).toBe('not_found');
     expect(state.sets).toBe(0);
   });
 
@@ -307,7 +307,7 @@ describe('PUT /api/runtimes/claude-code/project-accounts', () => {
       .set('x-dorkos-agent', 'agent-token-abc')
       .send({ project: dotted, allow: ['work'] });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('operator_only_config');
+    expect(res.body.code).toBe('person_only');
     expect(state.sets).toBe(0);
     expect(claudeCode().projectAccounts).toEqual({});
     expect(emit).not.toHaveBeenCalled();
@@ -380,7 +380,7 @@ describe('PUT /api/runtimes/claude-code/accounts/:id/only-projects', () => {
       .put('/api/runtimes/claude-code/accounts/work/only-projects')
       .send({ projects: [other, loose] });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('not_a_project');
+    expect(res.body.code).toBe('invalid_request');
     expect(state.sets).toBe(0);
   });
 
@@ -389,7 +389,7 @@ describe('PUT /api/runtimes/claude-code/accounts/:id/only-projects', () => {
       .put('/api/runtimes/claude-code/accounts/ghost/only-projects')
       .send({ projects: [other] });
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('unknown_account');
+    expect(res.body.code).toBe('not_found');
     expect(state.sets).toBe(0);
   });
 
@@ -399,7 +399,7 @@ describe('PUT /api/runtimes/claude-code/accounts/:id/only-projects', () => {
       .set('x-dorkos-agent', 'agent-token-abc')
       .send({ projects: [other] });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('operator_only_config');
+    expect(res.body.code).toBe('person_only');
     expect(state.sets).toBe(0);
     expect(claudeCode().defaultAccountOnlyProjects).toBeNull();
     expect(emit).not.toHaveBeenCalled();
@@ -474,7 +474,7 @@ describe('PUT /api/runtimes/claude-code/accounts/:id/no-auto-move', () => {
     for (const id of ['ghost', 'default']) {
       const res = await put(id).send({ noAutoMove: true });
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('unknown_account');
+      expect(res.body.code).toBe('not_found');
     }
     expect(state.sets).toBe(0);
     expect(emit).not.toHaveBeenCalled();
@@ -491,8 +491,9 @@ describe('PUT /api/runtimes/claude-code/accounts/:id/no-auto-move', () => {
       .set('x-dorkos-agent', 'agent-token-abc')
       .send({ noAutoMove: true });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('operator_only_config');
-    expect(res.body.error).toBe('Only a person can choose whether agents move here automatically.');
+    expect(res.body.code).toBe('person_only');
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body.detail).toMatch(/^DorkOS changed nothing\. Whether agents move/);
     expect(state.sets).toBe(0);
     expect(rows()[0]).not.toHaveProperty('noAutoMove');
     expect(emit).not.toHaveBeenCalled();
@@ -561,7 +562,7 @@ describe('POST /api/runtimes/claude-code/project-accounts/without-credits', () =
       .post('/api/runtimes/claude-code/project-accounts/without-credits')
       .send({ sessionId: 's-1' });
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('not_a_project');
+    expect(res.body.code).toBe('conflict');
     expect(state.sets).toBe(0);
   });
 

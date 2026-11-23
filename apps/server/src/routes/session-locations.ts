@@ -1,7 +1,6 @@
 /** Private, durable launch folders addressed by opaque caller-scoped references. */
 import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { and, eq, count } from 'drizzle-orm';
 import {
   agents,
@@ -18,7 +17,8 @@ import { AgentManifestSchema } from '@dorkos/shared/mesh-schemas';
 import type { MeshCore } from '@dorkos/mesh';
 import { BoundaryError, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, type ProblemStatus } from '@dorkos/http-kit';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { assessSessionLocationPerson, sessionLocationOwnerId } from './session-person-birth.js';
 
@@ -111,7 +111,8 @@ export function createSessionLocationsRoutes(
   });
   router.post('/', async (c) => {
     const parsed = bodySchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json({ error: 'Choose a valid chat folder.' }, 400);
+    if (!parsed.success)
+      return problem(c, 'invalid_request', { detail: 'Choose a valid chat folder.' });
     const ownerId = sessionLocationOwnerId(honoRequestFacts(c));
     try {
       const cwd = await validateBoundaryOrDorkHome(parsed.data.cwd);
@@ -128,18 +129,14 @@ export function createSessionLocationsRoutes(
           .where(eq(sessionLocations.ownerId, ownerId))
           .get()?.value ?? 0;
       if (size >= MAX_SESSION_LOCATIONS)
-        return c.json(
-          { error: 'Too many saved chat folders.', code: 'SESSION_LOCATION_LIMIT' },
-          409
-        );
+        return problem(c, 'conflict', { detail: 'Too many saved chat folders.' });
       const id = randomUUID();
       db.insert(sessionLocations)
         .values({ id, ownerId, cwd, createdAt: new Date().toISOString() })
         .run();
       return c.json({ id }, 201);
     } catch (error) {
-      if (error instanceof BoundaryError)
-        return c.json({ error: error.message, code: error.code }, 403);
+      if (error instanceof BoundaryError) return boundaryProblem(c, error);
       throw error;
     }
   });
@@ -202,17 +199,16 @@ export function createSessionLocationsRoutes(
   });
   router.get('/:id', async (c) => {
     const id = c.req.param('id');
-    if (!idSchema.safeParse(id).success) return c.json(locationMissing, 404);
+    if (!idSchema.safeParse(id).success) return locationMissing(c);
     const ownerId = sessionLocationOwnerId(honoRequestFacts(c));
     const location = ownedLocation(db, id, ownerId);
-    if (!location) return c.json(locationMissing, 404);
+    if (!location) return locationMissing(c);
     try {
       // Revalidate on every read: boundary changes and symlink retargets cannot widen access.
       const cwd = await validateBoundaryOrDorkHome(location.cwd);
       return c.json({ cwd });
     } catch (error) {
-      if (error instanceof BoundaryError)
-        return c.json({ error: error.message, code: error.code }, 403);
+      if (error instanceof BoundaryError) return boundaryProblem(c, error);
       throw error;
     }
   });

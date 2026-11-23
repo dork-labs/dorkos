@@ -248,7 +248,8 @@ describe('an agent creating from a template (the exploit)', () => {
     const res = await create({});
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain('template brings too much to show');
+    expect(res.body.code).toBe('declined');
+    expect(res.body.detail).toContain('template brings too much to show');
     expect(approvals.listPending()).toEqual([]);
     expect(await exists(path.join(agentsHome, 'minion'))).toBe(false);
   });
@@ -294,8 +295,10 @@ describe('template download outcomes (moved from the mocked-fs suite)', () => {
     templateFiles.fail = new Error('clone failed');
     const res = await create({});
     expect(res.status).toBe(500);
-    expect(res.body.error).toContain('Template download failed');
-    expect(res.body.error).toContain('clone failed');
+    // A fixed sentence: the download's own words go to the log, never the answer.
+    expect(res.body.code).toBe('internal_error');
+    expect(res.body.detail).toBe('The template couldn’t be downloaded. Try again.');
+    expect(JSON.stringify(res.body)).not.toContain('clone failed');
     expect(await exists(path.join(agentsHome, 'minion'))).toBe(false);
   });
 

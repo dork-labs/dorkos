@@ -76,9 +76,10 @@ describe('a tool prompt in a chat', () => {
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1', alwaysAllow: true });
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({
-      error: 'Answer at your computer or over Remote Access.',
-      code: NOT_FROM_WIFI,
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body).toMatchObject({
+      code: 'not_from_wifi',
+      detail: 'Answer at your computer or over Remote Access.',
     });
     expect(fakeRuntime.approveTool).not.toHaveBeenCalled();
   });
@@ -89,8 +90,8 @@ describe('a tool prompt in a chat', () => {
       .send({ toolCallId: 'tc-1' });
     expect(once.status).toBe(403);
     expect(once.body).toMatchObject({
-      code: NOT_FROM_WIFI,
-      error: 'Answer at your computer or over Remote Access.',
+      code: 'not_from_wifi',
+      detail: 'Answer at your computer or over Remote Access.',
     });
     expect(once.body.heldActionId).toBeUndefined();
     expect(fakeRuntime.approveTool).not.toHaveBeenCalled();

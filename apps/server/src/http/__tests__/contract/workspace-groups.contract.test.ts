@@ -71,6 +71,13 @@ const OUTSIDE = {
   code: 'OUTSIDE_BOUNDARY',
 };
 const NULL_BYTE = { error: 'Invalid path: null bytes not allowed', code: 'NULL_BYTE' };
+const GIT_OUTSIDE = problemBody('outside_boundary', {
+  detail: 'Pick a folder inside the ones DorkOS may use.',
+});
+const GIT_NULL_BYTE = problemBody('invalid_request', {
+  detail: 'That path has a character paths can’t hold.',
+});
+const NO_WORKSPACE = problemBody('not_found', { detail: 'No workspace with that id.' });
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const CROSS_SITE = { 'Sec-Fetch-Site': 'cross-site' };
@@ -308,17 +315,17 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
   {
     name: 'GET /api/git/status refuses a folder outside the boundary',
     path: '/api/git/status?dir=/etc',
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/git/status refuses a walk out of the boundary',
     path: `/api/git/status?dir=${q(`${REPO_ROOT}/../..`)}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
-    name: 'GET /api/git/status refuses a NUL byte with a 403',
+    name: 'GET /api/git/status refuses a NUL byte with a 400',
     path: `/api/git/status?dir=${q(`${REPO_ROOT}\0`)}`,
-    expect: { status: 403, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'GET /api/git/status refuses a repeated dir',
@@ -391,7 +398,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/workspaces/ports',
     body: { path: REPO_ROOT },
-    expect: { status: 404, body: { error: 'No managed workspace for path' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'That path isn’t inside a managed workspace.' }),
+    },
   },
   {
     name: 'POST /api/workspaces/ports refuses a request with no body',
@@ -427,19 +437,19 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
   {
     name: 'GET /api/workspaces/:id answers 404 for an unknown workspace',
     path: '/api/workspaces/no-such-workspace',
-    expect: { status: 404, body: { error: 'Not found' } },
+    expect: { status: 404, body: NO_WORKSPACE },
   },
   {
     name: 'GET /api/workspaces/:id decodes an encoded slash and still answers 404',
     path: '/api/workspaces/..%2F..%2Fetc',
-    expect: { status: 404, body: { error: 'Not found' } },
+    expect: { status: 404, body: NO_WORKSPACE },
   },
   {
     name: 'POST /api/workspaces/:id/pin answers 404 for an unknown workspace',
     method: 'POST',
     path: '/api/workspaces/no-such-workspace/pin',
     body: { pinned: true },
-    expect: { status: 404, body: { error: 'Not found' } },
+    expect: { status: 404, body: NO_WORKSPACE },
   },
   {
     name: 'POST /api/workspaces/:id/pin refuses a body without pinned',
@@ -458,7 +468,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     name: 'DELETE /api/workspaces/:id answers 404 for an unknown workspace',
     method: 'DELETE',
     path: '/api/workspaces/no-such-workspace?force=true',
-    expect: { status: 404, body: { error: 'Not found' } },
+    expect: { status: 404, body: NO_WORKSPACE },
   },
   {
     name: 'DELETE /api/workspaces/:id refuses an empty approvedRemoveHooks',
@@ -647,7 +657,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'PUT',
     path: '/api/read-cursors/room/no-such-room',
     body: { lastReadSeq: 1 },
-    expect: { status: 404, schema: z.object({ error: z.string(), code: z.string() }).loose() },
+    expect: { status: 404, schema: z.object({ code: z.literal('room_not_found') }).loose() },
   },
   {
     name: 'GET /api/read-cursors/:kind/:id refuses an agent it cannot verify',
@@ -655,7 +665,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: AGENT,
     expect: {
       status: 401,
-      schema: z.object({ code: z.literal('AGENT_IDENTITY_UNVERIFIED') }).loose(),
+      schema: z.object({ code: z.literal('agent_identity_unverified') }).loose(),
     },
   },
   {
@@ -684,44 +694,50 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/session-locations',
     body: { cwd: '/etc' },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'POST /api/session-locations refuses a walk out of the boundary',
     method: 'POST',
     path: '/api/session-locations',
     body: { cwd: `${REPO_ROOT}/../..` },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
-    name: 'POST /api/session-locations refuses a NUL byte with a 403',
+    name: 'POST /api/session-locations refuses a NUL byte with a 400',
     method: 'POST',
     path: '/api/session-locations',
     body: { cwd: `${REPO_ROOT}\0` },
-    expect: { status: 403, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'POST /api/session-locations refuses an unknown field',
     method: 'POST',
     path: '/api/session-locations',
     body: { cwd: REPO_ROOT, extra: true },
-    expect: { status: 400, body: { error: 'Choose a valid chat folder.' } },
+    expect: {
+      status: 400,
+      body: problemBody('invalid_request', { detail: 'Choose a valid chat folder.' }),
+    },
   },
   {
     name: 'POST /api/session-locations refuses a request with no body',
     method: 'POST',
     path: '/api/session-locations',
-    expect: { status: 400, body: { error: 'Choose a valid chat folder.' } },
+    expect: {
+      status: 400,
+      body: problemBody('invalid_request', { detail: 'Choose a valid chat folder.' }),
+    },
   },
   {
     name: 'GET /api/session-locations/:id answers 404 for an id that is not a UUID',
     path: '/api/session-locations/not-a-uuid',
-    expect: { status: 404, body: { error: 'Chat folder not found.' } },
+    expect: { status: 404, body: problemBody('not_found', { detail: 'Chat folder not found.' }) },
   },
   {
     name: 'GET /api/session-locations/:id answers 404 for a UUID nobody saved',
     path: `/api/session-locations/${randomUUID()}`,
-    expect: { status: 404, body: { error: 'Chat folder not found.' } },
+    expect: { status: 404, body: problemBody('not_found', { detail: 'Chat folder not found.' }) },
   },
   {
     name: 'GET /api/session-locations/:id refuses a cross-site request',
@@ -729,10 +745,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: CROSS_SITE,
     expect: {
       status: 403,
-      body: {
-        error: 'Only a person can choose a chat folder.',
-        code: 'SESSION_LOCATION_PERSON_REQUIRED',
-      },
+      body: problemBody('person_only', { detail: 'Only a person can choose a chat folder.' }),
     },
   },
   {
@@ -743,11 +756,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { cwd: REPO_ROOT },
     expect: {
       status: 403,
-      body: {
-        error: 'Only a person can choose a chat folder.',
-        code: 'SESSION_LOCATION_PERSON_REQUIRED',
-        message: 'Only a person can choose a chat folder.',
-      },
+      body: problemBody('person_only', { detail: 'Only a person can choose a chat folder.' }),
     },
   },
   {
@@ -756,7 +765,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: AGENT,
     expect: {
       status: 403,
-      schema: z.object({ code: z.literal('SESSION_LOCATION_PERSON_REQUIRED') }).loose(),
+      schema: z.object({ code: z.literal('person_only') }).loose(),
     },
   },
   {

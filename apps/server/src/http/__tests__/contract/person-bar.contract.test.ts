@@ -358,7 +358,7 @@ describe('contract: the person-only routes at this computer, with an owner', () 
         { authorization: `Bearer ${apiKey}` }
       );
       expect(res.status).toBe(403);
-      expect(res.json.error).toBe('Only a person can change those settings');
+      expect(res.json.detail).toEqual(expect.any(String));
       expect(['operator_only_config', 'operator_cookie_required']).toContain(res.json.code);
       expect(readFileSync(configFile()).equals(before)).toBe(true);
     });

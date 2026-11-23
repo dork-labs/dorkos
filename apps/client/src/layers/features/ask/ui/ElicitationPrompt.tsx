@@ -82,7 +82,7 @@ export function ElicitationPrompt({
         await transport.submitElicitation(sessionId, interactionId, submitAction, content);
       } catch (err) {
         const code = (err as { code?: string }).code;
-        if (code === 'INTERACTION_ALREADY_RESOLVED') {
+        if (code === 'interaction_already_resolved') {
           // Race condition — treat as success
         } else {
           setError('Couldn’t send your answer. Try again.');

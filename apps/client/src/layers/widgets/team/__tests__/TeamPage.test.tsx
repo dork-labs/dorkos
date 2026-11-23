@@ -213,7 +213,7 @@ describe('TeamPage — claiming an account on another platform (DOR-1778)', () =
     const user = userEvent.setup();
     const setIdentityLinkedToMe = vi
       .fn()
-      .mockRejectedValue(Object.assign(new Error('nope'), { code: 'OPERATOR_ONLY' }));
+      .mockRejectedValue(Object.assign(new Error('nope'), { code: 'operator_only' }));
     renderPage({ members: MOCK_TEAM_ROSTER }, { setIdentityLinkedToMe });
     await screen.findByText('Dorian');
 

@@ -139,7 +139,7 @@ describe('ClaimFeed — "Answer in a channel" (DOR-882)', () => {
     // this proves: without it, the shared mutation cache would ALSO toast
     // underneath the dialog this opens instead.
     const conflict = Object.assign(new Error('already bound'), {
-      code: 'CHAT_ALREADY_BOUND',
+      code: 'chat_already_bound',
       body: { conflict: { bindingId: 'b-existing', agentId: 'scribe' } },
     });
     transport.claimUnclaimedChat = vi.fn().mockRejectedValue(conflict);

@@ -243,7 +243,7 @@ describe('GET /api/sessions/:id/queue', () => {
   it('rejects a malformed session id', async () => {
     const res = await request(server).get('/api/sessions/not-a-uuid/queue');
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('INVALID_SESSION_ID');
+    expect(res.body.code).toBe('invalid_request');
   });
 });
 
@@ -308,7 +308,7 @@ describe('PATCH /api/sessions/:id/queue/:messageId', () => {
       .send({ content: 'hello?' });
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('QUEUED_MESSAGE_NOT_FOUND');
+    expect(res.body.code).toBe('queued_message_not_found');
   });
 
   it('404s a move anchored on a message from ANOTHER session', async () => {
@@ -342,7 +342,7 @@ describe('PATCH /api/sessions/:id/queue/:messageId', () => {
       .send({ content: 'hijacked words', move: { before: 'no-such-message' } });
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('QUEUED_MESSAGE_NOT_FOUND');
+    expect(res.body.code).toBe('queued_message_not_found');
     expect((await readQueue())[0]?.content).toBe('original words');
   });
 
@@ -353,7 +353,7 @@ describe('PATCH /api/sessions/:id/queue/:messageId', () => {
       .patch(`/api/sessions/${SESSION_ID}/queue/${mine.messageId}`)
       .send({});
     expect(nothing.status).toBe(400);
-    expect(nothing.body.code).toBe('VALIDATION_ERROR');
+    expect(nothing.body.code).toBe('invalid_request');
 
     // Express 5 leaves `req.body` undefined for a body-less request; that is a
     // 400 like any other malformed body, never a crash.
@@ -390,13 +390,13 @@ describe('DELETE /api/sessions/:id/queue/:messageId', () => {
       `/api/sessions/${SESSION_ID}/queue/${mine.messageId}`
     );
     expect(again.status).toBe(404);
-    expect(again.body.code).toBe('QUEUED_MESSAGE_NOT_FOUND');
+    expect(again.body.code).toBe('queued_message_not_found');
   });
 
   it('rejects a malformed session id', async () => {
     const res = await request(server).delete('/api/sessions/not-a-uuid/queue/whatever');
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('INVALID_SESSION_ID');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('names the person in the sender’s record when it removes an agent message', async () => {
@@ -447,7 +447,7 @@ describe('DELETE while Send now is carrying the message', () => {
     try {
       const res = await request(server).delete(`/api/sessions/${SESSION_ID}/queue/${queued.id}`);
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('QUEUED_MESSAGE_LAUNCHING');
+      expect(res.body.code).toBe('queued_message_launching');
       expect(store.get(queued.id)).toBeDefined();
     } finally {
       steering.delete(queued.id);
@@ -478,7 +478,7 @@ describe('POST /api/sessions/:id/queue/:messageId/steer', () => {
     );
 
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('NOT_A_CHAT_MESSAGE');
+    expect(res.body.code).toBe('conflict');
     expect((await readQueue()).map((row) => row.id)).toEqual([queued.messageId]);
   });
 });
@@ -579,7 +579,7 @@ describe('POST /api/sessions/:id/messages — the receipt', () => {
   it('rejects an empty body with 400, not a crash (Express 5)', async () => {
     const res = await request(server).post(`/api/sessions/${SESSION_ID}/messages`);
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('VALIDATION_ERROR');
+    expect(res.body.code).toBe('invalid_request');
   });
 });
 
@@ -692,12 +692,12 @@ describe('POST /api/sessions/:id/tasks/:taskId/stop — the same receipt vocabul
     fakeRuntime.hasSession.mockReturnValue(true);
     const conflict = await request(server).post(`/api/sessions/${SESSION_ID}/tasks/gone/stop`);
     expect(conflict.status).toBe(409);
-    expect(conflict.body.code).toBe('TASK_NOT_RUNNING');
+    expect(conflict.body.code).toBe('task_not_running');
 
     fakeRuntime.hasSession.mockReturnValue(false);
     const missing = await request(server).post(`/api/sessions/${SESSION_ID}/tasks/gone/stop`);
     expect(missing.status).toBe(404);
-    expect(missing.body.code).toBe('SESSION_NOT_FOUND');
+    expect(missing.body.code).toBe('session_not_found');
   });
 });
 

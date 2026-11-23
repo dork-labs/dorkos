@@ -388,7 +388,7 @@ export function ChatStatusSection({
   // Gated on `compaction.visible`, never re-derived: the hook already folds in
   // runtime support, the 85% threshold, AND `isStreaming`. A separately-derived
   // condition drifted from it once already, offering an enabled Compact button
-  // mid-turn that could only ever 409 `SESSION_LOCKED` (DOR-112 requirement 1).
+  // mid-turn that could only ever 409 `session_locked` (DOR-112 requirement 1).
   const inlineCompact = compaction.visible && budget.density === 'full';
   const promotedCompactAction = compaction.visible && !inlineCompact;
 

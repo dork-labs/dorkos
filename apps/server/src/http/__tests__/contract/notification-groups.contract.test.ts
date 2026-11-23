@@ -68,10 +68,9 @@ const APPROVAL_TOKEN = { 'X-DorkOS-Approval': 'some-token' };
 /** A ULID nothing in a fresh install has. */
 const UNKNOWN_ULID = '01JZZZZZZZZZZZZZZZZZZZZZZZ';
 
-const NOTIFICATIONS_OPERATOR_ONLY = {
-  error: 'Marking a notification read has to happen inside DorkOS, by the person it was for.',
-  code: 'NOTIFICATIONS_OPERATOR_ONLY',
-};
+const NOTIFICATIONS_OPERATOR_ONLY = problemBody('operator_only', {
+  detail: 'Only the person a notification was for can mark it read, in DorkOS.',
+});
 const PUSH_OPERATOR_ONLY = {
   error:
     'Deciding which devices DorkOS may reach is something only you can do, from inside DorkOS.',

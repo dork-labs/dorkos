@@ -351,8 +351,8 @@ describe('Agent Convention File Operations', () => {
       expect(res.status).toBe(400);
       // The refusal names MEMORY.md and its own budget — not SOUL.md's, which is
       // what a `too_big` map that forgot this field would have said.
-      expect(res.body.error).toContain('MEMORY.md');
-      expect(res.body.error).toContain('8,000');
+      expect(res.body.detail).toContain('MEMORY.md');
+      expect(res.body.detail).toContain('8,000');
       expect(mockWriteConventionFile).not.toHaveBeenCalledWith(
         '/home/user/project',
         'MEMORY.md',
@@ -473,7 +473,7 @@ describe('Agent Convention File Operations', () => {
       const res = await request(server).post('/api/agents/current/migrate-persona');
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('path query parameter required');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('returns 404 when no manifest found', async () => {
@@ -484,7 +484,7 @@ describe('Agent Convention File Operations', () => {
         .query({ path: '/home/user/project' });
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('No agent registered at this path');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('migrates persona text to SOUL.md', async () => {

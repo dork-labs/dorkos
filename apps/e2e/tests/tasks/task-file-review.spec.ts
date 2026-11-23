@@ -39,11 +39,15 @@ test.describe('Tasks — reviewing a task’s file with no cap standing', () => 
       sent = route.request().postDataJSON();
       await route.fulfill({
         status: 409,
-        json: {
-          error: 'Nothing to change',
-          code: 'file_changed_since',
+        contentType: 'application/problem+json',
+        body: JSON.stringify({
+          type: 'urn:dorkos:problem:conflict',
+          title: 'That clashes with a change made meanwhile.',
+          status: 409,
+          code: 'conflict',
+          detail: 'Nothing to change',
           message: 'The file changed again. Review it once more.',
-        },
+        }),
       });
     });
 

@@ -48,7 +48,14 @@ function writtenSentenceOf(body: object): string | undefined {
  * level (`NOT_FROM_WIFI`) and the owner-at-this-computer bar. Neither is a
  * fault, so a surface shows the server's sentence calmly, never as an error.
  */
-const AWAY_FROM_THE_COMPUTER_CODES = new Set(['NOT_FROM_WIFI', 'NEEDS_PERSON_AT_THIS_COMPUTER']);
+const AWAY_FROM_THE_COMPUTER_CODES = new Set([
+  'not_from_wifi',
+  // Old spelling until the other Wi-Fi-refusing routes move (DOR-4979).
+  'NOT_FROM_WIFI',
+  'needs_person_at_this_computer',
+  // Old spelling until the other front-door routes move (DOR-4979).
+  'NEEDS_PERSON_AT_THIS_COMPUTER',
+]);
 
 /**
  * The server's sentence for an action refused because of where this device

@@ -86,7 +86,7 @@ describe('agent credits confirmation', () => {
     writeFileSync(file, JSON.stringify({ ...agent, model: 'different-work' }));
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
       status: 409,
-      result: { code: 'AGENT_CHANGED' },
+      result: { code: 'conflict' },
     });
     expect(update).not.toHaveBeenCalled();
     expect(creditsAllowedForAgent(agent.id)).toBe(false);

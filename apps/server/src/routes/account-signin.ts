@@ -16,7 +16,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import {
   accountSigninPolicy,
@@ -32,9 +32,6 @@ const OrganizationSchema = z
   .strict();
 const FolderSchema = z.object({ accountId: z.string().min(1) }).strict();
 
-/** Refusal code when only the person, in the app, may change a sign-in. */
-export const SIGNIN_NEEDS_PERSON = 'SIGNIN_NEEDS_PERSON';
-
 /**
  * The person bar for Claude sign-ins: the refusal to answer with, or
  * `undefined` for the person in the app.
@@ -42,11 +39,11 @@ export const SIGNIN_NEEDS_PERSON = 'SIGNIN_NEEDS_PERSON';
  * @param c - The request's context.
  */
 export function refuseSigninPolicyChange(c: Context<ApiEnv>): Response | undefined {
-  if (!refuseUnlessAccountOwner(honoRequestFacts(c))) return undefined;
-  return c.json(
-    { error: 'Only you can change Claude sign-ins, in the app.', code: SIGNIN_NEEDS_PERSON },
-    403
-  );
+  const refusal = refuseUnlessAccountOwner(honoRequestFacts(c));
+  if (!refusal) return undefined;
+  return problem(c, refusal === 'not-the-owner' ? 'owner_only' : 'person_only', {
+    detail: 'Only you can change Claude sign-ins, in the app.',
+  });
 }
 
 interface SigninRouteDeps {
@@ -65,7 +62,11 @@ export function createAccountSigninRoutes(deps: SigninRouteDeps = {}): Hono<ApiE
     const refusal = refuseSigninPolicyChange(c);
     if (refusal) return refusal;
     c.header('Cache-Control', 'no-store');
-    if (!readPolicy()) return c.json({ error: 'Sign-in checks are not ready. Try again.' }, 503);
+    if (!readPolicy()) {
+      return problem(c, 'temporarily_unavailable', {
+        detail: 'Sign-in checks are not ready. Try again.',
+      });
+    }
     await next();
   });
   router.get('/', (c) => {
@@ -82,22 +83,26 @@ export function createAccountSigninRoutes(deps: SigninRouteDeps = {}): Hono<ApiE
   });
   router.post('/organizations', async (c) => {
     const body = OrganizationSchema.safeParse(readJsonBody(c));
-    if (!body.success) return c.json({ error: 'Enter an organization ID and a label.' }, 400);
+    if (!body.success) {
+      return validationProblem(c, body.error, { detail: 'Enter an organization ID and a label.' });
+    }
     readPolicy()!.addOrganization(body.data.orgId, body.data.label);
     return c.json({ ok: true });
   });
   router.delete('/organizations/:id', async (c) => {
     const body = EmptySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!body.success || !z.uuid().safeParse(c.req.param('id')).success)
-      return c.json({ error: 'Choose an organization from this list.' }, 400);
+      return problem(c, 'invalid_request', { detail: 'Choose an organization from this list.' });
     readPolicy()!.removeOrganization(c.req.param('id'));
     return c.json({ ok: true });
   });
   router.post('/folders', async (c) => {
     const body = FolderSchema.safeParse(readJsonBody(c));
-    if (!body.success) return c.json({ error: 'Choose an account from this computer.' }, 400);
+    if (!body.success) {
+      return validationProblem(c, body.error, { detail: 'Choose an account from this computer.' });
+    }
     const account = accounts().find((row) => row.accountId === body.data.accountId);
-    if (!account) return c.json({ error: 'That account is not registered.' }, 404);
+    if (!account) return problem(c, 'not_found', { detail: 'That account is not registered.' });
     readPolicy()!.addFolder({
       accountId: account.accountId,
       path: account.path,
@@ -107,20 +112,24 @@ export function createAccountSigninRoutes(deps: SigninRouteDeps = {}): Hono<ApiE
   });
   router.delete('/folders/:id', async (c) => {
     const body = EmptySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json({ error: 'Choose a folder from this list.' }, 400);
+    if (!body.success) {
+      return validationProblem(c, body.error, { detail: 'Choose a folder from this list.' });
+    }
     readPolicy()!.removeFolder(c.req.param('id'));
     return c.json({ ok: true });
   });
   // Confirm a new sign-in, or keep a changed one: both bind what the server reads now.
   router.post('/:id/accept', async (c) => {
     const body = EmptySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json({ error: 'Choose a sign-in from this list.' }, 400);
+    if (!body.success) {
+      return validationProblem(c, body.error, { detail: 'Choose a sign-in from this list.' });
+    }
     const account = accounts().find((row) => row.accountId === c.req.param('id'));
-    if (!account) return c.json({ error: 'That account is not registered.' }, 404);
+    if (!account) return problem(c, 'not_found', { detail: 'That account is not registered.' });
     const policy = readPolicy()!;
     const identity = policy.neverUses(account.path) ? null : metadata(account.path);
     if (!policy.accept(account.path, identity))
-      return c.json({ error: 'This sign-in can’t be used. Sign in again.' }, 409);
+      return problem(c, 'conflict', { detail: 'This sign-in can’t be used. Sign in again.' });
     noteSigninRepaired('claude-code', account.path, 'accept');
     return c.json({ ok: true, identity: policy.assess(account.path, identity) });
   });

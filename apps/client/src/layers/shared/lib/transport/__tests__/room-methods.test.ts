@@ -67,7 +67,7 @@ describe('postToRoom', () => {
         status: 409,
         statusText: 'Conflict',
         headers: new Headers(),
-        json: () => Promise.resolve({ error: 'This room is archived', code: 'ROOM_ARCHIVED' }),
+        json: () => Promise.resolve({ error: 'This room is archived', code: 'room_archived' }),
       })
     );
     await expect(setup().postToRoom('room-1', { text: 'anyone still here?' })).rejects.toThrow(
@@ -419,7 +419,7 @@ describe('saveRoomFile', () => {
   it('rejects with the server’s code and its conflict, so an editor can offer the choice', async () => {
     const conflict = {
       error: 'Somebody changed this file while you were editing it',
-      code: 'FILE_CHANGED',
+      code: 'file_changed',
       conflict: { path: 'docs/plan.md', commit: 'def5678', lastCommit: null },
     };
     vi.mocked(globalThis.fetch).mockResolvedValue({
@@ -433,7 +433,7 @@ describe('saveRoomFile', () => {
     // back, so the parsed body rides along on the thrown error.
     await expect(
       setup().saveRoomFile('room-1', { path: 'docs/plan.md', baseCommit: 'abc1234', text: 'x' })
-    ).rejects.toMatchObject({ code: 'FILE_CHANGED', status: 409, body: conflict });
+    ).rejects.toMatchObject({ code: 'file_changed', status: 409, body: conflict });
   });
 });
 

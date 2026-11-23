@@ -196,7 +196,7 @@ describe('GET /api/rooms/:id/sessions', () => {
       .set('X-DorkOS-Agent', token);
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('ROOM_NOT_FOUND');
+    expect(res.body.code).toBe('room_not_found');
     expect(res.body).not.toHaveProperty('bindings');
   });
 
@@ -209,7 +209,7 @@ describe('GET /api/rooms/:id/sessions', () => {
     const res = await request(server).get('/api/rooms/01NOSUCHROOM/sessions');
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('ROOM_NOT_FOUND');
+    expect(res.body.code).toBe('room_not_found');
 
     // And through the service directly, with a real room and an author who is
     // not in it.
@@ -239,7 +239,7 @@ describe('GET /api/rooms/:id/sessions', () => {
       .set('X-DorkOS-Agent', token);
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PEOPLE_ONLY');
+    expect(res.body.code).toBe('person_only');
     expect(res.body).not.toHaveProperty('bindings');
   });
 
@@ -261,7 +261,7 @@ describe('GET /api/rooms/:id/sessions', () => {
       .set('X-DorkOS-Agent', 'dork_agent_this-token-resolves-to-nothing');
 
     expect(refused.status).toBe(401);
-    expect(refused.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+    expect(refused.body.code).toBe('agent_identity_unverified');
     expect(refused.body).not.toHaveProperty('bindings');
 
     // The header is the ONLY difference: drop it and the same caller, on the

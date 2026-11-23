@@ -360,11 +360,11 @@ describe('ApprovalPrompt', () => {
     });
   });
 
-  describe('stale answer (409 INTERACTION_ALREADY_RESOLVED) is a benign no-op', () => {
+  describe('stale answer (409 interaction_already_resolved) is a benign no-op', () => {
     // When another surface already answered this interaction (recovery re-emit,
     // a backgrounded tab, a Slack click), the server resolved+deleted the entry,
     // so this card's approve/deny lands as a 409. fetchJSON throws an Error with
-    // `code === 'INTERACTION_ALREADY_RESOLVED'`. The card must treat that as
+    // `code === 'interaction_already_resolved'`. The card must treat that as
     // "already handled" — transition to the resolved state, surface NO error
     // toast — because the authoritative tool_result will clear it anyway.
 
@@ -374,7 +374,7 @@ describe('ApprovalPrompt', () => {
         code: string;
         status: number;
       };
-      err.code = 'INTERACTION_ALREADY_RESOLVED';
+      err.code = 'interaction_already_resolved';
       err.status = 409;
       return err;
     }

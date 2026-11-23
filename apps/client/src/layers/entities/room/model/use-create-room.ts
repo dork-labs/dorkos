@@ -77,7 +77,7 @@ export interface UseCreateChannelOptions {
 
 /**
  * True when `error` is the server's "that name is taken" refusal
- * (`SLUG_TAKEN`) — exported so the dialog can tell a conflict apart from
+ * (`slug_taken`) — exported so the dialog can tell a conflict apart from
  * every other failure and render it inline at the field instead of leaving
  * it to the toast this hook falls back to.
  *
@@ -87,7 +87,7 @@ export interface UseCreateChannelOptions {
  * @param error - The mutation's caught error, or `null`/`undefined`.
  */
 export function isChannelNameConflict(error: unknown): error is Error & { code: string } {
-  return (error as { code?: string } | null)?.code === 'SLUG_TAKEN';
+  return (error as { code?: string } | null)?.code === 'slug_taken';
 }
 
 /**

@@ -50,11 +50,10 @@ import {
 } from '../services/rooms/canvas/canvas-diff-review.js';
 import { findRoomCanvasMedia } from '../services/rooms/canvas/room-canvas-media.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { parseByteRange, servesInlineHere } from '../lib/file-route-guards.js';
 import { logger } from '../lib/logger.js';
-import { errorBody } from '../lib/route-utils.js';
 import { parseOrRefuse, roomRoute, type RoomCaller } from './room-route.js';
 
 /**
@@ -175,7 +174,7 @@ router.get('/media/:file', (c) =>
       c.req.param('file')
     );
     if (!media) {
-      return c.json(errorBody('No such file on this room’s canvas', 'NOT_FOUND'), 404);
+      return problem(c, 'not_found', { detail: 'No such file on this room’s canvas.' });
     }
     // Opened once, never through a symlink, and every later question asked of
     // that descriptor, so the file served is the file that was checked.
@@ -183,14 +182,17 @@ router.get('/media/:file', (c) =>
     try {
       file = await fs.open(media.filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
     } catch {
-      return c.json(errorBody('No such file on this room’s canvas', 'NOT_FOUND'), 404);
+      return problem(c, 'not_found', { detail: 'No such file on this room’s canvas.' });
     }
     const { size } = await file.stat();
     const range = parseByteRange(c.req.header('range'), size);
     if (range.kind === 'unsatisfiable') {
       await file.close();
       c.header('Content-Range', `bytes */${size}`);
-      return c.json(errorBody('Requested range not satisfiable', 'RANGE_NOT_SATISFIABLE'), 416);
+      return problem(c, 'invalid_request', {
+        status: 416,
+        detail: 'That byte range is outside the file.',
+      });
     }
     const headers: Record<string, string> = {
       'Content-Type': media.contentType,
@@ -230,10 +232,7 @@ router.get('/:documentId', (c) =>
     requireCanvasAccess(c, caller);
     const document = getRoomService().canvas.get(roomOf(c), c.req.param('documentId'));
     if (!document) {
-      return c.json(
-        errorBody('No such document on this room’s canvas', 'CANVAS_DOCUMENT_NOT_FOUND'),
-        404
-      );
+      return problem(c, 'not_found', { detail: 'No such document on this room’s canvas.' });
     }
     return c.json(document);
   })

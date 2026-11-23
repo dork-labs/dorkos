@@ -54,13 +54,13 @@ import {
   type SessionRelayPasskeyList,
 } from '@dorkos/shared/session-relay-link';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { classifyRequest } from '../lib/request-classifier.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/approval-wording.js';
-import { errorBody } from '../lib/route-utils.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import {
   ApprovalKeyStoreError,
@@ -153,8 +153,17 @@ const NOT_HERE = 'Add the passkey on the computer DorkOS runs on.';
 /** `/finish` from anything but the return page's own script. */
 const WRONG_PAGE = 'Add the passkey from the page this computer opened. Start again in Settings.';
 
-/** Code for every refusal on these routes but the two bars'. */
-export const SESSION_RELAY_PASSKEY_CODE = 'SESSION_RELAY_PASSKEY';
+/** The status a passkey refusal answers with. */
+type PasskeyRefusalStatus = 400 | 404 | 409 | 410 | 500;
+
+/** The code each refusal status answers with. */
+const CODE_BY_STATUS: Record<PasskeyRefusalStatus, ProblemCode> = {
+  400: 'invalid_request',
+  404: 'not_found',
+  409: 'conflict',
+  410: 'expired',
+  500: 'internal_error',
+};
 
 const START_REFUSALS: Record<EnrolStartRefusal, { status: 400 | 409 | 500; error: string }> = {
   'bad-origin': { status: 400, error: 'That approve page isn’t a valid https address.' },
@@ -237,8 +246,8 @@ export function createSessionRelayPasskeyRoutes(
   bars: SessionRelayBars
 ): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
-  const refuse = (c: Context<ApiEnv>, status: 400 | 404 | 409 | 410 | 500, error: string) =>
-    c.json(errorBody(error, SESSION_RELAY_PASSKEY_CODE), status);
+  const refuse = (c: Context<ApiEnv>, status: PasskeyRefusalStatus, detail: string) =>
+    problem(c, CODE_BY_STATUS[status], { detail });
 
   router.get(
     '/',
@@ -306,7 +315,7 @@ export function createSessionRelayPasskeyRoutes(
       presentsAgentIdentity(facts) ||
       facts.headers[APPROVAL_TOKEN_HEADER] !== undefined
     ) {
-      return c.json(errorBody(NOT_HERE, SESSION_RELAY_PASSKEY_CODE), 403);
+      return problem(c, 'needs_person_at_this_computer', { detail: NOT_HERE });
     }
     const expectedOrigin = deps.enrolment.returnOrigin();
     if (
@@ -317,7 +326,7 @@ export function createSessionRelayPasskeyRoutes(
       // Not the return page's own script: the statement is used up all the same.
       deps.enrolment.cancel();
       audit('add', 'create', 'Refused a passkey for approvals from the web', 'refused', 'origin');
-      return c.json(errorBody(WRONG_PAGE, SESSION_RELAY_PASSKEY_CODE), 403);
+      return problem(c, 'forbidden', { detail: WRONG_PAGE });
     }
     const parsed = SessionRelayPasskeyFinishBodySchema.safeParse(readJsonBody(c));
     // An unreadable body still uses up the live statement: each is tried once.

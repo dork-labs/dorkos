@@ -40,6 +40,12 @@ export interface ProblemOptions {
   retryAfterMs?: number;
   /** What failed validation; {@link validationProblem} fills it. */
   issues?: ProblemIssues;
+  /**
+   * Extension members (RFC 9457 §3.2): extra facts a client acts on, such as
+   * the id of the agent that refused. camelCase names; a standard member of
+   * the same name always wins.
+   */
+  extensions?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -52,6 +58,7 @@ export interface ProblemOptions {
 export function problemBody(code: ProblemCode, options: ProblemOptions = {}): Problem {
   const definition = PROBLEM_CODES[code];
   return {
+    ...options.extensions,
     type: problemType(code),
     title: definition.title,
     status: options.status ?? definition.status,

@@ -22,7 +22,6 @@
  * @module routes/agents
  */
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import fs from 'fs/promises';
 import { z } from 'zod';
 import path from 'path';
@@ -64,7 +63,9 @@ import { trustedCaller } from '../services/core/capabilities/index.js';
 import { clearsTheAgentBar, readCallerAuthority } from '../lib/caller-authority.js';
 import { pinPersonCreatedAgent } from '../services/runtimes/claude-code/folder-settings/folder-config-consent.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
+import { creationProblem, missingPath, noAgentHere, updateProblem } from './agents-problems.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { resolveAgentsDirectory } from '../lib/agents-home.js';
@@ -216,9 +217,7 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
   router.get('/current', async (c) => {
     try {
       const rawPath = rawPathOf(c);
-      if (!rawPath) {
-        return c.json({ error: 'path query parameter required' }, 400);
-      }
+      if (!rawPath) return missingPath(c);
       const agentPath = homeOf(resolveAgentHome(await validateBoundaryOrDorkHome(rawPath)));
       if (!agentPath) {
         return c.json(null);
@@ -241,11 +240,9 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
 
       return c.json({ ...manifest, soulContent, nopeContent, memoryContent, heartbeatContent });
     } catch (err) {
-      if (err instanceof BoundaryError) {
-        return c.json({ error: err.message, code: err.code }, 403);
-      }
+      if (err instanceof BoundaryError) return boundaryProblem(c, err);
       logger.error('[agents] GET /current failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error');
     }
   });
 
@@ -271,7 +268,7 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
       return c.json({ agents });
     } catch (err) {
       logger.error('[agents] POST /resolve failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error');
     }
   });
 
@@ -289,7 +286,10 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
       // Check if agent already exists
       const existing = await readManifest(agentPath);
       if (existing) {
-        return c.json({ error: 'Agent already exists at this path', agent: existing }, 409);
+        return problem(c, 'conflict', {
+          detail: 'An agent already lives in this folder.',
+          extensions: { agent: existing },
+        });
       }
 
       // The same identity gate the mesh register route and the `mesh_register`
@@ -298,9 +298,7 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
       // through unslugified, so a person naming an agent "My Bot" from this
       // route got that string as the immutable slug an `@handle` derives from.
       const identity = resolveNamedAgentIdentity({ name, displayName }, path.basename(agentPath));
-      if (!identity.ok) {
-        return c.json({ error: identity.error, code: identity.code }, 400);
-      }
+      if (!identity.ok) return problem(c, 'invalid_request', { detail: identity.error });
 
       const id = ulid();
       const manifest: AgentManifest = {
@@ -392,11 +390,9 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
 
       return c.json(manifest, 201);
     } catch (err) {
-      if (err instanceof BoundaryError) {
-        return c.json({ error: err.message, code: err.code }, 403);
-      }
+      if (err instanceof BoundaryError) return boundaryProblem(c, err);
       logger.error('[agents] POST / failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error');
     }
   });
 
@@ -414,25 +410,21 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
     body: Record<string, unknown>
   ): Promise<Response> => {
     if (body.template !== undefined) {
-      return c.json(
-        { error: 'Send a template or a package to create the agent from, not both.' },
-        400
-      );
+      return problem(c, 'invalid_request', {
+        detail: 'Send a template or a package to create the agent from, not both.',
+      });
     }
     if (!trustedCaller(readCallerAuthority(honoRequestFacts(c)))) {
-      return c.json(
-        {
-          code: 'operator_only',
-          error:
-            'Only a person creates an agent from a marketplace package here. An agent installs it ' +
-            'with marketplace_install, which asks a person first.',
-        },
-        403
-      );
+      return problem(c, 'operator_only', {
+        detail:
+          'Only a person creates an agent from a package here. Agents use marketplace_install.',
+      });
     }
     const marketplace = deps.marketplace?.();
     if (!marketplace) {
-      return c.json({ error: 'The marketplace is not running on this server.' }, 503);
+      return problem(c, 'temporarily_unavailable', {
+        detail: 'The marketplace isn’t running on this server.',
+      });
     }
     const pkg = PackageCreationSchema.safeParse(body.package);
     const identity = PackageAgentIdentitySchema.safeParse(body);
@@ -450,13 +442,9 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
       undefined
     );
     if (await pathExists(target)) {
-      return c.json(
-        {
-          code: 'COLLISION',
-          error: 'This agent is already on your team. Find it there, or remove it first.',
-        },
-        409
-      );
+      return problem(c, 'conflict', {
+        detail: 'This agent is already on your team. Find it there, or remove it first.',
+      });
     }
     try {
       const result = await marketplace.installer.install({
@@ -471,10 +459,13 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
       return c.json({ ...manifest, _path: result.installPath }, 201);
     } catch (err) {
       if (err instanceof DisclosureChangedError) {
-        return c.json({ code: 'disclosure_changed', error: err.message }, 409);
+        return problem(c, 'disclosure_changed', { detail: err.message });
       }
       if (err instanceof InvalidPackageError) {
-        return c.json({ error: err.message, errors: err.errors }, 400);
+        return problem(c, 'invalid_request', {
+          detail: 'This package didn’t pass its checks.',
+          extensions: { errors: err.errors },
+        });
       }
       throw err;
     }
@@ -525,7 +516,7 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
           model: options.model,
           accountNamedNow: false,
         });
-        if (refusal) return c.json({ error: refusal, code: 'UNSUPPORTED_MODEL' }, 400);
+        if (refusal) return problem(c, 'invalid_request', { detail: refusal });
       }
       const result = await createAgentWorkspace(
         options,
@@ -566,10 +557,10 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
       );
     } catch (err) {
       if (err instanceof TemplateNeedsReviewError) {
-        return c.json(
-          { error: err.message, code: err.code, template: templateOf(err.inspection) },
-          409
-        );
+        return problem(c, 'template_needs_review', {
+          detail: err.message,
+          extensions: { template: templateOf(err.inspection) },
+        });
       }
       if (err instanceof TemplateApprovalPendingError) {
         return c.json(
@@ -584,19 +575,11 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
         );
       }
       if (err instanceof TemplateDeclinedError) {
-        return c.json({ status: 'declined', error: err.message }, 403);
+        return problem(c, 'declined', { detail: err.message });
       }
-      if (err instanceof AgentCreationError) {
-        if (err.code === 'VALIDATION') {
-          return c.json({ error: 'Validation failed', details: err.message }, 400);
-        }
-        if (err.code === 'BOUNDARY') {
-          return c.json({ error: err.message, code: 'OUTSIDE_BOUNDARY' }, 403);
-        }
-        return c.json({ error: err.message }, err.statusCode as ContentfulStatusCode);
-      }
+      if (err instanceof AgentCreationError) return creationProblem(c, err);
       logger.error('[agents] POST /create failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error');
     }
   });
 
@@ -607,12 +590,12 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
   router.patch('/current', refuseAgentExecutionWrites, refuseAgentSelfFilesFromWifi, async (c) => {
     try {
       const rawPath = rawPathOf(c);
-      if (!rawPath) return c.json({ error: 'path query parameter required' }, 400);
+      if (!rawPath) return missingPath(c);
       // Written to the home the path resolves to — the same one GET answered
       // from — so an editor opened on a worktree or checkout changes the agent,
       // never the branch's committed copy (spec `agent-home-desk` §3.2 row 9).
       const agentPath = homeOf(resolveAgentHome(await validateBoundaryOrDorkHome(rawPath)));
-      if (!agentPath) return c.json({ error: 'No agent registered at this path' }, 404);
+      if (!agentPath) return noAgentHere(c);
 
       // Manifest guards + write live in the shared agent-updater service so the
       // `update_agent` MCP tool enforces the exact same rules (ADR-0043 sync
@@ -623,29 +606,10 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
       const updated = await updateAgentManifest({ agentPath, body, meshCore, byPerson });
       return c.json(updated);
     } catch (err) {
-      if (err instanceof BoundaryError) {
-        return c.json({ error: err.message, code: err.code }, 403);
-      }
-      if (err instanceof AgentUpdateError) {
-        switch (err.code) {
-          // `err.message` rather than a fixed string: a refused convention file
-          // knows WHICH file and WHY, and that sentence is what the editor puts
-          // on screen. A schema failure with nothing better to say still carries
-          // "Validation failed", which is what the older tests pin.
-          case 'VALIDATION':
-            return c.json({ error: err.message, details: err.details }, 400);
-          case 'NOT_FOUND':
-            return c.json({ error: err.message }, 404);
-          case 'SYSTEM_PROTECTED':
-          case 'OPERATOR_ONLY':
-            return c.json({ error: err.message }, 403);
-          case 'UNSUPPORTED_MODEL':
-          case 'REPORTS_TO_CYCLE':
-            return c.json({ error: err.message, code: err.code }, 400);
-        }
-      }
+      if (err instanceof BoundaryError) return boundaryProblem(c, err);
+      if (err instanceof AgentUpdateError) return updateProblem(c, err);
       logger.error('[agents] PATCH /current failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error');
     }
   });
 
@@ -654,14 +618,10 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
   router.post('/current/migrate-persona', async (c) => {
     try {
       const rawPath = rawPathOf(c);
-      if (!rawPath) {
-        return c.json({ error: 'path query parameter required' }, 400);
-      }
+      if (!rawPath) return missingPath(c);
       const agentPath = homeOf(resolveAgentHome(await validateBoundaryOrDorkHome(rawPath)));
       const manifest = agentPath ? await readHomeManifest(agentPath) : null;
-      if (!agentPath || !manifest) {
-        return c.json({ error: 'No agent registered at this path' }, 404);
-      }
+      if (!agentPath || !manifest) return noAgentHere(c);
 
       // Check if already migrated
       const existingSoul = await readConventionFile(agentPath, 'SOUL.md');
@@ -688,11 +648,9 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
 
       return c.json({ migrated: true });
     } catch (err) {
-      if (err instanceof BoundaryError) {
-        return c.json({ error: err.message, code: err.code }, 403);
-      }
+      if (err instanceof BoundaryError) return boundaryProblem(c, err);
       logger.error('[agents] POST /current/migrate-persona failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error');
     }
   });
 

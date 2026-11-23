@@ -33,21 +33,14 @@ import { searchForCaller, type SearchScope } from './search-service.js';
 export function answerSearch(db: Db, scope: SearchScope, raw: unknown): SearchAnswer {
   const parsed = SearchQuerySchema.safeParse(raw);
   if (!parsed.success) {
-    return {
-      ok: false,
-      status: 400,
-      error: refusalFor(parsed.error.issues[0]?.path[0]),
-      code: 'INVALID_SEARCH_QUERY',
-    };
+    return { ok: false, detail: refusalFor(parsed.error.issues[0]?.path[0]) };
   }
 
   const { q, limit, source } = parsed.data;
   if (source !== undefined && !SEARCH_SOURCES.some((registered) => registered.id === source)) {
     return {
       ok: false,
-      status: 400,
-      error: `There is nothing here called '${source}'. Searchable sources are: ${SEARCH_SOURCES.map((registered) => registered.id).join(', ')}.`,
-      code: 'UNKNOWN_SEARCH_SOURCE',
+      detail: `There is nothing here called '${source}'. Searchable sources are: ${SEARCH_SOURCES.map((registered) => registered.id).join(', ')}.`,
     };
   }
 

@@ -22,6 +22,7 @@ describe('describeDecisionRefusal', () => {
   it('shows the server’s own sentence for every refusal that has one', () => {
     const cases: [string, string][] = [
       ['operator_cookie_required', 'Only a person signed in to DorkOS can change that'],
+      ['not_from_wifi', 'Answer at your computer or over Remote Access.'],
       [
         'ALWAYS_NOT_OFFERED',
         "Always allow isn't offered for this request. Answer it with Allow or Deny.",

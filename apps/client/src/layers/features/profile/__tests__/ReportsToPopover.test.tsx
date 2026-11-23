@@ -127,7 +127,7 @@ describe('ReportsToPopover', () => {
   it('shows a refused loop under the list, and not as a toast', async () => {
     const refusal = Object.assign(
       new Error('That would make a loop: an agent can’t report to someone who reports to it.'),
-      { code: 'REPORTS_TO_CYCLE', status: 400 }
+      { code: 'reports_to_cycle', status: 400 }
     );
     renderPopover({ updateAgentByPath: vi.fn().mockRejectedValue(refusal) });
     await userEvent.click(await screen.findByRole('radio', { name: 'Juno' }));

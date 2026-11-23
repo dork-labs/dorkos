@@ -48,7 +48,6 @@ import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
-import { NOT_FROM_WIFI } from '../../services/core/auth/sessions/wifi-level.js';
 import { WIFI_RAISE_REFUSAL } from '../../services/core/auth/sessions/wifi-raise-guard.js';
 
 const target = swappableServer();
@@ -121,7 +120,7 @@ afterEach(() => {
   fs.rmSync(dorkHome, { recursive: true, force: true });
 });
 
-const REFUSED = { error: WIFI_RAISE_REFUSAL, code: NOT_FROM_WIFI };
+const REFUSED = { detail: WIFI_RAISE_REFUSAL, code: 'not_from_wifi' };
 
 describe('making a schedule from Wi-Fi', () => {
   it('gives one that names no mode Default, not the operator’s Full autonomy', async () => {
@@ -139,7 +138,7 @@ describe('making a schedule from Wi-Fi', () => {
       .set('x-test-via', 'wifi')
       .send(body({ permissionMode: 'acceptEdits' }));
     expect(raise.status).toBe(403);
-    expect(raise.body).toEqual(REFUSED);
+    expect(raise.body).toMatchObject(REFUSED);
     expect(store.getTasks()).toHaveLength(0);
 
     const lower = await request(server)
@@ -158,7 +157,7 @@ describe('changing a schedule from Wi-Fi', () => {
       .set('x-test-via', 'wifi')
       .send({ permissionMode: 'bypassPermissions' });
     expect(raise.status).toBe(403);
-    expect(raise.body).toEqual(REFUSED);
+    expect(raise.body).toMatchObject(REFUSED);
     expect(store.getTask(id)?.permissionMode).toBe('default');
 
     const full = await madeHere('bypassPermissions');
@@ -203,7 +202,7 @@ it('refuses Wi-Fi approval even at Default (DOR-3651)', async () => {
       permissionMode: 'default',
     });
   expect(response.status).toBe(403);
-  expect(response.body.code).toBe(NOT_FROM_WIFI);
+  expect(response.body.code).toBe('not_from_wifi');
   expect(store.getTask(id)?.status).toBe('pending_approval');
 });
 
@@ -214,7 +213,7 @@ describe('running a schedule now from Wi-Fi', () => {
       .post(`/api/tasks/${full}/trigger`)
       .set('x-test-via', 'wifi');
     expect(refused.status).toBe(403);
-    expect(refused.body).toEqual(REFUSED);
+    expect(refused.body).toMatchObject(REFUSED);
     expect(scheduler.triggerManualRun).not.toHaveBeenCalled();
 
     const plain = await madeHere('default');

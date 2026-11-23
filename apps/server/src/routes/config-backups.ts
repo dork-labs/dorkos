@@ -26,7 +26,8 @@ import {
   type BackupMoveRefusal,
 } from '@dorkos/db';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { requirePersonAtThisComputer } from '../lib/caller-authority.js';
 import { expandTilde, getBoundary, isContained } from '../lib/boundary.js';
@@ -58,34 +59,49 @@ type RouteRefusal =
 type DestinationRefusal =
   'destination_invalid' | 'destination_outside' | 'destination_in_data_folder';
 
-/** What each refusal says, and the status it answers with. */
-const REFUSALS: Record<
-  BackupMoveRefusal | RouteRefusal,
-  { status: 400 | 403 | 404 | 409 | 507; error: string }
-> = {
-  person_only: { status: 403, error: 'Only you can do this, from DorkOS.' },
-  not_at_this_computer: { status: 403, error: 'Do this on the computer DorkOS runs on.' },
+/** What each refusal says, and the problem code it answers with. */
+const REFUSALS: Record<BackupMoveRefusal | RouteRefusal, { code: ProblemCode; detail: string }> = {
+  person_only: { code: 'person_only', detail: 'Only you can do this, from DorkOS.' },
+  not_at_this_computer: {
+    code: 'needs_person_at_this_computer',
+    detail: 'Do this on the computer DorkOS runs on.',
+  },
   destination_outside: {
-    status: 400,
-    error: 'Pick a folder DorkOS can reach, or one on an external drive.',
+    code: 'invalid_request',
+    detail: 'Pick a folder DorkOS can reach, or one on an external drive.',
   },
-  destination_in_data_folder: { status: 400, error: 'Pick a folder outside DorkOS’s data folder.' },
-  not_found: { status: 404, error: 'That backup is no longer there.' },
-  managed: { status: 409, error: 'DorkOS removes this backup on its own.' },
-  busy: { status: 409, error: 'This backup is in use, so it can’t be changed now.' },
-  changed: { status: 409, error: 'This backup changed. Reload the list and try again.' },
-  destination_invalid: { status: 400, error: 'Pick a folder that exists.' },
-  destination_is_backups: { status: 400, error: 'Pick a folder outside the backups folder.' },
-  destination_exists: { status: 409, error: 'That folder already has a file with this name.' },
-  destination_full: { status: 507, error: 'That disk is full. The original stays.' },
+  destination_in_data_folder: {
+    code: 'invalid_request',
+    detail: 'Pick a folder outside DorkOS’s data folder.',
+  },
+  not_found: { code: 'not_found', detail: 'That backup is no longer there.' },
+  managed: { code: 'conflict', detail: 'DorkOS removes this backup on its own.' },
+  busy: { code: 'conflict', detail: 'This backup is in use, so it can’t be changed now.' },
+  changed: { code: 'conflict', detail: 'This backup changed. Reload the list and try again.' },
+  destination_invalid: { code: 'invalid_request', detail: 'Pick a folder that exists.' },
+  destination_is_backups: {
+    code: 'invalid_request',
+    detail: 'Pick a folder outside the backups folder.',
+  },
+  destination_exists: {
+    code: 'conflict',
+    detail: 'That folder already has a file with this name.',
+  },
+  destination_full: {
+    code: 'insufficient_storage',
+    detail: 'That disk is full. The original stays.',
+  },
   destination_not_writable: {
-    status: 403,
-    error: 'DorkOS can’t write to that folder. The original stays.',
+    code: 'forbidden',
+    detail: 'DorkOS can’t write to that folder. The original stays.',
   },
-  copy_failed: { status: 409, error: 'The copy couldn’t be written there. The original stays.' },
+  copy_failed: {
+    code: 'conflict',
+    detail: 'The copy couldn’t be written there. The original stays.',
+  },
   verify_failed: {
-    status: 409,
-    error: 'The copy didn’t check out, so the original stays. You can still remove it.',
+    code: 'conflict',
+    detail: 'The copy didn’t check out, so the original stays. You can still remove it.',
   },
 };
 
@@ -149,10 +165,10 @@ function decideDestination(asked: string, volumesRoot: string): string {
   return volumes !== undefined && strictlyInside(real, volumes) ? real : 'destination_outside';
 }
 
-/** Answer a refusal with its sentence and code. */
-function refuse(c: Context<ApiEnv>, code: keyof typeof REFUSALS) {
-  const { status, error } = REFUSALS[code];
-  return c.json({ error, code }, status);
+/** Answer a refusal as a problem document with its sentence. */
+function refuse(c: Context<ApiEnv>, refusal: keyof typeof REFUSALS): Response {
+  const { code, detail } = REFUSALS[refusal];
+  return problem(c, code, { detail });
 }
 
 /**

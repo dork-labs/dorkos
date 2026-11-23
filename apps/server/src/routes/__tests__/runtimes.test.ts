@@ -136,7 +136,9 @@ describe('POST /api/runtimes/opencode/provision', () => {
       .set('Cookie', PERSON_SESSION);
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/locally/i);
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body.code).toBe('operator_only');
+    expect(res.body.detail).toMatch(/only available on this computer/i);
     expect(provisionOpenCode).not.toHaveBeenCalled();
   });
 
@@ -202,7 +204,9 @@ describe('X-Forwarded-Host spoofing of the loopback gate', () => {
       .set('Cookie', PERSON_SESSION);
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/locally/i);
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body.code).toBe('operator_only');
+    expect(res.body.detail).toMatch(/only available on this computer/i);
     expect(getSpy()).not.toHaveBeenCalled();
   });
 
@@ -272,7 +276,9 @@ describe('TCP peer is required to be loopback', () => {
       .set('Cookie', PERSON_SESSION);
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/locally/i);
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body.code).toBe('operator_only');
+    expect(res.body.detail).toMatch(/only available on this computer/i);
     expect(provisionCodex).not.toHaveBeenCalled();
   });
 
@@ -376,7 +382,9 @@ describe('POST /api/runtimes/codex/provision', () => {
       .set('Cookie', PERSON_SESSION);
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/locally/i);
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body.code).toBe('operator_only');
+    expect(res.body.detail).toMatch(/only available on this computer/i);
     expect(provisionCodex).not.toHaveBeenCalled();
   });
 });
@@ -435,7 +443,9 @@ describe('POST /api/runtimes/claude-code/provision', () => {
       .set('Cookie', PERSON_SESSION);
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/locally/i);
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body.code).toBe('operator_only');
+    expect(res.body.detail).toMatch(/only available on this computer/i);
     expect(provisionClaudeCode).not.toHaveBeenCalled();
   });
 });
@@ -491,7 +501,9 @@ describe('POST /api/runtimes/opencode/ollama/provision', () => {
       .set('Cookie', PERSON_SESSION);
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/locally/i);
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body.code).toBe('operator_only');
+    expect(res.body.detail).toMatch(/only available on this computer/i);
     expect(provisionOllama).not.toHaveBeenCalled();
   });
 });

@@ -363,7 +363,7 @@ export function createPlaygroundTransport(): Transport {
       ) {
         return async () => {
           throw Object.assign(new Error('This room does not have files of its own.'), {
-            code: 'ROOM_HAS_NO_REPO',
+            code: 'room_has_no_repo',
             status: 409,
           });
         };

@@ -246,7 +246,8 @@ describe('Mesh routes', () => {
         .send({ roots: ['/root/secret'] });
 
       expect(res.status).toBe(500);
-      expect(res.body.error).toBe('Permission denied');
+      expect(res.type).toBe('application/problem+json');
+      expect(res.body.code).toBe('internal_error');
     });
 
     it('returns 403 when any root path is outside the boundary', async () => {
@@ -259,7 +260,7 @@ describe('Mesh routes', () => {
         .send({ roots: ['/etc/passwd'] });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('Path outside boundary');
+      expect(res.body.code).toBe('outside_boundary');
       expect(meshCore.discover).not.toHaveBeenCalled();
     });
 
@@ -276,7 +277,7 @@ describe('Mesh routes', () => {
         .send({ roots: ['/home/user/good', '/outside/boundary'] });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('/outside/boundary');
+      expect(res.body.code).toBe('outside_boundary');
       expect(meshCore.discover).not.toHaveBeenCalled();
     });
   });
@@ -401,7 +402,7 @@ describe('Mesh routes', () => {
           });
 
         expect(res.status).toBe(400);
-        expect(res.body.code).toBe('INVALID_COLOR');
+        expect(res.body.code).toBe('invalid_request');
         expect(meshCore.registerByPath).not.toHaveBeenCalled();
       });
 
@@ -414,7 +415,7 @@ describe('Mesh routes', () => {
           });
 
         expect(res.status).toBe(400);
-        expect(res.body.code).toBe('INVALID_ICON');
+        expect(res.body.code).toBe('invalid_request');
         expect(meshCore.registerByPath).not.toHaveBeenCalled();
       });
 
@@ -511,7 +512,8 @@ describe('Mesh routes', () => {
         });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('Scan root must be an ancestor');
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.detail).toContain('scanRoot');
       expect(meshCore.registerByPath).not.toHaveBeenCalled();
     });
 
@@ -533,7 +535,7 @@ describe('Mesh routes', () => {
         });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('Scan root outside boundary');
+      expect(res.body.code).toBe('outside_boundary');
       expect(meshCore.registerByPath).not.toHaveBeenCalled();
     });
 
@@ -557,7 +559,7 @@ describe('Mesh routes', () => {
         });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('overrides.name and overrides.runtime are required');
+      expect(res.body.detail).toContain('overrides.name and overrides.runtime');
     });
 
     it('registers a directory that already has a manifest from a bare { path }', async () => {
@@ -589,7 +591,7 @@ describe('Mesh routes', () => {
         });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('overrides.name and overrides.runtime are required');
+      expect(res.body.detail).toContain('overrides.name and overrides.runtime');
     });
 
     it('returns 422 when registerByPath throws', async () => {
@@ -603,7 +605,7 @@ describe('Mesh routes', () => {
         });
 
       expect(res.status).toBe(422);
-      expect(res.body.error).toBe('Duplicate agent');
+      expect(res.body.detail).toBe('This folder couldn’t be registered as an agent.');
     });
 
     it('returns 403 when projectPath is outside the boundary', async () => {
@@ -620,7 +622,7 @@ describe('Mesh routes', () => {
         });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('Path outside boundary');
+      expect(res.body.code).toBe('outside_boundary');
       expect(meshCore.registerByPath).not.toHaveBeenCalled();
     });
   });
@@ -775,7 +777,7 @@ describe('Mesh routes', () => {
       const res = await request(fixtureServer).get('/api/mesh/agents/nonexistent');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Agent not found');
+      expect(res.body.code).toBe('not_found');
     });
   });
 
@@ -929,7 +931,7 @@ describe('Mesh routes', () => {
         .send({ reportsTo: 'agent-2' });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('REPORTS_TO_CYCLE');
+      expect(res.body.code).toBe('reports_to_cycle');
       expect(meshCore.update).not.toHaveBeenCalled();
     });
 
@@ -941,7 +943,7 @@ describe('Mesh routes', () => {
         .patch('/api/mesh/agents/agent-1')
         .send({ reportsTo: 'nobody' });
       expect(unknown.status).toBe(400);
-      expect(unknown.body.code).toBe('VALIDATION');
+      expect(unknown.body.code).toBe('invalid_request');
 
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, reportsTo: 'agent-3' });
       const ok = await request(fixtureServer)
@@ -997,10 +999,11 @@ describe('Mesh routes', () => {
         .send({ displayName: 'Ana' });
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('MANIFEST_UNREADABLE');
-      // The sentence is for a person who has to go fix the file.
-      expect(res.body.error).toContain('/agents/ana');
-      expect(res.body.error).toContain('Fix or remove the file');
+      expect(res.type).toBe('application/problem+json');
+      expect(res.body.code).toBe('conflict');
+      // The sentence is for a person who has to go fix the file; it names no path.
+      expect(res.body.detail).toContain('Fix or remove it');
+      expect(res.body.detail).not.toContain('/agents/ana');
     });
 
     it('does NOT dress any other failure up as an unreadable manifest', async () => {
@@ -1017,8 +1020,8 @@ describe('Mesh routes', () => {
       // mounts `middleware/error-handler.ts`), and the claim here is only that
       // the route did not invent a 409 with a story about a corrupt file.
       expect(res.status).not.toBe(409);
-      expect(res.body.code).not.toBe('MANIFEST_UNREADABLE');
-      expect(JSON.stringify(res.body)).not.toContain('Fix or remove the file');
+      expect(res.body.code).not.toBe('conflict');
+      expect(JSON.stringify(res.body)).not.toContain('Fix or remove');
     });
 
     it('refuses a body carrying permissions, since this route has no caller guard', async () => {
@@ -1030,7 +1033,7 @@ describe('Mesh routes', () => {
         .send({ permissions: { areas: { rooms: 'allowed' } } });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('USE_PERMISSIONS_API');
+      expect(res.body.code).toBe('invalid_request');
       expect(meshCore.update).not.toHaveBeenCalled();
     });
 
@@ -1158,7 +1161,7 @@ describe('Mesh routes', () => {
           .send({ model: 'sonnet' });
 
         expect(res.status).toBe(400);
-        expect(res.body).toMatchObject({ code: 'UNSUPPORTED_MODEL' });
+        expect(res.body).toMatchObject({ code: 'invalid_request' });
         expect(meshCore.update).not.toHaveBeenCalled();
       });
 
@@ -1305,7 +1308,7 @@ describe('Mesh routes', () => {
         .send({ name: 'No Agent' });
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Agent not found');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('returns 403 when modifying protected fields on a system agent', async () => {
@@ -1316,9 +1319,10 @@ describe('Mesh routes', () => {
         .send({ name: 'Hacked Name', description: 'Hacked Desc' });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('name');
-      expect(res.body.error).toContain('description');
-      expect(res.body.error).toContain('system agents');
+      expect(res.body.code).toBe('forbidden');
+      expect(res.body.detail).toContain('name');
+      expect(res.body.detail).toContain('description');
+      expect(res.body.detail).toContain('system agent');
       expect(meshCore.update).not.toHaveBeenCalled();
     });
 
@@ -1330,7 +1334,7 @@ describe('Mesh routes', () => {
         .send({ namespace: 'evil-ns' });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('namespace');
+      expect(res.body.detail).toContain('namespace');
     });
 
     it('returns 403 when modifying isSystem on a system agent', async () => {
@@ -1341,7 +1345,7 @@ describe('Mesh routes', () => {
         .send({ isSystem: false });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('isSystem');
+      expect(res.body.detail).toContain('isSystem');
     });
 
     it('allows non-protected fields on a system agent', async () => {
@@ -1390,7 +1394,7 @@ describe('Mesh routes', () => {
       const res = await request(fixtureServer).delete('/api/mesh/agents/nonexistent');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Agent not found');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('surfaces orphaned installs BEFORE unregistering (path is gone after unregister)', async () => {
@@ -1431,7 +1435,7 @@ describe('Mesh routes', () => {
       const res = await request(fixtureServer).delete('/api/mesh/agents/nonexistent/data');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Agent not found');
+      expect(res.body.code).toBe('not_found');
       expect(meshCore.unregister).not.toHaveBeenCalled();
       expect(removeDorkDirectory).not.toHaveBeenCalled();
     });
@@ -1442,7 +1446,8 @@ describe('Mesh routes', () => {
       const res = await request(fixtureServer).delete('/api/mesh/agents/agent-1/data');
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('System agents');
+      expect(res.body.code).toBe('forbidden');
+      expect(res.body.detail).toContain('system agent');
       expect(meshCore.unregister).not.toHaveBeenCalled();
       expect(removeDorkDirectory).not.toHaveBeenCalled();
     });
@@ -1457,7 +1462,7 @@ describe('Mesh routes', () => {
       const res = await request(fixtureServer).delete('/api/mesh/agents/agent-1/data');
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('Path outside boundary');
+      expect(res.body.code).toBe('outside_boundary');
       expect(meshCore.unregister).not.toHaveBeenCalled();
       expect(removeDorkDirectory).not.toHaveBeenCalled();
     });
@@ -1469,7 +1474,7 @@ describe('Mesh routes', () => {
       const res = await request(fixtureServer).delete('/api/mesh/agents/agent-1/data');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Agent project path not found');
+      expect(res.body.code).toBe('not_found');
       expect(meshCore.unregister).not.toHaveBeenCalled();
       expect(removeDorkDirectory).not.toHaveBeenCalled();
     });
@@ -1506,8 +1511,8 @@ describe('Mesh routes', () => {
       const res = await request(fixtureServer).delete('/api/mesh/agents/agent-1/data');
 
       expect(res.status).toBe(409);
-      expect(res.body.error).toContain('agent.json');
-      expect(res.body.error).toContain('tracked by git');
+      expect(res.body.code).toBe('conflict');
+      expect(res.body.detail).toContain('Git tracks');
       // Nothing was touched: not the registry row, not the directory.
       expect(meshCore.unregister).not.toHaveBeenCalled();
       expect(removeDorkDirectory).not.toHaveBeenCalled();
@@ -1571,7 +1576,7 @@ describe('Mesh routes', () => {
       });
 
       expect(res.status).toBe(422);
-      expect(res.body.error).toBe('Already denied');
+      expect(res.body.detail).toBe('This folder couldn’t be hidden from discovery.');
     });
 
     it('returns 403 for out-of-boundary paths', async () => {
@@ -1584,7 +1589,7 @@ describe('Mesh routes', () => {
       });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('Path outside boundary');
+      expect(res.body.code).toBe('outside_boundary');
       expect(meshCore.deny).not.toHaveBeenCalled();
     });
   });
@@ -1662,7 +1667,7 @@ describe('Mesh routes', () => {
       const res = await clear('/etc/shadow');
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('Path outside boundary');
+      expect(res.body.code).toBe('outside_boundary');
       expect(meshCore.undeny).not.toHaveBeenCalled();
     });
 
@@ -1744,7 +1749,7 @@ describe('Mesh routes', () => {
       const res = await request(fixtureServer).get('/api/mesh/agents/nonexistent/health');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Agent not found');
+      expect(res.body.code).toBe('not_found');
     });
   });
 
@@ -1801,7 +1806,7 @@ describe('Mesh routes', () => {
         .send({ event: 'heartbeat' });
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Agent not found');
+      expect(res.body.code).toBe('not_found');
       expect(meshCore.updateLastSeen).not.toHaveBeenCalled();
     });
   });

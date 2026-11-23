@@ -66,7 +66,7 @@ import { isPlatformNamed, PLATFORM_NAMED_ROOM } from '../agent-facing-room-name.
  * `RoomError` is a message and a code with nowhere to put a payload. Enabling a
  * repo twice is an outcome, not a malformed request.
  */
-export const ROOM_REPO_EXISTS_CODE = 'ROOM_REPO_EXISTS';
+export const ROOM_REPO_EXISTS_CODE = 'room_repo_exists';
 
 /**
  * The commit subject a stray-change rescue carries.

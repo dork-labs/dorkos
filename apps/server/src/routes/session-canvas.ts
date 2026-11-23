@@ -7,7 +7,7 @@
  *
  * **A person is the gate, and there is no membership to check.** A session has
  * no members: it is one person's, so each route refuses a caller presenting an
- * agent identity with `PEOPLE_ONLY` — the same 403 the read-cursor routes give,
+ * agent identity with `person_only` — the same 403 the read-cursor routes give,
  * and for the same reason. An agent never reaches these routes at all; its path
  * is `control_ui` and `read_canvas_document`, neither of which can name a
  * session that is not its own.
@@ -24,7 +24,6 @@
  * @module routes/session-canvas
  */
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z, type ZodType } from 'zod';
 import { APP_WIDGET_REFUSAL, appWidgetIsRefused } from '@dorkos/shared/app-widget-actions';
 import {
@@ -44,12 +43,13 @@ import { peekProjector } from '../services/session/session-state-projector.js';
 import { knownSessionCwd } from '../services/session/index.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { callerAccessOf } from './caller-access.js';
 import { resolveCaller } from './room-caller.js';
-import { isOwnerCaller, roomErrorReply } from './room-error-response.js';
-import { errorBody, parseSessionId } from '../lib/route-utils.js';
+import { isOwnerCaller, sendRoomError } from './room-error-response.js';
+import { parseSessionId } from '../lib/route-utils.js';
+import { invalidSessionId, sessionNotFound } from './session-route-replies.js';
 
 /** The canvas service plus the scope this request may act on, and who is asking. */
 interface CanvasAccess {
@@ -77,35 +77,23 @@ interface CanvasAccess {
  */
 function requireCanvasAccess(c: Context<ApiEnv>): CanvasAccess | Response {
   const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+  if (!sessionId) return invalidSessionId(c);
   let caller;
   try {
     caller = resolveCaller(honoRequestFacts(c), callerAccessOf(c.req.method));
   } catch (err) {
-    return roomRefusal(c, err, 'session-canvas', () => false);
+    return sendRoomError(c, err, 'session-canvas', () => false);
   }
   if (caller.kind !== 'human') {
-    return c.json(errorBody('A session’s canvas is the person’s own', 'PEOPLE_ONLY'), 403);
+    return problem(c, 'person_only', { detail: 'A chat’s canvas is the person’s own.' });
   }
   const canvas = peekCanvasService();
   if (!canvas) {
-    return c.json(
-      errorBody('The canvas is not available on this server', 'CANVAS_UNAVAILABLE'),
-      503
-    );
+    return problem(c, 'temporarily_unavailable', {
+      detail: 'The canvas isn’t available on this server.',
+    });
   }
   return { canvas, scope: sessionScope(sessionId), ownerAsking: () => isOwnerCaller(caller) };
-}
-
-/** A thrown room refusal, answered. */
-function roomRefusal(
-  c: Context<ApiEnv>,
-  err: unknown,
-  context: string,
-  ownerAsking: () => boolean
-): Response {
-  const reply = roomErrorReply(err, context, ownerAsking);
-  return c.json(reply.body, reply.status as ContentfulStatusCode);
 }
 
 /** The body parsed by `schema`, or the 400 a body it cannot read answers. */
@@ -158,10 +146,10 @@ function namesAKnownSession(sessionId: string): boolean {
  * agent path open documents without one, and every later write clears it.
  *
  * **Who can set it.** Only a person's window: an agent caller is refused
- * `PEOPLE_ONLY` before the body is used, like every route here, and the MCP
+ * `person_only` before the body is used, like every route here, and the MCP
  * tools never reach this route. With sign-in on, the mark also needs a session
  * cookie: the caller check refuses a write made with an API key
- * (`PERSON_SESSION_REQUIRED`), so a program holding one, an app's own server
+ * (`person_session_required`), so a program holding one, an app's own server
  * half included, cannot set it. The window's frame bridge names the app from
  * its own record of which app it loaded, never from anything the app's frame
  * says. And the id must be an app whose screens run right now
@@ -188,13 +176,6 @@ export interface SessionCanvasDeps {
    */
   appScreenRuns?: (extensionId: string) => boolean;
 }
-
-const UNKNOWN_APP = errorBody(
-  'No app with that id is running here',
-  'CANVAS_OPENED_BY_UNKNOWN_APP'
-);
-
-const APP_WIDGET_ACTION = errorBody(APP_WIDGET_REFUSAL, 'CANVAS_APP_WIDGET_ACTION');
 
 /**
  * Where a document the person opens records it was resolved: the session's own
@@ -228,8 +209,6 @@ async function sessionTreeOf(sessionId: string): Promise<CanvasTreePlacement | u
   return { resolvedCwd: folder, sourceLabel: null, treeKind: null, aheadOfMain: null };
 }
 
-const NO_SUCH_DOCUMENT = errorBody('No such document on this canvas', 'CANVAS_DOCUMENT_NOT_FOUND');
-
 /**
  * The six canvas routes, mounted by `routes/sessions.ts` at `/:id/canvas`, so
  * `:id` is the session.
@@ -253,7 +232,7 @@ export function createSessionCanvasRoutes(deps: SessionCanvasDeps = {}): Hono<Ap
     const access = requireCanvasAccess(c);
     if (access instanceof Response) return access;
     const document = access.canvas.get(access.scope, c.req.param('documentId'));
-    if (!document) return c.json(NO_SUCH_DOCUMENT, 404);
+    if (!document) return problem(c, 'not_found', { detail: 'No such document on this canvas' });
     return c.json(document);
   });
 
@@ -265,10 +244,10 @@ export function createSessionCanvasRoutes(deps: SessionCanvasDeps = {}): Hono<Ap
     if (access instanceof Response) return access;
     const sessionId = c.req.param('id')!;
     if (!namesAKnownSession(sessionId)) {
-      return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
+      return sessionNotFound(c);
     }
     if (body.openedBy && !deps.appScreenRuns?.(body.openedBy.extensionId)) {
-      return c.json(UNKNOWN_APP, 400);
+      return problem(c, 'invalid_request', { detail: 'No app with that id is running here.' });
     }
     // A widget an app opened may only link out; its other actions act for
     // the person. The window refuses it first; this is the second check.
@@ -277,7 +256,7 @@ export function createSessionCanvasRoutes(deps: SessionCanvasDeps = {}): Hono<Ap
       body.content.type === 'widget' &&
       appWidgetIsRefused(body.content.definition)
     ) {
-      return c.json(APP_WIDGET_ACTION, 400);
+      return problem(c, 'invalid_request', { detail: APP_WIDGET_REFUSAL });
     }
     const tree = await sessionTreeOf(sessionId);
     try {
@@ -289,7 +268,7 @@ export function createSessionCanvasRoutes(deps: SessionCanvasDeps = {}): Hono<Ap
       });
       return c.json(document, 201);
     } catch (err) {
-      return roomRefusal(c, err, 'POST /:id/canvas', access.ownerAsking);
+      return sendRoomError(c, err, 'POST /:id/canvas', access.ownerAsking);
     }
   });
 
@@ -324,7 +303,7 @@ export function createSessionCanvasRoutes(deps: SessionCanvasDeps = {}): Hono<Ap
       }
       return c.json(document);
     } catch (err) {
-      return roomRefusal(c, err, 'PATCH /:id/canvas/:documentId', access.ownerAsking);
+      return sendRoomError(c, err, 'PATCH /:id/canvas/:documentId', access.ownerAsking);
     }
   });
 
@@ -336,7 +315,7 @@ export function createSessionCanvasRoutes(deps: SessionCanvasDeps = {}): Hono<Ap
       access.canvas.close(access.scope, c.req.param('documentId'));
       return c.body(null, 204);
     } catch (err) {
-      return roomRefusal(c, err, 'DELETE /:id/canvas/:documentId', access.ownerAsking);
+      return sendRoomError(c, err, 'DELETE /:id/canvas/:documentId', access.ownerAsking);
     }
   });
 
@@ -364,7 +343,7 @@ export function createSessionCanvasRoutes(deps: SessionCanvasDeps = {}): Hono<Ap
         )
       );
     } catch (err) {
-      return roomRefusal(c, err, 'POST /:id/canvas/:documentId/editing', access.ownerAsking);
+      return sendRoomError(c, err, 'POST /:id/canvas/:documentId/editing', access.ownerAsking);
     }
   });
 

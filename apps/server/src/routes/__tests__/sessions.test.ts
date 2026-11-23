@@ -318,14 +318,14 @@ describe('Sessions Routes', () => {
     it('returns 400 for invalid (non-UUID) session ID', async () => {
       const res = await request(server).get('/api/sessions/nonexistent');
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('INVALID_SESSION_ID');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('returns 404 for missing session', async () => {
       const missingId = '00000000-0000-4000-8000-ffffffffffff';
       const res = await request(server).get(`/api/sessions/${missingId}`);
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Session not found');
+      expect(res.body.code).toBe('session_not_found');
     });
   });
 
@@ -427,11 +427,11 @@ describe('Sessions Routes', () => {
           .send({ permissionMode: asked });
 
         expect(res.status).toBe(400);
-        expect(res.body.code).toBe('UNSUPPORTED_PERMISSION_MODE');
+        expect(res.body.code).toBe('invalid_request');
         // The message must name the runtime and the modes it CAN run.
-        expect(res.body.error).toContain('fake');
-        expect(res.body.error).toContain(asked);
-        for (const mode of runtimeModes) expect(res.body.error).toContain(mode);
+        expect(res.body.detail).toContain('fake');
+        expect(res.body.detail).toContain(asked);
+        for (const mode of runtimeModes) expect(res.body.detail).toContain(mode);
         // Nothing is persisted for a rejected mode.
         expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
       }
@@ -504,7 +504,7 @@ describe('Sessions Routes', () => {
           .send({ permissionMode: asked });
 
         expect(res.status).toBe(400);
-        expect(res.body.code).toBe('UNSUPPORTED_PERMISSION_MODE');
+        expect(res.body.code).toBe('invalid_request');
         expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
       });
 
@@ -616,10 +616,10 @@ describe('Sessions Routes', () => {
           .send({ model: 'openrouter/anthropic/claude-opus-5-fast' });
 
         expect(res.status).toBe(400);
-        expect(res.body.code).toBe('UNSUPPORTED_MODEL');
+        expect(res.body.code).toBe('invalid_request');
         // The message names the runtime and the model, and points somewhere.
-        expect(res.body.error).toContain('fake');
-        expect(res.body.error).toContain('openrouter/anthropic/claude-opus-5-fast');
+        expect(res.body.detail).toContain('fake');
+        expect(res.body.detail).toContain('openrouter/anthropic/claude-opus-5-fast');
         // Nothing is persisted for a rejected model.
         expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
       });
@@ -733,7 +733,7 @@ describe('Sessions Routes', () => {
         .send({ permissionMode: 'plan' });
 
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('SESSION_NOT_FOUND');
+      expect(res.body.code).toBe('session_not_found');
     });
 
     it('returns 400 for invalid session ID', async () => {
@@ -742,7 +742,7 @@ describe('Sessions Routes', () => {
         .send({ permissionMode: 'plan' });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('INVALID_SESSION_ID');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it.each([
@@ -761,7 +761,7 @@ describe('Sessions Routes', () => {
       const res = await request(server).patch(`/api/sessions/${S1}`).send(body);
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(res.body.code).toBe('invalid_request');
       expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
     });
 
@@ -824,7 +824,7 @@ describe('Sessions Routes', () => {
       const res = await request(server).post(`/api/sessions/${S1}/messages`).send({});
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Invalid request');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('returns 202 with the canonical session id and no in-band turn frames', async () => {
@@ -1004,9 +1004,9 @@ describe('Sessions Routes', () => {
       });
 
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({
-        error: 'Choose a registered agent before starting this chat',
-        code: 'INVALID_AGENT_PATH',
+      expect(res.body).toMatchObject({
+        detail: 'Choose a registered agent before starting this chat',
+        code: 'invalid_request',
       });
       expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
       expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();
@@ -1079,7 +1079,7 @@ describe('Sessions Routes', () => {
         .send({ content: 'hi', seedContext: '' });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('returns 400 when the hinted runtime is not registered', async () => {
@@ -1090,7 +1090,7 @@ describe('Sessions Routes', () => {
         .send({ content: 'hi', runtime: 'codex', create: true });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('UNKNOWN_RUNTIME');
+      expect(res.body.code).toBe('invalid_request');
       expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
     });
 
@@ -1202,7 +1202,8 @@ describe('Sessions Routes', () => {
         .send({ toolCallId: 'tc1' });
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('No pending approval');
+      expect(res.body.code).toBe('not_found');
+      expect(res.body.detail).toBe('No request is waiting for an answer here.');
     });
   });
 
@@ -1231,7 +1232,8 @@ describe('Sessions Routes', () => {
         .send({ toolCallId: 'tc1' });
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('No pending approval');
+      expect(res.body.code).toBe('not_found');
+      expect(res.body.detail).toBe('No request is waiting for an answer here.');
     });
   });
 
@@ -1338,8 +1340,8 @@ describe('Sessions Routes', () => {
       const res = await request(server).get(`/api/sessions/${S1}/messages`);
 
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('SESSION_CWD_REQUIRED');
-      expect(res.body.error).toMatch(/cwd/i);
+      expect(res.body.code).toBe('session_not_found');
+      expect(res.body.detail).toMatch(/cwd/i);
       expect(fakeRuntime.getMessageHistory).not.toHaveBeenCalled();
     });
 
@@ -1382,7 +1384,7 @@ describe('Sessions Routes', () => {
       const res = await request(server).get(`/api/sessions/${S1}/messages`);
 
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('SESSION_CWD_REQUIRED');
+      expect(res.body.code).toBe('session_not_found');
       expect(fakeRuntime.getMessageHistory).not.toHaveBeenCalled();
     });
 
@@ -1455,7 +1457,7 @@ describe('Sessions Routes', () => {
       const res = await request(server).get('/api/sessions').query({ cwd: '/etc/passwd' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
 
     it('GET /api/sessions/:id rejects cwd outside boundary with 403', async () => {
@@ -1466,7 +1468,7 @@ describe('Sessions Routes', () => {
       const res = await request(server).get(`/api/sessions/${S1}`).query({ cwd: '/etc' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
 
     it('GET /api/sessions/:id/messages rejects cwd outside boundary with 403', async () => {
@@ -1479,7 +1481,7 @@ describe('Sessions Routes', () => {
         .query({ cwd: '/tmp/evil' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
 
     it('GET /api/sessions/:id/tasks rejects cwd outside boundary with 403', async () => {
@@ -1492,10 +1494,10 @@ describe('Sessions Routes', () => {
         .query({ cwd: '/tmp/evil' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
 
-    it('rejects null byte paths with 403 and NULL_BYTE code', async () => {
+    it('rejects null byte paths with 400 invalid_request', async () => {
       vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
         new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
       );
@@ -1504,8 +1506,8 @@ describe('Sessions Routes', () => {
         .get('/api/sessions')
         .query({ cwd: '/home/user/project\0/../../etc' });
 
-      expect(res.status).toBe(403);
-      expect(res.body.code).toBe('NULL_BYTE');
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('invalid_request');
     });
   });
 
@@ -1515,7 +1517,7 @@ describe('Sessions Routes', () => {
     it('returns 400 for invalid session ID', async () => {
       const res = await request(server).post('/api/sessions/not-a-uuid/fork').send({});
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('INVALID_SESSION_ID');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('forks a session and returns 201 with new session', async () => {
@@ -1558,7 +1560,7 @@ describe('Sessions Routes', () => {
 
       const res = await request(server).post(`/api/sessions/${S1}/fork`).send({});
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('FORK_FAILED');
+      expect(res.body.code).toBe('session_not_found');
     });
 
     it('returns 500 when runtime throws', async () => {
@@ -1566,7 +1568,7 @@ describe('Sessions Routes', () => {
 
       const res = await request(server).post(`/api/sessions/${S1}/fork`).send({});
       expect(res.status).toBe(500);
-      expect(res.body.code).toBe('FORK_ERROR');
+      expect(res.body.code).toBe('internal_error');
     });
 
     it('translates session ID via getInternalSessionId', async () => {

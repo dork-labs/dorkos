@@ -36,6 +36,8 @@ const SHOW_SERVER_MESSAGE = new Set([
   // Answered by something that is not a signed-in person while login is on.
   'operator_cookie_required',
   // A Wi-Fi answer needs the desk or Remote Access; it must never open a password sheet.
+  'not_from_wifi',
+  // Old spelling until the approvals routes move (DOR-4979).
   'NOT_FROM_WIFI',
   // Always allow on a request that does not offer it.
   'ALWAYS_NOT_OFFERED',

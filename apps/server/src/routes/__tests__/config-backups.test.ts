@@ -120,7 +120,7 @@ describe('a person at this computer', () => {
   it('cannot remove a copy DorkOS manages', async () => {
     const res = await request(server.server).delete(`/api/config/backups/${MANAGED}`);
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('managed');
+    expect(res.body.code).toBe('conflict');
     expect(fs.existsSync(path.join(backups, MANAGED))).toBe(true);
   });
 
@@ -162,7 +162,7 @@ describe('a person at this computer', () => {
       .post(`/api/config/backups/${OLDER}/move`)
       .send({ destination: outside });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('destination_outside');
+    expect(res.body.code).toBe('invalid_request');
     expect(fs.readdirSync(outside)).toEqual([]);
     expect(fs.existsSync(path.join(backups, OLDER))).toBe(true);
   });
@@ -174,7 +174,7 @@ describe('a person at this computer', () => {
       .post(`/api/config/backups/${OLDER}/move`)
       .send({ destination: link });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('destination_outside');
+    expect(res.body.code).toBe('invalid_request');
     expect(fs.readdirSync(outside)).toEqual([]);
     expect(fs.existsSync(path.join(backups, OLDER))).toBe(true);
   });
@@ -184,7 +184,7 @@ describe('a person at this computer', () => {
       .post(`/api/config/backups/${MANAGED}/move`)
       .send({ destination: inside });
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('managed');
+    expect(res.body.code).toBe('conflict');
     expect(fs.readdirSync(inside)).toEqual([]);
     expect(fs.existsSync(path.join(backups, MANAGED))).toBe(true);
   });
@@ -212,7 +212,7 @@ describe('a person at this computer', () => {
         .post(`/api/config/backups/${OLDER}/move`)
         .send({ destination });
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('destination_in_data_folder');
+      expect(res.body.code).toBe('invalid_request');
     }
     expect(fs.readdirSync(inData)).toEqual([]);
     expect(fs.existsSync(path.join(backups, OLDER))).toBe(true);
@@ -239,7 +239,7 @@ describe('a person at this computer', () => {
       .post(`/api/config/backups/${OLDER}/move`)
       .send({ destination: link });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('destination_in_data_folder');
+    expect(res.body.code).toBe('invalid_request');
     expect(fs.readdirSync(inData)).toEqual([]);
     expect(fs.existsSync(path.join(backups, OLDER))).toBe(true);
   });
@@ -261,7 +261,7 @@ describe('a person at this computer', () => {
         .post(`/api/config/backups/${OLDER}/move`)
         .send({ destination });
       expect(res.status, destination).toBe(400);
-      expect(res.body.code, destination).toBe('destination_outside');
+      expect(res.body.code, destination).toBe('invalid_request');
     }
     expect(fs.existsSync(path.join(backups, OLDER))).toBe(true);
   });
@@ -273,7 +273,7 @@ describe('a person at this computer', () => {
       .post(`/api/config/backups/${OLDER}/move`)
       .send({ destination: path.join(volumes, 'Macintosh HD') });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('destination_outside');
+    expect(res.body.code).toBe('invalid_request');
     expect(fs.existsSync(path.join(backups, OLDER))).toBe(true);
   });
 
@@ -283,7 +283,7 @@ describe('a person at this computer', () => {
       .post('/api/config/backups/dork-20260904-daily.db/move')
       .send({ destination: inside });
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('verify_failed');
+    expect(res.body.code).toBe('conflict');
     expect(fs.existsSync(path.join(backups, 'dork-20260904-daily.db'))).toBe(true);
     expect(fs.readdirSync(inside)).toEqual([]);
   });

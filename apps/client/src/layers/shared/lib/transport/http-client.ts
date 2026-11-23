@@ -95,7 +95,7 @@ async function request(
       if (Number.isFinite(milliseconds)) err.retryAfterMs = milliseconds;
     }
     // Some refusals carry data the caller must act on, not just describe: a
-    // `CHAT_ALREADY_BOUND` 409 names the binding that already owns the chat,
+    // `chat_already_bound` 409 names the binding that already owns the chat,
     // which is the id the "move it instead?" dialog calls `moveBinding` with.
     // `message`/`code`/`status` cannot carry it, so the parsed body rides along
     // as `err.body`.

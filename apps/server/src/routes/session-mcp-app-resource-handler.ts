@@ -13,15 +13,28 @@
  * @module routes/session-mcp-app-resource-handler
  */
 import type { Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { McpAppResourceRequestSchema } from '@dorkos/shared/schemas';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
-import { errorBody, parseSessionId } from '../lib/route-utils.js';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
+import { parseSessionId } from '../lib/route-utils.js';
+import { invalidSessionId, sessionNotFound } from './session-route-replies.js';
 import { logger } from '../lib/logger.js';
 import { getOrCreateProjector } from '../services/session/index.js';
-import { resolveAppResource, McpAppResourceError, UI_SCHEME } from '../services/mcp-apps/index.js';
+import {
+  resolveAppResource,
+  McpAppResourceError,
+  UI_SCHEME,
+  type McpAppResourceErrorCode,
+} from '../services/mcp-apps/index.js';
+
+/** The problem each resource refusal answers with; a failed read has none of its own. */
+const RESOURCE_ERROR_CODES: Partial<Record<McpAppResourceErrorCode, ProblemCode>> = {
+  INVALID_SCHEME: 'invalid_request',
+  UNSUPPORTED_MIME: 'unsupported_media_type',
+  NOT_FOUND: 'not_found',
+};
 
 /**
  * Handler for `POST /api/sessions/:id/mcp-app/resource`, mounted by
@@ -33,22 +46,24 @@ import { resolveAppResource, McpAppResourceError, UI_SCHEME } from '../services/
  */
 export async function sessionMcpAppResourceHandler(c: Context<ApiEnv>): Promise<Response> {
   const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+  if (!sessionId) return invalidSessionId(c);
 
   const parsed = McpAppResourceRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
+    return validationProblem(c, parsed.error);
   }
   const { serverName, uri } = parsed.data;
 
   // Cheap early reject before any runtime work — the service re-checks too.
   if (!uri.startsWith(UI_SCHEME)) {
-    return c.json(errorBody(`Resource URI must use the ${UI_SCHEME} scheme`, 'INVALID_URI'), 400);
+    return problem(c, 'invalid_request', {
+      detail: `Resource URI must use the ${UI_SCHEME} scheme`,
+    });
   }
 
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   if (!runtime.hasSession(sessionId)) {
-    return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
+    return sessionNotFound(c);
   }
 
   // Server-authoritative cwd: the projector tracks the directory the session's
@@ -56,24 +71,20 @@ export async function sessionMcpAppResourceHandler(c: Context<ApiEnv>): Promise<
   // this is set; a session with no turn yet has no MCP context to fetch from.
   const cwd = getOrCreateProjector(sessionId).cwd;
   if (!cwd) {
-    return c.json(errorBody('No MCP context for session', 'NO_MCP_CONTEXT'), 404);
+    return problem(c, 'not_found', { detail: 'This chat has no MCP servers yet.' });
   }
 
   // Membership: the server must be in this cwd's live MCP set.
   const servers = runtime.getMcpStatus?.(cwd) ?? [];
   if (!servers.some((s) => s.name === serverName)) {
-    return c.json(
-      errorBody(`MCP server "${serverName}" not found for session`, 'SERVER_NOT_FOUND'),
-      404
-    );
+    return problem(c, 'not_found', {
+      detail: `MCP server "${serverName}" not found for this chat`,
+    });
   }
 
   const connection = runtime.getMcpServerConfig?.(cwd, serverName);
   if (!connection) {
-    return c.json(
-      errorBody(`No connection config captured for "${serverName}"`, 'SERVER_CONFIG_UNAVAILABLE'),
-      404
-    );
+    return problem(c, 'not_found', { detail: `No settings for the "${serverName}" tool server.` });
   }
 
   try {
@@ -81,18 +92,13 @@ export async function sessionMcpAppResourceHandler(c: Context<ApiEnv>): Promise<
     return c.json(resource, 200);
   } catch (err) {
     if (err instanceof McpAppResourceError) {
-      const status: ContentfulStatusCode =
-        err.code === 'INVALID_SCHEME'
-          ? 400
-          : err.code === 'UNSUPPORTED_MIME'
-            ? 415
-            : err.code === 'NOT_FOUND'
-              ? 404
-              : 502;
-      if (status === 502) {
+      const code = RESOURCE_ERROR_CODES[err.code];
+      if (code === undefined) {
         logger.warn('[POST /mcp-app/resource] read failed', { sessionId, serverName, uri });
+        // The MCP server's read failed: a bad answer from upstream, so 502.
+        return problem(c, 'temporarily_unavailable', { detail: err.message, status: 502 });
       }
-      return c.json(errorBody(err.message, err.code), status);
+      return problem(c, code, { detail: err.message });
     }
     throw err;
   }

@@ -37,6 +37,71 @@ describe('PROBLEM_CODE_LIST', () => {
     expect(ProblemCodeSchema.options.length).toBe(PROBLEM_CODE_LIST.length);
     expect(ProblemCodeSchema.safeParse('NOT_FOUND').success).toBe(false);
   });
+
+  it('holds the codes chats, agents, rooms and work branch on, at their statuses', () => {
+    const expected: ReadonlyArray<readonly [string, number]> = [
+      ['agent_paused', 409],
+      ['room_session_moved', 409],
+      ['desk_not_own', 409],
+      ['protected_folder', 403],
+      ['queued_message_not_found', 404],
+      ['queued_message_launching', 409],
+      ['task_not_running', 409],
+      ['not_supported', 501],
+      ['account_not_allowed_here', 409],
+      ['interaction_already_resolved', 409],
+      ['operator_cookie_required', 403],
+      ['expired', 410],
+      ['needs_person_at_this_computer', 403],
+      ['room_not_found', 404],
+      ['room_archived', 409],
+      ['slug_taken', 409],
+      ['handle_taken', 409],
+      ['handle_reserved', 409],
+      ['handle_lookalike', 409],
+      ['invalid_handle', 400],
+      ['identity_not_external', 400],
+      ['chat_already_bound', 409],
+      ['avatar_missing', 400],
+      ['avatar_type_unsupported', 415],
+      ['attachment_not_found', 404],
+      ['room_repo_exists', 409],
+      ['room_repos_disabled', 409],
+      ['room_repo_git_unavailable', 409],
+      ['room_has_no_repo', 409],
+      ['room_file_path_invalid', 400],
+      ['room_file_not_found', 404],
+      ['room_file_not_readable', 400],
+      ['room_file_not_text', 400],
+      ['room_file_exists', 409],
+      ['room_upload_too_many_files', 400],
+      ['file_changed', 409],
+      ['main_checkout_dirty', 409],
+      ['room_repo_config_unsafe', 409],
+      ['file_too_large', 409],
+      ['repo_cap_exceeded', 409],
+      ['merge_in_flight', 429],
+      ['template_needs_review', 409],
+      ['workspace_needs_review', 409],
+      ['remove_hooks_need_review', 409],
+      ['declined', 403],
+      ['disclosure_changed', 409],
+      ['reports_to_cycle', 400],
+      ['terminal_limit', 429],
+      ['too_large', 413],
+      ['not_a_file', 400],
+      ['binary_file', 415],
+      ['schedule_review_changed', 409],
+      ['schedule_package_owned', 409],
+      ['looser_than_proposed', 409],
+      ['past_due', 400],
+      ['operator_only_config', 403],
+      ['insufficient_storage', 507],
+    ];
+    for (const [code, status] of expected) {
+      expect(PROBLEM_CODES[code as keyof typeof PROBLEM_CODES]?.status, code).toBe(status);
+    }
+  });
 });
 
 describe('agreement with the DorkOS Cloud contract', () => {

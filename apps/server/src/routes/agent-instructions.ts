@@ -16,7 +16,6 @@
  * @module routes/agent-instructions
  */
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   InstructionsQuerySchema,
   InstructionsRuntimeSchema,
@@ -29,7 +28,7 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { resolveAgentHome, homeOf } from '../services/core/agent-identity/index.js';
 import { buildInstructionsView } from '../services/runtimes/context-preview/preview.js';
-import { validationProblem } from '@dorkos/http-kit';
+import { problem, validationProblem } from '@dorkos/http-kit';
 
 /** What the routes read, resolved per request. */
 export interface AgentInstructionsRouterDeps {
@@ -53,17 +52,13 @@ function refuseNonPerson(c: Context<ApiEnv>): Response | undefined {
   const facts = honoRequestFacts(c);
   const authority = resolveDecisionAuthority(readCallerAuthority(facts));
   if (!authority.allowed) {
-    return c.json(
-      { error: ONLY_A_PERSON, code: authority.code },
-      authority.status as ContentfulStatusCode
-    );
+    // A signed-out caller under login is asked to sign in; anyone else is not a person.
+    return authority.status === 401
+      ? problem(c, 'unauthenticated', { detail: ONLY_A_PERSON })
+      : problem(c, 'person_only', { detail: ONLY_A_PERSON });
   }
-  const cookie = requireOperatorCookieUnderLogin(facts, 'agent instructions');
-  if (cookie) {
-    return c.json(
-      { error: ONLY_A_PERSON, code: cookie.code },
-      cookie.status as ContentfulStatusCode
-    );
+  if (requireOperatorCookieUnderLogin(facts, 'agent instructions')) {
+    return problem(c, 'operator_cookie_required', { detail: ONLY_A_PERSON });
   }
   return undefined;
 }
@@ -112,7 +107,7 @@ export function createAgentInstructionsRoutes(deps: AgentInstructionsRouterDeps)
     const folder = deps.agentPath(id);
     const home = folder ? homeOf(resolveAgentHome(folder)) : undefined;
     if (!folder || !home) {
-      return c.json({ error: `No agent with id "${id}".`, code: 'UNKNOWN_AGENT' }, 404);
+      return problem(c, 'not_found', { detail: 'No agent with that id.' });
     }
     const runtime = query.data.runtime ?? viewerRuntime(await deps.runtimeType(folder));
     return c.json(

@@ -263,18 +263,15 @@ export const SearchQuerySchema = z
 export type SearchQuery = z.infer<typeof SearchQuerySchema>;
 
 /**
- * A search request the contract refuses, in the shape the HTTP route sends it.
+ * A search request the contract refuses. The HTTP route sends it as a
+ * `400 invalid_request` problem with this sentence as its `detail` (DOR-4979).
  *
  * Named here so the HTTP route and shared search service use one refusal shape
  * for malformed queries (DOR-691).
  */
 export interface SearchRefusal {
-  /** The status the HTTP route answers with — `400` for everything here today. */
-  status: number;
   /** One plain sentence naming what was actually wrong with the request. */
-  error: string;
-  /** The machine-readable code: `INVALID_SEARCH_QUERY` or `UNKNOWN_SEARCH_SOURCE`. */
-  code: string;
+  detail: string;
 }
 
 /**

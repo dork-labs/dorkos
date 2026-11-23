@@ -5,6 +5,7 @@
  * @module services/todos/todos-openapi
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
+import { PROBLEM_CONTENT } from '../core/openapi/problem-openapi.js';
 import { z } from 'zod';
 import {
   CreateTodoRequestSchema,
@@ -16,7 +17,6 @@ import {
 } from '@dorkos/shared/todo-schemas';
 
 /** A refusal: plain words and a stable code. */
-const TodoErrorSchema = z.object({ error: z.string(), code: z.string() }).openapi('TodoError');
 
 /**
  * Register the to-do routes.
@@ -57,19 +57,19 @@ export function registerTodosOpenApi(registry: OpenAPIRegistry): void {
       },
       400: {
         description: 'A bad body',
-        content: { 'application/json': { schema: TodoErrorSchema } },
+        content: PROBLEM_CONTENT,
       },
       401: {
         description: 'Step up first',
-        content: { 'application/json': { schema: TodoErrorSchema } },
+        content: PROBLEM_CONTENT,
       },
       403: {
         description: 'An agent',
-        content: { 'application/json': { schema: TodoErrorSchema } },
+        content: PROBLEM_CONTENT,
       },
       429: {
         description: 'Past a daily cap',
-        content: { 'application/json': { schema: TodoErrorSchema } },
+        content: PROBLEM_CONTENT,
       },
     },
   });
@@ -90,7 +90,7 @@ export function registerTodosOpenApi(registry: OpenAPIRegistry): void {
       },
       404: {
         description: 'No such to-do',
-        content: { 'application/json': { schema: TodoErrorSchema } },
+        content: PROBLEM_CONTENT,
       },
     },
   });
@@ -111,23 +111,23 @@ export function registerTodosOpenApi(registry: OpenAPIRegistry): void {
       200: { description: 'The to-do', content: { 'application/json': { schema: TodoSchema } } },
       400: {
         description: 'A bad body',
-        content: { 'application/json': { schema: TodoErrorSchema } },
+        content: PROBLEM_CONTENT,
       },
       401: {
         description: 'Step up first',
-        content: { 'application/json': { schema: TodoErrorSchema } },
+        content: PROBLEM_CONTENT,
       },
       403: {
         description: 'Not yours',
-        content: { 'application/json': { schema: TodoErrorSchema } },
+        content: PROBLEM_CONTENT,
       },
       404: {
         description: 'No such to-do',
-        content: { 'application/json': { schema: TodoErrorSchema } },
+        content: PROBLEM_CONTENT,
       },
       409: {
         description: 'It changed since',
-        content: { 'application/json': { schema: TodoErrorSchema } },
+        content: PROBLEM_CONTENT,
       },
     },
   });

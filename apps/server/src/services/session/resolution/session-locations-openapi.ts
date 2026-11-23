@@ -1,15 +1,12 @@
 /** HTTP contract for private, caller-owned launch folder references. */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { ErrorResponseSchema } from '@dorkos/shared/schemas';
 import { AgentManifestSchema } from '@dorkos/shared/mesh-schemas';
+import { problemResponse } from '../../core/openapi/problem-openapi.js';
 
 /** Register launch-location reads and reservations without exposing paths in links. */
 export function registerSessionLocationsOpenApi(registry: OpenAPIRegistry): void {
-  const error = (description: string) => ({
-    description,
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  });
+  const error = problemResponse;
   registry.registerPath({
     method: 'post',
     path: '/api/session-locations',

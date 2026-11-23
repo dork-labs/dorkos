@@ -277,7 +277,7 @@ describe('Tasks routes', () => {
     it('returns empty array when no schedules', async () => {
       const res = await request(fixtureServer).get('/api/tasks');
       expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+      expect(res.body).toMatchObject([]);
     });
 
     it('returns schedules with nextRun', async () => {
@@ -439,7 +439,8 @@ describe('Tasks routes', () => {
     it('returns 400 for missing required fields', async () => {
       const res = await request(fixtureServer).post('/api/tasks').send({ name: 'No cron' });
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.issues.fieldErrors).toBeDefined();
     });
 
     it('refuses a name that slugifies to the reserved templates folder', async () => {
@@ -454,7 +455,7 @@ describe('Tasks routes', () => {
       // Allowing it would write a file the reconciler skips by name, and then
       // retire the row the watcher created for it.
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('reserved');
+      expect(res.body.detail).toContain('reserved');
       expect(store.getTasks()).toHaveLength(0);
     });
 
@@ -773,7 +774,7 @@ describe('Tasks routes', () => {
     it('returns empty array when no runs', async () => {
       const res = await request(fixtureServer).get('/api/tasks/runs');
       expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+      expect(res.body).toMatchObject([]);
     });
 
     it('returns runs with pagination', async () => {
@@ -846,7 +847,7 @@ describe('Tasks routes', () => {
 
       const res = await request(fixtureServer).post('/api/tasks/runs/run-1/cancel');
       expect(res.status).toBe(502);
-      expect(res.body.error).toContain('nothing picked it up');
+      expect(res.body.detail).toContain('nothing picked it up');
     });
   });
 });

@@ -357,9 +357,9 @@ function errorMessage(err: unknown): string {
 
 /**
  * Whether a create failure is the server's live-terminal cap (HTTP 429,
- * `code: 'TERMINAL_LIMIT'`) — the transport carries the machine-readable code
+ * `code: 'terminal_limit'`) — the transport carries the machine-readable code
  * on the thrown error so the panel can show friendlier copy.
  */
 function isTerminalLimitError(err: unknown): boolean {
-  return err instanceof Error && (err as Error & { code?: string }).code === 'TERMINAL_LIMIT';
+  return err instanceof Error && (err as Error & { code?: string }).code === 'terminal_limit';
 }

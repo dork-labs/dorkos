@@ -63,15 +63,18 @@ describe('createTerminalMethods().openTerminal', () => {
     expect(fetchMock.mock.calls[0][1]?.signal).toBe(controller.signal);
   });
 
-  it('attaches the server error code to a failed create (TERMINAL_LIMIT → friendly copy upstream)', async () => {
+  it('attaches the server error code to a failed create (terminal_limit → friendly copy upstream)', async () => {
     globalThis.fetch = vi.fn(
       async () =>
         new Response(
           JSON.stringify({
-            error: 'Terminal limit reached (24 live terminals)',
-            code: 'TERMINAL_LIMIT',
+            type: 'urn:dorkos:problem:terminal_limit',
+            title: 'Too many terminals are open.',
+            status: 429,
+            code: 'terminal_limit',
+            detail: 'Too many terminals are open. Close one, then try again.',
           }),
-          { status: 429, headers: { 'Content-Type': 'application/json' } }
+          { status: 429, headers: { 'Content-Type': 'application/problem+json' } }
         )
     ) as unknown as typeof fetch;
 
@@ -79,7 +82,9 @@ describe('createTerminalMethods().openTerminal', () => {
     const failure = await methods.openTerminal('/repo').catch((err: unknown) => err);
 
     expect(failure).toBeInstanceOf(Error);
-    expect((failure as Error).message).toBe('Terminal limit reached (24 live terminals)');
-    expect((failure as Error & { code?: string }).code).toBe('TERMINAL_LIMIT');
+    expect((failure as Error).message).toBe(
+      'Too many terminals are open. Close one, then try again.'
+    );
+    expect((failure as Error & { code?: string }).code).toBe('terminal_limit');
   });
 });

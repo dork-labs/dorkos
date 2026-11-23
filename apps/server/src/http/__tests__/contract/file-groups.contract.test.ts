@@ -81,11 +81,21 @@ afterAll(() => {
 });
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json\b/ };
 const OUTSIDE = {
   error: 'Access denied: path outside directory boundary',
   code: 'OUTSIDE_BOUNDARY',
 };
 const NULL_BYTE = { error: 'Invalid path: null bytes not allowed', code: 'NULL_BYTE' };
+const DIFF_OUTSIDE = problemBody('outside_boundary', {
+  detail: 'Pick a folder inside the ones DorkOS may use.',
+});
+const DIFF_NULL_BYTE = problemBody('invalid_request', {
+  detail: 'That path has a character paths can’t hold.',
+});
+const DIFF_SESSION_NOT_FOUND = problemBody('session_not_found', {
+  detail: 'No chat with that id.',
+});
 const NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
 });
@@ -495,25 +505,27 @@ contractSuite('file, diff, upload and profile groups', [
     name: 'GET /api/diff/baseline is a 404 to an agent that may not read the session',
     path: `/api/diff/baseline?${at('notes.txt')}&sessionId=${SESSION}`,
     headers: AGENT,
-    expect: { status: 404, body: { error: 'Session not found', code: 'SESSION_NOT_FOUND' } },
+    expect: { status: 404, body: DIFF_SESSION_NOT_FOUND },
   },
   {
     name: 'GET /api/diff/baseline refuses a binary file',
     path: `/api/diff/baseline?${at('binary.txt')}&sessionId=${SESSION}`,
     expect: {
       status: 415,
-      body: { error: 'Binary files cannot be diffed as text', code: 'BINARY_FILE' },
+      body: problemBody('binary_file', {
+        detail: 'This file isn’t text, so it has no text diff.',
+      }),
     },
   },
   {
     name: 'GET /api/diff/baseline refuses a .. walk',
     path: `/api/diff/baseline?${at('../../../x.txt')}&sessionId=${SESSION}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: DIFF_OUTSIDE },
   },
   {
     name: 'GET /api/diff/baseline refuses a NUL byte',
     path: `/api/diff/baseline?cwd=${q(CWD)}&path=a%00.txt&sessionId=${SESSION}`,
-    expect: { status: 400, body: NULL_BYTE },
+    expect: { status: 400, body: DIFF_NULL_BYTE },
   },
   {
     name: 'GET /api/diff/baseline refuses a missing session',
@@ -528,28 +540,30 @@ contractSuite('file, diff, upload and profile groups', [
   {
     name: 'GET /api/diff/pending refuses a folder outside the boundary',
     path: `/api/diff/pending?cwd=${q(OUTSIDE_DIR)}&sessionId=${SESSION}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: DIFF_OUTSIDE },
   },
   {
     name: 'GET /api/diff/baseline/raw is a 404 when there is no before',
     path: `/api/diff/baseline/raw?${at('pic.svg')}&sessionId=${SESSION}`,
-    expect: { status: 404, body: { error: 'No baseline for this file', code: 'NO_BASELINE' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'This file has no earlier version to show.' }),
+    },
   },
   {
     name: 'GET /api/diff/baseline/raw refuses a type it does not serve',
     path: `/api/diff/baseline/raw?${at('notes.txt')}&sessionId=${SESSION}`,
     expect: {
       status: 415,
-      body: {
-        error: 'Only image, PDF, and 3D-model baselines can be served',
-        code: 'UNSUPPORTED_TYPE',
-      },
+      body: problemBody('unsupported_media_type', {
+        detail: 'Only image, PDF and 3D-model baselines can be served.',
+      }),
     },
   },
   {
     name: 'GET /api/diff/baseline/raw refuses a symlink out',
     path: `/api/diff/baseline/raw?${at('escape.svg')}&sessionId=${SESSION}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: DIFF_OUTSIDE },
   },
   {
     name: 'POST /api/diff/baseline/advance is a no-op with no baseline',
@@ -564,7 +578,7 @@ contractSuite('file, diff, upload and profile groups', [
     path: '/api/diff/baseline/advance',
     headers: AGENT,
     body: { cwd: CWD, path: 'notes.txt', sessionId: SESSION },
-    expect: { status: 404, body: { error: 'Session not found', code: 'SESSION_NOT_FOUND' } },
+    expect: { status: 404, body: DIFF_SESSION_NOT_FOUND },
   },
   {
     name: 'POST /api/diff/revert is a 404 with nothing to restore',
@@ -573,7 +587,7 @@ contractSuite('file, diff, upload and profile groups', [
     body: { cwd: CWD, path: 'notes.txt', sessionId: SESSION },
     expect: {
       status: 404,
-      body: { error: 'No baseline to restore for this file', code: 'NO_BASELINE' },
+      body: problemBody('not_found', { detail: 'This file has no earlier version to restore.' }),
     },
   },
   {
@@ -882,7 +896,7 @@ contractSuite('file, diff, upload and profile groups', [
     path: '/api/profile',
     headers: AGENT,
     body: { displayName: 'Agent' },
-    expect: { status: 401, headers: JSON_TYPE },
+    expect: { status: 401, headers: PROBLEM_TYPE },
   },
   {
     name: 'POST /api/profile/avatar refuses an agent before reading the body',
@@ -890,7 +904,7 @@ contractSuite('file, diff, upload and profile groups', [
     path: '/api/profile/avatar',
     headers: { ...AGENT, ...MULTIPART },
     body: multipart([{ field: 'avatar', filename: 'a.webp', type: 'image/webp', content: WEBP }]),
-    expect: { status: 401, headers: JSON_TYPE },
+    expect: { status: 401, headers: PROBLEM_TYPE },
   },
   {
     name: 'POST /api/profile/avatar asks for the image when there is none',
@@ -898,7 +912,7 @@ contractSuite('file, diff, upload and profile groups', [
     path: '/api/profile/avatar',
     expect: {
       status: 400,
-      body: { error: "Attach the image as the 'avatar' field.", code: 'AVATAR_MISSING' },
+      body: problemBody('avatar_missing', { detail: "Attach the image as the 'avatar' field." }),
     },
   },
   {
@@ -909,10 +923,9 @@ contractSuite('file, diff, upload and profile groups', [
     body: multipart([{ field: 'avatar', filename: 'a.png', type: 'image/png', content: 'text' }]),
     expect: {
       status: 415,
-      body: {
-        error: 'That file is not a PNG, JPEG, or WebP image.',
-        code: 'AVATAR_TYPE_UNSUPPORTED',
-      },
+      body: problemBody('avatar_type_unsupported', {
+        detail: 'That file is not a PNG, JPEG, or WebP image.',
+      }),
     },
   },
   {
@@ -969,7 +982,7 @@ contractSuite('file, diff, upload and profile groups', [
     path: '/api/profile/avatar/nobody',
     expect: {
       status: 404,
-      body: { error: 'No photo for that identity.', code: 'AVATAR_NOT_FOUND' },
+      body: problemBody('not_found', { detail: 'No photo for that identity.' }),
     },
   },
   {
@@ -977,7 +990,7 @@ contractSuite('file, diff, upload and profile groups', [
     path: `/api/profile/avatar/${q('a/b')}`,
     expect: {
       status: 404,
-      body: { error: 'No photo for that identity.', code: 'AVATAR_NOT_FOUND' },
+      body: problemBody('not_found', { detail: 'No photo for that identity.' }),
     },
   },
   {
@@ -991,19 +1004,19 @@ contractSuite('file, diff, upload and profile groups', [
     method: 'DELETE',
     path: '/api/profile/avatar',
     headers: AGENT,
-    expect: { status: 401, headers: JSON_TYPE },
+    expect: { status: 401, headers: PROBLEM_TYPE },
   },
   {
     name: 'POST /api/profile/identities/:authorId is a 404 for an author that does not exist',
     method: 'POST',
     path: '/api/profile/identities/platform%3Anobody',
-    expect: { status: 404, headers: JSON_TYPE },
+    expect: { status: 404, headers: PROBLEM_TYPE },
   },
   {
     name: 'DELETE /api/profile/identities/:authorId is a 404 for an author that does not exist',
     method: 'DELETE',
     path: '/api/profile/identities/platform%3Anobody',
-    expect: { status: 404, body: { error: 'No such author', code: 'MEMBER_NOT_FOUND' } },
+    expect: { status: 404, body: problemBody('not_found', { detail: 'No such author' }) },
   },
   {
     name: 'GET /api/profile is the /api 404',

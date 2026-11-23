@@ -130,7 +130,7 @@ describe('scheduled task credits confirmation', () => {
     store.updateTask(task.id, { prompt: 'Different work.' });
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
       status: 409,
-      result: { code: 'TASK_CHANGED' },
+      result: { code: 'conflict' },
     });
     expect(store.getTask(task.id)?.enabled).toBe(false);
   });
