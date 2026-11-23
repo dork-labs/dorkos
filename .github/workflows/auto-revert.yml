@@ -1,0 +1,124 @@
+name: auto-revert
+
+# Reverts a merge that turned main red (DOR-5122, under DOR-5098; Dorian,
+# Nov 23: release fast, fix forward). Never the release commit.
+#
+# When a push-to-main workflow fails, scripts/auto-revert.sh decides:
+#   - first failure of the run: re-run the failed jobs once, so a flake never
+#     reverts anyone's work;
+#   - failed again, the same workflow was green on the parent commit, main has
+#     not moved on, and no revert is open: open a revert PR, which goes through
+#     the queue like any PR, with auto-merge on.
+# after-merge-alert.yml has already told the author. The revert PR names them.
+#
+# SWITCHED OFF BY DEFAULT. The revert step runs only when the repo variable
+# AUTO_REVERT is `on`. It pushes with the merge-tail app token, because a
+# GITHUB_TOKEN push starts no workflows and the revert's required checks would
+# never run. Until AUTO_REVERT is on, the decision still runs and is logged.
+#
+# A `workflow_run` workflow runs the default branch's copy, and both jobs check
+# out main, so a PR cannot change it. Nothing from the reverted commit runs.
+
+on:
+  workflow_run:
+    workflows: [scripts-test, CLI Smoke Test, Desktop Smoke, db-check]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-revert-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  decide:
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == github.event.repository.default_branch &&
+      contains(fromJSON('["failure","timed_out"]'), github.event.workflow_run.conclusion)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      # Only to re-run the failed jobs once.
+      actions: write
+    outputs:
+      decision: ${{ steps.decide.outputs.decision }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/auto-revert.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Decide
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          bash scripts/auto-revert.sh facts "$RUN_ID" >facts.json
+          cat facts.json
+          decision=$(bash scripts/auto-revert.sh decide facts.json)
+          echo "Decision: $decision"
+          echo "decision=$decision" >>"$GITHUB_OUTPUT"
+          if [ "$decision" = rerun ]; then
+            gh run rerun "$RUN_ID" --failed --repo "$REPO" || echo "::warning::could not re-run $RUN_ID"
+          fi
+
+  revert:
+    needs: decide
+    if: startsWith(needs.decide.outputs.decision, 'revert ') && vars.AUTO_REVERT == 'on'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Mint the merge-tail app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 2
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Open the revert PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          DECISION: ${{ needs.decide.outputs.decision }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          read -r _ sha pr <<<"$DECISION"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] && [[ "$pr" =~ ^[1-9][0-9]*$ ]] || { echo "::error::bad decision '$DECISION'"; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$sha" ] || { echo "::notice::main moved on; not reverting."; exit 0; }
+          branch="auto-revert/${sha:0:12}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git revert --no-edit "$sha"
+          git push origin "$branch"
+          author=$(gh api "repos/$REPO/pulls/$pr" --jq .user.login)
+          title="Revert #$pr: $WORKFLOW failed on main (auto-revert)"
+          body="Auto-revert (DOR-5122): \`$WORKFLOW\` failed twice on main after #$pr merged, and was green on the commit before it.
+
+          Run: $RUN_URL
+
+          @$author please fix forward: reopen the change in a new PR with the fix."
+          url=$(gh pr create --repo "$REPO" --base main --head "$branch" --title "$title" \
+            --body "$body" --label skip-changelog --label auto-revert)
+          echo "Opened $url"
+          gh pr merge "$url" --repo "$REPO" --auto || echo "::warning::could not turn on auto-merge for $url"
+          gh api --method POST "repos/$REPO/issues/$pr/comments" \
+            -f body="@$author this PR turned main red (\`$WORKFLOW\`, $RUN_URL) and is being reverted in $url. Please fix forward in a new PR." >/dev/null
