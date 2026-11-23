@@ -266,6 +266,11 @@ gates:
     source: .github/workflows/security-verdict.yml
     purpose: After each Claude review run, posts a security-verdict commit status that is success only when the review's Security lens posted a pass for that exact head (DOR-5099), then re-runs that head's pr-gates after a pass (DOR-5119).
 
+  # --- after-merge-alert.yml ---
+  - id: wf.after-merge-alert.alert
+    source: .github/workflows/after-merge-alert.yml
+    purpose: Never gates a merge. When a push-to-main check fails, comments on the merged PR and opens or updates one issue per failure group, assigned to the author; closes the groups when the check is green again (DOR-5121).
+
   # --- pr-gates.yml ---
   - id: wf.pr-gates.pr-gates
     source: .github/workflows/pr-gates.yml

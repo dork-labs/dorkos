@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# Fixture suite for scripts/after-merge-alert.sh (DOR-5121). A stubbed `gh`
+# (GH=...) answers reads from fixture files, applies the script's own --jq
+# filter, and logs every call, so writes can be asserted. Needs bash and jq.
+#
+#   bash scripts/test-after-merge-alert.sh
+set -uo pipefail
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+SCRIPT=$repo_root/scripts/after-merge-alert.sh
+tmp=$(mktemp -d -t after-merge-alert-test.XXXXXX)
+trap 'rm -rf "$tmp"' EXIT
+fx=$tmp/fx
+mkdir -p "$fx"
+pass=0
+fail=0
+
+# Reads map to fixture files; writes are logged and answer {"number": 900}.
+# FAIL_ON=<substring> fails any call whose arguments contain it.
+cat >"$tmp/gh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$GH_LOG"
+[ -n "${FAIL_ON:-}" ] && [[ "$*" == *"$FAIL_ON"* ]] && exit 1
+filter=.
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+  [ "${args[$i]}" = --jq ] && filter=${args[$((i + 1))]}
+done
+case "$*" in
+  *"--method"*) echo '{"number":900}' | jq -r "$filter"; exit 0 ;;
+  *"/commits/"*"/pulls"*) f=pulls ;;
+  *"/actions/runs/"*"/jobs"*) f=jobs ;;
+  *"/issues/"*"/comments"*) f=comments ;;
+  *"/issues?"*) f=issues ;;
+  *"/labels/"*) f=label ;;
+  *) echo "stub gh: unexpected $*" >&2; exit 1 ;;
+esac
+[ -f "$FX/$f" ] || exit 1
+jq -r "$filter" "$FX/$f"
+EOF
+chmod +x "$tmp/gh"
+export GH="$tmp/gh" GH_LOG="$tmp/gh.log" REPO=made-up/repo FX=$fx
+
+S=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+URL=https://example.invalid/run/77
+reset() {
+  echo '[{"number":12,"merged_at":"2026-11-23T10:00:00Z","user":{"login":"dev1"}}]' >"$fx/pulls"
+  echo '{"jobs":[{"name":"Unit tests","conclusion":"failure"},{"name":"Lint","conclusion":"success"}]}' >"$fx/jobs"
+  echo '[]' >"$fx/comments"
+  echo '[]' >"$fx/issues"
+  echo '{"name":"after-merge-failure"}' >"$fx/label"
+}
+out=""
+rc=0
+run() {
+  : >"$GH_LOG"
+  out=$("$SCRIPT" "$@" 2>&1)
+  rc=$?
+}
+check() {
+  if [ "$2" = "$3" ]; then
+    pass=$((pass + 1))
+  else
+    fail=$((fail + 1))
+    printf 'FAIL  %s\n        expected: %s\n        actual:   %s\n        output:   %s\n' "$1" "$2" "$3" "$out" >&2
+  fi
+}
+has() { grep -qF -- "$2" <<<"$1" && echo yes || echo no; }
+log() { cat "$GH_LOG"; }
+count() { grep -cF -- "$1" "$GH_LOG"; }
+
+reset
+run failed 77 $S scripts-test $URL
+check 'a failure exits 0' 0 "$rc"
+check 'it comments on the merged PR' yes "$(has "$(log)" 'api --method POST repos/made-up/repo/issues/12/comments')"
+check 'the comment names the author' yes "$(has "$(log)" '@dev1')"
+check 'the comment carries the run marker' yes "$(has "$(log)" '<!-- after-merge-alert run=77 -->')"
+check 'the comment names the failed job only' no "$(has "$(log)" 'Lint')"
+check 'it opens one group issue' 1 "$(count 'repos/made-up/repo/issues -f title=')"
+check 'titled by workflow and job' yes "$(has "$(log)" 'title=After merge: scripts-test / Unit tests fails on main')"
+check 'assigned to the author' yes "$(has "$(log)" 'assignees[]=dev1')"
+check 'labelled' yes "$(has "$(log)" 'labels[]=after-merge-failure')"
+
+reset
+printf '%s\n' '[{"id":5,"body":"<!-- after-merge-alert run=77 --> old"}]' >"$fx/comments"
+run failed 77 $S scripts-test $URL
+check 'a re-run of the alert does not comment twice' 0 "$(count 'issues/12/comments -f body')"
+
+reset
+echo '[{"number":40,"title":"After merge: scripts-test / Unit tests fails on main"}]' >"$fx/issues"
+run failed 77 $S scripts-test $URL
+check 'an open group gets a comment' yes "$(has "$(log)" 'api --method POST repos/made-up/repo/issues/40/comments')"
+check 'and no second issue' 0 "$(count 'repos/made-up/repo/issues -f title=')"
+
+reset
+echo '[{"number":41,"title":"After merge: scripts-test / Unit tests fails on main","pull_request":{}}]' >"$fx/issues"
+run failed 77 $S scripts-test $URL
+check 'a PR with the same title is not a group issue' 1 "$(count 'repos/made-up/repo/issues -f title=')"
+
+reset
+echo '{"jobs":[{"name":"A","conclusion":"failure"},{"name":"B","conclusion":"timed_out"}]}' >"$fx/jobs"
+run failed 77 $S scripts-test $URL
+check 'each failed job is its own group' 2 "$(count 'repos/made-up/repo/issues -f title=')"
+
+reset
+echo '{"jobs":[]}' >"$fx/jobs"
+run failed 77 $S scripts-test $URL
+check 'no failed job: the workflow is the group' yes "$(has "$(log)" 'title=After merge: scripts-test / scripts-test fails on main')"
+
+reset
+echo '[]' >"$fx/pulls"
+run failed 77 $S scripts-test $URL
+check 'no merged PR: still exits 0' 0 "$rc"
+check 'no merged PR: no PR comment' 0 "$(count 'comments -f body')"
+check 'no merged PR: the issue still opens' 1 "$(count 'repos/made-up/repo/issues -f title=')"
+check 'no merged PR: no assignee' no "$(has "$(log)" 'assignees')"
+
+reset
+echo '[{"number":12,"merged_at":"2026-11-23T10:00:00Z","user":{"login":"dependabot[bot]"}}]' >"$fx/pulls"
+run failed 77 $S scripts-test $URL
+check 'a bot author is not assigned' no "$(has "$(log)" 'assignees')"
+
+reset
+FAIL_ON='assignees' run failed 77 $S scripts-test $URL
+check 'an unassignable author still gets the issue' 0 "$rc"
+check 'retried without the assignee' yes "$(has "$(log)" 'labels[]=after-merge-failure --jq .number')"
+
+reset
+FAIL_ON='/pulls' run failed 77 $S scripts-test $URL
+check 'an unreadable PR lookup is exit 2' 2 "$rc"
+
+reset
+run failed 77 abc scripts-test $URL
+check 'a bad sha is a usage error' 2 "$rc"
+run failed x $S scripts-test $URL
+check 'a bad run id is a usage error' 2 "$rc"
+run
+check 'no arguments is a usage error' 2 "$rc"
+
+reset
+echo '[{"number":40,"title":"After merge: scripts-test / Unit tests fails on main"},{"number":42,"title":"After merge: db-check / db fails on main"}]' >"$fx/issues"
+run passed scripts-test $URL
+check 'green again closes that workflow s groups' yes "$(has "$(log)" 'api --method PATCH repos/made-up/repo/issues/40 -f state=closed')"
+check 'and leaves other workflows open' no "$(has "$(log)" 'issues/42')"
+
+reset
+run passed scripts-test $URL
+check 'green with nothing open is quiet' 0 "$rc"
+check 'and writes nothing' 0 "$(count '--method')"
+
+echo "after-merge-alert fixtures: $pass passed, $fail failed"
+[ "$fail" -eq 0 ]
