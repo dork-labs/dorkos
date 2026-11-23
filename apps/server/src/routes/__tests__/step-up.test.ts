@@ -60,6 +60,7 @@ import { holdForStepUp } from '../step-up-guard.js';
 import { createStepUpRoutes, extensionRiskError, type StepUpRouteDeps } from '../step-up.js';
 import { StepUpRiskLedger } from '../../services/extensions/step-up/step-up-risk-ledger.js';
 import { mintPageStamp } from '../../services/extensions/step-up/page-stamp.js';
+import { sheetAfterRead0140 } from './fixtures/step-up-sheet-0.140.1.js';
 import {
   currentStepUpExtensionRisks,
   setStepUpExtensionRiskInputs,
@@ -911,23 +912,62 @@ describe('a confirm on a ledger that opened with a clear, no mini app risk ever 
     expect(commit).not.toHaveBeenCalled();
   });
 
-  it('answers a page with no stamp (open across the update) in the shape it reads, naming why', async () => {
+  it('refuses the read of a page with no stamp (open across the update) with words that say reload', async () => {
     const id = await hold({ user: SESSION_NEW });
     const view = await request(app({ user: SESSION_NEW }))
       .get(`/api/step-up/${id}`)
       .set('Cookie', COOKIE);
-    // The page's own code reads only this shape: its "Sign in again" reloads it.
-    expect(view.body).toMatchObject({
-      methods: [],
-      passwordUnavailable: 'extension-risk',
-      blockedBy: [],
+    // A refused read is the one answer whose words that page's sheet shows, with only Close.
+    expect(view.status).toBe(409);
+    expect(view.body).toEqual({
+      error: 'DorkOS changed after this page opened. Reload it, then try again.',
+      code: 'extension-risk',
       stale: 'stale-page',
     });
     const res = await confirmFrom(id);
     expect(res.status).toBe(409);
     expect(res.body).toMatchObject({ code: 'extension-risk', blockedBy: [], stale: 'stale-page' });
-    expect(res.body.error).toBe('This page opened before a change. Reload it, then try again.');
     expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('shows a 0.140.1 tab the reload words, with only Close, and never its "Sign in again" (DOR-5086)', async () => {
+    const id = await hold({ user: SESSION_NEW });
+    const read = await request(app({ user: SESSION_NEW }))
+      .get(`/api/step-up/${id}`)
+      .set('Cookie', COOKIE);
+    expect(sheetAfterRead0140(read.status, read.body)).toEqual({
+      kind: 'ended',
+      message: 'DorkOS changed after this page opened. Reload it, then try again.',
+    });
+    // The 200 answer 0.141.0 gave first drew that page's "Sign in again" card,
+    // which signs in without reloading and comes back here: the loop this ends.
+    expect(
+      sheetAfterRead0140(200, {
+        passwordUnavailable: 'extension-risk',
+        blockedBy: [],
+        stale: 'stale-page',
+      })
+    ).toEqual({ kind: 'view', passwordUnavailable: 'extension-risk', blockedBy: [] });
+  });
+
+  it.each([
+    ['a page this release sent', COOKIE],
+    // The Mac app's window sends the stamp of the app window's page (desktop step-up confirmation).
+    ['the Mac app', COOKIE],
+  ])('keeps the normal view for %s, which sends its page stamp', async (_label, cookie) => {
+    const id = await hold({ user: SESSION_NEW });
+    const read = (stamp: string) =>
+      request(app({ user: SESSION_NEW }))
+        .get(`/api/step-up/${id}`)
+        .set('Cookie', cookie)
+        .set('x-dorkos-page-stamp', stamp);
+    const old = await read(mintPageStamp(cookie, Date.now() - 120_000));
+    expect(old.status).toBe(200);
+    expect(old.body).toMatchObject({ passwordUnavailable: 'stale-page', stale: 'stale-page' });
+    const fresh = await read(mintPageStamp(cookie));
+    expect(fresh.status).toBe(200);
+    expect(fresh.body).toMatchObject({ methods: ['password'] });
+    expect(fresh.body).not.toHaveProperty('stale');
   });
 
   it('confirms from a freshly loaded page of the same sign-in', async () => {

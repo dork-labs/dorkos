@@ -89,6 +89,13 @@ import {
 /** The longest password Better Auth stores. */
 const MAX_PASSWORD_LENGTH = 128;
 
+/**
+ * What a page from before 0.141.0 shows when it is too old to confirm from
+ * (DOR-5086). Its sheet shows a refused read's own words; this one says how out.
+ * Since 0.141, remove in 0.143 with `fromOlderPage` (DOR-5089).
+ */
+const OLDER_PAGE_RELOAD_ERROR = 'DorkOS changed after this page opened. Reload it, then try again.';
+
 /** What the routes read, injectable for tests. */
 export interface StepUpRouteDeps {
   /** The install owner's id, or `null`. */
@@ -469,6 +476,15 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     const { unavailable, risks } = await passwordUnavailable(c);
     const stale =
       unavailable === 'stale-sign-in' || unavailable === 'stale-page' ? unavailable : undefined;
+    // A page from before the named reasons, too old to confirm from: its sheet shows a
+    // refused read's own words with only Close. A 200 view would show its "Sign in again",
+    // which signs in without reloading and lands here again (DOR-5086).
+    if (stale === 'stale-page' && fromOlderPage(c)) {
+      return c.json(
+        { ...errorBody(OLDER_PAGE_RELOAD_ERROR, 'extension-risk'), stale },
+        REFUSALS['extension-risk'].status
+      );
+    }
     // A page from before the named reasons reads only `extension-risk` (see fromOlderPage).
     const shown = stale && fromOlderPage(c) ? 'extension-risk' : unavailable;
     const view: HeldStepUpView = {
