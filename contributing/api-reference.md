@@ -55,7 +55,7 @@ Every operation in the document has an `operationId`. It is the name a generated
 pnpm vitest run apps/server/src/services/core/openapi/__tests__/operation-ids-snapshot.test.ts -u
 ```
 
-Read the diff before you commit it: a changed line on an existing operation is an API change.
+Read the diff before you commit it: a changed line on an existing operation is an API change. The rule can rename an operation you never touched: adding `/api/x/{id}` turns `GET /api/x` from `x.get` into `x.list`, and adding a `limit` or `cursor` query parameter to a `GET` does the same. Unless that rename is what you want, do not run `-u`. Pin the old id instead: add `operationId: 'x.get'` (the id the snapshot shows on its old line) to that operation's `registerPath` call, and the snapshot passes unchanged.
 
 **Collisions.** `assignOperationIds` throws while the document is generated when two operations' ids match once lowercased with underscores removed (`x.foo_bar` and `x.fooBar`), derived or hand-set, naming both paths, so `pnpm docs:export-api` and every test that generates the document fail. Fix it with a hand-set `operationId` on one of the two `registerPath` calls. `services/core/__tests__/export-openapi.test.ts` checks that every operation has an id and that no two are byte-identical; `services/core/openapi/__tests__/operation-ids.test.ts` checks the throw.
 

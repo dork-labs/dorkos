@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { generateOpenAPISpec } from '../../openapi-registry.js';
 import { decideSessionGate } from '../../auth/session-gate.js';
-import { isGateExemptPath } from '../../auth/gated-paths.js';
+import { env } from '../../../../env.js';
 import { programKeyOperationKeys } from '../../../connectors/principal/program-key-routes.js';
 import { operationSecurity, samplePath } from '../security-schemes.js';
 
@@ -50,9 +50,8 @@ describe('operation security', () => {
         fromAnotherDevice,
         'credential'
       );
-      // A hub's link path is open only on a hub, which this test server is not.
-      const hubOnly = isGateExemptPath(path, samplePath(path), 'hub') && !decision.allowed;
-      const open = decision.allowed || hubOnly;
+      // A hub's link path is open only on a hub; the next test asks a hub.
+      const open = decision.allowed || `${method} ${path}` === 'POST /api/hub/link';
       const documentedOpen = Array.isArray(security) && security.length === 0;
       const betterAuth = path.startsWith('/api/auth/');
       if (open && !betterAuth && !documentedOpen)
@@ -67,6 +66,34 @@ describe('operation security', () => {
       expect.arrayContaining(['GET /api/health', 'GET /api/extensions/media/{ticket}'])
     );
     expect(open.map((op) => op.path)).not.toContain('/api/health/deep');
+  });
+
+  describe('on a hub', () => {
+    const role = env.DORKOS_SERVER_ROLE;
+    afterEach(() => {
+      env.DORKOS_SERVER_ROLE = role;
+    });
+
+    it('opens the link path a computer redeems its code at, and only there', async () => {
+      const { operations } = documentedOperations();
+      expect(operations.find((op) => op.path === '/api/hub/link')?.security).toEqual([]);
+      env.DORKOS_SERVER_ROLE = 'hub';
+      const onHub = await decideSessionGate(
+        'POST',
+        '/api/hub/link',
+        fromAnotherDevice,
+        'credential'
+      );
+      expect(onHub.allowed).toBe(true);
+      env.DORKOS_SERVER_ROLE = 'computer';
+      const onComputer = await decideSessionGate(
+        'POST',
+        '/api/hub/link',
+        fromAnotherDevice,
+        'credential'
+      );
+      expect(onComputer.allowed).toBe(false);
+    });
   });
 
   it('marks API-key only every connector route that registers from the program-key list', () => {

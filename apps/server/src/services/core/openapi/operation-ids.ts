@@ -73,7 +73,10 @@
  * generated document to its id, and `__tests__/operation-ids-snapshot.test.ts`
  * fails with a diff when any id changes, appears or goes. Renaming one on
  * purpose is `pnpm vitest run apps/server/src/services/core/openapi/__tests__/operation-ids-snapshot.test.ts -u`
- * (`contributing/api-reference.md`).
+ * (`contributing/api-reference.md`). An id can also change because another
+ * route appeared (a sibling `{param}` path) or a `GET` gained a `limit` or
+ * `cursor` parameter. Unless that rename is intended, do not run `-u`: pin
+ * the old id by hand with `operationId` on the operation's `registerPath` call.
  *
  * ## Collisions fail the export
  *

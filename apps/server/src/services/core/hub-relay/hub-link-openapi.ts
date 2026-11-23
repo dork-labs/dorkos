@@ -74,7 +74,8 @@ export function registerHubLinkOpenApi(registry: OpenAPIRegistry): void {
     tags: TAGS,
     summary: 'Link a computer with a code',
     description:
-      'Sent by DorkOS on the computer, never a browser, with no sign-in: the link code is the ' +
+      'Open only on a hub; on a computer the session gate asks for a sign-in like anywhere ' +
+      'else. Sent by DorkOS on the computer, never a browser, with no sign-in: the link code is the ' +
       "credential. The request is signed with the computer's own key; the answer carries the " +
       "hub's key and is signed with it. A wrong, expired or used code and a bad signature get " +
       'the same 401.',
