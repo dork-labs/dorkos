@@ -325,11 +325,15 @@ export class HandoffOutboxStore {
           envelope.waitDeadlineAt !== row.waitDeadlineAt
         )
           throw new HandoffOutboxConflict();
+        // The witness admission captured stands for a chat its runtime forgot (a restart,
+        // an idle reclaim), as for the end notice (DOR-5040): never for another agent's
+        // folder, nobody's folder or a refused one (DOR-5087).
         const recipient = captureAdmissionRecipient(
           tx,
           envelope.source.callerSessionId,
           envelope.seat.authorId,
-          envelope.source.agentPath
+          envelope.source.agentPath,
+          { acceptUnknownAgent: true }
         );
         if (!recipient || recipient.digest !== envelope.recipient.digest)
           throw new HandoffOutboxConflict();
@@ -368,7 +372,8 @@ export class HandoffOutboxStore {
           tx,
           envelope.source.callerSessionId,
           row.authorId,
-          envelope.source.agentPath
+          envelope.source.agentPath,
+          { acceptUnknownAgent: true }
         );
         if (!recipient || recipient.digest !== envelope.recipient.digest)
           throw new HandoffOutboxConflict();

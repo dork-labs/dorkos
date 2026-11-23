@@ -65,7 +65,11 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
         const sessionId = request.sessionId ?? 'juno-seat';
         request.onSessionBound(sessionId);
         const draft = draftIn(request.prompt);
-        if (draft === undefined) return { sessionId, text: null };
+        if (draft === undefined) {
+          // An ordinary room turn: it holds the seat while a test keeps it busy (DOR-5087).
+          await state.seatBusy;
+          return { sessionId, text: null };
+        }
         // What happens to the source chat while the seat works (DOR-5040).
         if (state.whileSeatRuns) live.override = state.whileSeatRuns();
         // The seat is not the chat under test: its own launch facts stand in.
@@ -85,6 +89,10 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
     durableHarness?: import('./room-test-harness.js').RoomHarness;
     /** The folder the source chat's runtime reports once the seat runs: `null` for none. */
     whileSeatRuns?: () => string | null;
+    /** The folder the runtime reports right after admission: `null` once it forgot the chat. */
+    afterAdmission?: () => string | null;
+    /** While pending, an ordinary turn of the seat stays running. */
+    seatBusy?: Promise<void>;
   } = {};
   /** An override of the folder the runtime reports for the source chat. */
   const live: { override?: string | null } = {};
@@ -101,6 +109,8 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
           { roomId: room.id, text: DRAFT },
           { identity: as, sessionId: SESSION, retryChannel: 'mcp-argument' }
         )) as PostResult;
+        // The runtime forgets the chat before the seat takes the hand-off (DOR-5087).
+        if (state.afterAdmission) live.override = state.afterAdmission();
         yield { type: 'done', data: { sessionId: SESSION } } as StreamEvent;
       },
     ]);
@@ -150,6 +160,8 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
       await import('../../core/agent-identity/__tests__/agent-home-fixture.js');
     registerTestHomes([home, otherHome], { managed: { [GHOST_WORKSPACE]: '/agents/gone' } });
     state.whileSeatRuns = undefined;
+    state.afterAdmission = undefined;
+    state.seatBusy = undefined;
     live.override = undefined;
     const permission = await import('../../core/capabilities/permission-enforcement.js');
     permission.initPermissionGate({
@@ -298,6 +310,49 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
     expect(row.noticeState).toBe('accepted');
     const prepared = await terminalAcceptance.prepare(row.noticeReceiptId!);
     expect(prepared.content).toBe('Juno shared it in #launch.');
+  });
+
+  // DOR-5087: a restart while the hand-off waits. The test runtime, like any runtime that keeps
+  // its chats in memory, no longer knows the chat's folder when the seat takes the hand-off.
+  /** Hand off while the seat is busy, so it waits in the queue as QA's restart row sets it up. */
+  async function queuedHandoff(): Promise<PostResult> {
+    let free!: () => void;
+    state.seatBusy = new Promise<void>((resolve) => (free = resolve));
+    const human = store.listEntries(room.id, { limit: 1 })[0]!.authorId;
+    service.post(room.id, { authorId: human, text: '@juno hold this turn' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const answer = await launchFolderChat(juno);
+    expect(answer).toMatchObject({ posted: false, handedOff: true });
+    expect(store.handoffOutbox.readOwned(answer.handoffId!, junoId)?.state).toBe('queued');
+    free();
+    await settle();
+    return answer;
+  }
+
+  it('posts a hand-off whose chat the runtime forgot before the seat took it, and reports once', async () => {
+    state.afterAdmission = () => null;
+    const answer = await queuedHandoff();
+    const row = store.handoffOutbox.readOwned(answer.handoffId!, junoId)!;
+    expect(row.state).toBe('posted');
+    expect(
+      store
+        .listEntries(room.id, { limit: 100 })
+        .filter((entry) => entry.kind === 'post' && entry.authorId === junoId)
+    ).toHaveLength(1);
+    expect(row.noticeState).toBe('accepted');
+    const prepared = await terminalAcceptance.prepare(row.noticeReceiptId!);
+    expect(prepared.content).toBe('Juno shared it in #launch.');
+  });
+
+  it('never posts a queued hand-off whose chat now stands in another agent’s home', async () => {
+    state.afterAdmission = () => otherHome;
+    const answer = await queuedHandoff();
+    expect(store.handoffOutbox.readOwned(answer.handoffId!, junoId)?.state).toBe('declined');
+    expect(
+      store
+        .listEntries(room.id, { limit: 100 })
+        .filter((entry) => entry.kind === 'post' && entry.authorId === junoId)
+    ).toEqual([]);
   });
 
   it.each([
