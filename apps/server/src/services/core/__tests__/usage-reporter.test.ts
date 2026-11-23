@@ -141,6 +141,66 @@ describe('batch + flush behavior', () => {
   });
 });
 
+describe('person profiles (DOR-4989)', () => {
+  type SentEvent = { event: string; properties: Record<string, unknown> };
+
+  /** Report one of each usage event, flush, and return what reached the wire. */
+  async function sendAll(): Promise<SentEvent[]> {
+    reportUsageEvent({
+      event: 'app_started',
+      properties: { os: 'linux-x64', runtimesConfigured: 1 },
+    });
+    reportUsageEvent({ event: 'session_created', properties: { runtime: 'codex' } });
+    reportUsageEvent({ event: 'first_run_completed', properties: {} });
+    reportUsageEvent({ event: 'instance_active', properties: {} });
+    await flushUsageEvents();
+    const [, init] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    return (JSON.parse(init.body as string) as { events: SentEvent[] }).events;
+  }
+
+  it('marks every usage event anonymous when the install is not linked to an account', async () => {
+    registerUsageReporter(baseOptions());
+    const events = await sendAll();
+    expect(events.map((e) => e.event)).toEqual([
+      'app_started',
+      'session_created',
+      'first_run_completed',
+      'instance_active',
+    ]);
+    for (const e of events) expect(e.properties.$process_person_profile).toBe(false);
+  });
+
+  it('leaves the mark off when linked with analytics linking on', async () => {
+    registerUsageReporter(baseOptions({ isAnalyticsLinkedToAccount: () => true }));
+    const events = await sendAll();
+    expect(events).toHaveLength(4);
+    for (const e of events) expect(e.properties).not.toHaveProperty('$process_person_profile');
+  });
+
+  it('reads the link at send time, not once at registration', async () => {
+    let linked = false;
+    registerUsageReporter(baseOptions({ isAnalyticsLinkedToAccount: () => linked }));
+    reportUsageEvent({ event: 'session_created', properties: { runtime: 'codex' } });
+    linked = true;
+    const events = await sendAll();
+    for (const e of events) expect(e.properties).not.toHaveProperty('$process_person_profile');
+
+    linked = false;
+    for (const e of await sendAll()) expect(e.properties.$process_person_profile).toBe(false);
+  });
+
+  it('stays anonymous when the link check throws', async () => {
+    registerUsageReporter(
+      baseOptions({
+        isAnalyticsLinkedToAccount: () => {
+          throw new Error('link manager not ready');
+        },
+      })
+    );
+    for (const e of await sendAll()) expect(e.properties.$process_person_profile).toBe(false);
+  });
+});
+
 describe('privacy — no PII on the wire', () => {
   it('the batch body carries only allowlisted event fields', async () => {
     registerUsageReporter(baseOptions());

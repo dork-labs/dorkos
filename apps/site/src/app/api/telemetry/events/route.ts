@@ -21,10 +21,11 @@
  *     `429` starts no retry storm either.
  *   - **Per-event allowlist validation.** Each event is validated against the
  *     route-LOCAL schema below, which MIRRORS the shared registry at
- *     `packages/shared/src/telemetry-events.ts`. Per ADR-0235 the site keeps
- *     route-local schemas rather than importing `@dorkos/shared`; the two carry
- *     cross-reference comments so a reviewer catches drift. Keep them in
- *     lockstep — every strict property allowlist here must match the registry.
+ *     `packages/shared/src/telemetry-events.ts`. The site may import
+ *     `@dorkos/shared` (the install route does); this route still keeps a local
+ *     mirror, and the two carry cross-reference comments so a reviewer catches
+ *     drift. Keep them in lockstep — every strict property allowlist here must
+ *     match the registry.
  *   - **Accept-and-drop when unconfigured.** With `POSTHOG_PROJECT_KEY` unset,
  *     valid events are accepted and simply not forwarded (zero errors, zero
  *     PostHog requests).
@@ -56,18 +57,29 @@ const MAX_BATCH = 100;
 // MUST match the shared registry's property allowlists and event names exactly.
 // If you add/rename an event or property there, mirror it here (and vice versa).
 
-/** Mirrors `AppStartedProperties` in the shared registry. */
+/**
+ * Mirrors `sendTimeUsageFields` in the shared registry (DOR-4989): the server
+ * sets `$process_person_profile: false` unless the install is linked to an
+ * account with analytics linking on. It spreads through to PostHog unchanged.
+ */
+const sendTimeUsageFields = {
+  $process_person_profile: z.literal(false).optional(),
+};
+
+/** Mirrors `AppStartedProperties` (plus the send-time fields) in the shared registry. */
 const AppStartedProperties = z
   .object({
     os: z.string().min(1).max(MAX_STRING_LEN),
     runtimesConfigured: z.number().int().min(0).max(64),
+    ...sendTimeUsageFields,
   })
   .strict();
 
-/** Mirrors `SessionCreatedProperties` in the shared registry. */
+/** Mirrors `SessionCreatedProperties` (plus the send-time fields) in the shared registry. */
 const SessionCreatedProperties = z
   .object({
     runtime: z.string().min(1).max(MAX_STRING_LEN),
+    ...sendTimeUsageFields,
   })
   .strict();
 
@@ -77,11 +89,12 @@ const FirstRunCompletedProperties = z
     installRef: z.string().regex(INSTALL_REF_TOKEN_PATTERN).optional(),
     utmSource: z.string().regex(INSTALL_REF_UTM_PATTERN).optional(),
     utmCampaign: z.string().regex(INSTALL_REF_UTM_PATTERN).optional(),
+    ...sendTimeUsageFields,
   })
   .strict();
 
 /** Mirrors `InstanceActiveProperties` in the shared registry (DOR-2862). */
-const InstanceActiveProperties = z.object({}).strict();
+const InstanceActiveProperties = z.object({ ...sendTimeUsageFields }).strict();
 
 /** Mirrors the envelope fields in the shared registry. */
 const envelopeFields = {

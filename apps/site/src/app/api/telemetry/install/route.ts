@@ -8,7 +8,8 @@
  * the rows on read.
  *
  * Privacy contract:
- *   - The validated `InstallEvent` shape is the **complete** set of fields the
+ *   - The validated `InstallTelemetryEvent` shape (from
+ *     `@dorkos/shared/marketplace-install-telemetry`) is the **complete** set of fields the
  *     handler is allowed to persist. No request header — IP, cookies, user
  *     agent — is ever stored, logged, or forwarded.
  *   - The one header read is the client IP, taken by the per-IP throttle below
@@ -32,7 +33,10 @@
  * @module app/api/telemetry/install
  */
 
-import { z } from 'zod';
+import {
+  InstallTelemetryEventSchema,
+  type InstallTelemetryEvent,
+} from '@dorkos/shared/marketplace-install-telemetry';
 
 import { getDb } from '@/db/client';
 import { marketplaceInstallEvents } from '@/db/schema';
@@ -40,31 +44,10 @@ import { consumeInstallTelemetryQuota } from '@/lib/telemetry/install-rate-limit
 
 export const runtime = 'edge';
 
-const MAX_NAME_LEN = 64;
-const MAX_ERROR_CODE_LEN = 64;
-const MAX_VERSION_LEN = 32;
-const MAX_DURATION_MS = 600_000;
-
-/**
- * Wire format for an install telemetry event posted by the DorkOS CLI.
- *
- * Adding a field here is the only way new data can land in the
- * `marketplace_install_events` table — keep this schema and the Drizzle table
- * in lockstep, and never add a header-derived or PII-shaped field.
- */
-const InstallEventSchema = z.object({
-  packageName: z.string().min(1).max(MAX_NAME_LEN),
-  marketplace: z.string().min(1).max(MAX_NAME_LEN),
-  type: z.enum(['agent', 'plugin', 'skill-pack', 'adapter']),
-  outcome: z.enum(['success', 'failure', 'cancelled']),
-  durationMs: z.number().int().min(0).max(MAX_DURATION_MS),
-  errorCode: z.string().max(MAX_ERROR_CODE_LEN).optional(),
-  installId: z.string().uuid(),
-  dorkosVersion: z.string().min(1).max(MAX_VERSION_LEN),
-  sourceType: z.enum(['relative-path', 'github', 'url', 'git-subdir', 'npm']),
-});
-
-type InstallEvent = z.infer<typeof InstallEventSchema>;
+// The wire format lives in `@dorkos/shared/marketplace-install-telemetry`, the
+// one definition the server's reporter is tested against too (DOR-4988). Adding
+// a field there is the only way new data can land in the
+// `marketplace_install_events` table — keep it and the Drizzle table in lockstep.
 
 /**
  * Handle a telemetry POST. Returns `429` when this IP is over its limit and
@@ -89,7 +72,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const parsed = InstallEventSchema.safeParse(body);
+  const parsed = InstallTelemetryEventSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ error: 'Invalid event', issues: parsed.error.issues }, { status: 400 });
   }
@@ -106,7 +89,7 @@ export async function POST(request: Request): Promise<Response> {
  * client — graceful degradation is part of the privacy contract: the CLI must
  * not learn about backend health from telemetry responses.
  */
-async function persistInstallEvent(event: InstallEvent): Promise<void> {
+async function persistInstallEvent(event: InstallTelemetryEvent): Promise<void> {
   try {
     const db = getDb();
     await db.insert(marketplaceInstallEvents).values({

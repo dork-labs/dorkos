@@ -136,6 +136,17 @@ export class PackageResolver {
   ) {}
 
   /**
+   * Whether `name` is a marketplace this install has configured. Lets the
+   * install telemetry report a requested marketplace only when it is a real one,
+   * never free text a person typed (DOR-4988).
+   *
+   * @param name - The marketplace name to check.
+   */
+  async isConfiguredMarketplace(name: string): Promise<boolean> {
+    return (await this.sourceManager.get(name)) != null;
+  }
+
+  /**
    * Resolve a user-supplied identifier into a concrete source.
    *
    * Supported input formats (checked in order):

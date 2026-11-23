@@ -43,3 +43,29 @@ export async function resolveLinkTelemetryInstanceId(args: {
   if (!resolveTelemetryConsent(args.linkAnalyticsToAccount, args.env)) return undefined;
   return getOrCreateInstanceId(args.dorkHome);
 }
+
+/**
+ * Whether this computer's usage events may join a person in analytics: only
+ * when the operator opted in (`telemetry.linkAnalyticsToAccount`), no env kill
+ * switch is set, AND the computer is linked to an account right now. The usage
+ * reporter calls it on every send and marks each event
+ * `$process_person_profile: false` while it is false (DOR-4989).
+ *
+ * @param args.linkAnalyticsToAccount - The live `telemetry.linkAnalyticsToAccount` flag.
+ * @param args.env - The env record to read the kill switches from.
+ * @param args.getLinkManager - Returns the cloud-link manager. A getter that
+ *   throws (the manager is not set up yet) counts as not linked.
+ * @returns True only when all three hold.
+ */
+export function isAnalyticsLinkedToAccount(args: {
+  linkAnalyticsToAccount: boolean;
+  env: TelemetryEnv;
+  getLinkManager: () => { isLinked(): boolean };
+}): boolean {
+  if (!resolveTelemetryConsent(args.linkAnalyticsToAccount, args.env)) return false;
+  try {
+    return args.getLinkManager().isLinked();
+  } catch {
+    return false;
+  }
+}
