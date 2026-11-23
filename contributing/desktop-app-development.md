@@ -20,6 +20,7 @@ apps/desktop/
 ├── build/               # buildResources: icons, entitlements, tray images (see build/README.md)
 ├── scripts/
 │   ├── build-server.ts     # esbuild-bundles server-entry.ts → dist/server/server-entry.mjs
+│   ├── check-renderer-defines.ts # fails the build if a renderer `define` was left unsubstituted
 │   ├── rebuild-natives.ts  # @electron/rebuild for better-sqlite3 / node-pty (Electron ABI)
 │   └── smoke-packaged.ts   # launches the packaged app and asserts it serves
 ├── electron-builder.yml # packaging, signing, notarization, files/asarUnpack
@@ -65,6 +66,23 @@ One job per module. `index.ts` is wiring and ordering **only** — every policy 
 | `server-process.ts`           | **Supervises** the child (§2).                                                                                                                                                                                                                                                                                          |
 | `server-crash-recovery.ts`    | The conversation with the user after an unexpected death (§2).                                                                                                                                                                                                                                                          |
 | `server-output.ts`            | The child's stderr, made safe to show (§2).                                                                                                                                                                                                                                                                             |
+| `admin/`                      | Restart and reset on the app's behalf, done by the supervisor instead of `POST /api/admin/*` (DOR-542, §2).                                                                                                                                                                                                             |
+| `server-stopped/`             | The "Restarting DorkOS…" bar, and the bundled "DorkOS stopped" page once restarts have failed (DOR-3229).                                                                                                                                                                                                               |
+| `cache-hygiene.ts`            | Clearing Chromium's caches: once per version change, and on the `renderer-health/` recovery ladder.                                                                                                                                                                                                                     |
+| `tab-session/`                | Every window's tabs, remembered across quits, restarts and crashes.                                                                                                                                                                                                                                                     |
+| `window-focus/`               | Forwards OS-level window focus to the renderer for dim-on-blur (DOR-254).                                                                                                                                                                                                                                               |
+| `fullscreen/`                 | Forwards fullscreen state so the renderer stops reserving traffic-light space (DOR-563).                                                                                                                                                                                                                                |
+| `permissions/`                | What the renderer may ask the OS for (camera, microphone, notifications and the rest); Electron says yes to almost everything without a handler.                                                                                                                                                                        |
+| `launch-switches/`            | Refuses to start a packaged build with debugger switches.                                                                                                                                                                                                                                                               |
+| `install-location/`           | The one offer to move DorkOS into Applications, since an app run from the disk image or Downloads cannot update itself.                                                                                                                                                                                                 |
+| `sign-in/`                    | The window's sign-in cookie, carried on the main process's own requests to the server (DOR-4691).                                                                                                                                                                                                                       |
+| `step-up/`                    | The "Confirm it's you" window for held actions (DOR-3234).                                                                                                                                                                                                                                                              |
+| `local-browser/`              | The shell side of the built-in browser: guest identity, page history, keys and stills.                                                                                                                                                                                                                                  |
+| `capture/`                    | "Capture app": a real screenshot of the window for the feedback dialog.                                                                                                                                                                                                                                                 |
+| `diagnostics/`                | One click that collects the logs and updater state support would otherwise ask for.                                                                                                                                                                                                                                     |
+| `shell-log-excerpt/`          | The shell's own recent log, attached to a bug report filed from the app (DOR-2045).                                                                                                                                                                                                                                     |
+| `certificate-file-picker.ts`  | The native file dialog behind "Choose…" for company certificates in Settings.                                                                                                                                                                                                                                           |
+| `terminal-command/`           | Settings → This computer → Terminal command: the opt-in `dorkos` in the person's Terminal (DOR-3105).                                                                                                                                                                                                                   |
 
 ## 2. The packaging model (how it actually runs when installed)
 
@@ -77,7 +95,7 @@ The main process spawns the server, not in-process:
 - **Production**: Electron `UtilityProcess.fork` of the bundled `dist/server/server-entry.mjs`.
 - **Development**: `child_process.fork` via `tsx` of the original `src/server-entry.ts` (system Node, so the shared `better-sqlite3` stays compiled for system Node and `pnpm dev` keeps working).
 
-Five small modules own this, split by job:
+Six small modules own this, split by job:
 
 | Module                              | Job                                                                                                                                                                                                                                                                                             |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -113,7 +131,7 @@ Three env facts worth knowing, all set in `buildServerEnv`.
 
 ### The server bundle is a separate build step
 
-`electron-vite build` compiles **only** main/preload/renderer. It does **not** compile `src/server-entry.ts`. The desktop `build` script therefore runs `electron-vite build && tsx scripts/build-server.ts`, and `build-server.ts` (esbuild, mirroring `packages/cli/scripts/build.ts`) emits `dist/server/server-entry.mjs` with the native modules + agent SDKs marked external. Skip this and the packaged app forks a file that doesn't exist and dies windowless.
+`electron-vite build` compiles **only** main/preload/renderer. It does **not** compile `src/server-entry.ts`. The desktop `build` script therefore runs `electron-vite build && tsx scripts/check-renderer-defines.ts && tsx scripts/build-server.ts` (the middle step refuses a renderer bundle that still carries an unsubstituted build define, the DOR-1448 black window), and `build-server.ts` (esbuild, mirroring `packages/cli/scripts/build.ts`) emits `dist/server/server-entry.mjs` with the native modules + agent SDKs marked external. Skip this and the packaged app forks a file that doesn't exist and dies windowless.
 
 That bundle carries two gates, both of which fail the build (DOR-536):
 
@@ -242,7 +260,7 @@ Both halves of that symmetry were bought:
 
 ```bash
 pnpm --filter @dorkos/desktop dev        # electron-vite dev; server child via tsx
-pnpm --filter @dorkos/desktop build      # electron-vite build + build-server.ts
+pnpm --filter @dorkos/desktop build      # electron-vite build + check-renderer-defines.ts + build-server.ts
 pnpm --filter @dorkos/desktop test       # vitest; electron is vi.mock'd (src/main/__tests__/electron-mock.ts)
 pnpm --filter @dorkos/desktop typecheck
 pnpm --filter @dorkos/desktop lint

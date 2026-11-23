@@ -49,9 +49,9 @@ StreamEvent yielded to client
   |  HttpTransport: SSE event -> onEvent callback
   |
   v
-useChatSession processes event
+projectInProgressTurn folds the event
   |
-  |  Adds ToolCallState with interactiveType to message
+  |  Upserts a tool_call part with interactiveType
   |
   v
 AssistantMessageContent renders interactive component
@@ -168,48 +168,59 @@ function handleAskUserQuestion(session, toolUseId, input) {
 
 **3. Client receives `question_prompt` event**
 
-In `model/stream/stream-tool-handlers.ts`, `handleQuestionPrompt` pushes a tool-call part with `interactiveType: 'question'` onto `currentPartsRef` (reusing the part if one already exists for the `toolCallId`):
+The event lands in the per-session stream store as part of the in-progress turn. The client never mutates message state from a handler: `projectInProgressTurn` in `features/chat/model/stream/project-session-turn.ts` is a pure fold over the turn's `SessionEvent`s, and its `foldQuestion` upserts a tool-call part with `interactiveType: 'question'` (reusing the part if one already exists for the event's `id`):
 
 ```typescript
-// model/stream/stream-tool-handlers.ts
-export function handleQuestionPrompt(helpers, data, assistantId) {
-  const question = data as QuestionPromptEvent;
-  const existing = helpers.findToolCallPart(question.toolCallId);
+// features/chat/model/stream/project-session-turn.ts
+function foldQuestion(
+  parts: MessagePart[],
+  event: Extract<SessionEvent, { type: 'question_prompt' }>
+) {
+  const existing = findToolCallPart(parts, event.id);
+  const countdownFields = {
+    timeoutMs: event.timeoutMs,
+    approvalStartedAt: event.startedAt,
+    approvalRemainingMs: event.remainingMs,
+  };
   if (existing) {
     existing.interactiveType = 'question';
-    existing.questions = question.questions;
+    existing.questions = event.questions;
     existing.status = 'pending';
+    Object.assign(existing, countdownFields);
   } else {
-    helpers.currentPartsRef.current.push({
+    parts.push({
       type: 'tool_call',
-      toolCallId: question.toolCallId,
+      toolCallId: event.id,
       toolName: 'AskUserQuestion',
       input: '',
       status: 'pending',
       interactiveType: 'question',
-      questions: question.questions,
+      questions: event.questions,
+      ...countdownFields,
     });
   }
-  helpers.updateAssistantMessage(assistantId);
 }
 ```
 
 **4. The message UI renders `QuestionPrompt`**
 
-`QuestionPrompt` is rendered from `ui/message/AssistantMessageContent.tsx` (inline, when a tool-call part has `interactiveType === 'question'` and `questions`) and from `widgets/session/ui/SessionAsks.tsx` (the prompt that takes the composer). There is no row-level switch — `interactiveType` is matched at the part level:
+`QuestionPrompt` (`features/ask/ui/QuestionPrompt.tsx`) is rendered from `features/chat/ui/message/AssistantMessageContent.tsx` (inline, when a tool-call part has `interactiveType === 'question'`) and from `widgets/session/ui/SessionAsks.tsx` (the prompt that takes the composer). There is no row-level switch — `interactiveType` is matched at the part level:
 
 ```typescript
-// ui/message/AssistantMessageContent.tsx
-if (toolPart.interactiveType === 'question' && toolPart.questions) {
+// features/chat/ui/message/AssistantMessageContent.tsx
+// Gated on `interactiveType` ALONE: a question whose `questions` failed to parse
+// is still a question, and must not fall through to the plain tool card (DOR-1293).
+if (toolPart.interactiveType === 'question') {
   return (
     <QuestionPrompt
+      key={toolPart.toolCallId}
       sessionId={sessionId}
       toolCallId={toolPart.toolCallId}
-      questions={toolPart.questions}
-      answers={toolPart.answers ?? (toolPart.status !== 'pending' ? {} : undefined)}
-      onDecided={
-        onToolDecided ? (answers) => onToolDecided(toolPart.toolCallId, answers) : undefined
-      }
+      questions={toolPart.questions ?? []}
+      answers={toolPart.answers ?? (isSettledQuestion(toolPart) ? {} : undefined)}
+      outcome={questionEnding(toolPart)}
+      result={toolPart.result}
+      /* ... */
     />
   );
 }
@@ -221,16 +232,16 @@ if (toolPart.interactiveType === 'question' && toolPart.questions) {
 
 ```typescript
 await transport.submitAnswers(sessionId, toolCallId, answers);
-onDecided?.(answers); // Optimistically clear waiting state, with the canonical answers
+onDecided?.(answers);
 ```
 
-`onDecided` receives the canonical (index-keyed) answers so the chat model can persist them onto the tool-call part (`part.answers = answers`, see `markToolCallResponded` in `model/use-session-submit.ts`) — this keeps the answered row specific even if the message remounts before history reloads.
+There is no optimistic client patch. After the submit endpoint runs, the server re-emits the resolution on the durable `/events` stream, and `foldInteractionResolved` in `project-session-turn.ts` moves the part off `pending`. `markToolCallResponded` in `features/chat/model/use-session-submit.ts` is a deliberate no-op kept so every decision callback has one signature.
 
 Both `QuestionPrompt` and `ApprovalPrompt` treat HTTP 409 (`INTERACTION_ALREADY_RESOLVED`) as success — this handles the race condition where the SDK resolves the interaction before the client's HTTP request arrives.
 
 **Single vs. multi-question UX.** A single-question prompt renders the one question directly with a Submit button. A multi-question prompt instead renders a step indicator (the question's `header`, falling back to `Question N of M`) plus Back/Next navigation, showing one question at a time. `submit()` advances to the next question on each Enter and only calls the transport once the final question is reached, so the user answers the questions sequentially before anything is submitted.
 
-**Collapsed answer summary.** After submission, `QuestionAnswerSummary` (`ui/tools/QuestionAnswerSummary.tsx`) renders the collapsed row: a single answer becomes one compact line (`Header: Value`), multiple answers become a stacked `<dl>` header/value grid, and an observing client with no recovered answers gets a generic `N questions answered` fallback. It prefers the persisted index-keyed `answers` and falls back to the submitting client's local `selections`, tolerating legacy JSON-array encodings of multi-select answers (decoded for multi-select questions only).
+**Collapsed answer summary.** After submission, `QuestionAnswerSummary` (`features/ask/ui/QuestionAnswerSummary.tsx`) renders the collapsed row: a single answer becomes one compact line (`Header: Value`), multiple answers become a stacked `<dl>` header/value grid, and an observing client with no recovered answers gets a generic `N questions answered` fallback. It prefers the persisted index-keyed `answers` and falls back to the submitting client's local `selections`, tolerating legacy JSON-array encodings of multi-select answers (decoded for multi-select questions only).
 
 **6. Transport resolves the deferred promise**
 
@@ -277,7 +288,7 @@ Membership is **necessary but not sufficient**. `autoAllowedByCall` checks serve
 
 What apply cannot do — and this guide claimed it could until DOR-1713 — is hand those schedules a permission mode nobody granted. `clampSchedulePermissionMode` downgrades a manifest's `bypassPermissions` to `acceptEdits` (DOR-607), a schedule is created enabled only when the manifest asked **and** its agent already exists, and `resolveFileArmStatus` parks the row at `pending_approval` on first sighting (DOR-1486). The card is warranted by the writing and rewiring, not by a cron-with-no-prompts story.
 
-The verdict per action lives in `UI_COMMAND_REACH` (`@dorkos/shared/schemas`, right beside `UiCommandSchema`), a total `Record` over the command union, so adding a UI command without classifying it is a `tsc` error in the file you are already editing. **`reaches-the-machine` is the default answer; pick `client-only` only when the client's handler touches nothing but local UI state.** A call the union cannot parse is not auto-allowed either — no rule is never consent. Two tests hold the halves that neither package can see alone: `core/__tests__/mcp-tool-gate.test.ts` pins that the classification is total, and `apps/client/.../__tests__/ui-action-dispatcher.test.ts` drives the real dispatcher and fails if a `client-only` command reaches a server mutation.
+The verdict per action lives in `UI_COMMAND_REACH` (`@dorkos/shared/schemas`, right beside `UiCommandSchema`), a total `Record` over the command union, so adding a UI command without classifying it is a `tsc` error in the file you are already editing. **`reaches-the-machine` is the default answer; pick `client-only` only when the client's handler touches nothing but local UI state.** A call the union cannot parse is not auto-allowed either — no rule is never consent. Two tests hold the halves that neither package can see alone: `core/__tests__/mcp-tool-gate.test.ts` pins that the classification is total, and `apps/client/src/layers/shared/lib/__tests__/ui-action-dispatcher.test.ts` drives the real dispatcher and fails if a `client-only` command reaches a server mutation.
 
 If you add another multiplexer tool to the auto-allow set, classify its branches the same way rather than reasoning about the tool name.
 
@@ -387,27 +398,32 @@ Key changes from the original pattern:
 
 **3. Client receives `approval_required` event**
 
-In `useChatSession`, the handler adds a tool call entry with `interactiveType: 'approval'`:
+`foldApproval` in `features/chat/model/stream/project-session-turn.ts` upserts the tool-call part with the fields `approvalFieldsOf(event)` builds (`approval-fields.ts`), including `interactiveType: 'approval'` and the countdown:
 
 ```typescript
-case 'approval_required': {
-  const approval = data as ApprovalEvent;
-  currentToolCallsRef.current.push({
-    toolCallId: approval.toolCallId,
-    toolName: approval.toolName,
-    input: approval.input,
-    status: 'pending',
-    interactiveType: 'approval',
-  });
-  updateAssistantMessage(assistantId);
-  break;
+function foldApproval(
+  parts: MessagePart[],
+  event: Extract<SessionEvent, { type: 'approval_required' }>
+) {
+  const approvalFields = approvalFieldsOf(event);
+  const existing = findToolCallPart(parts, event.id);
+  if (existing) {
+    Object.assign(existing, approvalFields);
+  } else {
+    parts.push({
+      type: 'tool_call',
+      toolCallId: event.id,
+      toolName: event.toolName,
+      ...approvalFields,
+    });
+  }
 }
 ```
 
 **4. `AssistantMessageContent` renders `ApprovalPrompt`**
 
 ```typescript
-// ui/message/AssistantMessageContent.tsx
+// features/chat/ui/message/AssistantMessageContent.tsx (simplified)
 if (tc.interactiveType === 'approval') {
   return <ApprovalPrompt sessionId={sessionId} toolCallId={tc.toolCallId} toolName={tc.toolName} input={tc.input} />;
 }
@@ -444,27 +460,9 @@ await transport.batchApprove(sessionId, toolCallIds);
 await transport.batchDeny(sessionId, toolCallIds);
 ```
 
-**6. Optimistic indicator update via `markToolCallResponded`**
+**6. The card settles from the server, not optimistically**
 
-After the user clicks Approve or Deny, the transport call resolves the server-side promise — but the server's `tool_result` event can take seconds for slow tools (e.g., Bash). Without an optimistic update, the `InferenceIndicator` would stay stuck on "Waiting for your approval" during that gap.
-
-The fix: `ApprovalPrompt` receives an `onDecided` callback (threaded from `useChatSession` → `ChatPanel` → `SessionTranscript` → `SessionMessage` → `MessageContext` → `AssistantMessageContent` → `ApprovalPrompt`). This calls `markToolCallResponded(toolCallId)`, which immediately sets the tool call part's status from `'pending'` to `'running'` in the message state:
-
-```typescript
-// useChatSession.ts — markToolCallResponded
-const part = currentPartsRef.current.find(
-  (p) => p.type === 'tool_call' && p.toolCallId === toolCallId
-);
-if (part && part.type === 'tool_call') {
-  part.status = 'running';
-  // Trigger re-render with updated parts
-  const parts = currentPartsRef.current.map((p) => ({ ...p }));
-  const derived = deriveFromParts(parts);
-  setMessages((prev) => prev.map((m) => /* update matching message */));
-}
-```
-
-This clears `isWaitingForUser` (which checks for `status === 'pending'`), so the indicator immediately switches back to rotating verbs. The server's `tool_result` event later sets status to `'complete'`.
+After the user clicks Approve or Deny, the server re-emits the resolution (`interaction_resolved`) on the durable `/events` stream as soon as the endpoint runs, before a slow tool (e.g., Bash) returns its `tool_result`. `foldInteractionResolved` in `project-session-turn.ts` moves the part off `pending`, which clears `isWaitingForUser`, so the live lane's "Waiting for your approval" line goes away at once. `ApprovalPrompt` still calls `onDecided`, but `markToolCallResponded` (`features/chat/model/use-session-submit.ts`) is an intentional no-op: patching the part on the client would race the server's own answer.
 
 **7. Transport resolves the deferred promise**
 
@@ -713,28 +711,36 @@ router.post('/:id/my-new-result', async (c) => {
 });
 ```
 
-### Step 5: Handle event in `useChatSession`
+### Step 5: Fold the event in `project-session-turn.ts`
 
-Add a case to `handleStreamEvent`:
+The client turns session events into message parts in one pure function, `projectInProgressTurn` (`apps/client/src/layers/features/chat/model/stream/project-session-turn.ts`). Add a `fold*` function and a case for your event:
 
 ```typescript
-// apps/client/src/layers/features/chat/model/use-chat-session.ts
-case 'my_new_interactive': {
-  const event = data as MyNewInteractiveEvent;
-  currentToolCallsRef.current.push({
-    toolCallId: event.toolCallId,
-    toolName: 'MyNewTool',
-    input: '',
-    status: 'pending',
-    interactiveType: 'my_new_type',
-    // Store additional data on ToolCallState (extend the interface if needed)
-  });
-  updateAssistantMessage(assistantId);
-  break;
+// apps/client/src/layers/features/chat/model/stream/project-session-turn.ts
+function foldMyNewInteractive(
+  parts: MessagePart[],
+  event: Extract<SessionEvent, { type: 'my_new_interactive' }>
+) {
+  const existing = findToolCallPart(parts, event.id);
+  if (existing) {
+    existing.interactiveType = 'my_new_type';
+    existing.status = 'pending';
+  } else {
+    parts.push({ type: 'tool_call', toolCallId: event.id, toolName: 'MyNewTool', input: '', status: 'pending', interactiveType: 'my_new_type' });
+  }
 }
+
+// in projectInProgressTurn's switch:
+case 'my_new_interactive':
+  foldMyNewInteractive(parts, event);
+  break;
 ```
 
-You may need to extend `ToolCallState` to hold your tool's specific data fields, similar to how `questions` is stored for the question prompt.
+Three more places must agree, or the event is silently dropped:
+
+- Add the event name to `SESSION_EVENT_TYPES` (`apps/client/src/layers/shared/lib/transport/session-event-types.ts`); names missing from it never reach the store.
+- If a person must be able to answer it after a reload, also handle it in `foldPendingInteraction` (same file), which replays recovered interactions through the same folds.
+- Extend `ToolCallPartSchema` (`packages/shared/src/schemas.ts`) if your tool needs fields of its own, the way `questions` is stored for the question prompt.
 
 ### Step 6: Build UI component
 
