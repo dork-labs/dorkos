@@ -2,33 +2,34 @@
 
 ## Overview
 
-This guide covers everything between an agent's edit and a change on `main`: the local hooks, the GitHub Actions checks, the merge queue, merge-tail, and CI Steward, the system that records and judges every change to the pipeline itself. Merges into `main` are fully autonomous, with no human approval ever, so the pipeline is the only thing between an agent and `main`. It is written for agents first: exact commands, exact paths, and the rules that stop twenty agents from making one incident twenty times worse.
+This guide covers everything between an agent's edit and a change on `main`: the local hooks, the GitHub Actions checks, arming, the merge queue, and CI Steward, the system that records and judges every change to the pipeline itself. Merges into `main` are fully autonomous, with no human approval ever, so the pipeline is the only thing between an agent and `main`. It is written for agents first: exact commands, exact paths, and the rules that stop twenty agents from making one incident twenty times worse.
 
 ## Key Files
 
-| Concept                                  | Location                                                                                                                  |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Required checks (declared intent)        | `ci/required-checks.json`, mirrored into the generated block below                                                        |
-| Every gate and what it is for            | `ci/gates.yaml` (`{id, source, purpose}`)                                                                                 |
-| Repo-specific steward config             | `ci/config.yaml`; SLOs `ci/slos.yaml`; metric catalogue `ci/metrics.yaml`; ratchets `ci/ratchets.yaml`                    |
-| Steward-owned paths (the fence)          | `ci/steward-owned-paths.json`                                                                                             |
-| Census exceptions, each with a reason    | `ci/census-allowlist.yaml`                                                                                                |
-| One ledger entry per pipeline change     | `ci/ledger/<YYMMDD-HHMMSS>-<slug>.md`                                                                                     |
-| The engine                               | `packages/ci-steward` (`@dorkos/ci-steward`), entry `packages/ci-steward/src/cli.ts` (`--help` lists every command)       |
-| The daily collector                      | `.github/workflows/ci-steward.yml` (job `collect`, 05:00 UTC, never required)                                             |
-| Data-branch file formats                 | `packages/ci-steward/src/data.ts` (snapshots, `latest.json`, verdicts, floors, local exports)                             |
-| Local hook timings                       | `packages/ci-steward/bin/time-wrap.sh`, the first line of every `lefthook.yml` command; export via `ci-local-export`      |
-| Reading it                               | `/ci-status` (`pnpm ci:status`), `/ci-pulse` (`pnpm ci:pulse`); a SessionStart line when the collector stops or breaks    |
-| Where the census runs                    | `.github/workflows/typecheck.yml` steps "CI Steward census", "CI Steward ledger check", "CI Steward ledger coverage"      |
-| Local hooks                              | `lefthook.yml` (pre-commit, pre-push), `.claude/settings.json` (Claude Code hooks)                                        |
-| Arming merges                            | `.github/workflows/merge-tail.yml`, decision in `scripts/should-arm-automerge.sh`                                         |
-| "Did the suite really run?"              | `scripts/assert-tests-executed.sh`, pinned by `scripts/test-assert-tests-executed.sh`                                     |
-| Admin-merge guard                        | `.claude/hooks/merge-guard.mjs`, fixtures `scripts/test-merge-guard.sh`                                                   |
-| The PR author's side                     | `.agents/skills/creating-pull-requests/SKILL.md` and `scripts/watch-prs.sh` there                                         |
-| The method (PDCA, hypotheses, the fence) | `.agents/skills/stewarding-ci-pipeline/SKILL.md`                                                                          |
-| Path-triggered protocol                  | `.claude/rules/ci-pipeline.md`                                                                                            |
-| Decisions                                | ADR `260728-112203` (merge queue), ADR `260919-174348` (autonomous merges), ADR `260919-174349` (hypotheses and verdicts) |
-| Evidence and plan                        | `research/20260919_ci-pipeline-deep-review.md`, `plans/ci-steward-plan.md`                                                |
+| Concept                                  | Location                                                                                                                                                                                                                                      |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Required checks (declared intent)        | `ci/required-checks.json`, mirrored into the generated block below                                                                                                                                                                            |
+| Every gate and what it is for            | `ci/gates.yaml` (`{id, source, purpose}`)                                                                                                                                                                                                     |
+| Repo-specific steward config             | `ci/config.yaml`; SLOs `ci/slos.yaml`; metric catalogue `ci/metrics.yaml`; ratchets `ci/ratchets.yaml`                                                                                                                                        |
+| Steward-owned paths (the fence)          | `ci/steward-owned-paths.json`                                                                                                                                                                                                                 |
+| Census exceptions, each with a reason    | `ci/census-allowlist.yaml`                                                                                                                                                                                                                    |
+| One ledger entry per pipeline change     | `ci/ledger/<YYMMDD-HHMMSS>-<slug>.md`                                                                                                                                                                                                         |
+| The engine                               | `packages/ci-steward` (`@dorkos/ci-steward`), entry `packages/ci-steward/src/cli.ts` (`--help` lists every command)                                                                                                                           |
+| The daily collector                      | `.github/workflows/ci-steward.yml` (job `collect`, 05:00 UTC, never required)                                                                                                                                                                 |
+| Data-branch file formats                 | `packages/ci-steward/src/data.ts` (snapshots, `latest.json`, verdicts, floors, local exports)                                                                                                                                                 |
+| Local hook timings                       | `packages/ci-steward/bin/time-wrap.sh`, the first line of every `lefthook.yml` command; export via `ci-local-export`                                                                                                                          |
+| Reading it                               | `/ci-status` (`pnpm ci:status`), `/ci-pulse` (`pnpm ci:pulse`); a SessionStart line when the collector stops or breaks                                                                                                                        |
+| Where the census runs                    | `.github/workflows/typecheck.yml` steps "CI Steward census", "CI Steward ledger check", "CI Steward ledger coverage"                                                                                                                          |
+| Local hooks                              | `lefthook.yml` (pre-commit, pre-push), `.claude/settings.json` (Claude Code hooks)                                                                                                                                                            |
+| Arming merges                            | `arm.sh` (`<main checkout>/.temp/coord/arm.sh` on the maintainers' machine, not tracked); queue door `.github/workflows/arm-door.yml` + `scripts/arm-door.sh` (fixtures `scripts/test-arm-door.sh`); `merge-tail.yml` is off since 2026-11-18 |
+| PR-side merge gates (advisory for now)   | `not-held.yml` (`scripts/not-held-check.sh`), `pr-gates.yml` (`scripts/pr-gates-check.sh`), `release-window.yml` + `release-window-refresh.yml` (`scripts/release-window-check.sh`)                                                           |
+| "Did the suite really run?"              | `scripts/assert-tests-executed.sh`, pinned by `scripts/test-assert-tests-executed.sh`                                                                                                                                                         |
+| Admin-merge guard                        | `.claude/hooks/merge-guard.mjs`, fixtures `scripts/test-merge-guard.sh`                                                                                                                                                                       |
+| The PR author's side                     | Opening and watching a PR: `.agents/skills/creating-pull-requests/SKILL.md` and `scripts/watch-prs.sh` there (arming: this guide)                                                                                                             |
+| The method (PDCA, hypotheses, the fence) | `.agents/skills/stewarding-ci-pipeline/SKILL.md`                                                                                                                                                                                              |
+| Path-triggered protocol                  | `.claude/rules/ci-pipeline.md`                                                                                                                                                                                                                |
+| Decisions                                | ADR `260728-112203` (merge queue), ADR `260919-174348` (autonomous merges), ADR `260919-174349` (hypotheses and verdicts)                                                                                                                     |
+| Evidence and plan                        | `research/20260919_ci-pipeline-deep-review.md`, `plans/ci-steward-plan.md`                                                                                                                                                                    |
 
 ## When to Use What
 
@@ -40,11 +41,11 @@ This guide covers everything between an agent's edit and a change on `main`: the
 | Your PR is behind `main`                                                                                                              | Nothing                                                                                                                                                         | The queue tests the combined tree; being behind blocks nothing                                                 |
 | A PR check failed and it is yours                                                                                                     | Fix and push                                                                                                                                                    |                                                                                                                |
 | A PR check failed and it is not yours (red elsewhere, infra)                                                                          | `gh run rerun <run-id> --failed`, once                                                                                                                          | One job, not a 19-to-25-job round                                                                              |
-| Your PR was ejected from the queue for failed checks, first time                                                                      | Read the failing job; once it is plainly not yours, `gh pr merge --auto <n>`, once                                                                              | 85% re-pass unchanged; merge-tail runs only every 2-3 h                                                        |
-| Same check ejected it twice on the same head commit                                                                                   | Stop re-arming. It is a regression only the queue can see: read the log, fix, push                                                                              | Browser tests run only in the queue; merge-tail will not re-arm it either                                      |
+| Your PR was ejected from the queue for failed checks, first time                                                                      | Read the failing job; once it is plainly not yours, re-arm once through `arm.sh`                                                                                | 85% re-pass unchanged                                                                                          |
+| Same check ejected it twice on the same head commit                                                                                   | Stop re-arming. It is a regression only the queue can see: read the log, fix, push                                                                              | Browser tests run only in the queue; `queue-repeat-guard.yml` takes it out again anyway                        |
 | The queue itself is broken or backed up                                                                                               | Say so; do not push, rerun or re-arm                                                                                                                            | Load is the problem. Incident mode (freeze, shed, break-glass) is phase 1b                                     |
 | A run sits in `queued` and looks stuck                                                                                                | Leave it. Never cancel a queued run and re-run it                                                                                                               | Queued means waiting for a runner; a re-run goes to the back of the line (about 55 a week did this, Oct 23–30) |
-| You are tempted to merge with admin rights                                                                                            | Don't. `gh pr merge --auto <n>`                                                                                                                                 | Admin merges skip every required check; reserved for `/ci-break-glass` (phase 1b)                              |
+| You are tempted to merge with admin rights                                                                                            | Don't. Arm through `arm.sh`; never `gh pr merge`                                                                                                                | Admin merges skip every required check; reserved for `/ci-break-glass` (phase 1b)                              |
 
 ## How a change reaches `main`
 
@@ -54,7 +55,8 @@ TURN END prettier --write on changed files (Stop hook); checkpoint in worktrees
 COMMIT   lefthook pre-commit: prettier, drizzle generate, dir-size, turbo lint --affected (under the machine-wide slot cap). No typecheck at commit
 PUSH     lefthook pre-push: changed-file formatting, fragment validity, file-size ratchet, pipeline ledger coverage, CI still running from the last push. No tests run at push (DOR-2160)
 PR       ~19-25 Actions jobs; the required checks below must pass ON THE PR before it may enter the queue
-ARM      agents arm with gh pr merge --auto; merge-tail (every 2-3 h, throttled) is the backstop
+ARM      agents arm only through arm.sh, which runs every gate and stamps an arm-record status; merge-tail is off
+DOOR     arm-door and queue-repeat-guard read each queue entry and take out a head that lacks a gate
 QUEUE    merge_group: the required checks re-run on main + everything ahead, up to 5 PRs per group, ALLGREEN
 MAIN     squash merge; a few push-to-main legs (db-check, CLI smoke, scripts-test, desktop smoke)
 ```
@@ -119,7 +121,7 @@ run of `security-gate` succeeds with a "Waiting for Security" annotation instead
 of failing, and main's `security-review` status says `pending` rather than `failure`
 (a P0 path still lacking `security-deep-reviewed` is waiting too; a workflow or
 judge-file edit lacking it stays `failure`). It approves nothing: `security-review` stays short of `success`, so
-`arm.sh` and merge-tail refuse, and the merge-queue run still refuses (DOR-4459).
+`arm.sh` refuses, and the merge-queue run still refuses (DOR-4459).
 A stale label with no `hold`, or a label a bot added, still fails. A fully classified nonsensitive
 PR with no security-review status can pass read-only as "no security paths
 (computed)". The queue can do the same using `base...queuedHead`, never the current
@@ -229,7 +231,7 @@ Runs with no label, and agents' own commands, never read the order file. CI neve
 - The scope decision lives **inside the job**, and a `paths:` filter on `pull_request` sits in front of it so a PR that can't reach the site doesn't hold a runner (ledger `261030-193801`). That filter is safe only because this check is advisory: a path-filtered workflow reports nothing, and a required check that reports nothing keeps a PR out of the queue and then stalls the queue for an hour. `harness-windows` has the same shape.
 - **It is not a required check yet.** Making it one is a ruleset change, the operator's to make, and it needs the `paths:` filter deleted first (and, under the steward, a ledger entry).
 
-**Other Actions checks.** `fragment-present` and `no-fragment-under-skip-label` (changelog), `scripts-test` (its `fixtures` job is required and runs on every PR and merge group; its `harness` job is advisory, PR and push only, and scoped by `scripts/scripts-test-scope.sh`; the `scripts/` suites that read the whole repo also run in the required `typecheck` job, listed in `scripts/vitest.repo.config.ts`, so a PR outside that scope that breaks one is ejected from the queue instead of turning `main` red), and CLI smoke tests (Node 22/24) plus integration tests, which run on push to `main` and on PRs that touch what they package. Locally: `pnpm smoke:docker` and `pnpm smoke:integration`. Advisory checks such as `site-build`, `harness-windows` and the Claude `review` do not block the queue, but any red check stops merge-tail arming a PR.
+**Other Actions checks.** `fragment-present` and `no-fragment-under-skip-label` (changelog), `scripts-test` (its `fixtures` job is required and runs on every PR and merge group; its `harness` job is advisory, PR and push only, and scoped by `scripts/scripts-test-scope.sh`; the `scripts/` suites that read the whole repo also run in the required `typecheck` job, listed in `scripts/vitest.repo.config.ts`, so a PR outside that scope that breaks one is ejected from the queue instead of turning `main` red), and CLI smoke tests (Node 22/24) plus integration tests, which run on push to `main` and on PRs that touch what they package. Locally: `pnpm smoke:docker` and `pnpm smoke:integration`. Advisory checks such as `site-build`, `harness-windows` and the Claude `review` do not block the queue, and `arm.sh` reads only the required checks.
 
 **Capacity.** The org is on the GitHub **Team** plan: 60 concurrent jobs, not the Free plan's 20. One push to a PR starts about 14 jobs (docs-only) to 20 (code), down from 19 to 25 before the PR leg went to two shards and dropped `community-pg`, plus four `@smoke` browser shards of about 15 to 20 minutes each since PRs started running them; a queue entry costs about 19 to 20, plus three browser shards more since that suite went to six (a queue build's full check-run count, the number the CI Steward ledger uses, went from about 31 to 34). Twenty agents each pushing once is 400 to 500 jobs, 7 to 8 full refills of the pool, and the queue's own builds wait behind them. That arithmetic is why no remedy anywhere here is "push an empty commit".
 
@@ -240,9 +242,9 @@ Runs with no label, and agents' own commands, never read the order file. CI neve
 - **Every required check must report on `merge_group`.** A required check that fires only on `pull_request` blocks the queue forever. Any new required check needs `merge_group:` in its `on:` list, and the census enforces it (the deadlock invariant below).
 - **Some checks stay PR-only on purpose.** Fragment _coverage_ needs the PR's labels and number, which the `merge_group` payload does not carry, so it is answered before queueing and not re-asked. Fragment _validity_ does re-run in the queue. This is sound only because a PR cannot enter the queue until its required checks pass on the PR, and neither its labels nor its diff can change afterwards.
 - **A skipped job satisfies a required context.** A job-level `if:` that skips posts a _skipped_ check run, and GitHub counts skipped as passing. Never "fix" a required check by making it skip.
-- **An ejection is usually not your fault.** 22% of PRs are ejected at least once; 85% of failed-checks ejections (209 of 247 over 30 days) re-pass with no change. The first response to one is to read the failing job without pushing or rerunning, and to re-arm with `gh pr merge --auto <n>`, once, when it is plainly not yours (merge-tail would re-arm it too, but only every 2-3 hours). Green PR checks are not evidence that it is not yours: the browser tests run only in the queue. **If the same check fails again on the same head commit, stop re-arming:** it is a regression that only the queue can see, so read the log and push a fix. PR #1964 was re-armed unchanged four times after one browser assertion broke, and cost 17 queue builds, its own and every PR stacked behind it. The one exception is the same check red on `main` too, a break that landed there: wait for the fix on `main`, then re-arm.
+- **An ejection is usually not your fault.** 22% of PRs are ejected at least once; 85% of failed-checks ejections (209 of 247 over 30 days) re-pass with no change. The first response to one is to read the failing job without pushing or rerunning, and to re-arm once through `arm.sh` when it is plainly not yours. Green PR checks are not evidence that it is not yours: the browser tests run only in the queue. **If the same check fails again on the same head commit, stop re-arming:** it is a regression that only the queue can see, so read the log and push a fix. PR #1964 was re-armed unchanged four times after one browser assertion broke, and cost 17 queue builds, its own and every PR stacked behind it. `queue-repeat-guard.yml` (`scripts/queue-repeat-guard.sh`) now takes such a head back out of the queue on entry, whoever queued it; the `requeue-ok` label lets it through when the failures were `main`'s. The one exception is the same check red on `main` too, a break that landed there: wait for the fix on `main`, then re-arm.
 - **A jump is not free.** Enqueueing with `jump: true` (GraphQL `enqueuePullRequest`, the path `ci-fix` PRs use) puts a PR ahead of every waiting PR, and GitHub documents that it also tears down and rebuilds every entry already testing ([managing a merge queue](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue#jumping-to-the-top-of-the-queue)), so each jump costs those builds again.
-- **Dependent PRs stack; everything else branches from `origin/main`.** One topic, one PR. Before starting, check for an open PR on the same files or one that must land first; if there is one, stack on it with `gh stack` (gh 2.90+). A stack merges only with `gh stack merge` run on its top PR, which sends every layer through the queue together. **Never `gh pr merge --auto` a layer whose base is not `main`**: it merges into the branch below and skips the queue. Steps: the `creating-pull-requests` skill.
+- **Dependent PRs stack; everything else branches from `origin/main`.** One topic, one PR. Before starting, check for an open PR on the same files or one that must land first; if there is one, stack on it with `gh stack` (gh 2.90+). A stack merges only with `gh stack merge` run on its top PR, which sends every layer through the queue together. **Never arm a layer whose base is not `main`** (`arm.sh` refuses one): it would merge into the branch below and skip the queue. Opening a stacked PR: the `creating-pull-requests` skill; arming follows this guide, not that skill.
 
 ## Release branches
 
@@ -293,10 +295,47 @@ The canary closes it. `test.yml`, `browser-test.yml`, `typecheck.yml` and `lint.
 - **It rides the quarantine lane.** The lane's shard steps and fan-in proofs run on the canary exactly as in the queue, because it is the same job: a canary that failed on a flake the queue excuses would report a break that is not there. With no `quarantine.json` on the data branch, `quarantine-list` writes an empty list and exits 0, and an empty lane behaves exactly as no lane at all.
 - **What it costs.** About 150 job minutes a round, 600 a day: **+11%** against the 8-day mean, +6.5% against a busy day and +50% on a quiet one, because the canary's cost is fixed. The repository is public, so those are unbilled; the price is contention on the pool the queue shares.
 
-## merge-tail: who arms a merge, and who asks for a lost review again
+## Arming: arm.sh, the doors, and merge-tail (off)
 
-`merge-tail.yml` has two duties. The second one, added 2026-09-20 (ledger
-`260920-175925`): on the same tick it re-requests the automated Claude review on
+**Agents arm only through `arm.sh`; never `gh pr merge`.** It is the coordinator's script, `<main checkout>/.temp/coord/arm.sh`, in the maintainers' main checkout on their own machine: not tracked in git, and pinned by Security through `arm.manifest.sha256` beside it by absolute path, so a copy, an edited file, or the same path inside a worktree refuses to run. Outside contributors never arm; a maintainer arms their PR.
+
+Before it arms, it must know who is arming, and it refuses otherwise:
+
+- **The agent:** `ARM_AGENT=<agent name>`, or run it from your agent's folder so `$PWD/.dork/agent.json` names you.
+- **The session:** `CLAUDE_CODE_SESSION_ID` must be set (Claude Code sets it). Both go into the `arm-record` stamp and a PR comment, because every agent acts on GitHub as one login.
+
+Call it with the PR number and the full 40-hex head SHA:
+
+```bash
+ARM_AGENT=<agent name> <main checkout>/.temp/coord/arm.sh <pr> <full-sha>                     # the clear path
+ARM_AGENT=<agent name> <main checkout>/.temp/coord/arm.sh <pr> <full-sha> --security-sha-ok   # a security path matched and Security named this exact SHA
+<main checkout>/.temp/coord/arm.sh --pull <pr> "<reason>"                                     # take a PR out of the queue and disarm it, then add hold
+```
+
+It runs every gate before it arms and refuses (exit 1, a `REFUSE:` line saying why) on, among others: a head that is not the SHA you named, a `hold` or `needs-qa-gate` label, a base other than `main`, a merge conflict, a required check not yet green, a Security label missing or older than the head, no verify proof at the head (a recorded `pnpm verify`, a PM waiver, docs-only, or every required check and all six test shards green), a missing `qa-real-data` or `design-ok` where `scripts/qa-real-data.sh` or `scripts/design-ok.sh` asks for one, a freeze, and a release in the queue. When it arms, it stamps the head with a `success` `arm-record` commit status. A `--pull` reason is posted on the PR, so it names an owner and a time and never describes a security finding. `arm.sh` stamps and enqueues one exact commit: the `arm-record` is per commit, so a new push takes the PR out of the queue and needs a new arm at that head, once its checks are green.
+
+**Only Security's `label-pr.sh` adds or removes `security-*` labels; no agent touches them by hand.** It also writes the `PASS` line in Security's review file that `arm.sh` checks for, so `arm.sh` refuses a hand-added `security-reviewed` or `security-deep-reviewed` (DOR-4711). If you think a PR needs one, ask Security.
+
+**The doors.** Two workflows read every merge-queue entry, whoever queued it, and take it back out rather than let a gate be skipped. Both fail open (anything they cannot read keeps the entry, with a warning) and stay green, because a red run on the merge-group commit would count among that build's failed checks:
+
+- `arm-door.yml` (`scripts/arm-door.sh`, fixtures `scripts/test-arm-door.sh`, ledger `261118-183332`, DOR-4648) takes out a head with no `security-reviewed` label at or after it, no verify proof (an `arm-record` naming one, docs-only, or green CI), or a missing fresh `qa-real-data` or `design-ok` where the PR needs one. An entry whose gates are met but which has no `arm-record` stamp stays, and its author is told once that it skipped `arm.sh`.
+- `queue-repeat-guard.yml` takes out a head that already failed the same required check in two queue builds (see the queue section above).
+
+**The PR-side gates (advisory today).** Three checks move `arm.sh`'s rules into GitHub so that, once required, a PR can auto-merge at open (DOR-5098). Each runs on `pull_request` and `merge_group` with no path filter or job-level `if:`, and checks out main's copy of its script, never the PR's:
+
+| Check            | Fails while                                                                                                                          | Decision                                           |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `not-held`       | the PR carries `hold` (DOR-5103)                                                                                                     | `scripts/not-held-check.sh`                        |
+| `pr-gates`       | `security-reviewed` is missing or older than the head, or `qa-real-data` or `design-ok` is needed and missing (DOR-5107)             | `scripts/pr-gates-check.sh`, reusing `arm-door.sh` |
+| `release-window` | the `MERGE_FREEZE` repository variable names another PR, a release PR is not alone, or main's `VERSION` is not on npm yet (DOR-5102) | `scripts/release-window-check.sh`                  |
+
+Nothing re-runs a check when a freeze lifts or a publish lands, so `release-window-refresh.yml` re-runs failed `release-window` checks once the window is open again. None of the three is in `ci/required-checks.json` yet. `scripts/open-pr.sh` turns auto-merge on at open only once main's `ci/required-checks.json` requires all three, and never for a draft or a `--hold` PR; until then it prints `auto-merge: off` with the reason, and you arm through `arm.sh`.
+
+**merge-tail is off.** `merge-tail.yml` is disabled in GitHub since 2026-11-18 (it queued #3934 seconds before QA's sign-off) and stays off until it runs `arm.sh`'s gate code: a GitHub runner cannot see `arm.sh`'s local gates. Its file and its decision script, `scripts/should-arm-automerge.sh` (pinned by `scripts/test-should-arm-automerge.sh`), are still in the tree, and `arm-door.yml` holds anything it would queue to the same gates.
+
+Its second duty, added 2026-09-20 (ledger `260920-175925`), is off with it, so
+apply `re-review` yourself when your PR's `review` check is red. When the workflow
+runs, on the same tick it re-requests the automated Claude review on
 any open PR whose `review` check is red, by applying the `re-review` label. The
 decision is `scripts/should-redispatch-review.sh`, pinned by
 `scripts/test-should-redispatch-review.sh`. **What actually bounds it is a
@@ -326,13 +365,10 @@ triggered. Reading the review's runs does need `actions: read`; if the app lacks
 it, the tick says so in its summary and in a warning rather than quietly
 retrying nothing.
 
-`merge-tail.yml` arms auto-merge on PRs that are finished. Its schedule says every 10 minutes, but GitHub throttles it: over 200 scheduled runs from 2026-08-25 to 09-19 the median gap was 162 minutes (p90 305, max 748), so it runs roughly every 2-3 hours and is a backstop, not the arming path. Arm your own green PR with `gh pr merge --auto <n>`, and re-arm after a failed-checks ejection once the failing job's log shows it was not yours; arming is idempotent. A finished PR is open, not a draft, no hold label (`hold`, `do-not-merge`, `do not merge`, `wip`, `blocked`), not conflicting, mergeability known, no requested changes, no unresolved review threads (outdated ones count), and every check settled green with none cancelled. It also will not re-arm a PR whose head commit the queue has ejected twice with the same check failing: the PR's own checks cannot see a queue-only failure, so it reads that from the PR timeline (the `REMOVED_FROM_MERGE_QUEUE_EVENT`s since the head was pushed, each with the check runs that failed on its merge-group commit), comments on the PR once per head naming the check, and arms again after a new commit. Its decision is `scripts/should-arm-automerge.sh`, pinned by `scripts/test-should-arm-automerge.sh`, and it is affirmative: anything unknown is a skip. That includes a field it cannot read: labels that are absent, null or not a list are `SKIP labels-unreadable`, never "no hold" (DOR-3871), and the same goes for a missing draft flag, review decision or auto-merge field, a checks list that is not a list of objects, and a check whose bucket is not one gh reports. Its input is built by `scripts/should-arm-automerge-input.sh` (pinned by `scripts/test-should-arm-automerge-input.sh`), which refuses an answer from GitHub that is not really one: a GraphQL error comes back as a body, `{"data": null, "errors": [...]}`, and read loosely that body says "not queued, no open threads" (DOR-2271). A failed read is retried once after 5 seconds (the pauses stop after 3 PRs in a row stay unreadable); if it fails again, the PR is skipped for that tick with GitHub's own error on its log line, the tick carries on to the next PR, and the run ends with a warning counting them. A tick that could read no PR at all fails instead, because a lost permission or a broken query looks exactly like that and must not stay green.
-
 - Open a PR with `scripts/open-pr.sh` (fixtures: `scripts/test-open-pr.sh`), never a bare `gh pr create`: it runs the open-PR cap, computes `review:light`/`review:deep`, `skip-changelog` and `needs-design` from the diff, adds the provenance line and applies every label at creation. `.claude/hooks/pr-create-guard.mjs` refuses `gh pr create` and REST or GraphQL PR creates in Claude Code (fixtures: `scripts/test-pr-create-guard.sh`).
 - A `hold` always carries a reason: a comment starting `hold:` saying why and who lifts it (`scripts/open-pr.sh --hold "<reason>"` posts it). The advisory `hold-reason` workflow (`scripts/hold-reason-check.sh`) flags a held PR without one, for every harness. On 2026-11-20 holds with no owner left 19 PRs stuck for 9 hours.
-- Apply `hold` (or `do-not-merge`, `wip`, `blocked`) to keep a green PR from being armed. The queue itself does not read labels, so a hold label on a PR that is **already** armed does nothing: disarm it with `gh pr merge --disable-auto <n>`.
-- Agents may arm their own PR: `gh pr merge --auto <n>` (no strategy flag; the queue owns it). In practice most PRs are armed at creation.
-- Once armed, only the required checks bind. The Claude review and open threads bind only merge-tail's arming, so a PR armed at creation merges with its findings open. The pre-PR adversarial review is the review gate that actually holds today; a blocking review gate is planned for phase 2.
+- Apply `hold` (or `do-not-merge`, `wip`, `blocked`) to keep a green PR from being armed. Until `not-held` is required, the queue itself does not read labels, so a hold label on a PR that is **already** armed or queued does nothing: take it out with `arm.sh --pull <n> "<reason>"`, which dequeues and disarms before it adds `hold`.
+- Once armed, only the required checks and the doors bind. The Claude review and open threads do not, so a PR armed straight after it opens merges with its findings open. The pre-PR adversarial review is the review gate that actually holds today; a blocking review gate is planned for phase 2.
 
 ## Admin merges and credentials
 
@@ -555,10 +591,11 @@ gh run rerun <run-id> --failed
 gh pr update-branch <n>
 # ✅ Nothing. The queue builds on main for you.
 
-# ❌ Merge around the queue
+# ❌ Merge around the queue, or arm around the gates
 gh pr merge <n> --admin
-# ✅ Let merge-tail arm it, or arm it yourself
 gh pr merge --auto <n>
+# ✅ Arm through arm.sh (maintainers' main checkout only), which runs every gate first
+ARM_AGENT=<agent name> <main checkout>/.temp/coord/arm.sh <n> <full-sha>
 
 # ❌ Ask classic protection which checks are required (retired; returned 6 of 9)
 gh api repos/{owner}/{repo}/branches/main/protection
@@ -570,7 +607,7 @@ gh api repos/{owner}/{repo}/rules/branches/main
 - ❌ A job-level `if:` that skips a required check. ✅ Run and pass explicitly; a skipped run satisfies the requirement.
 - ❌ Editing the ruleset, then writing the ledger. ✅ Ledger and `ci/required-checks.json` first.
 - ❌ A pipeline change with "should be faster" as its reason. ✅ One catalogue metric, a baseline, a target, a date.
-- ❌ Pushing or rerunning on the first failed-checks ejection. ✅ Read the failing job, then re-arm with `gh pr merge --auto <n>` once it is plainly not yours.
+- ❌ Pushing or rerunning on the first failed-checks ejection. ✅ Read the failing job, then re-arm once through `arm.sh` when it is plainly not yours.
 - ❌ Re-arming again after the same check failed twice on the same head. ✅ Stop: it is a real regression only the queue can see. Read the log, fix, push.
 - ❌ Cancelling a queued run and re-running it. ✅ Leave it: queued means waiting for a runner, and a re-run goes to the back of the line.
 
