@@ -115,6 +115,22 @@ export function readAuthorityMarks(stored: string | null | undefined): TurnMarks
 }
 
 /**
+ * Whether a stored to-do's words came from outside the team (DOR-4666): its marks carry the
+ * outsider mark, because a stranger made it or changed its words (`floorAfter` merges an edit's
+ * marks in), or it was made from a stranger's post. An outsider's to-do counts whatever its marks
+ * say, for rows written before marks were kept (Security's backstop). Marks nobody can read, and a
+ * to-do that is gone, count as outside.
+ *
+ * @param row - The stored row, or undefined when there is none.
+ */
+export function rowCarriesOutsideWords(
+  row: { readonly assignedByKind: string; readonly authorityMarks: string } | undefined
+): boolean {
+  if (row === undefined || row.assignedByKind === 'outsider') return true;
+  return readAuthorityMarks(row.authorityMarks).outsider === true;
+}
+
+/**
  * The column value for a set of marks: `{}` when there are none.
  *
  * @param marks - The marks.
