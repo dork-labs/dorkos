@@ -81,7 +81,6 @@ import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { homeOf, resolveAgentHome, turnAgentOf } from '../../core/agent-identity/index.js';
 import { logger, logError } from '../../../lib/logger.js';
-import { buildOpenCodeTurnParts } from './messaging/turn-context.js';
 import {
   checkOpenCodeDependencies,
   getConnectedOpenCodeProvider,
@@ -99,6 +98,9 @@ import {
   unwrap,
   type OpenCodeClientProvider,
 } from './sessions/session-mapper.js';
+import { OpenCodeToolTurnContext } from './tool-turn/context.js';
+import { dispatchOpenCodePrompt } from './tool-turn/prompt.js';
+import { isHostTurnEvent, type OpenCodeTurnEvent } from './tool-turn/host-events.js';
 import { OpenCodeGlobalEventHub, TurnEventQueue } from './events/global-event-hub.js';
 import { OpenCodeSessionRegistry } from './sessions/session-registry.js';
 import {
@@ -111,12 +113,6 @@ import {
 } from './messaging/approvals.js';
 import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constants.js';
 import { awaitAbortAck, delay } from './messaging/bounded-abort.js';
-import {
-  openCodeTurnBody,
-  parseModelSelection,
-  recordOpenCodeTurn,
-} from './messaging/turn-input.js';
-import { keepDorkosAsks } from './messaging/keep-asks.js';
 import { sessionDirectoryOf } from './sessions/session-directory.js';
 import { resolveCompactionModel } from './messaging/compaction-model.js';
 import type { OpenCodeTurnOptions } from './messaging/turn-options.js';
@@ -130,7 +126,7 @@ import { projectAddonsNotice } from './messaging/project-addons-notice.js';
 import { discoverOpenCodeModels } from './model-discovery.js';
 import { OpenCodeContextWindows } from './providers/context-windows.js';
 import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
-import { OpenCodeMcpManager } from './mcp/mcp-manager.js';
+import { OpenCodeMcpManager, type EnsureManagedResult } from './mcp/mcp-manager.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import { listOpenCodeSubagents } from './subagent-list.js';
 import { captureOpenCodeMedia } from './events/media-capture.js';
@@ -180,6 +176,7 @@ interface ActiveTurn {
   connectorBinding?: OpenConnectorTurnResult;
   connectorSupervisor?: ConnectorTurnLeaseSupervisorHandle;
   connectorRevocation?: Promise<void>;
+  toolTurn?: OpenCodeToolTurnContext;
 }
 
 /** A turn started but not yet tracked as active, by its session. Identity-compared. */
@@ -444,56 +441,18 @@ export class OpenCodeRuntime implements AgentRuntime {
       sessionId,
       cwd,
       opts?.title,
-      async (client, ocSessionId, dorkosApplied, connectionsApplied, plan) => {
-        // Build the prompt only after the leased MCP reconcile, so the room
-        // verbs describe what this exact turn can actually call.
-        // The agent this turn acts as — anchored, so a room worktree reads as its
-        // agent and a room turn as nobody but the agent it is for (DOR-2091).
-        const agentPath = homeOf(resolveAgentHome(cwd, forAgent));
-        const agentContext = await buildOpenCodeTurnParts(
-          cwd,
-          dorkosApplied,
-          agentPath,
-          !!opts?.roomTurn
-        );
-        // On credits the prompt always names the credits provider: the
-        // session's model when it is a credits model, else the default one.
-        const model =
-          plan.mode === 'credits'
-            ? creditsPromptModel(settings.model, plan)
-            : parseModelSelection(settings.model);
-        const agent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
-        const accessContext =
-          connectionsApplied && this.connectorRuntimeTools && agent
-            ? await this.accountsAccess.select(this.connectorRuntimeTools, agent.id, sessionId, {
-                serviceCatalog: dorkosApplied,
-              })
-            : undefined;
-        const turnOpts = accessContext
-          ? {
-              ...opts,
-              additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry],
-            }
-          : opts;
-        // The model's window, so a small one gets a trimmed system prompt (DOR-2839).
-        const at = await sessionDirectoryOf(this.directoryByOcId, client, ocSessionId);
-        // A project's opencode.json must not switch DorkOS's asks off (DOR-4394),
-        // and the model is told whenever its session refuses helpers (DOR-4447).
-        const asked = await keepDorkosAsks(client, ocSessionId, at, turnOpts);
-        const window = await this.contextWindows.lookup(
-          client,
-          at,
-          model?.providerID,
-          model?.modelID
-        );
-        const body = openCodeTurnBody(content, asked, agentContext, window, model, at);
-        // The exact body the sidecar is handed, for the turn's context record.
-        recordOpenCodeTurn(sessionId, body, turnOpts, settings);
-        const prompted = await client.session.promptAsync({ path: { id: ocSessionId }, body });
-        if (prompted.error !== undefined)
-          throw new Error(`OpenCode session.promptAsync failed: ${JSON.stringify(prompted.error)}`);
-        accessContext?.commit();
-      },
+      (client, ocSessionId, managed, plan, publishToolTurn) =>
+        dispatchOpenCodePrompt(
+          { sessionId, content, cwd, forAgent, settings, opts },
+          { client, ocSessionId, managed, plan, publishToolTurn },
+          {
+            directoryByOcId: this.directoryByOcId,
+            contextWindows: this.contextWindows,
+            accountsAccess: this.accountsAccess,
+            getMeshCore: () => this.meshCore,
+            getConnectorRuntimeTools: () => this.connectorRuntimeTools,
+          }
+        ),
       {
         connectorTurn: true,
         full:
@@ -503,7 +462,7 @@ export class OpenCodeRuntime implements AgentRuntime {
         grants: validatedGrants(opts?.additionalDirectories, cwd),
         // Held per ask, like the grants: a turn another agent's post or a
         // stranger's message started is answered at no looser a level than its
-        // sender's (spec `trusted-by-default-flip` §4).
+        // sender's (spec `trusted-by-default-flip` §4). Stored settings stay as they are.
         ...(opts?.permissionCeiling !== undefined
           ? { permissionCeiling: opts.permissionCeiling }
           : {}),
@@ -551,7 +510,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       sessionId,
       cwd,
       undefined,
-      async (client, ocSessionId, _d, _c, plan) => {
+      async (client, ocSessionId, _mcp, plan) => {
         const model =
           plan.mode === 'credits'
             ? creditsPromptModel(settings.model, plan)
@@ -614,8 +573,8 @@ export class OpenCodeRuntime implements AgentRuntime {
    * @param sessionId - DorkOS session id.
    * @param cwd - Working directory used to resolve the client and session.
    * @param title - Optional title used only when a new OpenCode session is created.
-   * @param trigger - Fires the turn after MCP registration settles, receiving
-   *   whether the room-tool server was actually applied.
+   * @param trigger - Fires after MCP registration and gets its actual result.
+   *   The prompt callback publishes live facts when its native request starts.
    * @param opts - Marks a model prompt that receives connector runtime tools,
    *   and names the agent a room turn is for (DOR-2091).
    */
@@ -626,9 +585,9 @@ export class OpenCodeRuntime implements AgentRuntime {
     trigger: (
       client: OpencodeClient,
       ocSessionId: string,
-      dorkosApplied: boolean,
-      connectionsApplied: boolean,
-      plan: OpenCodeSidecarPlan
+      managed: EnsureManagedResult,
+      plan: OpenCodeSidecarPlan,
+      publishToolTurn: () => void
     ) => Promise<void>,
     opts?: OpenCodeTurnOptions
   ): AsyncGenerator<StreamEvent> {
@@ -678,7 +637,15 @@ export class OpenCodeRuntime implements AgentRuntime {
       controller,
       phase: this.connectorRuntimeTools ? 'waiting' : 'setup',
     };
+    this.activeTurns.get(sessionId)?.toolTurn?.close();
     this.activeTurns.set(sessionId, turn);
+    const toolTurn = new OpenCodeToolTurnContext(
+      () => this.activeTurns.get(sessionId) === turn && turn.phase === 'running',
+      () => this.registry.get(sessionId)?.permissionMode,
+      opts?.permissionCeiling,
+      controller.signal
+    );
+    turn.toolTurn = toolTurn;
     this.settingUp.delete(settingUp);
     // Once per chat: the project's own add-ons the sidecar kept off (DOR-4404).
     yield* projectAddonsNotice(sessionId, directory);
@@ -719,7 +686,10 @@ export class OpenCodeRuntime implements AgentRuntime {
                 canonicalCwd: directory,
                 signal: controller.signal,
               },
-              { isCurrent: () => this.activeTurns.get(sessionId) === turn }
+              {
+                isCurrent: () => this.activeTurns.get(sessionId) === turn,
+                readToolTurn: () => toolTurn.read(),
+              }
             )
           : null;
       if (this.connectorRuntimeTools && opened) {
@@ -767,7 +737,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       // Read the model catalog now, so the reply's context reading finds its
       // window ready rather than waiting on it (bounded either way).
       this.contextWindows.prefetch(client, directory);
-      const queue = new TurnEventQueue<OpenCodeWireEvent>();
+      const queue = new TurnEventQueue<OpenCodeTurnEvent>(() => toolTurn.close());
       subscription = this.hub.subscribe({
         cwd,
         onEvent: (event) => {
@@ -776,7 +746,14 @@ export class OpenCodeRuntime implements AgentRuntime {
           const admit =
             matchesOpenCodeSession(event, directory, ocSessionId) ||
             matchesOpenCodeSubagentSession(event, directory, ctx);
-          if (admit) queue.push(event.payload as OpenCodeWireEvent);
+          if (admit) {
+            queue.push(event.payload as OpenCodeWireEvent);
+            if (
+              event.payload.type === 'session.idle' &&
+              matchesOpenCodeSession(event, directory, ocSessionId)
+            )
+              queue.end();
+          }
         },
         onStreamDrop: (error) => queue.fail(error),
       });
@@ -788,7 +765,10 @@ export class OpenCodeRuntime implements AgentRuntime {
       // elapses) — a fast turn must not complete before we can see its idle.
       await Promise.race([subscription.live, delay(STREAM_LIVE_TIMEOUT_MS)]);
 
-      await trigger(client, ocSessionId, mcpResult.dorkosApplied, mcpResult.connectorApplied, plan);
+      await trigger(client, ocSessionId, mcpResult, plan, () => {
+        if (mcpResult.connectorApplied && turn.connectorBinding)
+          toolTurn.attach((event) => queue.push(event));
+      });
 
       const routing: ApprovalRouting = {
         ...opts,
@@ -802,6 +782,10 @@ export class OpenCodeRuntime implements AgentRuntime {
       };
       // Says the turn is alive while a slow model is still answering (FB-68).
       for await (const mapped of mapLiveOpenCodeTurn(queue, ctx)) {
+        if (isHostTurnEvent(mapped)) {
+          yield mapped;
+          continue;
+        }
         // On credits, a refused token is the credits card, never an OpenCode
         // sign-in error: the person's own sign-in was not used.
         const event = await this.contextWindows.withWindow(
@@ -820,6 +804,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       }
       connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
     } finally {
+      toolTurn.close();
       if (controller.signal.aborted) connectorRevokeReason = 'turn_cancelled';
       turn.connectorSupervisor?.stop();
       try {
