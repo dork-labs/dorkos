@@ -17,7 +17,10 @@ import {
   type DbTransaction,
 } from '@dorkos/db';
 import { SessionStartedByStore } from '../../../session/origin/session-started-by-store.js';
-import { reportTargetFromStore } from '../../../session/chat-messages/report-back/report-target.js';
+import {
+  reportStartedAtFromStore,
+  reportTargetFromStore,
+} from '../../../session/chat-messages/report-back/report-target.js';
 import { reportSeatScope } from './report-seat-scope.js';
 import { OUTBOX_RETENTION_MS } from './outbox-retention.js';
 import { mergeMarks } from '../../../core/turn-power/turn-marks.js';
@@ -118,6 +121,12 @@ export class ReportOutboxStore {
     });
   }
 
+  /** The seat a report reaches, checked against when its spin-off started (DOR-3753). */
+  private seatScope(sourceSessionId: string, parentSessionId: string) {
+    const startedAt = reportStartedAtFromStore(this.starts, sourceSessionId);
+    return reportSeatScope(this.db, parentSessionId, startedAt);
+  }
+
   /** The first-turn timer starts before launch binds a runtime; that failure is notice-only. */
   private sourceEpoch(sessionId: string, kind: SavedReport['kind']) {
     if (kind === 'startup') {
@@ -169,7 +178,7 @@ export class ReportOutboxStore {
           version: 1,
           source,
           parent,
-          seat: reportSeatScope(this.db, parentSessionId),
+          seat: this.seatScope(sourceSessionId, parentSessionId),
           attempt: 0,
         });
         for (const row of earlier) {
@@ -242,7 +251,7 @@ export class ReportOutboxStore {
       this.epoch(parent);
       if (
         saved.seat === 'unavailable' ||
-        JSON.stringify(reportSeatScope(this.db, parent)) !== JSON.stringify(saved.seat)
+        JSON.stringify(this.seatScope(row.sourceSessionId, parent)) !== JSON.stringify(saved.seat)
       )
         return false;
       // A verified account carry may change the parent ID; replacement of an unchanged ID may not.

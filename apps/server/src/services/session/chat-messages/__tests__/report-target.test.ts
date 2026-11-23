@@ -78,6 +78,7 @@ describe('deliverToRoomSeat (DOR-3488)', () => {
     });
     setRoomSeatReports({
       seatOf: (id) => (id === 'seat' ? { roomId: 'r', authorId: 'a' } : null),
+      holdsSeat: (id) => id === 'seat',
       deliver,
     });
     await expect(deliverToRoomSeat('seat', report)).resolves.toBe(true);
@@ -88,9 +89,72 @@ describe('deliverToRoomSeat (DOR-3488)', () => {
     );
   });
 
+  // DOR-3753: a seat that moved checks the spin-off's start against the move, so the start
+  // handed in must be the server's own record of it, past any account carry.
+  it('hands in when the spin-off was first started, from the server’s start record', async () => {
+    const deliver = vi.fn((_seat: string, _report: unknown, onSettled?: (ran: boolean) => void) => {
+      onSettled?.(true);
+      return true;
+    });
+    setRoomSeatReports({
+      seatOf: () => ({ roomId: 'r', authorId: 'a' }),
+      holdsSeat: () => true,
+      deliver,
+    });
+    start('child', 'seat');
+    const firstStart = Date.parse(store.get('child')!.createdAt);
+    start('child-on-b', 'child', { carried: true });
+
+    await deliverToRoomSeat('seat', report);
+    await deliverToRoomSeat('seat', { ...report, fromSessionId: 'child-on-b' });
+
+    expect(
+      deliver.mock.calls.map(([, sent]) => (sent as { startedAt?: number }).startedAt)
+    ).toEqual([firstStart, firstStart]);
+  });
+
+  it('hands in no start for a spin-off with no start record', async () => {
+    const deliver = vi.fn((_seat: string, _report: unknown, onSettled?: (ran: boolean) => void) => {
+      onSettled?.(true);
+      return true;
+    });
+    setRoomSeatReports({
+      seatOf: () => ({ roomId: 'r', authorId: 'a' }),
+      holdsSeat: () => true,
+      deliver,
+    });
+
+    await deliverToRoomSeat('seat', { ...report, fromSessionId: 'unknown' });
+
+    expect((deliver.mock.calls[0]?.[1] as { startedAt?: number }).startedAt).toBeUndefined();
+  });
+
+  it('never keeps a start the caller handed in, only the server’s record', async () => {
+    const deliver = vi.fn((_seat: string, _report: unknown, onSettled?: (ran: boolean) => void) => {
+      onSettled?.(true);
+      return true;
+    });
+    setRoomSeatReports({
+      seatOf: () => ({ roomId: 'r', authorId: 'a' }),
+      holdsSeat: () => true,
+      deliver,
+    });
+    start('child', 'seat');
+    const recorded = Date.parse(store.get('child')!.createdAt);
+    const forged = { startedAt: 0 } as object;
+
+    await deliverToRoomSeat('seat', { ...report, ...forged });
+    await deliverToRoomSeat('seat', { ...report, ...forged, fromSessionId: 'unknown' });
+
+    expect(
+      deliver.mock.calls.map(([, sent]) => (sent as { startedAt?: number }).startedAt)
+    ).toEqual([recorded, undefined]);
+  });
+
   it('throws when the seat’s turn never ran, so the report can be tried again (DOR-3720)', async () => {
     setRoomSeatReports({
       seatOf: () => ({ roomId: 'r', authorId: 'a' }),
+      holdsSeat: () => true,
       deliver: (_seat, _report, onSettled) => {
         onSettled?.(false);
         return true;
@@ -102,7 +166,7 @@ describe('deliverToRoomSeat (DOR-3488)', () => {
   it('is false for a chat that is no room’s seat, or before the rooms boot', async () => {
     await expect(deliverToRoomSeat('seat', report)).resolves.toBe(false);
     const deliver = vi.fn(() => true);
-    setRoomSeatReports({ seatOf: () => null, deliver });
+    setRoomSeatReports({ seatOf: () => null, holdsSeat: () => false, deliver });
     await expect(deliverToRoomSeat('plain-chat', report)).resolves.toBe(false);
     expect(deliver).not.toHaveBeenCalled();
   });

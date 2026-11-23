@@ -61,7 +61,7 @@ import {
 import { setChatMessageStore, type ChatMessageStore } from './chat-message-store.js';
 import { stampHistory } from './chat-message-stamps.js';
 import { setChatReportBack } from './chat-message-current.js';
-import { reportTargetFromStore } from './report-back/report-target.js';
+import { reportStartedAtFromStore, reportTargetFromStore } from './report-back/report-target.js';
 import { randomUUID } from 'node:crypto';
 import { ChatReportBack, type RoomSeatReport } from './chat-report-back.js';
 import type { ChatReadDeps } from './chat-read.js';
@@ -418,8 +418,12 @@ export async function deliverToRoomSeat(
   const seat = [parentSessionId, canonical].find((id) => seats.seatOf(id) !== null);
   if (seat === undefined) return false;
   const fromTitle = await chatTitleOf(report.fromSessionId);
+  // A seat that moved checks this against the move (DOR-3753): only the server's record, set
+  // last so no start a caller handed in survives.
+  const startedAt = reportStartedAtFromStore(getSessionStartedByStore(), report.fromSessionId);
+  const sent = { ...report, fromTitle, startedAt: startedAt ?? undefined };
   return new Promise<boolean>((resolve, reject) => {
-    const taken = seats.deliver(seat, { ...report, fromTitle }, (ran) => {
+    const taken = seats.deliver(seat, sent, (ran) => {
       if (ran) resolve(true);
       else reject(new Error('The report did not reach the room seat.'));
     });
