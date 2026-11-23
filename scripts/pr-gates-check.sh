@@ -66,6 +66,18 @@ explain() {
   esac
 }
 
+# Security's sign-off may also come from the cloud Security lens (Dorian, Nov 23:
+# while local agents are down, the cloud verdict stands in for the label): the
+# newest `security-verdict` commit status on the head, posted by GitHub Actions,
+# in state `success` (security-verdict.yml, from main's copy). CLOUD_SECURITY=pass
+# then drops the two Security-label reasons; QA's and the designer's still count.
+cloud_security() { # <payload.json> -> pass | none
+  jq -r '[.statuses[] | select(type == "object" and .context == "security-verdict"
+            and (.creator.login // "") == "github-actions[bot]")]
+         | sort_by(.created_at // "", .id // 0) | last
+         | if . != null and .state == "success" then "pass" else "none" end' "$1" 2>/dev/null || echo none
+}
+
 decide() {
   local line=$1 reasons r out=()
   case "$line" in
@@ -77,7 +89,11 @@ decide() {
       reasons=${line#PULL }
       IFS=, read -r -a list <<<"$reasons"
       for r in "${list[@]}"; do
-        [ "$r" = no-proof ] || out+=("$r")
+        [ "$r" = no-proof ] && continue
+        if [ "${CLOUD_SECURITY:-none}" = pass ]; then
+          case "$r" in no-security-label | security-label-older-than-head) continue ;; esac
+        fi
+        out+=("$r")
       done
       if [ "${#out[@]}" -eq 0 ]; then
         echo "OK: every sign-off gate is met at this head (the other required checks are the proof)."
@@ -164,6 +180,9 @@ case "$mode" in
     payload "$2" >"$tmp/payload.json" || exit 2
     line=$(bash "$here/arm-door.sh" verdict "$tmp/payload.json" | head -n 1)
     echo "arm-door verdict for #$2: ${line:-<none>}"
+    CLOUD_SECURITY=$(cloud_security "$tmp/payload.json")
+    [ "$CLOUD_SECURITY" = pass ] && echo "The cloud Security lens passed this head (security-verdict), which counts as Security's sign-off."
+    export CLOUD_SECURITY
     decide "$line"
     ;;
   *) usage ;;
