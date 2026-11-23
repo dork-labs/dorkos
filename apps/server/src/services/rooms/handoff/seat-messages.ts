@@ -82,6 +82,11 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
     return resolveSeatMessageTarget(this.core, sessionId);
   }
 
+  /** The sender's live room turn, held now and marked only by an accepted send (DOR-4670). */
+  privateAnswerMark(sessionId: string, agentPath: string): (() => void) | undefined {
+    return this.core.triggers.privateAnswerMark(sessionId, agentPath);
+  }
+
   /** Commit admission and any constant trace, reserve bounded ownership, then return promptly. */
   admit(input: SeatMessageAdmission) {
     if (this.stopped || this.faulted)

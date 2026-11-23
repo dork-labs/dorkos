@@ -762,6 +762,43 @@ export class RoomTriggerDispatcher {
   }
 
   /**
+   * Hold the room turn a chat is running right now, so a private message it is
+   * about to send can count as that turn's answer (DOR-4670).
+   *
+   * A turn that answers with `chat_send` has answered, just not in the room, so
+   * it must not earn an `agent_declined` line. It sets the reaction's mark rather
+   * than the post's: like a reaction it is an answer that put no words in the
+   * room, so a re-seat must not read it as "already posted" (see
+   * {@link ActiveClaim.reactedViaTool}).
+   *
+   * **The claim is taken NOW and checked again at the mark.** The caller asks
+   * before its first await and marks only once the send is accepted, so a
+   * refusal buys nothing, and a send that outlives its turn finds a different
+   * claim object and marks nothing: it can never answer a newer turn. What makes
+   * that true is the capture: every claim is a fresh object, so the re-check at
+   * the mark is defence in depth (removing it leaves every test green, measured)
+   * that keeps the write on the live claim if claims are ever reused. The match
+   * is the chat's own session, which the runner reports onto the claim as soon
+   * as the runtime names it ({@link RoomTriggerDispatcher.noteSessionBound}), so
+   * a send from another seat (another room, or the seat it wrote to) never
+   * matches.
+   *
+   * @param sessionId - The sending chat, from the verified caller.
+   * @param agentPath - The sending agent, from the verified caller.
+   * @returns A mark to call once the send is accepted, or `undefined` when that
+   *   chat holds no room turn.
+   */
+  privateAnswerMark(sessionId: string, agentPath: string): (() => void) | undefined {
+    for (const [key, claim] of this.claimed) {
+      if (claim.sessionId !== sessionId || claim.agentPath !== agentPath) continue;
+      return () => {
+        if (this.claimed.get(key) === claim) claim.reactedViaTool = true;
+      };
+    }
+    return undefined;
+  }
+
+  /**
    * Take the "this agent has already spoken here" mark, if one is standing.
    *
    * **Consume-once, and the clear is defence in depth rather than a behaviour.**
