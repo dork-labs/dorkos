@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ProblemCodeSchema as CloudProblemCodeSchema } from '@dork-labs/cloud-api';
 import {
   PROBLEM_CODE_LIST,
+  PROBLEM_CODE_PATTERN,
   PROBLEM_CODES,
   ProblemCodeSchema,
   ProblemSchema,
@@ -17,7 +18,7 @@ describe('PROBLEM_CODE_LIST', () => {
   });
 
   it('spells every code lower_snake, as the Cloud contract does', () => {
-    for (const { code } of PROBLEM_CODE_LIST) expect(code).toMatch(/^[a-z]+(?:_[a-z]+)*$/);
+    for (const { code } of PROBLEM_CODE_LIST) expect(code).toMatch(PROBLEM_CODE_PATTERN);
   });
 
   it('gives every code an error status and a title', () => {
@@ -86,6 +87,18 @@ describe('ProblemSchema', () => {
         issues: { formErrors: [], fieldErrors: { name: ['Required'] } },
       })
     ).toBe(true);
+  });
+
+  it('reads a code only the Cloud contract holds', () => {
+    for (const code of ['balance_exhausted', 'invalid_token', 'entitlement_required']) {
+      expect(CloudProblemCodeSchema.safeParse(code).success).toBe(true);
+      expect(ProblemCodeSchema.safeParse(code).success).toBe(false);
+      expect(isProblem({ code, status: 402, title: 'Refused.' })).toBe(true);
+    }
+  });
+
+  it('refuses a SCREAMING_CASE code', () => {
+    expect(isProblem({ ...minimal, code: 'NOT_FOUND' })).toBe(false);
   });
 
   it('refuses a body in the old `{ error, code }` shape', () => {

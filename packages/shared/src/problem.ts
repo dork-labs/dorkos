@@ -102,7 +102,10 @@ export const PROBLEM_CODES: Readonly<Record<ProblemCode, ProblemCodeDefinition>>
     ProblemCodeDefinition
   >;
 
-/** The machine-readable failure code. */
+/** How every failure code is spelled: `lower_snake`, as the Cloud contract's are. */
+export const PROBLEM_CODE_PATTERN = /^[a-z]+(?:_[a-z]+)*$/;
+
+/** The machine-readable failure code: one this server sends. */
 export const ProblemCodeSchema = z
   .enum(PROBLEM_CODE_LIST.map((entry) => entry.code) as [ProblemCode, ...ProblemCode[]])
   .describe('The machine-readable failure code. Permanent once published.')
@@ -135,7 +138,13 @@ export function problemType(code: ProblemCode): string {
   return `urn:dorkos:problem:${code}`;
 }
 
-/** The error document every failed API request is answered with. */
+/**
+ * The error document every failed API request is answered with.
+ *
+ * For READING: `code` is any `lower_snake` code, so a problem from DorkOS Cloud
+ * (whose codes this list does not hold) reads as one. Sending is narrower:
+ * `problem()` in `@dorkos/http-kit` takes only a {@link ProblemCode}.
+ */
 export const ProblemSchema = z
   .object({
     type: z
@@ -155,7 +164,12 @@ export const ProblemSchema = z
       .string()
       .optional()
       .describe('A longer explanation of this specific occurrence, safe to show a person.'),
-    code: ProblemCodeSchema,
+    code: z
+      .string()
+      .regex(PROBLEM_CODE_PATTERN)
+      .describe(
+        'The machine-readable failure code, `lower_snake`. This server sends only the codes in `ProblemCode`; a reader accepts any, so a DorkOS Cloud code reads too.'
+      ),
     instance: z
       .string()
       .optional()
