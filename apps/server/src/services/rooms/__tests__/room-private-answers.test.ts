@@ -50,6 +50,10 @@ let anaTurn: (request: RoomTurnRequest) => Promise<void>;
 /** What Bo's private aside turn does. */
 let boTurn: () => Promise<void>;
 let title: () => Promise<string | null>;
+/** When set, the DM's turn fails inside dispatch, so the send's receipt comes back `failed`. */
+let dmFails: boolean;
+/** When set, the runtime never names its session, as on a first turn before the rename lands. */
+let sessionUnnamed: boolean;
 const releases: Array<() => void> = [];
 
 /** A test-owned wait; cleanup releases every one still outstanding. */
@@ -67,11 +71,13 @@ beforeEach(() => {
   anaTurn = async () => undefined;
   boTurn = async () => undefined;
   dispatched = [];
+  dmFails = false;
+  sessionUnnamed = false;
   const runner = outcomeRunner(() => ({ text: null }));
   const run = runner.run.bind(runner);
   runner.run = async (request) => {
     // The scripted runner reports the session onto the claim before any tool runs.
-    const result = run(request);
+    const result = run(sessionUnnamed ? { ...request, onSessionBound: () => undefined } : request);
     if (request.agentPath === ana.agentPath) await anaTurn(request);
     else await boTurn();
     return result;
@@ -120,6 +126,10 @@ beforeEach(() => {
     dispatch: async (opts) => {
       if (opts.sessionId !== BO_DM) throw new Error('a seat must never use ordinary dispatch');
       dispatched.push(opts.sessionId);
+      if (dmFails) {
+        const row = receipts.listSentFrom(ana.sessionId).at(-1)!;
+        receipts.update(row.id, { status: 'failed', failureReason: 'The turn could not start.' });
+      }
       return {
         accepted: true,
         queued: false,
@@ -198,6 +208,29 @@ describe('a private reply from a room turn', () => {
     await ask();
 
     expect(dispatched).toEqual([BO_DM]);
+    expect(declines()).toEqual([]);
+  });
+
+  it('does not count a send whose receipt comes back failed', async () => {
+    dmFails = true;
+    let receipt: ChatSendReceipt | undefined;
+    anaTurn = async () => {
+      receipt = await chats.send(ana, { to: BO_DM, message: 'PRIVATE_BODY' });
+    };
+    await ask();
+
+    expect(receipt?.status).toBe('failed');
+    expect(declines()).toHaveLength(1);
+  });
+
+  it('counts on a first turn, before the runtime has named its session', async () => {
+    sessionUnnamed = true;
+    anaTurn = async () => {
+      await sendToBoSeat();
+    };
+    await ask();
+    await inbox.idle();
+
     expect(declines()).toEqual([]);
   });
 
@@ -302,7 +335,7 @@ describe('a private reply from a room turn', () => {
     expect(declines().map((entry) => entry.body.subjectAuthorId)).toEqual([boId]);
   });
 
-  it('counts a send that arrives outside the turn’s own call chain, as an HTTP runtime’s does', async () => {
+  it('counts a send made outside the turn’s own async chain', async () => {
     const held = gate();
     let running = false;
     anaTurn = async () => {

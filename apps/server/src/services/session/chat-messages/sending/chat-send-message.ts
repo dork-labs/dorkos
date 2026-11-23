@@ -41,8 +41,11 @@ interface SendOptions {
  * Run one send, and count an accepted deliberate message as the sender's room
  * turn's answer, so the room does not say the agent "did not reply" (DOR-4670).
  *
- * The sender's turn is held before `send` starts, ahead of every await (the
- * per-agent lock included), so a send that outlives its turn answers nothing.
+ * The sender's turn is held from the moment the send is entered, ahead of every
+ * await (the per-agent lock included), so a send that outlives its turn after
+ * that answers nothing. Before that moment is a known gap: a call that waited on
+ * an approval card while its turn ended can be read as a newer turn's answer
+ * (see `RoomTriggerDispatcher.privateAnswerMark`).
  * Only a `message` counts: a `report` is the server's own send. A refusal
  * throws past the mark, and a receipt already `failed` delivered nothing.
  *

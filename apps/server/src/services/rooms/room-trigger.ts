@@ -771,17 +771,28 @@ export class RoomTriggerDispatcher {
    * room, so a re-seat must not read it as "already posted" (see
    * {@link ActiveClaim.reactedViaTool}).
    *
-   * **The claim is taken NOW and checked again at the mark.** The caller asks
-   * before its first await and marks only once the send is accepted, so a
-   * refusal buys nothing, and a send that outlives its turn finds a different
-   * claim object and marks nothing: it can never answer a newer turn. What makes
-   * that true is the capture: every claim is a fresh object, so the re-check at
-   * the mark is defence in depth (removing it leaves every test green, measured)
-   * that keeps the write on the live claim if claims are ever reused. The match
-   * is the chat's own session, which the runner reports onto the claim as soon
-   * as the runtime names it ({@link RoomTriggerDispatcher.noteSessionBound}), so
-   * a send from another seat (another room, or the seat it wrote to) never
-   * matches.
+   * **The claim is taken when the send is entered, and checked again at the
+   * mark.** The caller asks before the send's first await and marks only once
+   * the send is accepted, so a refusal buys nothing, and a send that outlives its
+   * turn after that moment finds a different claim object and marks nothing.
+   * What makes that true is the capture: every claim is a fresh object, so the
+   * re-check at the mark is defence in depth (removing it leaves every test
+   * green, measured) that keeps the write on the live claim if claims are ever
+   * reused.
+   *
+   * **The gap: anything before the send is entered.** A tool call that waits on
+   * an approval card in the runtime reaches the server only once the person
+   * answers. If its turn ended meanwhile and a newer turn holds this seat, the
+   * older call is read as the newer turn's answer. Nothing on the server sees
+   * the call before that card, so closing it needs the runtime to carry the turn
+   * the call started in. The cost is one missing "did not reply" line.
+   *
+   * **Which turn: the one on the sending chat's session.** First the session the
+   * runner reported onto the claim ({@link RoomTriggerDispatcher.noteSessionBound}),
+   * then the room's own record of the seat, the same lookups
+   * `RoomHandoffs.isSeat` makes: on a first turn the claim has no session yet,
+   * and the ledger follows the runtime's rename. Either way a send from another
+   * seat (another room, or the seat it wrote to) never matches.
    *
    * @param sessionId - The sending chat, from the verified caller.
    * @param agentPath - The sending agent, from the verified caller.
@@ -789,13 +800,17 @@ export class RoomTriggerDispatcher {
    *   chat holds no room turn.
    */
   privateAnswerMark(sessionId: string, agentPath: string): (() => void) | undefined {
-    for (const [key, claim] of this.claimed) {
-      if (claim.sessionId !== sessionId || claim.agentPath !== agentPath) continue;
-      return () => {
-        if (this.claimed.get(key) === claim) claim.reactedViaTool = true;
-      };
+    let key = [...this.claimed].find(([, held]) => held.sessionId === sessionId)?.[0];
+    if (key === undefined) {
+      const seat = this.deps.store.sessionLedger.bindingForSession(sessionId);
+      if (seat) key = agentKey(seat.roomId, seat.authorId);
     }
-    return undefined;
+    const claim = key === undefined ? undefined : this.claimed.get(key);
+    // Defence in depth: a session is one agent's seat, so this never discriminates today.
+    if (key === undefined || claim === undefined || claim.agentPath !== agentPath) return undefined;
+    return () => {
+      if (this.claimed.get(key) === claim) claim.reactedViaTool = true;
+    };
   }
 
   /**
