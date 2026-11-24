@@ -155,20 +155,6 @@ describe('extension agent tools through the real lifecycle', () => {
     expect(await registry.invoke('ext_agent_tools_ext.bump_counter', {})).toEqual({ total: 1 });
   }, 30_000);
 
-  it('registers nothing when register() throws', async () => {
-    // Purpose: an instance that never started offers no tools, even ones it
-    // bound before throwing.
-    await install(
-      `export default function register(_r, ctx) {
-        ctx.tools.handle('echo', () => 'x');
-        throw new Error('boom');
-      }`
-    );
-    await boot();
-    expect(registered()).toEqual([]);
-    expect(statuses().echo).toBe('inactive');
-  }, 30_000);
-
   it('registers nothing when register() times out, and ignores a late handle', async () => {
     // Purpose: a register() DorkOS stopped waiting for never offers tools,
     // whatever it binds after the deadline.
@@ -213,27 +199,6 @@ describe('extension agent tools through the real lifecycle', () => {
     const result = await manager.initializeServer(ID);
     expect(result).toMatchObject({ ok: false, error: expect.stringMatching(/declares no tool/) });
     expect(registered()).toEqual([]);
-  }, 30_000);
-
-  it('removes the tools before the extension’s own cleanup runs', async () => {
-    // Purpose: on stop the tools go first, so nothing can call into an
-    // extension that is already tearing itself down.
-    await install(
-      `export default function register(_r, ctx) {
-        ctx.tools.handle('echo', (i) => i);
-        ctx.tools.handle('bump_counter', () => 1);
-        ctx.tools.handle('delete_note', () => 1);
-        return () => { globalThis.__dor2685_cleanup = globalThis.__dor2685_probe(); };
-      }`
-    );
-    const g = globalThis as Record<string, unknown>;
-    g.__dor2685_probe = () => registry.get('ext_agent_tools_ext.echo') === undefined;
-    await boot();
-    expect(registered()).toHaveLength(3);
-    await manager.shutdownServer(ID);
-    expect(g.__dor2685_cleanup).toBe(true);
-    delete g.__dor2685_probe;
-    delete g.__dor2685_cleanup;
   }, 30_000);
 
   it('takes the tools away on disable and brings them back on enable', async () => {

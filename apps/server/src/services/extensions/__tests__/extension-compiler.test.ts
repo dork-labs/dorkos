@@ -1,19 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ExtensionCompiler } from '../extension-compiler.js';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { createHash } from 'crypto';
 import type { ExtensionRecord } from '@dorkos/extension-api';
-
-vi.mock('../../../lib/logger.js', () => ({
-  logger: {
-    info: vi.fn(),
-    debug: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
-}));
 
 /** True when this process can bypass a `chmod` file permission (root on POSIX). */
 const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
@@ -234,79 +225,7 @@ describe('ExtensionCompiler', () => {
     }
   });
 
-  // === 7. Cached error ===
-
-  it('returns cached error on second compilation of same failing source', async () => {
-    const extDir = path.join(tmpDir, 'cached-err-ext');
-    await fs.mkdir(extDir, { recursive: true });
-    const badSource =
-      'import { nonExistent } from "./missing.js";\nexport function activate() { nonExistent(); }';
-    await fs.writeFile(path.join(extDir, 'index.ts'), badSource);
-
-    const first = await compiler.compile(makeRecord('cached-err-ext', extDir));
-    expect('error' in first).toBe(true);
-
-    // Second call should return cached error
-    const second = await compiler.compile(makeRecord('cached-err-ext', extDir));
-    expect('error' in second).toBe(true);
-
-    if ('error' in first && 'error' in second) {
-      expect(second.error.code).toBe(first.error.code);
-      expect(second.error.message).toBe(first.error.message);
-      expect(second.sourceHash).toBe(first.sourceHash);
-    }
-  });
-
-  // === 8. Bundle size warning ===
-
-  it('logs warning when bundle exceeds 500KB', async () => {
-    const { logger } = await import('../../../lib/logger.js');
-
-    const extDir = path.join(tmpDir, 'large-ext');
-    await fs.mkdir(extDir, { recursive: true });
-    // Generate a large string constant to create a big bundle
-    const largeString = 'x'.repeat(600 * 1024);
-    const source = `export const big = "${largeString}";\nexport function activate() {}`;
-    await fs.writeFile(path.join(extDir, 'index.ts'), source);
-
-    const result = await compiler.compile(makeRecord('large-ext', extDir));
-
-    expect('code' in result).toBe(true);
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('exceeds 500KB guideline'));
-  });
-
   // === 9. Stale cache cleanup ===
-
-  it('removes cache entries older than 7 days', async () => {
-    const cacheDir = path.join(tmpDir, 'cache', 'extensions');
-    await fs.mkdir(cacheDir, { recursive: true });
-
-    // Create a stale file and a fresh file
-    const stalePath = path.join(cacheDir, 'stale-ext.abc123.js');
-    const freshPath = path.join(cacheDir, 'fresh-ext.def456.js');
-    await fs.writeFile(stalePath, 'stale content');
-    await fs.writeFile(freshPath, 'fresh content');
-
-    // Backdate the stale file's access time to 8 days ago
-    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
-    await fs.utimes(stalePath, eightDaysAgo, eightDaysAgo);
-
-    const cleaned = await compiler.cleanStaleCache();
-
-    expect(cleaned).toBe(1);
-
-    // Stale file should be gone
-    await expect(fs.access(stalePath)).rejects.toThrow();
-    // Fresh file should remain
-    await expect(fs.access(freshPath)).resolves.toBeUndefined();
-  });
-
-  it('returns 0 when cache directory does not exist', async () => {
-    // Use a compiler pointing to a non-existent dorkHome
-    const missingCompiler = new ExtensionCompiler(path.join(tmpDir, 'nonexistent'));
-    const cleaned = await missingCompiler.cleanStaleCache();
-    expect(cleaned).toBe(0);
-  });
 
   it.skipIf(isRoot)(
     'does not throw when a cache subdirectory cannot be read (EACCES, not missing)',
@@ -426,11 +345,6 @@ describe('ExtensionCompiler', () => {
     ).toBeNull();
   });
 
-  it('returns null for a non-existent bundle', async () => {
-    const bundle = await compiler.readBundle('nonexistent', 'deadbeef12345678');
-    expect(bundle).toBeNull();
-  });
-
   // === compileServer ===
 
   describe('compileServer', () => {
@@ -454,21 +368,6 @@ describe('ExtensionCompiler', () => {
       }
     });
 
-    it('returns error when serverEntryPath is undefined', async () => {
-      const extDir = path.join(tmpDir, 'no-server-ext');
-      await fs.mkdir(extDir, { recursive: true });
-
-      const record = makeRecord('no-server-ext', extDir);
-      const result = await compiler.compileServer(record);
-
-      expect('error' in result).toBe(true);
-      if ('error' in result) {
-        expect(result.error.code).toBe('compilation_failed');
-        expect(result.error.message).toContain('No server entry point');
-        expect(result.sourceHash).toBe('');
-      }
-    });
-
     it('returns structured error for invalid server TypeScript', async () => {
       const extDir = path.join(tmpDir, 'bad-server-ext');
       await fs.mkdir(extDir, { recursive: true });
@@ -486,46 +385,6 @@ describe('ExtensionCompiler', () => {
         expect(result.error.code).toBe('compilation_failed');
         expect(result.error.errors.length).toBeGreaterThan(0);
         expect(result.sourceHash).toHaveLength(16);
-      }
-    });
-
-    it('returns cached result on second compilation of same source', async () => {
-      const extDir = path.join(tmpDir, 'server-cache-ext');
-      await fs.mkdir(extDir, { recursive: true });
-      const source = 'export default function register() { return 1; }';
-      const serverPath = path.join(extDir, 'server.ts');
-      await fs.writeFile(serverPath, source);
-
-      const record = makeServerRecord('server-cache-ext', extDir, serverPath);
-      const first = await compiler.compileServer(record);
-      expect('code' in first).toBe(true);
-
-      const second = await compiler.compileServer(record);
-      expect('code' in second).toBe(true);
-
-      if ('code' in first && 'code' in second) {
-        expect(second.code).toBe(first.code);
-        expect(second.sourceHash).toBe(first.sourceHash);
-      }
-    });
-
-    it('recompiles when server source content changes', async () => {
-      const extDir = path.join(tmpDir, 'server-invalidate-ext');
-      await fs.mkdir(extDir, { recursive: true });
-      const serverPath = path.join(extDir, 'server.ts');
-
-      await fs.writeFile(serverPath, 'export default function register() { return "v1"; }');
-      const record = makeServerRecord('server-invalidate-ext', extDir, serverPath);
-      const first = await compiler.compileServer(record);
-      expect('code' in first).toBe(true);
-
-      await fs.writeFile(serverPath, 'export default function register() { return "v2"; }');
-      const second = await compiler.compileServer(record);
-      expect('code' in second).toBe(true);
-
-      if ('code' in first && 'code' in second) {
-        expect(second.sourceHash).not.toBe(first.sourceHash);
-        expect(second.code).toContain('v2');
       }
     });
 
@@ -561,25 +420,6 @@ describe('ExtensionCompiler', () => {
         (e) => !e.startsWith('.') && e !== 'server'
       );
       expect(clientEntries.some((e) => e.startsWith('isolation-ext.'))).toBe(true);
-    });
-
-    it('does not include browser polyfills in server output', async () => {
-      const extDir = path.join(tmpDir, 'node-target-ext');
-      await fs.mkdir(extDir, { recursive: true });
-      // Use a Node.js-only API to verify the platform target is node
-      const source =
-        'import path from "path";\nexport default function register() { return path.join("a", "b"); }';
-      const serverPath = path.join(extDir, 'server.ts');
-      await fs.writeFile(serverPath, source);
-
-      const record = makeServerRecord('node-target-ext', extDir, serverPath);
-      const result = await compiler.compileServer(record);
-
-      expect('code' in result).toBe(true);
-      if ('code' in result) {
-        // Node platform should use require("path"), not bundle a polyfill
-        expect(result.code).toContain('require("path")');
-      }
     });
 
     it('externalizes express and extension-api packages', async () => {

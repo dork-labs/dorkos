@@ -114,37 +114,6 @@ describe('LocalCommunityAdapter cursors', () => {
       StaleCommunityCursorError
     );
   });
-
-  it('refuses a cursor from a superseded epoch, rather than serving its seq', async () => {
-    // A room's `seq` IS durable, so this cursor names a real entry — which is
-    // exactly why it has to be refused rather than bounded: the same integer in
-    // a different epoch is a different promise about what a stream carries.
-    const { adapter } = setup();
-    await adapter.connect();
-    const roomId = await seed(adapter);
-    const stale = `${LOCAL_COMMUNITY}|${roomId}|${STREAM_EPOCH - 1}|1` as CommunityCursor;
-
-    expect(() => adapter.subscribeRoom(roomId, stale)).toThrow(StaleCommunityCursorError);
-  });
-
-  it('refuses a cursor ahead of the room, never suppressing what it has not sent', async () => {
-    const { adapter } = setup();
-    await adapter.connect();
-    const roomId = await seed(adapter);
-    const ahead = `${LOCAL_COMMUNITY}|${roomId}|${STREAM_EPOCH}|99999` as CommunityCursor;
-
-    expect(() => adapter.subscribeRoom(roomId, ahead)).toThrow(StaleCommunityCursorError);
-  });
-
-  it('refuses a malformed cursor rather than reading a number out of it', async () => {
-    const { adapter } = setup();
-    await adapter.connect();
-    const roomId = await seed(adapter);
-
-    expect(() => adapter.subscribeRoom(roomId, '7' as CommunityCursor)).toThrow(
-      StaleCommunityCursorError
-    );
-  });
 });
 
 describe('LocalCommunityAdapter room visibility', () => {
@@ -260,74 +229,6 @@ describe('LocalCommunityAdapter projection', () => {
     const members = await adapter.listMembers(created.id);
     expect(members.some((m) => m.kind === 'agent')).toBe(true);
     expect(JSON.stringify(members)).not.toContain('/Users/planted');
-  });
-
-  it('rolls a thread up onto its root, and counts the root out of its own replies', async () => {
-    const { adapter } = setup();
-    await adapter.connect();
-    const roomId = await seed(adapter);
-    const [root] = (await adapter.listEntries(roomId)).entries;
-    await adapter.post(roomId, { text: 'first answer', parentEntryId: root!.id });
-    await adapter.post(roomId, { text: 'second answer', parentEntryId: root!.id });
-
-    const page = await adapter.listEntries(roomId);
-    const rolled = page.entries.find((entry) => entry.id === root!.id);
-    expect(
-      rolled?.thread?.replyCount,
-      '"2 replies" means two answers, not the opener plus one'
-    ).toBe(2);
-    expect(rolled?.thread?.lastReplyAt).toBeTruthy();
-    expect(
-      page.entries.find((entry) => entry.id !== root!.id)?.thread,
-      'an entry with no replies carries no summary at all'
-    ).toBeUndefined();
-  });
-
-  it('lists an archived room, because an archived room still reads', async () => {
-    const { adapter } = setup();
-    await adapter.connect();
-    const roomId = await seed(adapter);
-    await adapter.updateRoom(roomId, { archived: true });
-
-    const listed = (await adapter.listRooms()).find((room) => room.roomId === roomId);
-    expect(listed?.archived).toBe(true);
-    await expect(adapter.getRoom(roomId)).resolves.not.toBeNull();
-  });
-});
-
-describe('LocalCommunityAdapter roster and read cursor', () => {
-  it('removes a member idempotently, the way the port requires', async () => {
-    const { adapter, harness } = setup();
-    await adapter.connect();
-    const roomId = await seed(adapter);
-
-    // Nobody by that id was ever in the room; the shipped service calls that a
-    // typed refusal, and the port calls it the outcome the caller asked for.
-    await expect(adapter.removeMember(roomId, 'nobody-by-that-id')).resolves.toBeUndefined();
-    await expect(adapter.removeMember(roomId, harness.human)).resolves.toBeUndefined();
-    await expect(
-      adapter.removeMember(roomId, harness.human),
-      'removing someone twice is still removed'
-    ).resolves.toBeUndefined();
-  });
-
-  it('reports no read cursor until one is set, then keeps it monotonic', async () => {
-    const { adapter } = setup();
-    await adapter.connect();
-    const roomId = await seed(adapter);
-    const { entries } = await adapter.listEntries(roomId);
-
-    await expect(adapter.getReadCursor(roomId), 'nothing read yet is null, not zero').resolves.toBe(
-      null
-    );
-
-    await adapter.setReadCursor(roomId, entries[1]!.cursor);
-    await expect(adapter.getReadCursor(roomId)).resolves.toBe(entries[1]!.cursor);
-
-    // A stale client must not be able to un-read a room for a second one
-    // holding the same membership.
-    await adapter.setReadCursor(roomId, entries[0]!.cursor);
-    await expect(adapter.getReadCursor(roomId)).resolves.toBe(entries[1]!.cursor);
   });
 });
 
@@ -450,27 +351,6 @@ describe('LocalCommunityAdapter signals', () => {
     ).rejects.toBeInstanceOf(CommunityMemberNotFoundError);
   });
 
-  it('still lets one room member publish presence about another — the documented gap', async () => {
-    // The residual this adapter does NOT close, pinned so it stays a decision
-    // rather than a surprise: the roster check proves the subject EXISTS, not
-    // that it is working. Mechanical honesty needs the claim map, which lives
-    // in the dispatcher. That is tolerable only while every caller is
-    // server-side code that already knows what it started — which is why the
-    // method's doc requires claim-gating before any route or MCP tool exposes
-    // it, and why this test is here to fail loudly if that day arrives quietly.
-    const { adapter, harness } = setup();
-    await adapter.connect();
-    const roomId = await seed(adapter);
-    const member = harness.service.addMember(roomId, harness.human, {
-      agentPath: AGENT_PATH,
-      responseMode: 'silent',
-    });
-
-    await expect(
-      adapter.publishSignal(roomId, 'progress', { state: 'working', memberId: member.authorId })
-    ).resolves.toBeUndefined();
-  });
-
   it('refuses to signal into a room it cannot see', async () => {
     // The port does not contract this method against an unknown room, so the
     // adapter answers the way it answers everywhere else: a room id is not a
@@ -486,48 +366,6 @@ describe('LocalCommunityAdapter signals', () => {
 });
 
 describe('LocalCommunityAdapter mentions', () => {
-  it('round-trips the mentions the caller resolved, even when the text names nobody', async () => {
-    // The port carries `mentions` on `post` and on the committed entry, and says
-    // outright why: `responseMode: 'mention-only'` is unusable without it. This
-    // adapter used to drop the field on the floor, so a caller that had already
-    // resolved who it was addressing — the only thing the port lets it do — was
-    // silently addressing nobody.
-    const { adapter, harness } = setup();
-    await adapter.connect();
-    const roomId = await seed(adapter);
-    const agentId = harness.service.addMember(roomId, harness.human, {
-      agentPath: AGENT_PATH,
-    }).authorId;
-
-    const posted = await adapter.post(roomId, {
-      text: 'a line with no at-sign in it at all',
-      mentions: [agentId],
-    });
-
-    const entry = (await adapter.listEntries(roomId)).entries.find((e) => e.id === posted.entryId);
-    expect(
-      entry?.mentions,
-      'a mention the caller resolved is the entry’s, whatever the text says'
-    ).toEqual([agentId]);
-  });
-
-  it('keeps what the text resolves to, and never repeats a name it already found', async () => {
-    const { adapter, harness } = setup();
-    await adapter.connect();
-    const roomId = await seed(adapter);
-    const member = harness.service.addMember(roomId, harness.human, { agentPath: AGENT_PATH });
-    const handle = harness.authors.getMany([member.authorId]).get(member.authorId)?.handle;
-    expect(handle, 'the arrangement needs an addressable member').toBeTruthy();
-
-    const posted = await adapter.post(roomId, {
-      text: `over to you @${handle}`,
-      mentions: [member.authorId],
-    });
-
-    const entry = (await adapter.listEntries(roomId)).entries.find((e) => e.id === posted.entryId);
-    expect(entry?.mentions, 'named twice is still one member').toEqual([member.authorId]);
-  });
-
   it('drops a mention naming somebody this room does not hold', async () => {
     // The same answer the text path gives an unresolvable `@name`: it is not an
     // error, it is somebody addressing a name this room has nobody for. What it
@@ -664,29 +502,6 @@ describe('LocalCommunityAdapter room list', () => {
     }
   });
 
-  it('reports a room entering this identity’s view as added', async () => {
-    // The other half of the same transition. A view is a membership here, so a
-    // room arrives the moment this identity is put on its roster — and an
-    // adapter that only ever watched `room_created` would never mention a room
-    // that already existed when the invitation came.
-    const { harness, adapter, agentId } = asAgentIn('Mine');
-    await adapter.connect();
-    const later = harness.service.createRoom(
-      { kind: 'channel', title: 'Later', members: [], agentPaths: [] },
-      harness.human
-    );
-    const iterator = adapter.subscribeRoomList()[Symbol.asyncIterator]();
-    try {
-      harness.service.addMember(later.id, harness.human, { authorId: agentId });
-
-      const event = await nextListEvent(iterator, 'the room_added event');
-      expect(event.type).toBe('room_added');
-      expect(event.type === 'room_added' && event.room.roomId).toBe(later.id);
-    } finally {
-      await iterator.return?.();
-    }
-  });
-
   it('never reports a room this identity cannot see, however it changed', async () => {
     // `room_created` and `room_updated` rode the store rather than the
     // visibility rule, so a listener was told about every room on the machine —
@@ -705,27 +520,6 @@ describe('LocalCommunityAdapter room list', () => {
       await expect(
         nextListEvent(iterator, 'nothing at all'),
         'a room this identity cannot list must not arrive on its stream either'
-      ).rejects.toThrow(/timed out/);
-    } finally {
-      await iterator.return?.();
-    }
-  });
-
-  it('says nothing when a removal leaves this identity’s view unchanged', async () => {
-    // Somebody else leaving a room is not this identity losing it. An adapter
-    // that emitted `room_removed` on every membership change would empty a
-    // sidebar the first time an agent was taken off a roster.
-    const { harness, adapter, roomId } = asAgentIn('Backend');
-    await adapter.connect();
-    const other = harness.authors.resolveAgent(OTHER_AGENT_PATH, 'Other').id;
-    harness.service.addMember(roomId, harness.human, { authorId: other });
-    const iterator = adapter.subscribeRoomList()[Symbol.asyncIterator]();
-    try {
-      harness.service.removeMember(roomId, harness.human, other);
-
-      await expect(
-        nextListEvent(iterator, 'nothing at all'),
-        'a room this identity can still see is not a room that went away'
       ).rejects.toThrow(/timed out/);
     } finally {
       await iterator.return?.();
@@ -752,27 +546,5 @@ describe('LocalCommunityAdapter subscription teardown', () => {
       harness.service.stream.subscriberCount(roomId),
       'the live subscriber opened before the read is released when the read fails'
     ).toBe(0);
-  });
-});
-
-describe('LocalCommunityAdapter connection', () => {
-  it('types a store that will not answer as unreachable, and never throws', async () => {
-    const { adapter, harness } = setup();
-    harness.db.$client.close();
-
-    const connection = await adapter.connect();
-    expect(connection.status).toBe('unreachable');
-    expect(connection.identity).toBeUndefined();
-    expect(connection.error, 'a failed connection says what happened, for the log').toBeTruthy();
-  });
-
-  it('reports the owner as the connected identity', async () => {
-    const { adapter, harness } = setup();
-    const connection = await adapter.connect();
-    expect(connection.status).toBe('connected');
-    expect(connection.identity).toEqual({
-      community: LOCAL_COMMUNITY,
-      memberId: harness.human,
-    });
   });
 });

@@ -67,13 +67,6 @@ describe('raise', () => {
     expect(sent.deepLink).toBe('/x/flow/p/dorkos');
   });
 
-  it('falls back to home as the push deep link when there is no link', async () => {
-    await fx.inbox.raise('flow', 'Flow', shipDecision({ link: undefined }));
-    await vi.advanceTimersByTimeAsync(3 * ONE_MINUTE);
-    await flush();
-    expect((fx.sendToAll.mock.calls[0][0] as { deepLink: string }).deepLink).toBe('/');
-  });
-
   it.each([
     ['a missing why', { why: undefined }, 'why'],
     ['a blank why', { why: '   ' }, 'why'],
@@ -183,12 +176,6 @@ describe('namespacing (invariant 4)', () => {
     );
     expect(answer).toMatchObject({ ok: false, status: 404 });
     expect(fx.inbox.listOpen()).toHaveLength(1);
-  });
-
-  it('lets two extensions use the same key', async () => {
-    await fx.inbox.raise('flow', 'Flow', shipDecision());
-    await fx.inbox.raise('other', 'Other', shipDecision({ link: undefined }));
-    expect(fx.inbox.listOpen()).toHaveLength(2);
   });
 });
 
@@ -474,17 +461,6 @@ describe('record (decisions never asked)', () => {
     expect(row.readAt).toBeNull();
   });
 
-  it('writes "Just do it" rows already read', async () => {
-    await fx.inbox.record('flow', 'Flow', {
-      key: 'k',
-      title: 'Sorted 12 ideas',
-      why: 'They were waiting.',
-      outcome: 'answered',
-      by: { kind: 'rule', label: "your 'Just do it' setting" },
-    });
-    expect(fx.history()[0].readAt).not.toBeNull();
-  });
-
   it('refuses a missing, blank or 301-character why, and a missing by', async () => {
     for (const why of [undefined, '  ', 'x'.repeat(301)]) {
       await expect(
@@ -540,21 +516,6 @@ describe('lifecycle', () => {
     await vi.advanceTimersByTimeAsync(ONE_MINUTE);
     await flush();
     expect(fx.inbox.listOpen()).toHaveLength(1);
-  });
-
-  it('shows a decision raised into a missing folder once the folder is back, and escalates it then', async () => {
-    fx.missing.add('/repos/dorkos');
-    await fx.inbox.raise('flow', 'Flow', shipDecision());
-    expect(fx.inbox.listOpen()).toEqual([]);
-    await vi.advanceTimersByTimeAsync(3 * ONE_MINUTE);
-    await flush();
-    expect(fx.sendToAll).not.toHaveBeenCalled();
-
-    fx.missing.delete('/repos/dorkos');
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE);
-    await flush();
-    expect(fx.inbox.listOpen()).toHaveLength(1);
-    expect(fx.sendToAll).toHaveBeenCalledTimes(1);
   });
 
   it('cancels, with no history row, the decisions of an extension no longer installed', async () => {

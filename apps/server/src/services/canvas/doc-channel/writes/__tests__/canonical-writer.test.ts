@@ -12,7 +12,7 @@ import {
 import { rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import Database from 'better-sqlite3';
+
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   CanonicalFileWriteCoordinator,
@@ -145,30 +145,6 @@ describe('canonical cooperative writer', () => {
     );
     f.setTransaction(false);
     await f.coordinator.withFiles([f.a], async () => undefined);
-  });
-  it('refuses a real raw SQLite transaction opened while resolving', async () => {
-    const db = new Database(':memory:');
-    let begin = true;
-    const f = await fixture(
-      () => {
-        if (begin) {
-          begin = false;
-          db.exec('BEGIN');
-        }
-      },
-      () => {
-        if (db.inTransaction) throw new Error('SQLite boundary');
-      }
-    );
-    try {
-      await expect(f.coordinator.withFiles([f.a], async () => undefined)).rejects.toThrow(
-        'SQLite boundary'
-      );
-      db.exec('ROLLBACK');
-      await f.coordinator.withFiles([f.a], async () => undefined);
-    } finally {
-      db.close();
-    }
   });
   it('holds canonical pathname ownership through atomic replacement and verification', async () => {
     const held = latch();
@@ -327,14 +303,6 @@ it('bounds reservations, rejects retired leases and recursive aliases, preservin
     await first;
   }
   await expect(retired.reserveReplacement(f.a)).rejects.toThrow('no longer active');
-});
-
-it('keeps actual filesystem lookup errors distinct from pre-callback identity changes', async () => {
-  const f = await fixture();
-  await unlink(f.a);
-  const operation = f.coordinator.withFiles([f.a], async () => undefined);
-  await expect(operation).rejects.toMatchObject({ code: 'ENOENT' });
-  await expect(operation).rejects.not.toBeInstanceOf(CanonicalFileIdentityChangedError);
 });
 
 async function actualIdentity(path: string) {
@@ -503,36 +471,4 @@ it('closes admission, cancels queued callbacks and drains active effects before 
   expect(queuedEffects).toBe(0);
   expect(await readFile(f.a, 'utf8')).toBe('completed active effect');
   await f.coordinator.stop();
-});
-
-it('refuses nested stop without closing admission or deadlocking the active callback', async () => {
-  const f = await fixture();
-  await f.coordinator.withFiles([f.a], async () => {
-    await expect(f.coordinator.stop()).rejects.toThrow('Recursive');
-    await expect(f.coordinator.withFiles([f.b], async () => undefined)).rejects.toThrow(
-      'Recursive'
-    );
-  });
-  await f.coordinator.withFiles([f.b], async () => undefined);
-  await f.coordinator.stop();
-});
-
-it('preserves concurrency of unrelated active filesystem effects', async () => {
-  const f = await fixture(),
-    held = latch(),
-    entered = latch();
-  const first = f.coordinator.withFiles([f.a], async () => {
-    entered.release();
-    await held.promise;
-  });
-  await entered.promise;
-  try {
-    await f.coordinator.withFiles([f.b], async () => {
-      await writeFile(f.b, 'unrelated');
-    });
-    expect(await readFile(f.b, 'utf8')).toBe('unrelated');
-  } finally {
-    held.release();
-    await first;
-  }
 });

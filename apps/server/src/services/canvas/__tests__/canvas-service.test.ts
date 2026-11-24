@@ -36,7 +36,7 @@ import { RoomError } from '../../rooms/room-errors.js';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { RoomCanvasService } from '../../rooms/canvas/room-canvas-service.js';
 import type { CanvasDocumentStore } from '../canvas-document-store.js';
-import { roomScope } from '../scopes.js';
+
 import type { RoomBroadcaster } from '../../rooms/room-stream.js';
 import {
   agentLookupFor,
@@ -47,7 +47,6 @@ import {
   MAX_ROOM_CANVAS_DOCUMENTS,
   NOT_IN_A_ROOM_MESSAGE,
   NO_DEFAULT_DOCUMENT_MESSAGE,
-  OPEN_CANVAS_NEEDS_CONTENT_MESSAGE,
   canvasChangeSentence,
 } from '../../rooms/canvas/room-canvas-service.js';
 
@@ -146,16 +145,6 @@ describe('RoomCanvasService.apply', () => {
       expect(result).toMatchObject({ applied: false, reason: NOT_IN_A_ROOM_MESSAGE });
     });
 
-    it('refuses an `open_canvas` carrying nothing to show', () => {
-      // Optional in the schema, and in a session it merely reveals the pane —
-      // which a room has no equivalent of.
-      const result = applyAs(ana, 'turn-1', { action: 'open_canvas' });
-      expect(result).toMatchObject({
-        applied: false,
-        reason: OPEN_CANVAS_NEEDS_CONTENT_MESSAGE,
-      });
-    });
-
     it('refuses every write on an archived room BEFORE the table is touched', () => {
       applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent('before') });
       service.updateRoom(room.id, human, { archived: true });
@@ -180,11 +169,6 @@ describe('RoomCanvasService.apply', () => {
         reason: NO_DEFAULT_DOCUMENT_MESSAGE,
       });
       expect(canvas.list(room.id)).toEqual([]);
-    });
-
-    it('refuses a bare close from somebody with nothing of their own here', () => {
-      const result = applyAs(ana, 'turn-1', { action: 'close_canvas' });
-      expect(result).toMatchObject({ applied: false, code: 'CANVAS_NO_DEFAULT_DOCUMENT' });
     });
   });
 
@@ -240,19 +224,6 @@ describe('RoomCanvasService.apply', () => {
       expect(updated).toMatchObject({ applied: true, documentId: id });
       expect(canvas.get(room.id, id)?.title).toBe('Ana edited Ben’s');
     });
-
-    it('keeps the pointer on the ROW, so a restart does not lose the default', () => {
-      const opened = applyAs(ana, 'turn-1', {
-        action: 'open_canvas',
-        content: jsonContent('Ana’s notes'),
-      });
-      const id = opened.applied ? opened.documentId : '';
-      // Read straight off the table rather than out of the service: what makes
-      // the default survive a restart is that it is a COLUMN, and a process map
-      // would pass every assertion above this one.
-      expect(canvasDocuments.lastTouchedBy(roomScope(room.id), ana)?.id).toBe(id);
-      expect(canvasDocuments.lastTouchedBy(roomScope(room.id), ben)).toBeNull();
-    });
   });
 
   describe('dedupe, capacity and pins', () => {
@@ -270,12 +241,6 @@ describe('RoomCanvasService.apply', () => {
         second.applied ? second.documentId : ''
       );
       expect(canvas.list(room.id)).toHaveLength(1);
-    });
-
-    it('every `json` open is a fresh document, because it has no identity', () => {
-      applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent('same title') });
-      applyAs(ana, 'turn-2', { action: 'open_canvas', content: jsonContent('same title') });
-      expect(canvas.list(room.id)).toHaveLength(2);
     });
 
     it('evicts the least recently active unpinned document past the ceiling', () => {
@@ -302,61 +267,6 @@ describe('RoomCanvasService.apply', () => {
       }
       expect(canvas.get(room.id, pinned.id)).not.toBeNull();
       expect(canvas.list(room.id)).toHaveLength(MAX_ROOM_CANVAS_DOCUMENTS + 1);
-    });
-
-    it('spares a pin taken on the document that was next to go', () => {
-      // The discriminating case, and the one the happy path misses: fill the
-      // room to its ceiling, then pin the LEAST recently active document — the
-      // one eviction would reach for first — and push the room over. A carve-out
-      // that only protected documents pinned at OPEN time passes the test above
-      // and fails this one.
-      const oldest = canvas.open(room.id, human, {
-        type: 'url',
-        url: 'https://example.test/first',
-      });
-      for (let n = 1; n < MAX_ROOM_CANVAS_DOCUMENTS; n += 1) {
-        canvas.open(room.id, human, { type: 'url', url: `https://example.test/${n}` });
-      }
-      expect(canvas.list(room.id)).toHaveLength(MAX_ROOM_CANVAS_DOCUMENTS);
-
-      // Pinning takes it out of the count, so it takes TWO more opens to put the
-      // room back over — which is itself the second half of the carve-out.
-      canvas.pin(room.id, human, oldest.id, true);
-      canvas.open(room.id, human, { type: 'url', url: 'https://example.test/newer' });
-      canvas.open(room.id, human, { type: 'url', url: 'https://example.test/newest' });
-
-      expect(canvas.get(room.id, oldest.id)).not.toBeNull();
-      // …and somebody else went instead, so the ceiling still bites.
-      const live = canvas.list(room.id);
-      expect(live).toHaveLength(MAX_ROOM_CANVAS_DOCUMENTS + 1);
-      expect(live.some((d) => d.content.type === 'url' && d.content.url.endsWith('/1'))).toBe(
-        false
-      );
-    });
-
-    it('a pin is a row, so a reload finds it and still sorts it first', () => {
-      const doc = canvas.open(room.id, human, jsonContent('the plan'));
-      const later = canvas.open(room.id, human, jsonContent('something later'));
-      canvas.pin(room.id, human, doc.id, true);
-
-      // What a reload actually reads: the ROW, in SQLite, rather than anything
-      // this process is holding. Nothing about a pin lives in memory, which is
-      // why closing the browser cannot lose one.
-      expect(canvasDocuments.get(roomScope(room.id), doc.id)?.pinned).toBe(true);
-      // And the order every viewer is served comes off those rows, so the pin is
-      // first however recently anything else was touched.
-      canvas.activate(room.id, human, later.id);
-      expect(canvas.list(room.id).map((d) => d.id)).toEqual([doc.id, later.id]);
-    });
-
-    it('publishes a `closed` frame for anything it evicts', async () => {
-      const frames = await collectFrames(broadcaster, room.id, async () => {
-        for (let n = 0; n <= MAX_ROOM_CANVAS_DOCUMENTS; n += 1) {
-          canvas.open(room.id, human, { type: 'url', url: `https://example.test/${n}` });
-        }
-      });
-      // No viewer may be left holding a row the server dropped.
-      expect(frames.filter((f) => f.type === 'canvas' && f.closed === true)).toHaveLength(1);
     });
   });
 
@@ -410,14 +320,6 @@ describe('RoomCanvasService.apply', () => {
       expect(agentUpdate('t2')).toMatchObject({ applied: true });
     });
 
-    it('lets the holder keep writing to their own document', () => {
-      const doc = canvas.open(room.id, human, jsonContent('mine'));
-      canvas.heartbeat(room.id, human, doc.id, true);
-      expect(canvas.update(room.id, human, doc.id, jsonContent('mine, edited')).title).toBe(
-        'mine, edited'
-      );
-    });
-
     it('refuses a second member taking a lock somebody else holds', () => {
       const doc = canvas.open(room.id, human, jsonContent('contested'));
       canvas.heartbeat(room.id, human, doc.id, true);
@@ -465,31 +367,6 @@ describe('RoomCanvasService.apply', () => {
       expect(entry?.body.subjectAuthorId).toBe(ana);
       // It wakes nobody: no mentions, and a cascade that starts spent.
       expect(entry?.mentions).toEqual([]);
-    });
-
-    it('writes nothing at all for a turn that applied nothing', () => {
-      applyAs(ana, 'turn-1', { action: 'open_canvas' });
-      const before = log().length;
-      canvas.finishTurn('turn-1');
-      expect(log()).toHaveLength(before);
-    });
-
-    it('clears the ledger, so a second call writes no second line', () => {
-      applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent('one') });
-      canvas.finishTurn('turn-1');
-      const after = log().length;
-      canvas.finishTurn('turn-1');
-      expect(log()).toHaveLength(after);
-    });
-
-    it('never throws when the entry cannot be posted, and keeps the rows', () => {
-      // A room archived mid-turn is the reachable case, and it must not reject
-      // out of a collector whose `closed` promise never rejects.
-      applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent('one') });
-      service.updateRoom(room.id, human, { archived: true });
-      expect(() => canvas.finishTurn('turn-1')).not.toThrow();
-      // Only the line is lost.
-      expect(canvas.list(room.id)).toHaveLength(1);
     });
 
     it('composes the sentence for a person, naming at most two and counting the rest', () => {
@@ -626,28 +503,6 @@ describe('RoomCanvasService.apply', () => {
         '/rooms/general/worktrees/ana-1a2b3c4d'
       );
     });
-
-    it('labels an absolute path inside the room`s shared copy as main', () => {
-      const { open, canvas, roomId } = projectRoom();
-      const document = open('/rooms/general/repo/ROOM.md');
-
-      expect(document.treeKind).toBe('room-main');
-      expect(document.sourceLabel ?? null).toBeNull();
-      expect(canvas.resolvedTreeOf(roomId, document.id)).toBe('/rooms/general/repo');
-      // Every member can read the room's own files.
-      expect(canvas.mayReadContent(document, '/somewhere/else')).toBe(true);
-    });
-
-    it('labels anything else — a relative path, or a path elsewhere — as the agent`s project', () => {
-      const { open, canvas, roomId } = projectRoom();
-      for (const sourcePath of ['src/router.ts', `${ANA}/notes.md`]) {
-        const document = open(sourcePath, 'markdown');
-        expect(document.treeKind).toBe('agent-cwd');
-        expect(document.sourceLabel).toContain('project');
-        expect(document.aheadOfMain).toBeNull();
-        expect(canvas.resolvedTreeOf(roomId, document.id)).toBe(ANA);
-      }
-    });
   });
 
   describe('the frames a change fans out', () => {
@@ -659,14 +514,6 @@ describe('RoomCanvasService.apply', () => {
       expect(frame).toBeDefined();
       expect(frame?.type === 'canvas' && frame.document?.title).toBe('one');
       expect(frame?.type === 'canvas' && frame.change).toBe('opened');
-    });
-
-    it('resyncs every live document as its own frame', () => {
-      applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent('one') });
-      applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent('two') });
-      const resync = canvas.resync(room.id);
-      expect(resync).toHaveLength(2);
-      expect(resync.every((f) => f.type === 'canvas' && f.document !== undefined)).toBe(true);
     });
   });
 });

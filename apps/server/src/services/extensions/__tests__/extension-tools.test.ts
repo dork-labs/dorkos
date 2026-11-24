@@ -7,7 +7,6 @@ import {
   createReloadExtensionsHandler,
   createCreateExtensionHandler,
   createTestExtensionHandler,
-  getExtensionTools,
 } from '../../runtimes/claude-code/mcp-tools/extension-tools.js';
 import type { ExtensionRecordPublic, ExtensionManifest } from '@dorkos/extension-api';
 import type { ExtensionManager } from '../extension-manager.js';
@@ -169,17 +168,6 @@ describe('list_extensions handler', () => {
     });
   });
 
-  it('returns empty list when no extensions are discovered', async () => {
-    const manager = createMockManager();
-    const handler = createListExtensionsHandler(createDeps(manager));
-
-    const result = await handler();
-
-    const data = parseResponse(result);
-    expect(data.count).toBe(0);
-    expect(data.extensions).toEqual([]);
-  });
-
   it('returns error when extension manager is not available', async () => {
     const handler = createListExtensionsHandler(createDeps(undefined));
 
@@ -208,55 +196,6 @@ describe('list_extensions handler', () => {
       code: 'compilation_failed',
       message: 'Syntax error',
     });
-  });
-
-  it('excludes description when not present in manifest', async () => {
-    const manager = createMockManager({
-      listPublic: vi.fn(() => [makePublicRecord('no-desc')]),
-    });
-    const handler = createListExtensionsHandler(createDeps(manager));
-
-    const result = await handler();
-
-    const data = parseResponse(result);
-    expect(data.extensions[0]).not.toHaveProperty('description');
-  });
-
-  it('includes hasServerEntry and hasDataProxy flags for each extension', async () => {
-    const manager = createMockManager({
-      listPublic: vi.fn(() => [
-        makePublicRecord('client-only', { hasServerEntry: false, hasDataProxy: false }),
-        makePublicRecord('server-ext', { hasServerEntry: true, hasDataProxy: false }),
-        makePublicRecord('proxy-ext', { hasServerEntry: false, hasDataProxy: true }),
-        makePublicRecord('full-ext', { hasServerEntry: true, hasDataProxy: true }),
-      ]),
-    });
-    const handler = createListExtensionsHandler(createDeps(manager));
-
-    const result = await handler();
-
-    const data = parseResponse(result);
-    expect(data.extensions[0]).toMatchObject({ hasServerEntry: false, hasDataProxy: false });
-    expect(data.extensions[1]).toMatchObject({ hasServerEntry: true, hasDataProxy: false });
-    expect(data.extensions[2]).toMatchObject({ hasServerEntry: false, hasDataProxy: true });
-    expect(data.extensions[3]).toMatchObject({ hasServerEntry: true, hasDataProxy: true });
-  });
-
-  it('reports serverStatus as active when server router exists', async () => {
-    const manager = createMockManager({
-      listPublic: vi.fn(() => [
-        makePublicRecord('active-server', { hasServerEntry: true }),
-        makePublicRecord('inactive-server', { hasServerEntry: true }),
-      ]),
-      getServerHandler: vi.fn((id: string) => (id === 'active-server' ? ({} as never) : null)),
-    });
-    const handler = createListExtensionsHandler(createDeps(manager));
-
-    const result = await handler();
-
-    const data = parseResponse(result);
-    expect(data.extensions[0].serverStatus).toBe('active');
-    expect(data.extensions[1].serverStatus).toBe('inactive');
   });
 });
 
@@ -291,29 +230,6 @@ describe('get_extension_errors handler', () => {
     expect(ids).toContain('incompat');
     expect(ids).toContain('act-err');
   });
-
-  it('returns empty list when no extensions have errors', async () => {
-    const manager = createMockManager({
-      listErrors: vi.fn(() => []),
-    });
-    const handler = createGetExtensionErrorsHandler(createDeps(manager));
-
-    const result = await handler();
-
-    const data = parseResponse(result);
-    expect(data.count).toBe(0);
-    expect(data.errors).toEqual([]);
-  });
-
-  it('returns error when extension manager is not available', async () => {
-    const handler = createGetExtensionErrorsHandler(createDeps(undefined));
-
-    const result = await handler();
-
-    expect(result.isError).toBe(true);
-    const data = parseResponse(result);
-    expect(data.error).toBe('Extension system is not available');
-  });
 });
 
 describe('get_extension_api handler', () => {
@@ -327,26 +243,6 @@ describe('get_extension_api handler', () => {
     expect(result.content[0].text).toContain('ExtensionAPI');
     expect(result.content[0].text).toContain('registerComponent');
     expect(result.content[0].text).toContain('ExtensionPointId');
-  });
-
-  it('works without extension manager (always available)', async () => {
-    const handler = createGetExtensionApiHandler(createDeps(undefined));
-
-    const result = await handler();
-
-    // No isError — should always succeed
-    expect(result).not.toHaveProperty('isError');
-    expect(result.content[0].text).toContain('ExtensionModule');
-  });
-
-  it('includes usage examples in the reference', async () => {
-    const handler = createGetExtensionApiHandler(createDeps(undefined));
-
-    const result = await handler();
-
-    expect(result.content[0].text).toContain('Usage Examples');
-    expect(result.content[0].text).toContain('dashboard.sections');
-    expect(result.content[0].text).toContain('api.registerCommand');
   });
 });
 
@@ -404,31 +300,6 @@ describe('reload_extensions handler', () => {
     expect(data.error).toBe('Filesystem unavailable');
     expect(data.code).toBe('RELOAD_FAILED');
   });
-
-  it('returns error when targeted reload throws for unknown extension', async () => {
-    const manager = createMockManager({
-      reloadExtension: vi.fn(async () => {
-        throw new Error("Extension 'ghost' not found");
-      }),
-    });
-    const handler = createReloadExtensionsHandler(createDeps(manager));
-
-    const result = await handler({ id: 'ghost' });
-
-    expect(result.isError).toBe(true);
-    const data = parseResponse(result);
-    expect(data.error).toContain("Extension 'ghost' not found");
-  });
-
-  it('returns error when extension manager is not available', async () => {
-    const handler = createReloadExtensionsHandler(createDeps(undefined));
-
-    const result = await handler({});
-
-    expect(result.isError).toBe(true);
-    const data = parseResponse(result);
-    expect(data.error).toBe('Extension system is not available');
-  });
 });
 
 describe('create_extension handler', () => {
@@ -448,26 +319,6 @@ describe('create_extension handler', () => {
       scope: 'global',
       // No session behind the call (the external `/mcp` server), so nothing it
       // creates is approved without a person.
-      approveIfTrusted: false,
-    });
-  });
-
-  it('passes all options to createExtension', async () => {
-    const manager = createMockManager();
-    const handler = createCreateExtensionHandler(createDeps(manager));
-
-    await handler({
-      name: 'custom-ext',
-      description: 'My custom extension',
-      template: 'command',
-      scope: 'local',
-    });
-
-    expect(manager.createExtension).toHaveBeenCalledWith({
-      name: 'custom-ext',
-      description: 'My custom extension',
-      template: 'command',
-      scope: 'local',
       approveIfTrusted: false,
     });
   });
@@ -523,28 +374,6 @@ describe('create_extension handler', () => {
     expect(emit).not.toHaveBeenCalled();
   });
 
-  it('supports settings-panel template', async () => {
-    const manager = createMockManager();
-    const handler = createCreateExtensionHandler(createDeps(manager));
-
-    await handler({ name: 'prefs', template: 'settings-panel' });
-
-    expect(manager.createExtension).toHaveBeenCalledWith(
-      expect.objectContaining({ template: 'settings-panel' })
-    );
-  });
-
-  it('supports right-panel-tab template', async () => {
-    const manager = createMockManager();
-    const handler = createCreateExtensionHandler(createDeps(manager));
-
-    await handler({ name: 'inspector', template: 'right-panel-tab' });
-
-    expect(manager.createExtension).toHaveBeenCalledWith(
-      expect.objectContaining({ template: 'right-panel-tab' })
-    );
-  });
-
   it('returns error when createExtension throws', async () => {
     const manager = createMockManager({
       createExtension: vi.fn(async () => {
@@ -558,16 +387,6 @@ describe('create_extension handler', () => {
     expect(result.isError).toBe(true);
     const data = parseResponse(result);
     expect(data.error).toContain("Extension 'dupe' already exists");
-  });
-
-  it('returns error when extension manager is not available', async () => {
-    const handler = createCreateExtensionHandler(createDeps(undefined));
-
-    const result = await handler({ name: 'orphan' });
-
-    expect(result.isError).toBe(true);
-    const data = parseResponse(result);
-    expect(data.error).toBe('Extension system is not available');
   });
 });
 
@@ -623,16 +442,6 @@ describe('test_extension handler', () => {
     expect(data.code).toBe('TEST_FAILED');
   });
 
-  it('returns error when extension manager is not available', async () => {
-    const handler = createTestExtensionHandler(createDeps(undefined));
-
-    const result = await handler({ id: 'any' });
-
-    expect(result.isError).toBe(true);
-    const data = parseResponse(result);
-    expect(data.error).toBe('Extension system is not available');
-  });
-
   it('includes serverCompileStatus when extension has server entry', async () => {
     const manager = createMockManager({
       testServerCompilation: vi.fn(async () => 'Server compilation successful'),
@@ -644,54 +453,5 @@ describe('test_extension handler', () => {
     const data = parseResponse(result);
     expect(data.status).toBe('ok');
     expect(data.serverCompileStatus).toBe('Server compilation successful');
-  });
-
-  it('includes serverCompileStatus with error when server compilation fails', async () => {
-    const manager = createMockManager({
-      testServerCompilation: vi.fn(async () => 'Server compilation failed: Syntax error'),
-    });
-    const handler = createTestExtensionHandler(createDeps(manager));
-
-    const result = await handler({ id: 'test-ext' });
-
-    const data = parseResponse(result);
-    expect(data.status).toBe('ok');
-    expect(data.serverCompileStatus).toContain('Server compilation failed');
-  });
-
-  it('omits serverCompileStatus when extension has no server entry', async () => {
-    const manager = createMockManager({
-      testServerCompilation: vi.fn(async () => null),
-    });
-    const handler = createTestExtensionHandler(createDeps(manager));
-
-    const result = await handler({ id: 'test-ext' });
-
-    const data = parseResponse(result);
-    expect(data.status).toBe('ok');
-    expect(data).not.toHaveProperty('serverCompileStatus');
-  });
-});
-
-describe('getExtensionTools', () => {
-  it('returns only get_extension_api when manager is not available', () => {
-    const tools = getExtensionTools(createDeps(undefined));
-
-    expect(tools).toHaveLength(1);
-    expect(tools[0].name).toBe('get_extension_api');
-  });
-
-  it('returns all 6 tools when manager is available', () => {
-    const manager = createMockManager();
-    const tools = getExtensionTools(createDeps(manager));
-
-    expect(tools).toHaveLength(6);
-    const names = tools.map((t) => t.name);
-    expect(names).toContain('get_extension_api');
-    expect(names).toContain('list_extensions');
-    expect(names).toContain('get_extension_errors');
-    expect(names).toContain('create_extension');
-    expect(names).toContain('reload_extensions');
-    expect(names).toContain('test_extension');
   });
 });

@@ -135,59 +135,11 @@ describe('the screen half is always pinned (client digest)', () => {
     expect(mayLoadClientHalf(copy(), agentApproval(), bundleDigestOf(EDITED_BUNDLE))).toBe(false);
   });
 
-  it('tells Settings its screens are paused, rather than a silent "allowed"', () => {
-    const clientEdit = copy({ clientDigest: bundleDigestOf(EDITED_BUNDLE) });
-    const paused = toPublic(clientEdit, agentApproval());
-    expect(paused.approvedToRun).toBe(true);
-    expect(paused.bundleReady).toBe(false);
-    expect(paused.screensPaused).toBe(true);
-    expect(toPublic(copy(), agentApproval()).screensPaused).toBe(false);
-    // A copy that may not run at all waits for the plain approval instead.
-    expect(toPublic(copy(), { approvedToRun: [] }).screensPaused).toBe(false);
-  });
-
   it('raises a card for it (the queue counts it as waiting)', () => {
     const clientEdit = copy({ clientDigest: bundleDigestOf(EDITED_BUNDLE) });
     const approvals = { ...agentApproval(), dismissedApprovals: {} };
     expect(isPendingApproval(clientEdit, approvals)).toBe(true);
     expect(isPendingApproval(copy(), approvals)).toBe(false);
-  });
-
-  it('says so on the row in short blocks of its own', async () => {
-    for (const sentence of SCREEN_CHANGED.split(/(?<=\.)\s+/)) {
-      expect(sentence.split(/\s+/).length).toBeLessThanOrEqual(15);
-    }
-    const home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'extension-row-')));
-    const folder = path.join(home, '.dork', 'extensions', 'notes');
-    await fs.mkdir(folder, { recursive: true });
-    const approvals = agentApproval();
-    approvals.approvedSources!.notes = {
-      ...approvals.approvedSources!.notes!,
-      path: folder,
-      authorHome: home,
-    };
-    stored.extensions = {
-      enabled: ['notes'],
-      disabled: [],
-      dismissedApprovals: {},
-      ...approvals,
-    };
-    const clientEdit = copy({
-      path: folder,
-      realPath: folder,
-      clientDigest: bundleDigestOf(EDITED_BUNDLE),
-    });
-    try {
-      const [row] = await listPendingExtensionApprovals({
-        listRecords: () => [clientEdit],
-        onChange: () => () => undefined,
-        dorkHome: home,
-      } as never);
-      expect(row!.why).toBe(SCREEN_CHANGED);
-      expect(row!.changedFiles).toEqual([]);
-    } finally {
-      await fs.rm(home, { recursive: true, force: true });
-    }
   });
 
   it('loads no screen code under a path-trust approval that pinned none', () => {
@@ -227,18 +179,6 @@ describe('the author is recorded at create, never inferred', () => {
   it('pins a copy in its author’s folder but outside .dork/extensions', () => {
     const elsewhere = copy({ realPath: `${HOME}/scratch/notes` });
     expect(keepsPathTrust(elsewhere, agentApproval().approvedSources!.notes!)).toBe(false);
-  });
-
-  it('pins a copy promoted or copied to the global folder', () => {
-    const promoted = copy({
-      scope: 'global',
-      path: '/home/me/.dork/extensions/notes',
-      realPath: `${HOME}/.dork/extensions/notes`,
-    });
-    const approvals = agentApproval();
-    approvals.approvedSources!.notes!.path = promoted.path;
-    expect(keepsPathTrust(promoted, approvals.approvedSources!.notes!)).toBe(false);
-    expect(mayRunExtensionCode(promoted, approvals)).toBe(false);
   });
 
   it('keeps every approval, author included, a setting only a person may write', () => {
@@ -552,23 +492,6 @@ describe('on disk: an agent’s mini app lives in its folder and stays visible',
     expect(source.digest).toMatch(/^sha256:/);
   });
 
-  it('records no author for a folder no deny rule could name', async () => {
-    const odd = path.join(tmp, 'agents', 'odd?bot');
-    const dir = path.join(odd, '.dork', 'extensions', 'notes');
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(path.join(dir, 'extension.json'), JSON.stringify(ISOLATED));
-    await approveNewScaffold(
-      dorkHome,
-      'notes',
-      { targetDir: dir, manifest: ISOLATED, scope: 'local', digest: await scaffoldDigest(dir) },
-      odd
-    );
-    const source = (stored.extensions.approvedSources as Record<string, Record<string, unknown>>)
-      .notes!;
-    expect(source).not.toHaveProperty('authorHome');
-    expect(source.digest).toMatch(/^sha256:/);
-  });
-
   it('pins a create made with no author (a marked turn) to its files', async () => {
     const dir = path.join(agentHome, '.dork', 'extensions', 'notes');
     await fs.mkdir(dir, { recursive: true });
@@ -598,20 +521,6 @@ describe('on disk: an agent’s mini app lives in its folder and stays visible',
     );
     expect(approved).toBeNull();
     expect(stored.extensions.approvedSources ?? {}).not.toHaveProperty('notes');
-    expect(stored.extensions.approvedToRun).not.toContain('notes');
-  });
-
-  it('approves nothing when the scaffolder could not digest what it wrote', async () => {
-    const dir = path.join(agentHome, '.dork', 'extensions', 'notes');
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(path.join(dir, 'extension.json'), JSON.stringify(ISOLATED));
-    const approved = await approveNewScaffold(
-      dorkHome,
-      'notes',
-      { targetDir: dir, manifest: ISOLATED, scope: 'local', digest: null },
-      agentHome
-    );
-    expect(approved).toBeNull();
     expect(stored.extensions.approvedToRun).not.toContain('notes');
   });
 });

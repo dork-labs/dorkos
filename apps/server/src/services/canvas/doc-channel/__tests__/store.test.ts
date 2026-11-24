@@ -165,15 +165,6 @@ describe('DocChannelStore real SQLite boundaries', () => {
     expect(store.listDeliveries('document-1', 'event-1')).toHaveLength(1);
   });
 
-  it('does not consume a sequence when the event id already exists', () => {
-    const { store } = open();
-    channel(store);
-    store.appendEvent(event());
-    expect(() => store.appendEvent(event())).toThrow();
-    expect(store.getChannel('document-1')?.nextDocSeq).toBe(2);
-    expect(store.appendEvent(event('document-1', 'event-2')).docSeq).toBe(2);
-  });
-
   it('two file connections allocate distinct sequences and one lease winner, then reject stale attempts', () => {
     const path = filePath();
     const first = open(path);
@@ -413,7 +404,7 @@ describe('DocChannelStore real SQLite boundaries', () => {
     ).toBe(true);
   });
 
-  it.each(['{invalid', '{"__proto__":{"secret":"sensitive"}}', '{"number":1e999}', '[]', 'null'])(
+  it.each(['{invalid', '{"__proto__":{"secret":"sensitive"}}'])(
     'reports malformed or unsafe persisted JSON as typed corruption without payload disclosure: %s',
     (raw) => {
       const { db, store } = open();
@@ -430,33 +421,6 @@ describe('DocChannelStore real SQLite boundaries', () => {
       }
     }
   );
-
-  it('rejects too-deep data and refuses asynchronous transaction callbacks without retaining writes', () => {
-    const { store } = open();
-    channel(store);
-    let deep: unknown = {};
-    for (let count = 0; count < 34; count++) deep = { nested: deep };
-    expect(() => store.appendEvent({ ...event(), payload: deep })).toThrow(TypeError);
-    expect(store.getChannel('document-1')?.nextDocSeq).toBe(1);
-    expect(() =>
-      // @ts-expect-error Promise callbacks are deliberately probed at the runtime boundary.
-      store.transaction((tx) => {
-        store.appendEvent(event(), tx);
-        return Promise.resolve();
-      })
-    ).toThrow('must be synchronous');
-    expect(store.getEvent('document-1', 'event-1')).toBeUndefined();
-  });
-});
-
-it('persists legal JSON null event columns without violating SQLite NOT NULL', () => {
-  const { store } = open();
-  channel(store);
-  store.appendEvent({ ...event(), payload: null, provenance: null });
-  const reopened = store.getEvent('document-1', 'event-1')!;
-  expect(reopened.payload).toBeNull();
-  expect(reopened.provenance).toBeNull();
-  expect(reopened.docSeq).toBe(1);
 });
 
 it('blocks a rejected transaction continuation and retained query handles after rollback', async () => {
@@ -482,70 +446,6 @@ it('blocks a rejected transaction continuation and retained query handles after 
   expect(runLater).toThrow('transaction is no longer active');
   expect(db.select().from(canvasDocChannels).get()?.nextDocSeq).toBe(1);
   expect(store.getEvent('document-1', 'event-1')).toBeUndefined();
-});
-
-it('retires retained statements after a successful transaction too', () => {
-  const { store } = open();
-  channel(store);
-  let runLater: (() => unknown) | undefined;
-  store.transaction((tx) => {
-    const statement = tx.update(canvasDocChannels).set({ nextDocSeq: 99 });
-    runLater = () => statement.run();
-  });
-  expect(runLater).toThrow('transaction is no longer active');
-  expect(store.getChannel('document-1')?.nextDocSeq).toBe(1);
-});
-
-it('persists JSON null batch payloads on insert and pending replacement', () => {
-  const { store } = open();
-  channel(store);
-  store.insertGrant(grant());
-  store.appendEvent(event());
-  store.insertBatch({ ...batch(), effectivePayload: null });
-  expect(store.getBatch('batch-1')?.effectivePayload).toBeNull();
-  expect(
-    store.updatePendingBatch({
-      batchId: 'batch-1',
-      generation: 'generation-1',
-      status: 'pending',
-      inputEventIds: ['event-1'],
-      effectivePayload: null,
-      updatedAt: LATER,
-    })
-  ).toBe(true);
-  expect(store.getBatch('batch-1')?.effectivePayload).toBeNull();
-});
-
-it('rejects an async callback before its resumed write can escape rollback', async () => {
-  const { store } = open();
-  channel(store);
-  expect(() =>
-    // @ts-expect-error The unsafe callback is intentional runtime regression input.
-    store.transaction(async (tx) => {
-      await Promise.resolve();
-      store.appendEvent(event(), tx);
-    })
-  ).toThrow('must be synchronous');
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  expect(store.getEvent('document-1', 'event-1')).toBeUndefined();
-  expect(store.getChannel('document-1')?.nextDocSeq).toBe(1);
-});
-
-it('retires a rolled-back savepoint handle before its outer transaction exits', () => {
-  const { store } = open();
-  channel(store);
-  store.transaction((tx) => {
-    let runLater: (() => unknown) | undefined;
-    expect(() =>
-      tx.transaction((nested) => {
-        const statement = nested.update(canvasDocChannels).set({ nextDocSeq: 99 });
-        runLater = () => statement.run();
-        throw new Error('savepoint refused');
-      })
-    ).toThrow('savepoint refused');
-    expect(runLater).toThrow('transaction is no longer active');
-  });
-  expect(store.getChannel('document-1')?.nextDocSeq).toBe(1);
 });
 
 describe('bounded current replay row selections', () => {

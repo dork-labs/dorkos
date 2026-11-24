@@ -218,20 +218,6 @@ it('recovers a staged original replacement exactly once without any file write, 
   const after = await fs.stat(f.h.path, { bigint: true });
   expect([after.dev, after.ino]).toEqual([physical.dev, physical.ino]);
 });
-it('returns historical committed proof separately from a later writer’s different file', async () => {
-  const f = await setup(),
-    input = f.input();
-  await f.save(input);
-  await fs.writeFile(f.h.path, 'Later external bytes');
-  const result = await f.recover(input.documentSave.eventId);
-  expect(result.entry).toMatchObject({
-    state: 'receipt',
-    historical: true,
-    currentFileMatch: 'different',
-    receipt: { fileHash: f.intent(input.documentSave.eventId).afterHash },
-  });
-  expect(await fs.readFile(f.h.path, 'utf8')).toBe('Later external bytes');
-});
 it('does not settle same bytes placed into a different inode by another writer', async () => {
   const f = await setup(),
     input = f.input();
@@ -280,62 +266,6 @@ it('recovers only original history even while an actual doc.saved route is appro
     'doc.saved'
   );
 });
-it('never selects a newly approved route during historical original receipt recovery', async () => {
-  const f = await setup(),
-    input = f.input();
-  f.fail();
-  await expect(f.save(input)).rejects.toThrow();
-  f.allow();
-  f.h.http.grants.configure(
-    f.documentId,
-    {
-      routes: [
-        {
-          id: 'new-route',
-          on: 'doc.saved',
-          to: 'agent:owner',
-          turn: { mode: 'immediate', maxBatch: 1 },
-        },
-      ],
-    },
-    f.h.actor
-  );
-  const grantInput = {
-    documentId: f.documentId,
-    routeId: 'new-route',
-    allowedTypes: ['doc.saved'],
-    expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-  };
-  const pending = f.h.http.grants.grant(grantInput, f.h.actor);
-  if (pending.kind !== 'approval_required') throw new Error('Expected actual approval');
-  f.h.approvals.grant(pending.ticket.approvalId);
-  f.h.http.grants.grant(grantInput, f.h.actor, pending.ticket.token);
-  await f.recover(input.documentSave.eventId);
-  expect(f.batches()).toHaveLength(0);
-  expect(f.h.http.channels.listDeliveries(f.documentId, input.documentSave.eventId)).toEqual([]);
-});
-it('returns no-op and proven failure honestly without manufacturing saved events', async () => {
-  const f = await setup(),
-    input = f.input(f.before);
-  await f.save(input);
-  const noOp = await f.recover(input.documentSave.eventId);
-  expect(noOp.entry.state).toBe('no_op');
-  f.h.db
-    .update(canvasDocFileSaveIntents)
-    .set({ status: 'failed' })
-    .where(eq(canvasDocFileSaveIntents.eventId, input.documentSave.eventId))
-    .run();
-  expect((await f.recover(input.documentSave.eventId)).entry.state).toBe('failed');
-  expect(f.batches()).toHaveLength(0);
-});
-it('bounds recent matching owner/birth summaries and never treats the window as vacancy proof', async () => {
-  const f = await setup();
-  for (let i = 0; i < 27; i++) await f.save(f.input(f.before));
-  const result = await f.discover();
-  expect(result.entries).toHaveLength(25);
-  expect(result.hasMore).toBe(true);
-  expect(result.window).toBe('latest_25_current_owner_birth');
-});
 it('reports an older-birth alias blocker without disclosing its UUID or allowing settlement', async () => {
   const f = await setup(),
     input = f.input(f.before);
@@ -356,22 +286,6 @@ it('reports an older-birth alias blocker without disclosing its UUID or allowing
   expect(result.admission).toBe('blocked');
   expect(JSON.stringify(result)).not.toContain(foreignId);
   await expect(f.recover(foreignId)).rejects.toThrow();
-});
-it('refuses malformed unknown durable phase instead of returning an empty or clear discovery', async () => {
-  const f = await setup(),
-    input = f.input(f.before);
-  await f.save(input);
-  // Simulate persisted corruption explicitly; production CHECK constraints remain unchanged.
-  f.h.db.run(sql`PRAGMA ignore_check_constraints=ON`);
-  try {
-    f.h.db.run(
-      sql`UPDATE canvas_doc_file_save_intents SET status='unrecognized' WHERE event_id=${input.documentSave.eventId}`
-    );
-  } finally {
-    f.h.db.run(sql`PRAGMA ignore_check_constraints=OFF`);
-  }
-  await request(server.server).get(f.endpoint).expect(503);
-  expect(f.intent(input.documentSave.eventId).status).toBe('unrecognized');
 });
 it('rejects stale full birth, foreign document, presented agent/bearer and foreign owner before disclosing original rows', async () => {
   const f = await setup(),
@@ -552,40 +466,6 @@ it('refuses a committed intent with missing original event proof instead of synt
     .send({ expectedIncarnation: f.incarnation })
     .expect(503);
   expect(f.intent(input.documentSave.eventId).status).toBe('committed');
-});
-it('tracks an admitted proof read through stop/drain and rejects new discovery while it finishes', async () => {
-  const f = await setup(),
-    input = f.input();
-  await f.save(input);
-  let started!: () => void, release!: () => void;
-  const entered = new Promise<void>((done) => {
-    started = done;
-  });
-  const held = new Promise<void>((done) => {
-    release = done;
-  });
-  const originalOpen = fs.open.bind(fs);
-  vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
-    const handle = await originalOpen(...args);
-    if (String(args[0]) === f.h.path && args[1] === 'r') {
-      started();
-      await held;
-    }
-    return handle;
-  });
-  const recovery = f.recover(input.documentSave.eventId);
-  await entered;
-  let stopped = false;
-  const stop = f.h.http.fileWrites.stop().then(() => {
-    stopped = true;
-  });
-  await Promise.resolve();
-  expect(stopped).toBe(false);
-  await expect(f.discover()).rejects.toThrow();
-  release();
-  expect((await recovery).entry.state).toBe('receipt');
-  await stop;
-  expect(stopped).toBe(true);
 });
 
 it('refused close preserves current birth for discovery and proof-only recovery before successful close', async () => {

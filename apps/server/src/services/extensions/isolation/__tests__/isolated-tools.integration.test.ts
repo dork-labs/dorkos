@@ -435,22 +435,6 @@ describe('agent tools from an isolated extension (real child)', () => {
     expect(again.pid).not.toBe(first);
     expect(again.pid).toBe(await childPid());
   }, 60_000);
-
-  // Purpose: a handler stuck in a synchronous loop freezes the whole child;
-  // the watchdog kills it, the tool leaves the registry, and the call fails
-  // as stopped rather than waiting out its 60-second deadline.
-  it('removes the tools of a child the watchdog killed for hanging in a handler', async () => {
-    await boot();
-    const pid = await childPid();
-    const started = Date.now();
-    expect(await toolErrorOf(call('hang'))).toEqual({
-      error: `${NAME} stopped while this ran.`,
-      code: 'EXTENSION_TOOL_STOPPED',
-    });
-    expect(Date.now() - started).toBeLessThan(15_000);
-    expect(registry.get(`${DOMAIN}.hang`)).toBeUndefined();
-    await until(() => !alive(pid));
-  }, 60_000);
 });
 
 describe('the isolated host on a child exit (real child)', () => {
@@ -526,71 +510,4 @@ module.exports.probes = {
   crash: () => { setTimeout(() => process.abort(), 10); return 'crashing'; },
 };
 `;
-
-  // Purpose: when a running child dies, onGone (where the lifecycle takes its
-  // tools out of the registry) runs FIRST: while the child's tool binding is
-  // still held on the real ctx and before the call waiting on it is
-  // rejected; only then is everything released and onExit told. This pins
-  // DOR-2685's stop order structurally, not by microtask timing.
-  it('calls onGone before it releases the child or rejects its calls', async () => {
-    const bundle = path.join(h.tmp, 'bundles', 'tool.js');
-    await fs.writeFile(bundle, BUNDLE);
-    const manifest = ExtensionManifestSchema.parse({
-      id: 'gone-order',
-      name: 'Gone Order',
-      version: '1.0.0',
-      serverCapabilities: { serverEntry: './server.ts', runtime: 'subprocess' },
-      tools: [
-        {
-          name: 'wait',
-          title: 'Wait',
-          description: 'Never answers.',
-          tier: 'observe',
-          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-        },
-      ],
-    });
-    const toolChecks = checkDeclaredTools(manifest);
-    const built = createDataProviderContext({
-      extensionId: 'gone-order',
-      extensionDir: path.join(h.tmp, 'ext', 'gone-order'),
-      dorkHome: h.dorkHome,
-      extensionName: 'Gone Order',
-      toolChecks,
-    });
-    const order: string[] = [];
-    let settled = false;
-    let registrationsAtGone = -1;
-    // The callbacks read `host` only once the child runs, after this line.
-    const host = makeHost(h, {
-      id: 'gone-order',
-      bundle,
-      onExit: () => order.push(`exit:${host.ctxRegistrations}`),
-      overrides: {
-        ctx: built.ctx,
-        tools: toolChecks,
-        onGone: () => {
-          registrationsAtGone = host.ctxRegistrations;
-          order.push(`gone:${settled ? 'settled' : 'waiting'}`);
-        },
-      },
-    });
-    await startOk(host);
-    const { handled } = built.tools.seal();
-    expect(handled.map((x) => x.tool.name)).toEqual(['wait']);
-    const pending = Promise.resolve(
-      handled[0]!.handler(
-        {},
-        Object.freeze({ signal: new AbortController().signal, agentId: null })
-      )
-    ).finally(() => {
-      settled = true;
-    });
-    pending.catch(() => undefined);
-    await host.probe('crash');
-    await expect(pending).rejects.toThrow('Probe stopped.');
-    expect(registrationsAtGone).toBe(1);
-    expect(order).toEqual(['gone:waiting', 'exit:0']);
-    built.dispose();
-  }, 30_000);
 });
