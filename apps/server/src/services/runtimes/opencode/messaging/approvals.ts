@@ -40,15 +40,18 @@
  *
  * @module services/runtimes/opencode/approvals
  */
-import type { DirectoryGrant, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
-import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
+import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import type { ApprovalEvent, PermissionModeId, StreamEvent } from '@dorkos/shared/types';
 import { logger, logError } from '../../../../lib/logger.js';
 import { logRefusal } from '../../../observability/refusals.js';
 import type { OpenCodePermissionState } from '../events/session-event-mapper.js';
 import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import type { OpenCodeSessionRegistry } from '../sessions/session-registry.js';
+import {
+  effectiveApprovalMode,
+  readOpenCodeTurnMode,
+  type OpenCodeTurnOptions,
+} from './turn-options.js';
 import { resolveGrantVerdict } from './directory-grants.js';
 import { installedPackageReadGrants } from './package-grants.js';
 import { protectedFileVerdict } from './protected-files.js';
@@ -64,6 +67,7 @@ import {
 import { PendingApprovalRegistry } from '../../shared/timing/pending-approval-registry.js';
 
 export type { ApprovalDecision };
+export { effectiveApprovalMode };
 
 /**
  * The only OpenCode permission responses DorkOS ever sends. `always` is
@@ -250,7 +254,10 @@ export class PendingApprovalStore {
  * subagent raises its prompts in its own CHILD session and only that session
  * can take the answer (DOR-1126).
  */
-export interface ApprovalRouting {
+export interface ApprovalRouting extends Pick<
+  OpenCodeTurnOptions,
+  'sendPermissionMode' | 'permissionCeiling'
+> {
   sessionId: string;
   ocSessionId: string;
   cwd: string;
@@ -263,12 +270,6 @@ export interface ApprovalRouting {
   grants?: readonly DirectoryGrant[];
   /** Native file refusals precede grants and Full mode. */
   protectedRoots?: ProtectedPathRoots;
-  /**
-   * The loosest level THIS turn may run at (`MessageOpts.permissionCeiling`).
-   * Applied to the live mode on every ask, so the turn runs at the stricter of
-   * the two and the session's stored mode is never rewritten.
-   */
-  permissionCeiling?: TurnPermissionCeiling;
   /** The turn's own stop: it ends a heavy `bash` ask's wait for the machine's line. */
   signal?: AbortSignal;
 }
@@ -608,7 +609,7 @@ async function* decideApproval(
         );
       }
     }
-    const liveMode = deps.registry.get(sessionId)?.permissionMode;
+    const liveMode = readOpenCodeTurnMode(deps.registry, sessionId, turn.sendPermissionMode);
     const mode = effectiveApprovalMode(liveMode, turn.permissionCeiling);
     if (
       grantVerdict !== 'deny' &&
@@ -664,14 +665,4 @@ async function* decideApproval(
     }
   }
   yield event;
-}
-
-/** The live permission mode bounded by this turn's own ceiling, without changing stored settings. */
-export function effectiveApprovalMode(
-  mode: PermissionModeId | undefined,
-  ceiling?: TurnPermissionCeiling
-): PermissionModeId | undefined {
-  return mode !== undefined && ceiling !== undefined
-    ? clampModeToCeiling(OPENCODE_CAPABILITIES.permissionModes, mode, ceiling)
-    : mode;
 }

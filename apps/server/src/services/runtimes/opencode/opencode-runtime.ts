@@ -115,7 +115,7 @@ import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constan
 import { awaitAbortAck, delay } from './messaging/bounded-abort.js';
 import { sessionDirectoryOf } from './sessions/session-directory.js';
 import { resolveCompactionModel } from './messaging/compaction-model.js';
-import type { OpenCodeTurnOptions } from './messaging/turn-options.js';
+import { readOpenCodeTurnMode, type OpenCodeTurnOptions } from './messaging/turn-options.js';
 import { validatedGrants } from './messaging/directory-grants.js';
 import {
   assertNoProjectPlugins,
@@ -463,9 +463,8 @@ export class OpenCodeRuntime implements AgentRuntime {
         // Held per ask, like the grants: a turn another agent's post or a
         // stranger's message started is answered at no looser a level than its
         // sender's (spec `trusted-by-default-flip` §4). Stored settings stay as they are.
-        ...(opts?.permissionCeiling !== undefined
-          ? { permissionCeiling: opts.permissionCeiling }
-          : {}),
+        permissionCeiling: opts?.permissionCeiling,
+        sendPermissionMode: opts?.permissionMode,
       }
     );
   }
@@ -650,7 +649,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     this.activeTurns.set(sessionId, turn);
     const toolTurn = new OpenCodeToolTurnContext(
       () => this.activeTurns.get(sessionId) === turn && turn.phase === 'running',
-      () => this.registry.get(sessionId)?.permissionMode,
+      () => readOpenCodeTurnMode(this.registry, sessionId, opts?.sendPermissionMode),
       opts?.permissionCeiling,
       controller.signal
     );
