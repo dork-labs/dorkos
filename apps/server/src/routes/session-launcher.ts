@@ -176,16 +176,19 @@ async function forkPlaceRefusal(
  * Why this caller may not touch a message waiting in this chat, or `null` when
  * it may: the same place rule a new message meets, asked of the chat's
  * recorded agent (else its folder's agent) and, when known, its folder
- * (DOR-3644 S1, DOR-5035).
+ * (DOR-3644 S1, DOR-5035). A verified agent's relay message into a chat asks it
+ * too (`relay-chat-place.ts`, DOR-5200).
  *
  * @param facts - The request's facts.
  * @param meshCore - Mesh, which lists the registered homes.
  * @param sessionId - The chat.
+ * @param action - What a refusal is recorded as; a queue change unless said otherwise.
  */
 export async function chatPlaceRefusal(
   facts: RequestFacts,
   meshCore: Pick<MeshCore, 'listWithPaths'> | undefined,
-  sessionId: string
+  sessionId: string,
+  action = 'session.queue'
 ): Promise<LaunchPlaceRefusal | null> {
   const launcher = sessionLauncherOf(facts);
   if (launcher.kind === 'person') return null;
@@ -206,13 +209,7 @@ export async function chatPlaceRefusal(
   const place = { chatAgent, ...(cwd ? { cwd } : {}) };
   const refusal = launchPlaceRefusal(meshCore, launcher, place);
   if (refusal) {
-    auditRefusedLaunch(
-      sessionId,
-      refusal,
-      launchedByOf(meshCore, launcher),
-      place,
-      'session.queue'
-    );
+    auditRefusedLaunch(sessionId, refusal, launchedByOf(meshCore, launcher), place, action);
   }
   return refusal;
 }

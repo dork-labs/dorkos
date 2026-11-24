@@ -27,6 +27,7 @@ import { PERSON_APP_HEADER, PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/
 import { handleAgentMessage } from '../../../../../packages/relay/src/adapters/claude-code/agent-handler.js';
 import { initAuth } from '../../services/core/auth/index.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
+import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { markIngress, type IngressKind } from '../../services/core/remote/ingress-mark.js';
 import { countWhileRunning } from '../../services/core/turn-power/live-outsider-turns.js';
 import { honoRequestFacts } from '../../http/request-facts.js';
@@ -156,6 +157,8 @@ beforeAll(async () => {
   initConfigManager(tmpDir);
   const db = createDb(path.join(tmpDir, 'auth.db'));
   runMigrations(db);
+  // The chat place rule asks the registry whether a subject names a chat it holds (DOR-5200).
+  runtimeRegistry.setDb(db);
   const auth = initAuth(db, tmpDir);
   const signUp = await auth.api.signUpEmail({
     body: { email: 'owner' + '@' + 'dork.test', password: 'a-long-password-1', name: 'Owner' },

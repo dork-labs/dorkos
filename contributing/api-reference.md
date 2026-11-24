@@ -872,14 +872,14 @@ Send a message to a subject pattern.
 }
 ```
 
-The server sets the sender (`routes/relay-message-sender.ts`, DOR-5151). The person's own turn (`sessionLauncherOf`, the chat route's rule) keeps the `from` it names. A verified agent sends from its own registered address, anyone else from `relay.external.http`, and a caller other than the person naming a `relay.human.*` sender is refused, except a verified agent, which is sent from its own address. A message that is not the person's has its turn-shaping payload fields and `responseContext` removed and carries its agent's marks (`launcherTurnCeiling`).
+The server sets the sender (`routes/relay-message-sender.ts`, DOR-5151). The person's own turn (`sessionLauncherOf`, the chat route's rule) keeps the `from` it names. A verified agent sends from its own registered address, anyone else from `relay.external.http`, and a caller other than the person naming a `relay.human.*` sender is refused, except a verified agent, which is sent from its own address. A message that is not the person's has its turn-shaping payload fields and `responseContext` removed and carries its agent's marks (`launcherTurnCeiling`). A verified agent's message to a chat's own address (`relay.agent.<runtime>.<sessionId>`) meets the chat route's place rule (`routes/relay-chat-place.ts`, `chatPlaceRefusal`, DOR-5200) and gets the same `403 DESK_NOT_OWN` answer.
 
 **Responses:**
 
 - `200` - Message sent: `{ messageId: string, deliveredTo: number }`
 - `400` - Validation error
 - `401` - Login requires a credential, or `person_session_required` for an app window without a session
-- `403` - Reserved sender, destination or reply address, or `person_required` for a person's address from someone else
+- `403` - Reserved sender, destination or reply address, `person_required` for a person's address from someone else, or `DESK_NOT_OWN` for a chat a verified agent may not send into
 
 ### GET /api/relay/messages
 
