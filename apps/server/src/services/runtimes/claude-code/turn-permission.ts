@@ -28,6 +28,7 @@ import {
 import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/schemas';
 import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from './runtime-constants.js';
 import { ownLevelBounds } from '../../core/turn-power/full-autonomy.js';
+import { resolveApprovalDecision } from '../shared/policy/approvals.js';
 
 /**
  * The mode this turn runs at: the session's own mode (or, for a chat that
@@ -345,26 +346,16 @@ export function resolveModeDecision(mode: PermissionModeId): ModeDecision {
   if (!named.success) return 'ask';
   const namedMode = named.data;
   switch (namedMode) {
-    // "Skip all tool approval prompts" — this mode IS consent. The CLI resolves
-    // most calls under it upstream, but not quite all (see the TSDoc above).
+    // The CLI escalated this call after classifying it. Even an edit belongs
+    // to the shared 'other' row at this stage, and only Full allows it.
     case 'bypassPermissions':
-      return 'allow';
-
-    // Every remaining mode asks, each for its own reason:
-    //   `default`     — "Prompt on tool use", exactly as shipped.
-    //   `acceptEdits` — the CLI already auto-accepted in-workspace writes; what
-    //                   reaches here left the working directory.
-    //   `auto`        — research-preview classifier; DorkOS still raises a card.
-    //   `plan`        — read-only planning; the CLI answers writes with "Cannot
-    //                   write to X while in plan mode". Nothing executes here.
     case 'default':
     case 'acceptEdits':
     case 'auto':
     case 'plan':
-      return 'ask';
+      return resolveApprovalDecision(namedMode, 'other') === 'auto-approve' ? 'allow' : 'ask';
 
-    // "Never ask": refuse what any other mode would ask about. Never `ask`
-    // (nobody may be asked) and never `allow` (that would widen it).
+    // Never ask still refuses anything that would need a person's answer.
     case 'dontAsk':
       return 'refuse';
 

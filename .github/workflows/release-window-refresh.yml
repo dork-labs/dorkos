@@ -10,17 +10,22 @@ name: release-window-refresh
 # `release-window` run of each open PR's head when that run failed
 # (`rerun-list`). When the window is closed it does nothing.
 #
-# Triggers: after a release publish finishes, after every push to main, by
-# hand (`gh workflow run release-window-refresh.yml`, right after clearing
-# MERGE_FREEZE), and every 15 minutes as a backstop. GitHub delays scheduled
-# runs by hours at times, so the schedule is only the backstop.
+# Triggers: after a release publish finishes (it then waits up to five
+# minutes for npm to show the version), after every push to main, after a PR's
+# release-window run fails on its first attempt (so a run that read the window
+# just before it opened is re-run at once), by hand (`gh workflow run
+# release-window-refresh.yml`, right after clearing MERGE_FREEZE), and every 15
+# minutes as a backstop. GitHub fired that schedule twice in its first day
+# (ledger 261124-161126), so the events do the work. A re-run is a later
+# attempt and starts nothing here, so the refresh cannot loop on a check that
+# keeps failing.
 #
 # Not a required check. Its only write is re-running workflow runs; it checks
 # out main's copy of its script.
 
 on:
   workflow_run:
-    workflows: [Release Publish]
+    workflows: [Release Publish, release-window]
     types: [completed]
   push:
     branches: [main]
@@ -42,8 +47,15 @@ env:
 
 jobs:
   refresh:
+    # A release-window run wakes it only when a PR's first attempt failed.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.name == 'Release Publish' ||
+      (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.conclusion == 'failure' &&
+       github.event.workflow_run.run_attempt == 1)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
@@ -57,8 +69,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           MERGE_FREEZE: ${{ vars.MERGE_FREEZE }}
+          # npm can lag the publish that just finished by a minute or two.
+          PUBLISHED: ${{ github.event.workflow_run.name == 'Release Publish' && github.event.workflow_run.conclusion == 'success' }}
         run: |
-          if ! bash scripts/release-window-check.sh open; then
+          tries=1
+          [ "$PUBLISHED" = true ] && tries=10
+          open=no
+          for i in $(seq 1 "$tries"); do
+            if bash scripts/release-window-check.sh open; then open=yes; break; fi
+            [ "$i" -lt "$tries" ] && sleep 30
+          done
+          if [ "$open" != yes ]; then
             echo "The window is closed; nothing to re-run."
             exit 0
           fi

@@ -245,9 +245,12 @@ gates:
     purpose: Publishes and attests the immutable Community image and its strict version-to-digest release manifest.
 
   # --- review-redispatch.yml ---
+  - id: wf.review-redispatch.wait
+    source: .github/workflows/review-redispatch.yml
+    purpose: Never gates a merge. After a claude-code-review run fails, sleeps until the retry ladder's next rung for that head has passed (review-redispatch-wait.sh), so the scan that follows can act on it.
   - id: wf.review-redispatch.redispatch
     source: .github/workflows/review-redispatch.yml
-    purpose: Never gates a merge. Every 10 minutes, re-requests a lost automated review (re-review label) on PRs whose review check is red, up to the ladder in should-redispatch-review.sh, so pr-gates is not left waiting (DOR-5124; was merge-tail's second duty).
+    purpose: Never gates a merge. After a failed review (once its rung has passed) and on a 10-minute cron backstop, re-requests a lost automated review (re-review label) on PRs whose review check is red, up to the ladder in should-redispatch-review.sh, so pr-gates is not left waiting (DOR-5124; was merge-tail's second duty).
 
   # --- release-publish.yml ---
   - id: wf.release-publish.prove
@@ -299,11 +302,17 @@ gates:
     purpose: Never gates a merge. Opens a revert PR for the bisected merge through auto-revert.sh's revert path, only while the AUTO_REVERT repo variable is on (DOR-5122).
 
   # --- daily-sweep.yml ---
+  - id: wf.daily-sweep.due
+    source: .github/workflows/daily-sweep.yml
+    purpose: Never gates a merge. Lets the 17:13 UTC cron or the after-push backstop sweep only once today's slot has passed and no run has swept yet (timed-slot.sh).
   - id: wf.daily-sweep.sweep
     source: .github/workflows/daily-sweep.yml
     purpose: Never gates a merge. Once a day, rewrites one issue per release window listing the PRs merged since the last release that the design-ok or qa-real-data rules flag, for QA's and the designer's batch review (DOR-5120).
 
   # --- daily-release.yml ---
+  - id: wf.daily-release.due
+    source: .github/workflows/daily-release.yml
+    purpose: Never gates a merge. Lets the 15:07 UTC cron or the after-push backstop go on only once today's slot has passed and no run has done it yet (timed-slot.sh), so the slot runs once a day even when GitHub drops the cron.
   - id: wf.daily-release.plan
     source: .github/workflows/daily-release.yml
     purpose: Never gates a merge. Once a day (and by hand), reads the release state with daily-release.sh, picks P (newest main commit of 48 h with a green full run that release-gate.sh ships), plans the version with release-commit.ts, and writes what it would do to the step summary (DOR-5123).
@@ -313,6 +322,9 @@ gates:
   - id: wf.daily-release.advance
     source: .github/workflows/daily-release.yml
     purpose: Never gates a merge. Tags a merged release PR and dispatches the native artifact, or dispatches release-publish.yml once that is green, only while DAILY_RELEASE_LIVE is on (DOR-5123).
+  - id: wf.daily-release.slot-done
+    source: .github/workflows/daily-release.yml
+    purpose: Never gates a merge. Uploads the day's timed-slot artifact once a slot run's plan and chosen step finished, so no later cron or backstop run repeats the day's slot.
 
   # --- pr-gates.yml ---
   - id: wf.pr-gates.pr-gates
@@ -337,7 +349,7 @@ gates:
   # --- release-window-refresh.yml ---
   - id: wf.release-window-refresh.refresh
     source: .github/workflows/release-window-refresh.yml
-    purpose: Not a gate; re-runs failed release-window checks on open PRs once no freeze is set and main's VERSION is on npm, since GitHub raises no event for either.
+    purpose: Not a gate; re-runs failed release-window checks on open PRs once no freeze is set and main's VERSION is on npm, since GitHub raises no event for either; runs after every push to main, a release publish, a PR's failed first release-window attempt, and a 15-minute cron backstop.
 
   # --- scripts-test.yml ---
   - id: wf.scripts-test.attest
