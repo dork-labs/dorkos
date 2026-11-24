@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { serve } from '@hono/node-server';
 import { Pool } from 'pg';
 import { createCommunityApp } from '../app.js';
@@ -660,762 +660,868 @@ it.each(['active', 'archived'] as const)(
   }
 );
 
-it('rejects foreign objects on every id-taking community route, even for an owner of both', async () => {
-  const otherId = (
-    await pool.query<{ id: string }>(
-      "SELECT id FROM communities WHERE id<>$1 AND lifecycle='active' ORDER BY id LIMIT 1",
-      [communityId]
-    )
-  ).rows[0].id;
-  const own = `/api/v1/communities/${communityId}`;
-  const other = `/api/v1/communities/${otherId}`;
+// Tenant isolation (spec `community-tenancy-contract`): every community route
+// that takes an object id refuses community B's object at community A's URL
+// exactly as it refuses an id that exists nowhere, even for an owner of both.
+// B's objects are built once; each route is its own case so a red names it.
+// The closing case keeps the title the isolation receipt cites.
 
-  // Community B's objects, each created through B's own URL.
-  const created = await jsonRequest(`${other}/channels`, 'POST', {
-    name: 'Tenant isolation private',
-    visibility: 'private',
-  });
-  expect(created.status).toBe(201);
-  const channel = (await created.json()).channel.id;
-  // A private channel refuses a non-member with the same 404 as a missing one,
-  // so it would hide a missing tenant check. Every channel probe also runs
-  // against this public one, which a non-member of B could otherwise read.
-  // Two routes gain nothing from it: GET /channels/:id/read-cursor and
-  // GET /channels/:id/events answer 404 to any non-member, public or not
-  // (liveChannel in routes/community/events.ts). What keeps them in their tenant is that
-  // membership rows carry tenant foreign keys, so no member of A can ever be a
-  // member of a channel in B.
-  const createdPublic = await jsonRequest(`${other}/channels`, 'POST', {
-    name: 'Tenant isolation public',
-    visibility: 'public',
-  });
-  expect(createdPublic.status).toBe(201);
-  const publicChannel = (await createdPublic.json()).channel.id;
-  const posted = await jsonRequest(`${other}/channels/${channel}/entries`, 'POST', {
-    text: 'Only in the other tenant',
-    idempotencyKey: 'isolation-positive-entry',
-  });
-  expect(posted.status).toBe(201);
-  const entry = (await posted.json()).entry.id;
-  const otherOwner = (
-    await pool.query<{ id: string }>(
-      "SELECT id FROM members WHERE community_id=$1 AND role='owner'",
-      [otherId]
-    )
-  ).rows[0].id;
-  // A non-owner target: owners can never be demoted or become successors, so
-  // probes aimed at the owner would be refused even without a tenant check.
-  await pool.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
-    'isolation-other-member',
-    'Other Member',
-    'other-member@isolation.test',
-  ]);
-  const otherPlainMember = (
-    await pool.query<{ id: string }>(
-      `INSERT INTO members(community_id,user_id,display_name,handle,role)
-       VALUES($1,'isolation-other-member','Other Member','other-member','member') RETURNING id`,
-      [otherId]
-    )
-  ).rows[0].id;
-  // A ready export in B, so its archive and cancel routes answer at B's own URL.
-  await pool.query(
-    "UPDATE export_archives SET expires_at=now()-interval '1 second' WHERE community_id=$1 AND state='ready'",
-    [otherId]
-  );
-  const exportedInOther = await jsonRequest(`${other}/owner/export`, 'POST', { password });
-  expect(exportedInOther.status).toBe(202);
-  const archive = (await exportedInOther.json()).export.id as string;
-  await drainExports(pool, blobStore);
-  const upload = await request(`${other}/channels/${channel}/attachments`, {
-    method: 'POST',
-    headers: {
-      cookie: ownerCookie,
-      origin: 'http://localhost:6481',
+type Ids = {
+  channel: string;
+  entry: string;
+  attachment: string;
+  invite: string;
+  inviteToken: string;
+  member: string;
+  pairing: string;
+  verifier: string;
+  grant: string;
+  agent: string;
+  localAgentId: string;
+  archive: string;
+  admission: string;
+  replacement: string;
+  ban: string;
+  report: string;
+  memberReport: string;
+};
+
+type Caller = 'member' | 'grant' | 'local' | 'anonymous';
+type Probe = {
+  route: string;
+  caller?: Caller;
+  call: (
+    ids: Ids,
+    attempt: string
+  ) => { path: string; body?: unknown; upload?: string; cookie?: string };
+};
+
+/** What the isolation setup built, read by the probes when they run. */
+interface Isolation {
+  own: string;
+  otherId: string;
+  otherOwner: string;
+  ownChannel: string;
+  ownGrantToken: string;
+  ownLifecycleVersion: number;
+  agent: string;
+  foreign: Ids;
+  foreignPublic: Ids;
+  missing: Ids;
+  before: Record<string, unknown>;
+}
+// Empty until the setup runs; the probes only read it when called, and the
+// shape check below never reads a field that would tell two ids apart.
+let iso = {} as Isolation;
+
+// Every community route that takes an object id, in its path or its body.
+const probes: Probe[] = [
+  { route: 'GET /attachments/:id', call: (x) => ({ path: `/attachments/${x.attachment}` }) },
+  {
+    route: 'POST /attachments/:id/link',
+    call: (x) => ({ path: `/attachments/${x.attachment}/link`, body: {} }),
+  },
+  {
+    route: 'DELETE /attachments/:attachmentId',
+    call: (x) => ({ path: `/attachments/${x.attachment}` }),
+  },
+  { route: 'DELETE /entries/:entryId', call: (x) => ({ path: `/entries/${x.entry}` }) },
+  {
+    route: 'POST /channels/:id/attachments',
+    call: (x) => ({ path: `/channels/${x.channel}/attachments`, upload: 'proof' }),
+  },
+  { route: 'GET /channels/:id', call: (x) => ({ path: `/channels/${x.channel}` }) },
+  {
+    route: 'PATCH /channels/:id',
+    call: (x) => ({ path: `/channels/${x.channel}`, body: { name: 'Must not change' } }),
+  },
+  {
+    route: 'POST /channels/:id/join',
+    call: (x) => ({ path: `/channels/${x.channel}/join`, body: {} }),
+  },
+  {
+    route: 'POST /channels/:id/leave',
+    call: (x) => ({ path: `/channels/${x.channel}/leave`, body: {} }),
+  },
+  {
+    route: 'GET /channels/:id/members',
+    call: (x) => ({ path: `/channels/${x.channel}/members` }),
+  },
+  {
+    route: 'POST /channels/:id/members',
+    call: (x) => ({ path: `/channels/${x.channel}/members`, body: { memberId: ownerMemberId } }),
+  },
+  {
+    route: 'POST /channels/:id/members',
+    call: (x) => ({ path: `/channels/${iso.ownChannel}/members`, body: { memberId: x.member } }),
+  },
+  {
+    route: 'DELETE /channels/:id/members/:memberId',
+    call: (x) => ({ path: `/channels/${x.channel}/members/${iso.otherOwner}`, body: {} }),
+  },
+  {
+    route: 'DELETE /channels/:id/members/:memberId',
+    call: (x) => ({ path: `/channels/${iso.ownChannel}/members/${x.member}`, body: {} }),
+  },
+  {
+    route: 'PATCH /members/:id/role',
+    call: (x) => ({ path: `/members/${x.member}/role`, body: { role: 'admin' } }),
+  },
+  { route: 'DELETE /members/:id', call: (x) => ({ path: `/members/${x.member}`, body: {} }) },
+  {
+    route: 'POST /members/:id/ban',
+    call: (x) => ({ path: `/members/${x.member}/ban`, body: {} }),
+  },
+  { route: 'DELETE /bans/:id', call: (x) => ({ path: `/bans/${x.ban}`, body: {} }) },
+  {
+    route: 'POST /members/:id/mute',
+    call: (x) => ({ path: `/members/${x.member}/mute`, body: { minutes: 5 } }),
+  },
+  { route: 'DELETE /members/:id/mute', call: (x) => ({ path: `/members/${x.member}/mute` }) },
+  {
+    route: 'GET /channels/:id/slow-mode',
+    call: (x) => ({ path: `/channels/${x.channel}/slow-mode` }),
+  },
+  {
+    route: 'POST /entries/:id/reports',
+    call: (x) => ({ path: `/entries/${x.entry}/reports`, body: { reason: 'spam' } }),
+  },
+  {
+    route: 'POST /reports/:id/resolve',
+    call: (x) => ({ path: `/reports/${x.report}/resolve`, body: { action: 'dismiss' } }),
+  },
+  {
+    route: 'POST /members/:id/reports',
+    call: (x) => ({ path: `/members/${x.member}/reports`, body: { reason: 'spam' } }),
+  },
+  {
+    route: 'POST /member-reports/:id/resolve',
+    call: (x) => ({
+      path: `/member-reports/${x.memberReport}/resolve`,
+      body: { action: 'dismiss' },
+    }),
+  },
+  {
+    route: 'POST /owner/transfer',
+    call: (x) => ({
+      path: '/owner/transfer',
+      body: { successorMemberId: x.member, password, lifecycleVersion: iso.ownLifecycleVersion },
+    }),
+  },
+  {
+    route: 'POST /channels/:id/entries',
+    call: (x, attempt) => ({
+      path: `/channels/${x.channel}/entries`,
+      body: { text: 'Must not post', idempotencyKey: `isolation-foreign-entry-${attempt}` },
+    }),
+  },
+  {
+    route: 'POST /channels/:id/entries',
+    call: (x, attempt) => ({
+      path: `/channels/${iso.ownChannel}/entries`,
+      body: {
+        text: 'Must not reply across tenants',
+        parentEntryId: x.entry,
+        idempotencyKey: `isolation-foreign-parent-${attempt}`,
+      },
+    }),
+  },
+  {
+    route: 'POST /channels/:id/entries',
+    call: (x, attempt) => ({
+      path: `/channels/${iso.ownChannel}/entries`,
+      body: {
+        text: 'Must not attach across tenants',
+        attachmentIds: [x.attachment],
+        idempotencyKey: `isolation-foreign-attachment-${attempt}`,
+      },
+    }),
+  },
+  {
+    route: 'GET /channels/:id/entries',
+    call: (x) => ({ path: `/channels/${x.channel}/entries` }),
+  },
+  {
+    route: 'GET /channels/:id/read-cursor',
+    call: (x) => ({ path: `/channels/${x.channel}/read-cursor` }),
+  },
+  {
+    route: 'PUT /channels/:id/read-cursor',
+    call: (x) => ({ path: `/channels/${x.channel}/read-cursor`, body: { cursor: '1' } }),
+  },
+  { route: 'GET /channels/:id/events', call: (x) => ({ path: `/channels/${x.channel}/events` }) },
+  {
+    route: 'GET /channels/:id/threads',
+    call: (x) => ({ path: `/channels/${x.channel}/threads?roots=${x.entry}` }),
+  },
+  {
+    route: 'GET /channels/:id/redactions',
+    call: (x) => ({ path: `/channels/${x.channel}/redactions` }),
+  },
+  {
+    route: 'POST /invites',
+    call: (x) => ({ path: '/invites', body: { channelId: x.channel, seats: 1 } }),
+  },
+  { route: 'DELETE /invites/:id', call: (x) => ({ path: `/invites/${x.invite}`, body: {} }) },
+  {
+    route: 'POST /invites/preview',
+    caller: 'anonymous',
+    call: (x) => ({ path: '/invites/preview', body: { token: x.inviteToken } }),
+  },
+  {
+    route: 'POST /invites/preflight',
+    caller: 'anonymous',
+    call: (x) => ({ path: '/invites/preflight', body: { token: x.inviteToken } }),
+  },
+  {
+    route: 'POST /invites/bind',
+    call: (x) => ({ path: '/invites/bind', body: {}, cookie: x.admission }),
+  },
+  {
+    route: 'POST /invites/redeem',
+    call: (x) => ({ path: '/invites/redeem', body: {}, cookie: x.admission }),
+  },
+  {
+    // B's join attempt read at A's URL must look exactly like no join attempt at all.
+    route: 'GET /invites/pending',
+    call: (x) => ({ path: '/invites/pending', cookie: x.admission }),
+  },
+  { route: 'GET /exports/:id', call: (x) => ({ path: `/exports/${x.archive}` }) },
+  {
+    route: 'GET /exports/:id/archive',
+    call: (x) => ({ path: `/exports/${x.archive}/archive` }),
+  },
+  {
+    route: 'POST /exports/:id/cancel',
+    call: (x) => ({ path: `/exports/${x.archive}/cancel`, body: {} }),
+  },
+  {
+    route: 'POST /exports/:id/link',
+    call: (x) => ({ path: `/exports/${x.archive}/link`, body: {} }),
+  },
+  { route: 'GET /pairings/:id', call: (x) => ({ path: `/pairings/${x.pairing}` }) },
+  {
+    route: 'POST /pairings/approve',
+    call: (x) => ({ path: '/pairings/approve', body: { pairingId: x.pairing } }),
+  },
+  {
+    route: 'POST /pairings/decline',
+    call: (x) => ({ path: '/pairings/decline', body: { pairingId: x.pairing } }),
+  },
+  {
+    route: 'POST /pairings/poll',
+    caller: 'local',
+    call: (x) => ({
+      path: '/pairings/poll',
+      body: { pairingId: x.pairing, verifier: x.verifier },
+    }),
+  },
+  {
+    route: 'POST /pairings/exchange',
+    caller: 'local',
+    call: (x) => ({
+      path: '/pairings/exchange',
+      body: { pairingId: x.pairing, verifier: x.verifier, code: 'not-a-code' },
+    }),
+  },
+  {
+    route: 'POST /pairings/cancel',
+    caller: 'local',
+    call: (x) => ({
+      path: '/pairings/cancel',
+      body: { pairingId: x.pairing, verifier: x.verifier },
+    }),
+  },
+  { route: 'DELETE /me/grants/:id', call: (x) => ({ path: `/me/grants/${x.grant}`, body: {} }) },
+  {
+    route: 'DELETE /me/grants/:id/administer',
+    call: (x) => ({ path: `/me/grants/${x.grant}/administer`, body: {} }),
+  },
+  {
+    route: 'POST /agents/:id/rotate',
+    caller: 'grant',
+    call: (x) => ({ path: `/agents/${x.agent}/rotate`, body: {} }),
+  },
+  {
+    route: 'POST /agents/recover',
+    caller: 'grant',
+    call: (x) => ({
+      path: '/agents/recover',
+      body: { localAgentId: x.localAgentId, displayName: 'Must not recover' },
+    }),
+  },
+  { route: 'DELETE /agents/:id', call: (x) => ({ path: `/agents/${x.agent}`, body: {} }) },
+  {
+    route: 'POST /owner-replacement/objection',
+    call: (x) => ({
+      path: '/owner-replacement/objection',
+      body: { replacementId: x.replacement },
+    }),
+  },
+  {
+    route: 'POST /channels/:id/agents',
+    call: (x) => ({ path: `/channels/${x.channel}/agents`, body: { agentId: x.agent } }),
+  },
+  {
+    route: 'POST /channels/:id/agents',
+    call: (x) => ({ path: `/channels/${iso.ownChannel}/agents`, body: { agentId: x.agent } }),
+  },
+  {
+    route: 'DELETE /channels/:id/agents/:agentId',
+    call: (x) => ({ path: `/channels/${x.channel}/agents/${x.agent}`, body: {} }),
+  },
+  {
+    route: 'DELETE /channels/:id/agents/:agentId',
+    call: (x) => ({ path: `/channels/${iso.ownChannel}/agents/${x.agent}`, body: {} }),
+  },
+  // Direct messages (DOR-2955): another space's agent can be neither messaged nor switched.
+  { route: 'POST /dms', call: (x) => ({ path: '/dms', body: { agentId: x.agent } }) },
+  {
+    route: 'PUT /agents/:id/dms',
+    call: (x) => ({ path: `/agents/${x.agent}/dms`, body: { accepts: true } }),
+  },
+];
+
+// Routes that take no object id at all: they act only on the caller, the
+// community named in the URL, or an object they create. There is nothing
+// foreign to pass them.
+const exempt: Record<string, string> = {
+  'GET /community': 'reads the URL community only',
+  'GET /features': 'describes the server; takes no id',
+  'GET /auth-options': 'deployment sign-in options, no object',
+  'GET /settings': 'reads the URL community only',
+  'PATCH /settings': 'edits the URL community only',
+  'PUT /settings/icon': 'edits the URL community only',
+  'DELETE /settings/icon': 'edits the URL community only',
+  'GET /icon': 'reads the URL community only',
+  'GET /history-origin': 'reads the URL community only',
+  'POST /owner/lifecycle': 'changes the URL community only',
+  'GET /owner/deletion': 'reads the URL community only',
+  'POST /owner/deletion': 'changes the URL community only',
+  'POST /owner/deletion/cancel': 'changes the URL community only',
+  'GET /owner/erasures': 'reads the URL community only',
+  'POST /owner/export': 'exports the URL community; takes only a password',
+  'POST /me/export': 'exports the caller; no body',
+  'GET /exports': "lists the caller's own exports",
+  'GET /me': 'the caller only',
+  'POST /me/leave': 'the caller only',
+  'DELETE /me/grants': "revokes all of the caller's own grants; takes only a password",
+  'GET /me/connection-access': 'the calling grant only',
+  'DELETE /me/connection': 'the calling grant revokes itself only',
+  'GET /me/host-access': "the calling grant's own account; takes no id",
+  'GET /me/grants': "lists the caller's own grants",
+  'GET /members': 'lists the URL community',
+  'GET /channels': 'lists the URL community',
+  'POST /channels': 'creates a new channel; references nothing',
+  'GET /attention': "the caller's own unread counts",
+  'GET /invites': 'lists the URL community',
+  'GET /agents': "lists the caller's own agents",
+  'POST /pairings/start': 'creates a new pairing; references nothing',
+  'GET /takedowns': "lists the URL community's takedowns the caller may see",
+  'GET /owner-replacement': "reads the URL community's open or completed replacement only",
+  'GET /bans': 'lists the URL community',
+  'GET /mutes': 'lists the URL community',
+  'GET /reports': 'lists the URL community',
+  'GET /member-reports': 'lists the URL community',
+  'GET /me/standing': 'the caller only',
+  'PATCH /me': 'the caller renames themselves only',
+  'GET /rules': "reads the URL community's rules only",
+  'PUT /rules': "edits the URL community's rules only",
+  'POST /rules/accept': "the caller accepts the URL community's rules; takes only a version",
+  'GET /reserved-names': 'reads the URL community only',
+  'PUT /reserved-names': 'edits the URL community only',
+  'GET /channels/auto-join': 'lists the URL community',
+  'GET /dms': "lists the caller's own direct messages",
+  'GET /open-admission': 'reads the URL community only',
+  'POST /open-admission/preflight': 'the URL community only; references nothing',
+  'POST /open-admission/join': 'admits the caller to the URL community only; no body',
+};
+
+// Routes whose foreign-id call legitimately succeeds, so they cannot share
+// the refusal comparison; each has its own check after the matrix.
+const separately = ['POST /agents', 'POST /agents/availability'];
+
+async function send(
+  probe: Probe,
+  ids: Ids,
+  attempt: string
+): Promise<{ status: number; body: string }> {
+  const [method] = probe.route.split(' ');
+  const { path, body, upload, cookie } = probe.call(ids, attempt);
+  const caller = probe.caller ?? 'member';
+  const headers: Record<string, string> = {};
+  if (caller === 'member') headers.cookie = cookie ? `${ownerCookie}; ${cookie}` : ownerCookie;
+  if (caller === 'grant') headers.authorization = `Bearer ${iso.ownGrantToken}`;
+  if (caller !== 'local') headers.origin = 'http://localhost:6481';
+  if (upload !== undefined) {
+    Object.assign(headers, {
       'content-type': 'text/plain',
-      'x-file-name': 'isolation.txt',
-      'x-file-size': '5',
-      'idempotency-key': 'isolation-file',
-    },
-    body: 'proof',
+      'x-file-name': 'foreign.txt',
+      'x-file-size': String(Buffer.byteLength(upload)),
+      'idempotency-key': `isolation-foreign-upload-${attempt}`,
+    });
+  } else if (body !== undefined) {
+    headers['content-type'] = 'application/json';
+  }
+  const response = await request(`${iso.own}${path}`, {
+    method,
+    headers,
+    body: upload ?? (body === undefined ? undefined : JSON.stringify(body)),
+    signal: AbortSignal.timeout(5000),
   });
-  expect(upload.status).toBe(201);
-  const attachment = (await upload.json()).attachment.id;
-  expect(
-    (
-      await jsonRequest(`${other}/channels/${channel}/entries`, 'POST', {
-        text: 'Committed private file',
-        idempotencyKey: 'isolation-file-entry',
-        attachmentIds: [attachment],
-      })
-    ).status
-  ).toBe(201);
-  const invitation = await jsonRequest(`${other}/invites`, 'POST', {
-    channelId: channel,
-    seats: 1,
-  });
-  expect(invitation.status).toBe(201);
-  const invitationBody = await invitation.json();
-  // A join attempt started in B: its admission cookie is the object that
-  // binding and redeeming look up.
-  const admitted = await jsonRequest(
-    `${other}/invites/preflight`,
-    'POST',
-    { token: invitationBody.token },
-    ''
-  );
-  expect(admitted.status).toBe(200);
-  const foreignAdmission = cookieOf(admitted);
-  expect(foreignAdmission).toMatch(/^community_admission=/);
-  const verifier = randomBytes(32).toString('base64url');
-  const pairing = await jsonRequest(`${other}/pairings/start`, 'POST', {
-    challenge: createHash('sha256').update(verifier).digest('base64url'),
-    installName: 'Isolation fixture',
-    scopes: ['read'],
-  });
-  expect(pairing.status).toBe(201);
-  const pairingId = (await pairing.json()).pairingId;
-  // Connection grants are minted directly: the pairing handshake that issues
-  // them is covered elsewhere, and only the stored grant matters here.
-  const otherGrantToken = randomBytes(32).toString('base64url');
-  const otherGrant = (
-    await pool.query<{ id: string }>(
-      `INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name)
+  return { status: response.status, body: await response.text() };
+}
+
+// A probe reads the channel id exactly when swapping it changes the call.
+const shapeOf = (channel: string): Ids =>
+  Object.fromEntries(
+    [
+      'channel',
+      'entry',
+      'attachment',
+      'invite',
+      'inviteToken',
+      'member',
+      'pairing',
+      'verifier',
+      'grant',
+      'agent',
+      'localAgentId',
+      'archive',
+      'admission',
+      'replacement',
+      'ban',
+      'report',
+      'memberReport',
+    ].map((key) => [key, key === 'channel' ? channel : `shape-${key}`])
+  ) as Ids;
+const variants = probes.flatMap((probe, index) => {
+  const label = `${probe.route} #${index}`;
+  const readsChannel =
+    JSON.stringify(probe.call(shapeOf('a'), 'shape')) !==
+    JSON.stringify(probe.call(shapeOf('b'), 'shape'));
+  return [
+    { probe, label, ids: 'foreign' as const, attempt: `foreign-${index}` },
+    ...(readsChannel
+      ? [
+          {
+            probe,
+            label: `${label} (public channel)`,
+            ids: 'foreignPublic' as const,
+            attempt: `foreign-public-${index}`,
+          },
+        ]
+      : []),
+  ];
+});
+let executed = 0;
+const checked = new Set<string>();
+
+describe('foreign objects on community routes', () => {
+  beforeAll(async () => {
+    const otherId = (
+      await pool.query<{ id: string }>(
+        "SELECT id FROM communities WHERE id<>$1 AND lifecycle='active' ORDER BY id LIMIT 1",
+        [communityId]
+      )
+    ).rows[0].id;
+    const own = `/api/v1/communities/${communityId}`;
+    const other = `/api/v1/communities/${otherId}`;
+
+    // Community B's objects, each created through B's own URL.
+    const created = await jsonRequest(`${other}/channels`, 'POST', {
+      name: 'Tenant isolation private',
+      visibility: 'private',
+    });
+    expect(created.status).toBe(201);
+    const channel = (await created.json()).channel.id;
+    // A private channel refuses a non-member with the same 404 as a missing one,
+    // so it would hide a missing tenant check. Every channel probe also runs
+    // against this public one, which a non-member of B could otherwise read.
+    // Two routes gain nothing from it: GET /channels/:id/read-cursor and
+    // GET /channels/:id/events answer 404 to any non-member, public or not
+    // (liveChannel in routes/community/events.ts). What keeps them in their tenant is that
+    // membership rows carry tenant foreign keys, so no member of A can ever be a
+    // member of a channel in B.
+    const createdPublic = await jsonRequest(`${other}/channels`, 'POST', {
+      name: 'Tenant isolation public',
+      visibility: 'public',
+    });
+    expect(createdPublic.status).toBe(201);
+    const publicChannel = (await createdPublic.json()).channel.id;
+    const posted = await jsonRequest(`${other}/channels/${channel}/entries`, 'POST', {
+      text: 'Only in the other tenant',
+      idempotencyKey: 'isolation-positive-entry',
+    });
+    expect(posted.status).toBe(201);
+    const entry = (await posted.json()).entry.id;
+    const otherOwner = (
+      await pool.query<{ id: string }>(
+        "SELECT id FROM members WHERE community_id=$1 AND role='owner'",
+        [otherId]
+      )
+    ).rows[0].id;
+    // A non-owner target: owners can never be demoted or become successors, so
+    // probes aimed at the owner would be refused even without a tenant check.
+    await pool.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
+      'isolation-other-member',
+      'Other Member',
+      'other-member@isolation.test',
+    ]);
+    const otherPlainMember = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO members(community_id,user_id,display_name,handle,role)
+       VALUES($1,'isolation-other-member','Other Member','other-member','member') RETURNING id`,
+        [otherId]
+      )
+    ).rows[0].id;
+    // A ready export in B, so its archive and cancel routes answer at B's own URL.
+    await pool.query(
+      "UPDATE export_archives SET expires_at=now()-interval '1 second' WHERE community_id=$1 AND state='ready'",
+      [otherId]
+    );
+    const exportedInOther = await jsonRequest(`${other}/owner/export`, 'POST', { password });
+    expect(exportedInOther.status).toBe(202);
+    const archive = (await exportedInOther.json()).export.id as string;
+    await drainExports(pool, blobStore);
+    const upload = await request(`${other}/channels/${channel}/attachments`, {
+      method: 'POST',
+      headers: {
+        cookie: ownerCookie,
+        origin: 'http://localhost:6481',
+        'content-type': 'text/plain',
+        'x-file-name': 'isolation.txt',
+        'x-file-size': '5',
+        'idempotency-key': 'isolation-file',
+      },
+      body: 'proof',
+    });
+    expect(upload.status).toBe(201);
+    const attachment = (await upload.json()).attachment.id;
+    expect(
+      (
+        await jsonRequest(`${other}/channels/${channel}/entries`, 'POST', {
+          text: 'Committed private file',
+          idempotencyKey: 'isolation-file-entry',
+          attachmentIds: [attachment],
+        })
+      ).status
+    ).toBe(201);
+    const invitation = await jsonRequest(`${other}/invites`, 'POST', {
+      channelId: channel,
+      seats: 1,
+    });
+    expect(invitation.status).toBe(201);
+    const invitationBody = await invitation.json();
+    // A join attempt started in B: its admission cookie is the object that
+    // binding and redeeming look up.
+    const admitted = await jsonRequest(
+      `${other}/invites/preflight`,
+      'POST',
+      { token: invitationBody.token },
+      ''
+    );
+    expect(admitted.status).toBe(200);
+    const foreignAdmission = cookieOf(admitted);
+    expect(foreignAdmission).toMatch(/^community_admission=/);
+    const verifier = randomBytes(32).toString('base64url');
+    const pairing = await jsonRequest(`${other}/pairings/start`, 'POST', {
+      challenge: createHash('sha256').update(verifier).digest('base64url'),
+      installName: 'Isolation fixture',
+      scopes: ['read'],
+    });
+    expect(pairing.status).toBe(201);
+    const pairingId = (await pairing.json()).pairingId;
+    // Connection grants are minted directly: the pairing handshake that issues
+    // them is covered elsewhere, and only the stored grant matters here.
+    const otherGrantToken = randomBytes(32).toString('base64url');
+    const otherGrant = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name)
        VALUES($1,$2,$3,$4,'Isolation B') RETURNING id`,
-      [otherId, otherOwner, hashSecret(otherGrantToken), ['read', 'post', 'enroll-agent']]
-    )
-  ).rows[0].id;
-  const ownGrantToken = randomBytes(32).toString('base64url');
-  await pool.query(
-    `INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name)
+        [otherId, otherOwner, hashSecret(otherGrantToken), ['read', 'post', 'enroll-agent']]
+      )
+    ).rows[0].id;
+    const ownGrantToken = randomBytes(32).toString('base64url');
+    await pool.query(
+      `INSERT INTO connection_grants(community_id,member_id,token_hash,scopes,install_name)
      VALUES($1,$2,$3,$4,'Isolation A')`,
-    [communityId, ownerMemberId, hashSecret(ownGrantToken), ['read', 'post', 'enroll-agent']]
-  );
-  const enrolled = await request(`${other}/agents`, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${otherGrantToken}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({ localAgentId: 'isolation-agent', displayName: 'Isolation Agent' }),
-  });
-  expect(enrolled.status).toBe(201);
-  const agent = (await enrolled.json()).agent.memberId;
-  const joinedAgent = await jsonRequest(`${other}/channels/${channel}/agents`, 'POST', {
-    agentId: agent,
-  });
-  expect(joinedAgent.status, await joinedAgent.clone().text()).toBe(200);
-  // An open owner replacement in B, written directly: this host has no mail, so the request
-  // route refuses to open one. A's owner also owns B, so only the URL community tells them apart.
-  const foreignReplacement = randomUUID();
-  await pool.query(
-    `INSERT INTO owner_replacements(id,community_id,reason,claimant_named,claim_token_hash,
+      [communityId, ownerMemberId, hashSecret(ownGrantToken), ['read', 'post', 'enroll-agent']]
+    );
+    const enrolled = await request(`${other}/agents`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${otherGrantToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ localAgentId: 'isolation-agent', displayName: 'Isolation Agent' }),
+    });
+    expect(enrolled.status).toBe(201);
+    const agent = (await enrolled.json()).agent.memberId;
+    const joinedAgent = await jsonRequest(`${other}/channels/${channel}/agents`, 'POST', {
+      agentId: agent,
+    });
+    expect(joinedAgent.status, await joinedAgent.clone().text()).toBe(200);
+    // An open owner replacement in B, written directly: this host has no mail, so the request
+    // route refuses to open one. A's owner also owns B, so only the URL community tells them apart.
+    const foreignReplacement = randomUUID();
+    await pool.query(
+      `INSERT INTO owner_replacements(id,community_id,reason,claimant_named,claim_token_hash,
        requested_by_host_actor,idempotency_key,payload_hash,after_objection,after_withdrawal,
        prior_owner_member_id,requested_at)
      VALUES($1,$2,'other',false,$3,'api_key:isolation',$6,$4,false,false,$5,now())`,
-    [
-      foreignReplacement,
-      otherId,
-      hashSecret(randomToken()),
-      createHash('sha256').update(foreignReplacement).digest('hex'),
-      otherOwner,
-      `isolation-${foreignReplacement}`,
-    ]
-  );
-  // A standing ban in B, written directly so B's member stays for the other probes.
-  const foreignBan = (
-    await pool.query<{ id: string }>(
-      'INSERT INTO bans(community_id,actor_member_id) VALUES($1,$2) RETURNING id',
-      [otherId, otherOwner]
-    )
-  ).rows[0].id;
-  // An open report in B, written directly, for the resolve probe (0034).
-  const foreignReport = (
-    await pool.query<{ id: string }>(
-      `INSERT INTO reports(community_id,entry_id,reporter_member_id,reason)
-       VALUES($1,$2,$3,'spam') RETURNING id`,
-      [otherId, entry, otherPlainMember]
-    )
-  ).rows[0].id;
-  // An open report of a person in B, for the same probe (0050).
-  const foreignMemberReport = (
-    await pool.query<{ id: string }>(
-      `INSERT INTO member_reports(community_id,subject_member_id,reporter_member_id,reason)
-       VALUES($1,$2,$3,'spam') RETURNING id`,
-      [otherId, otherPlainMember, otherOwner]
-    )
-  ).rows[0].id;
-  // Community A's own public channel, for probes that pair it with a foreign id.
-  const home = await jsonRequest(`${own}/channels`, 'POST', {
-    name: 'Isolation home',
-    visibility: 'public',
-  });
-  expect(home.status).toBe(201);
-  const ownChannel = (await home.json()).channel.id;
-
-  // Positive controls: each object really exists and is reachable in its own tenant.
-  for (const path of [
-    `/attachments/${attachment}`,
-    `/pairings/${pairingId}`,
-    `/channels/${channel}`,
-    `/channels/${channel}/entries`,
-    `/channels/${channel}/members`,
-    `/channels/${channel}/read-cursor`,
-    `/channels/${publicChannel}`,
-    `/channels/${publicChannel}/entries`,
-    `/channels/${publicChannel}/members`,
-    `/channels/${publicChannel}/read-cursor`,
-    `/exports/${archive}`,
-    `/exports/${archive}/archive`,
-  ]) {
-    const response = await request(`${other}${path}`, { headers: { cookie: ownerCookie } });
-    expect(response.status, `positive control ${path}`).toBe(200);
-    await response.arrayBuffer();
-  }
-  const grants = await request(`${other}/me/grants`, { headers: { cookie: ownerCookie } });
-  expect((await grants.json()).grants.map((grant: { id: string }) => grant.id)).toContain(
-    otherGrant
-  );
-  const agents = await request(`${other}/agents`, { headers: { cookie: ownerCookie } });
-  expect((await agents.json()).agents.map((row: { memberId: string }) => row.memberId)).toContain(
-    agent
-  );
-  const members = await request(`${other}/members`, { headers: { cookie: ownerCookie } });
-  expect(JSON.stringify(await members.json())).toContain(otherPlainMember);
-  const notice = await request(`${other}/owner-replacement`, { headers: { cookie: ownerCookie } });
-  expect((await notice.json()).open?.replacementId).toBe(foreignReplacement);
-
-  type Ids = {
-    channel: string;
-    entry: string;
-    attachment: string;
-    invite: string;
-    inviteToken: string;
-    member: string;
-    pairing: string;
-    verifier: string;
-    grant: string;
-    agent: string;
-    localAgentId: string;
-    archive: string;
-    admission: string;
-    replacement: string;
-    ban: string;
-    report: string;
-    memberReport: string;
-  };
-  const foreign: Ids = {
-    channel,
-    entry,
-    attachment,
-    invite: invitationBody.invite.id,
-    inviteToken: invitationBody.token,
-    member: otherPlainMember,
-    pairing: pairingId,
-    verifier,
-    grant: otherGrant,
-    agent,
-    localAgentId: 'isolation-agent',
-    archive,
-    admission: foreignAdmission,
-    replacement: foreignReplacement,
-    ban: foreignBan,
-    report: foreignReport,
-    memberReport: foreignMemberReport,
-  };
-  const foreignPublic: Ids = { ...foreign, channel: publicChannel };
-  // The same shapes with ids that exist nowhere: a foreign id must be refused
-  // exactly as a nonexistent one is, so the response reveals nothing.
-  const missing: Ids = {
-    channel: randomUUID(),
-    entry: randomUUID(),
-    attachment: randomUUID(),
-    invite: randomUUID(),
-    inviteToken: randomBytes(48).toString('base64url'),
-    member: randomUUID(),
-    pairing: randomUUID(),
-    verifier: randomBytes(32).toString('base64url'),
-    grant: randomUUID(),
-    agent: randomUUID(),
-    localAgentId: 'isolation-agent-missing',
-    archive: randomUUID(),
-    // Correctly signed, so it reaches the lookup, but matches no join attempt.
-    admission: `community_admission=${signValue(randomToken(), 'a'.repeat(32))}`,
-    replacement: randomUUID(),
-    ban: randomUUID(),
-    report: randomUUID(),
-    memberReport: randomUUID(),
-  };
-  const { lifecycle_version: ownLifecycleVersion } = (
-    await pool.query<{ lifecycle_version: number }>(
-      'SELECT lifecycle_version FROM communities WHERE id=$1',
-      [communityId]
-    )
-  ).rows[0];
-
-  type Caller = 'member' | 'grant' | 'local' | 'anonymous';
-  type Probe = {
-    route: string;
-    caller?: Caller;
-    call: (
-      ids: Ids,
-      attempt: string
-    ) => { path: string; body?: unknown; upload?: string; cookie?: string };
-  };
-  // Every community route that takes an object id, in its path or its body.
-  const probes: Probe[] = [
-    { route: 'GET /attachments/:id', call: (x) => ({ path: `/attachments/${x.attachment}` }) },
-    {
-      route: 'POST /attachments/:id/link',
-      call: (x) => ({ path: `/attachments/${x.attachment}/link`, body: {} }),
-    },
-    {
-      route: 'DELETE /attachments/:attachmentId',
-      call: (x) => ({ path: `/attachments/${x.attachment}` }),
-    },
-    { route: 'DELETE /entries/:entryId', call: (x) => ({ path: `/entries/${x.entry}` }) },
-    {
-      route: 'POST /channels/:id/attachments',
-      call: (x) => ({ path: `/channels/${x.channel}/attachments`, upload: 'proof' }),
-    },
-    { route: 'GET /channels/:id', call: (x) => ({ path: `/channels/${x.channel}` }) },
-    {
-      route: 'PATCH /channels/:id',
-      call: (x) => ({ path: `/channels/${x.channel}`, body: { name: 'Must not change' } }),
-    },
-    {
-      route: 'POST /channels/:id/join',
-      call: (x) => ({ path: `/channels/${x.channel}/join`, body: {} }),
-    },
-    {
-      route: 'POST /channels/:id/leave',
-      call: (x) => ({ path: `/channels/${x.channel}/leave`, body: {} }),
-    },
-    {
-      route: 'GET /channels/:id/members',
-      call: (x) => ({ path: `/channels/${x.channel}/members` }),
-    },
-    {
-      route: 'POST /channels/:id/members',
-      call: (x) => ({ path: `/channels/${x.channel}/members`, body: { memberId: ownerMemberId } }),
-    },
-    {
-      route: 'POST /channels/:id/members',
-      call: (x) => ({ path: `/channels/${ownChannel}/members`, body: { memberId: x.member } }),
-    },
-    {
-      route: 'DELETE /channels/:id/members/:memberId',
-      call: (x) => ({ path: `/channels/${x.channel}/members/${otherOwner}`, body: {} }),
-    },
-    {
-      route: 'DELETE /channels/:id/members/:memberId',
-      call: (x) => ({ path: `/channels/${ownChannel}/members/${x.member}`, body: {} }),
-    },
-    {
-      route: 'PATCH /members/:id/role',
-      call: (x) => ({ path: `/members/${x.member}/role`, body: { role: 'admin' } }),
-    },
-    { route: 'DELETE /members/:id', call: (x) => ({ path: `/members/${x.member}`, body: {} }) },
-    {
-      route: 'POST /members/:id/ban',
-      call: (x) => ({ path: `/members/${x.member}/ban`, body: {} }),
-    },
-    { route: 'DELETE /bans/:id', call: (x) => ({ path: `/bans/${x.ban}`, body: {} }) },
-    {
-      route: 'POST /members/:id/mute',
-      call: (x) => ({ path: `/members/${x.member}/mute`, body: { minutes: 5 } }),
-    },
-    { route: 'DELETE /members/:id/mute', call: (x) => ({ path: `/members/${x.member}/mute` }) },
-    {
-      route: 'GET /channels/:id/slow-mode',
-      call: (x) => ({ path: `/channels/${x.channel}/slow-mode` }),
-    },
-    {
-      route: 'POST /entries/:id/reports',
-      call: (x) => ({ path: `/entries/${x.entry}/reports`, body: { reason: 'spam' } }),
-    },
-    {
-      route: 'POST /reports/:id/resolve',
-      call: (x) => ({ path: `/reports/${x.report}/resolve`, body: { action: 'dismiss' } }),
-    },
-    {
-      route: 'POST /members/:id/reports',
-      call: (x) => ({ path: `/members/${x.member}/reports`, body: { reason: 'spam' } }),
-    },
-    {
-      route: 'POST /member-reports/:id/resolve',
-      call: (x) => ({
-        path: `/member-reports/${x.memberReport}/resolve`,
-        body: { action: 'dismiss' },
-      }),
-    },
-    {
-      route: 'POST /owner/transfer',
-      call: (x) => ({
-        path: '/owner/transfer',
-        body: { successorMemberId: x.member, password, lifecycleVersion: ownLifecycleVersion },
-      }),
-    },
-    {
-      route: 'POST /channels/:id/entries',
-      call: (x, attempt) => ({
-        path: `/channels/${x.channel}/entries`,
-        body: { text: 'Must not post', idempotencyKey: `isolation-foreign-entry-${attempt}` },
-      }),
-    },
-    {
-      route: 'POST /channels/:id/entries',
-      call: (x, attempt) => ({
-        path: `/channels/${ownChannel}/entries`,
-        body: {
-          text: 'Must not reply across tenants',
-          parentEntryId: x.entry,
-          idempotencyKey: `isolation-foreign-parent-${attempt}`,
-        },
-      }),
-    },
-    {
-      route: 'POST /channels/:id/entries',
-      call: (x, attempt) => ({
-        path: `/channels/${ownChannel}/entries`,
-        body: {
-          text: 'Must not attach across tenants',
-          attachmentIds: [x.attachment],
-          idempotencyKey: `isolation-foreign-attachment-${attempt}`,
-        },
-      }),
-    },
-    {
-      route: 'GET /channels/:id/entries',
-      call: (x) => ({ path: `/channels/${x.channel}/entries` }),
-    },
-    {
-      route: 'GET /channels/:id/read-cursor',
-      call: (x) => ({ path: `/channels/${x.channel}/read-cursor` }),
-    },
-    {
-      route: 'PUT /channels/:id/read-cursor',
-      call: (x) => ({ path: `/channels/${x.channel}/read-cursor`, body: { cursor: '1' } }),
-    },
-    { route: 'GET /channels/:id/events', call: (x) => ({ path: `/channels/${x.channel}/events` }) },
-    {
-      route: 'GET /channels/:id/threads',
-      call: (x) => ({ path: `/channels/${x.channel}/threads?roots=${x.entry}` }),
-    },
-    {
-      route: 'GET /channels/:id/redactions',
-      call: (x) => ({ path: `/channels/${x.channel}/redactions` }),
-    },
-    {
-      route: 'POST /invites',
-      call: (x) => ({ path: '/invites', body: { channelId: x.channel, seats: 1 } }),
-    },
-    { route: 'DELETE /invites/:id', call: (x) => ({ path: `/invites/${x.invite}`, body: {} }) },
-    {
-      route: 'POST /invites/preview',
-      caller: 'anonymous',
-      call: (x) => ({ path: '/invites/preview', body: { token: x.inviteToken } }),
-    },
-    {
-      route: 'POST /invites/preflight',
-      caller: 'anonymous',
-      call: (x) => ({ path: '/invites/preflight', body: { token: x.inviteToken } }),
-    },
-    {
-      route: 'POST /invites/bind',
-      call: (x) => ({ path: '/invites/bind', body: {}, cookie: x.admission }),
-    },
-    {
-      route: 'POST /invites/redeem',
-      call: (x) => ({ path: '/invites/redeem', body: {}, cookie: x.admission }),
-    },
-    {
-      // B's join attempt read at A's URL must look exactly like no join attempt at all.
-      route: 'GET /invites/pending',
-      call: (x) => ({ path: '/invites/pending', cookie: x.admission }),
-    },
-    { route: 'GET /exports/:id', call: (x) => ({ path: `/exports/${x.archive}` }) },
-    {
-      route: 'GET /exports/:id/archive',
-      call: (x) => ({ path: `/exports/${x.archive}/archive` }),
-    },
-    {
-      route: 'POST /exports/:id/cancel',
-      call: (x) => ({ path: `/exports/${x.archive}/cancel`, body: {} }),
-    },
-    {
-      route: 'POST /exports/:id/link',
-      call: (x) => ({ path: `/exports/${x.archive}/link`, body: {} }),
-    },
-    { route: 'GET /pairings/:id', call: (x) => ({ path: `/pairings/${x.pairing}` }) },
-    {
-      route: 'POST /pairings/approve',
-      call: (x) => ({ path: '/pairings/approve', body: { pairingId: x.pairing } }),
-    },
-    {
-      route: 'POST /pairings/decline',
-      call: (x) => ({ path: '/pairings/decline', body: { pairingId: x.pairing } }),
-    },
-    {
-      route: 'POST /pairings/poll',
-      caller: 'local',
-      call: (x) => ({
-        path: '/pairings/poll',
-        body: { pairingId: x.pairing, verifier: x.verifier },
-      }),
-    },
-    {
-      route: 'POST /pairings/exchange',
-      caller: 'local',
-      call: (x) => ({
-        path: '/pairings/exchange',
-        body: { pairingId: x.pairing, verifier: x.verifier, code: 'not-a-code' },
-      }),
-    },
-    {
-      route: 'POST /pairings/cancel',
-      caller: 'local',
-      call: (x) => ({
-        path: '/pairings/cancel',
-        body: { pairingId: x.pairing, verifier: x.verifier },
-      }),
-    },
-    { route: 'DELETE /me/grants/:id', call: (x) => ({ path: `/me/grants/${x.grant}`, body: {} }) },
-    {
-      route: 'DELETE /me/grants/:id/administer',
-      call: (x) => ({ path: `/me/grants/${x.grant}/administer`, body: {} }),
-    },
-    {
-      route: 'POST /agents/:id/rotate',
-      caller: 'grant',
-      call: (x) => ({ path: `/agents/${x.agent}/rotate`, body: {} }),
-    },
-    {
-      route: 'POST /agents/recover',
-      caller: 'grant',
-      call: (x) => ({
-        path: '/agents/recover',
-        body: { localAgentId: x.localAgentId, displayName: 'Must not recover' },
-      }),
-    },
-    { route: 'DELETE /agents/:id', call: (x) => ({ path: `/agents/${x.agent}`, body: {} }) },
-    {
-      route: 'POST /owner-replacement/objection',
-      call: (x) => ({
-        path: '/owner-replacement/objection',
-        body: { replacementId: x.replacement },
-      }),
-    },
-    {
-      route: 'POST /channels/:id/agents',
-      call: (x) => ({ path: `/channels/${x.channel}/agents`, body: { agentId: x.agent } }),
-    },
-    {
-      route: 'POST /channels/:id/agents',
-      call: (x) => ({ path: `/channels/${ownChannel}/agents`, body: { agentId: x.agent } }),
-    },
-    {
-      route: 'DELETE /channels/:id/agents/:agentId',
-      call: (x) => ({ path: `/channels/${x.channel}/agents/${x.agent}`, body: {} }),
-    },
-    {
-      route: 'DELETE /channels/:id/agents/:agentId',
-      call: (x) => ({ path: `/channels/${ownChannel}/agents/${x.agent}`, body: {} }),
-    },
-    // Direct messages (DOR-2955): another space's agent can be neither messaged nor switched.
-    { route: 'POST /dms', call: (x) => ({ path: '/dms', body: { agentId: x.agent } }) },
-    {
-      route: 'PUT /agents/:id/dms',
-      call: (x) => ({ path: `/agents/${x.agent}/dms`, body: { accepts: true } }),
-    },
-  ];
-  // Routes that take no object id at all: they act only on the caller, the
-  // community named in the URL, or an object they create. There is nothing
-  // foreign to pass them.
-  const exempt: Record<string, string> = {
-    'GET /community': 'reads the URL community only',
-    'GET /features': 'describes the server; takes no id',
-    'GET /auth-options': 'deployment sign-in options, no object',
-    'GET /settings': 'reads the URL community only',
-    'PATCH /settings': 'edits the URL community only',
-    'PUT /settings/icon': 'edits the URL community only',
-    'DELETE /settings/icon': 'edits the URL community only',
-    'GET /icon': 'reads the URL community only',
-    'GET /history-origin': 'reads the URL community only',
-    'POST /owner/lifecycle': 'changes the URL community only',
-    'GET /owner/deletion': 'reads the URL community only',
-    'POST /owner/deletion': 'changes the URL community only',
-    'POST /owner/deletion/cancel': 'changes the URL community only',
-    'GET /owner/erasures': 'reads the URL community only',
-    'POST /owner/export': 'exports the URL community; takes only a password',
-    'POST /me/export': 'exports the caller; no body',
-    'GET /exports': "lists the caller's own exports",
-    'GET /me': 'the caller only',
-    'POST /me/leave': 'the caller only',
-    'DELETE /me/grants': "revokes all of the caller's own grants; takes only a password",
-    'GET /me/connection-access': 'the calling grant only',
-    'DELETE /me/connection': 'the calling grant revokes itself only',
-    'GET /me/host-access': "the calling grant's own account; takes no id",
-    'GET /me/grants': "lists the caller's own grants",
-    'GET /members': 'lists the URL community',
-    'GET /channels': 'lists the URL community',
-    'POST /channels': 'creates a new channel; references nothing',
-    'GET /attention': "the caller's own unread counts",
-    'GET /invites': 'lists the URL community',
-    'GET /agents': "lists the caller's own agents",
-    'POST /pairings/start': 'creates a new pairing; references nothing',
-    'GET /takedowns': "lists the URL community's takedowns the caller may see",
-    'GET /owner-replacement': "reads the URL community's open or completed replacement only",
-    'GET /bans': 'lists the URL community',
-    'GET /mutes': 'lists the URL community',
-    'GET /reports': 'lists the URL community',
-    'GET /member-reports': 'lists the URL community',
-    'GET /me/standing': 'the caller only',
-    'PATCH /me': 'the caller renames themselves only',
-    'GET /rules': "reads the URL community's rules only",
-    'PUT /rules': "edits the URL community's rules only",
-    'POST /rules/accept': "the caller accepts the URL community's rules; takes only a version",
-    'GET /reserved-names': 'reads the URL community only',
-    'PUT /reserved-names': 'edits the URL community only',
-    'GET /channels/auto-join': 'lists the URL community',
-    'GET /dms': "lists the caller's own direct messages",
-    'GET /open-admission': 'reads the URL community only',
-    'POST /open-admission/preflight': 'the URL community only; references nothing',
-    'POST /open-admission/join': 'admits the caller to the URL community only; no body',
-  };
-
-  const scoped = '/api/v1/communities/:communityId';
-  const registered = [
-    ...new Set(
-      app.routes
-        .filter((route) => route.method !== 'ALL' && route.path.startsWith(`${scoped}/`))
-        .map((route) => `${route.method} ${route.path.slice(scoped.length)}`)
-    ),
-  ].sort();
-  expect(registered.length).toBeGreaterThan(50);
-  // Routes whose foreign-id call legitimately succeeds, so they cannot share
-  // the refusal comparison; each has its own check after the matrix.
-  const separately = ['POST /agents', 'POST /agents/availability'];
-  const probed = new Set(probes.map((probe) => probe.route));
-  expect([...probed].filter((route) => route in exempt || separately.includes(route))).toEqual([]);
-  expect(separately.filter((route) => route in exempt)).toEqual([]);
-  expect([...new Set([...probed, ...Object.keys(exempt), ...separately])].sort()).toEqual(
-    registered
-  );
-
-  async function send(probe: Probe, ids: Ids, attempt: string) {
-    const [method] = probe.route.split(' ');
-    const { path, body, upload, cookie } = probe.call(ids, attempt);
-    const caller = probe.caller ?? 'member';
-    const headers: Record<string, string> = {};
-    if (caller === 'member') headers.cookie = cookie ? `${ownerCookie}; ${cookie}` : ownerCookie;
-    if (caller === 'grant') headers.authorization = `Bearer ${ownGrantToken}`;
-    if (caller !== 'local') headers.origin = 'http://localhost:6481';
-    if (upload !== undefined) {
-      Object.assign(headers, {
-        'content-type': 'text/plain',
-        'x-file-name': 'foreign.txt',
-        'x-file-size': String(Buffer.byteLength(upload)),
-        'idempotency-key': `isolation-foreign-upload-${attempt}`,
-      });
-    } else if (body !== undefined) {
-      headers['content-type'] = 'application/json';
-    }
-    const response = await request(`${own}${path}`, {
-      method,
-      headers,
-      body: upload ?? (body === undefined ? undefined : JSON.stringify(body)),
-      signal: AbortSignal.timeout(5000),
-    });
-    return { status: response.status, body: await response.text() };
-  }
-
-  // A probe reads the channel id exactly when swapping it changes the call.
-  const variants = probes.flatMap((probe, index) => {
-    const label = `${probe.route} #${index}`;
-    const readsChannel =
-      JSON.stringify(probe.call(foreign, 'shape')) !==
-      JSON.stringify(probe.call(foreignPublic, 'shape'));
-    return [
-      { probe, label, ids: foreign, attempt: `foreign-${index}` },
-      ...(readsChannel
-        ? [
-            {
-              probe,
-              label: `${label} (public channel)`,
-              ids: foreignPublic,
-              attempt: `foreign-public-${index}`,
-            },
-          ]
-        : []),
-    ];
-  });
-  // The number of probes that take the channel id. Update it when you add or
-  // remove a channel probe; it stops the public run from silently shrinking.
-  expect(variants.filter(({ ids }) => ids === foreignPublic)).toHaveLength(19);
-
-  const before = await isolationSnapshot([communityId, otherId]);
-  let executed = 0;
-  for (const { probe, label, ids, attempt } of variants) {
-    const refused = await send(probe, ids, attempt);
-    const unknown = await send(probe, missing, `missing-${attempt}`);
-    expect(refused.status, `${label} must be refused`).toBeGreaterThanOrEqual(400);
-    // A malformed, unauthenticated or cross-site probe would be refused before
-    // any lookup, and would then match the nonexistent id for the wrong reason.
-    expect(refused.status, `${label} must be authenticated`).not.toBe(401);
-    expect(refused.body, `${label} must reach the lookup`).not.toContain('The request is invalid.');
-    expect(refused.body, `${label} must pass the origin check`).not.toContain(
-      'This request came from an untrusted site.'
+      [
+        foreignReplacement,
+        otherId,
+        hashSecret(randomToken()),
+        createHash('sha256').update(foreignReplacement).digest('hex'),
+        otherOwner,
+        `isolation-${foreignReplacement}`,
+      ]
     );
-    expect(refused, `${label} must match a nonexistent id`).toEqual(unknown);
-    executed++;
-  }
-  expect(executed).toBe(variants.length);
-  expect(await isolationSnapshot([communityId, otherId])).toEqual(before);
-
-  // POST /agents looks up the caller's existing agent by its local id, then
-  // reactivates it and replaces its credentials. A local id that exists only
-  // in B must create a fresh agent in A and leave B's agent untouched.
-  const checked = new Set<string>();
-  const otherBefore = await isolationSnapshot([otherId]);
-  const sameLocalId = await request(`${own}/agents`, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${ownGrantToken}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      localAgentId: foreign.localAgentId,
-      displayName: 'Own agent, same local id',
-    }),
-  });
-  expect(sameLocalId.status, 'POST /agents with a local id used in B').toBe(201);
-  const ownAgent = (await sameLocalId.json()).agent.memberId;
-  expect(ownAgent).not.toBe(agent);
-  expect(
-    (await pool.query('SELECT community_id FROM agents WHERE id=$1', [ownAgent])).rows[0]
-  ).toEqual({ community_id: communityId });
-  expect(await isolationSnapshot([otherId])).toEqual(otherBefore);
-  checked.add('POST /agents');
-
-  // POST /agents/availability answers 200 and lists what it refused, so it cannot share the
-  // refusal comparison. B's agent, named at A's URL, comes back refused exactly as an id that
-  // exists nowhere does, and B's agent row keeps no report (DOR-2877).
-  const reportFor = async (agentId: string) => {
-    const response = await request(`${own}/agents/availability`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${ownGrantToken}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ agents: [{ agentId, runsOn: 'computer' }] }),
+    // A standing ban in B, written directly so B's member stays for the other probes.
+    const foreignBan = (
+      await pool.query<{ id: string }>(
+        'INSERT INTO bans(community_id,actor_member_id) VALUES($1,$2) RETURNING id',
+        [otherId, otherOwner]
+      )
+    ).rows[0].id;
+    // An open report in B, written directly, for the resolve probe (0034).
+    const foreignReport = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO reports(community_id,entry_id,reporter_member_id,reason)
+       VALUES($1,$2,$3,'spam') RETURNING id`,
+        [otherId, entry, otherPlainMember]
+      )
+    ).rows[0].id;
+    // An open report of a person in B, for the same probe (0050).
+    const foreignMemberReport = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO member_reports(community_id,subject_member_id,reporter_member_id,reason)
+       VALUES($1,$2,$3,'spam') RETURNING id`,
+        [otherId, otherPlainMember, otherOwner]
+      )
+    ).rows[0].id;
+    // Community A's own public channel, for probes that pair it with a foreign id.
+    const home = await jsonRequest(`${own}/channels`, 'POST', {
+      name: 'Isolation home',
+      visibility: 'public',
     });
-    expect(response.status, 'POST /agents/availability').toBe(200);
-    return (await response.json()) as { accepted: string[]; refused: string[] };
-  };
-  expect(await reportFor(agent)).toMatchObject({ accepted: [], refused: [agent] });
-  expect(await reportFor(missing.agent)).toMatchObject({ accepted: [], refused: [missing.agent] });
-  expect(
-    (await pool.query('SELECT runs_on,last_seen_at FROM agents WHERE id=$1', [agent])).rows
-  ).toEqual([{ runs_on: null, last_seen_at: null }]);
-  checked.add('POST /agents/availability');
-  expect([...checked]).toEqual(separately);
+    expect(home.status).toBe(201);
+    const ownChannel = (await home.json()).channel.id;
+
+    // Positive controls: each object really exists and is reachable in its own tenant.
+    for (const path of [
+      `/attachments/${attachment}`,
+      `/pairings/${pairingId}`,
+      `/channels/${channel}`,
+      `/channels/${channel}/entries`,
+      `/channels/${channel}/members`,
+      `/channels/${channel}/read-cursor`,
+      `/channels/${publicChannel}`,
+      `/channels/${publicChannel}/entries`,
+      `/channels/${publicChannel}/members`,
+      `/channels/${publicChannel}/read-cursor`,
+      `/exports/${archive}`,
+      `/exports/${archive}/archive`,
+    ]) {
+      const response = await request(`${other}${path}`, { headers: { cookie: ownerCookie } });
+      expect(response.status, `positive control ${path}`).toBe(200);
+      await response.arrayBuffer();
+    }
+    const grants = await request(`${other}/me/grants`, { headers: { cookie: ownerCookie } });
+    expect((await grants.json()).grants.map((grant: { id: string }) => grant.id)).toContain(
+      otherGrant
+    );
+    const agents = await request(`${other}/agents`, { headers: { cookie: ownerCookie } });
+    expect((await agents.json()).agents.map((row: { memberId: string }) => row.memberId)).toContain(
+      agent
+    );
+    const members = await request(`${other}/members`, { headers: { cookie: ownerCookie } });
+    expect(JSON.stringify(await members.json())).toContain(otherPlainMember);
+    const notice = await request(`${other}/owner-replacement`, {
+      headers: { cookie: ownerCookie },
+    });
+    expect((await notice.json()).open?.replacementId).toBe(foreignReplacement);
+
+    const foreign: Ids = {
+      channel,
+      entry,
+      attachment,
+      invite: invitationBody.invite.id,
+      inviteToken: invitationBody.token,
+      member: otherPlainMember,
+      pairing: pairingId,
+      verifier,
+      grant: otherGrant,
+      agent,
+      localAgentId: 'isolation-agent',
+      archive,
+      admission: foreignAdmission,
+      replacement: foreignReplacement,
+      ban: foreignBan,
+      report: foreignReport,
+      memberReport: foreignMemberReport,
+    };
+    const foreignPublic: Ids = { ...foreign, channel: publicChannel };
+    // The same shapes with ids that exist nowhere: a foreign id must be refused
+    // exactly as a nonexistent one is, so the response reveals nothing.
+    const missing: Ids = {
+      channel: randomUUID(),
+      entry: randomUUID(),
+      attachment: randomUUID(),
+      invite: randomUUID(),
+      inviteToken: randomBytes(48).toString('base64url'),
+      member: randomUUID(),
+      pairing: randomUUID(),
+      verifier: randomBytes(32).toString('base64url'),
+      grant: randomUUID(),
+      agent: randomUUID(),
+      localAgentId: 'isolation-agent-missing',
+      archive: randomUUID(),
+      // Correctly signed, so it reaches the lookup, but matches no join attempt.
+      admission: `community_admission=${signValue(randomToken(), 'a'.repeat(32))}`,
+      replacement: randomUUID(),
+      ban: randomUUID(),
+      report: randomUUID(),
+      memberReport: randomUUID(),
+    };
+    const { lifecycle_version: ownLifecycleVersion } = (
+      await pool.query<{ lifecycle_version: number }>(
+        'SELECT lifecycle_version FROM communities WHERE id=$1',
+        [communityId]
+      )
+    ).rows[0];
+
+    iso = {
+      own,
+      otherId,
+      otherOwner,
+      ownChannel,
+      ownGrantToken,
+      ownLifecycleVersion,
+      agent,
+      foreign,
+      foreignPublic,
+      missing,
+      // Taken after the positive controls, as the probes must change nothing.
+      before: await isolationSnapshot([communityId, otherId]),
+    };
+  });
+
+  it('names every id-taking route as probed, exempt or checked separately', () => {
+    const scoped = '/api/v1/communities/:communityId';
+    const registered = [
+      ...new Set(
+        app.routes
+          .filter((route) => route.method !== 'ALL' && route.path.startsWith(`${scoped}/`))
+          .map((route) => `${route.method} ${route.path.slice(scoped.length)}`)
+      ),
+    ].sort();
+    expect(registered.length).toBeGreaterThan(50);
+    const probed = new Set(probes.map((probe) => probe.route));
+    expect([...probed].filter((route) => route in exempt || separately.includes(route))).toEqual(
+      []
+    );
+    expect(separately.filter((route) => route in exempt)).toEqual([]);
+    expect([...new Set([...probed, ...Object.keys(exempt), ...separately])].sort()).toEqual(
+      registered
+    );
+  });
+
+  it('probes the public channel too on every route that takes a channel id', () => {
+    // A probe reads the channel id exactly when swapping it changes the call.
+
+    // The number of probes that take the channel id. Update it when you add or
+    // remove a channel probe; it stops the public run from silently shrinking.
+    expect(variants.filter(({ ids }) => ids === 'foreignPublic')).toHaveLength(19);
+  });
+
+  // `%s` with the label first, so a title is never truncated the way `$label` is.
+  it.each(variants.map((variant) => [variant.label, variant] as const))(
+    'refuses %s exactly as an id that exists nowhere',
+    async (_title, { probe, label, ids: which, attempt }) => {
+      const ids = iso[which];
+      const { missing } = iso;
+
+      const refused = await send(probe, ids, attempt);
+      const unknown = await send(probe, missing, `missing-${attempt}`);
+      expect(refused.status, `${label} must be refused`).toBeGreaterThanOrEqual(400);
+      // A malformed, unauthenticated or cross-site probe would be refused before
+      // any lookup, and would then match the nonexistent id for the wrong reason.
+      expect(refused.status, `${label} must be authenticated`).not.toBe(401);
+      expect(refused.body, `${label} must reach the lookup`).not.toContain(
+        'The request is invalid.'
+      );
+      expect(refused.body, `${label} must pass the origin check`).not.toContain(
+        'This request came from an untrusted site.'
+      );
+      expect(refused, `${label} must match a nonexistent id`).toEqual(unknown);
+
+      executed++;
+    }
+  );
+
+  it('rejects foreign objects on every id-taking community route, even for an owner of both', async () => {
+    // Every probe above passed, and none of them changed either community.
+    expect(executed).toBe(variants.length);
+    expect(await isolationSnapshot([communityId, iso.otherId])).toEqual(iso.before);
+  });
+
+  it('POST /agents with a local id used in B creates a fresh agent in A', async () => {
+    const { own, otherId, ownGrantToken, foreign, agent } = iso;
+
+    // POST /agents looks up the caller's existing agent by its local id, then
+    // reactivates it and replaces its credentials. A local id that exists only
+    // in B must create a fresh agent in A and leave B's agent untouched.
+    const otherBefore = await isolationSnapshot([otherId]);
+    const sameLocalId = await request(`${own}/agents`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${ownGrantToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        localAgentId: foreign.localAgentId,
+        displayName: 'Own agent, same local id',
+      }),
+    });
+    expect(sameLocalId.status, 'POST /agents with a local id used in B').toBe(201);
+    const ownAgent = (await sameLocalId.json()).agent.memberId;
+    expect(ownAgent).not.toBe(agent);
+    expect(
+      (await pool.query('SELECT community_id FROM agents WHERE id=$1', [ownAgent])).rows[0]
+    ).toEqual({ community_id: communityId });
+    expect(await isolationSnapshot([otherId])).toEqual(otherBefore);
+    checked.add('POST /agents');
+  });
+
+  it("POST /agents/availability refuses B's agent as it refuses a missing one (DOR-2877)", async () => {
+    const { own, ownGrantToken, agent, missing } = iso;
+
+    // POST /agents/availability answers 200 and lists what it refused, so it cannot share the
+    // refusal comparison. B's agent, named at A's URL, comes back refused exactly as an id that
+    // exists nowhere does, and B's agent row keeps no report (DOR-2877).
+    const reportFor = async (agentId: string) => {
+      const response = await request(`${own}/agents/availability`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${ownGrantToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ agents: [{ agentId, runsOn: 'computer' }] }),
+      });
+      expect(response.status, 'POST /agents/availability').toBe(200);
+      return (await response.json()) as { accepted: string[]; refused: string[] };
+    };
+    expect(await reportFor(agent)).toMatchObject({ accepted: [], refused: [agent] });
+    expect(await reportFor(missing.agent)).toMatchObject({
+      accepted: [],
+      refused: [missing.agent],
+    });
+    expect(
+      (await pool.query('SELECT runs_on,last_seen_at FROM agents WHERE id=$1', [agent])).rows
+    ).toEqual([{ runs_on: null, last_seen_at: null }]);
+    checked.add('POST /agents/availability');
+    expect([...checked]).toEqual(separately);
+  });
 });
 
 it('archives with immediate credential revocation and restores without revival', async () => {
