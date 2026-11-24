@@ -5,6 +5,4 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- A failed room chat still recovers once after DorkOS restarts (DOR-4626)
+- When an agent's chat in a room stopped on a server error and DorkOS then restarted, the next post handed to that room used to fail. The agent now gets one fresh chat there, as it would have without the restart, with the same limits its old chat had (DOR-4626).
