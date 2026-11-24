@@ -259,7 +259,7 @@ gates:
   # --- security-verdict.yml ---
   - id: wf.security-verdict.security-verdict
     source: .github/workflows/security-verdict.yml
-    purpose: After each Claude review run, posts a security-verdict commit status that is success only when the review's Security lens posted a pass for that exact head (DOR-5099), then re-runs that head's pr-gates after a pass (DOR-5119).
+    purpose: After each Claude review run, posts a security-verdict commit status that is success only when the review's Security lens posted a pass for that exact head (DOR-5099), then re-runs that head's finished, unpassed pr-gates runs after a pass (DOR-5119).
 
   # --- after-merge-alert.yml ---
   - id: wf.after-merge-alert.alert
@@ -382,6 +382,9 @@ gates:
   - id: lefthook.pre-push.own-mocks
     source: lefthook.yml
     purpose: Refuses new vi.mock calls on our own modules before pushing.
+  - id: lefthook.pre-push.test-ratio
+    source: lefthook.yml
+    purpose: Refuses a package adding tests faster than source past its test budget, or a budget loosened by hand, before pushing.
   - id: lefthook.pre-push.ledger-coverage
     source: lefthook.yml
     purpose: Requires a ledger entry for changed pipeline paths before pushing.

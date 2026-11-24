@@ -24,8 +24,9 @@
  * `261101-191731`), each front-running a ratchet CI enforces, and on
  * 2026-11-12 a fifth (`own-mocks`, ledger `261111-184639`), and on 2026-11-15 a
  * sixth (`ci-midrun`, which asks GitHub whether CI from the last push is still
- * running, under a 4 s limit). All six are independent, so still no ordering.
- * The assertions below pin exactly those six commands; `local-gate-shape.test.ts` beside this one pins that no test
+ * running, under a 4 s limit), and on 2026-11-24 a seventh (`test-ratio`, ledger
+ * `261123-220533`). All seven are independent, so still no ordering.
+ * The assertions below pin exactly those seven commands; `local-gate-shape.test.ts` beside this one pins that no test
  * command has come back without a ledger entry.
  *
  * WHY A VITEST TEST RATHER THAN A SHELL FIXTURE — the same reasoning its
@@ -109,24 +110,26 @@ const PRE_PUSH_COMMANDS = [
   'ledger-coverage',
   'max-lines',
   'own-mocks',
+  'test-ratio',
 ];
 
 describe('the pre-push formatting check is wired beside its sibling checks', () => {
-  it('finds the pre-push hook and its six commands at all', () => {
+  it('finds the pre-push hook and its seven commands at all', () => {
     // Without this, every assertion below passes vacuously the day the hook is
     // renamed or the scanner stops matching — the exact way a guard dies
     // quietly. `fragments` joined on 2026-10-30
     // (ci/ledger/261030-230941-pre-push-fragment-check.md); `max-lines` and
     // `ledger-coverage` on 2026-11-01 (ci/ledger/261101-191731-pre-push-ratchets.md);
     // `own-mocks` on 2026-11-12 (ci/ledger/261111-184639-own-mocks-ratchet.md);
-    // `ci-midrun` on 2026-11-15 (ci/ledger/261115-173750.md).
+    // `ci-midrun` on 2026-11-15 (ci/ledger/261115-173750.md); `test-ratio` on
+    // 2026-11-24 (ci/ledger/261123-220533-test-ratio-ceiling.md).
     expect(prePush).not.toBe('');
     expect([...priorities.keys()].sort()).toEqual(PRE_PUSH_COMMANDS);
   });
 
-  it('declares no ordering, because the six checks are independent', () => {
+  it('declares no ordering, because the seven checks are independent', () => {
     // `piped` and `priority` earned their lines when a two-second check had to
-    // preempt a six-minute sweep. These six are all quick and answer
+    // preempt a six-minute sweep. These seven are all quick and answer
     // different questions, so each should report on the same push rather than
     // one hiding the other. Adding a slow command means deciding ordering
     // deliberately and putting them back — this is the line that makes you.

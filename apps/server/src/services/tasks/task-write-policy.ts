@@ -192,6 +192,11 @@ export const TASK_WRITE_POLICY = {
   // do, and an agent's change to it on an approved schedule parks it for a
   // person like any other settings change (`TaskApprovals.settleApprovedWorkChange`).
   account: 'agent-writable',
+  // Whether runs stay on that account when it runs out or signs out (DOR-5097).
+  // Off, a run moves only to an account a person allowed for automatic moves,
+  // never to credits or the main sign-in, so either answer is a choice of who
+  // pays, never of what a run may do.
+  accountPinned: 'agent-writable',
   // Requests appear on the approval card but never change what a run may do.
   requestedPermissionMode: 'agent-writable',
   requestedAllow: 'agent-writable',

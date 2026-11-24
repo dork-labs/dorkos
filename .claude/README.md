@@ -86,6 +86,7 @@ Skills load their description into every session (the retrieval index) and their
 | `opensrc`                        | Fetching dependency source for implementation context                                                                |
 | `orchestrating-parallel-work`    | Agent-tool fan-out, batching, background agents                                                                      |
 | `organizing-fsd-architecture`    | FSD layer placement (defers to rules/fsd-layers.md for the import matrix)                                            |
+| `pruning-tests`                  | Weekly from @dorkos-qa: delete tests that fail the keep-rubric in one package, then tighten its test budget          |
 | `reading-session-transcripts`    | DorkOS session URL → JSONL resolution (claude-code runtime)                                                          |
 | `receiving-code-review`          | Technical evaluation of inbound review feedback                                                                      |
 | `requesting-code-review`         | Dispatching code-reviewer for batch-level verification                                                               |

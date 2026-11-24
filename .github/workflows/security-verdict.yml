@@ -18,8 +18,9 @@ name: security-verdict
 # ADVISORY. It is not a required check. For a comparison period the local
 # Security agent keeps reviewing, and the two verdicts are compared on the same
 # heads before this becomes required (org rule, DOR-5101). It holds no secret.
-# Its only write is the commit status. Findings are never posted: this
-# repository is public.
+# Its only write is the commit status. Findings are never posted in the clear:
+# this repository is public. A failing lens's details reach Security only as
+# age ciphertext (scripts/security-findings.sh), which this job never reads.
 
 on:
   workflow_run:
@@ -31,7 +32,7 @@ permissions:
   pull-requests: read
   issues: read
   statuses: write
-  # Only to re-run this head's pr-gates run after a pass (see the last step).
+  # Only to re-run this head's unpassed pr-gates runs after a pass (see the last step).
   actions: write
 
 concurrency:
@@ -92,10 +93,16 @@ jobs:
           echo "state=$state" >>"$GITHUB_OUTPUT"
 
       # pr-gates (a required check, DOR-5119) reads this status, but it runs on
-      # PR events, usually before the review finishes. After a pass, re-run this
-      # head's newest finished pr-gates run so auto-merge can go ahead without a
-      # push. A re-run keeps the run on the PR's head. Best effort: a failure
-      # here only warns, and the next push or label re-runs pr-gates anyway.
+      # PR events, usually before the review finishes. A new PR gets several
+      # runs (opened, then one per label open-pr.sh adds), all red. After a
+      # pass, re-run every finished pr-gates run on this head that did not pass,
+      # newest first (at most 6), so auto-merge can go ahead without a push and
+      # no stale red is left on the PR. GitHub reads only the newest check run,
+      # but the older reds still show and read as a failing PR. Re-running,
+      # rather than a cancelling `concurrency:` group in pr-gates.yml, keeps
+      # every run reading the PR live and never leaves a cancelled check. A
+      # re-run keeps the run on the PR's head. Best effort: a failure here only
+      # warns, and the next push or label re-runs pr-gates anyway.
       - name: Re-run pr-gates for this head
         if: steps.post.outputs.state == 'success'
         env:
@@ -103,10 +110,20 @@ jobs:
           REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          id=$(gh api "repos/$REPO/actions/workflows/pr-gates.yml/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=20" \
-            --jq '[.workflow_runs[] | select(.status == "completed")] | sort_by(.created_at) | last | .id // empty') || id=
-          if [ -z "$id" ]; then
-            echo "::notice::No finished pr-gates run for ${HEAD_SHA:0:7}; one still running will read the status itself."
+          ids=$(gh api "repos/$REPO/actions/workflows/pr-gates.yml/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=30" \
+            --jq '[.workflow_runs[] | select(.status == "completed" and .conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral")]
+                  | sort_by(.created_at) | reverse | .[:6] | .[].id') || {
+            echo "::warning::could not list pr-gates runs for ${HEAD_SHA:0:7}"
+            exit 0
+          }
+          if [ -z "$ids" ]; then
+            echo "::notice::No finished, unpassed pr-gates run for ${HEAD_SHA:0:7}; one still running will read the status itself."
             exit 0
           fi
-          gh run rerun "$id" --repo "$REPO" || echo "::warning::could not re-run pr-gates run $id"
+          for id in $ids; do
+            if gh run rerun "$id" --repo "$REPO"; then
+              echo "Re-ran pr-gates run $id"
+            else
+              echo "::warning::could not re-run pr-gates run $id"
+            fi
+          done

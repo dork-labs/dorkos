@@ -22,6 +22,7 @@ import {
   PermissionModeSchema,
   TaskApproverSchema,
   TaskPermissionRulesSchema,
+  TaskRunAccountMoveSchema,
 } from '@dorkos/shared/schemas';
 import { effectiveContentKey, effectiveTiming, effectiveWork } from './timing/effective-timing.js';
 import {
@@ -175,6 +176,7 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     // travelling as an `EffortLevel` into an adapter that cannot map it.
     effort: readEffort(row.effort),
     account: row.account ?? null,
+    ...(row.accountPinned ? { accountPinned: true } : {}),
     runOnce: row.runOnce,
     ranOnceAt: row.ranOnceAt ?? null,
     status: row.status as Task['status'],
@@ -233,6 +235,18 @@ export function mapRunRow(row: typeof pulseRuns.$inferSelect): TaskRun {
     outcome: (row.outcome as TaskRunOutcome | null) ?? null,
     scheduledFor: row.scheduledFor ?? null,
     missedTicks: row.missedTicks ?? null,
+    ...accountMoveOf(row.accountMove),
     createdAt: row.createdAt,
   };
+}
+
+/** The run's account move (DOR-5097), when the column holds one this build can read. */
+function accountMoveOf(raw: string | null): Pick<TaskRun, 'accountMove'> {
+  if (raw === null) return {};
+  try {
+    const parsed = TaskRunAccountMoveSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? { accountMove: parsed.data } : {};
+  } catch {
+    return {};
+  }
 }

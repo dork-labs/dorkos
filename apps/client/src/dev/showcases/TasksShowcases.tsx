@@ -4,10 +4,10 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { TaskTemplateCard, TasksPanel } from '@/layers/features/tasks';
-import { TASKS_KEY } from '@/layers/entities/tasks';
+import { TASKS_KEY, TASK_RUNS_KEY } from '@/layers/entities/tasks';
 import { configKeys } from '@/layers/entities/config';
 import type { TaskTemplate } from '@dorkos/shared/types';
-import type { Task } from '@dorkos/shared/types';
+import type { Task, TaskRun } from '@dorkos/shared/types';
 
 const RUNNING_SCHEDULE: Task = {
   id: 'sched-health-check',
@@ -300,6 +300,93 @@ function TasksPanelShowcase() {
   );
 }
 
+/** A schedule on its own Claude account, which may move when it runs out (DOR-5097). */
+const ON_ACCOUNT_SCHEDULE: Task = {
+  ...RUNNING_SCHEDULE,
+  id: 'sched-publish-posts',
+  name: 'Publish due posts',
+  cron: '0 17 * * *',
+  account: 'claude5',
+};
+
+/** The same schedule, pinned: a run fails rather than moving. */
+const PINNED_SCHEDULE: Task = {
+  ...ON_ACCOUNT_SCHEDULE,
+  id: 'sched-weekly-digest',
+  name: 'Send the weekly digest',
+  cron: '0 9 * * 1',
+  accountPinned: true,
+};
+
+/** A run that started on another account because its own was out. */
+const MOVED_RUN: TaskRun = {
+  id: 'run-moved',
+  scheduleId: ON_ACCOUNT_SCHEDULE.id,
+  status: 'completed',
+  startedAt: '2026-11-23T23:00:04.000Z',
+  finishedAt: '2026-11-23T23:01:10.000Z',
+  durationMs: 66_000,
+  outputSummary: 'Published 2 posts.',
+  error: null,
+  sessionId: null,
+  trigger: 'scheduled',
+  resolvedRuntime: 'claude-code',
+  resolvedModel: null,
+  refusedTools: null,
+  outcome: null,
+  scheduledFor: '2026-11-23T23:00:00.000Z',
+  missedTicks: 0,
+  accountMove: {
+    from: { id: 'claude5', label: 'Claude5' },
+    to: { id: 'claude3', label: 'Claude3' },
+    reason: 'limited',
+  },
+  createdAt: '2026-11-23T23:00:04.000Z',
+};
+
+/** Two schedules on their own account, each with its runs seeded (DOR-5097). */
+function makeAccountQueryClient(): QueryClient {
+  const qc = makeTasksQueryClient(true, [ON_ACCOUNT_SCHEDULE, PINNED_SCHEDULE]);
+  qc.setQueryData(configKeys.current(), {
+    tasks: { enabled: true },
+    claudeCode: {
+      accounts: [
+        { id: 'claude5', path: '/accounts/claude5', label: 'Claude5', isAccountRoot: true },
+        { id: 'claude3', path: '/accounts/claude3', label: 'Claude3', isAccountRoot: true },
+      ],
+    },
+  });
+  for (const [task, runs] of [
+    [ON_ACCOUNT_SCHEDULE, [MOVED_RUN]],
+    [PINNED_SCHEDULE, []],
+  ] as const) {
+    qc.setQueryData([...TASK_RUNS_KEY, 'infinite', { scheduleId: task.id, limit: 20 }], {
+      pages: [runs],
+      pageParams: [0],
+    });
+  }
+  return qc;
+}
+
+/** A schedule's account, the "This account only" switch and a moved run (DOR-5097). */
+function TasksAccountShowcase() {
+  const client = useMemo(() => makeAccountQueryClient(), []);
+  return (
+    <PlaygroundSection
+      title="Schedule account"
+      description="Open a schedule: its account, whether a run may move to another account when that one is out, and a run that moved."
+    >
+      <ShowcaseDemo>
+        <QueryClientProvider client={client}>
+          <div className="bg-background max-w-2xl rounded-lg border" data-shot="task-account">
+            <TasksPanel />
+          </div>
+        </QueryClientProvider>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
 const HEALTH_CHECK: TaskTemplate = {
   id: 'health-check',
   name: 'Health Check',
@@ -362,6 +449,7 @@ export function TasksShowcases() {
 
       <TasksPanelShowcase />
       <TasksYourTimeShowcase />
+      <TasksAccountShowcase />
     </>
   );
 }

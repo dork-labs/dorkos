@@ -203,12 +203,9 @@ Each batch runs the same chain, and no step is optional:
   is true — the PR reports an auto-merge request, **or** it appears in the merge
   queue. A queued PR reports _no_ auto-merge request, so the first field alone
   answers wrongly. A zero exit proves nothing, and the request silently no-ops
-  while mergeability is unknown. In this repo a janitor (`merge-tail.yml`) also
-  arms finished PRs on a 10-minute tick, so the population that actually strands
-  is the one it skips by design — unresolved review threads, any check pending,
-  failing or cancelled, a `hold`/`wip`/`blocked` label, a conflicting tree,
-  unknown mergeability (`scripts/should-arm-automerge.sh` names each reason).
-  Straight off a push, most PRs are in that set.
+  while mergeability is unknown. In this repo nobody arms a PR:
+  `scripts/open-pr.sh` turns on auto-merge at open (`contributing/ci.md`, "Merging"), and
+  `gh pr merge --auto <n>` is only for re-queueing once after an ejection.
 - **Rebase deliberately.** When a branch falls behind, resolve to **both
   intents** — the incoming change and yours — rather than picking a side by
   reflex; when one side deleted what the other edited, the **deletion wins**, and

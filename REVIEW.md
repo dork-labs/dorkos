@@ -149,6 +149,11 @@ is a Nit, open the summary with "No blocking issues."
 - New or changed behavior has a test: client tests use a mock `Transport` via
   `TransportProvider`; server tests use `FakeAgentRuntime` from
   `@dorkos/test-utils`.
+- New tests earn their place (`.claude/rules/testing.md`, "Is this test worth
+  keeping?"): a test that asserts its own mock, duplicates a test that already
+  fails for the same break, tests a constant or a re-export, or adds one case per
+  prop where a table would do is a finding. Name the test and the question it
+  fails. A PR that deletes tests with a stated reason is good work, not a risk.
 - Dead code Knip can't see: unreachable branches, commented-out code, TODOs,
   half-finished migrations, and exports kept alive only by stale callers the PR
   should have removed.
