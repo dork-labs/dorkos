@@ -6,7 +6,15 @@
  */
 import type { AgentRuntime, DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import type { PersonChatBinding } from '../../core/runtime-seam/person-draft-settings.js';
+import type {
+  PersonChatBinding,
+  PersonDraftWitness,
+} from '../../core/runtime-seam/person-draft-settings.js';
+import {
+  SessionBirthWriteError,
+  type SessionBirthWriteContext,
+} from '../../core/runtime-seam/session-birth-write.js';
+import type { FreshDmBirth } from '../chat-messages/sending/chat-message-birth.js';
 import {
   resolveSessionCwdWithRoom,
   type ResolvedSessionPlace,
@@ -174,4 +182,22 @@ export function matchesPersonChatPlace(
     ? verifiedAgentPath === expectedAgentPath &&
         (place.forAgent === undefined || place.forAgent === expectedAgentPath)
     : place.cwd === (birth?.kind === 'person-location' ? birth.cwd : draft?.sourcePath);
+}
+
+/** Select the exact server-owned source for a first bind without changing ordinary calls. */
+export function launchBindingSourceArgs(
+  place: ResolvedChatPlace,
+  verifiedAgentPath: string | undefined,
+  person: PersonChatBinding | undefined,
+  freshDm: FreshDmBirth | undefined
+): [SessionBirthWriteContext?, PersonDraftWitness?] {
+  if (person) {
+    if (freshDm || place.session.bound || !matchesPersonChatPlace(person, place, verifiedAgentPath))
+      throw new SessionBirthWriteError('source');
+    return 'birth' in person ? [person.birth] : [undefined, person.draft];
+  }
+  if (!freshDm) return [];
+  if (place.session.bound || freshDm.targetAgent.path !== verifiedAgentPath)
+    throw new SessionBirthWriteError('source');
+  return [freshDm];
 }
