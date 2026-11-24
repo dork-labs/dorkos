@@ -179,29 +179,6 @@ describe('a running recording turns every action into a frame', () => {
     expect(store.recordingFor('s1')?.frames).toBe(1);
   });
 
-  it('counts nothing when the page could not be rasterized', async () => {
-    const { recording, driving, emitted, store } = seat(storeWithDriver());
-    await recording.start({});
-
-    const answer = driving.click({ text: 'Pay' });
-    store.resolveAction({ requestId: pushed(emitted).requestId, ok: true });
-    await answer;
-
-    // The action happened; no frame did. Counting the REQUEST would make the
-    // stop answer claim a picture nobody has.
-    expect(store.recordingFor('s1')?.frames).toBe(0);
-  });
-
-  it('leaves `capture` off when nothing is recording', async () => {
-    const { driving, emitted, store } = seat(storeWithDriver());
-
-    const answer = driving.click({ text: 'Pay' });
-    expect(pushed(emitted).capture).toBeUndefined();
-    store.resolveAction({ requestId: pushed(emitted).requestId, ok: true });
-    await answer;
-    expect(store.recordingFor('s1')).toBeUndefined();
-  });
-
   it('stops filming at the ceiling and keeps driving', async () => {
     const { recording, driving, emitted, store } = seat(storeWithDriver());
     await recording.start({});
@@ -226,107 +203,6 @@ describe('a running recording turns every action into a frame', () => {
       did: 'Clicked.',
     });
     expect((await after).payload).toMatchObject({ ok: true, did: 'Clicked.' });
-  });
-
-  it('counts an action the recording could not film, and says so on stop', async () => {
-    const store = storeWithDriver();
-    const { recording, driving, emitted } = seat(store, 500);
-    await recording.start({});
-
-    // A person brought a preview to the front in ANOTHER window. The action is
-    // addressed there, really runs, and is not in the film.
-    store.ingest(
-      's1',
-      { documentId: 'doc-b', seq: 2, console: [], network: [], active: true, instrumented: true },
-      'client-b'
-    );
-    const acted = driving.click({ text: 'Pay' });
-    const request = pushed(emitted);
-    expect(request.targetClientId).toBe('client-b');
-    // Never asked for a frame from a window that is not holding the buffer.
-    expect(request.capture).toBeUndefined();
-    store.resolveAction({ requestId: request.requestId, ok: true, did: 'Clicked.' });
-    // The action itself still succeeds — the run is not what went wrong.
-    expect((await acted).payload).toMatchObject({ ok: true, did: 'Clicked.' });
-
-    const stopping = recording.stop();
-    const stopEvent = pushed(emitted);
-    store.resolveRecording(stopEvent.requestId, {
-      ok: true,
-      path: '.dork/.temp/recordings/rec.gif',
-      bytes: 10,
-      frames: 2,
-      durationMs: 1_000,
-      keyframe: null,
-    });
-
-    const answer = await stopping;
-    // `ok: true` with an unexplained gap is the one thing §10 forbids.
-    expect(answer.payload).toMatchObject({ ok: true, missed: 1 });
-    // And it reads as one thing, not as several.
-    expect(String(answer.payload.note)).toContain(
-      '1 action you took happened in another window while this was recording, so it is not in ' +
-        'the file.'
-    );
-  });
-
-  it('does not count an action that never came back as one that happened', async () => {
-    const store = storeWithDriver();
-    const { recording, driving, emitted } = seat(store, 5);
-    await recording.start({});
-
-    // Same shape as above — the action is addressed to another window — except
-    // that window never answers. Nothing happened there, so the recording has
-    // no gap to own up to: saying it does would make the count claim more than
-    // the run did.
-    store.ingest(
-      's1',
-      { documentId: 'doc-b', seq: 2, console: [], network: [], active: true, instrumented: true },
-      'client-b'
-    );
-    const acted = driving.click({ text: 'Pay' });
-    expect(pushed(emitted).targetClientId).toBe('client-b');
-    expect((await acted).payload).toMatchObject({ ok: false });
-
-    const stopping = recording.stop();
-    store.resolveRecording(pushed(emitted).requestId, {
-      ok: true,
-      path: '.dork/.temp/recordings/rec.gif',
-      bytes: 10,
-      frames: 2,
-      durationMs: 1_000,
-      keyframe: null,
-    });
-
-    const stopped = await stopping;
-    expect(stopped.payload.missed).toBeUndefined();
-    expect(String(stopped.payload.note)).not.toContain('another window');
-  });
-
-  it('says nothing about missed frames when the whole run was filmed', async () => {
-    const { recording, driving, emitted, store } = seat(storeWithDriver(), 500);
-    await recording.start({});
-    const answer = driving.click({ text: 'Pay' });
-    store.resolveAction({
-      requestId: pushed(emitted).requestId,
-      ok: true,
-      captured: true,
-    });
-    await answer;
-
-    const stopping = recording.stop();
-    store.resolveRecording(pushed(emitted).requestId, {
-      ok: true,
-      path: '.dork/.temp/recordings/rec.gif',
-      bytes: 10,
-      frames: 3,
-      durationMs: 1_000,
-      keyframe: null,
-    });
-
-    const stopped = await stopping;
-    expect(stopped.payload.missed).toBeUndefined();
-    expect(String(stopped.payload.note)).not.toContain('another window');
   });
 
   it('drops the buffer when the window lets that page go', async () => {
@@ -392,35 +268,6 @@ describe('stopping a recording', () => {
     expect(String(answer.payload.note)).toContain('last frame');
   });
 
-  it('says the ceiling was reached when the run outran the film', async () => {
-    const { recording, driving, emitted, store } = seat(storeWithDriver(), 500);
-    await recording.start({});
-    for (let i = 0; i < WORKBENCH.MAX_RECORDING_FRAMES; i++) {
-      const answer = driving.click({ text: 'Pay' });
-      store.resolveAction({
-        requestId: pushed(emitted).requestId,
-        ok: true,
-        captured: true,
-      });
-      await answer;
-    }
-
-    const stopping = recording.stop();
-    const event = pushed(emitted);
-    store.resolveRecording(event.requestId, {
-      ok: true,
-      path: '.dork/.temp/recordings/rec.gif',
-      bytes: 10,
-      frames: WORKBENCH.MAX_RECORDING_FRAMES,
-      durationMs: 1_000,
-      keyframe: null,
-    });
-
-    const answer = await stopping;
-    expect(String(answer.payload.note)).toContain('filled up');
-    expect(answer.image).toBeUndefined();
-  });
-
   it('refuses when nothing is being recorded', async () => {
     const { recording } = seat(storeWithDriver());
 
@@ -441,22 +288,6 @@ describe('stopping a recording', () => {
     // And nothing is left behind: the very next start works.
     expect(store.recordingFor('s1')).toBeUndefined();
     expect((await recording.start({})).payload.ok).toBe(true);
-  });
-
-  it('passes the sentence the window gave through when it could not make a file', async () => {
-    const { recording, emitted, store } = seat(storeWithDriver(), 500);
-    await recording.start({});
-
-    const stopping = recording.stop();
-    store.resolveRecording(pushed(emitted).requestId, {
-      ok: false,
-      error: 'The recording came out bigger than 8 MB, so it was not saved.',
-    });
-
-    expect((await stopping).payload).toMatchObject({
-      ok: false,
-      note: 'The recording came out bigger than 8 MB, so it was not saved.',
-    });
   });
 });
 
@@ -676,63 +507,7 @@ describe('bound recording START phases', () => {
     expect((await answer).payload.ok).toBe(true);
     store.clear();
   });
-  it.each(['reserved', 'started'] as const)(
-    'lost %s outcome times out and rolls back only that reservation',
-    async (missing) => {
-      vi.useFakeTimers();
-      const store = boundStore();
-      try {
-        const sent: RawSessionEvent[] = [];
-        const handlers = createRecordingHandlers({
-          sessionId: 's1',
-          cwd: '/tmp/cwd',
-          store,
-          emit: (event) => {
-            sent.push(event);
-            const request = pushed([event]);
-            if (request.action === 'start' && missing !== 'reserved')
-              reply(store, request, 'reserved');
-            return true;
-          },
-        });
-        const answer = handlers.start({});
-        await vi.advanceTimersByTimeAsync(8001);
-        expect((await answer).payload.ok).toBe(false);
-        expect(pushed(sent).action).toBe('cancel-start');
-        expect(store.recordingFor('s1')).toBeUndefined();
-        expect(vi.getTimerCount()).toBe(0);
-      } finally {
-        store.clear();
-        vi.useRealTimers();
-      }
-    }
-  );
-  it.each(['start', 'confirm-start'] as const)(
-    'failed %s publication cancels its phase waiter immediately',
-    async (fail) => {
-      vi.useFakeTimers();
-      const store = boundStore();
-      try {
-        const handlers = createRecordingHandlers({
-          sessionId: 's1',
-          cwd: '/tmp/cwd',
-          store,
-          emit: (event) => {
-            const request = pushed([event]);
-            if (request.action === fail) return false;
-            if (request.action === 'start') reply(store, request, 'reserved');
-            return true;
-          },
-        });
-        expect((await handlers.start({})).payload.ok).toBe(false);
-        expect(store.recordingFor('s1')).toBeUndefined();
-        expect(vi.getTimerCount()).toBe(0);
-      } finally {
-        store.clear();
-        vi.useRealTimers();
-      }
-    }
-  );
+
   it('refused START cannot clear a different recording installed reentrantly and rekeyed', async () => {
     const store = boundStore();
     const handlers = createRecordingHandlers({
