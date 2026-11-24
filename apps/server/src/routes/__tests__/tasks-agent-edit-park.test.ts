@@ -28,8 +28,8 @@ import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createTestDb } from '@dorkos/test-utils/db';
-import type { Db } from '@dorkos/db';
-import { sql } from 'drizzle-orm';
+import { notifications, type Db } from '@dorkos/db';
+import { eq, sql } from 'drizzle-orm';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { hasSchedule } from '@dorkos/skills';
@@ -635,6 +635,37 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
       expect((await resync()).status).toBe('active');
       // The server's record of the move is spent: the same notice undoes nothing more (C1).
       expect((await undo(task.id, notice!.id)).status).toBe(409);
+    });
+
+    it('puts back what the server recorded, never what the notice’s words say', async () => {
+      // Purpose: the Undo acts on DorkOS's own record of the move (C1), so a
+      // stored notice whose words changed cannot restore another account.
+      const task = await approvedOn('claude4');
+      await agentEdit(task.id, { account: 'claude5' });
+      const [notice] = accountNotices();
+      const stored = db.select().from(notifications).where(eq(notifications.id, notice!.id)).get()!;
+      const payload = JSON.parse(stored.dataJson!);
+      payload.accountChange.fromId = 'claude-ab1';
+      db.update(notifications)
+        .set({ dataJson: JSON.stringify(payload) })
+        .where(eq(notifications.id, notice!.id))
+        .run();
+
+      const res = await undo(task.id, notice!.id);
+
+      expect(res.body).toMatchObject({ status: 'active', account: 'claude4' });
+    });
+
+    it('never undoes the same move twice, even once the task is back on that account', async () => {
+      const task = await approvedOn('claude-ab1');
+      await agentEdit(task.id, { account: 'claude5' });
+      const [notice] = accountNotices();
+      expect((await undo(task.id, notice!.id)).body.account).toBe('claude-ab1');
+      // Back on Claude5 by another way (the row alone); the old notice must not move it again.
+      store.updateTask(task.id, { account: 'claude5' });
+
+      expect((await undo(task.id, notice!.id)).status).toBe(409);
+      expect(store.getTask(task.id)!.account).toBe('claude5');
     });
 
     it('waits for the person when Undo puts back an account that needs approval', async () => {

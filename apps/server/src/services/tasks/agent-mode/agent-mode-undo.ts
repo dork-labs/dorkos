@@ -185,7 +185,6 @@ export async function undoAgentModeChange(
   // would; a restricted one (credits, the main sign-in, kept out, not signed
   // in, or none) waits for the person to approve it, as a move there does.
   if (data.account !== undefined) {
-    store.approvals.patchAgentModeColumn(id, { accountUndo: null });
     if (accountMayTakeMovedWork(data.account)) {
       const before = { ...taskWorkOf(existing), status: existing.status };
       store.approvals.settleApprovedWorkChange(id, before, {
@@ -193,6 +192,8 @@ export async function undoAgentModeChange(
         accountMayMoveTo: (to) => accountMayTakeMovedWork(to),
       });
     } else store.approvals.parkWithReason(id, RESTORED_ACCOUNT_REASON);
+    // Spent: the same notice never undoes this move again.
+    store.approvals.patchAgentModeColumn(id, { accountUndo: null });
   }
   if (byPerson) {
     if (data.permissionMode) store.approvals.setPersonFloor(id, data.permissionMode);
