@@ -1,6 +1,6 @@
 ---
 name: creating-pull-requests
-description: When to open a pull request in the DorkOS repo (review the pushed branch first, open the PR after it converges), how the automated review behaves (skip-review, review:light/deep, re-review), and how a PR lands through merge-tail and the merge queue, including what to do when it goes red or is ejected. Use when finishing a branch, opening a PR, deciding how much review a PR should get, requesting a re-review, or watching a PR until it merges.
+description: When to open a pull request in the DorkOS repo (review the pushed branch first, open the PR after it converges), how the automated review behaves (skip-review, review:light/deep, re-review), and how a PR lands through auto-merge and the merge queue, including what to do when it goes red or is ejected. Use when finishing a branch, opening a PR, deciding how much review a PR should get, requesting a re-review, or watching a PR until it merges.
 ---
 
 # Creating Pull Requests
@@ -331,14 +331,14 @@ their own group and cannot evict one that will, and the group is keyed by head
 SHA, so one commit gets exactly one review.
 
 **A review lost to an infrastructure failure is re-requested for you.**
-merge-tail applies `re-review` on your behalf when the check is red, up to three
-times per head SHA (`scripts/should-redispatch-review.sh`). Do not wait on it if
-you want a review now: GitHub throttles scheduled workflows and the median gap
-between merge-tail ticks is about 2.7 hours, so apply `re-review` yourself. It
+`review-redispatch.yml` applies `re-review` on your behalf when the check is red, up
+to three times per head SHA (`scripts/should-redispatch-review.sh`). Do not wait on
+it if you want a review now: GitHub throttles scheduled workflows, so it can be hours
+between ticks; apply `re-review` yourself. It
 leaves a `skip-review` label alone, never retries a PR that edits the review
 workflow (that one cannot be reviewed by it at all), and waits out the Claude
 subscription window when the last attempt died against a quota (about 5 hours,
-6 for a weekly limit) before trying again — a pause, not a give-up. If your PR is conflicting and `re-review` seems stuck on it, merge-tail
+6 for a weekly limit) before trying again — a pause, not a give-up. If your PR is conflicting and `re-review` seems stuck on it, review-redispatch
 removes it for you — a conflicting PR produces no run, so nothing else can.
 
 ## Rebase before you expect a review
@@ -424,7 +424,7 @@ bump) where you are the merger and have full context. Prefer `review:light` over
 Use `review:deep` for risky changes (security, migrations, broad refactors,
 deletions).
 
-## Merging: you arm it, the queue lands it
+## Merging: auto-merge at open, the queue lands it
 
 `main` merges through a merge queue (ADR 260728-112203). GitHub builds each queued PR
 on top of `main` plus everything ahead of it in the queue, runs the required checks on
@@ -433,25 +433,23 @@ so **never update a branch to satisfy a gate**: no `gh pr update-branch`, no mer
 `main` in to be current. It starts a fresh round of 19 to 25 Actions jobs against a
 60-job pool every agent shares, and it disarms the PR.
 
-**Who arms it.** `merge-tail.yml` arms auto-merge on every finished PR, but GitHub
-throttles its `*/10` schedule: over 200 scheduled runs (2026-08-25 to 09-19) the median
-gap was 162 minutes and the p90 305, so it runs roughly every 2-3 hours, not every 10
-minutes. It is a backstop. It arms a PR that is open, not a draft, no hold label (`hold`, `do-not-merge`, `wip`,
-`blocked`), not conflicting, no requested changes, no unresolved review threads
-(outdated ones count), and every check settled green with none cancelled. It will not
-re-arm a PR the queue has rejected twice for the same check on the same head commit;
-it comments on the PR once instead, and a new commit clears it. The decision
-is `scripts/should-arm-automerge.sh`. Arm your own green PR yourself instead of
-waiting for it; arming is idempotent and safe (one arming path arrives in phase 1b).
+**Nobody arms a PR (DOR-5124).** `scripts/open-pr.sh` turns auto-merge on when the
+PR opens, because main's `ci/required-checks.json` requires `not-held`,
+`release-window` and `pr-gates`: a hold, a freeze or release, and a missing Security
+sign-off block the merge on their own. GitHub queues the PR once every required check
+is green. `open-pr.sh` leaves auto-merge off for a draft and for a `--hold` PR, and
+prints `auto-merge: on` or `auto-merge: off: <why>`. `arm.sh`, `arm-door.yml` and
+merge-tail's arming are retired.
 
-**Auto-merge at open (DOR-5107).** `scripts/open-pr.sh` turns auto-merge on by itself
-once main's `ci/required-checks.json` requires `not-held`, `release-window` and
-`pr-gates`. Those checks make a hold, a freeze or release, and a missing sign-off block
-the merge on their own. It never does this for a draft or a `--hold` PR, and it prints
-`auto-merge: on` or `auto-merge: off: <why>`. Until those checks are required, arm by hand:
+The one time you turn auto-merge on yourself is the ejection rule in `AGENTS.md` and
+`contributing/ci.md`: after a first failed-checks ejection, read the failing job, and
+once it is plainly not yours, re-queue it once. The same check failing again on the
+same head is real: fix it and push instead. A draft marked ready, and a PR opened
+before Nov 24, need it turned on once too; a maintainer does it for an outside
+contributor.
 
 ```bash
-gh pr merge --auto <number>
+gh pr merge --auto <number>   # only after an ejection (once), or a draft marked ready
 ```
 
 Leave off the strategy flag; the queue owns it. `gh pr merge --auto --squash` prints
@@ -462,14 +460,13 @@ reacting to stderr.
 
 **What an armed PR does not wait for.** Once armed, GitHub waits only on the required
 checks. The Claude review is not a required check and conversation resolution is off,
-so on an armed PR a red review or an open thread blocks nothing. Only merge-tail's own
-arming respects them. That is why the order at the top of this file (review the
+so on an armed PR a red review or an open thread blocks nothing. That is why the order at the top of this file (review the
 branch, then open the PR) is the safeguard that actually holds: arm at creation only a
 branch that has already converged.
 
 **A new commit disarms auto-merge.** GitHub drops the armed state on every push to
-the PR branch, silently. Re-arm it yourself once the new commit's checks are green;
-merge-tail's next run may be hours away.
+the PR branch, silently. Turn it back on yourself once the new commit's checks are
+green; nothing else will.
 
 **Never an admin merge.** `gh pr merge --admin`, a REST `PUT .../pulls/<n>/merge` and
 the `mergePullRequest` mutation each land a change without the queue's checks, and
@@ -604,15 +601,39 @@ the merge queue gates on. Chasing it burns the attention the actually-blocking c
 needs. Confirm the required set (the rules API command above), then act only on a
 **required** check that went red on **this** PR.
 
-**Do not write the watch loop from memory; run the tested one:**
+**Do not write the watch loop from memory; run the tested one, in the background:**
 
 ```bash
 .agents/skills/creating-pull-requests/scripts/watch-prs.sh --interval 120 <number> [<number>...]
-# pipe it into the Monitor tool for hands-free notification; --once for a single cycle
+# as your harness's background task, so its exit wakes you; --once for a single cycle
 ```
 
+**It exits when a PR needs you, so the exit is your wake-up.** A harness tells you about
+a background shell only when it exits. A watcher that kept looping after a PR went
+`EJECTED`, `CONFLICTING` or green-and-unmerged wrote the right next step to a file
+nobody read, and #2333 and #2335 sat ejected and conflicting for hours (DOR-2558). So
+when stdout is not a terminal, `watch-prs.sh` runs with `--exit-on-action`: it
+finishes the cycle, prints one `NEEDS ACTION: PR #n TOKEN, ...` line and exits 10 as
+soon as any PR is `EJECTED`, `EJECTED_REPEAT`, `CONFLICTING`, `FAILING`, `CANCELLED`,
+`AUTO_MERGE_OFF` (any form) or `WATCHER BLIND`. Key on the `NEEDS ACTION` line, not
+the exit code alone: a crash also exits non-zero. The lines above the summary carry
+each remedy.
+**Act on them, then launch the watcher again** for the PRs still open; an ejection
+it already saw at launch is not reported twice. A PR still in one of those states at
+launch wakes you on the first cycle, so when the action you chose is to wait (the same
+job is red on `main`), leave that PR out of the relaunch. After `gh run rerun`, relaunch
+only once the rerun shows as pending in `gh pr checks <n>`; until then the old red
+wakes you again at once. Exit 0 means every PR merged or closed, or that `--once`
+finished its one cycle with nothing that needs action, PRs possibly still open. Exit 3
+means `--max-cycles` ran out. The other states (`HELD_BY_LABEL`,
+`UNRESOLVED_THREADS`, `STUCK_UNMERGEABLE`, `STALLED_IN_QUEUE`, `QUEUED`, `PENDING`)
+wait on someone or something else, so they print a line and the watch goes on. On a
+terminal it streams as before; `--no-exit-on-action` streams off a terminal too, for
+a Monitor that should keep reading. A Monitor alone is not enough: it can expire
+before a queue run ends, which takes 20 to 60 minutes or more.
+
 Every watcher on this machine spends the operator's one GraphQL budget (5,000 points
-an hour, shared with merge-tail), so poll no faster than you need: 120 seconds is
+an hour, shared with every other agent and workflow using that login), so poll no faster than you need: 120 seconds is
 plenty for a PR whose checks take 15 to 40 minutes.
 
 **Arming is not the end.** Keep watching until the PR is merged (report the squash
@@ -624,7 +645,7 @@ or close.
 It reports state **transitions** (never a once-per-PR "seen" flag that goes blind
 after the first event; a watcher written that way missed a check failure on
 2026-08-24). Each line that asks something of you ends in ` :: <remedy>`, the exact
-next step, so a Monitor-woken agent does not have to re-read this file. The
+next step, so an agent it wakes does not have to re-read this file. The
 vocabulary, the remedy text and the collector are pinned by
 `scripts/test-watch-prs.sh`; the header of `watch-prs.sh` is the reference. In
 precedence order:
@@ -636,12 +657,14 @@ precedence order:
 | `EJECTED_REPEAT(failed_checks,k)` | k failed-checks ejections with no new commit in between                                         | you: is it the same job?   |
 | `CONFLICTING`                     | Needs a rebase; a conflicting PR runs no CI and no review                                       | you                        |
 | `FAILING(names)`                  | PR checks red (standing `Vercel` reds excluded)                                                 | you, after reading the log |
-| `CANCELLED(names)`                | A cancelled check; merge-tail never arms a PR carrying one                                      | you: re-run it once        |
+| `CANCELLED(names)`                | A cancelled check is not a pass, so the PR cannot merge while it stands                         | you: re-run it once        |
 | `STUCK_UNMERGEABLE`               | A dead queue entry that keeps its position                                                      | you, after 10 minutes      |
 | `STALLED_IN_QUEUE(m)`             | Queued for 90 minutes or more (the queue's p90 is about 55)                                     | nobody on your branch      |
 | `HELD_BY_LABEL(l[,armed])`        | A hold label is on it; `,armed` means it was armed anyway and the queue does not read labels    | whoever set the label      |
 | `UNRESOLVED_THREADS(n[,armed])`   | Open threads, outdated included; `,armed` means it will merge with them open                    | you                        |
-| `UNARMED_CLEAN`                   | Green and unarmed                                                                               | merge-tail, within 10 min  |
+| `AUTO_MERGE_OFF`                  | Green with auto-merge off, so nothing will merge it (was `UNARMED_CLEAN`)                       | you: `gh pr merge --auto`  |
+| `AUTO_MERGE_OFF(ejected,k)`       | The same, on a head the queue ejected k times for failed checks since its last commit           | you: k=1 re-queue once, k≥2 fix |
+| `AUTO_MERGE_OFF(dequeued,reason)` | The same, after a manual, timed-out or other non-failed-checks removal                         | you: read why first        |
 | `QUEUED(pos)`, `PENDING`          | Informational                                                                                   | nobody                     |
 | `RECOVERED`                       | Healthy again after a red, cancelled, stuck, stalled or blind state                             | nobody                     |
 | `WATCHER BLIND(k cycles)`         | Its `gh` calls failed k cycles running (auth, network, rate limit)                              | you: `gh auth status`      |
@@ -651,8 +674,8 @@ retry-not-terminal (mergeability is computed async); checks attach to the head S
 so the rollup stays correct across reruns; `gh pr checks` never shows merge-group
 runs, so queue trouble is read from the queue entry and the timeline, not from check
 rows (the old `STALLED_IN_QUEUE` test counted check rows and could never fire); and a
-`hold` label beats "green and unarmed" (the old `UNARMED_CLEAN` remedy said to merge
-directly, which walked straight past a hold).
+`hold` label beats "green and unarmed" (the first green-and-unarmed remedy said to
+merge directly, which walked straight past a hold).
 
 On 2026-08-06 the v0.58.0 release PR sat `OPEN` with a red **required** `typecheck`
 (its prettier `--check` step — see the worktree gotcha below), while a
@@ -706,8 +729,7 @@ catch, which corrupts the numbers the pipeline is tuned by.
   flake. Do not re-arm. Find the job in each merge-group run
   (`gh run list --event merge_group -L 100 --json headBranch,name,conclusion,databaseId`,
   keeping rows whose `headBranch` contains `pr-<n>-`), read its log, fix it, push.
-  merge-tail will not re-arm such a PR either: it comments once and waits for a new
-  commit. PR #1964 was re-armed unchanged four times after the same browser assertion
+  PR #1964 was re-armed unchanged four times after the same browser assertion
   failed, costing 17 queue builds, its own and every PR stacked behind it. The one
   exception is the same check red on `main` too (a break that landed there, like the
   wall-clock fixture of 2026-09-17): wait for the fix on `main`, then re-arm. Different
@@ -722,12 +744,25 @@ catch, which corrupts the numbers the pipeline is tuned by.
   error such as a lost runner): `gh run rerun <run-id> --failed`, once. If `main` was
   broken when the check ran and is fixed now, rebase onto `origin/main` and push
   once: a rerun replays the original merge commit, so it cannot pick up the fix.
-- **`CANCELLED`**: re-run the cancelled run once (`gh run rerun <run-id>`); merge-tail
-  will not arm the PR while it stands.
-- **`UNARMED_CLEAN`**: arm it now with `gh pr merge --auto <n>`. Never merge it
-  directly. (Waiting for merge-tail made sense when it was believed to run every 10
-  minutes; it runs every 2-3 hours.)
-- **`HELD_BY_LABEL`**: not yours to lift unless you added the label.
+- **`CANCELLED`**: re-run the cancelled run once (`gh run rerun <run-id>`); the PR
+  cannot merge while it stands.
+- **`AUTO_MERGE_OFF`**: the remedy reads main's `ci/required-checks.json` the way
+  `scripts/open-pr.sh` does. Once main requires `not-held`, `release-window` and
+  `pr-gates`, turn auto-merge back on with `gh pr merge --auto <n>`: those checks still
+  stop a held, frozen or unsigned PR. If main ever stops requiring them, the remedy
+  says the maintainer merges it instead: do not arm, queue or merge it yourself; say it
+  is ready and stop watching it. Never merge it directly either way. A green PR with
+  open threads reads as `AUTO_MERGE_OFF` too, because threads block nothing.
+- **`AUTO_MERGE_OFF(ejected,k)`**: the queue ejected this head for failed checks and
+  that turned auto-merge off. k=1 is the first-ejection rule above: read the job, and
+  re-queue once only if it is plainly not yours. k≥2 is a regression: fix it and push,
+  never re-queue. If you choose to wait, leave the PR out of the relaunch.
+- **`AUTO_MERGE_OFF(dequeued,reason)`**: the latest removal was not a failed-checks
+  one. `manual`: someone removed it on purpose; read why first. `checks_timed_out`: a
+  stall; do nothing to the branch. No command to re-queue comes with either.
+- **`HELD_BY_LABEL`**: not yours to lift unless you added the label. Only `hold` is
+  stopped by a required check (`not-held`); `wip`, `blocked` and `do-not-merge` on an
+  armed PR merge once green, so disarm it if the hold is real.
 
 ### Clearing a STUCK_UNMERGEABLE queue entry
 
@@ -857,7 +892,7 @@ gh label create re-review    --description "Request another automated review pas
 - **A finished review is a green check, even when the action failed.** The action
   re-counts turns after the run and fails the step if a clean run overshot
   `--max-turns` — which used to red a review that had already posted its findings
-  and its tally, and merge-tail will not arm a PR with a red check. It no longer
+  and its tally. It no longer
   does: when the review finished and its verdict is on the PR, the check goes green
   and you get no comment at all, just a warning annotation on the Actions run
   (DOR-1665). So a green `claude-code-review` check means the current run posted a
@@ -940,8 +975,7 @@ gh label create re-review    --description "Request another automated review pas
   skill (`AGENTS.md`), which sets state for you. Pass `stateId` yourself only as a
   stopgap, when you are calling the API directly because the adapter is unreachable.
 - **The review is non-blocking, for now.** It posts comments and is not one of the
-  required checks, so the queue does not wait on it. It still matters twice: a red
-  review check makes merge-tail skip the PR (until the next push, since the check
-  belongs to the old SHA), and a PR someone armed early merges with its findings
-  open. Address findings before the PR is armed. CI Steward phase 2 plans a
+  required checks, so the queue does not wait on it. It still matters: its Security
+  verdict feeds the required `pr-gates` check, and a PR that is armed at open merges
+  with its other findings open. Address findings before the PR leaves draft. CI Steward phase 2 plans a
   required, always-running review gate that goes red on an open Important finding.

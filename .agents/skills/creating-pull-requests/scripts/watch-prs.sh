@@ -4,7 +4,8 @@
 # and fails again reports every turn).
 #
 # Usage:
-#   watch-prs.sh [--interval SECONDS] [--max-cycles N] [--once] PR [PR...]
+#   watch-prs.sh [--interval SECONDS] [--max-cycles N] [--once]
+#                [--exit-on-action | --no-exit-on-action] PR [PR...]
 #   watch-prs.sh --classify        # test seam: JSON snapshot on stdin -> event token
 #   watch-prs.sh --remedy TOKEN [PR]
 #                                  # test seam: print the remedy text the watch
@@ -26,6 +27,32 @@
 # ANNOUNCES expiry: silence is never success. Exits 0 when every watched PR
 # is MERGED or CLOSED.
 #
+# Exit-on-action (DOR-2558). A harness tells an agent about a background
+# shell only when it exits, so a watcher that keeps looping after a PR needs
+# action writes its best line to a file nobody reads (#2333 and #2335 sat
+# ejected and conflicting for hours that way). With --exit-on-action, the
+# watcher finishes the cycle, so every PR still gets its line, then prints
+#   NEEDS ACTION: PR #n TOKEN[, PR #m TOKEN]. Act on each line above, ...
+# and exits 10 once any PR enters a state that needs a hand: EJECTED(...),
+# EJECTED_REPEAT(...), CONFLICTING, FAILING(...), CANCELLED(...),
+# AUTO_MERGE_OFF[(...)] or WATCHER BLIND. Every other state waits on someone
+# or something else (a hold's owner, the queue, running checks), so the
+# watch goes on. Key on the NEEDS ACTION line, not on the exit code alone:
+# 10 is a code neither jq nor gh uses, but a crash can still exit non-zero. It is ON by default when stdout is not a TTY (a background task,
+# a pipe, a Monitor) and OFF on a terminal; --no-exit-on-action keeps a
+# streaming watch off a TTY. Run it in the background, act on the line that
+# woke you, then launch it again: an ejection already seen at launch is not
+# reported twice, so a relaunch waits for the next change. A PR still in a
+# needs-action state at launch wakes you on the first cycle, so when the
+# action you chose is to wait (main is red too), leave that PR out of the
+# relaunch, and after `gh run rerun` relaunch only once the rerun shows as
+# pending, or the old red wakes you again at once.
+#
+# Exit codes: 0 all settled, or --once finished a cycle with nothing that
+# needs action (PRs may still be open); 2 usage; 3 --max-cycles expired;
+# 4 `gh repo view` failed; 10 a PR needs action (exit-on-action);
+# 1 --probe saw ERR.
+#
 # Every remedy is load-aware on purpose. One push to a PR starts 19 to 25
 # Actions jobs against a 60-job pool shared by every agent, so no remedy here
 # tells you to push an empty commit, update a branch, or merge around the
@@ -37,8 +64,9 @@
 #   CLOSED                     terminal, closed without merging
 #   EJECTED(reason)            the merge queue dropped the PR; nothing else
 #                              reports this (no webhook, no check goes red).
-#                              For failed_checks the first response is to WAIT:
-#                              85% re-pass unchanged and merge-tail re-queues
+#                              For failed_checks, read the failing job before
+#                              acting: 85% re-pass unchanged, so re-queue once
+#                              when it is plainly not yours
 #   EJECTED_REPEAT(failed_checks,k)
 #                              k >= 2 failed-checks ejections with no new
 #                              commit in between: now check whether the same
@@ -47,25 +75,44 @@
 #                              NO automated review
 #   FAILING(name,...)          PR check failures (standing Vercel reds
 #                              excluded); read the log before acting
-#   CANCELLED(name,...)        a cancelled check; merge-tail never arms a PR
-#                              carrying one, so re-run it
+#   CANCELLED(name,...)        a cancelled check is not a pass, so the PR
+#                              cannot merge while it stands: re-run it
 #   STUCK_UNMERGEABLE          in the queue with entry state UNMERGEABLE, a
 #                              dead entry that keeps its position and would
 #                              otherwise read as a healthy QUEUED
 #   STALLED_IN_QUEUE(m)        queued for m >= 90 minutes (the queue's p90 is
 #                              about 55); a queue or runner stall, not your PR
 #   HELD_BY_LABEL(label[,armed])
-#                              hold / do-not-merge / wip / blocked is on the PR:
-#                              merge-tail will not arm it. ",armed" means it was
-#                              armed anyway, and the queue does not read labels
+#                              hold / do-not-merge / wip / blocked is on the PR.
+#                              ",armed" means auto-merge is on anyway: the
+#                              required not-held check stops `hold`, but the
+#                              queue reads no other label
 #   UNRESOLVED_THREADS(n[,armed])
 #                              unresolved review threads, outdated ones
-#                              included (merge-tail counts them the same way).
-#                              ",armed" means armed or queued: the queue does
-#                              not wait for threads, so it merges with them open
-#   UNARMED_CLEAN              green and unarmed; arm it yourself with
-#                              gh pr merge --auto (merge-tail runs only every
-#                              2-3 hours). Never merge it directly
+#                              included. Nothing waits on them: ",armed" means
+#                              armed or queued, so it merges with them open.
+#                              A green unarmed PR with threads reads as
+#                              AUTO_MERGE_OFF, which ranks above the unarmed
+#                              form
+#   AUTO_MERGE_OFF             green (CLEAN, or UNSTABLE with only the excluded
+#                              Vercel check red) with auto-merge off, so
+#                              nothing will merge it (UNARMED_CLEAN before
+#                              DOR-2558). The
+#                              remedy reads main's ci/required-checks.json the
+#                              way scripts/open-pr.sh does: once main requires
+#                              not-held, release-window and pr-gates, turn
+#                              auto-merge back on (an ejection turns it off);
+#                              until then the maintainer merges, and nobody
+#                              arms by hand. Never merge it directly
+#   AUTO_MERGE_OFF(ejected,k)  the same, on a head the queue ejected k times
+#                              for failed checks since its last commit: k=1,
+#                              read the job and re-queue once if it is not
+#                              yours; k>=2, fix and push, never re-queue
+#   AUTO_MERGE_OFF(dequeued,reason)
+#                              the same, after the latest queue removal since
+#                              the last commit was not a failed-checks one
+#                              (manual, checks_timed_out, ...): read why, and
+#                              no command to re-queue comes with it
 #   QUEUED(pos)                entered the merge queue (informational)
 #   PENDING                    checks running / mergeability being computed;
 #                              UNKNOWN mergeStateStatus is retry-not-terminal
@@ -76,7 +123,7 @@
 #                              and says so instead of going quiet
 set -euo pipefail
 
-USAGE="usage: watch-prs.sh [--interval s] [--max-cycles n] [--once] PR... | --classify | --remedy TOKEN [PR] | --probe PR"
+USAGE="usage: watch-prs.sh [--interval s] [--max-cycles n] [--once] [--exit-on-action | --no-exit-on-action] PR... | --classify | --remedy TOKEN [PR] | --probe PR"
 usage() {
   printf '%s\n' "$USAGE"
 }
@@ -93,9 +140,11 @@ is_non_negative_integer() {
   [ ${#value} -lt 10 ] || { [ ${#value} -eq 10 ] && [[ "$value" < "2147483648" ]]; }
 }
 
+DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 INTERVAL=60
 MAX_CYCLES=0 # 0 = unbounded (caller supplies the timeout)
 ONCE=0
+EXIT_ON_ACTION="" # empty = decided below from whether stdout is a TTY
 CLASSIFY=0
 REMEDY=""
 PROBE=""
@@ -113,6 +162,8 @@ while [ $# -gt 0 ]; do
       MAX_CYCLES="$2"
       shift 2 ;;
     --once) ONCE=1; shift ;;
+    --exit-on-action) EXIT_ON_ACTION=1; shift ;;
+    --no-exit-on-action) EXIT_ON_ACTION=0; shift ;;
     -h | --help) usage; exit 0 ;;
     --classify) CLASSIFY=1; shift ;;
     --remedy)
@@ -129,13 +180,48 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# On by default exactly when nobody is watching the terminal: a background
+# task, a pipe or a Monitor reads stdout without a TTY.
+if [ -z "$EXIT_ON_ACTION" ]; then
+  if [ -t 1 ]; then EXIT_ON_ACTION=0; else EXIT_ON_ACTION=1; fi
+fi
+
 # Minutes in the queue past which a queued PR is reported stalled. The queue's
 # p90 from entry to merge is about 55 minutes and its check timeout is 120, so
 # 90 is well past normal and still before GitHub gives up on the entry.
 STALL_MINUTES=90
-# Labels that stop merge-tail arming a PR. Mirror of HOLD_LABELS in
-# scripts/should-arm-automerge.sh; keep the two in step.
+# Labels that mean "do not land this yet". Mirror of HOLD_LABELS in
+# scripts/should-arm-automerge.sh (queue-repeat-guard runs it); keep the two
+# in step. Only `hold` is enforced by a required check (not-held).
 HOLD_LABELS='["hold","do-not-merge","do not merge","wip","blocked"]'
+# The checks main must require before auto-merge is safe to turn on: they
+# make a hold, a freeze or a missing sign-off stop a merge by themselves.
+# Mirror of AUTO_MERGE_GATES in scripts/open-pr.sh; keep the two in step.
+AUTO_MERGE_GATES="not-held release-window pr-gates"
+
+# auto_merge_absent: the AUTO_MERGE_GATES that origin/main does not require
+# yet, read from the ci/required-checks.json of the repo this script lives
+# in, the same file open-pr.sh reads. Empty means auto-merge is live;
+# "unreadable" means the file could not be read, which is treated as not live.
+auto_merge_absent() {
+  local json gate absent=""
+  json=$(git -C "$DIR" show origin/main:ci/required-checks.json 2>/dev/null) || { printf 'unreadable'; return; }
+  for gate in $AUTO_MERGE_GATES; do
+    jq -e --arg g "$gate" '.contexts | index($g)' >/dev/null 2>&1 <<<"$json" || absent="$absent $gate"
+  done
+  printf '%s' "${absent# }"
+}
+
+# needs_action: the tokens exit-on-action stops for. Each asks the PR's
+# author (or whoever they report to) to do something now; the rest wait on
+# someone or something else, and waking an agent for them would teach it to
+# ignore the watcher.
+needs_action() {
+  case "$1" in
+    EJECTED* | CONFLICTING | FAILING* | CANCELLED* | AUTO_MERGE_OFF* | WATCHER\ BLIND*) return 0 ;;
+  esac
+  return 1
+}
 
 # classify: pure state machine over one JSON snapshot. The network layer
 # below builds the same shape, so fixtures exercise the real decision path.
@@ -151,6 +237,9 @@ classify() {
     ((.labels // []) | map(ascii_downcase)) as $labels
     | ([$hold[] | select(. as $h | $labels | index($h))] | first) as $heldBy
     | ((.autoMerge // false) or (.queued // false)) as $armed
+    # Green and nothing will merge it. UNSTABLE is CLEAN with a non-required
+    # check red; any red but the excluded Vercel check is FAILING above.
+    | ((.mergeState == "CLEAN" or .mergeState == "UNSTABLE") and ((.autoMerge // false) | not) and ((.queued // false) | not)) as $off
     | if .state == "MERGED" then "MERGED"
     elif .state == "CLOSED" then "CLOSED"
     # An ejection outranks everything below it: it is the one event nothing
@@ -162,8 +251,8 @@ classify() {
     elif .ejectionReason != null then "EJECTED(\(.ejectionReason))"
     elif .mergeState == "DIRTY" then "CONFLICTING"
     elif (.failing | length) > 0 then "FAILING(\(.failing | join(",")))"
-    # merge-tail refuses a PR with a cancelled check forever, so a cancelled
-    # check is a stall the author has to see (should-arm: cancelled-checks).
+    # A cancelled check is not a pass, so the PR cannot merge while it
+    # stands: a stall the author has to see.
     elif ((.cancelled // []) | length) > 0 then "CANCELLED(\(.cancelled | join(",")))"
     # A queued entry GitHub has marked UNMERGEABLE is stuck: it will never
     # merge and nothing else reports it — the entry still carries a position,
@@ -183,8 +272,18 @@ classify() {
     elif $heldBy != null and $armed then "HELD_BY_LABEL(\($heldBy),armed)"
     elif $heldBy != null then "HELD_BY_LABEL(\($heldBy))"
     elif (.unresolvedThreads // 0) > 0 and $armed then "UNRESOLVED_THREADS(\(.unresolvedThreads),armed)"
+    # Any queue removal turns auto-merge off. The latest removal since the
+    # last commit decides the advice: after a failed-checks ejection it is
+    # the ejection rule (read the job, re-queue once; never after a repeat);
+    # after a manual or timed-out removal there is no re-queue command at all.
+    elif $off and ((.lastRemovalReasonSinceChange // "failed_checks") != "failed_checks")
+      then "AUTO_MERGE_OFF(dequeued,\(.lastRemovalReasonSinceChange))"
+    elif $off and ((.failedEjectionsSinceChange // 0) >= 1)
+      then "AUTO_MERGE_OFF(ejected,\(.failedEjectionsSinceChange))"
+    elif $off then "AUTO_MERGE_OFF"
+    # Below AUTO_MERGE_OFF: threads block nothing now, so a green unarmed PR
+    # with threads is first of all a PR nothing will merge.
     elif (.unresolvedThreads // 0) > 0 then "UNRESOLVED_THREADS(\(.unresolvedThreads))"
-    elif .mergeState == "CLEAN" and (.autoMerge | not) and (.queued | not) then "UNARMED_CLEAN"
     elif .queued then "QUEUED(\(.queuePos // "?"))"
     else "PENDING"
     end'
@@ -196,9 +295,9 @@ remedy() {
   local token=$1 n=${2:-<n>} text=""
   case "$token" in
     'EJECTED(failed_checks)')
-      text="Ejected by a failed check in the merge queue. Most of these (85% over 30 days) pass unchanged on re-entry. Do not push and do not rerun. Read the failing merge-group job first: if it covers a package you changed, run its tests locally and fix only if they fail. If the failure is not yours (the same job red on main or in other groups, or a flaky or infra error in its log), re-arm it once yourself: gh pr merge --auto $n. Green PR checks do not prove it is not yours: the browser tests run only in the queue. merge-tail would re-arm it too, but GitHub throttles its schedule to roughly every 2-3 hours." ;;
+      text="Ejected by a failed check in the merge queue. Most of these (85% over 30 days) pass unchanged on re-entry. Do not push and do not rerun. Read the failing merge-group job first: if it covers a package you changed, run its tests locally and fix only if they fail. If the failure is not yours (the same job red on main or in other groups, or a flaky or infra error in its log), re-queue it once yourself: gh pr merge --auto $n. Green PR checks do not prove it is not yours: the browser tests run only in the queue." ;;
     EJECTED_REPEAT*)
-      text="Ejected again for failed checks with no new commit in between. Find the failing job in each merge-group run: gh run list --event merge_group -L 100 --json headBranch,name,conclusion,databaseId, keeping rows whose headBranch contains pr-$n-. The same job each time: treat it as real and do not re-arm it; it is a regression only the queue can see. Read the log, reproduce it locally, fix and push (merge-tail will not re-arm it either until a new commit lands). Only if that job is red on main too, wait for the fix there, then re-arm. Different jobs: likely flaky, so re-arm it: gh pr merge --auto $n." ;;
+      text="Ejected again for failed checks with no new commit in between. Find the failing job in each merge-group run: gh run list --event merge_group -L 100 --json headBranch,name,conclusion,databaseId, keeping rows whose headBranch contains pr-$n-. The same job each time: treat it as real and do not re-arm it; it is a regression only the queue can see. Read the log, reproduce it locally, fix and push. Only if that job is red on main too, wait for the fix there, then re-arm. Different jobs: likely flaky, so re-arm it: gh pr merge --auto $n." ;;
     'EJECTED(merge_conflict)' | 'EJECTED(invalid_merge_commit)' | 'EJECTED(git_tree_invalid)')
       text="Rebase onto origin/main and push once, then arm it once its checks are green: gh pr merge --auto $n." ;;
     'EJECTED(manual)')
@@ -212,21 +311,42 @@ remedy() {
     FAILING*)
       text="Read the failing log first. Caused by your change: fix it and push. Not yours (the same job is red on main or on other PRs, or the log shows an infra error such as a lost runner): gh run rerun <run-id> --failed, once. If main was broken when this ran and is fixed now, rebase onto origin/main and push once, because a rerun replays the old merge commit. Never push an empty commit." ;;
     CANCELLED*)
-      text="A check was cancelled, and merge-tail never arms a PR with a cancelled check. Re-run that run once: gh run rerun <run-id>." ;;
+      text="A check was cancelled, and a cancelled check is not a pass, so the PR cannot merge while it stands. Re-run that run once: gh run rerun <run-id>." ;;
     STUCK_UNMERGEABLE)
       text="A dead queue entry that will never merge. If it is still here after 10 minutes, clear it with the dequeue recipe in the creating-pull-requests skill, then gh pr merge --auto $n." ;;
     STALLED_IN_QUEUE*)
       text="Queued far longer than normal (the queue's p90 is about 55 minutes): a queue or runner stall, not your PR. Do not push, rerun or re-arm. Check githubstatus.com and the merge_group runs." ;;
+    'HELD_BY_LABEL(hold,armed)')
+      text="Auto-merge is on, and the required not-held check stops the merge while hold is on. Leave the label alone unless you added it and the reason is gone; the PR merges once it is lifted." ;;
     HELD_BY_LABEL*,armed\))
-      text="Armed despite a hold label: the merge queue does not read labels, so this merges once green. If the hold is real, disarm it: gh pr merge --disable-auto $n." ;;
+      text="Armed despite a hold label: only hold is stopped by a required check (not-held), so this merges once green. If the hold is real, disarm it: gh pr merge --disable-auto $n." ;;
     HELD_BY_LABEL*)
-      text="A hold label is on this PR, so merge-tail will not arm it and nothing will land it. Leave the label alone unless you added it and the reason is gone." ;;
+      text="A hold label is on this PR and auto-merge is off, so nothing will land it. Leave the label alone unless you added it and the reason is gone; whoever lifts it turns auto-merge on." ;;
     UNRESOLVED_THREADS*,armed\))
       text="Armed or queued: the queue does not wait for review threads, so this PR merges with them open. Address or resolve them now, or disarm while you work: gh pr merge --disable-auto $n." ;;
     UNRESOLVED_THREADS*)
-      text="merge-tail will not arm this PR until every review thread is resolved, outdated ones included. Address or resolve them." ;;
-    UNARMED_CLEAN)
-      text="Green and unarmed. Arm it now: gh pr merge --auto $n. Arming is idempotent and safe; do not merge it directly. merge-tail would arm it too, but GitHub throttles its schedule to roughly every 2-3 hours." ;;
+      text="Unresolved review threads, outdated ones included. Nothing waits on them: once auto-merge is on, this PR merges with them open. Address or resolve them." ;;
+    'AUTO_MERGE_OFF(ejected,1)')
+      text="Auto-merge went off when the queue ejected this head for failed checks. Read the failing merge-group job first: if it covers a package you changed, run its tests locally and fix only if they fail. If it is plainly not yours, re-queue it once: gh pr merge --auto $n. If you choose to wait (the same job is red on main), leave this PR out of the relaunch." ;;
+    'AUTO_MERGE_OFF(ejected,'*)
+      text="The queue ejected this head for failed checks more than once with no new commit in between. If the same job failed each time, it is real: read the log, reproduce it locally, fix it and push. Do not re-queue it. Only if that job is red on main too, wait for the fix there and leave this PR out of the relaunch." ;;
+    'AUTO_MERGE_OFF(dequeued,manual)')
+      text="Someone took this PR out of the queue on purpose, and that turned auto-merge off. Read the timeline and comments for why before doing anything; turning it back on is for whoever removed it, or for you once their reason is gone." ;;
+    'AUTO_MERGE_OFF(dequeued,checks_timed_out)')
+      text="The queue timed out waiting for checks, and that turned auto-merge off: a queue or runner stall, not your PR. Do not push or rerun. Check githubstatus.com and the merge_group runs, and leave this PR out of the relaunch until the stall has cleared." ;;
+    'AUTO_MERGE_OFF(dequeued,'*)
+      local reason=${token#AUTO_MERGE_OFF(dequeued,}
+      reason=${reason%)}
+      text="This PR left the queue ($reason), and that turned auto-merge off. Read the PR timeline for why before turning it back on." ;;
+    AUTO_MERGE_OFF)
+      local absent
+      absent=$(auto_merge_absent)
+      if [ -z "$absent" ]; then
+        text="Green, but auto-merge is off, so nothing will merge it (an ejection from the queue turns it off). Turn it back on: gh pr merge --auto $n. That is safe because main requires not-held, release-window and pr-gates, so a hold, a freeze or a missing sign-off still stops the merge. Never merge it directly."
+      else
+        [ "$absent" = unreadable ] && absent="the auto-merge gates (origin/main:ci/required-checks.json is unreadable here)"
+        text="Green, and auto-merge is not live yet: main does not require $absent. Until it does, the maintainer merges it. Do not arm, queue or merge it yourself. Tell whoever you report to that it is ready, then stop watching it."
+      fi ;;
     WATCHER\ BLIND*)
       text="The watcher cannot read GitHub (auth, network or rate limit). Check gh auth status and gh api rate_limit, and look at the PR directly: gh pr checks $n." ;;
   esac
@@ -344,9 +464,7 @@ snapshot() { # $1 = PR number; prints the classify() input JSON
       labels: [($p.labels.nodes // [])[] | .name],
       failing: $failing,
       cancelled: $cancelled,
-      # Every unresolved thread, outdated ones included: the same count
-      # merge-tail uses (merge-tail.yml, isResolved == false), so the watcher
-      # and the bot agree on whether threads block arming.
+      # Every unresolved thread, outdated ones included (isResolved == false).
       unresolvedThreads: ([($p.reviewThreads.nodes // [])[] | select(.isResolved | not)] | length),
       queued: ($p.mergeQueueEntry != null),
       queuePos: ($p.mergeQueueEntry.position // null),
@@ -360,6 +478,14 @@ snapshot() { # $1 = PR number; prints the classify() input JSON
       failedEjectionsSinceChange: ([$items | to_entries[]
         | select(.key > $lastChange and .value.__typename == "RemovedFromMergeQueueEvent" and .value.reason == "failed_checks")]
         | length),
+      # Every removal since the last change, whatever its reason, and the
+      # reason of the latest one: a manual or timed-out removal turns
+      # auto-merge off too, and must not be read as a clean green PR.
+      removalsSinceChange: ([$items | to_entries[]
+        | select(.key > $lastChange and .value.__typename == "RemovedFromMergeQueueEvent")] | length),
+      lastRemovalReasonSinceChange: ([$items | to_entries[]
+        | select(.key > $lastChange and .value.__typename == "RemovedFromMergeQueueEvent") | .value.reason]
+        | last // null),
       checksReported: $reported
     }' <<<"$gql"
 }
@@ -392,6 +518,7 @@ cycle=0
 while true; do
   cycle=$((cycle + 1))
   open=0
+  action="" # "PR #n TOKEN" for every PR that entered a needs-action state
   i=-1
   for pr in "${PRS[@]}"; do
     i=$((i + 1))
@@ -400,8 +527,10 @@ while true; do
       open=1
       ERR_CYCLES[i]=$((ERR_CYCLES[i] + 1))
       if [ "${ERR_CYCLES[i]}" -eq "$BLIND_AFTER" ]; then
-        report "$pr" " ->" "WATCHER BLIND(${ERR_CYCLES[i]} cycles)"
+        blind="WATCHER BLIND(${ERR_CYCLES[i]} cycles)"
+        report "$pr" " ->" "$blind"
         LAST[i]="WATCHER BLIND"
+        if needs_action "$blind"; then action="${action:+$action, }PR #$pr $blind"; fi
       fi
       continue
     fi
@@ -431,10 +560,15 @@ while true; do
           esac ;;
         *) report "$pr" " ->" "$cur" ;;
       esac
+      if needs_action "$cur"; then action="${action:+$action, }PR #$pr $cur"; fi
       LAST[i]=$cur
     fi
     case "$cur" in MERGED|CLOSED) : ;; *) open=1 ;; esac
   done
+  if [ "$EXIT_ON_ACTION" = 1 ] && [ -n "$action" ]; then
+    echo "NEEDS ACTION: $action. Act on each line above, then re-launch the watcher for any PR still open."
+    exit 10
+  fi
   [ "$open" = 0 ] && { echo "ALL WATCHED PRS SETTLED"; exit 0; }
   [ "$ONCE" = 1 ] && exit 0
   if [ "$MAX_CYCLES" -gt 0 ] && [ "$cycle" -ge "$MAX_CYCLES" ]; then
