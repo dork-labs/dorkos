@@ -98,11 +98,15 @@ const additions = [
   ['scripts/check-design-tokens.ts', 'scripts/check-design-tokens.test.ts'],
   ['scripts/design-tokens/rule-guard.ts', 'scripts/design-tokensx/rule-guard.ts'],
   ['scripts/design-tokens/fixtures/rules.json', 'scripts/__tests__/check-design-tokens.test.ts'],
-  // pr-gates trusts main's signers file and its own check script, so a change to
-  // either waits for Security. The fixtures stay ungated.
-  ['ci/security/allowed_signers', 'ci/security/allowed_signers.md'],
-  ['ci/security/findings-recipients.txt', 'ci/security/findings-recipients.txt.old'],
+  // Everything under ci/security/ is Security's (the review lens, the signers file
+  // pr-gates trusts, the findings recipients, anything added later), and so are
+  // pr-gates' check script and the findings script. Their fixtures stay ungated.
+  ['ci/security/review-lens.md', 'ci/securityx.md'],
+  ['ci/security/allowed_signers', 'ci/security-gate-promotion.md'],
+  ['ci/security/findings-recipients.txt', 'docs/ci/security/findings-recipients.txt'],
+  ['ci/security/x.txt', 'ci/securityx/x.txt'],
   ['scripts/pr-gates-check.sh', 'scripts/test-pr-gates-check.sh'],
+  ['scripts/security-findings.sh', 'scripts/test-security-findings.sh'],
 ];
 for (const [match, miss] of additions) {
   test(`new trust path and rename: ${match}`, () => {
