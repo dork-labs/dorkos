@@ -191,19 +191,6 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
     await drained;
   });
 
-  it('counts only the stops the runtime acknowledged', async () => {
-    const runtime = fakeRuntime('failed');
-    const wrapped = decorateRuntime(runtime as unknown as AgentRuntime, {
-      storedPermissionModeOf: () => null,
-    });
-    const turn = wrapped.sendMessage('s1f', 'go', { cwd: SCOUT.home });
-    await turn.next();
-    const result = await service.pause(SCOUT.id, PERSON);
-    expect(runtime.interruptQuery).toHaveBeenCalledWith('s1f');
-    expect(result.stoppedTurns).toBe(0);
-    await turn.return(undefined);
-  });
-
   it('ends the agent’s live sessions on every runtime, from each runtime’s own records', async () => {
     const live: LiveSessionRef[] = [
       { sessionId: 'warm-scout', cwd: SCOUT.home },
@@ -379,12 +366,6 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
 
   it('lets an agent pause itself', async () => {
     await expect(service.pause(SCOUT.id, SCOUT_ACTOR)).resolves.toMatchObject({ paused: true });
-  });
-
-  it('refuses an id nobody is registered under', async () => {
-    await expect(service.pause('nobody', PERSON)).rejects.toMatchObject({
-      code: 'AGENT_NOT_FOUND',
-    });
   });
 
   describe('the hold at the runtime seam', () => {

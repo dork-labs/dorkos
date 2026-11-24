@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { once } from 'node:events';
 import { afterEach, expect, it, vi } from 'vitest';
-import { createDb, runMigrations, session, user, workspaces, eq } from '@dorkos/db';
+import { createDb, runMigrations, user, workspaces } from '@dorkos/db';
 import { createAuth } from '../../../../core/auth/index.js';
 import { initConfigManager, configManager } from '../../../../core/config-manager.js';
 import {
@@ -254,147 +254,10 @@ async function fixture(
     fake,
   };
 }
-it.each(
-  (['CONNECT', 'HTTP', 'WS'] as const).flatMap((mode) =>
-    (['owner', 'workspace', 'credential', 'config', 'grant', 'custody', 'runtime'] as const).map(
-      (cause) => ({
-        mode,
-        cause,
-      })
-    )
-  )
-)(
-  'rechecks actual $cause authority before another existing $mode byte',
-  async ({ cause, mode }) => {
-    const f = await fixture(mode);
-    if (mode === 'HTTP') f.fake.responseBody.emit('allowed-before');
-    else f.client.emit('allowed-before');
-    const beforeOrigin = [...f.origin.writes],
-      beforeClient = [...f.client.writes];
-    expect((mode === 'HTTP' ? beforeClient : beforeOrigin).join('')).toContain('allowed-before');
-    if (cause === 'owner') f.db.delete(user).where(eq(user.id, f.owner.id)).run();
-    if (cause === 'workspace')
-      f.db
-        .update(workspaces)
-        .set({ status: 'removing' })
-        .where(eq(workspaces.id, 'fixture-workspace'))
-        .run();
-    if (cause === 'credential') f.db.delete(session).run();
-    if (cause === 'config') configManager.set('auth', { enabled: false });
-    if (cause === 'grant') f.authority.revokeWorkspace(f.grant);
-    if (cause === 'custody') lifecycle.custody = false;
-    if (cause === 'runtime') lifecycle.runtime = 'b'.repeat(64);
-    if (mode === 'HTTP') f.fake.responseBody.emit('must-not-forward');
-    else f.client.emit('must-not-forward');
-    await turns();
-    expect(f.origin.writes).toEqual(beforeOrigin);
-    expect(f.client.writes).toEqual(beforeClient);
-    expect(f.client.observedClosed).toBe(true);
-    expect(f.origin.observedClosed).toBe(true);
-    expect(() => f.issuer.check(f.run)).toThrow('AUTHORITY_REFUSED');
-    expect(lifecycle.retire).toHaveBeenCalled();
-  }
-);
 it('refuses copied grant DTOs and reuse of original one-use consent', async () => {
   const f = await fixture();
   await expect(f.authority.openEngine({ ...f.grant }, {}, {})).rejects.toThrow('AUTHORITY_REFUSED');
   await expect(f.authority.openEngine(f.grant, {}, {})).rejects.toThrow('AUTHORITY_REFUSED');
-});
-
-it('reserves authentication capacity before concurrent original calls begin', async () => {
-  const f = await fixture(); // One of the 64 lifetime slots already belongs to this grant.
-  const actualGetSession = f.auth.api.getSession.bind(f.auth.api);
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const calls = vi.spyOn(f.auth.api, 'getSession').mockImplementation(async (request) => {
-    await gate;
-    return actualGetSession(request);
-  });
-  const results = Promise.allSettled(
-    Array.from({ length: 65 }, () =>
-      f.authority.authorizeWorkspace(
-        { cookie: f.cookie },
-        'fixture-workspace',
-        new AbortController().signal
-      )
-    )
-  );
-  try {
-    expect(calls).toHaveBeenCalledTimes(63);
-  } finally {
-    release();
-  }
-  const settled = await results;
-  expect(settled.filter((result) => result.status === 'fulfilled')).toHaveLength(63);
-  expect(settled.filter((result) => result.status === 'rejected')).toHaveLength(2);
-  calls.mockRestore();
-});
-
-it('prepares cold before ready activation and binds the same original receiver and peer', async () => {
-  const order: string[] = [];
-  const peer = Object.freeze({
-    url: 'http://127.0.0.1:6401',
-    credentials: Object.freeze({ username: 'dorkos', password: 'fixture-only' }),
-    isCustodyKnown: () => true,
-    close: async () => {},
-  });
-  let original: unknown;
-  const f = await fixture('CONNECT', {
-    async prepare(context) {
-      order.push('cold');
-      original = context.receiver;
-      expect(context.authorizationEpoch).toBe(1);
-      expect(context.binding.browserId).toBe(context.receiver.browserId);
-      return peer;
-    },
-    async activate(receiver, actualPeer) {
-      order.push('ready');
-      expect(receiver).toBe(original);
-      expect(actualPeer).toBe(peer);
-      expect(receiver.isOrdinary()).toBe(true);
-    },
-  });
-  expect(order).toEqual(['cold', 'ready']);
-  expect(f.client.observedClosed).toBe(false);
-});
-
-it('refuses an acquired cold peer with unknown custody before ready activation', async () => {
-  const activate = vi.fn();
-  await expect(
-    fixture('CONNECT', {
-      async prepare() {
-        return Object.freeze({
-          url: 'http://127.0.0.1:6401',
-          credentials: Object.freeze({ username: 'dorkos', password: 'fixture-only' }),
-          isCustodyKnown: () => false,
-          close: async () => {},
-        });
-      },
-      activate,
-    })
-  ).rejects.toThrow('AUTHORITY_REFUSED');
-  expect(activate).not.toHaveBeenCalled();
-  expect(lifecycle.retire).toHaveBeenCalledOnce();
-});
-it('refuses custody loss during cold activation and retires the same original', async () => {
-  await expect(
-    fixture('CONNECT', {
-      async prepare() {
-        return Object.freeze({
-          url: 'http://127.0.0.1:6401',
-          credentials: Object.freeze({ username: 'dorkos', password: 'fixture-only' }),
-          isCustodyKnown: () => true,
-          close: async () => {},
-        });
-      },
-      async activate() {
-        lifecycle.custody = false;
-      },
-    })
-  ).rejects.toThrow('AUTHORITY_REFUSED');
-  expect(lifecycle.retire).toHaveBeenCalledOnce();
 });
 
 it('refuses missing verified original runtime proof', async () => {

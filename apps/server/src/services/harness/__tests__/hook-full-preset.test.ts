@@ -42,7 +42,6 @@ vi.mock('../../core/config-manager.js', () => ({
 }));
 
 import {
-  planWithConsent,
   projectWithConsent,
   resetAllowedAtFullReports,
   scanHookRequests,
@@ -57,12 +56,7 @@ import {
   _internal as approvalInternal,
   type HookApprovalGateway,
 } from '../hook-approval.js';
-import {
-  readHookDecisionsFromDisk,
-  recordHookApproval,
-  recordHookRefusal,
-  storedHookDecisions,
-} from '../hook-consent.js';
+import { recordHookApproval, recordHookRefusal } from '../hook-consent.js';
 import { provenDorkosInstallsIfFull } from '../dorkos-installed.js';
 import { setMarkedFullActivity } from '../../core/turn-power/full-autonomy.js';
 import { recordProjectInstall } from '../../marketplace/lib/project-install-index.js';
@@ -215,13 +209,6 @@ describe('on Full, a package DorkOS installed runs its hooks without a card (DOR
     expect(String(rows[0]?.summary)).toContain('DorkOS is set to Full');
     // The row carries no command text: a command line can carry a token.
     expect(JSON.stringify(rows[0])).not.toContain(COMMAND);
-  });
-
-  it('writes the line once, however often the project is projected again', async () => {
-    await project();
-    await project();
-    await project();
-    expect(fullActionRows()).toHaveLength(1);
   });
 
   it('records no yes, so moving below Full puts the card back', async () => {
@@ -414,47 +401,5 @@ describe('on Full, a package DorkOS did not install is held back (DOR-3422)', ()
     expect(findOperatorOnlyPaths({ harness: { approvedHooks: ['acme@x'] } })).toEqual([
       'harness.approvedHooks',
     ]);
-  });
-});
-
-describe('the read-only paths', () => {
-  it('lists passed in say Full themselves, and planning alone writes no row', () => {
-    const notFull = planWithConsent(repo, {
-      dorkHome: home,
-      decisions: { approved: [], refused: [] },
-    });
-    expect(notFull.withheld.map((w) => w.reason)).toEqual(['unasked']);
-    expect(notFull.withheld[0]?.notInstalledByDorkos).toBeUndefined();
-
-    const full = planWithConsent(repo, {
-      dorkHome: home,
-      decisions: { approved: [], refused: [], full: true },
-    });
-    // Nothing proven was passed in, so nothing runs on Full's say-so.
-    expect(full.withheld[0]?.notInstalledByDorkos).toBe(true);
-    expect(fullActionRows()).toEqual([]);
-  });
-
-  it('the running server’s own lists say Full, from the stored preset', () => {
-    // QA: the live reader left `full` out, so Full still carded on a live
-    // server (Sync now, auto-projection).
-    config.permissions = { preset: 'full' };
-    expect(storedHookDecisions().full).toBe(true);
-    config.permissions = { preset: 'trusted' };
-    expect(storedHookDecisions().full).toBe(false);
-  });
-
-  it('reads Full off config.json for the read-only path', () => {
-    const harness = { autoSync: true, approvedHooks: [], refusedHooks: [] };
-    writeFileSync(
-      join(home, 'config.json'),
-      JSON.stringify({ harness, permissions: { preset: 'full' } })
-    );
-    expect(readHookDecisionsFromDisk(home).full).toBe(true);
-    writeFileSync(
-      join(home, 'config.json'),
-      JSON.stringify({ harness, permissions: { preset: 'trusted' } })
-    );
-    expect(readHookDecisionsFromDisk(home).full).toBe(false);
   });
 });

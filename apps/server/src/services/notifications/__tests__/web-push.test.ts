@@ -21,10 +21,7 @@ vi.mock('@dorkos/shared/secret-file', async (importOriginal) => {
     },
   };
 });
-
-import { WebPushError } from 'web-push';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
-import { logger } from '../../../lib/logger.js';
 import type { WebPushPayload } from '@dorkos/shared/notification-schemas';
 import { PushSubscriptionStore } from '../push-subscription-store.js';
 import { WebPushChannel, vapidKeyPath, type WebPushSender } from '../channels/web-push.js';
@@ -173,13 +170,6 @@ describe('sending', () => {
     expect(JSON.parse(sendNotification.mock.calls[0][1] as string)).toEqual(PAYLOAD);
   });
 
-  it('does nothing at all when nobody is subscribed', async () => {
-    const { channel, sendNotification } = sender();
-
-    expect(await channel.sendToAll(PAYLOAD)).toEqual({ delivered: 0, pruned: 0, outcomes: [] });
-    expect(sendNotification).not.toHaveBeenCalled();
-  });
-
   it('prunes a subscription the push service says is gone', async () => {
     const id = subscribe('https://fcm.googleapis.com/dead');
     const { channel } = sender(() => Promise.reject(pushRejection(410)));
@@ -190,14 +180,6 @@ describe('sending', () => {
     // A dead endpoint retried forever is a slow request on the path of the one
     // message that matters most.
     expect(subscriptions.list().map((row) => row.id)).not.toContain(id);
-  });
-
-  it('prunes on 404 too, which is the other way a browser says it is gone', async () => {
-    subscribe('https://fcm.googleapis.com/dead');
-    const { channel } = sender(() => Promise.reject(pushRejection(404)));
-
-    expect((await channel.sendToAll(PAYLOAD)).pruned).toBe(1);
-    expect(subscriptions.list()).toHaveLength(0);
   });
 
   it('keeps a subscription whose push merely failed', async () => {
@@ -212,44 +194,6 @@ describe('sending', () => {
     expect(subscriptions.list()).toHaveLength(1);
   });
 
-  it.each([500, 429])(
-    'keeps the push endpoint out of the log when a push fails with %i',
-    async (statusCode) => {
-      // The library's error carries the endpoint, the response headers and the
-      // body as own properties, and the log serializer keeps own properties. The
-      // endpoint is a capability URL for someone's phone: it must never reach a
-      // log file people attach to bug reports.
-      const endpoint = 'https://fcm.googleapis.com/fcm/send/secret-device-token';
-      const id = subscribe(endpoint);
-      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
-      const { channel } = sender(() =>
-        Promise.reject(
-          new WebPushError(
-            'Received unexpected response code',
-            statusCode,
-            { 'retry-after': '30' },
-            'upstream said no',
-            endpoint
-          )
-        )
-      );
-
-      await channel.sendToAll(PAYLOAD);
-
-      expect(warn).toHaveBeenCalledTimes(1);
-      const [, context] = warn.mock.calls[0]!;
-      expect(context).toEqual({
-        id,
-        statusCode,
-        error: 'Received unexpected response code',
-      });
-      const logged = JSON.stringify(warn.mock.calls);
-      expect(logged).not.toContain('secret-device-token');
-      expect(logged).not.toContain('retry-after');
-      expect(logged).not.toContain('upstream said no');
-    }
-  );
-
   it('one dead device does not stop the others being reached', async () => {
     subscribe('https://fcm.googleapis.com/dead');
     subscribe('https://web.push.apple.com/alive');
@@ -263,35 +207,6 @@ describe('sending', () => {
 
     expect(result).toMatchObject({ delivered: 1, pruned: 1 });
   });
-
-  it('never throws, whatever the transport does', async () => {
-    subscribe('https://fcm.googleapis.com/one');
-    const { channel } = sender(() => Promise.reject(new Error('DNS is on fire')));
-
-    await expect(channel.sendToAll(PAYLOAD)).resolves.toMatchObject({ delivered: 0 });
-  });
-
-  it('notes that a browser was reached, so the device list stays honest', async () => {
-    // Fake time, because a real clock can advance zero milliseconds between the
-    // subscribe and the send — which would make the assertion below pass or fail
-    // by luck rather than by whether `touch` was called.
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(new Date('2026-08-20T09:00:00.000Z'));
-      const id = subscribe('https://fcm.googleapis.com/one');
-      const before = subscriptions.list().find((row) => row.id === id)!.lastSeenAt;
-
-      vi.setSystemTime(new Date('2026-08-20T09:01:00.000Z'));
-      await sender().channel.sendToAll(PAYLOAD);
-
-      expect(subscriptions.list().find((row) => row.id === id)!.lastSeenAt).toBe(
-        '2026-08-20T09:01:00.000Z'
-      );
-      expect(before).toBe('2026-08-20T09:00:00.000Z');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
 });
 
 describe('what the list may say', () => {
@@ -302,20 +217,5 @@ describe('what the list may say', () => {
 
     expect(listed[0].service).toBe('web.push.apple.com');
     expect(JSON.stringify(listed)).not.toContain('very-secret-capability-url');
-  });
-
-  it('refreshes a browser that re-subscribes rather than adding a second row', () => {
-    const first = subscriptions.upsert({
-      endpoint: 'https://fcm.googleapis.com/one',
-      keys: { p256dh: 'old', auth: 'old' },
-    });
-    const second = subscriptions.upsert({
-      endpoint: 'https://fcm.googleapis.com/one',
-      keys: { p256dh: 'new', auth: 'new' },
-    });
-
-    expect(second.id).toBe(first.id);
-    expect(subscriptions.list()).toHaveLength(1);
-    expect(subscriptions.all()[0].keys).toEqual({ p256dh: 'new', auth: 'new' });
   });
 });

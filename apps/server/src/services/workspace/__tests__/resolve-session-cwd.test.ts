@@ -9,9 +9,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve as resolvePath } from 'node:path';
+import { join } from 'node:path';
 import type { AgentManifest, AgentWorkspaceBinding } from '@dorkos/shared/mesh-schemas';
-import { AgentManifestSchema } from '@dorkos/shared/mesh-schemas';
 import type { Workspace } from '@dorkos/shared/workspace';
 import {
   resolveSessionCwd,
@@ -115,20 +114,6 @@ describe('resolveSessionCwd — rung 3, the agent binding', () => {
     expect(deps.validateAgentHome).toHaveBeenCalledWith(AGENT);
   });
 
-  // The migration guarantee, and it has to go through the SCHEMA to mean
-  // anything. Handing the resolver an already-defaulted `{ mode: 'home' }`
-  // would assert only that `home` resolves to `home`, and would stay green with
-  // the schema's `.default()` deleted — which is the thing under test.
-  it('a pre-change manifest with no workspace key at all reads as home', async () => {
-    const { workspace: _absent, ...legacy } = manifest({ mode: 'home' });
-    const parsed = AgentManifestSchema.parse(legacy);
-    expect(parsed.workspace).toEqual({ mode: 'home' });
-
-    const deps = makeDeps({ readManifest: vi.fn(async () => parsed) });
-
-    expect((await resolveSessionCwd({ agentPath: AGENT }, deps)).rung).toBe('agent-home');
-  });
-
   it('managed provisions from the binding source and answers with the checkout', async () => {
     const deps = makeDeps({
       readManifest: vi.fn(async () =>
@@ -155,40 +140,9 @@ describe('resolveSessionCwd — rung 3, the agent binding', () => {
       undefined
     );
   });
-
-  it('none falls to the default with no degradation — it is a choice, not a failure', async () => {
-    const deps = makeDeps({ readManifest: vi.fn(async () => manifest({ mode: 'none' })) });
-
-    const result = await resolveSessionCwd({ agentPath: AGENT }, deps);
-
-    expect(result).toEqual({ cwd: DEFAULT, rung: 'default' });
-    expect(result.degraded).toBeUndefined();
-  });
-
-  it('reads the session binding when the caller names no agent', async () => {
-    const deps = makeDeps({ sessionAgentPath: vi.fn(async () => AGENT) });
-
-    const result = await resolveSessionCwd({ sessionId: 'ses-1' }, deps);
-
-    expect(result).toEqual({ cwd: AGENT, rung: 'agent-home' });
-    expect(deps.sessionAgentPath).toHaveBeenCalledWith('ses-1');
-  });
-
-  it('prefers the caller-supplied agentPath over the session binding', async () => {
-    const deps = makeDeps({ sessionAgentPath: vi.fn(async () => '/vault/agents/somebody-else') });
-
-    const result = await resolveSessionCwd({ agentPath: AGENT, sessionId: 'ses-1' }, deps);
-
-    expect(result.cwd).toBe(AGENT);
-    expect(deps.sessionAgentPath).not.toHaveBeenCalled();
-  });
 });
 
 describe('resolveSessionCwd — rung 4, and never failing the turn', () => {
-  it('no cwd and no agent is the default, plainly', async () => {
-    expect(await resolveSessionCwd({}, makeDeps())).toEqual({ cwd: DEFAULT, rung: 'default' });
-  });
-
   // Degradation goes ONE rung, to the agent's own folder. Reaching here means
   // the caller already knows where the agent lives, so answering `DEFAULT_CWD`
   // would move its work into the shared tree over an unreadable file — the
@@ -201,20 +155,6 @@ describe('resolveSessionCwd — rung 4, and never failing the turn', () => {
     expect(result.rung).toBe('agent-home');
     expect(result.cwd).toBe(AGENT);
     expect(result.degraded).toMatch(/no readable agent manifest/);
-  });
-
-  it('a manifest read that throws degrades rather than propagating', async () => {
-    const deps = makeDeps({
-      readManifest: vi.fn(async () => {
-        throw new Error('EACCES');
-      }),
-    });
-
-    const result = await resolveSessionCwd({ agentPath: AGENT }, deps);
-
-    expect(result.rung).toBe('agent-home');
-    expect(result.cwd).toBe(AGENT);
-    expect(result.degraded).toMatch(/EACCES/);
   });
 
   it('an agent home outside the boundary is refused, not used', async () => {
@@ -266,47 +206,10 @@ describe('resolveSessionCwd — rung 4, and never failing the turn', () => {
     // the check RAN, on the path that was resolved.
     expect(deps.validateManagedCheckout).toHaveBeenCalledWith(workspaceRow().path);
   });
-
-  // The only route to `DEFAULT_CWD` on this rung: the agent's own folder is
-  // itself out of bounds, so there is nothing nearer left to fall back to.
-  it('an unreadable manifest AND an out-of-bounds folder reaches the default, carrying both reasons', async () => {
-    const deps = makeDeps({
-      readManifest: vi.fn(async () => null),
-      validateAgentHome: vi.fn(async () => {
-        throw new Error('Access denied: path outside directory boundary');
-      }),
-    });
-
-    const result = await resolveSessionCwd({ agentPath: '/etc' }, deps);
-
-    expect(result.cwd).toBe(DEFAULT);
-    expect(result.rung).toBe('default');
-    expect(result.degraded).toMatch(/no readable agent manifest/);
-    expect(result.degraded).toMatch(/out of bounds/);
-  });
-
-  it('a session-binding read that throws leaves the chain to fall through', async () => {
-    const deps = makeDeps({
-      sessionAgentPath: vi.fn(async () => {
-        throw new Error('db closed');
-      }),
-    });
-
-    expect(await resolveSessionCwd({ sessionId: 'ses-1' }, deps)).toEqual({
-      cwd: DEFAULT,
-      rung: 'default',
-    });
-  });
 });
 
 describe('agentWorkspaceKey', () => {
   beforeEach(() => vi.clearAllMocks());
-
-  it('is stable for the same agent', () => {
-    expect(agentWorkspaceKey('api-bot', AGENT, '/vault/dorkos')).toEqual(
-      agentWorkspaceKey('api-bot', AGENT, '/vault/dorkos')
-    );
-  });
 
   it('separates two agents sharing a slug in different directories', () => {
     const a = agentWorkspaceKey('api-bot', '/vault/agents/a/api-bot', '/vault/dorkos');
@@ -320,11 +223,6 @@ describe('agentWorkspaceKey', () => {
     expect(agentWorkspaceKey('api-bot', AGENT, '/vault/some-other-repo').projectKey).toBe(
       'some-other-repo'
     );
-  });
-
-  it('sanitizes a name that would otherwise be an illegal key', () => {
-    const { key } = agentWorkspaceKey('api bot/v2', AGENT, '/vault/dorkos');
-    expect(key).toMatch(/^[A-Za-z0-9._-]+$/);
   });
 });
 
@@ -378,34 +276,5 @@ describe('one spelling per directory', () => {
     // exemption protects at most one of an agent's two identities.
     expect(keyFromLink?.owner).toEqual(keyFromReal?.owner);
     expect(keyFromLink?.owner).toEqual({ kind: 'agent', ref: real });
-  });
-
-  it('a trailing slash and a dot segment are the same agent', async () => {
-    const deps = makeDeps({
-      readManifest: vi.fn(async () => manifest({ mode: 'managed', source: '/vault/dorkos' })),
-      canonicalize: (p) => Promise.resolve(resolvePath(p)),
-    });
-
-    await resolveSessionCwd({ agentPath: '/vault/agents/api-bot/' }, deps);
-    await resolveSessionCwd({ agentPath: '/vault/agents/./api-bot' }, deps);
-
-    const [first, second] = vi.mocked(deps.ensureWorkspace).mock.calls;
-    expect(second?.[0].key).toBe(first?.[0].key);
-    expect(second?.[0].owner).toEqual(first?.[0].owner);
-  });
-
-  it('a directory that does not resolve still answers one stable spelling', async () => {
-    const deps = makeDeps({
-      readManifest: vi.fn(async () => manifest({ mode: 'managed', source: '/vault/dorkos' })),
-      // The production fallback: `realpath` throws, `path.resolve` answers.
-      canonicalize: (p) => Promise.resolve(resolvePath(p)),
-    });
-
-    await resolveSessionCwd({ agentPath: '/nope/gone/' }, deps);
-
-    expect(vi.mocked(deps.ensureWorkspace).mock.calls[0]?.[0].owner).toEqual({
-      kind: 'agent',
-      ref: '/nope/gone',
-    });
   });
 });

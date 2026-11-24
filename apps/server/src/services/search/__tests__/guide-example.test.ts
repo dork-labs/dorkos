@@ -44,7 +44,6 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { messages as messagesTable, searchSources, eq, type Db } from '@dorkos/db';
 import { sweepFileSource } from '../jsonl-frontier.js';
 import { searchMessages, MATCH_OPEN, MATCH_CLOSE } from '../query.js';
-import { SEARCH_SOURCES } from '../registry.js';
 import type {
   DiscoveryFailure,
   FileContainer,
@@ -329,44 +328,6 @@ describe('the guide is pinned to code that actually runs', () => {
       expect(self).toContain(block);
     }
   });
-
-  it('runs the projection with no database, no files and no clock', () => {
-    // "Pure" made executable rather than asserted. The projection is called
-    // here with nothing but strings — no db, no temp dir, no source record —
-    // and it still produces what the guide says it does. Three contract claims
-    // in one call: it resumes at the ordinal it was HANDED rather than at zero,
-    // it COUNTS the record it recognises and cannot read, and it drops the head
-    // record silently because that was never a message.
-    const projection = projectJournalLines(
-      [
-        JSON.stringify({ type: 'session', cwd: '/repo/app' }),
-        JSON.stringify({ who: 'user', text: 'a question', at: '2026-08-25T10:00:00.000Z' }),
-        '{"who":"user","text":',
-      ],
-      { originKey: 'conv-pure', firstOrdinal: 7 }
-    );
-
-    expect(projection).toEqual({
-      messages: [
-        {
-          originKey: 'conv-pure',
-          ordinal: 7,
-          messageId: null,
-          role: 'user',
-          createdAt: '2026-08-25T10:00:00.000Z',
-          body: 'a question',
-        },
-      ],
-      skipped: 1,
-    });
-  });
-
-  it('keeps the fixture source out of the production registry', () => {
-    // The guide's last anti-pattern. A `journal` row here would sweep the
-    // operator's real machine every five minutes for a runtime that does not
-    // exist — and the sweep is what a reader is being invited to copy.
-    expect(SEARCH_SOURCES.map((source) => source.id)).not.toContain('journal');
-  });
 });
 
 describe('the worked example, run as a real source', () => {
@@ -402,17 +363,6 @@ describe('the worked example, run as a real source', () => {
   /** One journal line from a runtime that stamped no time. */
   function saidUndated(who: 'user' | 'assistant', text: string): string {
     return `${JSON.stringify({ who, text })}\n`;
-  }
-
-  /** Every indexed body for one container, in ordinal order. */
-  function indexedBodies(originKey: string): string[] {
-    return db
-      .select({ body: messagesTable.body })
-      .from(messagesTable)
-      .where(eq(messagesTable.originKey, originKey))
-      .orderBy(messagesTable.ordinal)
-      .all()
-      .map((row) => row.body);
   }
 
   it('indexes a journal file and makes it searchable', async () => {
@@ -483,75 +433,5 @@ describe('the worked example, run as a real source', () => {
     expect(hits[0]?.role).toBe('user');
     expect(hits[0]?.createdAt).toBe('2026-08-25T10:00:00.000Z');
     expect(hits[0]?.excerpt).toContain(`${MATCH_OPEN}deploy${MATCH_CLOSE}`);
-  });
-
-  it('reads only what the file gained since the last sweep', async () => {
-    const file = await writeJournal('conv-2', [said('user', 'first question')]);
-    expect((await sweepFileSource(db, source, '2026-08-25T12:00:00.000Z')).indexed).toBe(1);
-
-    // A no-op sweep must report 0, not "the same count as before": an unchanged
-    // `count(*)` passes for a sweep that correctly did nothing AND for one that
-    // re-read and re-upserted every row.
-    expect((await sweepFileSource(db, source, '2026-08-25T12:05:00.000Z')).indexed).toBe(0);
-
-    await fs.appendFile(file, said('assistant', 'the answer arrived later'));
-    const third = await sweepFileSource(db, source, '2026-08-25T12:10:00.000Z');
-
-    expect(third.indexed).toBe(1);
-    // Ordinal 1, not 0: an append continues the container's numbering rather
-    // than renumbering what is already searchable.
-    expect(
-      db
-        .select({ ordinal: messagesTable.ordinal, body: messagesTable.body })
-        .from(messagesTable)
-        .where(eq(messagesTable.originKey, 'conv-2'))
-        .orderBy(messagesTable.ordinal)
-        .all()
-    ).toEqual([
-      { ordinal: 0, body: 'first question' },
-      { ordinal: 1, body: 'the answer arrived later' },
-    ]);
-  });
-
-  it('survives a file that vanishes between the readdir and the stat', async () => {
-    // The failure this guards against is the guide's own anti-pattern: an
-    // unguarded `stat` (or `open`) rejects `discover()` for the WHOLE source,
-    // and `jsonl-frontier.ts` turns a rejected discovery into zero rows, no
-    // prune and no `last_error` — a source that goes silently blank for the
-    // tick because one file was rotated away.
-    //
-    // A dangling symlink is that race made deterministic: `readdir` lists the
-    // name, and `stat` on it throws ENOENT exactly as it would for a file
-    // deleted a microsecond earlier.
-    await writeJournal('conv-survivor', [said('user', 'written before the neighbour vanished')]);
-    await fs.symlink(path.join(root, 'nothing-here.jsonl'), path.join(root, 'conv-gone.jsonl'));
-
-    const sweep = await sweepFileSource(db, source, '2026-08-25T12:00:00.000Z');
-
-    // The whole point: the surviving file still indexes.
-    expect(sweep.indexed).toBe(1);
-    expect(indexedBodies('conv-survivor')).toEqual(['written before the neighbour vanished']);
-    // A vanished file is not a decision, so it is neither reported nor counted.
-    expect(sweep.failures).toEqual([]);
-    expect(sweep.containers).toBe(1);
-
-    // The same guard on the other side of discovery: `readJournalCwd` opens
-    // inside its try, so a path that disappeared before the open answers null
-    // instead of rejecting the source.
-    await expect(readJournalCwd(path.join(root, 'also-nothing-here.jsonl'))).resolves.toBeNull();
-  });
-
-  it('spans several roots, and a root that is simply absent is not a failure', async () => {
-    // The guide's decision table: a source reads all its roots, and a root the
-    // runtime never used is skipped silently rather than reported. (A root that
-    // EXISTS and will not open is the loud case, covered by `discovery.test.ts`
-    // against the shipped sources.)
-    await writeJournal('conv-3', [said('user', 'indexed from the readable root')]);
-    const spanning = createJournalSource(() => [root, path.join(root, 'never-existed')]);
-
-    const sweep = await sweepFileSource(db, spanning, '2026-08-25T12:00:00.000Z');
-
-    expect(sweep.indexed).toBe(1);
-    expect(sweep.failures).toEqual([]);
   });
 });

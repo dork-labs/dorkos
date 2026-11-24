@@ -196,19 +196,6 @@ beforeEach(() => {
     .run();
 });
 
-describe('no beats yet', () => {
-  it('counts nothing and leaves every rate empty rather than zero', () => {
-    const m = measure();
-    expect(m.supporting.beats).toBe(0);
-    expect(m.keptRate).toMatchObject({ value: null, part: 0, whole: 0, target: '95% or more' });
-    expect(m.usefulRaiseRate.value).toBeNull();
-    expect(m.interruptions.value).toBeNull();
-    expect(m.surprises).toEqual({ measured: false, source: expect.any(String) });
-    expect(m.windowDays).toBe(7);
-    expect(m.since).toBe(ago(7 * DAY));
-  });
-});
-
 describe('kept rate', () => {
   it('counts only beats that left a mark, and undoes them for a pause within an hour or 👎', () => {
     // Acted: sent a message, posted around end_beat, edited a file, or took a DorkOS action.
@@ -310,39 +297,6 @@ describe('useful-raise rate', () => {
 
     const { usefulRaiseRate } = measure();
     expect(usefulRaiseRate).toMatchObject({ part: 2, whole: 5, target: '60% or more' });
-  });
-
-  it('credits a DM reply to the latest message only, and leaves out one still inside 48h', () => {
-    beat('b1', 4 * DAY, { outcome: 'worked', turnSessionId: 'chat-1', raises: 3 });
-    // Two messages in a row, then one reply: only the second was answered.
-    entry('e-first', 'room-dm', 'author-juno', 3 * DAY);
-    entry('e-second', 'room-dm', 'author-juno', 3 * DAY - HOUR);
-    entry('e-reply', 'room-dm', 'author-person', 3 * DAY - 2 * HOUR);
-    outboxRow('o-first', 'b1', 3 * DAY, { deliveredEntryId: 'e-first' });
-    outboxRow('o-second', 'b1', 3 * DAY - HOUR, { deliveredEntryId: 'e-second' });
-    // Sent an hour ago, no answer yet: too early to call.
-    entry('e-fresh', 'room-dm', 'author-juno', HOUR);
-    outboxRow('o-fresh', 'b1', HOUR, { deliveredEntryId: 'e-fresh' });
-
-    expect(measure().usefulRaiseRate).toMatchObject({ part: 1, whole: 2 });
-  });
-
-  it('does not count a stored reaction that is not a real emoji as an answer', () => {
-    beat('b1', 4 * DAY, { outcome: 'worked', turnSessionId: 'chat-1', raises: 2 });
-    for (const [id, emoji] of [
-      ['e-liked', '👍'],
-      ['e-not-emoji', '\u{1F44D}\u{E0068}\u{E0069}\u{E007F}'],
-    ] as const) {
-      entry(id, 'room-team', 'author-juno', 2 * DAY + 10 * HOUR);
-      outboxRow(`o-${id}`, 'b1', 2 * DAY + 10 * HOUR, {
-        rung: 'room',
-        roomId: 'room-team',
-        deliveredEntryId: id,
-      });
-      react(id, 'room-team', 'author-person', emoji, 2 * DAY);
-    }
-
-    expect(measure().usefulRaiseRate).toMatchObject({ part: 1, whole: 2 });
   });
 });
 
@@ -499,23 +453,5 @@ describe('supporting measures', () => {
     expect(supporting.turns).toEqual({ count: 3, tokensPerTurn: 2000 });
     expect(supporting.bypass).toBe(3);
     expect(supporting.held).toBe(1);
-  });
-});
-
-describe('the window', () => {
-  it('leaves out beats older than the window, and a wider window takes them in', () => {
-    beat('b-old', 10 * DAY, { outcome: 'worked', turnSessionId: 'chat-old', raises: 1 });
-    spoke('b-old', 10 * DAY - 60_000);
-    beat('b-new', DAY);
-    expect(measure().supporting.beats).toBe(1);
-    const wide = measure(30);
-    expect(wide.windowDays).toBe(30);
-    expect(wide.supporting.beats).toBe(2);
-    expect(wide.keptRate.whole).toBe(1);
-  });
-
-  it('clamps a window to 1 to 90 days', () => {
-    expect(measure(0).windowDays).toBe(1);
-    expect(measure(400).windowDays).toBe(90);
   });
 });

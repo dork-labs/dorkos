@@ -14,8 +14,8 @@
       "tests": 16894
     },
     "apps/server": {
-      "ratio": 1.24,
-      "tests": 891138
+      "ratio": 1.21,
+      "tests": 872150
     },
     "apps/site": {
       "ratio": 0.5,

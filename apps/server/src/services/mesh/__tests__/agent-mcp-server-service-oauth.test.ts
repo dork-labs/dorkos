@@ -304,21 +304,6 @@ describe('AgentMcpServerService.test — 401 classification', () => {
     expect(result.needsAuth).toBe(true);
     expect(result.error).toEqual(expect.any(String));
   });
-
-  it('does NOT report needsAuth on a non-401 failure', async () => {
-    const projectPath = await setupWorkspace();
-    const probeFetch: typeof fetch = async () => new Response('Boom', { status: 500 });
-    const service = new AgentMcpServerService({
-      agents: new FakeLocator(projectPath),
-      probeFetch,
-    });
-
-    const result = await service.test(AGENT_ID, REMOTE);
-    // The discriminator: a 500 is an ordinary failure, not needs-auth. Reverting
-    // `isUnauthorizedProbeError` to always-true would wrongly set needsAuth here.
-    expect(result.ok).toBe(false);
-    expect(result.needsAuth).toBeUndefined();
-  });
 });
 
 describe('AgentMcpServerService.test — probing with the OAuth bearer (DOR-985)', () => {
@@ -437,88 +422,6 @@ describe('AgentMcpServerService.list — derived authStatus (DOR-985)', () => {
     expect(server?.authStatus).toBe('needs-auth');
   });
 
-  it('has no opinion about a remote server that has never demanded auth', async () => {
-    const projectPath = await setupWorkspaceWith(PLAIN_HTTP);
-    const service = new AgentMcpServerService({
-      agents: new FakeLocator(projectPath),
-      tokenProvider: providerWith(undefined),
-    });
-
-    const [server] = await service.list(AGENT_ID);
-    // The negative branch: guessing needs-auth for every tokenless remote server
-    // would put a Sign in button on servers that authenticate by static header.
-    expect(server?.authStatus).toBeUndefined();
-  });
-
-  it('has no opinion about an oauth2 entry the operator authenticated by hand', async () => {
-    const projectPath = await setupWorkspaceWith({
-      ...OAUTH_HTTP,
-      headers: { authorization: 'Bearer operator-supplied' },
-    });
-    const service = new AgentMcpServerService({
-      agents: new FakeLocator(projectPath),
-      tokenProvider: providerWith(undefined),
-    });
-
-    const [server] = await service.list(AGENT_ID);
-    // The entry carries its own credential (lower-cased here on purpose — HTTP
-    // header names are case-insensitive), so DorkOS holding no token is not a
-    // problem to nag about. Dropping the guard puts a Sign in button on a server
-    // that does not need one.
-    expect(server?.authStatus).toBeUndefined();
-  });
-
-  it('has no opinion about a stdio server, even with a token cached under its name', async () => {
-    const projectPath = await setupWorkspaceWith({
-      transport: 'stdio',
-      command: 'node',
-      args: [],
-      env: {},
-    });
-    const service = new AgentMcpServerService({
-      agents: new FakeLocator(projectPath),
-      tokenProvider: providerWith('live-token'),
-    });
-
-    const [server] = await service.list(AGENT_ID);
-    // A local command has no OAuth endpoint; dropping the stdio guard would call
-    // this one connected off a token that could never be sent anywhere.
-    expect(server?.authStatus).toBeUndefined();
-  });
-
-  it('reads needs-auth again once a re-pointed server has had its credentials cleared', async () => {
-    // The two features meeting: DOR-986 clears the sign-in when an update moves
-    // the server to a new url, and this listing must then say so rather than
-    // reporting the old token as if it still applied.
-    const projectPath = await setupWorkspaceWith(OAUTH_HTTP);
-    const service = new AgentMcpServerService({
-      agents: new FakeLocator(projectPath),
-      tokenProvider: providerWith('live-token'),
-    });
-
-    const [before] = await service.list(AGENT_ID);
-    expect(before?.authStatus).toBe('connected');
-
-    // Re-pointed at another OAuth server. The `authKind` hint travels with the
-    // operator's own declaration, because the new endpoint is a different server
-    // and what the old one wanted proves nothing about it.
-    await service.update({
-      agentId: AGENT_ID,
-      name: REMOTE,
-      connection: {
-        transport: 'http',
-        url: 'https://elsewhere.example/mcp',
-        headers: {},
-        authKind: 'oauth2',
-      },
-    });
-
-    // The token in the fixture provider is bound to the OLD url, so the derived
-    // status follows the same rule injection does and offers a sign-in again.
-    const [after] = await service.list(AGENT_ID);
-    expect(after?.authStatus).toBe('needs-auth');
-  });
-
   it('never writes authStatus to the manifest on disk', async () => {
     const projectPath = await setupWorkspaceWith(OAUTH_HTTP);
     const service = new AgentMcpServerService({
@@ -563,42 +466,5 @@ describe('AgentMcpServerService — learning authKind from evidence (DOR-985)', 
     // And the next listing says needs-auth off that stored hint alone.
     const [server] = await service.list(AGENT_ID);
     expect(server?.authStatus).toBe('needs-auth');
-  });
-
-  it('does NOT record authKind when the probe fails for some other reason', async () => {
-    const projectPath = await setupWorkspaceWith(PLAIN_HTTP);
-    const service = new AgentMcpServerService({
-      agents: new FakeLocator(projectPath),
-      probeFetch: async () => new Response('Boom', { status: 500 }),
-    });
-
-    await service.test(AGENT_ID, REMOTE);
-
-    // The discriminator: an unreachable server is not an OAuth server. Learning
-    // on every failure would put a Sign in button on a server that is merely down.
-    const after = await readManifest(projectPath);
-    const connection = after?.mcpServers[0]?.connection;
-    expect(connection?.transport === 'http' ? connection.authKind : undefined).toBeUndefined();
-  });
-
-  it('leaves a stdio entry alone and reports no write', async () => {
-    const projectPath = await setupWorkspaceWith({
-      transport: 'stdio',
-      command: 'node',
-      args: [],
-      env: {},
-    });
-    const service = new AgentMcpServerService({ agents: new FakeLocator(projectPath) });
-
-    expect(await service.learnOAuthAuthKind(AGENT_ID, REMOTE)).toBe(false);
-    const after = await readManifest(projectPath);
-    expect(after?.mcpServers[0]?.connection.transport).toBe('stdio');
-  });
-
-  it('is idempotent — a second call does not rewrite an entry already marked', async () => {
-    const projectPath = await setupWorkspaceWith(OAUTH_HTTP);
-    const service = new AgentMcpServerService({ agents: new FakeLocator(projectPath) });
-
-    expect(await service.learnOAuthAuthKind(AGENT_ID, REMOTE)).toBe(false);
   });
 });

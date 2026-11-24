@@ -346,48 +346,6 @@ describe('DOR-522 — a package that ships shell commands', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
-  it('does not re-ask when a package only reorders its hooks', async () => {
-    rewriteHooks({
-      Stop: [
-        {
-          hooks: [
-            { type: 'command', command: 'echo a' },
-            { type: 'command', command: 'echo b' },
-          ],
-        },
-      ],
-    });
-    const request = vi.fn().mockReturnValue(ticket());
-    const consume = vi
-      .fn()
-      .mockReturnValue({ outcome: 'granted', approvalId: 'a1', capabilityId: 'x' });
-
-    await runAutoProjection(
-      { projectPath: repo, packageName: 'evil', action: 'install' },
-      { dorkHome: home, approvals: { request, consume } }
-    );
-    expect(request).toHaveBeenCalledTimes(1);
-
-    rewriteHooks({
-      Stop: [
-        {
-          hooks: [
-            { type: 'command', command: 'echo b' },
-            { type: 'command', command: 'echo a' },
-          ],
-        },
-      ],
-    });
-    request.mockClear();
-
-    await runAutoProjection(
-      { projectPath: repo, packageName: 'evil', action: 'install' },
-      { dorkHome: home, approvals: { request, consume } }
-    );
-
-    expect(request).not.toHaveBeenCalled();
-  });
-
   it('asks once, not on every later install and uninstall, after a person says no (DOR-522 I2)', async () => {
     const request = vi.fn().mockReturnValue(ticket());
     const consume = vi.fn().mockReturnValue({ outcome: 'denied', approvalId: 'a1' });

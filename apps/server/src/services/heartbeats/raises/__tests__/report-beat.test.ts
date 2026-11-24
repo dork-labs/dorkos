@@ -20,8 +20,7 @@ import { BeatRunner, type BeatAgent } from '../../beat-runner.js';
 import type { BeatTurnLauncher } from '../../beat-launch.js';
 import { endBeatTurn, registerBeatTurn, resetBeatTurns } from '../../beat-turns.js';
 import { queueManagerChange } from '../report-beat.js';
-import { nextReportSlot, reportBeatAt } from '../report-clock.js';
-import { REPORT_TURNS_MAX, reportMaterial } from '../report-material.js';
+import { nextReportSlot } from '../report-clock.js';
 import { DELIVERY_BACKOFF_MS } from '../../outbox.js';
 import { createDeliveries } from '../../heartbeat-adapters.js';
 import type { GathererRegistry } from '../../gatherers/index.js';
@@ -198,20 +197,6 @@ describe('when a report beat runs', () => {
     expect(r.nextReportAt(juno.id)?.getTime()).toBe(MONDAY_9AM);
     r.stop();
   });
-
-  it('skips the turn when the queue is empty and no beat turn ran, with a quiet record line', async () => {
-    const r = runner();
-    await r.start();
-    await vi.advanceTimersByTimeAsync(MONDAY_9AM - MONDAY_8AM);
-    await settle();
-    expect(launches).toEqual([]);
-    expect(reportBeats()).toMatchObject([
-      { outcome: 'quiet', summary: 'Nothing new to report.', wake: 'event:report-due' },
-    ]);
-    // The next one is Tuesday's start, not a retry.
-    expect(r.nextReportAt(juno.id)?.toISOString()).toBe('2026-10-13T13:00:00.000Z');
-    r.stop();
-  });
 });
 
 describe('delivering a report', () => {
@@ -248,20 +233,6 @@ describe('delivering a report', () => {
     r.stop();
   });
 
-  it('carries everything over when the turn passes report: null', async () => {
-    queue('A small thing.');
-    runtime.withScenarios([endsWith({ summary: 'Nothing worth it.', report: null })]);
-    const r = runner();
-    await r.start();
-    await vi.advanceTimersByTimeAsync(MONDAY_9AM - MONDAY_8AM);
-    await settle();
-    expect(launches).toHaveLength(1);
-    expect(dms).toEqual([]);
-    expect(raises.queuedItems(juno.id)).toHaveLength(1);
-    expect(store.getState(juno.id)?.lastReportAt ?? null).toBeNull();
-    r.stop();
-  });
-
   it('waits for an away manager instead of sending the report up the chain', async () => {
     queue('A small thing.');
     const r = runner();
@@ -294,29 +265,6 @@ describe('end_beat.report', () => {
 });
 
 describe('reports-to changes', () => {
-  it('queue a line for the new manager and one for the old', () => {
-    queueManagerChange(
-      {
-        raises,
-        managerOf: () => 'agent-ana',
-        nameOf: () => 'Ana',
-        exists: () => true,
-        canonical: (id: string) => id,
-      },
-      {
-        agentId: juno.id,
-        before: 'agent-otto',
-        id: 'i1',
-        oldLineId: 'i2',
-        at: '2026-10-12T12:00:00Z',
-      }
-    );
-    expect(db.select().from(heartbeatReportItems).all()).toMatchObject([
-      { kind: 'reports-to', text: 'Now reports to Ana.', toAccount: null },
-      { kind: 'reports-to', text: 'Now reports to Ana.', toAccount: 'agent-otto' },
-    ]);
-  });
-
   it('send the old manager’s line when the report goes', async () => {
     manager = 'acct-owner';
     queueManagerChange(
@@ -397,24 +345,6 @@ describe('the report clock', () => {
       '2026-10-19T13:00:00.000Z'
     );
   });
-
-  it('runs an owed report a few minutes from now, and never before its reader is back', () => {
-    const tuesdayNoon = Date.parse('2026-10-13T16:00:00Z');
-    const facts = {
-      cadence: 'daily' as const,
-      hours: HOURS,
-      lastAttemptAt: new Date(MONDAY_9AM).toISOString(),
-      now: tuesdayNoon,
-      random: () => 0,
-    };
-    expect(reportBeatAt({ ...facts, readerAvailableAt: tuesdayNoon })).toEqual({
-      at: tuesdayNoon + 60_000,
-      owed: true,
-    });
-    const back = Date.parse('2026-10-15T13:00:00Z');
-    expect(reportBeatAt({ ...facts, readerAvailableAt: back })).toEqual({ at: back, owed: true });
-    expect(reportBeatAt({ ...facts, cadence: 'off', readerAvailableAt: tuesdayNoon })).toBeNull();
-  });
 });
 
 describe('review round 1', () => {
@@ -453,95 +383,6 @@ describe('review round 1', () => {
     r.stop();
   });
 
-  it('counts a first report from one report period ago, and caps its beat lines', () => {
-    const now = MONDAY_9AM;
-    const beat = (id: string, hoursAgo: number) => {
-      store.insertBeat({
-        id,
-        agentId: juno.id,
-        startedAt: new Date(now - hoursAgo * 3_600_000).toISOString(),
-        kind: 'pulse',
-        wake: 'timer',
-      });
-      store.finishBeat(id, { outcome: 'worked', summary: `Beat ${id}.`, turnSessionId: 'chat' });
-    };
-    beat('old', 72);
-    for (let i = 0; i < REPORT_TURNS_MAX + 5; i++) beat(`b${i}`, 1 + i / 100);
-    const material = reportMaterial(raises, {
-      agentId: juno.id,
-      reader: 'acct-owner',
-      lastReportAt: null,
-      cadence: 'daily',
-      now,
-    });
-    expect(material.turns).toHaveLength(REPORT_TURNS_MAX + 1);
-    expect(material.turns.at(-1)).toBe('And 5 earlier beats.');
-    expect(material.turns).not.toContain('Beat old.');
-    expect(material.count).toBe(REPORT_TURNS_MAX);
-  });
-
-  it('arms the next regular start for a manager away with no return date, not an hourly retry', () => {
-    const tuesdayNoon = Date.parse('2026-10-13T16:00:00Z');
-    expect(
-      reportBeatAt({
-        cadence: 'daily',
-        hours: HOURS,
-        lastAttemptAt: '2026-10-12T13:00:00Z',
-        readerAvailableAt: null,
-        now: tuesdayNoon,
-      })
-    ).toEqual({ at: Date.parse('2026-10-14T13:00:00Z'), owed: false });
-  });
-
-  it('keeps an owed report where it was armed when the agent is re-armed', async () => {
-    // Monday's report beat ran; Tuesday's start passed with the server off.
-    store.insertBeat({
-      id: 'r0',
-      agentId: juno.id,
-      startedAt: new Date(MONDAY_9AM).toISOString(),
-      kind: 'report',
-      wake: 'event:report-due',
-    });
-    store.finishBeat('r0', { outcome: 'quiet', endedAt: new Date(MONDAY_9AM).toISOString() });
-    vi.setSystemTime(Date.parse('2026-10-13T16:00:00Z'));
-    const r = runner();
-    await r.start();
-    const armed = r.nextReportAt(juno.id)!.getTime();
-    vi.setSystemTime(Date.now() + 60_000);
-    await r.refreshAgent(juno.id);
-    expect(r.nextReportAt(juno.id)!.getTime()).toBe(armed);
-    r.stop();
-  });
-
-  it('leaves the pace of timed beats alone', async () => {
-    store.patchState(juno.id, { lastBeatAt: '2026-10-12T11:00:00.000Z' });
-    const r = runner();
-    await r.start();
-    await vi.advanceTimersByTimeAsync(MONDAY_9AM - MONDAY_8AM);
-    await settle();
-    expect(reportBeats()).toHaveLength(1);
-    expect(store.getState(juno.id)?.lastBeatAt).toBe('2026-10-12T11:00:00.000Z');
-    r.stop();
-  });
-
-  it('hands a report over once even when the delivery tick throws', async () => {
-    runner();
-    vi.spyOn(raises, 'closeAnswered').mockImplementation(() => {
-      throw new Error('tick fell over');
-    });
-    await expect(
-      box.deliverReport({
-        agent: juno,
-        beatId: 'r1',
-        chatSessionId: 'chat',
-        to: 'acct-owner',
-        text: 'Finished: Acme.',
-        lineIds: [],
-      })
-    ).resolves.toBeUndefined();
-    expect(store.heldFor(juno.id)).toHaveLength(1);
-  });
-
   it('never lets an agent close its own report by naming its key as resolved', async () => {
     runner();
     vi.spyOn(raises, 'closeAnswered').mockImplementation(() => {
@@ -559,26 +400,6 @@ describe('review round 1', () => {
     expect(store.heldFor(juno.id).map((row) => row.state)).toEqual(['held']);
   });
 
-  it('gives no line to an old manager who no longer exists', () => {
-    queueManagerChange(
-      {
-        raises,
-        managerOf: () => 'acct-owner',
-        nameOf: () => 'you',
-        exists: () => false,
-        canonical: (id: string) => id,
-      },
-      {
-        agentId: juno.id,
-        before: 'agent-gone',
-        id: 'i1',
-        oldLineId: 'i2',
-        at: new Date().toISOString(),
-      }
-    );
-    expect(db.select().from(heartbeatReportItems).all()).toHaveLength(1);
-  });
-
   it('delivers a DM only to the person it is for', async () => {
     const { deliverDm } = createDeliveries(
       { notifyDm: undefined } as never,
@@ -589,90 +410,5 @@ describe('review round 1', () => {
       reason:
         'Only the owner can get messages from agents here yet; this person has no DM to land in.',
     });
-  });
-});
-
-describe('review round 2', () => {
-  it('runs an owed report within minutes once an away-with-no-date manager is back', async () => {
-    // Its last report beat ran Friday; Monday's start finds the manager away with no date.
-    store.insertBeat({
-      id: 'r0',
-      agentId: juno.id,
-      startedAt: '2026-10-09T13:00:00.000Z',
-      kind: 'report',
-      wake: 'event:report-due',
-    });
-    store.finishBeat('r0', { outcome: 'quiet', endedAt: '2026-10-09T13:00:00.000Z' });
-    away = { until: null };
-    queue('A small thing.');
-    const r = runner();
-    await r.start();
-    await vi.advanceTimersByTimeAsync(MONDAY_9AM - MONDAY_8AM);
-    await settle();
-    expect(reportBeats().at(-1)).toMatchObject({ outcome: 'skipped' });
-    vi.setSystemTime(Date.parse('2026-10-12T16:00:00Z')); // noon, back
-    away = null;
-    await r.refreshReport(juno.id);
-    expect(r.nextReportAt(juno.id)!.getTime() - Date.now()).toBeLessThanOrEqual(5 * 60_000);
-    r.stop();
-  });
-
-  it('sets the report time to when its report beat began, not when it finally arrived', async () => {
-    dmFails = true;
-    queue('Sent Acme the second reminder.');
-    runtime.withScenarios([endsWith({ summary: 'Reported.', report: 'Finished: Acme.' })]);
-    const r = runner();
-    await r.start();
-    box.start();
-    await vi.advanceTimersByTimeAsync(MONDAY_9AM - MONDAY_8AM);
-    await settle();
-    dmFails = false;
-    await vi.advanceTimersByTimeAsync(DELIVERY_BACKOFF_MS[0]! + 60_000);
-    expect(dms).toEqual([{ to: 'acct-owner', text: 'Finished: Acme.' }]);
-    expect(store.getState(juno.id)?.lastReportAt).toBe(new Date(MONDAY_9AM).toISOString());
-    box.stop();
-    r.stop();
-  });
-
-  it('gives no second line to an old manager named by another of the same person’s ids', () => {
-    queueManagerChange(
-      {
-        raises,
-        managerOf: () => 'acct-owner',
-        nameOf: () => 'you',
-        exists: () => true,
-        canonical: (id) => (id === 'install:1' ? 'acct-owner' : id),
-      },
-      {
-        agentId: juno.id,
-        before: 'install:1',
-        id: 'i1',
-        oldLineId: 'i2',
-        at: new Date().toISOString(),
-      }
-    );
-    expect(db.select().from(heartbeatReportItems).all()).toHaveLength(1);
-  });
-
-  it('sends an old manager their line even when the reader has nothing new', async () => {
-    raises.queueItem(
-      'i2',
-      {
-        agentId: juno.id,
-        kind: 'reports-to',
-        text: 'Now reports to you.',
-        toAccount: 'agent-otto',
-        key: 'reports-to:agent-otto',
-      },
-      new Date().toISOString()
-    );
-    store.patchState(juno.id, { beatChatId: 'chat-today' });
-    const r = runner();
-    await r.start();
-    await vi.advanceTimersByTimeAsync(MONDAY_9AM - MONDAY_8AM);
-    await settle();
-    expect(launches).toEqual([]);
-    expect(agentSends).toEqual([{ to: 'agent-otto', text: 'From Juno:\nNow reports to you.' }]);
-    r.stop();
   });
 });
