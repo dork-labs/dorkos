@@ -220,18 +220,23 @@ For every open issue whose number matches nothing in FB:
    comment, and silence is a HOLD, not a post. After approval:
 
    ```bash
-   gh issue comment <n> -R dork-labs/dorkos --body-file - <<'REPLY'
+   root=$(git rev-parse --show-toplevel)
+   sig=$(pnpm exec tsx "$root/scripts/provenance/provenance-line.ts" --visibility public) && [ -n "$sig" ] ||
+     { echo "could not sign the reply; not posting" >&2; exit 1; }
+   { cat <<'REPLY'
    <the approved text>
 
    <!-- beat:heard -->
-   <!-- agent:provenance {"v":1,...} -->
    REPLY
+   printf '%s\n' "$sig"; } | gh issue comment <n> -R dork-labs/dorkos --body-file -
    ```
 
    `--body-file -` reads the body from stdin, so a reply never needs a temp file
    or another tool to write one. This is the shape every post in this file uses.
-   The repo is public, so the provenance line omits `resumeUrl` and truncates
-   `sessionId` to 8 characters.
+   The provenance line is built, never typed: the repo is public, so
+   `--visibility public` cuts the chat id to 8 characters and names no machine.
+   It goes last, because a reader takes only a body's last line as its signature.
+   If it cannot be built, nothing is posted: fix the install and try again.
 
 A "heard" reply is owed to every open issue with no `<!-- beat:heard -->`
 comment, whether this run filed its mirror or a previous one did. Issues that
@@ -421,12 +426,15 @@ release owes them:
 3. Post it with `<!-- beat:shipped -->` on its own line, then close the issue:
 
    ```bash
-   gh issue comment <n> -R dork-labs/dorkos --body-file - <<'REPLY'
+   root=$(git rev-parse --show-toplevel)
+   sig=$(pnpm exec tsx "$root/scripts/provenance/provenance-line.ts" --visibility public) && [ -n "$sig" ] ||
+     { echo "could not sign the reply; not posting" >&2; exit 1; }
+   { cat <<'REPLY'
    <the approved text>
 
    <!-- beat:shipped -->
-   <!-- agent:provenance {"v":1,...} -->
    REPLY
+   printf '%s\n' "$sig"; } | gh issue comment <n> -R dork-labs/dorkos --body-file -
    gh issue close <n> -R dork-labs/dorkos --reason completed
    ```
 
