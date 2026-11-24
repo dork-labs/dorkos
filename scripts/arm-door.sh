@@ -222,7 +222,7 @@ case "$cmd" in
       unarmed)
         echo "**Queued without the arm script.** This commit (\`${head:0:7}\`) has what it needs to merge ($detail), so it stays in the queue. But it went in some other way, so the arm script's other checks were not run."
         echo
-        echo "**Next time:** agents arm only through the arm script, never \`gh pr merge\`."
+        echo "**Next time:** open PRs with \`scripts/open-pr.sh\`, which turns on auto-merge."
         ;;
       unreadable)
         echo "**Could not check this queue entry.** The arm door could not read \`$detail\` for this commit (\`${head:0:7}\`), so it left it in the queue. The required checks still run."
