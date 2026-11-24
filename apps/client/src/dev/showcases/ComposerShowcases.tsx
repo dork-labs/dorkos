@@ -41,7 +41,7 @@ import {
   TOOL_CALL_APPROVAL,
 } from '../mock-chat-data';
 import { createPlaygroundTransport } from '../playground-transport';
-import { EMPTY_ROOM, RETIRED_DM_ROOM } from './rooms-showcase-data';
+import { EMPTY_ROOM } from './rooms-showcase-data';
 import type { PendingFile } from '@/layers/features/composer';
 import type { QuestionItem } from '@dorkos/shared/types';
 
@@ -419,13 +419,10 @@ export function ComposerShowcases() {
         initialValue="Looks like the migration step timed out waiting on a lock."
       />
 
-      <ShowcaseLabel>
-        Room — no agent to answer: a channel (DOR-2823), a retired DM (DOR-2365)
-      </ShowcaseLabel>
+      <ShowcaseLabel>Room — a channel with no agent in it (DOR-2823)</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <div className="flex flex-col">
           <NoAgentHint room={EMPTY_ROOM} hasEntries onAddAgents={() => {}} />
-          <NoAgentHint room={RETIRED_DM_ROOM} hasEntries onAddAgents={() => {}} />
           <ComposerDemo
             label="The hint sits over the room's composer until an agent joins"
             surface="room"
