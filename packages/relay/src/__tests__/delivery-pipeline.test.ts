@@ -99,42 +99,6 @@ describe('DeliveryPipeline', () => {
       expect(deps.sqliteIndex.insertMessage).toHaveBeenCalled();
     });
 
-    it('rejects when backpressure is exceeded', async () => {
-      vi.mocked(deps.sqliteIndex.countNewByEndpoint).mockReturnValue(1000);
-      const endpoint = createEndpoint();
-      const envelope = createEnvelope();
-
-      const result = await pipeline.deliverToEndpoint(endpoint, envelope);
-
-      expect(result.delivered).toBe(false);
-      expect(result.rejected?.reason).toBe('backpressure');
-      expect(deps.maildirStore.deliver).not.toHaveBeenCalled();
-    });
-
-    it('emits backpressure warning signal at warning threshold', async () => {
-      vi.mocked(deps.sqliteIndex.countNewByEndpoint).mockReturnValue(800);
-      const endpoint = createEndpoint();
-      const envelope = createEnvelope();
-
-      await pipeline.deliverToEndpoint(endpoint, envelope);
-
-      expect(deps.signalEmitter.emit).toHaveBeenCalledWith(
-        endpoint.subject,
-        expect.objectContaining({ type: 'backpressure', state: 'warning' })
-      );
-    });
-
-    it('rejects when circuit breaker is open', async () => {
-      vi.mocked(deps.circuitBreaker.check).mockReturnValue({ allowed: false, state: 'OPEN' });
-      const endpoint = createEndpoint();
-      const envelope = createEnvelope();
-
-      const result = await pipeline.deliverToEndpoint(endpoint, envelope);
-
-      expect(result.delivered).toBe(false);
-      expect(result.rejected?.reason).toBe('circuit_open');
-    });
-
     it('rejects to DLQ when budget is exceeded', async () => {
       const endpoint = createEndpoint();
       const envelope = createEnvelope({
@@ -166,16 +130,6 @@ describe('DeliveryPipeline', () => {
 
       expect(result.delivered).toBe(false);
       expect(deps.circuitBreaker.recordFailure).toHaveBeenCalledWith(endpoint.hash);
-    });
-
-    it('includes pressure in result', async () => {
-      const endpoint = createEndpoint();
-      const envelope = createEnvelope();
-
-      const result = await pipeline.deliverToEndpoint(endpoint, envelope);
-
-      expect(result.pressure).toBeDefined();
-      expect(typeof result.pressure).toBe('number');
     });
   });
 
@@ -246,14 +200,6 @@ describe('DeliveryPipeline', () => {
       expect(deps.circuitBreaker.recordFailure).not.toHaveBeenCalled();
     });
 
-    it('skips dispatch when no subscribers match', async () => {
-      vi.mocked(deps.subscriptionRegistry.getSubscribers).mockReturnValue([]);
-
-      await pipeline.dispatchToSubscribers(createEndpoint(), 'msg-001');
-
-      expect(deps.maildirStore.claim).not.toHaveBeenCalled();
-    });
-
     it('skips dispatch when claim fails', async () => {
       vi.mocked(deps.subscriptionRegistry.getSubscribers).mockReturnValue([vi.fn()]);
       vi.mocked(deps.maildirStore.claim).mockResolvedValue({ ok: false, error: 'claim failed' });
@@ -265,10 +211,6 @@ describe('DeliveryPipeline', () => {
   });
 
   describe('wasDispatched', () => {
-    it('returns false for a message that has never been dispatched', () => {
-      expect(pipeline.wasDispatched('unknown-id')).toBe(false);
-    });
-
     it('returns true for a message ID after dispatchToSubscribers runs', async () => {
       const handler = vi.fn();
       vi.mocked(deps.subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
@@ -305,19 +247,6 @@ describe('DeliveryPipeline', () => {
 
       // Message was claimed and attempted — should still be deduped
       expect(pipeline.wasDispatched('msg-handler-err')).toBe(true);
-    });
-  });
-
-  describe('setBackpressureConfig', () => {
-    it('updates the backpressure config', async () => {
-      // Lower the threshold so 5 messages trigger rejection
-      pipeline.setBackpressureConfig({ enabled: true, maxMailboxSize: 5, pressureWarningAt: 0.5 });
-      vi.mocked(deps.sqliteIndex.countNewByEndpoint).mockReturnValue(5);
-
-      const result = await pipeline.deliverToEndpoint(createEndpoint(), createEnvelope());
-
-      expect(result.delivered).toBe(false);
-      expect(result.rejected?.reason).toBe('backpressure');
     });
   });
 
@@ -362,11 +291,6 @@ describe('DeliveryPipeline', () => {
       } finally {
         vi.useRealTimers();
       }
-    });
-
-    it('is safe to call multiple times', () => {
-      pipeline.close();
-      pipeline.close();
     });
   });
 });

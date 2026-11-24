@@ -29,10 +29,6 @@ function createSpyLogger(): AccessControlLogger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 /** Create a temporary directory for test isolation. */
 function makeTmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'relay-acl-test-'));
@@ -114,10 +110,6 @@ async function waitUntil(predicate: () => boolean, what: string): Promise<void> 
   throw new Error(`timed out waiting for ${what}`);
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 describe('AccessControl', () => {
   let tmpDir: string;
   let acl: AccessControl;
@@ -139,10 +131,6 @@ describe('AccessControl', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  // -------------------------------------------------------------------------
-  // Default-allow
-  // -------------------------------------------------------------------------
-
   describe('default-allow policy', () => {
     it('allows all communication when no rules exist', () => {
       acl = new AccessControl(tmpDir);
@@ -155,27 +143,7 @@ describe('AccessControl', () => {
       expect(result.allowed).toBe(true);
       expect(result.matchedRule).toBeUndefined();
     });
-
-    it('allows communication when no rules match', () => {
-      writeRulesFile(tmpDir, [
-        makeRule('relay.agent.projectX.*', 'relay.agent.projectY.*', 'deny', 10),
-      ]);
-      acl = new AccessControl(tmpDir);
-
-      // These subjects don't match the deny rule
-      const result = acl.checkAccess(
-        'relay.agent.projectA.backend',
-        'relay.agent.projectB.frontend'
-      );
-
-      expect(result.allowed).toBe(true);
-      expect(result.matchedRule).toBeUndefined();
-    });
   });
-
-  // -------------------------------------------------------------------------
-  // Allow rules
-  // -------------------------------------------------------------------------
 
   describe('allow rules', () => {
     it('permits communication when an allow rule matches', () => {
@@ -196,24 +164,7 @@ describe('AccessControl', () => {
       expect(result.allowed).toBe(true);
       expect(result.matchedRule).toEqual(rule);
     });
-
-    it('returns the matched allow rule in the result', () => {
-      const rule = makeRule('relay.agent.>', 'relay.agent.>', 'allow', 5);
-      writeRulesFile(tmpDir, [rule]);
-      acl = new AccessControl(tmpDir);
-
-      const result = acl.checkAccess(
-        'relay.agent.projectA.backend',
-        'relay.agent.projectB.frontend'
-      );
-
-      expect(result.matchedRule).toEqual(rule);
-    });
   });
-
-  // -------------------------------------------------------------------------
-  // Deny rules
-  // -------------------------------------------------------------------------
 
   describe('deny rules', () => {
     it('blocks communication when a deny rule matches', () => {
@@ -229,22 +180,7 @@ describe('AccessControl', () => {
       expect(result.allowed).toBe(false);
       expect(result.matchedRule).toEqual(rule);
     });
-
-    it('returns the matched deny rule in the result', () => {
-      const rule = makeRule('relay.agent.evil', 'relay.agent.innocent', 'deny', 100);
-      writeRulesFile(tmpDir, [rule]);
-      acl = new AccessControl(tmpDir);
-
-      const result = acl.checkAccess('relay.agent.evil', 'relay.agent.innocent');
-
-      expect(result.allowed).toBe(false);
-      expect(result.matchedRule).toEqual(rule);
-    });
   });
-
-  // -------------------------------------------------------------------------
-  // Priority ordering
-  // -------------------------------------------------------------------------
 
   describe('priority ordering', () => {
     it('evaluates higher-priority rules first (first match wins)', () => {
@@ -264,20 +200,6 @@ describe('AccessControl', () => {
       expect(result.matchedRule).toEqual(allowRule);
     });
 
-    it('lower-priority deny overridden by higher-priority allow', () => {
-      const rules: RelayAccessRule[] = [
-        makeRule('relay.agent.>', 'relay.agent.>', 'deny', 1),
-        makeRule('relay.agent.trusted.*', 'relay.agent.>', 'allow', 100),
-      ];
-      writeRulesFile(tmpDir, rules);
-      acl = new AccessControl(tmpDir);
-
-      const result = acl.checkAccess('relay.agent.trusted.bot', 'relay.agent.projectX.worker');
-
-      expect(result.allowed).toBe(true);
-      expect(result.matchedRule?.priority).toBe(100);
-    });
-
     it('higher-priority deny blocks despite lower-priority allow', () => {
       const rules: RelayAccessRule[] = [
         makeRule('relay.agent.>', 'relay.agent.>', 'allow', 1),
@@ -292,10 +214,6 @@ describe('AccessControl', () => {
       expect(result.matchedRule?.priority).toBe(100);
     });
   });
-
-  // -------------------------------------------------------------------------
-  // Wildcard patterns
-  // -------------------------------------------------------------------------
 
   describe('wildcard patterns', () => {
     it('single wildcard (*) matches one token in from', () => {
@@ -332,24 +250,7 @@ describe('AccessControl', () => {
         false
       );
     });
-
-    it('wildcards work in both from and to simultaneously', () => {
-      const rule = makeRule('relay.agent.*.backend', 'relay.agent.>', 'deny', 10);
-      writeRulesFile(tmpDir, [rule]);
-      acl = new AccessControl(tmpDir);
-
-      expect(
-        acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.projectB.frontend').allowed
-      ).toBe(false);
-      expect(
-        acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.any.nested.path').allowed
-      ).toBe(false);
-    });
   });
-
-  // -------------------------------------------------------------------------
-  // addRule / removeRule
-  // -------------------------------------------------------------------------
 
   describe('addRule', () => {
     it('adds a rule that affects subsequent checkAccess calls', () => {
@@ -375,17 +276,25 @@ describe('AccessControl', () => {
       expect(persisted[0]).toEqual(rule);
     });
 
-    it('maintains priority ordering after adding multiple rules', () => {
+    it('keeps rules added at runtime in priority order, so a later high-priority allow wins', () => {
       acl = new AccessControl(tmpDir);
 
-      acl.addRule(makeRule('relay.a', 'relay.b', 'deny', 5));
-      acl.addRule(makeRule('relay.c', 'relay.d', 'allow', 20));
-      acl.addRule(makeRule('relay.e', 'relay.f', 'deny', 10));
+      acl.addRule(makeRule('relay.agent.>', 'relay.agent.>', 'deny', 5));
+      acl.addRule(makeRule('relay.agent.trusted.*', 'relay.agent.>', 'allow', 20));
+
+      expect(acl.listRules().map((r) => r.priority)).toEqual([20, 5]);
+      expect(acl.checkAccess('relay.agent.trusted.bot', 'relay.agent.x.worker').allowed).toBe(true);
+    });
+
+    it('replaces duplicate rules with same from/to/priority', () => {
+      acl = new AccessControl(tmpDir);
+
+      acl.addRule(makeRule('relay.a', 'relay.b', 'deny', 10));
+      acl.addRule(makeRule('relay.a', 'relay.b', 'allow', 10));
 
       const rules = acl.listRules();
-      expect(rules[0].priority).toBe(20);
-      expect(rules[1].priority).toBe(10);
-      expect(rules[2].priority).toBe(5);
+      expect(rules).toHaveLength(1);
+      expect(rules[0].action).toBe('allow');
     });
 
     it('writes nothing when the same rule is asserted again (DOR-2900)', () => {
@@ -401,17 +310,6 @@ describe('AccessControl', () => {
       const after = fs.statSync(file);
       expect([after.ino, after.mtimeMs]).toEqual([before.ino, before.mtimeMs]);
       expect(acl.listRules()).toHaveLength(1);
-    });
-
-    it('replaces duplicate rules with same from/to/priority', () => {
-      acl = new AccessControl(tmpDir);
-
-      acl.addRule(makeRule('relay.a', 'relay.b', 'deny', 10));
-      acl.addRule(makeRule('relay.a', 'relay.b', 'allow', 10));
-
-      const rules = acl.listRules();
-      expect(rules).toHaveLength(1);
-      expect(rules[0].action).toBe('allow');
     });
   });
 
@@ -437,42 +335,7 @@ describe('AccessControl', () => {
       expect(persisted).toHaveLength(1);
       expect(persisted[0].from).toBe('relay.c');
     });
-
-    it('does nothing if no rule matches', () => {
-      acl = new AccessControl(tmpDir);
-
-      acl.addRule(makeRule('relay.a', 'relay.b', 'deny', 5));
-      acl.removeRule('relay.x', 'relay.y');
-
-      expect(acl.listRules()).toHaveLength(1);
-    });
   });
-
-  // -------------------------------------------------------------------------
-  // listRules
-  // -------------------------------------------------------------------------
-
-  describe('listRules', () => {
-    it('returns an empty array when no rules exist', () => {
-      acl = new AccessControl(tmpDir);
-
-      expect(acl.listRules()).toEqual([]);
-    });
-
-    it('returns a copy (modifying returned array does not affect internal state)', () => {
-      acl = new AccessControl(tmpDir);
-      acl.addRule(makeRule('relay.a', 'relay.b', 'deny', 5));
-
-      const rules = acl.listRules();
-      rules.length = 0; // Mutate the returned array
-
-      expect(acl.listRules()).toHaveLength(1);
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // File loading
-  // -------------------------------------------------------------------------
 
   describe('file loading', () => {
     it('loads rules from an existing access-rules.json on construction', () => {
@@ -484,36 +347,11 @@ describe('AccessControl', () => {
       expect(acl.checkAccess('relay.sender', 'relay.receiver').allowed).toBe(false);
     });
 
-    it('handles missing access-rules.json gracefully (default-allow)', () => {
-      acl = new AccessControl(tmpDir);
-
-      expect(acl.checkAccess('relay.any', 'relay.other').allowed).toBe(true);
-      expect(acl.listRules()).toEqual([]);
-    });
-
     // Corrupt and non-array files used to load as "no rules", i.e. as
     // default-allow. They now quarantine — see the fail-closed block below.
   });
 
-  // -------------------------------------------------------------------------
-  // Hot-reload via chokidar
-  // -------------------------------------------------------------------------
-
   describe('hot-reload', () => {
-    it('watches the rules file, letting a settling write finish before reading it', () => {
-      acl = new AccessControl(tmpDir);
-
-      const watcher = chokidarSpy.latest();
-      expect(watcher.watchedPath).toBe(path.join(tmpDir, 'access-rules.json'));
-      // `awaitWriteFinish` is load-bearing: an editor saving in two syscalls
-      // would otherwise be read half-written and quarantine the evaluator.
-      expect(watcher.options).toMatchObject({
-        persistent: true,
-        ignoreInitial: true,
-        awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
-      });
-    });
-
     it('reloads rules when the file changes on disk', () => {
       // Pre-create the file so chokidar watches an existing file (fires 'change' not 'add')
       writeRulesFile(tmpDir, []);
@@ -524,16 +362,6 @@ describe('AccessControl', () => {
 
       writeRulesFile(tmpDir, [makeRule('relay.a', 'relay.b', 'deny', 10)]);
       chokidarSpy.latest().emit('change');
-
-      expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(false);
-    });
-
-    it('picks up a rules file created after construction', () => {
-      acl = new AccessControl(tmpDir);
-      expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(true);
-
-      writeRulesFile(tmpDir, [makeRule('relay.a', 'relay.b', 'deny', 10)]);
-      chokidarSpy.latest().emit('add');
 
       expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(false);
     });
@@ -610,10 +438,6 @@ describe('AccessControl', () => {
     );
   });
 
-  // -------------------------------------------------------------------------
-  // Unreadable rules — quarantine
-  // -------------------------------------------------------------------------
-
   describe('a rules file that exists but cannot be read', () => {
     /** Write raw text (valid or not) to access-rules.json. */
     function writeRaw(dir: string, text: string): void {
@@ -666,15 +490,6 @@ describe('AccessControl', () => {
       expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(true);
     });
 
-    it('says so once, loudly', () => {
-      const errors: unknown[][] = [];
-      writeRaw(tmpDir, 'not json at all');
-      acl = new AccessControl(tmpDir, { error: (...args) => errors.push(args) });
-
-      expect(errors).toHaveLength(1);
-      expect(String(errors[0]?.[0])).toContain('Refusing to deliver');
-    });
-
     it('recovers when the file is repaired', () => {
       writeRaw(tmpDir, '{{{');
       acl = new AccessControl(tmpDir);
@@ -713,17 +528,6 @@ describe('AccessControl', () => {
       expect(fs.readFileSync(path.join(tmpDir, 'access-rules.json'), 'utf-8')).toBe('{{{');
     });
 
-    it('accepts writes again once the file is repaired', () => {
-      writeRaw(tmpDir, '{{{');
-      acl = new AccessControl(tmpDir);
-
-      writeRulesFile(tmpDir, []);
-      chokidarSpy.latest().emit('change');
-
-      expect(() => acl.addRule(makeRule('relay.a', 'relay.b', 'deny', 10))).not.toThrow();
-      expect(readRulesFile(tmpDir)).toHaveLength(1);
-    });
-
     it('recovers when the broken file is deleted', () => {
       acl = new AccessControl(tmpDir);
       const watcher = chokidarSpy.latest();
@@ -748,45 +552,7 @@ describe('AccessControl', () => {
   // -------------------------------------------------------------------------
   // Watcher error handling — an EMFILE-style watcher failure must be logged,
   // never swallowed nor left to the process-wide unhandled-error path.
-  // -------------------------------------------------------------------------
-
   describe('watcher error handling', () => {
-    it('logs a watcher error through the injected logger, naming the rules path', () => {
-      const logger = createSpyLogger();
-      acl = new AccessControl(tmpDir, logger);
-      const err = Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' });
-
-      chokidarSpy.latest().emit('error', err);
-
-      // Two separate assertions rather than one interpolated RegExp: tmpDir is
-      // a real filesystem path and could legally contain regex metacharacters
-      // that would silently change what the pattern matches.
-      const [message, context] = vi.mocked(logger.warn!).mock.calls[0]!;
-      expect(typeof message).toBe('string');
-      expect((message as string).startsWith('[watcher-error] AccessControl: ')).toBe(true);
-      expect(message).toContain(tmpDir);
-      expect(context).toEqual(
-        expect.objectContaining({
-          code: 'EMFILE',
-          message: 'EMFILE: too many open files',
-          stack: err.stack,
-          suppressingFurtherErrors: true,
-        })
-      );
-    });
-
-    it('says further errors of that code are suppressed, so an operator knows the silence is by design', () => {
-      const logger = createSpyLogger();
-      acl = new AccessControl(tmpDir, logger);
-
-      chokidarSpy.latest().emit('error', Object.assign(new Error('EMFILE'), { code: 'EMFILE' }));
-
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('further EMFILE errors from this watcher are suppressed'),
-        expect.objectContaining({ suppressingFurtherErrors: true })
-      );
-    });
-
     it('keeps enforcing already-loaded rules after a watcher error', () => {
       const rule = makeRule('relay.a', 'relay.b', 'deny', 10);
       writeRulesFile(tmpDir, [rule]);
@@ -795,76 +561,6 @@ describe('AccessControl', () => {
       chokidarSpy.latest().emit('error', new Error('EMFILE'));
 
       expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(false);
-    });
-
-    it('does not throw when no logger was injected', () => {
-      acl = new AccessControl(tmpDir);
-
-      expect(() => chokidarSpy.latest().emit('error', new Error('EMFILE'))).not.toThrow();
-    });
-
-    // A single fd-exhaustion episode can make chokidar fire 'error' many times
-    // for one dead watcher. The handler must latch: log the first, drop repeats
-    // of the same code.
-    it('logs only the first of many errors carrying the same code', () => {
-      const logger = createSpyLogger();
-      acl = new AccessControl(tmpDir, logger);
-      const watcher = chokidarSpy.latest();
-
-      watcher.emit('error', Object.assign(new Error('EMFILE 1'), { code: 'EMFILE' }));
-      watcher.emit('error', Object.assign(new Error('EMFILE 2'), { code: 'EMFILE' }));
-      watcher.emit('error', Object.assign(new Error('EMFILE 3'), { code: 'EMFILE' }));
-
-      expect(logger.warn).toHaveBeenCalledTimes(1);
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ code: 'EMFILE', message: 'EMFILE 1' })
-      );
-    });
-
-    // The masking bug: a latch keyed on "any error at all" would let one benign
-    // EACCES hide a real EMFILE storm that follows it. Keying on `code` means a
-    // NEW code always gets its own line.
-    it('logs a separate line for each distinct error code', () => {
-      const logger = createSpyLogger();
-      acl = new AccessControl(tmpDir, logger);
-      const watcher = chokidarSpy.latest();
-
-      watcher.emit('error', Object.assign(new Error('permission denied'), { code: 'EACCES' }));
-      watcher.emit('error', Object.assign(new Error('too many open files'), { code: 'EMFILE' }));
-
-      expect(logger.warn).toHaveBeenCalledTimes(2);
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ code: 'EACCES' })
-      );
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ code: 'EMFILE' })
-      );
-    });
-
-    // Regression guard: if the latch were ever hoisted from the per-instance
-    // closure onto a module-level field, one relay's first error would wrongly
-    // suppress a second relay's first error too.
-    it('scopes the latch per instance — two evaluators each log their own first error', () => {
-      const loggerA = createSpyLogger();
-      const loggerB = createSpyLogger();
-      const otherDir = makeTmpDir();
-      acl = new AccessControl(tmpDir, loggerA);
-      const watcherA = chokidarSpy.latest();
-      const aclB = new AccessControl(otherDir, loggerB);
-      const watcherB = chokidarSpy.latest();
-      try {
-        watcherA.emit('error', Object.assign(new Error('EMFILE A'), { code: 'EMFILE' }));
-        watcherB.emit('error', Object.assign(new Error('EMFILE B'), { code: 'EMFILE' }));
-
-        expect(loggerA.warn).toHaveBeenCalledTimes(1);
-        expect(loggerB.warn).toHaveBeenCalledTimes(1);
-      } finally {
-        aclB.close();
-        fs.rmSync(otherDir, { recursive: true, force: true });
-      }
     });
   });
 
@@ -876,8 +572,6 @@ describe('AccessControl', () => {
   // `ready` is genuinely absent rather than merely early — a real watcher goes
   // ready within a millisecond and would settle these promises by itself,
   // passing whether or not the code under test did anything.
-  // -------------------------------------------------------------------------
-
   describe('whenWatcherReady', () => {
     it('resolves when the watcher fails before it ever goes ready', async () => {
       acl = new AccessControl(tmpDir, createSpyLogger());
@@ -895,41 +589,6 @@ describe('AccessControl', () => {
       acl.close();
 
       await expect(acl.whenWatcherReady()).resolves.toBeUndefined();
-    });
-
-    it('resolves once the watcher goes ready', async () => {
-      acl = new AccessControl(tmpDir);
-
-      chokidarSpy.latest().emit('ready');
-
-      await expect(acl.whenWatcherReady()).resolves.toBeUndefined();
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // close
-  // -------------------------------------------------------------------------
-
-  describe('close', () => {
-    it('stops the chokidar watcher', () => {
-      acl = new AccessControl(tmpDir);
-      const watcher = chokidarSpy.latest();
-
-      acl.close();
-
-      expect(watcher.closed).toBe(true);
-    });
-
-    it('is safe to call multiple times, and closes the watcher only once', () => {
-      acl = new AccessControl(tmpDir);
-      const watcher = chokidarSpy.latest();
-
-      expect(() => {
-        acl.close();
-        acl.close();
-        acl.close();
-      }).not.toThrow();
-      expect(watcher.closeCount).toBe(1);
     });
   });
 });

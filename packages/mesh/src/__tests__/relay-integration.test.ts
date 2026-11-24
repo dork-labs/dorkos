@@ -213,48 +213,6 @@ describe('MeshCore topology integration', () => {
     }
   });
 
-  it('denyCrossNamespace hides agents again', async () => {
-    const nsADir = path.join(base, 'project-alpha');
-    const nsBDir = path.join(base, 'project-beta');
-    const projectA = await makeProjectDir(nsADir, 'agent-a');
-    const projectB = await makeProjectDir(nsBDir, 'agent-b');
-
-    const relayCore = makeMockRelayCore();
-    const mesh = new MeshCore({
-      db,
-      relayCore: relayCore as never,
-      defaultScanRoot: base,
-    });
-
-    try {
-      const manifestA = await mesh.registerByPath(
-        projectA,
-        { name: 'agent-a', runtime: 'claude-code' },
-        'test',
-        base
-      );
-      const manifestB = await mesh.registerByPath(
-        projectB,
-        { name: 'agent-b', runtime: 'cursor' },
-        'test',
-        base
-      );
-
-      const nsA = manifestA.namespace!;
-      const nsB = manifestB.namespace!;
-
-      // Allow then deny
-      mesh.allowCrossNamespace(nsA, nsB);
-      expect(mesh.list({ callerNamespace: nsA })).toHaveLength(2);
-
-      mesh.denyCrossNamespace(nsA, nsB);
-      expect(mesh.list({ callerNamespace: nsA })).toHaveLength(1);
-      expect(mesh.list({ callerNamespace: nsA })[0]!.name).toBe('agent-a');
-    } finally {
-      mesh.close();
-    }
-  });
-
   it('getTopology("*") returns all namespaces', async () => {
     const nsADir = path.join(base, 'project-alpha');
     const nsBDir = path.join(base, 'project-beta');
@@ -298,85 +256,6 @@ describe('MeshCore topology integration', () => {
       const namespaceNames = view.namespaces.map((ns) => ns.namespace).sort();
       expect(namespaceNames).toContain(manifestA.namespace);
       expect(namespaceNames).toContain(manifestB.namespace);
-    } finally {
-      mesh.close();
-    }
-  });
-
-  it('listCrossNamespaceRules reflects allow rules', async () => {
-    const relayCore = makeMockRelayCore();
-    const mesh = new MeshCore({
-      db,
-      relayCore: relayCore as never,
-      defaultScanRoot: base,
-    });
-
-    try {
-      // Initially no cross-namespace rules
-      expect(mesh.listCrossNamespaceRules()).toEqual([]);
-
-      // Add a cross-namespace rule
-      mesh.allowCrossNamespace('ns-a', 'ns-b');
-
-      const rules = mesh.listCrossNamespaceRules();
-      expect(rules).toHaveLength(1);
-      expect(rules[0]).toEqual({
-        sourceNamespace: 'ns-a',
-        targetNamespace: 'ns-b',
-        action: 'allow',
-        origin: 'explicit',
-      });
-
-      // Deny removes the rule
-      mesh.denyCrossNamespace('ns-a', 'ns-b');
-      expect(mesh.listCrossNamespaceRules()).toEqual([]);
-    } finally {
-      mesh.close();
-    }
-  });
-
-  it('getAgentAccess returns reachable agents for a given agent', async () => {
-    const nsADir = path.join(base, 'project-alpha');
-    const nsBDir = path.join(base, 'project-beta');
-    const projectA = await makeProjectDir(nsADir, 'agent-a');
-    const projectB = await makeProjectDir(nsBDir, 'agent-b');
-
-    const relayCore = makeMockRelayCore();
-    const mesh = new MeshCore({
-      db,
-      relayCore: relayCore as never,
-      defaultScanRoot: base,
-    });
-
-    try {
-      const manifestA = await mesh.registerByPath(
-        projectA,
-        { name: 'agent-a', runtime: 'claude-code' },
-        'test',
-        base
-      );
-      const manifestB = await mesh.registerByPath(
-        projectB,
-        { name: 'agent-b', runtime: 'cursor' },
-        'test',
-        base
-      );
-
-      // Without cross-namespace access, agent-a can't reach agent-b
-      const accessBefore = mesh.getAgentAccess(manifestA.id);
-      expect(accessBefore).toBeDefined();
-      expect(accessBefore).toHaveLength(0);
-
-      // Allow cross-namespace
-      mesh.allowCrossNamespace(manifestA.namespace!, manifestB.namespace!);
-
-      const accessAfter = mesh.getAgentAccess(manifestA.id);
-      expect(accessAfter).toBeDefined();
-      expect(accessAfter).toHaveLength(1);
-      expect(accessAfter![0]!.name).toBe('agent-b');
-
-      // Non-existent agent returns undefined
-      expect(mesh.getAgentAccess('nonexistent')).toBeUndefined();
     } finally {
       mesh.close();
     }

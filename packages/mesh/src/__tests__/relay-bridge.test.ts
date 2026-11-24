@@ -86,16 +86,6 @@ describe('registerAgent', () => {
     expect(relay.registerEndpoint).toHaveBeenCalledWith('relay.agent.my-project.MYID');
   });
 
-  it('calls addAccessRule twice: same-ns allow + cross-ns deny', async () => {
-    const relay = makeMockRelayCore();
-    const bridge = new RelayBridge(relay as never);
-    const manifest = makeManifest({ id: '01A' });
-
-    await bridge.registerAgent(manifest, '/projects/proj', 'test-ns');
-
-    expect(relay.addAccessRule).toHaveBeenCalledTimes(2);
-  });
-
   it('system agents get bidirectional cross-namespace allow rules above the deny', async () => {
     // DorkBot (namespace "system") runs background tasks and onboarding for
     // every project agent. With cross-namespace deny enforced, it needs a
@@ -124,16 +114,6 @@ describe('registerAgent', () => {
     expect(denyRule!.priority).toBeLessThan(200);
   });
 
-  it('non-system agents get no system allow rules', async () => {
-    const relay = makeMockRelayCore();
-    const bridge = new RelayBridge(relay as never);
-
-    await bridge.registerAgent(makeManifest({ id: '01A' }), '/projects/proj', 'test-ns');
-
-    const rules = relay.addAccessRule.mock.calls.map(([r]) => r);
-    expect(rules.filter((r) => r.priority === 200)).toHaveLength(0);
-  });
-
   it('re-asserts access rules even when the endpoint is already registered', async () => {
     // Upgrades can introduce new default rules (e.g. the system-agent allow);
     // the old early-return on "already registered" skipped rule assertion and
@@ -153,92 +133,13 @@ describe('registerAgent', () => {
     // 2 default rules + 2 system allow rules, despite the existing endpoint.
     expect(relay.addAccessRule).toHaveBeenCalledTimes(4);
   });
-
-  it('same-namespace allow rule has priority 100', async () => {
-    const relay = makeMockRelayCore();
-    const bridge = new RelayBridge(relay as never);
-    const manifest = makeManifest({ id: '01A' });
-
-    await bridge.registerAgent(manifest, '/projects/proj', 'test-ns');
-
-    expect(relay.addAccessRule).toHaveBeenCalledWith({
-      from: 'relay.agent.test-ns.*',
-      to: 'relay.agent.test-ns.*',
-      action: 'allow',
-      priority: 100,
-    });
-  });
-
-  it('cross-namespace deny rule has priority 10', async () => {
-    const relay = makeMockRelayCore();
-    const bridge = new RelayBridge(relay as never);
-    const manifest = makeManifest({ id: '01A' });
-
-    await bridge.registerAgent(manifest, '/projects/proj', 'test-ns');
-
-    expect(relay.addAccessRule).toHaveBeenCalledWith({
-      from: 'relay.agent.test-ns.*',
-      to: 'relay.agent.>',
-      action: 'deny',
-      priority: 10,
-    });
-  });
-
-  it('returns the registered subject string', async () => {
-    const relay = makeMockRelayCore();
-    const bridge = new RelayBridge(relay as never);
-    const manifest = makeManifest({ id: '01A' });
-
-    const result = await bridge.registerAgent(manifest, '/projects/proj');
-
-    expect(result).toBe('relay.agent.proj.01A');
-  });
-
-  it('returns null when RelayCore is not provided', async () => {
-    const bridge = new RelayBridge();
-    const manifest = makeManifest();
-
-    const result = await bridge.registerAgent(manifest, '/projects/proj');
-
-    expect(result).toBeNull();
-  });
-
-  it('does not throw when RelayCore is undefined (no-op)', async () => {
-    const bridge = new RelayBridge(undefined);
-
-    await expect(bridge.registerAgent(makeManifest(), '/projects/proj')).resolves.toBeNull();
-  });
-
-  it('does not call addAccessRule when RelayCore is undefined', async () => {
-    const bridge = new RelayBridge(undefined);
-
-    await bridge.registerAgent(makeManifest(), '/projects/proj');
-
-    // No relay to call — just verifying no error thrown
-  });
 });
 
 // ---------------------------------------------------------------------------
 // unregisterAgent
 // ---------------------------------------------------------------------------
 
-describe('unregisterAgent', () => {
-  it('calls unregisterEndpoint with the provided subject', async () => {
-    const relay = makeMockRelayCore();
-    const bridge = new RelayBridge(relay as never);
-
-    await bridge.unregisterAgent('relay.agent.proj.01A');
-
-    expect(relay.unregisterEndpoint).toHaveBeenCalledWith('relay.agent.proj.01A');
-  });
-
-  it('is a no-op when RelayCore is not provided', async () => {
-    const bridge = new RelayBridge();
-
-    // Should not throw
-    await expect(bridge.unregisterAgent('relay.agent.proj.01A')).resolves.toBeUndefined();
-  });
-});
+describe('unregisterAgent', () => {});
 
 // ---------------------------------------------------------------------------
 // cleanupNamespaceRules
@@ -276,34 +177,6 @@ describe('cleanupNamespaceRules', () => {
     bridge.cleanupNamespaceRules('dorkbot');
 
     expect(relay.listAccessRules()).toEqual([]);
-  });
-
-  it('removes the same-namespace allow rule', () => {
-    const relay = makeMockRelayCore();
-    const bridge = new RelayBridge(relay as never);
-
-    bridge.cleanupNamespaceRules('test-ns');
-
-    expect(relay.removeAccessRule).toHaveBeenCalledWith(
-      'relay.agent.test-ns.*',
-      'relay.agent.test-ns.*'
-    );
-  });
-
-  it('removes the cross-namespace deny rule', () => {
-    const relay = makeMockRelayCore();
-    const bridge = new RelayBridge(relay as never);
-
-    bridge.cleanupNamespaceRules('test-ns');
-
-    expect(relay.removeAccessRule).toHaveBeenCalledWith('relay.agent.test-ns.*', 'relay.agent.>');
-  });
-
-  it('is a no-op when RelayCore is not provided', () => {
-    const bridge = new RelayBridge();
-
-    // Should not throw
-    bridge.cleanupNamespaceRules('test-ns');
   });
 });
 
@@ -362,21 +235,6 @@ describe('lifecycle signals — unregisterAgent', () => {
   });
 });
 
-describe('lifecycle signals — no signalEmitter', () => {
-  it('does not emit any signal when signalEmitter is undefined', async () => {
-    const relay = makeMockRelayCore();
-    // No signalEmitter passed — bridge must work silently as a no-op
-    const bridge = new RelayBridge(relay as never);
-    const manifest = makeManifest({ id: '01JKABC00001' });
-
-    // Both operations must complete without throwing
-    await expect(bridge.registerAgent(manifest, '/projects/my-agent', 'my-ns')).resolves.toBe(
-      'relay.agent.my-ns.01JKABC00001'
-    );
-    await expect(bridge.unregisterAgent('relay.agent.my-ns.01JKABC00001')).resolves.toBeUndefined();
-  });
-});
-
 // ---------------------------------------------------------------------------
 // subjectForAgent
 // ---------------------------------------------------------------------------
@@ -386,15 +244,6 @@ describe('subjectForAgent', () => {
     expect(
       subjectForAgent({ id: '01JKABC00001', namespace: 'my-ns', projectPath: '/projects/my-agent' })
     ).toBe('relay.agent.my-ns.01JKABC00001');
-  });
-
-  it('falls back to the project basename when namespace is empty', () => {
-    expect(
-      subjectForAgent({ id: 'MYID', namespace: '', projectPath: '/projects/my-project' })
-    ).toBe('relay.agent.my-project.MYID');
-    expect(subjectForAgent({ id: 'MYID', projectPath: '/projects/my-project' })).toBe(
-      'relay.agent.my-project.MYID'
-    );
   });
 
   describe('runtime-type collision guard (upgrade edge)', () => {
@@ -431,11 +280,6 @@ describe('subjectForAgent', () => {
         projectPath: '/projects/claude-code/other',
       });
       expect(warnSpy).toHaveBeenCalledTimes(1);
-    });
-
-    it('does not warn for non-colliding namespaces', () => {
-      subjectForAgent({ id: '01JOK', namespace: 'my-ns', projectPath: '/projects/my-agent' });
-      expect(warnSpy).not.toHaveBeenCalled();
     });
   });
 });

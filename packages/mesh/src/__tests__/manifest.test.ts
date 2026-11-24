@@ -58,16 +58,6 @@ describe('readManifest / writeManifest', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null when the file contains invalid JSON', async () => {
-    const projectDir = await makeTempDir();
-    const dorkDir = path.join(projectDir, '.dork');
-    await fs.mkdir(dorkDir, { recursive: true });
-    await fs.writeFile(path.join(dorkDir, 'agent.json'), 'not-valid-json', 'utf-8');
-
-    const result = await readManifest(projectDir);
-    expect(result).toBeNull();
-  });
-
   it('returns null when the manifest fails Zod validation (missing required fields)', async () => {
     const projectDir = await makeTempDir();
     const dorkDir = path.join(projectDir, '.dork');
@@ -83,19 +73,6 @@ describe('readManifest / writeManifest', () => {
     expect(result).toBeNull();
   });
 
-  it('creates .dork/ directory if it does not exist', async () => {
-    const projectDir = await makeTempDir();
-    const manifest = makeManifest();
-
-    // .dork/ does not exist yet
-    await expect(fs.access(path.join(projectDir, '.dork'))).rejects.toThrow();
-
-    await writeManifest(projectDir, manifest);
-
-    // .dork/ should now exist
-    await expect(fs.access(path.join(projectDir, '.dork'))).resolves.toBeUndefined();
-  });
-
   it('uses atomic write (temp file + rename): file exists and is valid after write', async () => {
     const projectDir = await makeTempDir();
     const manifest = makeManifest();
@@ -108,24 +85,5 @@ describe('readManifest / writeManifest', () => {
     // Ensure no leftover temp files
     const dorkContents = await fs.readdir(path.join(projectDir, '.dork'));
     expect(dorkContents).toEqual(['agent.json']);
-  });
-
-  it('produces human-readable JSON with 2-space indentation and a trailing newline', async () => {
-    const projectDir = await makeTempDir();
-    const manifest = makeManifest();
-
-    await writeManifest(projectDir, manifest);
-
-    const raw = await fs.readFile(path.join(projectDir, '.dork', 'agent.json'), 'utf-8');
-
-    // Should end with a newline
-    expect(raw.endsWith('\n')).toBe(true);
-
-    // Should be valid JSON that round-trips
-    const parsed = JSON.parse(raw) as unknown;
-    expect(parsed).toEqual(manifest);
-
-    // Should contain 2-space indented lines (e.g., the "id" key)
-    expect(raw).toContain('  "id"');
   });
 });

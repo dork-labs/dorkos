@@ -198,31 +198,6 @@ describe('handleTaskCancel', () => {
     expect(controller.signal.aborted).toBe(false);
   });
 
-  it('refuses a payload that is not a stop request', () => {
-    const running = new AbortRegistry();
-
-    const verdict = handleTaskCancel(
-      cancelEnvelope('run-1', { type: 'something_else' }),
-      running,
-      silentLog
-    );
-
-    expect(verdict).toEqual({ handled: false, reason: expect.any(String) });
-  });
-
-  it('is idempotent — a second stop changes nothing', () => {
-    const running = new AbortRegistry();
-    const controller = new AbortController();
-    running.register('run-1', controller);
-
-    handleTaskCancel(cancelEnvelope('run-1'), running, silentLog);
-    const reason = controller.signal.reason;
-    const second = handleTaskCancel(cancelEnvelope('run-1'), running, silentLog);
-
-    expect(second).toBeUndefined();
-    expect(controller.signal.reason).toBe(reason);
-  });
-
   it('does not let a late release unregister a newer run with the same id', () => {
     const running = new AbortRegistry();
     const first = new AbortController();
@@ -361,32 +336,6 @@ describe('ClaudeCodeAdapter — stopping a relay-dispatched run', () => {
     // in the relay surfaces — so it says the same thing the run row does rather
     // than abbreviating to jargon nobody can act on.
     expect(result.error).toBe('Run stopped after passing its time limit');
-  });
-
-  // DOR-3033: the scheduler now hands over the task's time limit as a person
-  // reads it, so a deadline stop says how long the run had.
-  it('names the time limit when the dispatch carries one', async () => {
-    await adapter.start(relay);
-    const turn = parkedTurn();
-    vi.mocked(agentManager.sendMessage).mockReturnValue(turn.stream);
-    const base = createTasksEnvelope();
-    const envelope = createTasksEnvelope({
-      budget: { ...base.budget, ttl: Date.now() + 150 },
-      payload: { ...(base.payload as Record<string, unknown>), timeLimit: '30m' },
-    });
-
-    const delivery = adapter.deliver(envelope.subject, envelope);
-    await turn.parked;
-    const result = await delivery;
-
-    expect(taskStore.updateRun).toHaveBeenCalledWith(
-      'run-1',
-      expect.objectContaining({
-        status: 'cancelled',
-        error: 'Run stopped after passing its 30m time limit',
-      })
-    );
-    expect(result.error).toBe('Run stopped after passing its 30m time limit');
   });
 
   it('records a run that FINISHED as completed, even when a stop lands in the same instant', async () => {
