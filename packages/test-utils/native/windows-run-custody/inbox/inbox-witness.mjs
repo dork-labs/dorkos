@@ -12,7 +12,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, URL } from 'node:url';
 import { promisify } from 'node:util';
 
 assert.equal(process.platform, 'win32', 'This fixture requires an actual Windows runner');
@@ -30,26 +30,14 @@ async function inspectAcl(directory, record) {
     'v1.0',
     'powershell.exe'
   );
-  const script = [
-    "$ErrorActionPreference = 'Stop'",
-    '$sidType = [System.Security.Principal.SecurityIdentifier]',
-    '$user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value',
-    '$dir = Get-Acl -LiteralPath $env:DORKOS_FIXTURE_DIRECTORY',
-    '$file = Get-Acl -LiteralPath $env:DORKOS_FIXTURE_RECORD',
-    'if ($dir.GetOwner($sidType).Value -ne $user -or !$dir.AreAccessRulesProtected) { throw "Unexpected directory owner or inheritance" }',
-    'foreach ($acl in @($dir, $file)) {',
-    '  $rules = @($acl.GetAccessRules($true, $true, $sidType))',
-    '  if ($rules.Count -ne 1 -or $rules[0].IdentityReference.Value -ne $user -or $rules[0].AccessControlType -ne "Allow") { throw "Unexpected metadata ACL" }',
-    '}',
-    '$childRules = @($file.GetAccessRules($true, $true, $sidType))',
-    'if (!$childRules[0].IsInherited) { throw "Expected the record to inherit its private ACL" }',
-    'Write-Output "private directory and record ACLs observed"',
-  ].join('\n');
-  const { stdout } = await execute(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
-    windowsHide: true,
-    timeout: 15_000,
-    env: { ...ownerEnv, DORKOS_FIXTURE_DIRECTORY: directory, DORKOS_FIXTURE_RECORD: record },
-  });
+  const script = fileURLToPath(new URL('./inspect-inbox-acl.ps1', import.meta.url));
+  const observation = execute(
+    shell,
+    ['-NoLogo', '-NoProfile', '-NonInteractive', '-File', script, directory, record],
+    { windowsHide: true, timeout: 15_000, env: ownerEnv }
+  );
+  observation.child.stdin.end();
+  const { stdout } = await observation;
   assert.equal(stdout.trim(), 'private directory and record ACLs observed');
 }
 
