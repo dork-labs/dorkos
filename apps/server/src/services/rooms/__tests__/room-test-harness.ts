@@ -14,6 +14,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { mockInterruptReceipt } from '@dorkos/test-utils';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
+import type { CreateRoomRequest } from '@dorkos/shared/room-schemas';
 import type { ProjectableAttachment } from '../room-context.js';
 import type { Db } from '@dorkos/db';
 import { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
@@ -618,6 +619,22 @@ export function agentLookupFor(
       };
     },
   };
+}
+
+/**
+ * A create-room request that seeds no author ids, only agent directories: the
+ * shape nearly every room test opens with.
+ *
+ * @param kind - A channel or a direct message.
+ * @param title - The room's title.
+ * @param agentPaths - Agent directories to seat with the creator.
+ */
+export function roomSpec(
+  kind: CreateRoomRequest['kind'],
+  title: string,
+  agentPaths: string[] = []
+): CreateRoomRequest {
+  return { kind, title, members: [], agentPaths };
 }
 
 /** A wired subsystem plus the handles a test needs to drive it. */
