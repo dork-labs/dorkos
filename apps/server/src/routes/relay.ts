@@ -280,7 +280,8 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
       mesh: deps.chatMesh?.(),
       agentSessions: deps.agentSessions?.(),
     });
-    if (placeRefused) return problem(c, 'desk_not_own', { detail: placeRefused.error });
+    if (placeRefused)
+      return problem(c, 'desk_not_own', { detail: placeRefused.error, status: 403 });
 
     // DOR-5151: the server sets the sender, by the chat route's own reading of the caller.
     const sent = relayMessageSender(facts, result.data, deps.agentSubjectOf);

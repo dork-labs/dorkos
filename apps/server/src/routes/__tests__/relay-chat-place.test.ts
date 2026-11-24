@@ -180,28 +180,28 @@ describe("a verified agent's message into a chat", () => {
   it("refuses the person's chat with another agent, as the sessions route does", async () => {
     const res = await send(`relay.agent.claude-code.${PERSON_CHAT}`, asRio);
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: OTHER_AGENTS_CHAT_MESSAGE, code: 'DESK_NOT_OWN' });
+    expect(res.body).toMatchObject({ detail: OTHER_AGENTS_CHAT_MESSAGE, code: 'desk_not_own' });
     expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
   });
 
   it("refuses another agent's chat, read from its folder when it recorded no agent", async () => {
     const res = await send(`relay.agent.claude-code.${JUNO_CHAT}`, asRio);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('DESK_NOT_OWN');
+    expect(res.body.code).toBe('desk_not_own');
     expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
   });
 
   it('refuses the three-token form of a chat’s address too', async () => {
     const res = await send(`relay.agent.${PERSON_CHAT}`, asRio);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('DESK_NOT_OWN');
+    expect(res.body.code).toBe('desk_not_own');
     expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
   });
 
   it('refuses the chat however the address is shaped', async () => {
     const res = await send(`relay.agent.default.${PERSON_CHAT}`, asRio);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('DESK_NOT_OWN');
+    expect(res.body.code).toBe('desk_not_own');
     expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
   });
 
@@ -260,14 +260,14 @@ describe('which chat a message reaches', () => {
   it('refuses a chat only a runtime knows when that runtime cannot look it up', async () => {
     const res = await send(`relay.agent.claude-code.${LOOKUP_FAILS_CHAT}`, asRio);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('DESK_NOT_OWN');
+    expect(res.body.code).toBe('desk_not_own');
   });
 
   it("refuses a chat whose id Mesh also knows as an agent, when the chat is someone else's", async () => {
     meshIds[PERSON_CHAT] = RIO;
     const res = await send(`relay.agent.default.${PERSON_CHAT}`, asRio);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('DESK_NOT_OWN');
+    expect(res.body.code).toBe('desk_not_own');
     expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
   });
 
@@ -275,14 +275,14 @@ describe('which chat a message reaches', () => {
     live[LIVE_ONLY_CHAT] = JUNO;
     const res = await send(`relay.agent.claude-code.${LIVE_ONLY_CHAT}`, asRio);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('DESK_NOT_OWN');
+    expect(res.body.code).toBe('desk_not_own');
   });
 
   it("refuses an id only a runtime's own store answers to, with no binding row", async () => {
     runtimeHeld[RUNTIME_ONLY_CHAT] = JUNO;
     const res = await send(`relay.agent.claude-code.${RUNTIME_ONLY_CHAT}`, asRio);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('DESK_NOT_OWN');
+    expect(res.body.code).toBe('desk_not_own');
   });
 
   it('refuses the chat the relay would run the message in, not only the one the subject names', async () => {
@@ -292,7 +292,7 @@ describe('which chat a message reaches', () => {
       conversationId: 'thread-1',
     });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('DESK_NOT_OWN');
+    expect(res.body.code).toBe('desk_not_own');
   });
 
   it("refuses an agent's own chat when its record cannot be read", async () => {
@@ -302,7 +302,7 @@ describe('which chat a message reaches', () => {
     try {
       const res = await send(`relay.agent.claude-code.${RIO_CHAT}`, asRio);
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('DESK_NOT_OWN');
+      expect(res.body.code).toBe('desk_not_own');
     } finally {
       read.mockRestore();
     }
@@ -335,7 +335,7 @@ describe('which chat a message reaches', () => {
     live['collide-id'] = JUNO;
     const res = await send('relay.agent.default.collide-id', asRio);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('DESK_NOT_OWN');
+    expect(res.body.code).toBe('desk_not_own');
   });
 
   it('refuses a Mesh id whose held chat names nobody', async () => {
@@ -343,7 +343,7 @@ describe('which chat a message reaches', () => {
     chat('lost-id', null);
     const res = await send('relay.agent.default.lost-id', asRio);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('DESK_NOT_OWN');
+    expect(res.body.code).toBe('desk_not_own');
   });
 
   it('delivers to another agent whose conversation it already has', async () => {
