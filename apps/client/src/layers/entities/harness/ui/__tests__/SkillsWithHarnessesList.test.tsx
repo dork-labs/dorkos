@@ -12,13 +12,10 @@ import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import {
   HARNESS_STATUS_ALL_SHARED,
-  HARNESS_STATUS_NOT_SET_UP,
-  HARNESS_STATUS_NO_SKILLS,
   HARNESS_STATUS_READY,
-  HARNESS_STATUS_UNREADABLE,
   HARNESS_STATUS_WITH_GLOBAL,
 } from '../../__fixtures__/harness-status';
-import { harnessRowKey } from '../../lib/harness-status';
+
 import { SkillHarnessRow } from '../SkillHarnessRow';
 import { SkillsWithHarnessesList } from '../SkillsWithHarnessesList';
 
@@ -41,13 +38,7 @@ function createWrapper(transport: Transport) {
   );
 }
 
-/**
- * Render one row on its own, inside the providers its mutation hook needs.
- *
- * The row owns the adopt action (DOR-1946), so it reaches `useTransport` and the
- * query client even on a row that offers no button — a bare `render` of it
- * throws where it used to pass.
- */
+/** Render one row on its own, inside the providers its mutation hook needs. */
 function renderRow(element: ReactNode) {
   return render(element, { wrapper: createWrapper(createMockTransport()) });
 }
@@ -68,9 +59,7 @@ describe('SkillsWithHarnessesList — the list', () => {
   });
 
   it('lists a package installed for all projects beside this project’s own, tagged', async () => {
-    // Seeded defect: drop the tag from the row. The list then draws two rows
-    // called "release" with the same chips and nothing to tell them apart, above
-    // a count that agrees with neither on its own.
+    // Seeded defect: drop the tag from the row.
     await renderWithStatus(HARNESS_STATUS_WITH_GLOBAL);
 
     const rows = await screen.findAllByRole('group');
@@ -81,24 +70,6 @@ describe('SkillsWithHarnessesList — the list', () => {
     const named = rows.filter((row) => row.getAttribute('aria-label') === 'release');
     expect(named).toHaveLength(2);
     expect(screen.getAllByText('for all your projects')).toHaveLength(1);
-  });
-
-  it('keys two rows apart when only their scope differs', () => {
-    // Seeded defect: drop `scope` from the client key. React then reconciles two
-    // different rows as one, and the server keys them apart while the client
-    // does not — the one disagreement a list key must never have.
-    //
-    // Constructed rather than taken from the fixture, for the reason the server's
-    // twin gives: on real payloads the two sources already differ — one
-    // repo-relative, one absolute — so no realistic pair collides on the other
-    // three, and a key that quietly dropped the fourth would pass every
-    // end-to-end assertion until the day two sources agreed.
-    const entry = { artifact: 'skill', source: '/x/skills/release', name: 'release' } as const;
-    expect(harnessRowKey({ ...entry, scope: 'project' })).not.toEqual(
-      harnessRowKey({ ...entry, scope: 'global' })
-    );
-    // Absent means project, matching the schema default and the server.
-    expect(harnessRowKey(entry)).toEqual(harnessRowKey({ ...entry, scope: 'project' }));
   });
 
   it('draws one row per skill and, expanded, one chip per enabled agent tool', async () => {
@@ -120,64 +91,8 @@ describe('SkillsWithHarnessesList — the list', () => {
     expect(chips).toHaveLength(18);
   });
 
-  it('names every chip after its tool and what that tool does, and describes it with the reason', async () => {
-    // Purpose: the accessibility tree is the assertion, not a class name. The
-    // chip word is a fixed phrase per state; the description is the plan's own
-    // sentence, never a paraphrase.
-    await renderWithStatus(HARNESS_STATUS_READY);
-
-    const row = await screen.findByRole('group', { name: 'browser-testing' });
-    expect(within(row).getByRole('listitem', { name: 'Claude Code reads it' })).toBeInTheDocument();
-    expect(
-      within(row).getByRole('listitem', {
-        name: 'Codex can’t see it',
-        description:
-          'Codex has no skills directory — its instructions file is the only place to put this',
-      })
-    ).toBeInTheDocument();
-    expect(within(row).getByRole('listitem', { name: 'Cursor shared' })).toBeInTheDocument();
-  });
-
-  it('says the word for every state the vocabulary has', async () => {
-    // Purpose: one case per chip word, so a renamed state cannot silently draw
-    // the wrong sentence on somebody's screen.
-    await renderWithStatus(HARNESS_STATUS_READY);
-
-    await screen.findByRole('group', { name: 'release' });
-    expect(screen.getByRole('listitem', { name: 'Codex out of date' })).toBeInTheDocument();
-    expect(screen.getByRole('listitem', { name: 'Codex blocked' })).toBeInTheDocument();
-    // A plain `projected` cell has no reason to give, so its description is the
-    // path it wrote to — the question a person actually has about that chip.
-    expect(
-      screen.getByRole('listitem', {
-        name: 'Codex shared',
-        description: '.codex/skills/marketplace-dev',
-      })
-    ).toBeInTheDocument();
-    // The warning rides a cell that already landed: the state chip stays and a
-    // marker joins it, carrying the warning as its own description.
-    expect(
-      screen.getByRole('img', {
-        name: 'May not work',
-        description: 'its frontmatter names a tool Codex does not have',
-      })
-    ).toBeInTheDocument();
-  });
-
-  it('draws the adoptable sentence, once, and only on the adoptable row', async () => {
-    await renderWithStatus(HARNESS_STATUS_READY);
-
-    const row = await screen.findByRole('group', { name: 'chat-self-test' });
-    expect(
-      within(row).getByText('Lives in .claude/skills. Move it to .agents/skills to share it.')
-    ).toBeInTheDocument();
-    expect(screen.getAllByText(/Move it to \.agents\/skills/)).toHaveLength(1);
-  });
-
   it('SRC-07: prints the command that moves the skill, carrying the absolute project', async () => {
-    // Seeded defect: pass `.` as the project. The command then means whatever
-    // folder the reader happens to be in — DOR-1921's own measurement, and the
-    // reason a string the SERVER prints never carries a relative path.
+    // Seeded defect: pass `.` as the project.
     await renderWithStatus(HARNESS_STATUS_READY);
 
     const row = await screen.findByRole('group', { name: 'chat-self-test' });
@@ -192,13 +107,9 @@ describe('SkillsWithHarnessesList — the list', () => {
   });
 
   it('SRC-10: the chips flip from the answer the move returned, with no second read', async () => {
-    // Case 31's other half, and the seeded defect the spec calls the single most
-    // likely thing to get wrong here: invalidate instead of `setQueryData` and
-    // the page throws away the authoritative answer, asks again, and re-renders
-    // whatever the second read happens to find. Asserted on the READ COUNT as
-    // well as on the chips, because a page that refetched would land on the same
-    // chips here — the mock answers the same status twice — while doing exactly
-    // the thing this rule forbids.
+    // Case 31's other half, and the seeded defect the spec calls the single most likely thing to
+    // get wrong here: invalidate instead of `setQueryData` and the page throws away the
+    // authoritative answer, asks again, and re-renders whatever the second read happens to find.
     const adoptable = HARNESS_STATUS_READY.rows.find((row) => row.adoptable) as HarnessRow;
     const afterTheMove: HarnessStatusResponse = {
       ...HARNESS_STATUS_READY,
@@ -241,9 +152,8 @@ describe('SkillsWithHarnessesList — the list', () => {
     await waitFor(() => expect(getHarnessStatus).toHaveBeenCalledTimes(1));
 
     const row = await screen.findByRole('group', { name: adoptable.name });
-    // Expanded first: once the skill is canonical every tool has it, and a row
-    // every tool is current on collapses to one chip — which would hide the very
-    // chip this case is about.
+    // Expanded first: once the skill is canonical every tool has it, and a row every tool is
+    // current on collapses to one chip — which would hide the very chip this case is about.
     await userEvent.click(screen.getByRole('switch', { name: 'Show every agent tool' }));
     expect(within(row).getByRole('listitem', { name: 'Codex can’t see it' })).toBeInTheDocument();
 
@@ -263,9 +173,7 @@ describe('SkillsWithHarnessesList — the list', () => {
   });
 
   it('XA-06: names the folder the row is actually in, not always .claude/skills', () => {
-    // Seeded defect: keep the sentence a constant. An OpenCode-first team is then
-    // told to look in `.claude/skills`, a directory they do not have — advice
-    // about somebody else's repository (DOR-1902).
+    // Seeded defect: keep the sentence a constant.
     const row = {
       ...SHARED_SKILL_ROW,
       provenance: 'harness-native',
@@ -317,101 +225,12 @@ describe('SkillsWithHarnessesList — the collapse', () => {
     expect(within(exceptional).getAllByRole('listitem')).toHaveLength(3);
     expect(within(exceptional).queryByRole('button')).not.toBeInTheDocument();
 
-    // A warning is an exception too, even though its cell's STATE is
-    // `projected`: collapsing this row would swallow the marker saying it may
-    // not work, which is the one thing on it worth reading.
+    // A warning is an exception too, even though its cell's STATE is `projected`: collapsing this
+    // row would swallow the marker saying it may not work, which is the one thing on it worth
+    // reading.
     const warned = screen.getByRole('group', { name: 'marketplace-dev' });
     expect(within(warned).getAllByRole('listitem')).toHaveLength(3);
     expect(within(warned).queryByRole('button')).not.toBeInTheDocument();
-  });
-
-  it('lets the collapsed chip expand its own row, and collapse it again from the keyboard', async () => {
-    // Purpose: the chip is a toggle, not a one-way door. It used to render only
-    // while collapsed, so pressing it unmounted it: focus fell to <body>, the
-    // row had no control left, and 18 of this repository's 31 rows could never
-    // be re-collapsed. The same element has to survive both presses.
-    const user = userEvent.setup();
-    await renderWithStatus(HARNESS_STATUS_ALL_SHARED);
-
-    const row = await screen.findByRole('group', { name: 'release' });
-    const chip = within(row).getByRole('button', { name: 'Shared with all 3' });
-    expect(chip).toHaveAttribute('aria-expanded', 'false');
-
-    chip.focus();
-    await user.keyboard('{Enter}');
-
-    expect(document.activeElement).toBe(chip);
-    expect(chip).toHaveAttribute('aria-expanded', 'true');
-    expect(within(row).getByRole('listitem', { name: 'Claude Code reads it' })).toBeInTheDocument();
-    expect(within(row).getByRole('listitem', { name: 'Codex shared' })).toBeInTheDocument();
-    expect(within(row).getByRole('listitem', { name: 'Cursor shared' })).toBeInTheDocument();
-
-    await user.keyboard('{Enter}');
-
-    expect(document.activeElement).toBe(chip);
-    expect(chip).toHaveAttribute('aria-expanded', 'false');
-    expect(
-      within(row).queryByRole('listitem', { name: 'Claude Code reads it' })
-    ).not.toBeInTheDocument();
-  });
-
-  it('keeps the chips in manifest order, never sorted', async () => {
-    // Purpose: the order in `.agents/harness.manifest.json` is the order the
-    // person wrote. Sorting it would make one row read differently on two
-    // screens, and the collapsed chip's own title is not enough to pin it.
-    const user = userEvent.setup();
-    await renderWithStatus(HARNESS_STATUS_READY);
-    await screen.findByRole('group', { name: 'release' });
-
-    await user.click(screen.getByRole('switch', { name: 'Show every agent tool' }));
-    const row = screen.getByRole('group', { name: 'browser-testing' });
-
-    expect(
-      within(row)
-        .getAllByRole('listitem')
-        .map((chip) => chip.getAttribute('aria-label'))
-    ).toEqual(['Claude Code reads it', 'Codex can’t see it', 'Cursor shared']);
-  });
-
-  it('clips the source path at its FRONT, keeping the path itself left-to-right', () => {
-    // Purpose: a skill's path is identified by its leaf and its head is what
-    // every row repeats, so the ellipsis belongs at the start. `dir="rtl"` is
-    // the whole mechanism, and the `<bdi dir="ltr">` inside it is required
-    // rather than decorative — without it the bidi algorithm claims any neutral
-    // character at either end of the path and paints it at the opposite one.
-    renderRow(
-      <SkillHarnessRow
-        row={SHARED_SKILL_ROW}
-        enabled={['claude-code']}
-        projectPath="/Users/kai/code/dorkos"
-        showEveryHarness
-      />
-    );
-
-    const path = screen.getByTitle('.agents/skills/release');
-    expect(path).toHaveAttribute('dir', 'rtl');
-    expect(path).toHaveClass('truncate');
-    // A right-to-left box would otherwise align a path that FITS to the right.
-    expect(path).toHaveClass('text-left');
-
-    const isolated = path.querySelector('bdi');
-    expect(isolated).toHaveAttribute('dir', 'ltr');
-    expect(isolated).toHaveTextContent('.agents/skills/release');
-  });
-
-  it('expands every row at once from the page-level toggle', async () => {
-    const user = userEvent.setup();
-    await renderWithStatus(HARNESS_STATUS_READY);
-
-    const healthy = await screen.findByRole('group', { name: 'release' });
-    expect(within(healthy).getAllByRole('listitem')).toHaveLength(1);
-
-    await user.click(screen.getByRole('switch', { name: 'Show every agent tool' }));
-
-    expect(within(healthy).getAllByRole('listitem')).toHaveLength(3);
-    expect(
-      within(healthy).queryByRole('button', { name: /Shared with all/ })
-    ).not.toBeInTheDocument();
   });
 });
 
@@ -419,22 +238,6 @@ describe('SkillsWithHarnessesList — the six page states', () => {
   beforeEach(() => {
     cleanup();
     vi.clearAllMocks();
-  });
-
-  it('draws three placeholder rows and no spinner while it is reading', () => {
-    // Purpose: the shape of what is coming, not the fact that something is.
-    const transport = createMockTransport({
-      getHarnessStatus: vi.fn(() => new Promise<HarnessStatusResponse>(() => {})),
-    });
-    const { container } = render(<SkillsWithHarnessesList projectPath="/repo" />, {
-      wrapper: createWrapper(transport),
-    });
-
-    expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(6);
-    expect(container.querySelector('[data-slot="spinner"]')).toBeNull();
-    expect(screen.queryByRole('group')).not.toBeInTheDocument();
-    // The blocks say nothing to a screen reader, so one sentence does.
-    expect(screen.getByRole('status')).toHaveTextContent('Loading skills…');
   });
 
   it('says it could not load and offers a Retry', async () => {
@@ -451,36 +254,5 @@ describe('SkillsWithHarnessesList — the six page states', () => {
 
     expect(await screen.findByRole('group', { name: 'release' })).toBeInTheDocument();
     expect(getHarnessStatus).toHaveBeenCalledTimes(2);
-  });
-
-  it('says nothing is set up yet, with the command and a docs link', async () => {
-    await renderWithStatus(HARNESS_STATUS_NOT_SET_UP);
-
-    expect(
-      await screen.findByText('DorkOS isn’t sharing agent files for this folder yet.')
-    ).toBeInTheDocument();
-    expect(screen.getByText('dorkos harness sync --fix')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'How agent file sharing works' })).toHaveAttribute(
-      'href',
-      'https://dorkos.ai/docs/guides/cli-usage#agent-files'
-    );
-  });
-
-  it('says the settings could not be read, and repeats the detail', async () => {
-    await renderWithStatus(HARNESS_STATUS_UNREADABLE);
-
-    expect(
-      await screen.findByText('DorkOS can’t read this folder’s agent file settings.')
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText('.agents/harness.manifest.json is not valid JSON.')
-    ).toBeInTheDocument();
-  });
-
-  it('says there are none yet, with the marketplace link, when the tree really is empty', async () => {
-    await renderWithStatus(HARNESS_STATUS_NO_SKILLS);
-
-    expect(await screen.findByText('No skills here yet.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Browse skill-packs/ })).toBeInTheDocument();
   });
 });

@@ -260,6 +260,24 @@ describe('LanAccess', () => {
     expect(await get(port)).toBe('ECONNREFUSED');
   });
 
+  it('checks each peer against the address it connected to on this computer', async () => {
+    const port = await freePort();
+    const seen: Array<[string | undefined, string | undefined]> = [];
+    const { controller, turn } = setup({
+      isLocalPeer: (address, localAddress) => {
+        seen.push([address, localAddress]);
+        return true;
+      },
+    });
+    await controller.attach({ port, createServer: okServer });
+    turn(true);
+    expect((await controller.reconcile()).listening).toBe(true);
+    await get(port);
+    // Loopback both ways: the local address is the one Tailscale admission keys on (DOR-5135).
+    expect(seen[0]?.[1]).toMatch(/127\.0\.0\.1/);
+    expect(seen[0]?.[0]).toMatch(/127\.0\.0\.1/);
+  });
+
   it('cuts a peer that is not on this computer’s own networks before answering it', async () => {
     const port = await freePort();
     const { controller, turn } = setup({ isLocalPeer: () => false });

@@ -17,8 +17,8 @@ export const CANCEL_WINDOW_CAPABILITY_IDS: ReadonlySet<string> = new Set([
 
 /**
  * The only capabilities that may declare `allowFromWifi`: actions that only
- * lower an agent's power, which a person on Wi-Fi must be able to take
- * (DOR-4978). A Wi-Fi sign-in otherwise acts at the computer (DOR-2969).
+ * lower an agent's power, which a person on the network must be able to take
+ * (DOR-4978). A network sign-in otherwise acts at the computer (DOR-2969).
  */
 export const WIFI_ALLOWED_CAPABILITY_IDS: ReadonlySet<string> = new Set(['agent.pause']);
 
@@ -36,6 +36,6 @@ export function assertNarrowDeclarations(
     throw new Error(`Capability registry: "${id}" may not declare a cancel window.`);
   }
   if (capability.allowFromWifi && !WIFI_ALLOWED_CAPABILITY_IDS.has(id)) {
-    throw new Error(`Capability registry: "${id}" may not run from a Wi-Fi sign-in.`);
+    throw new Error(`Capability registry: "${id}" may not run from a sign-in on your network.`);
   }
 }

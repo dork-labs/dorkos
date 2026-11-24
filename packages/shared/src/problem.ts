@@ -64,7 +64,11 @@ export const PROBLEM_CODE_LIST = [
   { code: 'owner_only', status: 403, title: 'Only the owner of this DorkOS can do that.' },
   { code: 'operator_only', status: 403, title: 'Only the person at this computer can do that.' },
   { code: 'person_only', status: 403, title: 'Only a person can do that, not an agent.' },
-  { code: 'not_from_wifi', status: 403, title: 'This can’t be done from another device on Wi-Fi.' },
+  {
+    code: 'not_from_wifi',
+    status: 403,
+    title: 'This can’t be done from another device on your network.',
+  },
   { code: 'origin_not_allowed', status: 403, title: 'This page isn’t allowed to call DorkOS.' },
   { code: 'host_not_allowed', status: 403, title: 'This address isn’t allowed to reach DorkOS.' },
   {

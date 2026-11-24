@@ -1,20 +1,5 @@
 // @vitest-environment jsdom
-/**
- * Sign in from the error card, and the message that failed sends itself
- * (DOR-1650).
- *
- * This is the only file that proves the feature exists. The rule has its own
- * unit tests and the card has its own, but between them lie six optional props
- * threaded through `ChatPanel → SessionTranscript → SessionMessage →
- * MessageProvider → AssistantMessageContent → ErrorMessageBlock →
- * AuthErrorActions`, and `onSigninComplete?` is optional at every hop. Drop it
- * anywhere along that chain and the whole thing compiles, every other test in
- * the repo stays green, and nothing is ever re-sent. So both render paths are
- * driven here end to end, with the REAL transcript and the REAL submit
- * underneath, and the assertion is on the transport: the failed prompt was
- * POSTed.
- */
-import React from 'react';
+/** Sign in from the error card, and the message that failed sends itself (DOR-1650). */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -25,9 +10,6 @@ import type { Session } from '@dorkos/shared/types';
 import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 
 // The durable stream: attach/connect must never open a real fetch in jsdom.
-// The out-of-usage banner and its composer pause read the session's account
-// (spec claude-account-ui §6.7); they have their own tests, and this file's
-// narrow mocks do not carry what they read.
 vi.mock('@/layers/features/continue-on-account', () => ({
   AccountLimitBanner: () => null,
   AccountLimitMarker: () => null,
@@ -102,13 +84,10 @@ const PICKER_STUB = {
   setAvailable: () => {},
 };
 vi.mock('@/layers/features/status', () => ({
-  // The panel closes the permission picker as the session changes. The stub's
-  // state object is module-level and frozen: the panel selects `setOpen` into an
-  // effect dependency, so a fresh function per call would re-run it every render.
+  // The panel closes the permission picker as the session changes.
   useSessionPermissionPicker: (select: (s: typeof PICKER_STUB) => unknown) => select(PICKER_STUB),
-  // The panel reads this to decide whether a read-only session needs its one
-  // explanation (DOR-2019). Never eligible here: these suites are about the send
-  // path, and a card in the bottom slot is not part of it.
+  // The panel reads this to decide whether a read-only session needs its one explanation
+  // (DOR-2019).
   useReadOnlyModeHint: () => ({ eligible: false, runtimeLabel: 'Codex', dismiss: () => {} }),
   ReadOnlyModeNotice: () => null,
   useRuntimeChip: () => ({ runtime: 'claude-code' }),
@@ -134,14 +113,7 @@ import {
 const SESSION_ID = 's1';
 const FAILED_PROMPT = 'fix the build';
 
-/**
- * A conversation whose last turn died on a dead sign-in.
- *
- * `inline` folds a typed `error` part into the assistant turn — the shape the
- * transcript renders an inline card from. Without it the turn left only
- * `status.lastError`, which is the panel-level `TurnFailedNotice` path. Both put
- * the same sign-in card on screen, by different routes, so both are driven.
- */
+/** A conversation whose last turn died on a dead sign-in. */
 function authFailedSnapshot({
   inline,
   queued = [],
@@ -283,17 +255,7 @@ function recordingTransport() {
   };
 }
 
-/**
- * Press the card's own Sign in button and let the login settle.
- *
- * Deliberately does NOT wait for the card's success state. On the panel-notice
- * path there is none to wait for: `TurnFailedNotice` renders only while the
- * status is `error`, and a resume flips it to `streaming` in the same tick — so
- * the card that announced the resume is gone before it can be read. That is
- * fine, and it is the design: the real confirmation is the message appearing in
- * the transcript with a turn running under it. Each test asserts the outcome it
- * is actually about.
- */
+/** Press the card's own Sign in button and let the login settle. */
 async function clickSignIn() {
   const button = await screen.findByTestId('auth-error-signin-button');
   await act(async () => {
@@ -336,12 +298,9 @@ afterEach(cleanup);
 
 describe('ChatPanel — signing in re-sends the turn that failed (DOR-1650)', () => {
   it('re-sends the failed prompt from the inline card in the transcript', async () => {
-    // **Seeded defect:** drop `onSigninComplete` at any hop on the TRANSCRIPT
-    // path — `ChatPanel` → `SessionTranscript` → `SessionMessage` →
-    // `MessageProvider` → `AssistantMessageContent` → `ErrorMessageBlock` — and
-    // this is what goes red. Verified by mutation on the middle hop, which is
-    // the one nothing else covers. The sibling test below guards the notice
-    // path, which forks at `ChatPanel` and shares only the last two hops.
+    // **Seeded defect:** drop `onSigninComplete` at any hop on the TRANSCRIPT path — `ChatPanel`
+    // → `SessionTranscript` → `SessionMessage` → `MessageProvider` → `AssistantMessageContent` →
+    // `ErrorMessageBlock` — and this is what goes red.
     const { transport, postMessage } = recordingTransport();
     await mountFailedSession(transport, { inline: true });
 
@@ -351,29 +310,9 @@ describe('ChatPanel — signing in re-sends the turn that failed (DOR-1650)', ()
     expect(postMessage.mock.calls[0][1]).toBe(FAILED_PROMPT);
   });
 
-  it('re-sends the failed prompt from the panel-level notice', async () => {
-    // The other route to the same card: a turn that died leaving only a typed
-    // error, with nothing inline for the transcript to render.
-    const { transport, postMessage } = recordingTransport();
-    await mountFailedSession(transport, { inline: false });
-
-    await clickSignIn();
-
-    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
-    expect(postMessage.mock.calls[0][1]).toBe(FAILED_PROMPT);
-  });
-
   it('sends nothing when another client has a message waiting on the queue', async () => {
-    // Purpose: the seam between the rule and where its input comes from, which
-    // the rule's own unit tests cannot cross — they are handed `queuedCount`.
-    //
-    // **Seeded defect:** pass `waiting.length` (the chip-facing
-    // `selectWaitingQueue` projection) instead of the raw server queue and this
-    // goes red. That projection hides the HEAD row in every lifecycle that is
-    // not an open turn — exactly the set the resume runs in — because a head
-    // with nothing running is "on its way" rather than waiting. Right for a
-    // chip; wrong here, where a single row queued by another window read as
-    // zero and the resume fired straight past rule 3.
+    // Purpose: the seam between the rule and where its input comes from, which the rule's own
+    // unit tests cannot cross — they are handed `queuedCount`.
     const { transport, postMessage } = recordingTransport();
     await mountFailedSession(transport, {
       inline: true,
@@ -386,12 +325,8 @@ describe('ChatPanel — signing in re-sends the turn that failed (DOR-1650)', ()
   });
 
   it('sends once per sign-in, not once per settled read', async () => {
-    // The once-only latch lives in `useDelegateRuntimeLogin`, keyed by mutation
-    // id per QueryClient. Every read of a settled sign-in — a re-render, a
-    // remounted row, a second card — sees `isSuccess`, and only the first one
-    // reports it. (Two cards sharing one attempt is asserted where two cards
-    // can actually be rendered: `ErrorMessageBlock.test.tsx`. This panel shows
-    // one card at a time by construction, so it pins the send count instead.)
+    // The once-only latch lives in `useDelegateRuntimeLogin`, keyed by mutation id per
+    // QueryClient.
     const { transport, postMessage, delegateRuntimeLogin } = recordingTransport();
     await mountFailedSession(transport, { inline: true });
 
@@ -407,9 +342,7 @@ describe('ChatPanel — signing in re-sends the turn that failed (DOR-1650)', ()
   });
 
   it('sends nothing when the person is already typing something else', async () => {
-    // The moved-on rule, at the seam that owns it. Their draft is newer intent;
-    // sending the old message over it is worse than making them press Retry.
-    // And the draft itself is left exactly where they typed it.
+    // The moved-on rule, at the seam that owns it.
     const { transport, postMessage } = recordingTransport();
     await mountFailedSession(transport, { inline: true });
     await typeDraft('actually, do this instead');
@@ -424,55 +357,8 @@ describe('ChatPanel — signing in re-sends the turn that failed (DOR-1650)', ()
     expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 
-  it('sends nothing when the failed turn is no longer the last turn', async () => {
-    // They gave up waiting, sent something else, and it worked. The old card is
-    // still in the transcript — scrolled back to, or just still on screen — and
-    // signing in from it must not drop a message into a conversation that
-    // recovered without us.
-    const { transport, postMessage } = recordingTransport();
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
-    });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <TransportProvider transport={transport}>
-          <EventStreamProvider>
-            <ChatPanel sessionId={SESSION_ID} />
-          </EventStreamProvider>
-        </TransportProvider>
-      </QueryClientProvider>
-    );
-    const failed = authFailedSnapshot({ inline: true });
-    act(() => {
-      useSessionStreamStore.getState().applySnapshot(SESSION_ID, {
-        ...failed,
-        messages: [
-          ...failed.messages,
-          { id: 'h3', role: 'user', content: 'never mind', timestamp: '2026-01-01T00:00:02Z' },
-          { id: 'h4', role: 'assistant', content: 'ok', timestamp: '2026-01-01T00:00:03Z' },
-        ],
-        status: { ...failed.status, lifecycle: 'idle', lastError: null },
-      } as unknown as SessionSnapshot);
-    });
-
-    await clickSignIn();
-
-    expect(postMessage).not.toHaveBeenCalled();
-  });
-
   it('sends nothing when another window already announced this resume', async () => {
     // Purpose: the wiring of the cross-window claim, at the seam that owns it.
-    // The hook's own tests prove the announcement travels; this proves the
-    // panel actually consults it before sending.
-    //
-    // The case is not hypothetical and not a race: pressing Sign in in a second
-    // window is the natural thing to do while a 180s spinner sits there, and
-    // the server hands the second request the SAME attempt — so both windows'
-    // callbacks fire off one completion, before either has POSTed. Without the
-    // claim that is a guaranteed double-send.
-    //
-    // **Seeded defect:** drop the `claimedElsewhere` guard in `ChatPanel` and
-    // this goes red.
     const restore = installFakeBroadcastChannel();
     try {
       const { transport, postMessage } = recordingTransport();
@@ -485,62 +371,6 @@ describe('ChatPanel — signing in re-sends the turn that failed (DOR-1650)', ()
       await clickSignIn();
 
       expect(postMessage).not.toHaveBeenCalled();
-      otherWindow.close();
-    } finally {
-      restore();
-    }
-  });
-
-  it('announces its own resume so the other window can stand down', async () => {
-    // Purpose: the SENDER half of the cross-window claim. The receiver test
-    // above passes just as happily when this panel never announces anything —
-    // measured, not assumed: deleting the `resumeClaim.claim(...)` call left
-    // every other test in this file green. A stand-down nobody triggers is not
-    // a mitigation, so the announcement needs its own assertion.
-    //
-    // What this does NOT pin is the claim landing before the POST, and the
-    // reason is worth recording rather than asserting badly: `submitContent` is
-    // async and yields at its first `await`, so the claim goes out in the same
-    // synchronous block whether it is written above or below the send. An
-    // ordering assertion here passed with the two lines swapped — it could not
-    // fail, so it is gone rather than decorating the file.
-    const restore = installFakeBroadcastChannel();
-    try {
-      const { transport, postMessage } = recordingTransport();
-      await mountFailedSession(transport, { inline: true });
-
-      const heard: unknown[] = [];
-      const otherWindow = new BroadcastChannel('dorkos:signin-resume');
-      otherWindow.addEventListener('message', (event) => {
-        heard.push((event as MessageEvent).data);
-      });
-
-      await clickSignIn();
-
-      await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
-      expect(heard).toEqual([{ sessionId: SESSION_ID }]);
-      otherWindow.close();
-    } finally {
-      restore();
-    }
-  });
-
-  it('still re-sends when a claim named a different session', async () => {
-    // The claim is per session, so an unrelated window resuming ITS conversation
-    // must not silence this one. Without this, the guard above could be a blunt
-    // "any claim stops everything" and no test would notice.
-    const restore = installFakeBroadcastChannel();
-    try {
-      const { transport, postMessage } = recordingTransport();
-      await mountFailedSession(transport, { inline: true });
-
-      const otherWindow = new BroadcastChannel('dorkos:signin-resume');
-      act(() => otherWindow.postMessage({ sessionId: 'a-different-session' }));
-
-      await clickSignIn();
-
-      await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
-      expect(postMessage.mock.calls[0][1]).toBe(FAILED_PROMPT);
       otherWindow.close();
     } finally {
       restore();

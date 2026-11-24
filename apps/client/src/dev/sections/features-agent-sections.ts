@@ -336,6 +336,21 @@ export const FEATURE_AGENT_SECTIONS: PlaygroundSection[] = [
     keywords: ['schedule', 'time zone', 'timezone', 'utc', 'your time', 'overnight'],
   },
   {
+    id: 'schedule-account',
+    title: 'Schedule account',
+    page: 'features',
+    category: 'Tasks',
+    keywords: [
+      'account',
+      'claude',
+      'pin',
+      'this account only',
+      'out of usage',
+      'signed out',
+      'moved run',
+    ],
+  },
+  {
     id: 'taskspanel',
     title: 'TasksPanel',
     page: 'features',

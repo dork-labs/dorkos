@@ -367,7 +367,7 @@ pnpm check:copy-spec-drift            # against origin/main
 pnpm check:copy-spec-drift <base-ref> # against something else
 ```
 
-What it does **not** catch: assertions that count things rather than read them (`toHaveCount`), copy assembled from a lookup table, and specs that build their expected text the same dynamic way the component does. Those still only surface in the queue. The job is advisory — it is not a required check — so a red does not block the merge queue, but it does stop `merge-tail.yml` arming auto-merge until someone looks.
+What it does **not** catch: assertions that count things rather than read them (`toHaveCount`), copy assembled from a lookup table, and specs that build their expected text the same dynamic way the component does. Those still only surface in the queue. The job is advisory — it is not a required check — so a red blocks neither auto-merge nor the merge queue: read it yourself before the PR merges.
 
 ## Test-Mode Server (Mock Browser Tests)
 

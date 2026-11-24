@@ -41,6 +41,7 @@ export const REPO_WIDE_SUITES = [
   '__tests__/check-boundary.test.ts',
   '__tests__/check-design-tokens.test.ts',
   '__tests__/check-own-mocks.test.ts',
+  '__tests__/check-test-ratio.test.ts',
   '__tests__/check-vocab-gate.test.ts',
   '__tests__/ci-apt-resilience.test.ts',
   '__tests__/code-only.test.ts',

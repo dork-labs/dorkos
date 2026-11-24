@@ -1,6 +1,6 @@
 ---
 name: creating-pull-requests
-description: When to open a pull request in the DorkOS repo (review the pushed branch first, open the PR after it converges), how the automated review behaves (skip-review, review:light/deep, re-review), and how a PR lands through auto-merge and the merge queue, including what to do when it goes red or is ejected. Use when finishing a branch, opening a PR, deciding how much review a PR should get, requesting a re-review, or watching a PR until it merges.
+description: When to open a pull request in the DorkOS repo (review the pushed branch first, open the PR after it converges), how the automated review behaves (skip-review, review:light/deep, re-review), and how a PR lands through auto-merge at open and the merge queue, including what to do when it goes red or is ejected. Use when finishing a branch, opening a PR, deciding how much review a PR should get, requesting a re-review, or watching a PR until it merges.
 ---
 
 # Creating Pull Requests
@@ -39,10 +39,9 @@ exists**. Opening the PR is the last step, not the first:
    and unchanged throughout the run. A new commit needs its own pass. A full
    `pnpm verify` pass also satisfies `--level preopen`. A PR that touches
    `.github/` needs a full `pnpm verify` (or a PM waiver) instead, checked with
-   plain `check HEAD`, since CI can't vouch for changes to itself. A preopen proof
-   never arms, because the arming check never reads it: arming accepts green
-   required checks and all six test shards at the exact head, a full local proof,
-   or a docs-only change. The checker runs no gates. If an exceptional PR must
+   plain `check HEAD`, since CI can't vouch for changes to itself. Nothing arms on a
+   proof any more: `scripts/open-pr.sh` turns on auto-merge at open, and
+   `arm.sh`, which read full proofs, is retired (DOR-5124). The checker runs no gates. If an exceptional PR must
    open without proof, add `--no-verify-proof` to plain `check HEAD` (it is
    refused with `--level preopen`); it logs who, when, and which commit locally.
    This does not bypass CI.
@@ -112,8 +111,9 @@ first (`gh pr list -R dork-labs/dorkos --search <path or ticket>`, then
 
 A stack merges only with **`gh stack merge` from the top** (`gh stack merge
 <top-pr> --yes`). It lands every layer up to that PR together, through the merge
-queue. **Never `gh pr merge --auto` a layer whose base is not `main`**: it merges
-into the branch below and skips the queue, so nothing tested it on top of `main`.
+queue. **Never turn on auto-merge for a layer whose base is not `main`**: it would
+merge into the branch below and skip the queue, so nothing tested it on top of
+`main` (`open-pr.sh` only opens against `main`).
 
 **UI PRs** (anything under `apps/client/**` or `packages/ui/**`) run their
 affected Playwright specs locally before pushing, and say so in the PR body. Write
@@ -331,15 +331,16 @@ their own group and cannot evict one that will, and the group is keyed by head
 SHA, so one commit gets exactly one review.
 
 **A review lost to an infrastructure failure is re-requested for you.**
-`review-redispatch.yml` applies `re-review` on your behalf when the check is red, up
-to three times per head SHA (`scripts/should-redispatch-review.sh`). Do not wait on
-it if you want a review now: GitHub throttles scheduled workflows, so it can be hours
-between ticks; apply `re-review` yourself. It
-leaves a `skip-review` label alone, never retries a PR that edits the review
-workflow (that one cannot be reviewed by it at all), and waits out the Claude
-subscription window when the last attempt died against a quota (about 5 hours,
-6 for a weekly limit) before trying again — a pause, not a give-up. If your PR is conflicting and `re-review` seems stuck on it, review-redispatch
-removes it for you — a conflicting PR produces no run, so nothing else can.
+`review-redispatch.yml` applies `re-review` when the check is red, up to three
+times per head SHA (`scripts/should-redispatch-review.sh`). This matters more now
+that `pr-gates` waits on the review's Security verdict. It runs on a throttled
+schedule (a median gap of about 2.7 hours), so apply `re-review` yourself if you
+want a review now. It leaves a `skip-review` label alone, never retries a PR that
+edits the review workflow (that one cannot be reviewed by it at all), and waits out
+the Claude subscription window when the last attempt died against a quota (about 5
+hours, 6 for a weekly limit). If your PR is conflicting and `re-review` seems stuck
+on it, the workflow removes it for you: a conflicting PR produces no run, so nothing
+else can.
 
 ## Rebase before you expect a review
 
@@ -433,23 +434,24 @@ so **never update a branch to satisfy a gate**: no `gh pr update-branch`, no mer
 `main` in to be current. It starts a fresh round of 19 to 25 Actions jobs against a
 60-job pool every agent shares, and it disarms the PR.
 
-**Nobody arms a PR (DOR-5124).** `scripts/open-pr.sh` turns auto-merge on when the
-PR opens, because main's `ci/required-checks.json` requires `not-held`,
-`release-window` and `pr-gates`: a hold, a freeze or release, and a missing Security
-sign-off block the merge on their own. GitHub queues the PR once every required check
-is green. `open-pr.sh` leaves auto-merge off for a draft and for a `--hold` PR, and
-prints `auto-merge: on` or `auto-merge: off: <why>`. `arm.sh`, `arm-door.yml` and
-merge-tail's arming are retired.
+**Nobody arms a PR (DOR-5124).** `scripts/open-pr.sh` turns auto-merge on when it
+opens the PR, because main requires `not-held`, `release-window` and `pr-gates`, so
+a hold, a freeze or release, and a missing Security sign-off each block the merge on
+their own. GitHub queues the PR once every required check is green. It prints
+`auto-merge: on`, or `auto-merge: off: <why>` for a draft or a `--hold` PR. Security's
+sign-off is a passing `security-verdict` status from the cloud review or Security's
+`security-reviewed` label; QA's and the designer's labels are notes, not gates (they
+sweep each day's merges). `arm.sh`, `arm-door.yml` and merge-tail's arming are
+retired. The detail is in `contributing/ci.md`, "Merging".
 
-The one time you turn auto-merge on yourself is the ejection rule in `AGENTS.md` and
-`contributing/ci.md`: after a first failed-checks ejection, read the failing job, and
-once it is plainly not yours, re-queue it once. The same check failing again on the
-same head is real: fix it and push instead. A draft marked ready, and a PR opened
-before Nov 24, need it turned on once too; a maintainer does it for an outside
-contributor.
+**`gh pr merge --auto <n>` has three uses left**, each once: (1) to re-queue after
+an ejection whose failure is plainly not yours, or after your own push disarmed it
+(below); (2) for a PR opened before Nov 24
+that has no auto-merge; (3) when a draft is marked ready or a hold is lifted
+(whoever lifts it turns it on). A maintainer does it for an outside contributor.
 
 ```bash
-gh pr merge --auto <number>   # only after an ejection (once), or a draft marked ready
+gh pr merge --auto <number>   # only in those three cases, once
 ```
 
 Leave off the strategy flag; the queue owns it. `gh pr merge --auto --squash` prints
@@ -458,11 +460,12 @@ and is not (the PR was enqueued, and a repeat call answers "already queued").
 `--delete-branch` is rejected outright. Confirm with `gh pr view <n>` rather than
 reacting to stderr.
 
-**What an armed PR does not wait for.** Once armed, GitHub waits only on the required
-checks. The Claude review is not a required check and conversation resolution is off,
-so on an armed PR a red review or an open thread blocks nothing. That is why the order at the top of this file (review the
-branch, then open the PR) is the safeguard that actually holds: arm at creation only a
-branch that has already converged.
+**What an auto-merging PR does not wait for.** GitHub waits only on the required
+checks. The Claude review counts only through its Security lens (`pr-gates`), and
+conversation resolution is off, so its other findings and open threads block nothing.
+That is why the order at the top of this file (review the
+branch, then open the PR) is the safeguard that actually holds: open only a branch
+that has already converged.
 
 **A new commit disarms auto-merge.** GitHub drops the armed state on every push to
 the PR branch, silently. Turn it back on yourself once the new commit's checks are
@@ -476,12 +479,12 @@ reads a generated, trust-gated `.codex/hooks.json`, unverified for this guard), 
 there treat this sentence as the whole rule. Admin merges are reserved for the CI Steward
 break-glass path (`/ci-break-glass`, phase 1b, not built yet); see `contributing/ci.md`.
 
-**Arming is not the same as walking away.** Read the next section before you treat
-an armed PR as finished.
+**Opening is not the same as walking away.** Read the next section before you treat
+an open PR as finished.
 
 ### The merge lands after your session ends, so clean up on your next visit
 
-Auto-merge and the merge queue both land the PR minutes to hours after you arm it.
+Auto-merge and the merge queue land the PR minutes to hours after you open it.
 Whatever cleanup you were planning to do "once it merges" will therefore be
 proposed to nobody: the session that opened the PR is usually gone. Do not leave
 the worktree removal as a promise to your future self.
@@ -636,7 +639,7 @@ Every watcher on this machine spends the operator's one GraphQL budget (5,000 po
 an hour, shared with every other agent and workflow using that login), so poll no faster than you need: 120 seconds is
 plenty for a PR whose checks take 15 to 40 minutes.
 
-**Arming is not the end.** Keep watching until the PR is merged (report the squash
+**Opening is not the end.** Keep watching until the PR is merged (report the squash
 SHA) or ejected from the queue (report the red `merge_group` checks); an ejection
 clears auto-merge without telling anyone (DOR-3341). For a standup,
 `scripts/pr-age-list.sh` lists open PRs older than three days, each to ship, split
@@ -660,9 +663,9 @@ precedence order:
 | `CANCELLED(names)`                | A cancelled check is not a pass, so the PR cannot merge while it stands                         | you: re-run it once        |
 | `STUCK_UNMERGEABLE`               | A dead queue entry that keeps its position                                                      | you, after 10 minutes      |
 | `STALLED_IN_QUEUE(m)`             | Queued for 90 minutes or more (the queue's p90 is about 55)                                     | nobody on your branch      |
-| `HELD_BY_LABEL(l[,armed])`        | A hold label is on it; `,armed` means it was armed anyway and the queue does not read labels    | whoever set the label      |
+| `HELD_BY_LABEL(l[,armed])`        | A hold label is on it; the required `not-held` check blocks the merge while `hold` is on        | whoever set the label      |
 | `UNRESOLVED_THREADS(n[,armed])`   | Open threads, outdated included; `,armed` means it will merge with them open                    | you                        |
-| `AUTO_MERGE_OFF`                  | Green with auto-merge off, so nothing will merge it (was `UNARMED_CLEAN`)                       | you: `gh pr merge --auto`  |
+| `AUTO_MERGE_OFF`                  | Green with auto-merge off, so nothing will merge it (was `UNARMED_CLEAN`)                       | you, once, in the three cases |
 | `AUTO_MERGE_OFF(ejected,k)`       | The same, on a head the queue ejected k times for failed checks since its last commit           | you: k=1 re-queue once, k≥2 fix |
 | `AUTO_MERGE_OFF(dequeued,reason)` | The same, after a manual, timed-out or other non-failed-checks removal                         | you: read why first        |
 | `QUEUED(pos)`, `PENDING`          | Informational                                                                                   | nobody                     |
@@ -720,23 +723,26 @@ catch, which corrupts the numbers the pipeline is tuned by.
   re-entry. Do not push and do not rerun. Read the failing merge-group job first: if
   it covers a package you changed, run its tests locally (`pnpm vitest run <path>`)
   and fix only if they fail. Once the evidence says it is not yours (the same job red
-  on `main` or in other groups, or a flake or infra error in its log), re-arm it
-  **once** yourself with `gh pr merge --auto <n>`. Green PR checks are not that
+  on `main` or in other groups, or a flake or infra error in its log), re-queue it
+  **once** with `gh pr merge --auto <n>` (the ejection cleared auto-merge). Green PR
+  checks are not that
   evidence: the browser tests run only in the queue, so a PR that breaks one reads
   green everywhere else.
-- **`EJECTED_REPEAT(failed_checks,k)`: stop re-arming.** If the **same check** failed
+- **`EJECTED_REPEAT(failed_checks,k)`: treat it as real.** If the **same check** failed
   again on the **same head commit**, it is a regression only the queue can see, not a
-  flake. Do not re-arm. Find the job in each merge-group run
+  flake. Do not re-queue. Find the job in each merge-group run
   (`gh run list --event merge_group -L 100 --json headBranch,name,conclusion,databaseId`,
   keeping rows whose `headBranch` contains `pr-<n>-`), read its log, fix it, push.
-  PR #1964 was re-armed unchanged four times after the same browser assertion
+  PR #1964 was re-queued unchanged four times after the same browser assertion
   failed, costing 17 queue builds, its own and every PR stacked behind it. The one
   exception is the same check red on `main` too (a break that landed there, like the
-  wall-clock fixture of 2026-09-17): wait for the fix on `main`, then re-arm. Different
-  checks each time: still likely flaky; re-arm with `gh pr merge --auto <n>`.
+  wall-clock fixture of 2026-09-17): wait for the fix on `main`, then re-queue once.
+  Different checks each time: still likely flaky; re-queue once with
+  `gh pr merge --auto <n>`.
 - **`EJECTED(merge_conflict)`** (or `invalid_merge_commit`, `git_tree_invalid`):
-  rebase onto `origin/main` and push once. **`EJECTED(manual)`**: someone removed
-  it on purpose; read the timeline before re-arming. **`EJECTED(checks_timed_out)`**
+  rebase onto `origin/main` and push once, then re-queue once with
+  `gh pr merge --auto <n>` when the new head is green. **`EJECTED(manual)`**: someone removed
+  it on purpose; read the timeline, and do not put it back yourself. **`EJECTED(checks_timed_out)`**
   and **`STALLED_IN_QUEUE`**: a queue or runner stall, not your PR; do nothing to the
   branch and check githubstatus.com if it repeats.
 - **`FAILING` on the PR: read the log first.** Caused by your change: fix and push.
@@ -748,7 +754,9 @@ catch, which corrupts the numbers the pipeline is tuned by.
   cannot merge while it stands.
 - **`AUTO_MERGE_OFF`**: the remedy reads main's `ci/required-checks.json` the way
   `scripts/open-pr.sh` does. Once main requires `not-held`, `release-window` and
-  `pr-gates`, turn auto-merge back on with `gh pr merge --auto <n>`: those checks still
+  `pr-gates`, turn auto-merge on once with `gh pr merge --auto <n>` only in the three
+  cases above (an ejection plainly not yours or your own push, a PR opened before Nov 24, a draft
+  marked ready or a hold lifted); otherwise say so on the PR. Those checks still
   stop a held, frozen or unsigned PR. If main ever stops requiring them, the remedy
   says the maintainer merges it instead: do not arm, queue or merge it yourself; say it
   is ready and stop watching it. Never merge it directly either way. A green PR with
@@ -784,7 +792,7 @@ schema on 2026-08-27 confirmed its input type is
 `DequeuePullRequestInput { id: ID!, clientMutationId: String }` — the required
 `id` is the PR's **node id**, not its number — and it returns a
 `DequeuePullRequestPayload { mergeQueueEntry, clientMutationId }`. Get the node id
-from `gh pr view <n> --json id`, then re-arm auto-merge so it re-enters the queue
+from `gh pr view <n> --json id`, then re-queue it with `gh pr merge --auto` so it re-enters the queue
 from a clean start:
 
 ```bash
@@ -792,7 +800,7 @@ PR_ID=$(gh pr view <number> --json id --jq .id)
 gh api graphql -f query='
   mutation($id:ID!){ dequeuePullRequest(input:{id:$id}){ mergeQueueEntry { position } } }' \
   -f id="$PR_ID"
-gh pr merge --auto <number>   # re-arm; it rejoins the queue from a clean start
+gh pr merge --auto <number>   # re-queue once; it rejoins the queue from a clean start
 ```
 
 The watcher stays read-only — it reports `STUCK_UNMERGEABLE` and never mutates.
@@ -974,8 +982,8 @@ gh label create re-review    --description "Request another automated review pas
   yours to get right — all tracker I/O routes through the `/flow` `linear-adapter`
   skill (`AGENTS.md`), which sets state for you. Pass `stateId` yourself only as a
   stopgap, when you are calling the API directly because the adapter is unreachable.
-- **The review is non-blocking, for now.** It posts comments and is not one of the
-  required checks, so the queue does not wait on it. It still matters: its Security
-  verdict feeds the required `pr-gates` check, and a PR that is armed at open merges
-  with its other findings open. Address findings before the PR leaves draft. CI Steward phase 2 plans a
+- **The review blocks only through its Security lens.** Its `security-verdict`
+  feeds the required `pr-gates` check; its other findings are comments, and the
+  queue does not wait on them. They still matter:
+  a PR auto-merges with its non-Security findings open. Address findings before you open the PR, or fix forward. CI Steward phase 2 plans a
   required, always-running review gate that goes red on an open Important finding.

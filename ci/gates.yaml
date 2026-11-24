@@ -268,7 +268,7 @@ gates:
   # --- security-verdict.yml ---
   - id: wf.security-verdict.security-verdict
     source: .github/workflows/security-verdict.yml
-    purpose: After each Claude review run, posts a security-verdict commit status that is success only when the review's Security lens posted a pass for that exact head (DOR-5099), then re-runs that head's pr-gates after a pass (DOR-5119).
+    purpose: After each Claude review run, posts a security-verdict commit status that is success only when the review's Security lens posted a pass for that exact head (DOR-5099), then re-runs that head's finished, unpassed pr-gates runs after a pass (DOR-5119).
 
   # --- after-merge-alert.yml ---
   - id: wf.after-merge-alert.alert
@@ -287,6 +287,17 @@ gates:
   - id: wf.daily-sweep.sweep
     source: .github/workflows/daily-sweep.yml
     purpose: Never gates a merge. Once a day, rewrites one issue per release window listing the PRs merged since the last release that the design-ok or qa-real-data rules flag, for QA's and the designer's batch review (DOR-5120).
+
+  # --- daily-release.yml ---
+  - id: wf.daily-release.plan
+    source: .github/workflows/daily-release.yml
+    purpose: Never gates a merge. Once a day (and by hand), reads the release state with daily-release.sh, picks P (newest main commit of 48 h with a green full run that release-gate.sh ships), plans the version with release-commit.ts, and writes what it would do to the step summary (DOR-5123).
+  - id: wf.daily-release.cut
+    source: .github/workflows/daily-release.yml
+    purpose: Never gates a merge. Cuts release/vX.Y.Z at P and opens the release PR with the merge-tail app token, only while DAILY_RELEASE_LIVE is on (DOR-5123).
+  - id: wf.daily-release.advance
+    source: .github/workflows/daily-release.yml
+    purpose: Never gates a merge. Tags a merged release PR and dispatches the native artifact, or dispatches release-publish.yml once that is green, only while DAILY_RELEASE_LIVE is on (DOR-5123).
 
   # --- pr-gates.yml ---
   - id: wf.pr-gates.pr-gates
@@ -394,6 +405,9 @@ gates:
   - id: lefthook.pre-push.own-mocks
     source: lefthook.yml
     purpose: Refuses new vi.mock calls on our own modules before pushing.
+  - id: lefthook.pre-push.test-ratio
+    source: lefthook.yml
+    purpose: Refuses a package adding tests faster than source past its test budget, or a budget loosened by hand, before pushing.
   - id: lefthook.pre-push.ledger-coverage
     source: lefthook.yml
     purpose: Requires a ledger entry for changed pipeline paths before pushing.
