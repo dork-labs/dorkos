@@ -54,7 +54,7 @@ export class DoeSessionRuntime {
   }
   /** Metadata lookup cannot leak a session from another project. */
   async getSession(project: string, id: string): Promise<Session | null> {
-    return this.sessions.belongs(id, project) ? this.sessions.get(id)!.session : null;
+    return this.sessions.belongs(id, project) ? this.sessions.getForDisplay(id) : null;
   }
   /** Display history reads the durable EventLog, never the engine's provider records. */
   async getMessageHistory(project: string, id: string): Promise<HistoryMessage[]> {

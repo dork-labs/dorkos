@@ -56,14 +56,12 @@ const mockSessions = [
 const mockHealth = { status: 'healthy' as const, lastHeartbeat: '2026-03-03T10:00:00Z' };
 
 vi.mock('@/layers/entities/session', async (importOriginal) => {
-  // Keep the real exports (sessionDisplayTitle, selectAgentSessions) and stub
-  // only the data hook — delegating to the REAL canonical selector so this
-  // mock can never diverge from the membership rule it stands in for.
+  // Keep sessionDisplayTitle real and provide fixture rows for each query path.
   const actual = await importOriginal<typeof import('@/layers/entities/session')>();
   return {
     ...actual,
     useAgentSessions: (projectPath: string | null) => ({
-      sessions: actual.selectAgentSessions(mockSessions, projectPath),
+      sessions: mockSessions.filter((session) => session.cwd === projectPath),
       isLoading: false,
       activeSessionId: null,
       setActiveSession: vi.fn(),

@@ -5,7 +5,6 @@
  */
 export { useSessions, insertOptimisticSession } from './model/query/use-sessions';
 export { useAgentSessions } from './model/query/use-agent-sessions';
-export { selectAgentSessions } from './lib/select-agent-sessions';
 export { switchAgentCwd } from './lib/switch-agent-cwd';
 export {
   resolveSessionForCwd,

@@ -128,10 +128,15 @@ describe('Doe: a chat that opens with the greeting kickoff', () => {
       expectNoDorkMarkup(store.get(SESSION)?.session);
       expect(store.get(SESSION)?.session.title ?? '').toBe('');
       expect(store.get(SESSION)?.session.lastMessagePreview).toBe('');
+      expect(store.getForDisplay(SESSION)).toMatchObject({
+        title: 'New chat',
+        lastMessagePreview: '',
+      });
       // DorkOS wrote the greeting, not the person.
       expect(store.get(SESSION)?.session.userLastMessageAt).toBeUndefined();
 
       store.message(SESSION, 'Fix the build', CWD);
+      expect(store.getForDisplay(SESSION)?.title).toBe('Fix the build');
       expect(store.get(SESSION)?.session.title).toBe('Fix the build');
       expect(store.get(SESSION)?.session.lastMessagePreview).toBe('Fix the build');
       expect(store.get(SESSION)?.session.userLastMessageAt).toBeDefined();

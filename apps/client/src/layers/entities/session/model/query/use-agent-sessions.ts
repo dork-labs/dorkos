@@ -2,14 +2,10 @@ import { useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 import { useSessionId } from '../navigation/use-session-id';
-// Same-slice imports via sibling modules (not the entities/session barrel) to
-// avoid a self-referential barrel import within this slice.
 import { sessionListQueryOptions } from '../../api/session-list-query';
-import { selectAgentSessions } from '../../lib/select-agent-sessions';
 
 /**
- * Sessions belonging to one agent's project directory, newest-first — THE
- * canonical per-agent membership rule (DOR-203).
+ * Sessions for one agent's project directory, newest first (DOR-203).
  *
  * Every surface that answers "which sessions belong to this agent?" (the session
  * sidebar, the profile's Sessions page, the command palette agent preview) must
@@ -28,12 +24,10 @@ import { selectAgentSessions } from '../../lib/select-agent-sessions';
  * session resolver and the global stream bridge (`useGlobalSessionStream`) also
  * keep live — no second fetch shape, no new cache namespace.
  *
- * Membership is the agent's project directory OR any folder inside it, through
- * the same `isWithinDirectory` predicate the server's per-project listing and
- * per-agent fan-out use — the mirror has to be exact, or this filter silently
- * re-drops sessions the server just included (DOR-674). A session without a cwd
- * belongs to no agent. `null` (no agent selected) resolves to an empty list and
- * fetches nothing.
+ * The server scopes the list, including folders reached through symlinks
+ * whose path spelling can differ from `projectPath` (DOR-3605). Keep the
+ * session's actual working directory for opening the chat. A session without
+ * a cwd belongs to no agent. A null project path fetches nothing.
  *
  * @param projectPath - The agent's project directory, or null when none is active
  */
@@ -48,10 +42,12 @@ export function useAgentSessions(projectPath: string | null) {
   });
 
   const { data } = sessionsQuery;
-  const agentSessions = useMemo(
-    () => selectAgentSessions(data ?? [], projectPath),
-    [data, projectPath]
-  );
+  const agentSessions = useMemo(() => {
+    if (!data || projectPath === null) return [];
+    return data
+      .filter((session) => session.cwd)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }, [data, projectPath]);
 
   return {
     sessions: agentSessions,

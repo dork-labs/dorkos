@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
-import { DoeEventQueue } from '../event-queue.js';
+import { RuntimeEventQueue } from '../session/event-queue.js';
 it('drains buffered events before its terminal completion', async () => {
-  const queue = new DoeEventQueue<number>();
+  const queue = new RuntimeEventQueue<number>();
   queue.push(1);
   queue.push(2);
   queue.end();
@@ -10,7 +10,7 @@ it('drains buffered events before its terminal completion', async () => {
   expect(await queue.next()).toEqual({ done: true, value: undefined });
 });
 it('return tears down a parked consumer and rejects later delivery', async () => {
-  const queue = new DoeEventQueue<number>();
+  const queue = new RuntimeEventQueue<number>();
   const pending = queue.next();
   await queue.return();
   expect(await pending).toEqual({ done: true, value: undefined });

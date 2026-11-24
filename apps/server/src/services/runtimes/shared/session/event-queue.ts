@@ -1,5 +1,5 @@
-/** Single-consumer callback bridge with deterministic parked-reader teardown. */
-export class DoeEventQueue<T> implements AsyncIterableIterator<T> {
+/** Single-consumer queue for session events, with deterministic reader teardown. */
+export class RuntimeEventQueue<T> implements AsyncIterableIterator<T> {
   private readonly values: T[] = [];
   private waiter?: (result: IteratorResult<T>) => void;
   private ended = false;

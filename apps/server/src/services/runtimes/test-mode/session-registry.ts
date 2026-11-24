@@ -1,28 +1,7 @@
-/**
- * In-memory session metadata registry for the stateless test-mode runtime.
- *
- * Backs {@link TestModeRuntime.subscribeSessionList} (and `listSessions`/
- * `getSession`) WITHOUT any filesystem watch — the explicit proof (spec
- * chat-stream-reconnection task #15, ADR-0263 Decision 1) that the session-list
- * contract has no baked-in JSONL/file assumptions. A session is "tracked" the
- * moment DorkOS observes it (its first triggered message, or an explicit
- * `ensureSession`), and only METADATA lives here: the transcript itself is the
- * DorkOS-owned EventLog inside the session's projector.
- *
- * Unbounded by design: the runtime is dev/test-only (`DORKOS_TEST_RUNTIME=true`
- * gating in index.ts), so the tracked set is small and process-scoped.
- *
- * @module services/runtimes/test-mode/session-registry
- */
-import type { Session, PermissionModeId } from '@dorkos/shared/types';
-import { isWithinDirectory } from '@dorkos/shared/paths';
-import { shownToPerson, titleShownToPerson } from '@dorkos/shared/kickoff';
-import { deriveSessionTitle } from '../shared/derive-title.js';
-import type { SessionListEvent } from '@dorkos/shared/session-stream';
+/** In-memory rows and unannounced draft settings for the test-mode runtime. */
+import type { PermissionModeId } from '@dorkos/shared/types';
+import { TrackedSessionRegistry } from '../shared/session/session-registry.js';
 import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
-
-/** Max characters of a first message used as the derived session title/preview. */
-const PREVIEW_MAX_CHARS = 80;
 
 /**
  * The mode a session is BORN in when nothing asks for one — read off this
@@ -50,103 +29,39 @@ export interface TrackedSessionPatch {
   cwd?: string;
 }
 
-/**
- * Whether a session-list event may reach live subscribers. A
- * `session_upserted` for a cwd-less session is suppressed: such a session
- * belongs to NO project list (see `list()`), so announcing it fleet-wide over
- * the global `/api/events` stream re-created the DOR-202 ghosts that the
- * list-side fix removed from `GET /api/sessions`. The session stays reachable
- * by id and self-announces on the upsert that resolves its cwd.
- */
-function isAnnounceable(event: SessionListEvent): boolean {
-  return event.type !== 'session_upserted' || event.session.cwd !== undefined;
-}
-
-/** Truncate message content into a one-line title/preview (codepoint-safe). */
-function toPreview(content: string): string {
-  const firstLine = content.split('\n', 1)[0] ?? '';
-  const codepoints = [...firstLine];
-  return codepoints.length > PREVIEW_MAX_CHARS
-    ? `${codepoints.slice(0, PREVIEW_MAX_CHARS).join('')}…`
-    : firstLine;
-}
-
-/**
- * Tracked-session metadata + live `session_upserted` fan-out for the test-mode
- * runtime. `subscribe()` yields the current inventory first, then live upserts
- * — mirroring the Claude session-list watcher's contract, minus the watcher.
- */
-export class TestModeSessionRegistry {
-  private readonly sessions = new Map<string, Session>();
-  // Pre-message settings do not constitute a native conversation.
+/** Test-mode adds pre-message settings and optional recording titles. */
+export class TestModeSessionRegistry extends TrackedSessionRegistry<TrackedSessionPatch> {
   private readonly pendingSettings = new Map<string, TrackedSessionPatch>();
-  private readonly listeners = new Set<(event: SessionListEvent) => void>();
 
-  /**
-   * Create a registry stamping sessions with the owning runtime's type.
-   *
-   * @param runtimeType - The owning runtime's type, stamped onto every tracked
-   *   session (drives session-list runtime marks). Defaults to `'test-mode'`;
-   *   a secondary e2e instance passes its own type.
-   */
-  constructor(
-    private readonly runtimeType: string = 'test-mode',
-    private readonly labelTitle: (title: string) => string = (title) => title
-  ) {}
-
-  /**
-   * Track a session (or refresh its settings) without a message — the
-   * `ensureSession` path used by Tasks and relay bindings.
-   */
-  register(sessionId: string, patch: TrackedSessionPatch = {}): void {
-    const session = this.upsert(sessionId, patch);
-    // Emit a copy: a queued list event must not observe later mutations.
-    this.emit({ type: 'session_upserted', session: { ...session } });
+  constructor(runtimeType = 'test-mode', labelTitle?: (title: string) => string) {
+    super({ runtime: runtimeType, defaultPermissionMode: BIRTH_PERMISSION_MODE, labelTitle });
   }
 
-  /**
-   * Record a triggered message: tracks the session on first sight (deriving its
-   * title from the first message, like the Claude adapter derives it from the
-   * transcript head), refreshes `updatedAt`/`lastMessagePreview`, and fans out
-   * the upsert to live list subscribers.
-   */
-  recordMessage(sessionId: string, content: string, patch: TrackedSessionPatch = {}): void {
-    const session = this.upsert(sessionId, patch);
-    const preview = titleShownToPerson(toPreview(shownToPerson(content)));
-    if (session.title === '')
-      session.title = this.labelTitle(deriveSessionTitle(content) || preview);
-    session.lastMessagePreview = preview;
-    session.updatedAt = new Date().toISOString();
-    this.emit({ type: 'session_upserted', session: { ...session } });
+  override register(sessionId: string, patch: TrackedSessionPatch = {}): void {
+    super.register(sessionId, this.consumePendingSettings(sessionId, patch));
   }
 
-  /**
-   * Give a session its title (`renameSession`). A session not tracked yet is
-   * tracked now, so a title set a moment before its first message arrives is
-   * the one it keeps: `recordMessage` derives a title only for an untitled one.
-   *
-   * @param sessionId - The session.
-   * @param title - Its new title.
-   */
-  rename(sessionId: string, title: string): void {
-    const session = this.upsert(sessionId, {});
-    session.title = this.labelTitle(title);
-    session.updatedAt = new Date().toISOString();
-    this.emit({ type: 'session_upserted', session: { ...session } });
+  override recordMessage(
+    sessionId: string,
+    content: string,
+    patch: TrackedSessionPatch = {}
+  ): void {
+    super.recordMessage(sessionId, content, this.consumePendingSettings(sessionId, patch));
+  }
+
+  override rename(sessionId: string, title: string): void {
+    super.rename(sessionId, title, this.consumePendingSettings(sessionId, {}));
   }
 
   /** Observe the exact pre-message settings entry without creating a session. */
   observeDraftSettingsOwner(sessionId: string): () => boolean {
     const pending = this.pendingSettings.get(sessionId);
-    return () => !this.sessions.has(sessionId) && this.pendingSettings.get(sessionId) === pending;
+    return () => !this.has(sessionId) && this.pendingSettings.get(sessionId) === pending;
   }
 
-  /**
-   * Save settings for a tracked session or a draft without announcing existence.
-   * Production runtimes accept settings before their first native message too.
-   */
+  /** Save draft settings without announcing a conversation before its first message. */
   applySettings(sessionId: string, patch: TrackedSessionPatch): boolean {
-    if (!this.sessions.has(sessionId)) {
+    if (!this.has(sessionId)) {
       this.pendingSettings.set(sessionId, { ...this.pendingSettings.get(sessionId), ...patch });
       return true;
     }
@@ -154,181 +69,23 @@ export class TestModeSessionRegistry {
     return true;
   }
 
-  /**
-   * Move a tracked session to the canonical id a first turn assigned it.
-   *
-   * The scripted stand-in for what the Claude adapter does mid-first-turn: a
-   * session streams under the request UUID the client minted and is renamed to
-   * the id the SDK actually keeps it under. Nothing here mints that id — a test
-   * declares it (`POST /api/test/canonical-id`) and this moves the metadata to
-   * match, so the session list, the sidebar and `GET /api/sessions/:id` all
-   * agree with the projector after {@link TestModeRuntime.getInternalSessionId}
-   * starts answering the new name.
-   *
-   * No `session_removed` for the old id: the session did not go away, it was
-   * renamed, and announcing a removal would tell every listener that watches for
-   * one — the canvas's orphan sweep among them — to reclaim what it holds.
-   *
-   * @param oldId - The id the session was tracked under.
-   * @param newId - The canonical id it is keeping.
-   */
-  rekey(oldId: string, newId: string): void {
-    const session = this.sessions.get(oldId);
-    if (!session || oldId === newId) return;
-    this.sessions.delete(oldId);
-    session.id = newId;
-    session.updatedAt = new Date().toISOString();
-    this.sessions.set(newId, session);
-    this.emit({ type: 'session_upserted', session: { ...session } });
-  }
-
-  /** Whether the session is tracked. */
-  has(sessionId: string): boolean {
-    return this.sessions.has(sessionId);
-  }
-
-  /** A copy of one tracked session's metadata, or null. */
-  get(sessionId: string): Session | null {
-    const session = this.sessions.get(sessionId);
-    return session ? { ...session } : null;
-  }
-
-  /**
-   * Tracked sessions belonging to a project: the ones running IN that directory
-   * or anywhere inside it, through the one shared membership predicate
-   * (`isWithinDirectory`, DOR-674/DOR-1550). Exact string equality here made a
-   * session started at `<project>/packages/api` invisible from the project even
-   * when every other layer had learned to include it.
-   *
-   * A session tracked without a cwd belongs to NO project list — it cannot be
-   * attributed to any project, and fanning it into every list rendered ghost
-   * sessions under every agent (DOR-202, mirrored from the Codex registry). The
-   * predicate answers `false` for an absent cwd, so that rule is the same rule.
-   * It stays reachable by id via {@link TestModeSessionRegistry.get}.
-   */
-  list(projectDir: string): Session[] {
-    return [...this.sessions.values()]
-      .filter((s) => isWithinDirectory(s.cwd, projectDir))
-      .map((s) => ({ ...s }));
-  }
-
-  /**
-   * Discovery + liveness stream: yields one `session_upserted` per tracked
-   * session, then live upserts as sessions are tracked/updated. Hand-rolled
-   * iterator (not an async generator) so `return()` resolves a parked `next()`
-   * immediately — the session-list broadcaster awaits `iterator.return()` on
-   * stop, and a generator parked on an un-settleable await would hang it.
-   *
-   * Single-consumer contract (the broadcaster iterates strictly sequentially):
-   * a second concurrent `next()` while one is parked would overwrite the
-   * waiter and leave the first promise unsettled.
-   */
-  subscribe(): AsyncIterableIterator<SessionListEvent> {
-    const queue: SessionListEvent[] = [...this.sessions.values()]
-      .map((session): SessionListEvent => ({ type: 'session_upserted', session: { ...session } }))
-      // The inventory snapshot honors the same announce rule as live pushes:
-      // a cwd-less session is never announced (DOR-202).
-      .filter(isAnnounceable);
-    let waiter: ((result: IteratorResult<SessionListEvent>) => void) | null = null;
-    let closed = false;
-
-    const push = (event: SessionListEvent): void => {
-      if (closed) return;
-      if (waiter) {
-        const resolve = waiter;
-        waiter = null;
-        resolve({ value: event, done: false });
-      } else {
-        queue.push(event);
-      }
-    };
-    this.listeners.add(push);
-
-    const close = (): void => {
-      if (closed) return;
-      closed = true;
-      // Drop buffered events too: a post-return() next() must report done, not
-      // drain a queue the consumer already walked away from.
-      queue.length = 0;
-      this.listeners.delete(push);
-      if (waiter) {
-        const resolve = waiter;
-        waiter = null;
-        resolve({ value: undefined, done: true });
-      }
-    };
-
-    return {
-      [Symbol.asyncIterator]() {
-        return this;
-      },
-      next(): Promise<IteratorResult<SessionListEvent>> {
-        if (queue.length > 0) {
-          return Promise.resolve({ value: queue.shift()!, done: false });
-        }
-        if (closed) {
-          return Promise.resolve({ value: undefined, done: true });
-        }
-        return new Promise((resolve) => {
-          waiter = resolve;
-        });
-      },
-      async return(): Promise<IteratorResult<SessionListEvent>> {
-        close();
-        return { value: undefined, done: true };
-      },
-    };
-  }
-
-  /** Ids of every tracked session (for the runtime's reset to dispose projectors). */
-  ids(): string[] {
-    return [...this.sessions.keys()];
-  }
-
-  /**
-   * Drop all tracked sessions (test-control reset), emitting `session_removed`
-   * to live list subscribers so a connected sidebar drops the stale rows.
-   */
-  reset(): void {
-    const ids = this.ids();
-    this.sessions.clear();
+  override reset(): void {
     this.pendingSettings.clear();
-    for (const sessionId of ids) {
-      this.emit({ type: 'session_removed', sessionId });
-    }
+    super.reset();
   }
 
-  /** Get-or-create the tracked entry and fold in the patch (mutates in place). */
-  private upsert(sessionId: string, patch: TrackedSessionPatch): Session {
-    patch = {
-      ...this.pendingSettings.get(sessionId),
+  private consumePendingSettings(
+    sessionId: string,
+    patch: TrackedSessionPatch
+  ): TrackedSessionPatch {
+    const pending = this.pendingSettings.get(sessionId);
+    if (pending === undefined) return patch;
+    this.pendingSettings.delete(sessionId);
+    return {
+      ...pending,
       ...(patch.permissionMode !== undefined ? { permissionMode: patch.permissionMode } : {}),
       ...(patch.model !== undefined ? { model: patch.model } : {}),
       ...(patch.cwd !== undefined ? { cwd: patch.cwd } : {}),
     };
-    this.pendingSettings.delete(sessionId);
-    let session = this.sessions.get(sessionId);
-    if (!session) {
-      const now = new Date().toISOString();
-      session = {
-        id: sessionId,
-        title: this.labelTitle(''),
-        createdAt: now,
-        updatedAt: now,
-        permissionMode: patch.permissionMode ?? BIRTH_PERMISSION_MODE,
-        runtime: this.runtimeType,
-      };
-      this.sessions.set(sessionId, session);
-    }
-    if (patch.permissionMode !== undefined) session.permissionMode = patch.permissionMode;
-    if (patch.model !== undefined) session.model = patch.model;
-    if (patch.cwd !== undefined) session.cwd = patch.cwd;
-    return session;
-  }
-
-  /** Fan an event to all live list subscribers (cwd-less upserts are suppressed — DOR-202). */
-  private emit(event: SessionListEvent): void {
-    if (!isAnnounceable(event)) return;
-    for (const listener of this.listeners) listener(event);
   }
 }

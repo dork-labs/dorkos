@@ -409,7 +409,7 @@ test.describe('session switcher, from ⌘K', { tag: SOLE_SIDEBAR_TAG }, () => {
    * Two sessions with EXPLICIT, distinct recency.
    *
    * They used to take `updatedAt` from `Date.now()` at construction — two calls,
-   * one per fixture. `selectAgentSessions` sorts newest first, so whenever those
+   * one per fixture. The list sorts newest first, so whenever those
    * calls landed in the same millisecond the order was whatever `sort` happened
    * to do with a tie, and whenever they straddled one the SECOND session became
    * `ROW.first()`. The `⇧↵` case then forked the wrong id and failed on a run

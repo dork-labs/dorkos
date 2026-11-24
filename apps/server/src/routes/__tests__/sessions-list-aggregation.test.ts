@@ -564,6 +564,26 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
       expect(res.body).not.toHaveProperty('warnings');
     });
 
+    it('lists a Codex chat through a project alias with its original working directory', async () => {
+      const project = path.join(tempRoot, 'project');
+      const sibling = path.join(tempRoot, 'project-sibling');
+      const alias = path.join(tempRoot, 'alias');
+      fs.mkdirSync(project);
+      fs.mkdirSync(sibling);
+      fs.symlinkSync(project, alias, 'junction');
+      codex.ensureSession(CODEX_SESSION, { permissionMode: 'default', cwd: project });
+      codex.ensureSession(UNKNOWN_HINT_SESSION, { permissionMode: 'default', cwd: sibling });
+
+      const res = await request(testServer)
+        .get('/api/sessions')
+        .query({ cwd: alias, runtime: 'codex' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.sessions).toMatchObject([
+        { id: CODEX_SESSION, cwd: project, runtime: 'codex' },
+      ]);
+    });
+
     it('keeps Codex sessions when another runtime fails (per-runtime degradation intact)', async () => {
       runtimeA.listSessions.mockResolvedValue([]);
       runtimeB.listSessions.mockRejectedValue(new Error('cold backend'));

@@ -63,9 +63,8 @@ describe('isRowActive on an agent row', () => {
   });
 
   it('lights the agent when the session is running in a subfolder (DOR-1550)', () => {
-    // The session is already IN this agent's list (`selectAgentSessions` has
-    // used the subtree rule since DOR-674); the row staying dark while its own
-    // conversation is open reads as the wrong agent being open.
+    // The agent's list includes sessions from subfolders (DOR-674). Keep the
+    // row lit when one of those sessions is open.
     expect(
       isRowActive(
         { kind: 'agent', path: '/work/project' },

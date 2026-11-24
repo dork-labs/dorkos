@@ -127,13 +127,6 @@ function upsertSessionInCache(queryClient: QueryClient, session: Session): void 
   });
 }
 
-/** Remove a session by id from its (last-known) cwd-keyed cache. */
-function removeSessionFromCache(queryClient: QueryClient, id: string, cwd: string | null): void {
-  queryClient.setQueryData<Session[]>(sessionKeys.list(cwd), (old) =>
-    old ? old.filter((s) => s.id !== id) : old
-  );
-}
-
 /**
  * Resolve newly-retired request UUIDs in EVERY session-list cache. The
  * placeholder row a first message optimistically inserts under the client UUID
@@ -191,28 +184,46 @@ export function reconcileRetiredSessions(
  * @param queryClient - The TanStack Query client whose caches to patch.
  * @param next - The new `sessions` map from the list store.
  * @param prev - The previously reconciled `sessions` map.
+ * @returns Whether a session appeared or moved and needs its project membership checked.
  * @internal Exported for testing.
  */
 export function reconcileSessionsCache(
   queryClient: QueryClient,
   next: Record<string, Session>,
   prev: Record<string, Session>
-): void {
+): boolean {
   // The store notifies its subscribers synchronously, so this is the instant the
   // frame arrived — the earliest moment about this answer the client can
   // observe. See the sync's own note on the hop it therefore cannot account for.
   const observedAt = Date.now();
-  const changed: Session[] = [];
+  const changed = new Map<string, Session>();
+  let membershipChanged = false;
   for (const [id, session] of Object.entries(next)) {
     if (prev[id] === session) continue; // unchanged reference → skip
+    changed.set(id, session);
+    if (prev[id]?.cwd !== session.cwd) membershipChanged = true;
+  }
+  const removed = new Set(Object.keys(prev).filter((id) => !next[id]));
+  if (changed.size === 0 && removed.size === 0) return false;
+
+  // A list fetched through an alias or parent directory may already contain
+  // this row. Update that known member, but only add new rows to the exact cwd
+  // cache. The server decides membership for other lists.
+  queryClient.setQueriesData<Session[]>({ queryKey: sessionKeys.listRoot }, (old) => {
+    if (!old?.some((row) => changed.has(row.id) || removed.has(row.id))) return old;
+    return old
+      .flatMap((row) => {
+        if (removed.has(row.id)) return [];
+        const update = changed.get(row.id);
+        return [update && update.cwd === row.cwd ? update : row];
+      })
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  });
+  for (const session of changed.values()) {
     upsertSessionInCache(queryClient, session);
-    changed.push(session);
   }
-  syncSessionDetailCache(queryClient, changed, observedAt);
-  for (const [id, session] of Object.entries(prev)) {
-    if (next[id]) continue;
-    removeSessionFromCache(queryClient, id, session.cwd ?? null);
-  }
+  syncSessionDetailCache(queryClient, [...changed.values()], observedAt);
+  return membershipChanged;
 }
 
 /**
@@ -233,9 +244,13 @@ export function useGlobalSessionStream(): void {
     let prev: Record<string, Session> = {};
     let prevRekeys: Record<string, string> = {};
     const recentRefresh = createThrottledRefresh(() => invalidateRecentSessions(queryClient));
+    // Only the server knows whether a new or moved session belongs to a list fetched through an alias.
+    const projectRefresh = createThrottledRefresh(() => {
+      void queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
+    });
     const unsubscribe = useSessionListStore.subscribe((state) => {
       if (state.sessions !== prev) {
-        reconcileSessionsCache(queryClient, state.sessions, prev);
+        if (reconcileSessionsCache(queryClient, state.sessions, prev)) projectRefresh.request();
         // Keep the cross-agent Recent section (DOR-329) live on lifecycle
         // events, at most once per gap (see RECENT_REFRESH_MIN_GAP_MS).
         recentRefresh.request();
@@ -267,7 +282,7 @@ export function useGlobalSessionStream(): void {
     // cache reflects both pre-existing and subsequent sessions.
     const initial = useSessionListStore.getState();
     if (Object.keys(initial.sessions).length > 0) {
-      reconcileSessionsCache(queryClient, initial.sessions, prev);
+      if (reconcileSessionsCache(queryClient, initial.sessions, prev)) projectRefresh.request();
       prev = initial.sessions;
     }
     if (Object.keys(initial.rekeys).length > 0) {
@@ -280,6 +295,7 @@ export function useGlobalSessionStream(): void {
       unsubscribe();
       unsubscribeInvalidated();
       recentRefresh.dispose();
+      projectRefresh.dispose();
     };
   }, [queryClient]);
 }

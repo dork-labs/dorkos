@@ -43,7 +43,7 @@ function localAt(hour: number, daysAgo = 0): string {
 
 const mockUseMeshAgentPaths = vi.fn();
 const mockUseCommands = vi.fn();
-const mockUseSessions = vi.fn();
+const mockUseAgentSessions = vi.fn();
 const mockUseRecentSessions = vi.fn();
 const mockSessionListState = vi.fn();
 const mockUseRooms = vi.fn();
@@ -156,10 +156,10 @@ vi.mock('@/layers/entities/command', () => ({
 }));
 
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
-  // Keep the real selectAgentSessions/sessionDisplayTitle/partitionSessionsByOwnership
+  // Keep the real sessionDisplayTitle and partitionSessionsByOwnership
   // — only the data hooks are stubbed.
   ...(await importOriginal<typeof import('@/layers/entities/session')>()),
-  useSessions: () => mockUseSessions(),
+  useAgentSessions: (cwd: string | null) => mockUseAgentSessions(cwd),
   useRecentSessions: () => mockUseRecentSessions(),
   // The fleet-wide live store, read through a selector exactly as the hook does.
   useSessionListStore: (selector: (s: unknown) => unknown) => selector(mockSessionListState()),
@@ -255,7 +255,7 @@ describe('usePaletteItems', () => {
     // Default: no data, not loading
     mockUseMeshAgentPaths.mockReturnValue({ data: undefined, isLoading: false });
     mockUseCommands.mockReturnValue({ data: undefined });
-    mockUseSessions.mockReturnValue({ sessions: [] });
+    mockUseAgentSessions.mockReturnValue({ sessions: [] });
     mockUseRecentSessions.mockReturnValue({ data: undefined });
     mockSessionListState.mockReturnValue({ statuses: {}, sessions: {} });
     mockUseRooms.mockReturnValue({ data: [], isLoading: false, isError: false });
@@ -563,35 +563,39 @@ describe('usePaletteItems', () => {
       createdAt: '2026-08-09T09:00:00.000Z',
     };
 
-    it('names the directory, the conversation on screen, and the runtime that owns it', () => {
-      mockUseSessions.mockReturnValue({ sessions: [activeSession] });
+    it('names the active directory and its Codex conversation with the stored path spelling', () => {
+      mockUseAgentSessions.mockImplementation((cwd: string) => ({
+        sessions: cwd === '/projects/a' ? [{ ...activeSession, cwd: '/physical/a' }] : [],
+      }));
 
       renderHook(() => usePaletteItems('/projects/a', NOW));
 
+      expect(mockUseAgentSessions).toHaveBeenCalledWith('/projects/a');
       expect(mockUseCommands).toHaveBeenCalledWith('/projects/a', 'session-codex', 'codex');
     });
 
     it('names the directory alone when no conversation is open there yet', () => {
       // A directory with no sessions still narrows the answer — project skills
       // live under it — so the cwd goes even when there is nothing else to say.
-      mockUseSessions.mockReturnValue({ sessions: [] });
+      mockUseAgentSessions.mockReturnValue({ sessions: [] });
 
       renderHook(() => usePaletteItems('/projects/a', NOW));
 
       expect(mockUseCommands).toHaveBeenCalledWith('/projects/a', undefined, undefined);
     });
 
-    it('ignores sessions belonging to another directory', () => {
-      // `selectAgentSessions` is the canonical membership rule (DOR-203);
-      // reading `sessions[0]` blindly would hand the palette a session from
-      // whichever project happened to be listed first.
-      mockUseSessions.mockReturnValue({
-        sessions: [{ ...activeSession, cwd: '/projects/elsewhere' }],
+    it('requests commands for the current project after switching directories', () => {
+      mockUseAgentSessions.mockImplementation((cwd: string) => ({
+        sessions: cwd === '/projects/a' ? [activeSession] : [],
+      }));
+
+      const { rerender } = renderHook(({ cwd }) => usePaletteItems(cwd, NOW), {
+        initialProps: { cwd: '/projects/a' },
       });
+      expect(mockUseCommands).toHaveBeenLastCalledWith('/projects/a', 'session-codex', 'codex');
 
-      renderHook(() => usePaletteItems('/projects/a', NOW));
-
-      expect(mockUseCommands).toHaveBeenCalledWith('/projects/a', undefined, undefined);
+      rerender({ cwd: '/projects/elsewhere' });
+      expect(mockUseCommands).toHaveBeenLastCalledWith('/projects/elsewhere', undefined, undefined);
     });
   });
 

@@ -1,6 +1,6 @@
 import { chatMessageWords } from '@dorkos/shared/chat-messages';
 import { shownToPerson, titleShownToPerson } from '@dorkos/shared/kickoff';
-import { TRANSCRIPT } from '../../../config/constants.js';
+import { TRANSCRIPT } from '../../../../config/constants.js';
 
 /**
  * Leading request-filler phrases that carry no information in a session title.

@@ -193,6 +193,65 @@ it('refuses a real same-record update before SQL and retains the competing local
   expect(allocations()).toEqual(beforeAllocation);
 });
 
+it('accepts a warm prepared write after another registration repeats the same fields', async () => {
+  const initial = { cwd: '/project', permissionMode: 'plan', model: 'before' };
+  local.register(id, initial);
+  const save = settings.saveSessionSettings.bind(settings);
+  vi.spyOn(settings, 'saveSessionSettings').mockImplementation((...args) => {
+    local.register(id, initial);
+    return save(...args);
+  });
+
+  await runPreparedSettingsMutation(id, birth, async () => {
+    await prepareOpenCodeSettingsUpdate(
+      local,
+      id,
+      { model: 'chosen' },
+      settings,
+      ownsUnboundIdentity
+    );
+    await settings.saveSessionSettings(id, { model: 'chosen' });
+  });
+
+  expect(local.get(id)).toMatchObject({ ...initial, model: 'chosen' });
+  expect(row()).toMatchObject({ modelLaunchState: 'pending-v1', model: 'chosen' });
+  expect(allocations()).toEqual([]);
+  expect(provider.getClient).not.toHaveBeenCalled();
+});
+
+it.each(['replacement', 'removal'] as const)(
+  'rejects an actual %s of a warm settings owner before SQL',
+  async (change) => {
+    local.register(id, { cwd: '/project', permissionMode: 'default', model: 'before' });
+    const before = local.get(id)!;
+    const beforeAllocation = allocations();
+    const save = settings.saveSessionSettings.bind(settings);
+    vi.spyOn(settings, 'saveSessionSettings').mockImplementation((...args) => {
+      if (change === 'replacement') local.set(before);
+      else local.reset();
+      return save(...args);
+    });
+
+    await expect(
+      runPreparedSettingsMutation(id, birth, async () => {
+        await prepareOpenCodeSettingsUpdate(
+          local,
+          id,
+          { model: 'stale' },
+          settings,
+          ownsUnboundIdentity
+        );
+        await settings.saveSessionSettings(id, { model: 'stale' });
+      })
+    ).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+
+    expect(local.get(id)).toEqual(change === 'replacement' ? before : null);
+    expect(row()).toBeUndefined();
+    expect(allocations()).toEqual(beforeAllocation);
+    expect(provider.getClient).not.toHaveBeenCalled();
+  }
+);
+
 it('preserves a real settings-first winner while a cold actual hydration read is paused', async () => {
   const entered = deferred();
   const release = deferred();

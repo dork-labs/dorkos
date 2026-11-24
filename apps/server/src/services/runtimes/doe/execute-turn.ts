@@ -38,7 +38,7 @@ import { openConnectorTurn } from '../connectors/open-connector-turn.js';
 import type { ConnectorRuntimeTools, ConnectorRuntimeMcpInjection } from '../connector-tools.js';
 import { DOE_CAPABILITIES } from './runtime-constants.js';
 import { DoeToolTurnContext } from './tool-turn/context.js';
-import { DoeEventQueue } from './event-queue.js';
+import type { RuntimeEventQueue } from '../shared/session/event-queue.js';
 import { DoeApprovals } from './approvals.js';
 import { DoeTurnEvents, doeErrorEvent } from './turn.js';
 import { assembleDoeHost, type DoeHostAssembly } from './tools.js';
@@ -133,7 +133,7 @@ export async function executeDoeTurn(
       settle: (result: BeatResult) => void;
     };
     turn: ActiveTurn;
-    queue: DoeEventQueue<StreamEvent>;
+    queue: RuntimeEventQueue<StreamEvent>;
     abortBeat: () => void;
   }
 ): Promise<void> {

@@ -2,8 +2,8 @@
  * The ONE spelling of a working directory, for the places that have to compare
  * one against another.
  *
- * Two server seams need it, which is why it lives here — reached as
- * `@dorkos/shared/canonical-directory` — rather than inside either of them.
+ * Runtime listings and the per-agent fan-out share this as
+ * `@dorkos/shared/canonical-directory`.
  *
  * **The OpenCode sidecar** answers about directories inconsistently: `POST
  * /session` canonicalizes the `directory` it is given (real path) and stores

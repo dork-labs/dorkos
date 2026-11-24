@@ -1,6 +1,6 @@
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { RuntimeToolTurnFacts } from '../../../connectors/runtime-principal-port.js';
-import type { DoeEventQueue } from '../event-queue.js';
+import type { RuntimeEventQueue } from '../../shared/session/event-queue.js';
 
 /** One active turn's host-card delivery and independent logical tool lifetime. */
 export class DoeToolTurnContext {
@@ -17,7 +17,7 @@ export class DoeToolTurnContext {
 
   /** Bind exact ownership, the actual prepared policy and turn cancellation. */
   constructor(
-    private readonly queue: DoeEventQueue<StreamEvent>,
+    private readonly queue: RuntimeEventQueue<StreamEvent>,
     runtimeSignal: AbortSignal,
     private readonly isCurrent: () => boolean,
     private readonly policy: Pick<RuntimeToolTurnFacts, 'effectiveMode' | 'chosenMode'>

@@ -46,11 +46,9 @@
  * `DORKOS_DEFAULT_CWD` while the agent was registered by its real path — so
  * {@link memberOfRoots} reconciles both sides rather than either one.
  *
- * The CLIENT mirrors this rule (`select-agent-sessions.ts`) and cannot resolve
- * anything: it has no filesystem. Reconciling that half means deciding where a
- * project directory becomes canonical for everyone — an ADR, not an adapter
- * fix — so the surfaces reading the client-side selector still drop a
- * symlink-spelt project's sessions.
+ * The server decides which sessions belong to the requested project, including
+ * paths reached through an alias. The client uses those results and keeps each
+ * session's stored `cwd` when opening the chat.
  *
  * @module services/session/agent-session-fanout
  */
