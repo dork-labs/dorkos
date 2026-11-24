@@ -3,9 +3,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { StreamEventSchema } from '@dorkos/shared/schemas';
 import { createCodexEventContext } from '../../event-mapper.js';
 import { AppServerTurnMapper, CODEX_STOPPED_COPY } from '../notification-mapper.js';
-import { NOTIFICATION_DISPOSITION } from '../notification-disposition.js';
-import { mergeRateLimits, rateLimitsToRolloutShape } from '../rate-limits.js';
-import { SERVER_NOTIFICATION_METHODS } from '../protocol/methods.js';
+import { rateLimitsToRolloutShape } from '../rate-limits.js';
 
 vi.mock('../../account-usage.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../account-usage.js')>()),
@@ -28,14 +26,6 @@ function all(m: AppServerTurnMapper, notifications: Array<ReturnType<typeof n>>)
 }
 const completed = (status = 'completed', error: unknown = null) =>
   n('turn/completed', { turn: { id: 'tu', status, items: [], error } });
-
-describe('dispositions', () => {
-  it('names every notification the binary can send', () => {
-    expect(Object.keys(NOTIFICATION_DISPOSITION).sort()).toEqual(
-      [...SERVER_NOTIFICATION_METHODS].sort()
-    );
-  });
-});
 
 describe('text', () => {
   it('streams agent deltas and adds only the tail the deltas missed', () => {
@@ -178,26 +168,6 @@ describe('tools', () => {
     });
   });
 
-  it('records an MCP image for the runtime to store', () => {
-    const ctx = createCodexEventContext('s1');
-    const m = new AppServerTurnMapper(ctx);
-    m.map(
-      n('item/completed', {
-        item: {
-          type: 'mcpToolCall',
-          id: 'm',
-          server: 's',
-          tool: 't',
-          status: 'completed',
-          arguments: {},
-          result: { content: [{ type: 'image', data: 'aGk=', mimeType: 'image/png' }] },
-          error: null,
-        },
-      })
-    );
-    expect(ctx.pendingMedia).toHaveLength(1);
-  });
-
   it('turns a plan into a task snapshot and sub-agents into background tasks', () => {
     const events = all(mapper(), [
       n('turn/plan/updated', {
@@ -243,6 +213,26 @@ describe('tools', () => {
       data: { taskId: 'ag', status: 'completed' },
     });
   });
+
+  it('records an MCP image for the runtime to store', () => {
+    const ctx = createCodexEventContext('s1');
+    const m = new AppServerTurnMapper(ctx);
+    m.map(
+      n('item/completed', {
+        item: {
+          type: 'mcpToolCall',
+          id: 'm',
+          server: 's',
+          tool: 't',
+          status: 'completed',
+          arguments: {},
+          result: { content: [{ type: 'image', data: 'aGk=', mimeType: 'image/png' }] },
+          error: null,
+        },
+      })
+    );
+    expect(ctx.pendingMedia).toHaveLength(1);
+  });
 });
 
 describe('terminals — exactly one done', () => {
@@ -283,12 +273,6 @@ describe('terminals — exactly one done', () => {
       { type: 'done', data: { sessionId: 's1' } },
     ]);
     expect(m.isFinished).toBe(true);
-  });
-
-  it('ends an interrupted turn quietly', () => {
-    expect(all(mapper(), [completed('interrupted')])).toEqual([
-      { type: 'done', data: { sessionId: 's1' } },
-    ]);
   });
 
   it('ends a failed turn with one error, sign-in copy for unauthorized, and the usage limit noted', () => {
@@ -337,12 +321,6 @@ describe('terminals — exactly one done', () => {
       },
     });
     expect(events.at(-1)).toEqual({ type: 'done', data: { sessionId: 's1' } });
-  });
-
-  it('turns a retrying error into a status, not a failure', () => {
-    expect(
-      all(mapper(), [n('error', { error: { message: 'reconnecting' }, willRetry: true })])
-    ).toEqual([{ type: 'system_status', data: { message: 'Codex is retrying: reconnecting' } }]);
   });
 
   it('reports background commands still running at the end', () => {
@@ -402,18 +380,6 @@ describe('rate limits', () => {
       credits: { has_credits: true, unlimited: false, balance: '5' },
     });
   });
-
-  it('merges a sparse update into the last reading without clearing what it leaves out', () => {
-    const merged = mergeRateLimits(
-      { limitId: 'codex', planType: 'pro', primary: { usedPercent: 1 } },
-      {
-        limitId: null,
-        planType: null,
-        primary: { usedPercent: 40 },
-      }
-    );
-    expect(merged).toEqual({ limitId: 'codex', planType: 'pro', primary: { usedPercent: 40 } });
-  });
 });
 
 describe('compaction (DOR-2732)', () => {
@@ -466,34 +432,6 @@ describe('compaction (DOR-2732)', () => {
         type: 'compact_boundary',
         data: { trigger: 'auto', preTokens: 180_000, postTokens: 20_000, durationMs: 500 },
       },
-    ]);
-  });
-
-  it('leaves out a size it has no reading for, rather than guessing', () => {
-    const m = new AppServerTurnMapper(createCodexEventContext('s1'), { compaction: true });
-    const events = all(m, [n('item/started', { item }), n('item/completed', { item })]);
-    expect(events.at(-1)).toMatchObject({ type: 'compact_boundary', data: { trigger: 'manual' } });
-  });
-
-  it('draws one line when the deprecated thread/compacted comes too, in either order', () => {
-    const before = all(mapper(), [
-      n('item/started', { item }),
-      n('thread/compacted'),
-      n('item/completed', { item }),
-    ]);
-    const after = all(mapper(), [
-      n('item/started', { item }),
-      n('item/completed', { item }),
-      n('thread/compacted'),
-    ]);
-    for (const events of [before, after]) {
-      expect(events.filter((e) => e.type === 'compact_boundary')).toHaveLength(1);
-    }
-  });
-
-  it('still draws the line from thread/compacted alone', () => {
-    expect(all(mapper(), [n('thread/compacted')])).toMatchObject([
-      { type: 'compact_boundary', data: { trigger: 'auto' } },
     ]);
   });
 

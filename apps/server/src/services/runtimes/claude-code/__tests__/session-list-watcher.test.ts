@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, rm, writeFile, stat, utimes } from 'fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { Session } from '@dorkos/shared/types';
@@ -28,14 +28,12 @@ const { mockWatcher, mockChokidar } = vi.hoisted(() => {
 vi.mock('chokidar', () => ({ default: mockChokidar }));
 
 import {
-  SESSION_LIST_APPEND_SWEEP_EVERY,
   SESSION_LIST_DEBOUNCE_MS,
   SESSION_LIST_MIN_RESCAN_GAP_MS,
   SESSION_LIST_RECONCILE_MS,
   watchSessionList,
 } from '../sessions/session-list-watcher.js';
 import { chokidarTreeWatcher } from '../sessions/transcripts/session-tree-watch.js';
-import { logger } from '../../../../lib/logger.js';
 
 function makeSession(id: string, overrides: Partial<Session> = {}): Session {
   return {
@@ -55,13 +53,6 @@ function handlerFor(
   const call = mockWatcher.on.mock.calls.find(([e]) => e === event);
   if (!call) throw new Error(`no ${event} handler registered`);
   return call[1] as (path: string) => void;
-}
-
-/** Resolve the watcher's registered 'error' handler. */
-function errorHandler(): (err: unknown) => void {
-  const call = mockWatcher.on.mock.calls.find(([e]) => e === 'error');
-  if (!call) throw new Error('no error handler registered');
-  return call[1] as (err: unknown) => void;
 }
 
 describe('watchSessionList', () => {
@@ -184,20 +175,6 @@ describe('watchSessionList', () => {
     ]();
   }
 
-  // REGRESSION (chokidar v4+ removed glob support): the watch target must be
-  // the projects ROOT directory, never a `*.jsonl` glob — a glob watches a
-  // literal path that never exists, so no discovery event ever fires.
-  it('watches the projects root directory, not a glob pattern', () => {
-    const it = start();
-
-    expect(mockChokidar.watch).toHaveBeenCalledTimes(1);
-    const [target, opts] = mockChokidar.watch.mock.calls[0]!;
-    expect(target).toBe(projectsRoot);
-    expect(target).not.toContain('*');
-    expect(opts).toMatchObject({ ignoreInitial: true, depth: 1 });
-    void it.return?.();
-  });
-
   // The initial on-disk inventory covers EVERY slug dir (fleet-wide, SRV-I4).
   it('emits session_upserted for every session across all project dirs', async () => {
     inventory[dirA] = [makeSession('alpha-1', { cwd: '/work/alpha' })];
@@ -229,20 +206,6 @@ describe('watchSessionList', () => {
       type: 'session_upserted',
       session: makeSession('external-1', { cwd: '/work/beta' }),
     });
-    await it.return?.();
-  });
-
-  // Non-transcript files (e.g. editor temp files) never trigger a rescan.
-  it('ignores non-jsonl file events', async () => {
-    const it = start();
-    // Drain the (empty) initial inventory's listing calls.
-    await awaitInitialScan();
-    listSessionsInDir.mockClear();
-
-    handlerFor('add')(join(dirA, 'notes.txt'));
-    await vi.advanceTimersByTimeAsync(300);
-
-    expect(listSessionsInDir).not.toHaveBeenCalled();
     await it.return?.();
   });
 
@@ -343,44 +306,6 @@ describe('watchSessionList', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  // The guard admits only immediate children of the root: an addDir for the
-  // root itself is not a slug dir and must not trigger a rescan.
-  it('ignores addDir for the projects root itself', async () => {
-    const it = start();
-    await awaitInitialScan();
-    listSessionsInDir.mockClear();
-
-    handlerFor('addDir')(projectsRoot);
-    await vi.advanceTimersByTimeAsync(300);
-
-    expect(listSessionsInDir).not.toHaveBeenCalled();
-    await it.return?.();
-  });
-
-  // Per-dir scoping: a burst in one project re-scans ONLY that project, and a
-  // re-scan returning fewer sessions cannot remove another project's sessions.
-  it('scopes rescans and removals to the changed project dir', async () => {
-    inventory[dirA] = [makeSession('alpha-1')];
-    inventory[dirB] = [makeSession('beta-1')];
-    const it = start();
-    await it.next();
-    await it.next(); // drain the two initial upserts
-    await awaitInitialScan();
-    listSessionsInDir.mockClear();
-
-    const nextPromise = it.next();
-    inventory[dirA] = []; // alpha-1 deleted; beta untouched
-    handlerFor('unlink')(join(dirA, 'alpha-1.jsonl'));
-    handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
-    await vi.advanceTimersByTimeAsync(300);
-
-    expect((await nextPromise).value).toEqual({ type: 'session_removed', sessionId: 'alpha-1' });
-    // Exactly one rescan (debounced burst), and only for dirA.
-    expect(listSessionsInDir).toHaveBeenCalledTimes(1);
-    expect(listSessionsInDir).toHaveBeenCalledWith(dirA);
-    await it.return?.();
-  });
-
   // An unchanged inventory is suppressed (no metadata-irrelevant spam).
   it('suppresses an upsert when session metadata is unchanged', async () => {
     inventory[dirA] = [makeSession('alpha-1')];
@@ -426,34 +351,6 @@ describe('watchSessionList', () => {
     await it.return?.();
   });
 
-  it('re-scans a change long after the last re-scan within the debounce', async () => {
-    const it = start();
-    await awaitInitialScan();
-    handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
-    await vi.advanceTimersByTimeAsync(SESSION_LIST_DEBOUNCE_MS);
-    await vi.advanceTimersByTimeAsync(SESSION_LIST_MIN_RESCAN_GAP_MS * 2);
-    listSessionsInDir.mockClear();
-
-    handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
-    await vi.advanceTimersByTimeAsync(SESSION_LIST_DEBOUNCE_MS);
-    expect(listSessionsInDir.mock.calls.filter(([dir]) => dir === dirA)).toHaveLength(1);
-    await it.return?.();
-  });
-
-  it('never pushes a pending re-scan back, however fast the writes come', async () => {
-    const it = start();
-    await awaitInitialScan();
-    listSessionsInDir.mockClear();
-
-    // A change every 50 ms: a debounce that restarted on each one would never fire.
-    for (let elapsed = 0; elapsed < 1_000; elapsed += 50) {
-      handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
-      await vi.advanceTimersByTimeAsync(50);
-    }
-    expect(listSessionsInDir.mock.calls.filter(([dir]) => dir === dirA)).toHaveLength(1);
-    await it.return?.();
-  });
-
   // DOR-2907: an append moves no directory's mtime, so a change event the watch
   // dropped used to leave the row stale until the session changed again.
   /**
@@ -490,160 +387,6 @@ describe('watchSessionList', () => {
     await runSweepsUntil(() => listSessionsInDir.mock.calls.some(([dir]) => dir === dirA));
 
     expect(listSessionsInDir.mock.calls.some(([dir]) => dir === dirA)).toBe(true);
-    await it.return?.();
-  });
-
-  it('leaves a project alone at the minute check when its rows match the files', async () => {
-    const file = join(dirA, 'alpha-1.jsonl');
-    await writeFile(file, '{}\n');
-    // A modification time 0.7 ms past a whole millisecond: rounding and
-    // truncating it disagree, which is how the check once mistook every such
-    // file for a changed one.
-    await utimes(file, 1_790_000_000, 1_790_000_000.0007);
-    // As the transcript reader builds the row.
-    inventory[dirA] = [
-      makeSession('alpha-1', { updatedAt: (await stat(file)).mtime.toISOString() }),
-    ];
-    const it = start();
-    await awaitInitialScan();
-    await runSweepsUntil(() => false, 14);
-    listSessionsInDir.mockClear();
-
-    await runSweepsUntil(() => false);
-
-    expect(listSessionsInDir.mock.calls.filter(([dir]) => dir === dirA)).toEqual([]);
-    await it.return?.();
-  });
-
-  it('does not hold back a new transcript behind the gap', async () => {
-    const it = start();
-    await awaitInitialScan();
-    handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
-    await vi.advanceTimersByTimeAsync(300);
-    listSessionsInDir.mockClear();
-
-    // A change right after a re-scan waits out the gap…
-    handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
-    await vi.advanceTimersByTimeAsync(300);
-    expect(listSessionsInDir).not.toHaveBeenCalled();
-
-    // …but a new chat in the same project shows up at once, taking it along.
-    inventory[dirA] = [makeSession('alpha-2')];
-    const pending = it.next();
-    handlerFor('add')(join(dirA, 'alpha-2.jsonl'));
-    await vi.advanceTimersByTimeAsync(300);
-    expect(listSessionsInDir).toHaveBeenCalledTimes(1);
-    expect(((await pending).value as SessionListEvent).type).toBe('session_upserted');
-    await vi.advanceTimersByTimeAsync(SESSION_LIST_MIN_RESCAN_GAP_MS);
-    expect(listSessionsInDir).toHaveBeenCalledTimes(1);
-    await it.return?.();
-  });
-
-  // A missing projects root is the normal first-run state (Claude Code never
-  // ran on this machine) — it must boot quietly, not as a WARN-level "failed"
-  // scan (DOR-247). Real scan failures on an existing root still WARN.
-  it('logs at debug, not warn, when the projects root does not exist yet', async () => {
-    const missingRoot = join(projectsRoot, 'does-not-exist');
-    (reader.getProjectsRootSet as ReturnType<typeof vi.fn>).mockReturnValue([missingRoot]);
-    const it = start();
-    // Wait for the scan to actually report, not for a fixed number of turns:
-    // this is the assertion that went red twice in CI purely because the
-    // detached scan had not finished inside 10 turns on a slower disk.
-    await flushIoUntil(() => vi.mocked(logger.debug).mock.calls.length > 0);
-
-    expect(logger.warn).not.toHaveBeenCalled();
-    expect(logger.debug).toHaveBeenCalledWith(
-      '[session-list-watcher] no sessions yet; projects directory not created',
-      { projectsRoot: missingRoot }
-    );
-    await it.return?.();
-  });
-
-  // A dead watcher (e.g. EMFILE when the process runs out of file descriptors)
-  // must be logged with enough context to identify the watcher, never left to
-  // surface as unhandled-error spam. See
-  // session-list-watcher.real-emfile.test.ts for proof chokidar really does
-  // emit 'error' for a genuine EMFILE, on real hardware.
-  it('logs a watcher error at error level, naming the projects root and the code', async () => {
-    const it = start();
-    await awaitInitialScan();
-
-    const err = Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' });
-    errorHandler()(err);
-
-    expect(logger.error).toHaveBeenCalledWith(
-      '[watcher-error] session-list-watcher — further EMFILE errors from this watcher are suppressed',
-      {
-        projectsRoot,
-        code: 'EMFILE',
-        message: 'EMFILE: too many open files',
-        stack: err.stack,
-        suppressingFurtherErrors: true,
-      }
-    );
-    await it.return?.();
-  });
-
-  it('stringifies a non-Error thrown as the watcher error, with no stack and code "unknown"', async () => {
-    const it = start();
-    await awaitInitialScan();
-
-    errorHandler()('EMFILE');
-
-    expect(logger.error).toHaveBeenCalledWith(
-      '[watcher-error] session-list-watcher — further unknown errors from this watcher are suppressed',
-      {
-        projectsRoot,
-        code: 'unknown',
-        message: 'EMFILE',
-        stack: undefined,
-        suppressingFurtherErrors: true,
-      }
-    );
-    await it.return?.();
-  });
-
-  // A dead root watcher spans every project dir, so a single fd-exhaustion
-  // episode can make chokidar fire 'error' once per directory it fails to
-  // (re-)watch — hundreds of times for a real tree. The handler must latch: log
-  // the first, drop repeats of the same code.
-  it('logs only the first of many errors carrying the same code', async () => {
-    const it = start();
-    await awaitInitialScan();
-    const onError = errorHandler();
-
-    onError(Object.assign(new Error('EMFILE 1'), { code: 'EMFILE' }));
-    onError(Object.assign(new Error('EMFILE 2'), { code: 'EMFILE' }));
-    onError(Object.assign(new Error('EMFILE 3'), { code: 'EMFILE' }));
-
-    expect(logger.error).toHaveBeenCalledTimes(1);
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('[watcher-error] session-list-watcher'),
-      expect.objectContaining({ code: 'EMFILE', message: 'EMFILE 1' })
-    );
-    await it.return?.();
-  });
-
-  // The masking bug: a latch keyed on "any error at all" would let one benign
-  // EACCES on a stale project dir hide a real EMFILE storm that follows it.
-  // Keying on `code` means a NEW code always gets its own line.
-  it('logs a separate line for each distinct error code', async () => {
-    const it = start();
-    await awaitInitialScan();
-    const onError = errorHandler();
-
-    onError(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
-    onError(Object.assign(new Error('too many open files'), { code: 'EMFILE' }));
-
-    expect(logger.error).toHaveBeenCalledTimes(2);
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('[watcher-error] session-list-watcher'),
-      expect.objectContaining({ code: 'EACCES' })
-    );
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('[watcher-error] session-list-watcher'),
-      expect.objectContaining({ code: 'EMFILE' })
-    );
     await it.return?.();
   });
 

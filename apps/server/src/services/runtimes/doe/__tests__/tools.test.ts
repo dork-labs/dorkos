@@ -207,18 +207,17 @@ it('RT-MCP-01: executes registry projections through the real authenticated list
   }
 });
 
-import express from 'express';
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { mcpAlias } from '@dorkos/doe';
 it('RT-MCP-02: bridges legacy managed SSE with explicit headers, deferred foreign aliases and owned shutdown', async () => {
-  const app = express();
-  app.use(express.json());
   const sessions = new Map<string, SSEServerTransport>(),
     servers: McpServer[] = [],
     headers: string[] = [];
-  app.get('/sse', async (req, res) => {
-    headers.push(req.header('authorization') ?? '');
+  // A bare node:http server: the legacy SSE transport takes node's own request
+  // and response, so no framework sits between it and the wire.
+  const onSse = async (req: IncomingMessage, res: ServerResponse) => {
+    headers.push(req.headers.authorization ?? '');
     const transport = new SSEServerTransport('/messages', res);
     sessions.set(transport.sessionId, transport);
     const server = new McpServer({ name: 'legacy-managed', version: '1.0.0' });
@@ -234,17 +233,24 @@ it('RT-MCP-02: bridges legacy managed SSE with explicit headers, deferred foreig
       async () => new Promise<never>(() => {})
     );
     await server.connect(transport);
-  });
-  app.post('/messages', async (req, res) => {
-    headers.push(req.header('authorization') ?? '');
-    const transport = sessions.get(String(req.query.sessionId));
+  };
+  const onMessage = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
+    headers.push(req.headers.authorization ?? '');
+    const transport = sessions.get(String(url.searchParams.get('sessionId')));
     if (!transport) {
-      res.sendStatus(404);
+      res.writeHead(404).end();
       return;
     }
-    await transport.handlePostMessage(req, res, req.body);
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk as Buffer);
+    await transport.handlePostMessage(req, res, JSON.parse(Buffer.concat(chunks).toString('utf8')));
+  };
+  const http = createServer((req, res) => {
+    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    if (req.method === 'GET' && url.pathname === '/sse') void onSse(req, res);
+    else if (req.method === 'POST' && url.pathname === '/messages') void onMessage(req, res, url);
+    else res.writeHead(404).end();
   });
-  const http = createServer(app);
   await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
   const port = (http.address() as { port: number }).port;
   let mcp: Awaited<ReturnType<typeof assembleDoeMcp>> | undefined;

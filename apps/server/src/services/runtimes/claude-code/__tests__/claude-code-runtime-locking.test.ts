@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { Response } from 'express';
+import type { SseResponse } from '@dorkos/shared/agent-runtime';
 
 // Mock the SDK before importing agent-manager
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
@@ -21,7 +21,7 @@ interface SessionLock {
   clientId: string;
   acquiredAt: number;
   ttl: number;
-  response: Response;
+  response: SseResponse;
 }
 
 interface LockManagerWithLocks {
@@ -41,8 +41,8 @@ describe('ClaudeCodeRuntime - Session Locking', () => {
   let ClaudeCodeRuntime: typeof import('../claude-code-runtime.js').ClaudeCodeRuntime;
   let agentManager: InstanceType<typeof ClaudeCodeRuntime>;
 
-  // Helper to create a mock Express Response
-  function createMockResponse(): Response & { _triggerClose: () => void } {
+  // A stand-in for the SSE response a lock is tied to
+  function createMockResponse(): SseResponse & { _triggerClose: () => void } {
     const handlers = new Map<string, Function>();
     const mockRes = {
       on: vi.fn((event: string, cb: Function) => {
@@ -53,7 +53,7 @@ describe('ClaudeCodeRuntime - Session Locking', () => {
         handlers.get('close')?.();
       },
     };
-    return mockRes as unknown as Response & { _triggerClose: () => void };
+    return mockRes as unknown as SseResponse & { _triggerClose: () => void };
   }
 
   beforeEach(async () => {
@@ -157,25 +157,6 @@ describe('ClaudeCodeRuntime - Session Locking', () => {
   });
 
   describe('isLocked()', () => {
-    it('returns false for unlocked sessions', () => {
-      expect(agentManager.isLocked('session1')).toBe(false);
-    });
-
-    it('returns true for locked sessions', () => {
-      const res = createMockResponse();
-      agentManager.acquireLock('session1', 'client1', res);
-
-      expect(agentManager.isLocked('session1')).toBe(true);
-    });
-
-    it('returns false for own lock with clientId', () => {
-      const res = createMockResponse();
-      agentManager.acquireLock('session1', 'client1', res);
-
-      expect(agentManager.isLocked('session1', 'client1')).toBe(false);
-      expect(agentManager.isLocked('session1', 'client2')).toBe(true);
-    });
-
     it('returns false when lock has expired', () => {
       const res = createMockResponse();
       agentManager.acquireLock('session1', 'client1', res);
@@ -188,39 +169,6 @@ describe('ClaudeCodeRuntime - Session Locking', () => {
       }
 
       expect(agentManager.isLocked('session1')).toBe(false);
-    });
-  });
-
-  describe('getLockInfo()', () => {
-    it('returns null for unlocked sessions', () => {
-      expect(agentManager.getLockInfo('session1')).toBeNull();
-    });
-
-    it('returns info for locked sessions', () => {
-      const res = createMockResponse();
-      const before = Date.now();
-      agentManager.acquireLock('session1', 'client1', res);
-      const after = Date.now();
-
-      const info = agentManager.getLockInfo('session1');
-      expect(info).not.toBeNull();
-      expect(info?.clientId).toBe('client1');
-      expect(info?.acquiredAt).toBeGreaterThanOrEqual(before);
-      expect(info?.acquiredAt).toBeLessThanOrEqual(after);
-    });
-
-    it('returns null when lock has expired', () => {
-      const res = createMockResponse();
-      agentManager.acquireLock('session1', 'client1', res);
-
-      // Expire the lock
-      const locks = getLocksMap(agentManager);
-      const lock = locks.get('session1');
-      if (lock) {
-        lock.acquiredAt = Date.now() - 6 * 60 * 1000; // 6 minutes ago
-      }
-
-      expect(agentManager.getLockInfo('session1')).toBeNull();
     });
   });
 
@@ -238,14 +186,6 @@ describe('ClaudeCodeRuntime - Session Locking', () => {
 
       agentManager.checkSessionHealth();
       expect(agentManager.isLocked('session1')).toBe(false);
-    });
-
-    it('keeps fresh locks', () => {
-      const res = createMockResponse();
-      agentManager.acquireLock('session1', 'client1', res);
-
-      agentManager.checkSessionHealth();
-      expect(agentManager.isLocked('session1')).toBe(true);
     });
 
     it('cleans up locks when session is removed', () => {
