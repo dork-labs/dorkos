@@ -27,9 +27,11 @@ fixtures 979 runner-minutes) and credential-free-build alone ejected 10 queue bu
 In a merge group each workflow now runs a small `attest` job (scripts/attest-pr-check.sh, from
 main): when the same context succeeded, from GitHub Actions, on the entry PR's current head, the
 heavy job is skipped and reports success. Any doubt runs the real check; a failed attest job fails
-the check closed. typecheck and db-check stay in the queue. Backstop: lint, credential-free-build and
-docs-openapi-check now also run on push to main (scripts-test already did), and after-merge-alert
-and auto-revert watch them.
+the check closed. While main lacks the script (this PR's own queue entry), attest reports not
+attested and the real check runs; `workflow-script-checkout.test.ts` in packages/ci-steward requires
+that guard in any queue-only job that runs a script from main's checkout. typecheck and db-check
+stay in the queue. Backstop: lint, credential-free-build and docs-openapi-check now also run on
+push to main (scripts-test already did), and after-merge-alert and auto-revert watch them.
 
 Baseline: ~11,600 queue runner-minutes a week on these four; 10 credential-free-build-only red
 queue builds a week.
