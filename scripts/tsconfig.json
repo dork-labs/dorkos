@@ -35,6 +35,7 @@
     "release/**/*.ts",
     "check-knip.ts",
     "knip/**/*.ts",
+    "api-lint/**/*.ts",
     "sharding/**/*.ts",
     "neon-preview-sweep.ts",
     "origin-branch-janitor.ts"

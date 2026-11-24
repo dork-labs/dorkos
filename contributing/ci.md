@@ -579,6 +579,12 @@ gh api repos/{owner}/{repo}/rules/branches/main
 
 **Cause:** a file over 500 lines (ESLint's `max-lines` count) grew, a new file passed 500, a file shrank and its entry in `scripts/max-lines/baseline.json` was not lowered, or the baseline was raised against the base. **Fix:** the step names each file and what to do. Move code out of a file that grew or is new; run `pnpm check:max-lines -- --update` to lower entries after a shrink, or to carry an entry to a file's new path after a `git mv`. Never raise an entry: that is the one fix the check refuses.
 
+### "API lint gate (DOR-4996)" is red in `typecheck`
+
+**Cause:** a change added an API lint finding in a route group (an operation with no `operationId`, a command-word path, an undocumented route, an unpaged list and so on), two operations share an `operationId`, a finding was fixed and `scripts/api-lint/baseline.json` was not lowered (on a PR only), or the baseline was raised against the base. **Fix:** the step names the rule, the group and what it found. Fix the new finding; run `pnpm check:api-lint -- --update` after a fix. Rules and fixes: [api-reference.md](api-reference.md#the-api-lint-gate).
+
+**In the merge queue a lowered count only prints.** The step passes `--queue` there, so an entry above its measured count is a note, not a failure. Two queued PRs that each fix one finding in a group each lower that entry by one; git merges the two identical edits cleanly, so the combined tree holds one finding fewer than its baseline says, and failing on that would eject the second PR for a fix. Growth, a new group, a shared id and a raised baseline still fail in the queue. The next `--update` on any PR locks the drop in. So a PR can go red with a lowered count in a group it never touched: that is a queue leftover, not your change. Run `pnpm check:api-lint -- --update` and commit the lowered baseline with your change. The file-size ratchet has the same race and does not yet make this exception: a stale entry there fails in the queue too.
+
 ### "CI Steward ledger coverage" is red
 
 **Cause:** the PR touches a pipeline path and adds no `ci/ledger/` entry. **Fix:** `node packages/ci-steward/src/cli.ts ledger-new --slug <what-changed>`, fill in the hypothesis, amend it into the commit.

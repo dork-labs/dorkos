@@ -96,6 +96,71 @@ pnpm --filter=@dorkos/site generate:api-docs  # 2. that JSON -> docs/api/api/**/
 
 The `docs-openapi-check` workflow runs both and fails on any difference, so CI catches it. Catching it locally costs one extra command.
 
+## The API lint gate
+
+The API lint gate (DOR-4996) stops the HTTP API from getting worse while old routes are migrated area by area (DOR-4977). It reads two committed files, `docs/api/openapi.json` and the route census `apps/server/src/http/__tests__/route-census.baseline.json`, and holds what it finds to a baseline that may only go down. It runs as the `API lint gate (DOR-4996)` step of the required `typecheck` job.
+
+| Concept                  | Location                                                           |
+| ------------------------ | ------------------------------------------------------------------ |
+| The check (CLI, ratchet) | `scripts/api-lint/check-api-lint.ts`                               |
+| The rules and word lists | `scripts/api-lint/rules.ts`                                        |
+| The baseline             | `scripts/api-lint/baseline.json`                                   |
+| Tests                    | `scripts/__tests__/check-api-lint.test.ts`                         |
+| The CI step              | `.github/workflows/typecheck.yml`, step `API lint gate (DOR-4996)` |
+
+```bash
+pnpm check:api-lint                    # check against the baseline
+pnpm check:api-lint -- --update        # after fixing findings: lower the baseline
+```
+
+`--update` lowers a blocking rule's entries and never raises them. It sets an advisory rule's entries (`hand-registered-path`) to whatever it measured, up or down, so that count stays true and the rule does not go red the day it starts blocking; `--base` never judges an advisory entry. In the merge queue the step adds `--queue`, which turns a stale entry into a note ([contributing/ci.md](ci.md#api-lint-gate-dor-4996-is-red-in-typecheck) says why).
+
+The counts are per rule and group, not per finding: a PR that fixes one finding and adds another of the same rule in the same group leaves the count where it was and passes. The ratchet stops the API getting worse in total, not every new finding.
+
+### The rules
+
+Every rule is counted per **route group**, the first path segment under `/api` (`sessions` for `/api/sessions/{id}/messages`), so two PRs in different groups never touch the same baseline entry. `hand-registered-path` is counted per file. `param-name` is counted per (group, resource) by decision: one resource named two ways across groups (`/agents/{id}` beside `/mesh/agents/{agentId}`) is DOR-4982's job, not this rule's.
+
+Every rule blocks except `hand-registered-path`, which is **advisory** (`blocking: false` in `RULES`, `rules.ts`). It is still measured, written to the baseline and lowered by `--update`, but it prints as an advisory line and never fails the check. The reason: until the capability HTTP mount (DOR-4978) merges, a documented `registerPath` is the only way to add a route. The mount PR flips the flag, and from then the hand registry takes no new paths (the decision is in ADR PR #4160).
+
+| Rule                   | A finding is                                                                                                                                                                                                                                                                                                                                | The fix                                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `operation-id`         | An operation with no `operationId`. Two operations sharing one id **always fail**, whatever the baseline says; ids that match once lowercased with underscores removed count as shared, as they do for the generator.                                                                                                                       | Give each new operation a unique `operationId`.                                                |
+| `verb-path`            | A static path segment that is a command word (`COMMAND_WORDS` in `rules.ts`, or any segment ending in `-all`). `pause`, `resume`, `halt`, `install`, `fork`, `merge` and `trigger` are allowed (`ALLOWED_VERBS`).                                                                                                                           | Name the resource and let the method be the action: `POST /things`, not `POST /things/create`. |
+| `param-name`           | A resource whose `{param}` goes by more than one name in its group (`/rooms/{id}` beside `/rooms/{roomId}`): distinct names minus one.                                                                                                                                                                                                      | Use the name the group already uses.                                                           |
+| `error-missing`        | An operation with no 4xx or 5xx response.                                                                                                                                                                                                                                                                                                   | Declare the error responses the handler can send.                                              |
+| `error-shape`          | A 4xx or 5xx response with no body, or whose JSON body is not a `$ref` to a shared error schema (`SHARED_ERROR_SCHEMAS`: `ErrorResponse`).                                                                                                                                                                                                  | Point the body at `ErrorResponse`.                                                             |
+| `list-paging`          | A GET whose last segment is static and whose 200 body is an array or holds one, but which lacks a `cursor` and `limit` query parameter or a `nextCursor` in its body.                                                                                                                                                                       | Page the list: accept `cursor` and `limit`, return `nextCursor`.                               |
+| `undocumented-route`   | A served route (from the census) with no documented operation. `ALL` middleware, wildcards, `/api/test` and `/api/ext/{id}` are left out; parameter names are ignored when matching. Known gap: an `ALL` or `/*` route answers requests but is never counted here, so a route served only that way can stay undocumented without a finding. | Document the route, then regenerate the docs (above).                                          |
+| `unserved-operation`   | A documented operation no served route answers.                                                                                                                                                                                                                                                                                             | Serve it, or remove it from the document.                                                      |
+| `hand-registered-path` | Advisory. A `registerPath(` call site in the hand registry: `openapi-registry.ts`, `services/core/openapi/*.ts`, and any `*-openapi.ts` or `openapi.ts` under `apps/server/src`. It counts call sites, not paths, so a loop that registers several paths counts once (`computer-openapi.ts` does this).                                     | Nothing today. Once DOR-4978 merges, declare the route as a capability `http` surface (below). |
+
+### When it goes red
+
+| The step says                                | What to do                                                                                            |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `<rule> in <group>: N (baseline M)`          | Your change added a finding. The step lists what it found in that group; fix the new one.             |
+| `..., and the baseline holds none there`     | First finding of that rule in a group. Fix it; the baseline is never added to.                        |
+| `down to N` or `none left`                   | You fixed something. Run `pnpm check:api-lint -- --update` and commit the lowered baseline.           |
+| `baseline raised` or `added to the baseline` | The baseline was edited upward by hand. Revert that edit and fix the finding instead.                 |
+| `cannot run` (exit 2)                        | An input is missing or not valid JSON, or `--base` is not a commit. A gate that cannot measure fails. |
+
+### Adding a route that passes
+
+**Today** a new route passes every blocking rule when it is a documented `registerPath` (the recipe is [Adding a New Endpoint](#adding-a-new-endpoint)) with:
+
+- a unique `operationId` (or none, and the generator derives one: see [Operation ids](#operation-ids));
+- at least one 4xx or 5xx response, each with a body that is `$ref: ErrorResponse`;
+- no command word in any static segment of its path (name the resource, let the method be the action);
+- the parameter name its group already uses for that resource;
+- on a list `GET`: `cursor` and `limit` query parameters and a `nextCursor` in the 200 body.
+
+Then regenerate the docs (above), so `docs/api/openapi.json` and the census both list it. `hand-registered-path` notes the new call, but only as advice.
+
+**Once DOR-4978 merges** (the capability mount, landing next), a new route is a capability with an `http` surface instead, served by the generic mount and documented by the OpenAPI projection, and `hand-registered-path` blocks. That PR rewrites [Adding a New Endpoint](#adding-a-new-endpoint) with the recipe; the decision is in ADR PR #4160. The path, parameter and paging rules above still apply. One gap stays open after it: a capability's `http` surface cannot declare its error responses yet, so a new capability route adds one to `error-missing` in its group until it can.
+
+**Never raise a number in the baseline by hand.** `--update` only lowers or removes entries, and CI runs the check with `--base`, which refuses any entry that is higher than the base's or new.
+
 ## Marketplace (`/api/marketplace/*`)
 
 The marketplace routes are mounted at `/api/marketplace` and backed by injected service dependencies (source manager, cache, fetcher, installer, uninstall/update flows). Route file: `apps/server/src/routes/marketplace.ts`, with one module per route group under `apps/server/src/routes/marketplace/`.
