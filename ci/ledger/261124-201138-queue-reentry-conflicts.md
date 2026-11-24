@@ -7,6 +7,12 @@ actor: agent
 gates:
   - wf.queue-reentry.sweep
 prs: []
+hypothesis:
+  metric: tracked.conflict-untold
+  baseline: 2
+  baseline_source: 'scripts/queue-reentry.sh sweep --dry-run against dork-labs/dorkos, 2026-11-24 20:10Z, with this change: 22 open PRs, 2 with auto-merge on and CONFLICTING and no note (#4293, #4296; #4296 had sat over two hours), 3 more with mergeability not yet computed'
+  target: 0
+  after_days: 7
 ratchet-release: []
 field-changes: []
 ---
@@ -22,7 +28,6 @@ marker, so one head never gets both notes. Held PRs are skipped, UNKNOWN mergeab
 sweep, and it reads from the one paginated list query, plus one comments read per such PR. It never turns
 auto-merge on or off.
 
-No tracked metric covers this yet. On the first live dry run (11-24 20:10Z) it would have told #4293
-and #4296. Check after 7 days, by hand from PR timelines: every PR with auto-merge on that conflicted with
-`main` for more than 30 minutes got the note within 30 minutes of the conflict (target: all). Revert if
-it comments on a PR that merges cleanly, or an author gets the same note twice on one head.
+Measured by hand with the sweep's own dry run (`tracked.conflict-untold`, new here): at any reading after
+a sweep, no PR with auto-merge on should be conflicting without the note. Revert if it comments on a PR
+that merges cleanly, or an author gets the same note twice on one head.
