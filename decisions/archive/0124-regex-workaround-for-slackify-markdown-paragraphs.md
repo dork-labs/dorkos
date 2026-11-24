@@ -1,7 +1,7 @@
 ---
 number: 124
 title: Regex Workaround for slackify-markdown Paragraph Breaks During Streaming
-status: draft
+status: archived
 created: 2026-03-14
 spec: relay-adapter-streaming-fixes
 superseded-by: null

@@ -1,7 +1,7 @@
 ---
 number: 182
 title: Shared Message Splitting Utility Across Relay Adapters
-status: proposed
+status: archived
 created: 2026-03-22
 spec: slack-adapter-world-class
 superseded-by: null

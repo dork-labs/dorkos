@@ -90,6 +90,7 @@ Decided, and not built unless `meta/ROADMAP.md` lists it as built. Target shape:
 - **Two sides, one contract** (ADR `261124-150516`). One program, one release. The space side holds space data; the computer side runs turns. One contract joins them: start, stream and stop a turn, answer an ask, call a DorkOS tool, sync an agent, report status. A Mac runs both; an agent computer runs only the computer side.
 - **Turns survive restarts** (ADR `261124-150517`): a run record, follow-up work saved with the turn, capped recovery.
 - **Every agent can be messaged directly** (ADR `261124-150518`): one send-to-agent capability for the API, CLI, MCP and A2A.
+- **Your Mac is home** (ADR `261124-194115`): a person's own computer holds their private space when they have one; the cloud holds it only for people with no computer.
 - **Playbooks** (ADR `261124-152801`): how agents work together is a setting of a space. DorkOS holds its rules at its own gate and the turn port, never in one runtime's hooks.
 
 Rules today:

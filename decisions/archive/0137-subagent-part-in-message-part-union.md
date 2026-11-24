@@ -1,7 +1,7 @@
 ---
 number: 137
 title: Add SubagentPart to MessagePart Discriminated Union
-status: draft
+status: archived
 created: 2026-03-16
 spec: subagent-lifecycle-visibility
 superseded-by: null

@@ -1,7 +1,7 @@
 ---
 number: 176
 title: Use @a2a-js/sdk for A2A Protocol Implementation
-status: proposed
+status: archived
 created: 2026-03-22
 spec: a2a-channels-interoperability
 superseded-by: null

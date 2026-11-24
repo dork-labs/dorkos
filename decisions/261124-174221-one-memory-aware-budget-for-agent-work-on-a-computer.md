@@ -12,7 +12,9 @@ amends: [260812-134510, 261009-171114]
 
 ## Status
 
-Proposed by the architect (2026-11-24), from the review of the problems of 2026-11-23 (`research/20261124_architecture-direction-review.md` and Linear DOR-5192). Becomes Accepted when the turn port's owner picks up DOR-5192 and confirms the shape, and the operator rules on it.
+The operator agreed to this rule in principle on 2026-11-24. It stays Proposed until the turn port's owner confirms the shape (DOR-5192).
+
+Proposed by the architect (2026-11-24), from the review of the problems of 2026-11-23 (`research/20261124_architecture-direction-review.md` and Linear DOR-5192). Becomes Accepted when the turn port's owner picks up DOR-5192 and confirms the shape.
 
 **Would amend** (each stays Accepted; only the named clause would be retired):
 

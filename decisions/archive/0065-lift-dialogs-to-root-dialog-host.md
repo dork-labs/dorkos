@@ -1,7 +1,7 @@
 ---
 number: 65
 title: Lift Dialogs to Root-Level DialogHost
-status: proposed
+status: archived
 created: 2026-03-03
 spec: shadcn-sidebar-redesign
 superseded-by: null

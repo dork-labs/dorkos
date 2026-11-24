@@ -1,7 +1,7 @@
 ---
 number: 96
 title: Place AnimatePresence Session Crossfade at App Root, Not Inside ChatPanel
-status: draft
+status: archived
 created: 2026-03-09
 spec: chat-microinteractions-polish
 superseded-by: null

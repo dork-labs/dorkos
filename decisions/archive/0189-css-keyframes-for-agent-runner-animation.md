@@ -1,7 +1,7 @@
 ---
 number: 189
 title: Use CSS @keyframes for Agent Runner Animation
-status: draft
+status: archived
 created: 2026-03-23
 spec: background-agent-indicator
 superseded-by: null

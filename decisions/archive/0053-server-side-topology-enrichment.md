@@ -1,7 +1,7 @@
 ---
 number: 53
 title: Server-Side Cross-Subsystem Topology Enrichment
-status: proposed
+status: archived
 created: 2026-02-26
 spec: mesh-topology-elevation
 superseded-by: null
