@@ -3452,6 +3452,11 @@ describe('the record of background work a process holds (DOR-2065)', () => {
     ).sessionStore.findSession(sessionId);
     session.pendingTimers = 2;
 
+    // A pending timer holds the process on the first reap; only the ceiling takes it.
+    await runtime.reapSession(sessionId);
+    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
+    expect(takeTurnCutoff(sessionId)).toBeNull();
+
     const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
     const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
     const awake = vi
