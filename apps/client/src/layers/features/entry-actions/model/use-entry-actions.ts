@@ -107,8 +107,9 @@ export function useEntryActions({
 }: EntryActionsInput): EntryAction[] {
   const rootEntryId = replyRootFor(entry);
   const text = entry.body.text;
-  // The message's own `/r/` link (DOR-5046): it opens the room scrolled to this
-  // message, in its thread when it is a reply, wherever it is pasted.
+  // The message's own `/r/` link (DOR-5046): opened on this DorkOS, by someone
+  // who may read the room, it shows the room at this message, in its thread
+  // when it is a reply. Menu and drawer only; the hover toolbar has no room.
   const link = dorkShareUrl('entry', entry.id);
   const handle = author?.id === viewerAuthorId ? undefined : (author?.handle ?? undefined);
   const authorName = author?.displayName;

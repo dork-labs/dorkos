@@ -11,9 +11,9 @@
  *   the exception: a deep link needs a first path segment to carry, and `/` has
  *   none, so it falls back to the origin link.
  *
- * The same split as `connectReturnTo` in `entities/connectors`. A tab's Copy
- * link and the Copy link on a chat, a room message and an agent (DOR-5046) all
- * build their link here.
+ * A tab's Copy link, the Copy link on a chat, a room message and an agent
+ * (DOR-5046), and the way back from connecting an account (`connectReturnTo`
+ * in `entities/connectors`) all build their link here.
  *
  * @module shared/lib/share-link
  */

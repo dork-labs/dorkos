@@ -63,7 +63,8 @@ export interface EntryAction {
  * goes last, and every arrow count to a command before it stays what it was.
  *
  * **`link` comes last of all, for the same reason** (DOR-5046): "Copy link" puts the message's
- * `/r/` link on the clipboard, and it arrived after every other command.
+ * `/r/` link on the clipboard, and it arrived after every other command. It is also the one
+ * command the hover toolbar leaves out ({@link MENU_ONLY_SLOTS}).
  *
  * **`run-with` sits with the other menu-opener, not with the commands.** It
  * arrived when the session's lone "Run this with…" control and this capsule
@@ -90,3 +91,12 @@ export const ENTRY_ACTION_ORDER: readonly EntryActionSlot[] = [
   'todo',
   'link',
 ];
+
+/**
+ * The slots only the right-click menu and the touch drawer draw, never the hover toolbar.
+ *
+ * The one exception to "one list, three renderings", and it is about width: the always-visible
+ * capsule already fills a 320-390px column, so another icon would spill off it. The menu and the
+ * drawer are lists, so they have room. `link` (Copy link, DOR-5046) is the only member.
+ */
+export const MENU_ONLY_SLOTS: ReadonlySet<EntryActionSlot> = new Set<EntryActionSlot>(['link']);

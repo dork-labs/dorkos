@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dorkUriFromLink } from '../dork-ref.js';
-import {
-  SESSION_ROUTE,
-  chatMarkdownLink,
-  chatRefMarkdownLink,
-  sessionPath,
-} from '../session-link.js';
+import { SESSION_ROUTE, chatMarkdownLink, sessionPath } from '../session-link.js';
 
 describe('sessionPath', () => {
   it('puts the route path in front of the session id', () => {
@@ -72,41 +66,5 @@ describe('chatMarkdownLink (DOR-2824)', () => {
       `[a \\] b \\[c\\](https://evil.example) \\\\](/session?session=${id})`
     );
     expect(chatMarkdownLink(id, 'one\n\n# two')).toBe(`[one # two](/session?session=${id})`);
-  });
-});
-
-describe('chatRefMarkdownLink (DOR-5046)', () => {
-  const id = '6572731c-1111-4222-8333-444455556666';
-  const target = `/r/dork:chat:${id}`;
-
-  it('names the chat by its title and links its /r/ address', () => {
-    expect(chatRefMarkdownLink(id, 'Rooms: always answer people')).toBe(
-      `[Rooms: always answer people](${target})`
-    );
-  });
-
-  it('links a target the one link reader turns back into the chat reference', () => {
-    const href = chatRefMarkdownLink(id, 'Plan').match(/\]\((.*)\)$/)?.[1];
-    expect(href && dorkUriFromLink(href)).toBe(`dork:chat:${id}`);
-  });
-
-  it('calls a chat with no title what the app calls it', () => {
-    expect(chatRefMarkdownLink(id, null)).toBe(`[New chat](${target})`);
-    expect(chatRefMarkdownLink(id, undefined)).toBe(`[New chat](${target})`);
-    expect(chatRefMarkdownLink(id, ' \n ')).toBe(`[New chat](${target})`);
-  });
-
-  it('escapes a title exactly as the /session link does', () => {
-    for (const title of ['a ] b [c](https://evil.example) \\', 'one\n\n# two', 'x\\]y']) {
-      const words = (link: string) => link.slice(0, link.lastIndexOf(']('));
-      expect(words(chatRefMarkdownLink(id, title))).toBe(words(chatMarkdownLink(id, title)));
-    }
-    expect(chatRefMarkdownLink(id, 'a ] b [c](https://evil.example) \\')).toBe(
-      `[a \\] b \\[c\\](https://evil.example) \\\\](${target})`
-    );
-  });
-
-  it('keeps the /session link for an id that cannot be a reference', () => {
-    expect(chatRefMarkdownLink('has.dots', 'Plan')).toBe('[Plan](/session?session=has.dots)');
   });
 });

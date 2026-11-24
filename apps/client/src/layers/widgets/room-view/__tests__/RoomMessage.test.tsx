@@ -198,8 +198,7 @@ describe('RoomMessage — the action surface', () => {
     row.focus();
     fireEvent.keyDown(row, { key: 'ArrowRight' });
     const first = screen.getByRole('button', { name: 'React with thumbsup' });
-    // Copy link is the capsule's last command (DOR-5046).
-    const last = screen.getByRole('button', { name: 'Copy link' });
+    const last = screen.getByRole('button', { name: 'Mention Ana' });
 
     fireEvent.keyDown(first, { key: 'End', ctrlKey: true });
     expect(last).not.toHaveFocus();
@@ -208,6 +207,19 @@ describe('RoomMessage — the action surface', () => {
     // Unmodified, it still does what it always did.
     fireEvent.keyDown(first, { key: 'End' });
     expect(last).toHaveFocus();
+  });
+
+  it('keeps Copy link out of the hover toolbar and puts it last in the right-click menu (DOR-5046)', async () => {
+    // The capsule already fills a phone-width column, so Copy link lives only
+    // in the two list renderings of the same action set.
+    renderRow();
+    const row = screen.getByTestId('room-entry');
+    expect(screen.queryByRole('button', { name: 'Copy link' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Mention Ana' })).toBeInTheDocument();
+
+    fireEvent.contextMenu(row);
+    const items = await screen.findAllByRole('menuitem');
+    expect(items.at(-1)).toHaveTextContent('Copy link');
   });
 
   it('moves into the actions on an arrow key', () => {

@@ -122,7 +122,8 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
     meta: { errorLabel: 'Couldn’t set that as the default agent' },
   });
 
-  // Every agent on this server has a `/r/` link that opens its profile (DOR-5046).
+  // An agent registered here with a mesh ULID id gets a `/r/` link that opens its
+  // profile (DOR-5046); an id no link opens gets no item rather than a dead link.
   const agentLink = member.agent ? dorkShareUrl('agent', member.agent.manifestId) : null;
   if (!hasProfileActions(member, relationship, agentLink)) return null;
 

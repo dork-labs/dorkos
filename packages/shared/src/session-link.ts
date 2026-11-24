@@ -14,7 +14,6 @@
  *
  * @module shared/session-link
  */
-import { DORK_LINK_PREFIX, dorkReferenceOrNull } from './dork-ref.js';
 
 /** The client route a conversation is read at. */
 export const SESSION_ROUTE = '/session';
@@ -75,15 +74,6 @@ export function sessionPath(params: SessionLinkParams): string {
 export const UNTITLED_CHAT_TITLE = 'New chat';
 
 /**
- * The words of a chat link: the title on one line, with what would end the
- * link text early escaped. A blank title reads as {@link UNTITLED_CHAT_TITLE}.
- */
-function chatLinkText(title: string | null | undefined): string {
-  const words = (title ?? '').replace(/\s+/g, ' ').trim() || UNTITLED_CHAT_TITLE;
-  return words.replace(/[\\[\]]/g, (char) => `\\${char}`);
-}
-
-/**
  * A markdown link that opens a chat in the DorkOS app, ready for an agent to
  * paste into what it writes: `[Chat title](/session?session=<id>)` (DOR-2824).
  *
@@ -98,24 +88,7 @@ function chatLinkText(title: string | null | undefined): string {
  * @returns The markdown link.
  */
 export function chatMarkdownLink(sessionId: string, title: string | null | undefined): string {
-  return `[${chatLinkText(title)}](${sessionPath({ session: sessionId })})`;
-}
-
-/**
- * The `/r/` twin of {@link chatMarkdownLink}: `[Chat title](/r/dork:chat:<id>)`
- * (DOR-5046, ADR 261122-124821). The same words, escaped the same way; only
- * the target differs, and it is the link every DorkOS origin answers, so it
- * keeps working when the chat is opened from another computer or a phone.
- *
- * An id that cannot be a `dork:` reference (one that does not fit
- * `DORK_ID_PATTERN`) keeps the `/session` link rather than failing.
- *
- * @param sessionId - The chat's full id.
- * @param title - Its title, or null when it has none.
- * @returns The markdown link.
- */
-export function chatRefMarkdownLink(sessionId: string, title: string | null | undefined): string {
-  const ref = dorkReferenceOrNull('chat', sessionId);
-  if (ref === null) return chatMarkdownLink(sessionId, title);
-  return `[${chatLinkText(title)}](${DORK_LINK_PREFIX}${ref})`;
+  const words = (title ?? '').replace(/\s+/g, ' ').trim() || UNTITLED_CHAT_TITLE;
+  const text = words.replace(/[\\[\]]/g, (char) => `\\${char}`);
+  return `[${text}](${sessionPath({ session: sessionId })})`;
 }
