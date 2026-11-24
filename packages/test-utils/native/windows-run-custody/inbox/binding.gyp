@@ -10,6 +10,8 @@
       'VCCLCompilerTool': {
         'WarningLevel': 4,
         'WarnAsError': 'true',
+        # Node's common.gypi adds this exact option for C++ addons.
+        'AdditionalOptions!': ['-std:c++20'],
         'AdditionalOptions': ['/std:c11']
       }
     }
