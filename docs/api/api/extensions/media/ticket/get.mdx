@@ -10,14 +10,14 @@ _openapi:
   structuredData:
     headings: []
     contents:
-      - content: "Needs no sign-in: the ticket is the credential. DorkOS asks the app’s
-          own route for the ticket’s path with only `Range` and `If-Range`,
-          tells the app its caller is not a person, and streams the answer. A
-          query string is ignored. `HEAD` answers the headers only; any other
-          method is answered `405`. Only `200`, `206` and `416` pass, a success
-          must be `video/mp4` or `video/webm`, and only `Content-Type`,
-          `Content-Length`, `Content-Range`, `Accept-Ranges`, `ETag` and
-          `Last-Modified` cross from the app. Every answer carries
+      - content: "Needs no sign-in: the ticket in the URL is the credential. DorkOS asks
+          the app’s own route for the ticket’s path with only `Range` and
+          `If-Range`, tells the app its caller is not a person, and streams the
+          answer. A query string is ignored. `HEAD` answers the headers only;
+          any other method is answered `405`. Only `200`, `206` and `416` pass,
+          a success must be `video/mp4` or `video/webm`, and only
+          `Content-Type`, `Content-Length`, `Content-Range`, `Accept-Ranges`,
+          `ETag` and `Last-Modified` cross from the app. Every answer carries
           `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox;
           default-src 'none'`, `Content-Disposition: inline`, `Cache-Control:
           private, no-store`, `Referrer-Policy: no-referrer` and

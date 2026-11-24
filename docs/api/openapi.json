@@ -3,7 +3,7 @@
   "info": {
     "title": "DorkOS API",
     "version": "0.141.0",
-    "description": "The DorkOS server's HTTP and SSE API: sessions, agents, rooms, connections and the rest of the app, served on this computer. From this computer, an operation that takes the sign-in cookie or a personal API key needs neither while \"Ask for a password on this computer too\" is off, which is how DorkOS installs (`dorkos auth enable` turns it on). A request from another device always needs one. A call that another computer relays here is refused, and on a hub the owner signs in with their DorkOS account."
+    "description": "The DorkOS server's HTTP and SSE API: sessions, agents, rooms, connections and the rest of the app, served on this computer. From this computer, an operation that takes the sign-in cookie or a personal API key needs neither while \"Ask for a password on this computer too\" is off, which is how DorkOS installs (`dorkos auth enable` turns it on). A request from another device needs one, with one exception for now: a browser reaching a Docker container through its published port, while the container runs with `DORKOS_ALLOW_INSECURE_BIND` and has no owner account yet. A call that another computer relays here is refused, and on a hub the owner signs in with their DorkOS account."
   },
   "servers": [
     {
@@ -24,12 +24,12 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "__Secure-better-auth.session_token",
-        "description": "The sign-in cookie a browser gets when a person signs in to DorkOS. An installed DorkOS on port 4242 names it `__Secure-better-auth.session_token`. On any other port the prefix carries a suffix for its data folder (`better-auth-<hash>`), and a development server leaves off `__Secure-`. From this computer, an operation that takes the sign-in cookie or a personal API key needs neither while \"Ask for a password on this computer too\" is off, which is how DorkOS installs (`dorkos auth enable` turns it on). A request from another device always needs one."
+        "description": "The sign-in cookie a browser gets when a person signs in to DorkOS. An installed DorkOS on port 4242 names it `__Secure-better-auth.session_token`. On any other port the prefix carries a suffix for its data folder (`better-auth-<hash>`), and a development server leaves off `__Secure-`. From this computer, an operation that takes the sign-in cookie or a personal API key needs neither while \"Ask for a password on this computer too\" is off, which is how DorkOS installs (`dorkos auth enable` turns it on). A request from another device needs one, with one exception for now: a browser reaching a Docker container through its published port, while the container runs with `DORKOS_ALLOW_INSECURE_BIND` and has no owner account yet."
       },
       "apiKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "A personal API key, sent as `Authorization: Bearer <key>`. Create one in DorkOS under Settings → Login & security → API keys, shown while you are signed in or \"Ask for a password on this computer too\" is on. The `dorkos` command line sends the key in `DORKOS_API_KEY`, or the one saved in `api-key` in its data folder. A few operations take only a key, even from this computer, such as running a connected app's action from a script. From this computer, an operation that takes the sign-in cookie or a personal API key needs neither while \"Ask for a password on this computer too\" is off, which is how DorkOS installs (`dorkos auth enable` turns it on). A request from another device always needs one."
+        "description": "A personal API key, sent as `Authorization: Bearer <key>`. Create one in DorkOS under Settings → Login & security → API keys, shown while you are signed in or \"Ask for a password on this computer too\" is on. The `dorkos` command line sends the key in `DORKOS_API_KEY`, or the one saved in `api-key` in its data folder. A few operations take only a key, even from this computer, such as running a connected app's action from a script. From this computer, an operation that takes the sign-in cookie or a personal API key needs neither while \"Ask for a password on this computer too\" is off, which is how DorkOS installs (`dorkos auth enable` turns it on). A request from another device needs one, with one exception for now: a browser reaching a Docker container through its published port, while the container runs with `DORKOS_ALLOW_INSECURE_BIND` and has no owner account yet."
       }
     },
     "schemas": {
@@ -44181,7 +44181,7 @@
           "Session relay"
         ],
         "summary": "Pin the approvals passkey just made",
-        "description": "Takes the live enrol statement whether it passes or not. Accepts only the same bytes `/start` issued, unexpired, and a registration over `SHA-256` of them from the statement's origin and relying party, with the person verified, signing with ES256, EdDSA or RS256, and not already pinned. Sent by the loopback page `GET /relay-passkey`. Needs no session even when this computer asks for a password; instead a direct loopback caller with no forwarding header, an `Origin` that is exactly the return page's, and a JSON body. The single-use statement is the credential.",
+        "description": "Takes the live enrol statement whether it passes or not. Accepts only the same bytes `/start` issued, unexpired, and a registration over `SHA-256` of them from the statement's origin and relying party, with the person verified, signing with ES256, EdDSA or RS256, and not already pinned. Sent by the loopback page `GET /relay-passkey`. Needs no session even when this computer asks for a password; instead a direct loopback caller with no forwarding header, an `Origin` that is exactly the return page's, and a JSON body. The single-use statement is the credential. Open like this only on a computer: on a hub this path needs a sign-in like any other.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -51797,7 +51797,7 @@
           "Workbench"
         ],
         "summary": "Serve a local file signed by /sign",
-        "description": "Statically serves a local file from the signed token's `cwd` so relative assets resolve, with the remainder re-confined against `cwd` (a `..`/symlink escape is rejected). Authorized by the signed token, NOT cookie/header auth — the browser frame is opaque-origin and credential-less, so this path is exempted from the session gate. `{splat}` stands in for the whole remainder of the path (it may contain `/`); the bare `/api/workbench/serve/{token}` form (root → index.html) is registered the same way with no remainder.",
+        "description": "Statically serves a local file from the signed token's `cwd` so relative assets resolve, with the remainder re-confined against `cwd` (a `..`/symlink escape is rejected). Needs no sign-in: the signed token in the URL is the credential, because the browser frame has no origin of its own and sends no cookie. `{splat}` stands in for the whole remainder of the path (it may contain `/`); the bare `/api/workbench/serve/{token}` form (root → index.html) is registered the same way with no remainder.",
         "parameters": [
           {
             "schema": {
@@ -111125,7 +111125,7 @@
           "Extensions"
         ],
         "summary": "Play an app’s video by its link",
-        "description": "Needs no sign-in: the ticket is the credential. DorkOS asks the app’s own route for the ticket’s path with only `Range` and `If-Range`, tells the app its caller is not a person, and streams the answer. A query string is ignored. `HEAD` answers the headers only; any other method is answered `405`. Only `200`, `206` and `416` pass, a success must be `video/mp4` or `video/webm`, and only `Content-Type`, `Content-Length`, `Content-Range`, `Accept-Ranges`, `ETag` and `Last-Modified` cross from the app. Every answer carries `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`, `Content-Disposition: inline`, `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer` and `Cross-Origin-Resource-Policy: cross-origin`.",
+        "description": "Needs no sign-in: the ticket in the URL is the credential. DorkOS asks the app’s own route for the ticket’s path with only `Range` and `If-Range`, tells the app its caller is not a person, and streams the answer. A query string is ignored. `HEAD` answers the headers only; any other method is answered `405`. Only `200`, `206` and `416` pass, a success must be `video/mp4` or `video/webm`, and only `Content-Type`, `Content-Length`, `Content-Range`, `Accept-Ranges`, `ETag` and `Last-Modified` cross from the app. Every answer carries `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`, `Content-Disposition: inline`, `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer` and `Cross-Origin-Resource-Policy: cross-origin`.",
         "parameters": [
           {
             "schema": {

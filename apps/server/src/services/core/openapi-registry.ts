@@ -1968,9 +1968,8 @@ registry.registerPath({
   description:
     "Statically serves a local file from the signed token's `cwd` so relative assets " +
     'resolve, with the remainder re-confined against `cwd` (a `..`/symlink escape is ' +
-    'rejected). Authorized by the signed token, NOT cookie/header auth — the browser ' +
-    'frame is opaque-origin and credential-less, so this path is exempted from the ' +
-    'session gate. `{splat}` stands in for the whole remainder of the path (it may ' +
+    'rejected). Needs no sign-in: the signed token in the URL is the credential, because ' +
+    'the browser frame has no origin of its own and sends no cookie. `{splat}` stands in for the whole remainder of the path (it may ' +
     'contain `/`); the bare `/api/workbench/serve/{token}` form (root → index.html) ' +
     'is registered the same way with no remainder.',
   request: {
