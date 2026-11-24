@@ -184,6 +184,7 @@ describe('shell fixture suites', () => {
     }
 
     function run(root: string, lane: string) {
+      // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; the runner needs PATH, minus the Actions variables
       const env = { ...process.env };
       delete env.GITHUB_ACTIONS;
       delete env.GITHUB_STEP_SUMMARY;
