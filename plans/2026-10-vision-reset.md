@@ -9,6 +9,8 @@ description: The brief the founder agreed on 2026-10-06 and 2026-10-07 for reset
 **Status:** Agreed. Point-in-time record.
 **Canon now lives in** [`meta/VISION.md`](../meta/VISION.md), [`meta/PRINCIPLES.md`](../meta/PRINCIPLES.md), [`meta/VOICE.md`](../meta/VOICE.md) and [`meta/ROADMAP.md`](../meta/ROADMAP.md). Where this brief and those files disagree, they win. The reasons behind each decision are in [`2026-10-vision-reset-decisions.md`](2026-10-vision-reset-decisions.md).
 
+> **Changed 2026-11-24 by ADR `261124-150515` (sequence, not dates).** The dates, the launch and the "before launch / after launch" split in this document are retired. What it decided to build, and the order where one step needs another, stand. The live order is `meta/ROADMAP.md`.
+
 This was the single source the rewrite worked from: `meta/` first, then `AGENTS.md`, the READMEs, docs and site. It was a hard reset. Older ADRs and positioning that disagreed with it were superseded, not patched.
 
 ## Vision

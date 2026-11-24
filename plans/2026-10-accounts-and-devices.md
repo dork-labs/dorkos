@@ -2,6 +2,8 @@
 
 **Tickets:** DOR-2964 to DOR-2971, children of DOR-2932 (project "Everything is a space"). **Decision:** ADR [`261015-125850`](../decisions/261015-125850-this-computer-and-other-devices.md), which amends ADR 0320. **Spec it folds into:** [`everything-is-a-space`](../specs/everything-is-a-space/02-specification.md). **Approved:** Dorian, direct chat, 2026-10-15 ("Let's go with A for the slip"). **Written:** 2026-10-15, against `origin/main` `69f7e0c729`.
 
+> **Changed 2026-11-24 by ADR `261124-150515` (sequence, not dates).** The dates, the launch and the "before launch / after launch" split in this document are retired. What it decided to build, and the order where one step needs another, stand. The live order is `meta/ROADMAP.md`.
+
 Nothing in this plan is built yet. No public surface may say any of it works until the step that ships it passes its tests (the demo-claim gate in [`meta/ROADMAP.md`](../meta/ROADMAP.md)).
 
 ## Why
@@ -73,6 +75,8 @@ Defended: other devices and people on the network; web pages (DNS rebinding, cro
 Not defended, and the docs say so: a malicious agent running as the same OS user; an active relay attacker on the same Wi-Fi during plain-http pairing; a targeted evil twin of the remembered network; the minimal-proxy GET residual above; other OS users on a shared computer unless "Ask for a password on this computer too" is on.
 
 ## The slip
+
+_Retired 2026-11-24 (ADR 261124-150515): kept as a record of the old plan. The order of the steps stands; the dates do not._
 
 Expected about 2 weeks, range 1 to 3. Launch moves from late January 2027 (January 19 to 26) to early February 2027 (about February 2 to 9). The Community Space soft launch stays December 8, 2026.
 

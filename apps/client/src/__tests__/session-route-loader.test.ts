@@ -1,14 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { createMemoryHistory, type AnyRoute } from '@tanstack/react-router';
+import { createMemoryHistory } from '@tanstack/react-router';
 import { createMockTransport, createMockSession } from '@dorkos/test-utils/mock-factories';
-import {
-  createAppRouter,
-  sessionRouteLoader,
-  sessionLoaderDeps,
-  reloadSessionMatches,
-} from '../router';
+import { sessionRouteLoader, sessionLoaderDeps, reloadSessionMatches } from '../router';
+import { createAppRouterWithoutPages } from '../test-helpers/app-router-without-pages';
 import { sessionSearchSchema, newSessionTarget } from '@/layers/shared/lib';
 import {
   clearSessionRouteContext,
@@ -57,24 +53,8 @@ function run(search: Parameters<typeof sessionSearchSchema.parse>[0], preload = 
     preload,
   });
 }
-/**
- * The app's router as `main.tsx` builds it, without its pages.
- *
- * Every page is a code-split chunk (`autoCodeSplitting`), and a load or
- * navigation does not settle until the router has imported the chunks of the
- * routes it matched. For `/session` that is the whole app shell, compiled cold:
- * about 2 s of a test's 5 s budget on an idle laptop, and all of it on a busy
- * CI shard. Nothing here renders, so the pages go and what stays is the routes'
- * own search parsing, `beforeLoad` and loaders. The route tree is this file's
- * own module instance, so no other suite sees the change, but every router
- * this file builds after the first call has no pages either.
- */
 function appRouterWithoutPages() {
-  const router = createAppRouter(queryClient, transport);
-  for (const route of Object.values(router.routesById) as AnyRoute[]) {
-    delete route.options.component;
-  }
-  return router;
+  return createAppRouterWithoutPages(queryClient, transport);
 }
 async function destination(search: Parameters<typeof sessionSearchSchema.parse>[0]) {
   try {
