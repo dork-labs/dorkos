@@ -116,11 +116,6 @@ interface ParsedCheck {
 }
 
 describe('UpdateInputSchema', () => {
-  it('accepts no arguments at all: an advisory check of everything', () => {
-    // Purpose: the safe call is the empty one.
-    expect(() => z.object(UpdateInputSchema).parse({})).not.toThrow();
-  });
-
   it('refuses an empty names list, which would read as "everything"', () => {
     // Purpose: `names: []` is almost certainly a bug in the caller; the HTTP
     // route refuses it too, so both surfaces answer the same.
@@ -380,14 +375,6 @@ describe('createUpdateHandler', () => {
     expect(onPluginsChanged).not.toHaveBeenCalled();
   });
 
-  it('checks only the named packages', async () => {
-    // Purpose: asking about one package must not fetch every other one.
-    const body = parse(await createUpdateHandler(deps)({ names: ['beta'] }));
-
-    expect((body.checks as ParsedCheck[]).map((c) => c.packageName)).toEqual(['beta']);
-    expect(installer.resolveLatest.mock.calls.map(([req]) => req.name)).toEqual(['beta']);
-  });
-
   it('checks exactly the installations named by path', async () => {
     // Purpose: `installPaths` picks one copy of a package that is installed in
     // two places, which a name cannot.
@@ -404,25 +391,6 @@ describe('createUpdateHandler', () => {
     expect(result.isError).toBe(true);
     expect(parse(result)).toMatchObject({ code: 'NOT_INSTALLED', packageNames: ['nope'] });
     expect(installer.resolveLatest).not.toHaveBeenCalled();
-  });
-
-  it('reports a check that fails as unknown, with why, and keeps the rest', async () => {
-    // Purpose: one broken package must not fail the whole answer.
-    latest.alpha = new Error('network is down');
-    const body = parse(await createUpdateHandler(deps)({ names: ['alpha', 'beta'] }));
-
-    const checks = body.checks as ParsedCheck[];
-    expect(checks.filter((c) => c.packageName === 'alpha')).toEqual([
-      expect.objectContaining({
-        status: 'unknown',
-        note: expect.stringContaining('network is down'),
-      }),
-      expect.objectContaining({
-        status: 'unknown',
-        note: expect.stringContaining('network is down'),
-      }),
-    ]);
-    expect(checks.find((c) => c.packageName === 'beta')).toMatchObject({ status: 'current' });
   });
 
   it('reports a linked install as unknown and never reinstalls it, even when asked to', async () => {

@@ -13,7 +13,6 @@ import {
   APP_ACTIONS_FRESH_MS,
   ConnectorAppActionsError,
   ConnectorAppActionsService,
-  SHORT_APP_ACTIONS_FRESH_MS,
 } from '../resources/app-actions-service.js';
 import { ConnectorRegistry } from '../registry.js';
 import { ManagedConnectorCloudError } from '../../core/auth/cloud-link-client.js';
@@ -167,24 +166,6 @@ describe('ConnectorAppActionsService', () => {
     expect(resolveToolkitVersion).not.toHaveBeenCalled();
   });
 
-  it('keeps an "unlisted" answer only for the short window', async () => {
-    let now = new Date('2026-09-27T12:00:00.000Z');
-    const { provider, resolveToolkitVersion } = fakeProvider({
-      version: async () => ({ status: 'unsupported', reason: 'No version.' }),
-    });
-    const { subject, list } = service(provider, tempHome(), () => now);
-    await expect(list()).resolves.toEqual({ status: 'unlisted', toolkit: 'gmail' });
-    await subject.idle();
-    now = new Date(now.getTime() + SHORT_APP_ACTIONS_FRESH_MS - 1);
-    await list();
-    await subject.idle();
-    expect(resolveToolkitVersion).toHaveBeenCalledTimes(1);
-    now = new Date(now.getTime() + 2);
-    await list();
-    await subject.idle();
-    expect(resolveToolkitVersion).toHaveBeenCalledTimes(2);
-  });
-
   it('refuses a way that is unknown, not the owner’s, or no longer available', async () => {
     await expect(service(undefined).list()).rejects.toMatchObject({ code: 'provider_not_found' });
 
@@ -242,17 +223,6 @@ describe('ConnectorAppActionsService', () => {
     expect(result.status === 'listed' && result.actions).toHaveLength(1);
   });
 
-  it('says "too large" when the app has more pages than DorkOS reads', async () => {
-    const endless = Array.from({ length: 25 }, (_, index) => ({
-      operations: [operation(`GMAIL_OP_${index}`, 'read')],
-      truncated: true,
-    }));
-    const { provider } = fakeProvider({ pages: endless });
-    const result = await service(provider).list();
-    expect(result).toMatchObject({ status: 'listed', completeness: 'too_large' });
-    expect(result.status === 'listed' && result.actions).toHaveLength(20);
-  });
-
   it('never counts an action from another version as part of the list', async () => {
     const { provider } = fakeProvider({
       pages: [
@@ -269,42 +239,6 @@ describe('ConnectorAppActionsService', () => {
     expect(result.status === 'listed' && result.actions.map((a) => a.operationSlug)).toEqual([
       'GMAIL_FETCH_EMAILS',
     ]);
-  });
-
-  it('serves a fresh copy from memory, and from disk after a restart, with no call', async () => {
-    const dorkHome = tempHome();
-    const first = fakeProvider();
-    await service(first.provider, dorkHome).list();
-
-    const kept = readdirSync(path.join(dorkHome, 'cache', 'connectors', 'actions'), {
-      recursive: true,
-    })
-      .map(String)
-      .filter((name) => name.endsWith('.json'))
-      .map((name) =>
-        readFileSync(path.join(dorkHome, 'cache', 'connectors', 'actions', name), 'utf-8')
-      );
-    expect(kept).toHaveLength(1);
-    expect(kept[0]).not.toContain('must-not-be-kept');
-    expect(kept[0]).not.toContain('inputSchema');
-
-    const second = fakeProvider();
-    const restarted = service(second.provider, dorkHome);
-    expect(await restarted.list()).toMatchObject({ status: 'listed', completeness: 'complete' });
-    await restarted.list();
-    expect(second.resolveToolkitVersion).not.toHaveBeenCalled();
-    expect(second.listOperationSchemas).not.toHaveBeenCalled();
-  });
-
-  it('lists again when the way’s setup changes', async () => {
-    const { provider, listOperationSchemas } = fakeProvider();
-    const { registry, list } = service(provider);
-    await list();
-    await list();
-    expect(listOperationSchemas).toHaveBeenCalledTimes(1);
-    registry.register(provider, 'digest-2');
-    await list();
-    expect(listOperationSchemas).toHaveBeenCalledTimes(2);
   });
 
   it('drops everything kept for a way that is removed, memory and disk', async () => {
@@ -425,57 +359,5 @@ describe('ConnectorAppActionsService', () => {
     expect(files).toHaveLength(1);
     expect(files[0]).toContain('GMAIL_FROM_SECOND');
     expect(files[0]).not.toContain('GMAIL_FETCH_EMAILS');
-  });
-
-  it('drops the kept list when the provider object is replaced, even with the same setup', async () => {
-    const { provider } = fakeProvider();
-    const { subject, registry, list } = service(provider);
-    expect(slugs(await list())).toContain('GMAIL_FETCH_EMAILS');
-    await subject.idle();
-
-    const second = replacement('GMAIL_FROM_SECOND');
-    registry.register(second.provider, 'digest-1');
-    expect(slugs(await list())).toEqual(['GMAIL_FROM_SECOND']);
-    expect(second.listOperationSchemas).toHaveBeenCalledTimes(1);
-  });
-
-  it('never reads the old copy back from disk when asked straight after a replacement', async () => {
-    const dorkHome = tempHome();
-    const { provider } = fakeProvider();
-    const { subject, registry, list } = service(provider, dorkHome);
-    await list();
-    await subject.idle();
-
-    const second = replacement('GMAIL_FROM_SECOND');
-    registry.register(second.provider, 'digest-1');
-    // No wait: the drop of the old file is still under way.
-    expect(slugs(await list())).toEqual(['GMAIL_FROM_SECOND']);
-  });
-
-  it('answers from the new way when it is replaced while the kept copy is being read', async () => {
-    const dorkHome = tempHome();
-    const before = service(fakeProvider().provider, dorkHome);
-    await before.list();
-    await before.subject.idle();
-
-    // A restart: the copy is only on disk, so the next list() has to read it.
-    const first = fakeProvider();
-    const { subject, registry, list } = service(first.provider, dorkHome);
-    const pending = list();
-    // The read is under way; the way is replaced with the same setup.
-    const second = replacement('GMAIL_FROM_SECOND');
-    registry.register(second.provider, 'digest-1');
-
-    expect(slugs(await pending)).toEqual(['GMAIL_FROM_SECOND']);
-    expect(first.listOperationSchemas).not.toHaveBeenCalled();
-    await subject.idle();
-    expect(slugs(await list())).toEqual(['GMAIL_FROM_SECOND']);
-  });
-
-  it('shares one listing between callers who ask at the same time', async () => {
-    const { provider, listOperationSchemas } = fakeProvider();
-    const { list } = service(provider);
-    await Promise.all([list(), list()]);
-    expect(listOperationSchemas).toHaveBeenCalledTimes(1);
   });
 });

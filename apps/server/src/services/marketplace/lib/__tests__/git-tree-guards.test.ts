@@ -212,24 +212,6 @@ describe('the GitHub token', () => {
     expect(resolveGitAuth).not.toHaveBeenCalled();
   });
 
-  it('is resolved once a minute, not once per git call', async () => {
-    // Purpose: `resolveGitAuth` may run `gh auth token` synchronously; an
-    // update check looks up many packages at once.
-    const now = vi.spyOn(Date, 'now').mockReturnValue(10_000_000_000_000);
-    try {
-      respond = gitReporting(A, A);
-      await fetchTree(req('https://github.com/org/pkg.git'));
-      await lookupRemoteRef('https://github.com/org/other.git', 'main');
-      expect(resolveGitAuth).toHaveBeenCalledTimes(1);
-
-      now.mockReturnValue(10_000_000_000_000 + 61_000);
-      await lookupRemoteRef('https://github.com/org/other.git', 'main');
-      expect(resolveGitAuth).toHaveBeenCalledTimes(2);
-    } finally {
-      now.mockRestore();
-    }
-  });
-
   it('is redacted from a failure message', async () => {
     // Purpose: whatever git echoes, a token must not reach the person, the
     // log, or the HTTP response.

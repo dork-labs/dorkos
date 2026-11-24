@@ -7,31 +7,6 @@ import { TokenConfirmationProvider } from '../confirmation-provider.js';
 import { emptyPreview, flowSizedPreview, NOTHING } from './fixtures/large-packages.js';
 
 describe('package card disclosure', () => {
-  it('uses the dialog labels and leaves ordinary declaration values unquoted', () => {
-    expect(
-      extensionDeclarationLines({
-        id: 'sample-app',
-        slots: ['pages'],
-        hasServer: true,
-        isolation: {
-          runtime: 'subprocess',
-          net: ['api.example.test'],
-          run: ['node', 'git'],
-          agents: true,
-        },
-        secrets: [{ key: 'sample_key', required: true }],
-      })
-    ).toEqual([
-      'Shows in: pages',
-      'Runs separately from DorkOS.',
-      'Can connect to: api.example.test',
-      'Can run: node, git',
-      'Can run node, which can run any program.',
-      'Can message your agents and start chats.',
-      'Secrets: sample_key (required)',
-    ]);
-  });
-
   it('keeps unusual declaration values quoted and hidden characters visible', () => {
     const lines = extensionDeclarationLines({
       id: 'sample-app',

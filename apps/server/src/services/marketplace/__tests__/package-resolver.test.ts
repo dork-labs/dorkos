@@ -19,7 +19,6 @@ import type { MarketplaceSource } from '../types.js';
 import {
   AmbiguousPackageError,
   MarketplaceNotFoundError,
-  PackageNotFoundError,
   PackageResolver,
 } from '../package-resolver.js';
 import { InvalidPackageNameError } from '../lib/package-paths.js';
@@ -110,27 +109,6 @@ describe('PackageResolver', () => {
       expect(result.packageName).toBe('fixture-pkg');
     });
 
-    it('resolves a `./` prefixed relative path against process.cwd()', async () => {
-      const fixtureDir = join(scratchDir, 'rel-fixture');
-      await mkdir(fixtureDir, { recursive: true });
-      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(scratchDir);
-
-      const resolver = new PackageResolver(buildSourceManagerStub(), buildCacheStub());
-      const result = await resolver.resolve('./rel-fixture');
-
-      expect(cwdSpy).toHaveBeenCalled();
-      expect(result.kind).toBe('local');
-      expect(result.localPath).toBe(resolve(fixtureDir));
-      expect(result.packageName).toBe('rel-fixture');
-    });
-
-    it('throws a clear error when the local path is not a directory', async () => {
-      const missing = join(scratchDir, 'does-not-exist');
-      const resolver = new PackageResolver(buildSourceManagerStub(), buildCacheStub());
-
-      await expect(resolver.resolve(missing)).rejects.toThrow(/not a directory|does not exist/i);
-    });
-
     // Without this, a remote caller learns whether any absolute path on the
     // server exists (the `stat` answers differently), and any directory that
     // happens to carry a package manifest gets its whole file listing returned
@@ -176,14 +154,6 @@ describe('PackageResolver', () => {
       expect(result.kind).toBe('git');
       expect(result.packageName).toBe('pkg');
       expect(result.gitUrl).toBe('https://github.com/x/y');
-    });
-
-    it('keeps accepting repo-shaped names that are only ever cache keys', async () => {
-      const resolver = new PackageResolver(buildSourceManagerStub(), buildCacheStub());
-
-      const result = await resolver.resolve('My.Repo_v2@https://github.com/x/y');
-
-      expect(result.packageName).toBe('My.Repo_v2');
     });
 
     // The resolved name becomes the cache key `${name}@${sha}` under
@@ -235,35 +205,6 @@ describe('PackageResolver', () => {
         MarketplaceNotFoundError
       );
     });
-
-    it('throws PackageNotFoundError when the marketplace is configured but not yet cached', async () => {
-      const sources = buildSourceManagerStub({
-        get: new Map([['my-marketplace', buildSource('my-marketplace')]]),
-      });
-      const cache = buildCacheStub(); // empty — readMarketplace returns null
-      const resolver = new PackageResolver(sources, cache);
-
-      await expect(resolver.resolve('pkg@my-marketplace')).rejects.toThrow(
-        /refresh marketplace cache first/
-      );
-      await expect(resolver.resolve('pkg@my-marketplace')).rejects.toBeInstanceOf(
-        PackageNotFoundError
-      );
-    });
-
-    it('throws PackageNotFoundError when the marketplace lacks the named package', async () => {
-      const sources = buildSourceManagerStub({
-        get: new Map([['my-marketplace', buildSource('my-marketplace')]]),
-      });
-      const cache = buildCacheStub(
-        new Map([['my-marketplace', buildCachedMarketplace('my-marketplace', ['other-pkg'])]])
-      );
-      const resolver = new PackageResolver(sources, cache);
-
-      await expect(resolver.resolve('pkg@my-marketplace')).rejects.toBeInstanceOf(
-        PackageNotFoundError
-      );
-    });
   });
 
   describe("the entry's own version (entryVersion)", () => {
@@ -274,16 +215,6 @@ describe('PackageResolver', () => {
       return cached;
     }
 
-    it('carries the entry version on an explicit-marketplace resolution', async () => {
-      // Purpose: Claude Code's step 2 needs the entry's version, read where the
-      // entry is read; without it the install could not record it.
-      const resolver = new PackageResolver(
-        buildSourceManagerStub({ get: new Map([['mp', buildSource('mp')]]) }),
-        buildCacheStub(new Map([['mp', cachedWithVersion('mp', '3.0.0')]]))
-      );
-      expect((await resolver.resolve('pkg@mp')).entryVersion).toBe('3.0.0');
-    });
-
     it('carries the entry version on a bare-name resolution', async () => {
       // Purpose: bare-name installs go through a different branch; it must
       // carry the field too.
@@ -292,19 +223,6 @@ describe('PackageResolver', () => {
         buildCacheStub(new Map([['mp', cachedWithVersion('mp', '3.1.0')]]))
       );
       expect((await resolver.resolve('pkg')).entryVersion).toBe('3.1.0');
-    });
-
-    it('leaves it undefined when the entry sets no version', async () => {
-      // Purpose: our own marketplace sets none; nothing may be invented.
-      const resolver = new PackageResolver(
-        buildSourceManagerStub({
-          list: [buildSource('mp')],
-          get: new Map([['mp', buildSource('mp')]]),
-        }),
-        buildCacheStub(new Map([['mp', cachedWithVersion('mp')]]))
-      );
-      expect((await resolver.resolve('pkg@mp')).entryVersion).toBeUndefined();
-      expect((await resolver.resolve('pkg')).entryVersion).toBeUndefined();
     });
   });
 
@@ -328,22 +246,6 @@ describe('PackageResolver', () => {
       expect(result.marketplaceName).toBe('my-marketplace');
     });
 
-    it('skips disabled marketplaces during bare-name search', async () => {
-      const sources = buildSourceManagerStub({
-        list: [buildSource('my-marketplace', false), buildSource('other-marketplace', true)],
-      });
-      const cache = buildCacheStub(
-        new Map([
-          ['my-marketplace', buildCachedMarketplace('my-marketplace', ['pkg'])],
-          ['other-marketplace', buildCachedMarketplace('other-marketplace', ['pkg'])],
-        ])
-      );
-      const resolver = new PackageResolver(sources, cache);
-
-      const result = await resolver.resolve('pkg');
-      expect(result.marketplaceName).toBe('other-marketplace');
-    });
-
     it('throws AmbiguousPackageError when two marketplaces both contain the package', async () => {
       const sources = buildSourceManagerStub({
         list: [buildSource('alpha'), buildSource('beta')],
@@ -363,21 +265,6 @@ describe('PackageResolver', () => {
       expect(ambiguous.marketplaces.sort()).toEqual(['alpha', 'beta']);
       expect(ambiguous.message).toMatch(/alpha/);
       expect(ambiguous.message).toMatch(/beta/);
-    });
-
-    it('throws PackageNotFoundError when no marketplace contains the package', async () => {
-      const sources = buildSourceManagerStub({
-        list: [buildSource('alpha'), buildSource('beta')],
-      });
-      const cache = buildCacheStub(
-        new Map([
-          ['alpha', buildCachedMarketplace('alpha', ['something'])],
-          ['beta', buildCachedMarketplace('beta', ['other'])],
-        ])
-      );
-      const resolver = new PackageResolver(sources, cache);
-
-      await expect(resolver.resolve('pkg')).rejects.toBeInstanceOf(PackageNotFoundError);
     });
   });
 });

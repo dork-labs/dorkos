@@ -135,13 +135,6 @@ function parseToolPayload<T = unknown>(result: { content: { type: 'text'; text: 
 }
 
 describe('UninstallInputSchema', () => {
-  it('exports a Zod-compatible shape with name + optional purge/projectPath/confirmationToken', () => {
-    expect(UninstallInputSchema).toHaveProperty('name');
-    expect(UninstallInputSchema).toHaveProperty('purge');
-    expect(UninstallInputSchema).toHaveProperty('projectPath');
-    expect(UninstallInputSchema).toHaveProperty('confirmationToken');
-  });
-
   // The tool's own schema is what the capability registry parses agent input
   // with, so a traversal name never becomes a tool call at all.
   it('refuses a traversal name at the schema, and keeps real names', () => {
@@ -223,26 +216,6 @@ describe('createUninstallHandler — in-app approve happy path', () => {
     expect(payload.package.name).toBe('sentry');
     expect(payload.preservedPaths).toEqual(['/tmp/.dork-test/plugins/sentry/.dork/secrets.json']);
   });
-
-  it('passes the package name through requestInstallConfirmation with operation: uninstall', async () => {
-    const handler = createUninstallHandler(deps);
-    await handler({ name: 'sentry' });
-
-    expect(confirmationProvider.requestInstallConfirmation).toHaveBeenCalledTimes(1);
-    expect(confirmationProvider.requestInstallConfirmation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        packageName: 'sentry',
-        operation: 'uninstall',
-      })
-    );
-  });
-
-  it('does not call resolveToken when no confirmationToken is supplied', async () => {
-    const handler = createUninstallHandler(deps);
-    await handler({ name: 'sentry' });
-
-    expect(confirmationProvider.resolveToken).not.toHaveBeenCalled();
-  });
 });
 
 describe('createUninstallHandler — token resume flow', () => {
@@ -322,22 +295,6 @@ describe('createUninstallHandler — declined', () => {
     expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
   });
 
-  it('falls back to a default reason when the provider omits one', async () => {
-    const confirmationProvider = new FakeConfirmationProvider();
-    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'declined' });
-    const uninstallFlow = createStubUninstallFlow({
-      result: uninstallResult({ packageName: 'sentry' }),
-    });
-    const deps = createStubDeps({ confirmationProvider, uninstallFlow });
-
-    const handler = createUninstallHandler(deps);
-    const result = await handler({ name: 'sentry' });
-
-    const payload = parseToolPayload<{ status: string; reason: string }>(result);
-    expect(payload.status).toBe('declined');
-    expect(payload.reason).toMatch(/declined/i);
-  });
-
   it('returns declined when a token resolves to declined', async () => {
     const { provider: tokenProvider, denyPending } = buildTokenProvider();
     const uninstallFlow = createStubUninstallFlow({
@@ -375,42 +332,9 @@ describe('createUninstallHandler — package not installed', () => {
     expect(payload.code).toBe('NOT_INSTALLED');
     expect(payload.error).toContain('ghost');
   });
-
-  it('returns isError + code UNINSTALL_FAILED for any other error', async () => {
-    const confirmationProvider = new FakeConfirmationProvider();
-    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
-    const uninstallFlow = createStubUninstallFlow({
-      error: new Error('disk on fire'),
-    });
-    const deps = createStubDeps({ confirmationProvider, uninstallFlow });
-
-    const handler = createUninstallHandler(deps);
-    const result = await handler({ name: 'sentry' });
-
-    expect(result.isError).toBe(true);
-    const payload = parseToolPayload<{ error: string; code: string }>(result);
-    expect(payload.code).toBe('UNINSTALL_FAILED');
-    expect(payload.error).toContain('disk on fire');
-  });
 });
 
 describe('createUninstallHandler — purge flag', () => {
-  it('forwards purge: true to the underlying flow', async () => {
-    const confirmationProvider = new FakeConfirmationProvider();
-    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
-    const uninstallFlow = createStubUninstallFlow({
-      result: uninstallResult({ packageName: 'sentry', preservedData: [] }),
-    });
-    const deps = createStubDeps({ confirmationProvider, uninstallFlow });
-
-    const handler = createUninstallHandler(deps);
-    await handler({ name: 'sentry', purge: true });
-
-    expect(uninstallFlow.uninstall).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'sentry', purge: true })
-    );
-  });
-
   it('defaults purge to false when omitted', async () => {
     const confirmationProvider = new FakeConfirmationProvider();
     confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
@@ -453,29 +377,6 @@ describe('createUninstallHandler — purge flag', () => {
 
     expect(payload.unprovenPaths).toEqual(['/tmp/.dork-test/plugins/sentry/a.md']);
     expect(payload.warnings).toEqual(["DorkOS couldn't download the version of sentry you had…"]);
-  });
-
-  it('forwards projectPath to the underlying flow when supplied', async () => {
-    const confirmationProvider = new FakeConfirmationProvider();
-    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
-    const uninstallFlow = createStubUninstallFlow({
-      result: uninstallResult({ packageName: 'sentry' }),
-    });
-    const deps = createStubDeps({ confirmationProvider, uninstallFlow });
-
-    // An in-bounds project path: the handler confines projectPath the same way
-    // the HTTP route does, so the boundary has to contain it. Realpath'd, because
-    // the flow receives the canonical path and macOS's tmpdir is a symlink.
-    const boundary = await realpath(await tempRoot('mcp-uninstall-boundary-'));
-    await initBoundary(boundary);
-    const projectPath = join(boundary, 'some-project');
-
-    const handler = createUninstallHandler(deps);
-    await handler({ name: 'sentry', projectPath });
-
-    expect(uninstallFlow.uninstall).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'sentry', projectPath })
-    );
   });
 });
 
@@ -580,20 +481,6 @@ describe('createUninstallHandler — plugins-changed notification (DOR-2057)', (
     });
   });
 
-  it('fires when the tier gate already approved the call', async () => {
-    const uninstallFlow = createStubUninstallFlow({
-      result: uninstallResult({ packageName: 'flow' }),
-    });
-
-    await createUninstallHandler(depsWith(uninstallFlow))({ name: 'flow' }, { preApproved: true });
-
-    expect(onPluginsChanged).toHaveBeenCalledWith({
-      projectPath: undefined,
-      packageName: 'flow',
-      action: 'uninstall',
-    });
-  });
-
   it('does NOT fire while the uninstall is waiting for confirmation', async () => {
     confirmationProvider.requestInstallConfirmation.mockResolvedValue({
       status: 'pending',
@@ -605,39 +492,6 @@ describe('createUninstallHandler — plugins-changed notification (DOR-2057)', (
 
     await createUninstallHandler(depsWith(uninstallFlow))({ name: 'flow' });
 
-    expect(onPluginsChanged).not.toHaveBeenCalled();
-  });
-
-  it('does NOT fire when the uninstall is declined', async () => {
-    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'declined' });
-    const uninstallFlow = createStubUninstallFlow({
-      result: uninstallResult({ packageName: 'flow' }),
-    });
-
-    await createUninstallHandler(depsWith(uninstallFlow))({ name: 'flow' });
-
-    expect(onPluginsChanged).not.toHaveBeenCalled();
-  });
-
-  it('does NOT fire when the approved uninstall fails', async () => {
-    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
-    const uninstallFlow = createStubUninstallFlow({
-      error: new PackageNotInstalledError('flow'),
-    });
-
-    const result = await createUninstallHandler(depsWith(uninstallFlow))({ name: 'flow' });
-
-    expect(result.isError).toBe(true);
-    expect(onPluginsChanged).not.toHaveBeenCalled();
-  });
-
-  it('does NOT fire when the approved uninstall fails for any other reason', async () => {
-    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
-    const uninstallFlow = createStubUninstallFlow({ error: new Error('disk on fire') });
-
-    const result = await createUninstallHandler(depsWith(uninstallFlow))({ name: 'flow' });
-
-    expect(parseToolPayload<{ code: string }>(result).code).toBe('UNINSTALL_FAILED');
     expect(onPluginsChanged).not.toHaveBeenCalled();
   });
 

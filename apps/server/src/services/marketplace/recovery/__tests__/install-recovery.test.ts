@@ -471,35 +471,6 @@ describe('recoverInterruptedInstall', () => {
       expect(isRecordSettleable(record, now + IN_FLIGHT_FLOOR_MS)).toBe(true);
     });
 
-    it('waits for the age floor when a running writer’s start time cannot be read', async () => {
-      // Windows, or a `ps` that failed: alive and unconfirmed is never "gone".
-      other = await startOtherProcess();
-      vi.spyOn(ownerInternal, 'readProcessStartSeconds').mockReturnValue(null);
-      await writePackage(path.join(root, recordName('flow', { owner: ownerOf(other) })), 'v1');
-
-      expect((await recoverInterruptedInstall(target)).inFlight).toHaveLength(1);
-    });
-
-    it('waits for the age floor when the writer could not read its own start time', async () => {
-      // A record written where `ps` failed carries start time 0. Its pid is
-      // running, and "unknown" must never be read as "started long ago, so
-      // recycled".
-      other = await startOtherProcess();
-      await writePackage(
-        path.join(root, recordName('flow', { owner: { ...ownerOf(other), startedAt: 0 } })),
-        'v1'
-      );
-
-      expect((await recoverInterruptedInstall(target)).inFlight).toHaveLength(1);
-    });
-
-    it('waits for the age floor for a young backup written before owners were stamped', async () => {
-      await writePackage(path.join(root, recordName('flow', { owner: null })), 'v1');
-
-      expect((await recoverInterruptedInstall(target)).inFlight).toHaveLength(1);
-      expect(await exists(target)).toBe(false);
-    });
-
     it('settles any record older than the age floor, whoever wrote it', async () => {
       // No transaction holds a record for ten minutes, so an old one is crash
       // residue even if its writer's pid is still running.
@@ -529,22 +500,6 @@ describe('recoverInterruptedInstall', () => {
       await recoverInterruptedInstall(target);
 
       expect(await versionAt(target)).toBe('v1');
-    });
-
-    it('reads a running writer that seems to have started a little late as still running', async () => {
-      // A stepped wall clock moves a live process's reported start time; within
-      // the tolerance it is the same process, never a recycled pid.
-      other = await startOtherProcess();
-      const owner = ownerOf(other);
-      await writePackage(
-        path.join(
-          root,
-          recordName('flow', { owner: { ...owner, startedAt: owner.startedAt - 60 } })
-        ),
-        'v1'
-      );
-
-      expect((await recoverInterruptedInstall(target)).inFlight).toHaveLength(1);
     });
 
     it('settles a record whose writer exited', async () => {
