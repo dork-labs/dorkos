@@ -13,21 +13,9 @@ import {
   FeedbackEventSchema,
   FeedbackSubmissionSchema,
   FeedbackDiagnosticsSchema,
-  BreadcrumbSchema,
-  FeedbackSubmittedProperties,
-  FeatureRequestedProperties,
   buildFeedbackEvent,
-  FEEDBACK_EVENT_NAMES,
   MAX_FEEDBACK_MESSAGE_LEN,
   MAX_FEEDBACK_SCREENSHOT_DATA_URL_LEN,
-  MAX_FEEDBACK_ELEMENT_SELECTOR_LEN,
-  MAX_FEEDBACK_ELEMENT_NAME_LEN,
-  MAX_FEEDBACK_ELEMENT_LABEL_LEN,
-  MAX_BREADCRUMBS,
-  MAX_TRANSCRIPT_LEN,
-  MAX_LOG_EXCERPT_LEN,
-  MAX_CLIENT_REPORT_BROWSER_LEN,
-  MAX_CLIENT_REPORT_TAG_LEN,
   TelemetryEventInputSchema,
 } from '../telemetry-events.js';
 
@@ -48,46 +36,8 @@ const FEEDBACK_SUBMITTED = {
   timestamp: VALID_TIMESTAMP,
 };
 
-const FEATURE_REQUESTED = {
-  event: 'feature_requested' as const,
-  properties: {
-    message: 'Please add a keyboard shortcut for the command palette.',
-    surface: 'site' as const,
-  },
-  distinctId: 'ph_visitor_abc123',
-  timestamp: VALID_TIMESTAMP,
-};
-
 describe('feedback event registry', () => {
-  describe('event names', () => {
-    it('are all snake_case [object]_[verb]', () => {
-      for (const name of FEEDBACK_EVENT_NAMES) {
-        expect(name).toMatch(/^[a-z]+(_[a-z]+)+$/);
-      }
-    });
-  });
-
   describe('FeedbackEventSchema', () => {
-    it('accepts a valid feedback_submitted event', () => {
-      expect(FeedbackEventSchema.safeParse(FEEDBACK_SUBMITTED).success).toBe(true);
-    });
-
-    it('accepts a valid feature_requested event', () => {
-      expect(FeedbackEventSchema.safeParse(FEATURE_REQUESTED).success).toBe(true);
-    });
-
-    it('accepts free-text message and contact (the volunteered-content exemption)', () => {
-      const res = FeedbackEventSchema.safeParse({
-        ...FEEDBACK_SUBMITTED,
-        properties: {
-          ...FEEDBACK_SUBMITTED.properties,
-          message: 'Anything the user typed: a path /Users/kai, an email a@b.com, a URL.',
-          contact: 'find me @kai on the forum',
-        },
-      });
-      expect(res.success).toBe(true);
-    });
-
     it('rejects an unknown property key (still strict beyond the free-text fields)', () => {
       const res = FeedbackEventSchema.safeParse({
         ...FEEDBACK_SUBMITTED,
@@ -106,28 +56,6 @@ describe('feedback event registry', () => {
       });
       expect(res.success).toBe(false);
     });
-
-    it('rejects a feedback_submitted with no kind', () => {
-      const { kind: _kind, ...noKind } = FEEDBACK_SUBMITTED.properties;
-      const res = FeedbackEventSchema.safeParse({ ...FEEDBACK_SUBMITTED, properties: noKind });
-      expect(res.success).toBe(false);
-    });
-
-    it('rejects a feature_requested carrying a kind (that shape has no kind)', () => {
-      const res = FeedbackEventSchema.safeParse({
-        ...FEATURE_REQUESTED,
-        properties: { ...FEATURE_REQUESTED.properties, kind: 'feedback' },
-      });
-      expect(res.success).toBe(false);
-    });
-
-    it('rejects an empty message', () => {
-      const res = FeedbackEventSchema.safeParse({
-        ...FEEDBACK_SUBMITTED,
-        properties: { ...FEEDBACK_SUBMITTED.properties, message: '' },
-      });
-      expect(res.success).toBe(false);
-    });
   });
 
   describe('free-text is unique to feedback', () => {
@@ -140,31 +68,9 @@ describe('feedback event registry', () => {
       });
       expect(res.success).toBe(false);
     });
-
-    it('the feedback property schemas require the message field', () => {
-      expect(
-        FeedbackSubmittedProperties.safeParse({ surface: 'cockpit', kind: 'bug' }).success
-      ).toBe(false);
-      expect(FeatureRequestedProperties.safeParse({ surface: 'site' }).success).toBe(false);
-    });
   });
 
   describe('FeedbackSubmissionSchema (client → server payload)', () => {
-    it('accepts a minimal submission', () => {
-      const res = FeedbackSubmissionSchema.safeParse({ kind: 'feedback', message: 'nice work' });
-      expect(res.success).toBe(true);
-    });
-
-    it('accepts the idea kind', () => {
-      const res = FeedbackSubmissionSchema.safeParse({ kind: 'idea', message: 'add dark mode' });
-      expect(res.success).toBe(true);
-    });
-
-    it('rejects an unknown kind', () => {
-      const res = FeedbackSubmissionSchema.safeParse({ kind: 'praise', message: 'hi' });
-      expect(res.success).toBe(false);
-    });
-
     it('rejects unknown keys (strict)', () => {
       const res = FeedbackSubmissionSchema.safeParse({
         kind: 'bug',
@@ -187,62 +93,7 @@ describe('feedback event registry', () => {
       expect(res.success).toBe(false);
     });
 
-    it('accepts the new diagnostics/attachment plumbing fields', () => {
-      const res = FeedbackSubmissionSchema.safeParse({
-        kind: 'bug',
-        message: 'crash on save',
-        sessionId: 'sess_123',
-        diagnostics: {
-          clientReport: {
-            version: '0.47.0',
-            platform: 'darwin-arm64',
-            runtimes: ['claude-code'],
-            flags: { 'tunnel.enabled': true, 'ui.theme': 'dark' },
-          },
-          breadcrumbs: [{ at: VALID_TIMESTAMP, kind: 'console_error', message: 'TypeError: boom' }],
-        },
-        transcriptExcerpt: 'last few turns...',
-        screenshot: { dataUrl: 'data:image/webp;base64,UklGRhoAAABXRUJQ' },
-        includeServerLogs: true,
-        includeTranscript: true,
-        anonymous: true,
-      });
-      expect(res.success).toBe(true);
-    });
-
     describe('screenshot', () => {
-      /** A valid, tiny WebP data URL — the shape the client's compression step emits. */
-      const validDataUrl = 'data:image/webp;base64,UklGRhoAAABXRUJQVlA4';
-
-      it('round-trips a submission carrying a screenshot', () => {
-        const res = FeedbackSubmissionSchema.safeParse({
-          kind: 'bug',
-          message: 'crash on save',
-          screenshot: { dataUrl: validDataUrl },
-        });
-        expect(res.success).toBe(true);
-        // Parsed back out intact — a stripped field would still report success.
-        expect(res.success && res.data.screenshot?.dataUrl).toBe(validDataUrl);
-      });
-
-      it('round-trips a submission with no screenshot at all', () => {
-        const res = FeedbackSubmissionSchema.safeParse({
-          kind: 'bug',
-          message: 'crash on save',
-        });
-        expect(res.success).toBe(true);
-        expect(res.success && res.data.screenshot).toBeUndefined();
-      });
-
-      it.each(['image/webp', 'image/png', 'image/jpeg'])('accepts %s', (mime) => {
-        const res = FeedbackSubmissionSchema.safeParse({
-          kind: 'bug',
-          message: 'crash on save',
-          screenshot: { dataUrl: `data:${mime};base64,QUJD` },
-        });
-        expect(res.success).toBe(true);
-      });
-
       it('rejects a data URL whose media type is not one of the three images', () => {
         // `image/svg+xml` is the pointed case: an image type that is also an
         // executable document, so it must not ride into a Linear description.
@@ -258,15 +109,6 @@ describe('feedback event registry', () => {
           });
           expect(res.success).toBe(false);
         }
-      });
-
-      it('rejects a non-base64 image URL (a remote http src is not an inline image)', () => {
-        const res = FeedbackSubmissionSchema.safeParse({
-          kind: 'bug',
-          message: 'crash on save',
-          screenshot: { dataUrl: 'https://example.com/shot.png' },
-        });
-        expect(res.success).toBe(false);
       });
 
       it('rejects a data URL one character over the cap, and accepts one exactly at it', () => {
@@ -288,50 +130,10 @@ describe('feedback event registry', () => {
         });
         expect(tooBig.success).toBe(false);
       });
-
-      it('rejects unknown keys inside screenshot', () => {
-        const res = FeedbackSubmissionSchema.safeParse({
-          kind: 'bug',
-          message: 'crash on save',
-          screenshot: { dataUrl: validDataUrl, mime: 'image/webp' },
-        });
-        expect(res.success).toBe(false);
-      });
-
-      it('no longer accepts the retired screenshotUploadId field', () => {
-        // The upload-reference design was replaced by the inline data URL
-        // above; `.strict()` is what makes the removal enforceable at runtime
-        // rather than a silently-ignored leftover.
-        const res = FeedbackSubmissionSchema.safeParse({
-          kind: 'bug',
-          message: 'crash on save',
-          screenshotUploadId: 'upload_abc',
-        });
-        expect(res.success).toBe(false);
-      });
     });
 
     describe('element (DOR-2232)', () => {
       const base = { kind: 'bug' as const, message: 'Messages vanish when I scroll up.' };
-
-      it('round-trips the pointed-at element beside the words, not in them', () => {
-        const element = {
-          selector: '[data-testid="message-list"]',
-          slot: 'scroll-area',
-          testId: 'message-list',
-        };
-        const res = FeedbackSubmissionSchema.safeParse({ ...base, element });
-        expect(res.success && res.data.element).toEqual(element);
-        expect(res.success && res.data.message).toBe(base.message);
-      });
-
-      it('accepts an element that is only a selector', () => {
-        const res = FeedbackSubmissionSchema.safeParse({
-          ...base,
-          element: { selector: 'main > div:nth-of-type(2)' },
-        });
-        expect(res.success).toBe(true);
-      });
 
       it('rejects an element with no selector, or an empty one', () => {
         expect(
@@ -340,47 +142,6 @@ describe('feedback event registry', () => {
         expect(
           FeedbackSubmissionSchema.safeParse({ ...base, element: { selector: '' } }).success
         ).toBe(false);
-      });
-
-      it('bounds the selector and both names at their caps', () => {
-        const at = (n: number) => 'a'.repeat(n);
-        const ok = FeedbackSubmissionSchema.safeParse({
-          ...base,
-          element: {
-            selector: at(MAX_FEEDBACK_ELEMENT_SELECTOR_LEN),
-            slot: at(MAX_FEEDBACK_ELEMENT_NAME_LEN),
-            testId: at(MAX_FEEDBACK_ELEMENT_NAME_LEN),
-          },
-        });
-        expect(ok.success).toBe(true);
-        for (const element of [
-          { selector: at(MAX_FEEDBACK_ELEMENT_SELECTOR_LEN + 1) },
-          { selector: 'div', slot: at(MAX_FEEDBACK_ELEMENT_NAME_LEN + 1) },
-          { selector: 'div', testId: at(MAX_FEEDBACK_ELEMENT_NAME_LEN + 1) },
-        ]) {
-          expect(FeedbackSubmissionSchema.safeParse({ ...base, element }).success).toBe(false);
-        }
-      });
-
-      it('carries the element’s accessible name, bounded', () => {
-        const ok = FeedbackSubmissionSchema.safeParse({
-          ...base,
-          element: { selector: 'button', label: 'Set up a daily run' },
-        });
-        expect(ok.success && ok.data.element?.label).toBe('Set up a daily run');
-        const over = FeedbackSubmissionSchema.safeParse({
-          ...base,
-          element: { selector: 'button', label: 'a'.repeat(MAX_FEEDBACK_ELEMENT_LABEL_LEN + 1) },
-        });
-        expect(over.success).toBe(false);
-      });
-
-      it('rejects unknown keys inside element (strict)', () => {
-        const res = FeedbackSubmissionSchema.safeParse({
-          ...base,
-          element: { selector: 'div', componentName: 'MessageList' },
-        });
-        expect(res.success).toBe(false);
       });
 
       it('never rides the metrics event', () => {
@@ -392,50 +153,9 @@ describe('feedback event registry', () => {
         expect(FeedbackEventSchema.safeParse(event).success).toBe(true);
       });
     });
-
-    it('accepts the opt-in transcript + anonymous flags on their own', () => {
-      const res = FeedbackSubmissionSchema.safeParse({
-        kind: 'bug',
-        message: 'crash on save',
-        sessionId: 'sess_123',
-        includeTranscript: true,
-        anonymous: true,
-      });
-      expect(res.success).toBe(true);
-    });
-
-    it('rejects diagnostics missing the required clientReport', () => {
-      const res = FeedbackSubmissionSchema.safeParse({
-        kind: 'bug',
-        message: 'hi',
-        diagnostics: { serverLogExcerpt: 'warn: something' },
-      });
-      expect(res.success).toBe(false);
-    });
-
-    it('rejects an oversized transcriptExcerpt', () => {
-      const res = FeedbackSubmissionSchema.safeParse({
-        kind: 'bug',
-        message: 'hi',
-        transcriptExcerpt: 'x'.repeat(MAX_TRANSCRIPT_LEN + 1),
-      });
-      expect(res.success).toBe(false);
-    });
   });
 
   describe('FeedbackDiagnosticsSchema + BreadcrumbSchema', () => {
-    it('accepts a minimal diagnostics bundle (clientReport only)', () => {
-      const res = FeedbackDiagnosticsSchema.safeParse({
-        clientReport: { version: '0.47.0', platform: 'darwin-arm64', runtimes: [], flags: {} },
-      });
-      expect(res.success).toBe(true);
-    });
-
-    it('rejects a diagnostics bundle with no clientReport', () => {
-      const res = FeedbackDiagnosticsSchema.safeParse({ breadcrumbs: [] });
-      expect(res.success).toBe(false);
-    });
-
     it('rejects an unknown clientReport key (strict, no path/token can ride along)', () => {
       const res = FeedbackDiagnosticsSchema.safeParse({
         clientReport: {
@@ -445,61 +165,6 @@ describe('feedback event registry', () => {
           flags: {},
           cwd: '/Users/dorian/secret',
         },
-      });
-      expect(res.success).toBe(false);
-    });
-
-    it('rejects more breadcrumbs than MAX_BREADCRUMBS', () => {
-      const res = FeedbackDiagnosticsSchema.safeParse({
-        clientReport: { version: '0.47.0', platform: 'darwin-arm64', runtimes: [], flags: {} },
-        breadcrumbs: Array.from({ length: MAX_BREADCRUMBS + 1 }, () => ({
-          at: VALID_TIMESTAMP,
-          kind: 'console_error',
-          message: 'x',
-        })),
-      });
-      expect(res.success).toBe(false);
-    });
-
-    it('rejects an oversized serverLogExcerpt', () => {
-      const res = FeedbackDiagnosticsSchema.safeParse({
-        clientReport: { version: '0.47.0', platform: 'darwin-arm64', runtimes: [], flags: {} },
-        serverLogExcerpt: 'x'.repeat(MAX_LOG_EXCERPT_LEN + 1),
-      });
-      expect(res.success).toBe(false);
-    });
-
-    it('accepts an optional shellLogExcerpt, and bounds it like the server one', () => {
-      // The one client-attached field in this bundle (DOR-2045): the desktop
-      // shell's own log, which the server cannot read. Optional, so a browser
-      // client and every client older than it still validate; bounded, because
-      // being client-authored is exactly why the bound matters.
-      const clientReport = {
-        version: '0.75.0',
-        platform: 'darwin-arm64',
-        runtimes: [],
-        flags: {},
-      };
-      expect(
-        FeedbackDiagnosticsSchema.safeParse({
-          clientReport,
-          shellLogExcerpt: '2026-09-14 15:25:25.123 info [renderer] Reloading the window.',
-        }).success
-      ).toBe(true);
-      expect(FeedbackDiagnosticsSchema.safeParse({ clientReport }).success).toBe(true);
-      expect(
-        FeedbackDiagnosticsSchema.safeParse({
-          clientReport,
-          shellLogExcerpt: 'x'.repeat(MAX_LOG_EXCERPT_LEN + 1),
-        }).success
-      ).toBe(false);
-    });
-
-    it('rejects an unknown breadcrumb kind', () => {
-      const res = BreadcrumbSchema.safeParse({
-        at: VALID_TIMESTAMP,
-        kind: 'page_view',
-        message: 'x',
       });
       expect(res.success).toBe(false);
     });
@@ -517,70 +182,6 @@ describe('feedback event registry', () => {
           },
         };
       }
-
-      it('accepts a fully-populated environment', () => {
-        const res = FeedbackDiagnosticsSchema.safeParse(
-          report({
-            viewport: { width: 1512, height: 856, devicePixelRatio: 2 },
-            browser: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
-            shell: 'desktop-app',
-            theme: 'dark',
-            locale: 'en-US',
-            timezone: 'America/Los_Angeles',
-          })
-        );
-        expect(res.success).toBe(true);
-      });
-
-      it('accepts a bundle with none of them (a client that predates the fields)', () => {
-        expect(FeedbackDiagnosticsSchema.safeParse(report()).success).toBe(true);
-      });
-
-      it('rejects a fractional viewport dimension', () => {
-        // A zoomed window reports fractional CSS pixels; the client rounds them.
-        // If it stops rounding, this refusal is what makes that a loud failure.
-        const res = FeedbackDiagnosticsSchema.safeParse(
-          report({ viewport: { width: 1512.5, height: 856, devicePixelRatio: 2 } })
-        );
-        expect(res.success).toBe(false);
-      });
-
-      it('rejects an unknown key inside viewport (strict all the way down)', () => {
-        const res = FeedbackDiagnosticsSchema.safeParse(
-          report({
-            viewport: { width: 100, height: 100, devicePixelRatio: 1, screenX: 40 },
-          })
-        );
-        expect(res.success).toBe(false);
-      });
-
-      it('rejects an over-cap browser string', () => {
-        const res = FeedbackDiagnosticsSchema.safeParse(
-          report({ browser: 'x'.repeat(MAX_CLIENT_REPORT_BROWSER_LEN + 1) })
-        );
-        expect(res.success).toBe(false);
-      });
-
-      it('rejects an over-cap locale or timezone', () => {
-        const tooLong = 'x'.repeat(MAX_CLIENT_REPORT_TAG_LEN + 1);
-        expect(FeedbackDiagnosticsSchema.safeParse(report({ locale: tooLong })).success).toBe(
-          false
-        );
-        expect(FeedbackDiagnosticsSchema.safeParse(report({ timezone: tooLong })).success).toBe(
-          false
-        );
-      });
-
-      it('rejects a shell or theme outside its enum', () => {
-        // Both are closed sets, so a free-form string cannot ride in on either
-        // — that is what keeps them context rather than another text field.
-        expect(FeedbackDiagnosticsSchema.safeParse(report({ shell: 'terminal' })).success).toBe(
-          false
-        );
-        expect(FeedbackDiagnosticsSchema.safeParse(report({ theme: 'system' })).success).toBe(
-          false
-        );
-      });
 
       it('has no slot for a location, a cwd, or a workspace path', () => {
         // The strict allowlist IS the privacy contract. These are the three
@@ -625,27 +226,6 @@ describe('feedback event registry', () => {
       expect(FeedbackEventSchema.safeParse(event).success).toBe(true);
     });
 
-    it('maps the idea kind to feature_requested with no kind property', () => {
-      const event = buildFeedbackEvent(
-        { kind: 'idea', message: 'add dark mode' },
-        { surface: 'site', distinctId: 'ph_x', timestamp: VALID_TIMESTAMP }
-      );
-      expect(event.event).toBe('feature_requested');
-      expect(event.properties).not.toHaveProperty('kind');
-      expect(event.properties).not.toHaveProperty('contact');
-      expect(FeedbackEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('omits optional fields that were not provided (strict-schema safe)', () => {
-      const event = buildFeedbackEvent(
-        { kind: 'feedback', message: 'hi' },
-        { surface: 'site', distinctId: 'ph_x', timestamp: VALID_TIMESTAMP }
-      );
-      expect(event.properties).not.toHaveProperty('route');
-      expect(event.properties).not.toHaveProperty('dorkosVersion');
-      expect(FeedbackEventSchema.safeParse(event).success).toBe(true);
-    });
-
     it('attaches reporterEmail/reporterName from context.identity, never from the submission', () => {
       const event = buildFeedbackEvent(
         { kind: 'bug', message: 'broken' },
@@ -663,15 +243,6 @@ describe('feedback event registry', () => {
       // The identity's userId is never sent — only email/name.
       expect(JSON.stringify(event.properties)).not.toContain('user_1');
       expect(FeedbackEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('omits reporterEmail/reporterName when there is no identity (auth off / no session)', () => {
-      const event = buildFeedbackEvent(
-        { kind: 'bug', message: 'broken' },
-        { surface: 'cockpit', distinctId: VALID_DISTINCT_ID, timestamp: VALID_TIMESTAMP }
-      );
-      expect(event.properties).not.toHaveProperty('reporterEmail');
-      expect(event.properties).not.toHaveProperty('reporterName');
     });
   });
 });

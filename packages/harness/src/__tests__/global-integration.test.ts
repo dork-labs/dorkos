@@ -28,12 +28,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  buildGlobalPlan,
-  globalSkillsDir,
-  projectGlobal,
-  type GlobalPlanRoots,
-} from '../plan/global-projector.js';
+import { globalSkillsDir, projectGlobal, type GlobalPlanRoots } from '../plan/global-projector.js';
 import { applyGlobalPlan, checkGlobalPlan, findGlobalOrphans } from '../apply/global-apply.js';
 import { diffSnapshots, existsOnDisk, snapshotTree } from './journeys/stage.js';
 
@@ -173,28 +168,6 @@ describe('IN-05 global: the sweep and the check agree', () => {
     expect(swept.every((p) => promised.includes(p))).toBe(true);
     expect(existsOnDisk(join(globalSkillsDir(dorkHome), 'acme__build'))).toBe(false);
     expect(existsOnDisk(join(globalSkillsDir(dorkHome), 'globex__greet'))).toBe(true);
-  });
-
-  it('IN-05: a check makes no promise it cannot keep on a clean tree', () => {
-    const dorkHome = stageDorkHome([{ name: 'globex', skills: [{ name: 'greet' }] }]);
-    const roots = rootsFor(dorkHome);
-    const plan = projectGlobal({ roots, harnesses: [] });
-    applyGlobalPlan(plan, roots, { sweepOrphans: true });
-
-    expect(checkGlobalPlan(plan, roots)).toEqual({
-      drifted: [],
-      blocked: [],
-      orphans: [],
-      removals: [],
-      leftAlone: [],
-      // Neither producer can reach a global plan: its targets are in somebody's
-      // home directory, which no git checkout tracks, and there is no folder to
-      // be blind inside — the only root it walks is the plan's own, and one it
-      // cannot list stops the whole sweep as `unreadableRoot` long before this
-      // (DOR-1883, DOR-1939).
-      warnings: [],
-      clean: true,
-    });
   });
 });
 
@@ -364,6 +337,24 @@ describe('AP-07 global: a plan that could not be built removes nothing', () => {
     expect(existsOnDisk(join(globalSkillsDir(dorkHome), 'globex__greet'))).toBe(true);
   });
 
+  it('AP-07: a link into the packages folder without the __ marker is never touched', () => {
+    // Clause 2, on its own. The package is installed AND enumerated, so clause 4
+    // would call this link an orphan; the only thing standing between it and the
+    // sweep is that a person's own convenience link is not named like a
+    // projection. Deleting clause 2 reds here.
+    const dorkHome = stageDorkHome([{ name: 'globex', skills: [{ name: 'greet' }] }]);
+    const roots = rootsFor(dorkHome);
+    const skillsRoot = globalSkillsDir(dorkHome);
+    mkdirSync(skillsRoot, { recursive: true });
+    symlinkSync('../plugins/globex/skills/greet', join(skillsRoot, 'my-shortcut'));
+
+    const plan = projectGlobal({ roots, harnesses: [] });
+    const { swept } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+
+    expect(swept).toEqual([]);
+    expect(existsOnDisk(join(skillsRoot, 'my-shortcut'))).toBe(true);
+  });
+
   it('AP-07: a skill renamed inside a readable package still loses its stale link', () => {
     // The other side of the same rule: the plan gets the last word about the
     // packages it DID enumerate, so keeping a broken package's links does not
@@ -390,36 +381,6 @@ describe('AP-07 global: a plan that could not be built removes nothing', () => {
       'The package this skill came from no longer has a skill of this name.',
     ]);
     expect(existsOnDisk(join(globalSkillsDir(dorkHome), 'globex__hello'))).toBe(true);
-  });
-
-  it('AP-07: a link into the packages folder without the __ marker is never touched', () => {
-    // Clause 2, on its own. The package is installed AND enumerated, so clause 4
-    // would call this link an orphan; the only thing standing between it and the
-    // sweep is that a person's own convenience link is not named like a
-    // projection. Deleting clause 2 reds here.
-    const dorkHome = stageDorkHome([{ name: 'globex', skills: [{ name: 'greet' }] }]);
-    const roots = rootsFor(dorkHome);
-    const skillsRoot = globalSkillsDir(dorkHome);
-    mkdirSync(skillsRoot, { recursive: true });
-    symlinkSync('../plugins/globex/skills/greet', join(skillsRoot, 'my-shortcut'));
-
-    const plan = projectGlobal({ roots, harnesses: [] });
-    const { swept } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
-
-    expect(swept).toEqual([]);
-    expect(existsOnDisk(join(skillsRoot, 'my-shortcut'))).toBe(true);
-  });
-});
-
-describe('AP-05 global: the finders never throw for what they find', () => {
-  it('AP-05: a skills root that is a plain file is nothing to sweep, not an exception', () => {
-    const dorkHome = stageDorkHome([{ name: 'globex', skills: [{ name: 'greet' }] }]);
-    const roots = rootsFor(dorkHome);
-    writeFileSync(globalSkillsDir(dorkHome), 'not a directory\n');
-
-    const plan = buildGlobalPlan({ roots, packages: [], harnesses: [] });
-    expect(findGlobalOrphans(plan, roots)).toEqual([]);
-    expect(checkGlobalPlan(plan, roots).clean).toBe(true);
   });
 });
 

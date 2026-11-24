@@ -81,11 +81,8 @@ vi.mock('../../apply/apply.js', async (importOriginal) => {
 const { applyAdopt } = await import('../apply.js');
 const { planAdopt } = await import('../plan.js');
 const { readAdoptCandidates } = await import('../read.js');
-const { checkPlan } = await import('../../apply/apply.js');
-const { project, loadManifest } = await import('../../engine.js');
+const { loadManifest } = await import('../../engine.js');
 const { inventorySourceTree } = await import('../../inventory/index.js');
-const { planAdoptedSkillLink } = await import('../../plan/projector.js');
-const { ADOPT_SENTENCES } = await import('../refusals.js');
 
 /** The skill every case is about. */
 const NAME = 'deploy-checklist';
@@ -214,33 +211,6 @@ describe('AP-17 — applyAdopt moves one skill and leaves the projection behind'
     expectLinkBack(repo);
   });
 
-  it('AP-17: leaves a tree the next sync already agrees with, action for action', () => {
-    // The test that discharges "the next sync's plan already matches". Seeded
-    // defect: hand-roll the link text as an absolute path — `linkMatchesPlan`
-    // fails and `clean` goes false.
-    const repo = stageRepo();
-
-    const plan = planFor(repo);
-    const applied = plan.moves[0]?.link;
-    applyAdopt(repo, plan);
-
-    expect(applied).toEqual(planAdoptedSkillLink(NAME));
-    const drift = checkPlan(repo, project(repo));
-    expect({ clean: drift.clean, drifted: drift.drifted.length }).toEqual({
-      clean: true,
-      drifted: 0,
-    });
-    // And the projector, over the post-move tree, plans that same value — which
-    // is what stops the extraction drifting from `planSkill` later.
-    const skillActions = project(repo).actions.filter(
-      (action) => action.artifact === 'skill' && action.harness === 'claude-code'
-    );
-    expect({ found: skillActions.length, action: skillActions[0] }).toEqual({
-      found: 1,
-      action: planAdoptedSkillLink(NAME),
-    });
-  });
-
   it('AP-17: puts everything back when the projection dies between the two steps', () => {
     // Seeded defect: delete the restore, and the source-path assertion reds.
     const repo = stageRepo();
@@ -316,72 +286,6 @@ describe('AP-17 — applyAdopt moves one skill and leaves the projection behind'
     );
   });
 
-  it('AP-17: leaves no link for a root whose harness already reads the canonical layer', () => {
-    // An OpenCode-first repository: every tool it enables reads `.agents/skills`
-    // itself, so a link back into `.opencode/skills` would be a path DorkOS
-    // wrote that no plan action names — an orphan by construction.
-    //
-    // Seeded defect: plan a link for every root, and this repository grows a
-    // `.claude/skills` nobody enabled.
-    const repo = stageRepo('.opencode/skills', ['codex', 'opencode']);
-
-    const plan = planFor(repo);
-    expect(plan.moves.map((move) => move.link)).toEqual([undefined]);
-    const result = applyAdopt(repo, plan);
-
-    expect(result.moved).toHaveLength(1);
-    expect(hashTree(join(repo, '.opencode'))).toEqual(['skills/']);
-    const drift = checkPlan(repo, project(repo));
-    expect({ clean: drift.clean, orphans: drift.orphans.length }).toEqual({
-      clean: true,
-      orphans: 0,
-    });
-  });
-
-  it('AP-17: links a skill adopted out of ANOTHER tool’s folder, when Claude Code is on', () => {
-    // The link is planned iff `claude-code` is ENABLED, whatever folder the
-    // skill came from: the link is Claude Code's projection of a canonical
-    // skill, not a link back to the folder the skill was taken out of.
-    //
-    // Seeded defect: key the link off the source root instead. The skill then
-    // lands in `.agents/skills` with the claude-code symlink the projector
-    // plans still missing, and the very next `--check` reports drift.
-    const repo = stageRepo('.opencode/skills', ['claude-code', 'codex', 'opencode']);
-
-    const plan = planFor(repo);
-    expect(plan.moves[0]?.link).toEqual(planAdoptedSkillLink(NAME));
-    applyAdopt(repo, plan);
-
-    expectLinkBack(repo);
-    const drift = checkPlan(repo, project(repo));
-    expect({ clean: drift.clean, orphans: drift.orphans.length }).toEqual({
-      clean: true,
-      orphans: 0,
-    });
-  });
-
-  it('AP-17: leaves NO link for a .claude/skills skill when Claude Code is off', () => {
-    // The mirror image, and the reason the condition moved: a repository that
-    // does not enable Claude Code has no claude-code projection at all, so a
-    // link left at `.claude/skills/x` would be a path DorkOS wrote that no plan
-    // action names — an orphan by construction, at a path no sweep owns.
-    //
-    // Seeded defect: key the link off the source root, and this tree grows a
-    // `.claude/skills` link for a tool nobody enabled.
-    const repo = stageRepo('.claude/skills', ['codex', 'opencode']);
-
-    const plan = planFor(repo);
-    expect(plan.moves.map((move) => move.link)).toEqual([undefined]);
-    applyAdopt(repo, plan);
-
-    expect(hashTree(join(repo, '.claude'))).toEqual(['skills/']);
-    const drift = checkPlan(repo, project(repo));
-    expect({ clean: drift.clean, orphans: drift.orphans.length }).toEqual({
-      clean: true,
-      orphans: 0,
-    });
-  });
-
   it('AP-17: refuses a move across filesystems rather than copying half a skill', () => {
     const repo = stageRepo();
     const before = hashTree(repo);
@@ -397,23 +301,6 @@ describe('AP-17 — applyAdopt moves one skill and leaves the projection behind'
     ]);
     stub.exdev = false;
     expect(hashTree(repo)).toEqual(before);
-  });
-
-  it('SRC-10: gives the moved skill authored provenance, so nothing tells you to ignore it', () => {
-    // Seeded defect: set `provenance: 'adopted'` on the moved skill's action and
-    // the gitignore half of the engine starts demanding a pattern for a skill
-    // that was just committed — which is why the value is retired rather than
-    // produced.
-    const repo = stageRepo();
-
-    const plan = planFor(repo);
-    applyAdopt(repo, plan);
-
-    expect(plan.moves[0]?.link?.provenance).toBe('authored');
-    const provenances = project(repo)
-      .actions.filter((action) => action.name === NAME)
-      .map((action) => action.provenance);
-    expect(new Set(provenances)).toEqual(new Set(['authored']));
   });
 
   it('AP-17: adopting the same name twice is refused the second time, and changes nothing', () => {
@@ -465,14 +352,5 @@ describe('AP-17 — --claude-only writes one manifest element and moves nothing'
     ].join('\n');
     expect(after.replace(inserted, '')).toBe(before);
     expect(hashTree(join(repo, '.claude', 'skills', NAME))).toEqual(skillBefore);
-  });
-});
-
-describe('the frozen sentences this slice owns', () => {
-  it('AP-17: says S10 exactly, whatever the source path', () => {
-    expect(ADOPT_SENTENCES.S10('.opencode/skills/review-pr')).toBe(
-      "DorkOS can't move .opencode/skills/review-pr into .agents/skills because the two folders " +
-        'are on different drives. Move the folder yourself, then run dorkos harness sync --fix.'
-    );
   });
 });

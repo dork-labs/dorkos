@@ -10,15 +10,11 @@
  * else — including unknown future modes and permission keys nobody has seen —
  * falls through to the safe default of asking the user.
  *
- * Every forwarded request waits in two stages, exactly as the Claude adapter's
- * prompts do (spec `ask-parks-on-timeout`). The card counts down for
- * `SESSIONS.INTERACTION_TIMEOUT_MS`, which is the `timeoutMs` the mapper
- * advertises on `approval_required` and is left there deliberately: it is the
- * number a person is counting down against, not the number the sidecar is
- * answered at. Past it the card PARKS — `listPendingInteractions` derives that
- * from the same two numbers, so OpenCode gets it without a line of its own —
- * and the auto-deny timer here fires only at
- * `SESSIONS.INTERACTION_PARK_CEILING_MS`.
+ * Every forwarded request uses the attended approval profile
+ * (spec `ask-parks-on-timeout`). The mapper advertises its countdown
+ * on `approval_required`. At the end of the countdown the card parks, as
+ * derived by `listPendingInteractions`. The store auto-denies the request
+ * at the profile's terminal deadline.
  *
  * **One thing here is unverified, and it is stated rather than assumed.**
  * Whether the OpenCode sidecar applies an expiry of its own to an unanswered
@@ -48,7 +44,6 @@ import type { DirectoryGrant, TurnPermissionCeiling } from '@dorkos/shared/agent
 import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
 import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
 import type { ApprovalEvent, PermissionModeId, StreamEvent } from '@dorkos/shared/types';
-import { SESSIONS } from '../../../../config/constants.js';
 import { logger, logError } from '../../../../lib/logger.js';
 import { logRefusal } from '../../../observability/refusals.js';
 import type { OpenCodePermissionState } from '../events/session-event-mapper.js';
@@ -62,9 +57,13 @@ import type { ProtectedPathRoots } from '../../shared/policy/protected-path-chec
 import { checkShellCommand, type ShellCommandVerdict } from '../../shared/policy/package-hooks.js';
 import type { RuntimeWaitDeps } from '../../../core/load-gate/runtime-wait.js';
 import { HeavyShellSlots, holdHeavyShell } from './load-gate-hold.js';
+import {
+  resolveApprovalDecision as resolveOrdinaryApprovalDecision,
+  type ApprovalDecision,
+} from '../../shared/policy/approvals.js';
+import { PendingApprovalRegistry } from '../../shared/timing/pending-approval-registry.js';
 
-/** How a permission request should be resolved under a DorkOS mode. */
-export type ApprovalDecision = 'ask' | 'auto-approve';
+export type { ApprovalDecision };
 
 /**
  * The only OpenCode permission responses DorkOS ever sends. `always` is
@@ -97,9 +96,10 @@ export function resolveApprovalDecision(
   mode: PermissionModeId | undefined,
   permissionType: string
 ): ApprovalDecision {
-  if (mode === 'bypassPermissions') return 'auto-approve';
-  if (mode === 'acceptEdits' && EDIT_PERMISSION_TYPES.has(permissionType)) return 'auto-approve';
-  return 'ask';
+  return resolveOrdinaryApprovalDecision(
+    mode,
+    EDIT_PERMISSION_TYPES.has(permissionType) ? 'edit' : 'other'
+  );
 }
 
 /** One forwarded, still-unanswered permission request. */
@@ -108,8 +108,6 @@ interface PendingApproval {
   ocSessionId: string;
   /** Working directory for `getClient` routing. */
   cwd: string;
-  /** Armed auto-deny timer, which fires at the park ceiling. */
-  timer: ReturnType<typeof setTimeout>;
   /** The permission's key (`bash`, `edit`, …), for the auto-deny log line only. */
   toolName?: string;
   /** Server epoch ms this request was registered, for the auto-deny `waitedMs`. */
@@ -122,7 +120,7 @@ interface PendingApproval {
  */
 export class PendingApprovalStore {
   /** DorkOS session id → permission id → pending record. */
-  private readonly pending = new Map<string, Map<string, PendingApproval>>();
+  private readonly pending = new PendingApprovalRegistry<PendingApproval>();
 
   /**
    * Permission ids this store auto-denied because nobody answered, per session,
@@ -146,9 +144,8 @@ export class PendingApprovalStore {
   /**
    * Track a forwarded request and arm its auto-deny timer.
    *
-   * The timer fires at {@link SESSIONS.INTERACTION_PARK_CEILING_MS}: the card
-   * counts down for ten minutes, then parks and says the agent is waiting, and
-   * only four hours in does the sidecar hear a `reject`.
+   * The card counts down for ten minutes, then parks and says the agent is
+   * waiting. The timer sends a `reject` to the sidecar only after four hours.
    *
    * @param sessionId - DorkOS session the request belongs to
    * @param permissionId - `Permission.id` (the `approval_required.toolCallId`)
@@ -176,8 +173,8 @@ export class PendingApprovalStore {
     // agent is waiting, and this is when the agent actually gives up (spec
     // `ask-parks-on-timeout` §6). The mapper still advertises the countdown,
     // which is what the person watches.
-    const timer = setTimeout(() => {
-      if (!this.take(sessionId, permissionId)) return;
+    const record = { ...entry, startedAt };
+    this.pending.insert(sessionId, permissionId, record, 'attended', (expired) => {
       const forSession = this.expired.get(sessionId) ?? new Set<string>();
       forSession.add(permissionId);
       this.expired.set(sessionId, forSession);
@@ -188,7 +185,7 @@ export class PendingApprovalStore {
       // module's TSDoc), so this line is the only record at all. Nothing from
       // the request's input is logged — only what it was and how long it
       // waited.
-      const waitedMs = Date.now() - startedAt;
+      const waitedMs = Date.now() - expired.startedAt;
       logRefusal(
         `[opencode] nobody answered in ${Math.round(waitedMs / 60_000)}m, so this was denied`,
         {
@@ -198,21 +195,13 @@ export class PendingApprovalStore {
           detail: {
             interactionId: permissionId,
             kind: 'approval',
-            toolName: entry.toolName,
+            toolName: expired.toolName,
             waitedMs,
           },
         }
       );
       onTimeout();
-    }, SESSIONS.INTERACTION_PARK_CEILING_MS);
-    // Never hold the event loop open for an approval countdown.
-    timer.unref?.();
-    let forSession = this.pending.get(sessionId);
-    if (!forSession) {
-      forSession = new Map();
-      this.pending.set(sessionId, forSession);
-    }
-    forSession.set(permissionId, { ...entry, timer, startedAt });
+    });
   }
 
   /**
@@ -220,13 +209,8 @@ export class PendingApprovalStore {
    * nothing is pending under that id (already answered, timed out, or unknown).
    */
   take(sessionId: string, permissionId: string): { ocSessionId: string; cwd: string } | null {
-    const forSession = this.pending.get(sessionId);
-    const entry = forSession?.get(permissionId);
-    if (!forSession || !entry) return null;
-    clearTimeout(entry.timer);
-    forSession.delete(permissionId);
-    if (forSession.size === 0) this.pending.delete(sessionId);
-    return { ocSessionId: entry.ocSessionId, cwd: entry.cwd };
+    const entry = this.pending.take(sessionId, permissionId);
+    return entry ? { ocSessionId: entry.ocSessionId, cwd: entry.cwd } : null;
   }
 
   /**
@@ -254,10 +238,7 @@ export class PendingApprovalStore {
   clearSession(sessionId: string): void {
     this.heavyJobs.endSession(sessionId);
     this.expired.delete(sessionId);
-    const forSession = this.pending.get(sessionId);
-    if (!forSession) return;
-    for (const entry of forSession.values()) clearTimeout(entry.timer);
-    this.pending.delete(sessionId);
+    this.pending.clear(sessionId);
   }
 }
 

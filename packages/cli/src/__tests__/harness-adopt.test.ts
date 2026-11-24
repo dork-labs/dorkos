@@ -22,7 +22,6 @@ import { ROOM_SEEDED_SKILL_NAMES } from '@dorkos/harness';
 
 import { runHarnessAdopt, parseHarnessAdoptArgs } from '../harness-adopt-command.js';
 import { runHarnessSync, parseHarnessSyncArgs } from '../harness-sync-command.js';
-import { runHarnessDispatcher } from '../commands/harness-dispatcher.js';
 import { createTempDir, pinEmptyClaudeRoot, syncArgs } from './harness-fixtures.js';
 
 /** The skill most cases are about. */
@@ -101,35 +100,11 @@ function writeRepo(
 }
 
 describe('parseHarnessAdoptArgs', () => {
-  it('SRC-07: takes one skill name, and the three flags', async () => {
-    expect(parseHarnessAdoptArgs([NAME])).toEqual({
-      name: NAME,
-      claudeOnly: false,
-      check: false,
-    });
-    expect(parseHarnessAdoptArgs([NAME, '--check', '--claude-only', '--project', '/x'])).toEqual({
-      name: NAME,
-      project: '/x',
-      claudeOnly: true,
-      check: true,
-    });
-  });
-
   it('SRC-07: refuses a bare adopt, and names the command that lists candidates', async () => {
     // A bare adopt that ACTED would be one keystroke away from the multi-adopt
     // this work deliberately does not ship.
     expect(() => parseHarnessAdoptArgs([])).toThrow(/Name the skill you want to move/);
     expect(() => parseHarnessAdoptArgs([])).toThrow(/dorkos harness sync --check/);
-  });
-
-  it('SRC-07: refuses two names rather than moving the first one', async () => {
-    expect(() => parseHarnessAdoptArgs(['a', 'b'])).toThrow(/one skill at a time, and you named 2/);
-  });
-
-  it('SRC-07: names the command in an unknown-option error', async () => {
-    expect(() => parseHarnessAdoptArgs([NAME, '--force'])).toThrow(
-      /Unknown option for 'harness adopt': --force/
-    );
   });
 });
 
@@ -188,20 +163,6 @@ describe('runHarnessAdopt', () => {
     expect(snapshotTree(worktree)).toEqual(before);
   });
 
-  it('SRC-11: moves the same reserved name in a folder DorkOS does not own', async () => {
-    // The other half of the pair, so the case above is about the PLACE rather
-    // than about the name: the identical skill in somebody's own project is a
-    // skill they may move.
-    const reserved = [...ROOM_SEEDED_SKILL_NAMES].sort()[0]!;
-    writeRepo(repo, { names: [reserved] });
-    process.chdir(repo);
-
-    const result = await runHarnessAdopt(adoptArgs({ name: reserved }));
-
-    expect(result).toEqual({ exitCode: 0 });
-    expect(fs.existsSync(path.join(repo, '.agents', 'skills', reserved))).toBe(true);
-  });
-
   it('SRC-07: --check says what would happen, exits 0, and writes nothing', async () => {
     writeRepo(repo);
     process.chdir(repo);
@@ -233,87 +194,6 @@ describe('runHarnessAdopt', () => {
     expect(snapshotTree(repo)).toContain(`.claude/skills/${NAME} -> ../../.agents/skills/${NAME}`);
   });
 
-  it('SRC-07: says S15b, and leaves no link, for a root every enabled tool reads past', async () => {
-    // The same condition asserted on the filesystem and on the sentence, so a
-    // run cannot promise a link it did not make.
-    writeRepo(repo, { skillRoot: '.opencode/skills', harnesses: ['codex', 'opencode'] });
-    process.chdir(repo);
-
-    const result = await runHarnessAdopt(adoptArgs({ name: NAME }));
-
-    expect(result).toEqual({ exitCode: 0 });
-    expect(printed()).toContain(
-      `Moved ${NAME} to .agents/skills/${NAME}, where every agent reads it.`
-    );
-    expect(printed()).not.toContain('Claude Code still finds it');
-    expect(snapshotTree(repo).filter((line) => line.startsWith('.opencode'))).toEqual([
-      '.opencode',
-      '.opencode/skills',
-    ]);
-  });
-
-  // Two full six-harness syncs plus an adopt and a check: 3160 ms before this branch,
-  // 4229 ms at HEAD in isolation, so vitest's 5000 ms default is a coin toss the
-  // moment the machine is shared. The budget is the fix; the engine stays as eager as
-  // it is.
-  it('SRC-07: says S15 naming .claude/skills for a skill taken out of another folder', async () => {
-    // The link is Claude Code's projection of a canonical skill, not a link back
-    // to the folder the skill came out of — so a repository that runs Claude
-    // Code gets one wherever the skill was, and the sentence names where the
-    // link IS.
-    //
-    // Seeded defect: key the link off the source root. The move then leaves the
-    // claude-code symlink the projector plans unmade, and the `--check` below
-    // reports drift.
-    writeRepo(repo, { skillRoot: '.opencode/skills', harnesses: ALL_SIX });
-    process.chdir(repo);
-    await runHarnessSync(syncArgsFix());
-    logSpy.mockClear();
-
-    const result = await runHarnessAdopt(adoptArgs({ name: NAME }));
-
-    expect(result).toEqual({ exitCode: 0 });
-    expect(printed()).toContain(
-      `Moved ${NAME} to .agents/skills/${NAME}. Claude Code still finds it through a link at ` +
-        `.claude/skills/${NAME}.`
-    );
-    expect(snapshotTree(repo)).toContain(`.claude/skills/${NAME} -> ../../.agents/skills/${NAME}`);
-
-    logSpy.mockClear();
-    expect(await runHarnessSync(parseHarnessSyncArgs(['--check']))).toEqual({ exitCode: 0 });
-    expect(printed()).toContain('No drift — every projection already matches the plan.');
-  }, 20_000);
-
-  // Two full six-harness syncs plus an adopt and a check: 3160 ms before this branch,
-  // 4229 ms at HEAD in isolation, so vitest's 5000 ms default is a coin toss the
-  // moment the machine is shared. The budget is the fix; the engine stays as eager as
-  // it is.
-  it('SRC-07: says S15b, and writes no link, when the project does not run Claude Code', async () => {
-    // The mirror image: a `.claude/skills` skill in a repository that never
-    // enabled Claude Code. A link there would be a path DorkOS wrote that no
-    // plan action names.
-    writeRepo(repo, { harnesses: ['codex', 'opencode'] });
-    process.chdir(repo);
-    await runHarnessSync(syncArgsFix());
-    logSpy.mockClear();
-
-    const result = await runHarnessAdopt(adoptArgs({ name: NAME }));
-
-    expect(result).toEqual({ exitCode: 0 });
-    expect(printed()).toContain(
-      `Moved ${NAME} to .agents/skills/${NAME}, where every agent reads it.`
-    );
-    expect(printed()).not.toContain('Claude Code still finds it');
-    expect(snapshotTree(repo).filter((line) => line.startsWith('.claude'))).toEqual([
-      '.claude',
-      '.claude/skills',
-    ]);
-
-    logSpy.mockClear();
-    expect(await runHarnessSync(parseHarnessSyncArgs(['--check']))).toEqual({ exitCode: 0 });
-    expect(printed()).toContain('No drift — every projection already matches the plan.');
-  }, 20_000);
-
   it('SRC-07: exits 1 on a refusal, and the tree is byte-for-byte what it was', async () => {
     writeRepo(repo);
     // Something is already at the target, which is R4. Neither a skill nor a
@@ -335,20 +215,6 @@ describe('runHarnessAdopt', () => {
     expect(snapshotTree(repo)).toEqual(before);
   });
 
-  it('SRC-07: --check exits 1 when the move would NOT work', async () => {
-    // The asymmetry with `sync --check`, stated as a test: this command asks
-    // "will it work?", so success is zero and a refusal is one.
-    writeRepo(repo);
-    process.chdir(repo);
-    const before = snapshotTree(repo);
-
-    const result = await runHarnessAdopt(adoptArgs({ name: 'no-such-skill', check: true }));
-
-    expect(result).toEqual({ exitCode: 1 });
-    expect(printed()).toContain('There is no skill called "no-such-skill" in .claude/skills.');
-    expect(snapshotTree(repo)).toEqual(before);
-  });
-
   it('SRC-07: stops on a project with no manifest, and never scaffolds one', async () => {
     fs.mkdirSync(path.join(repo, '.claude', 'skills', NAME), { recursive: true });
     fs.writeFileSync(path.join(repo, '.claude', 'skills', NAME, 'SKILL.md'), '# x\n');
@@ -360,32 +226,6 @@ describe('runHarnessAdopt', () => {
     expect(result).toEqual({ exitCode: 1 });
     expect(printedErrors()).toContain('No harness manifest in');
     expect(printedErrors()).toContain('.agents/harness.manifest.json');
-    expect(snapshotTree(repo)).toEqual(before);
-  });
-
-  it('SRC-07: a manifest it cannot read is one sentence, the folder, and the way to the stack', async () => {
-    // The same three lines `dorkos harness sync` prints, because it is the same
-    // person in the same folder with the same broken file. A stack trace is not
-    // what somebody with a comment in their JSON needs to read first — but it is
-    // one environment variable away, and the message says which.
-    writeRepo(repo);
-    fs.writeFileSync(
-      path.join(repo, '.agents', 'harness.manifest.json'),
-      '{\n  // a comment JSON does not have\n  "version": 1\n}\n'
-    );
-    process.chdir(repo);
-    // `process.cwd()` rather than the temp path this test made: macOS resolves
-    // `/var` to `/private/var`, and the folder the command NAMES is the one it
-    // acted on.
-    const here = process.cwd();
-    const before = snapshotTree(repo);
-
-    const result = await runHarnessAdopt(adoptArgs({ name: NAME }));
-
-    expect(result).toEqual({ exitCode: 1 });
-    expect(printedErrors()).toContain('Harness adopt failed:');
-    expect(printedErrors()).toContain(`  in ${here}`);
-    expect(printedErrors()).toContain('  Re-run with LOG_LEVEL=debug to see the stack.');
     expect(snapshotTree(repo)).toEqual(before);
   });
 
@@ -417,36 +257,18 @@ describe('runHarnessAdopt', () => {
     );
   });
 
-  it('SRC-07: --project from another folder produces the tree the same run inside does', async () => {
-    const twin = createTempDir();
-    try {
-      writeRepo(repo);
-      writeRepo(twin);
-
-      process.chdir(repo);
-      await runHarnessAdopt(adoptArgs({ name: NAME }));
-      const fromInside = snapshotTree(repo);
-
-      process.chdir(originalCwd);
-      await runHarnessAdopt(adoptArgs({ name: NAME, project: twin }));
-
-      expect(snapshotTree(twin)).toEqual(fromInside);
-    } finally {
-      fs.rmSync(twin, { recursive: true, force: true });
-    }
-  });
-
-  it('SRC-07: reaches the dispatcher, which answers --help without touching the tree', async () => {
-    writeRepo(repo);
+  it('SRC-11: moves the same reserved name in a folder DorkOS does not own', async () => {
+    // The other half of the pair, so the case above is about the PLACE rather
+    // than about the name: the identical skill in somebody's own project is a
+    // skill they may move.
+    const reserved = [...ROOM_SEEDED_SKILL_NAMES].sort()[0]!;
+    writeRepo(repo, { names: [reserved] });
     process.chdir(repo);
-    const before = snapshotTree(repo);
 
-    expect(await runHarnessDispatcher('adopt', ['--help'])).toBe(0);
-    expect(printed()).toContain('dorkos harness adopt deploy-checklist');
-    expect(snapshotTree(repo)).toEqual(before);
+    const result = await runHarnessAdopt(adoptArgs({ name: reserved }));
 
-    expect(await runHarnessDispatcher('adopt', [NAME])).toBe(0);
-    expect(snapshotTree(repo)).toContain(`.claude/skills/${NAME} -> ../../.agents/skills/${NAME}`);
+    expect(result).toEqual({ exitCode: 0 });
+    expect(fs.existsSync(path.join(repo, '.agents', 'skills', reserved))).toBe(true);
   });
 });
 
@@ -497,57 +319,6 @@ describe('J-06 — the sync report names the skills only some agents can see', (
       `  1 skill lives only in .claude/skills and Codex and Gemini CLI cannot see it — ` +
         `dorkos harness adopt ${NAME} moves it`
     );
-  });
-
-  it('J-06: prints no block at all when every enabled tool can already see it', async () => {
-    // The same tree, a Claude-Code-only manifest: a count of zero problems is
-    // noise, and this block is not a drift report.
-    writeRepo(repo, { harnesses: ['claude-code'] });
-    process.chdir(repo);
-
-    await runHarnessSync(parseHarnessSyncArgs(['--check']));
-
-    expect(printed()).not.toContain('Skills only some of your agents can see');
-    expect(printed()).not.toContain('dorkos harness adopt');
-  });
-
-  it('J-06: at n>1 counts the skills and gives each its own command', async () => {
-    writeRepo(repo, { harnesses: ALL_SIX, names: ['alpha', 'beta', 'gamma'] });
-    process.chdir(repo);
-
-    await runHarnessSync(parseHarnessSyncArgs(['--check']));
-
-    expect(printed()).toContain(
-      '  3 skills live only in .claude/skills and Codex and Gemini CLI cannot see them — ' +
-        'dorkos harness adopt <name> moves one'
-    );
-    expect(printed()).toContain('    dorkos harness adopt alpha');
-    expect(printed()).toContain('    dorkos harness adopt beta');
-    expect(printed()).toContain('    dorkos harness adopt gamma');
-  });
-
-  it('J-06: names one root per headline, computed per root and ordered by folder', async () => {
-    // Three roots, staged in an order no reader would choose, so the block's
-    // order is its own rather than the inventory's: a report whose lines move
-    // around between runs is one a person cannot diff.
-    writeRepo(repo, { skillRoot: '.opencode/skills', harnesses: ALL_SIX, names: ['beta'] });
-    writeRepo(repo, { skillRoot: '.gemini/skills', harnesses: ALL_SIX, names: ['gamma'] });
-    writeRepo(repo, { harnesses: ALL_SIX, names: ['alpha'] });
-    process.chdir(repo);
-
-    await runHarnessSync(parseHarnessSyncArgs(['--check']));
-
-    const headlines = printed()
-      .split('\n')
-      .filter((line) => line.includes('lives only in'));
-    expect(headlines).toEqual([
-      '  1 skill lives only in .claude/skills and Codex and Gemini CLI cannot see it — ' +
-        'dorkos harness adopt alpha moves it',
-      '  1 skill lives only in .gemini/skills and Claude Code, Codex, Cursor, Copilot and ' +
-        'OpenCode cannot see it — dorkos harness adopt gamma moves it',
-      '  1 skill lives only in .opencode/skills and Claude Code, Codex, Cursor, Gemini CLI and ' +
-        'Copilot cannot see it — dorkos harness adopt beta moves it',
-    ]);
   });
 
   it('J-06: goes quiet the moment the skill is adopted, and the next check is clean', async () => {

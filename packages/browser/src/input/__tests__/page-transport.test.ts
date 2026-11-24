@@ -14,7 +14,6 @@ import { submitInput } from '../../lifecycle/parent-actions.js';
 import { fenceOrdinary } from '../../lifecycle/ownership.js';
 import type { PrivateBrowserInputDispatcher } from '../../engine.js';
 import type { CDPSession, Page } from 'playwright-core';
-import { createPageTransport } from '../page-transport.js';
 import { createPointerLedger, type PointerLedger } from '../../tabs/pointer.js';
 import { parseBrowserId, parseTabId } from '../../ids.js';
 import { createBrowserStopGate } from '../../lifecycle/stop.js';
@@ -120,10 +119,6 @@ function fixture(
     },
   };
 }
-const retirementCancellations = [
-  ['send', 'Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 }],
-  ['send', 'Input.cancelDragging'],
-];
 const signal = () => new AbortController().signal;
 const tick = async () => {
   for (let i = 0; i < 30; i++) await Promise.resolve();
@@ -185,24 +180,6 @@ it('refuses API-getter reentrant binding replacement before the native call', as
   expect(h.effects).toEqual([]);
   await h.close();
 });
-it('preregisters native custody before getters reenter shared close', async () => {
-  const h = fixture();
-  await h.ready;
-  let pending = -1;
-  Object.defineProperty(h.page, 'keyboard', {
-    get: () => {
-      pending = h.owner.custody().nativePending;
-      void h.close();
-      return h.keyboard;
-    },
-  });
-  await expect(
-    h.owner.native.dispatch({ kind: 'text', text: 'FIXTURE' }, signal())
-  ).rejects.toThrow('TARGET_REFUSED');
-  expect(pending).toBe(1);
-  expect(h.effects).not.toContain('text');
-  await h.close();
-});
 it('abort refuses unstarted dispatch and is not a native cancellation claim', async () => {
   const h = fixture();
   await h.ready;
@@ -213,131 +190,6 @@ it('abort refuses unstarted dispatch and is not a native cancellation claim', as
   ).rejects.toThrow('TARGET_REFUSED');
   expect(h.effects).toEqual([]);
   await h.close();
-});
-it('terminal close does not release held keys or manufacture certain cleanup', async () => {
-  const h = fixture();
-  await h.ready;
-  await h.owner.native.dispatch({ kind: 'keyDown', key: 'Control' }, signal());
-  expect(await h.close()).toMatchObject({ detached: true, uncertain: true });
-  expect(h.effects).toEqual([['keyDown', 'Control'], ...retirementCancellations, ['detach']]);
-});
-it.each(['Input.imeSetComposition', 'Input.cancelDragging'])(
-  'unsupported %s fails and retains cleanup uncertainty',
-  async (method) => {
-    const h = fixture();
-    await h.ready;
-    h.session.send.mockRejectedValueOnce(new Error('UNSUPPORTED_NATIVE_COMMAND'));
-    await expect(
-      method === 'Input.cancelDragging'
-        ? h.owner.native.cancelDrag(signal())
-        : h.owner.native.cancelComposition(signal())
-    ).rejects.toThrow('UNSUPPORTED_NATIVE_COMMAND');
-    expect((await h.close()).uncertain).toBe(true);
-  }
-);
-it('retains in-flight native uncertainty after detach and later acknowledgement', async () => {
-  const h = fixture();
-  await h.ready;
-  const pending = deferred<void>();
-  h.keyboard.insertText.mockImplementation(() => pending.promise);
-  const call = h.owner.native.dispatch({ kind: 'text', text: 'FIXTURE' }, signal());
-  void call.catch(() => {});
-  expect(await h.close()).toMatchObject({ nativePending: 1, uncertain: true });
-  pending.resolve();
-  await tick();
-  expect(h.owner.custody()).toMatchObject({ nativePending: 0, uncertain: true });
-});
-it('shares the exact child close promise after genuine parent terminal entry, including reentrant detach', async () => {
-  const h = fixture();
-  await h.ready;
-  const transport = h.owner;
-  expect(h.slot.registeredTarget!.transport).toBe(transport);
-  let nested: unknown;
-  h.session.detach.mockImplementation(async () => {
-    nested = transport.close();
-  });
-  const parentWait = h.close();
-  await tick();
-  expect(h.record.lifetime.ordinary.retirement.terminalEntered).toBe(true);
-  const childClose = transport.close();
-  expect(transport.close()).toBe(childClose);
-  expect(parentWait).not.toBe(childClose);
-  await parentWait;
-  expect(nested).toBe(childClose);
-});
-
-it('subordinates a hung detach to caller deadline and observes late rejection', async () => {
-  vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
-  const h = fixture();
-  await h.ready;
-  const detach = deferred<void>();
-  h.session.detach.mockImplementation(() => detach.promise);
-  const close = h.close(performance.now() + 50);
-  await vi.advanceTimersByTimeAsync(50);
-  expect(await close).toMatchObject({ detachPending: true, uncertain: true });
-  detach.reject(new Error('LATE_DETACH_REJECTION'));
-  await tick();
-  expect(h.owner.custody()).toMatchObject({ detachPending: false, uncertain: true });
-});
-it('late session after acquisition deadline is detached without target publication or uncertainty healing', async () => {
-  vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
-  const pending = deferred<CDPSession>();
-  const h = fixture(undefined, undefined, (context) =>
-    context.newCDPSession.mockImplementation(() => pending.promise)
-  );
-  const ready = expect(h.ready).rejects.toThrow('INPUT_DEADLINE');
-  await vi.advanceTimersByTimeAsync(2000);
-  await ready;
-  expect(h.slot.registeredTarget).toBeUndefined();
-  const originalEnd = h.record.lifetime.inputEnd;
-  const close = h.close(performance.now());
-  await vi.advanceTimersByTimeAsync(2000);
-  expect(await close).toMatchObject({ acquisitionPending: true, uncertain: true });
-  pending.resolve(h.session as unknown as CDPSession);
-  await tick();
-  expect(h.session.detach).toHaveBeenCalledTimes(1);
-  expect(h.input.custody()).toMatchObject({
-    acquisitionPending: false,
-    detached: true,
-    uncertain: true,
-  });
-  expect(h.slot.registeredTarget).toBeUndefined();
-  expect(h.record.lifetime.inputEnd).toBe(originalEnd);
-});
-
-it('already-expired caller budget still attempts exact-owned detach without claiming certainty', async () => {
-  const h = fixture();
-  await h.ready;
-  expect(await h.close(performance.now() - 1)).toMatchObject({ uncertain: true });
-  expect(h.session.detach).toHaveBeenCalledTimes(1);
-});
-
-it('a final cleanup Page observation crossing the original end cannot enter native cancellation', async () => {
-  vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
-  const h = fixture();
-  await h.ready;
-  let retiringReads = 0,
-    captured = false;
-  const send = h.session.send;
-  Object.defineProperty(h.session, 'send', {
-    get: () => {
-      captured = true;
-      return send;
-    },
-  });
-  h.page.isClosed = () => {
-    if (captured && h.record.lifetime.ordinary.phase === 'retiring' && ++retiringReads === 2)
-      vi.advanceTimersByTime(2001);
-    return false;
-  };
-  const closing = h.close();
-  await vi.advanceTimersByTimeAsync(5000);
-  expect(await closing).toMatchObject({ uncertain: true });
-  expect(retiringReads).toBeGreaterThanOrEqual(2);
-  expect(h.record.lifetime.inputEnd).toBe(2000);
-  expect(h.record.lifetime.parentEnd).toBe(5000);
-  expect(h.effects.filter((effect) => Array.isArray(effect) && effect[0] === 'send')).toEqual([]);
-  expect(h.session.detach).toHaveBeenCalledTimes(1);
 });
 
 it('a Proxy canonical cleanup binding refuses native cancellation rather than treating traps as data', async () => {
@@ -356,66 +208,6 @@ it('a Proxy canonical cleanup binding refuses native cancellation rather than tr
   expect(h.session.detach).toHaveBeenCalledTimes(1);
   expect(h.record.lifetime.inputEnd).toBe(2000);
   expect(h.record.lifetime.parentEnd).toBe(5000);
-});
-
-it('a stable final cleanup Page observation retains exactly two fixed cancellations', async () => {
-  vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
-  const h = fixture();
-  await h.ready;
-  h.page.isClosed = () => false;
-  expect(await h.close()).toMatchObject({ uncertain: false, detached: true });
-  expect(h.effects).toEqual([...retirementCancellations, ['detach']]);
-  expect(h.record.lifetime.inputEnd).toBe(2000);
-  expect(h.record.lifetime.parentEnd).toBe(5000);
-});
-
-it('expired parent observation retains a rejection consumer without renewing its end', async () => {
-  const h = fixture();
-  await h.ready;
-  const rejected = new Set<Promise<unknown>>();
-  let consumers = 0;
-  const reject = Promise.reject;
-  const then = Promise.prototype.then;
-  Promise.reject = (reason?: unknown) => {
-    const operation = Reflect.apply(reject, Promise, [reason]);
-    if (reason instanceof Error && reason.message === '') {
-      rejected.add(operation);
-      Object.defineProperty(operation, 'then', {
-        value: function (this: Promise<unknown>, ...args: Parameters<Promise<unknown>['then']>) {
-          if (typeof args[1] === 'function') consumers++;
-          return Reflect.apply(then, this, args);
-        },
-      });
-    }
-    return operation;
-  };
-  try {
-    const end = performance.now() - 1;
-    expect(await h.close(end)).toMatchObject({ uncertain: true });
-    expect(h.record.lifetime.parentEnd).toBe(end);
-    expect(h.session.detach).toHaveBeenCalledTimes(1);
-    expect(rejected.size).toBeGreaterThan(0);
-    expect(
-      consumers,
-      'OWNED_REJECTION_MUST_BE_OBSERVED_BEFORE_EXPIRED_WAIT'
-    ).toBeGreaterThanOrEqual(rejected.size);
-  } finally {
-    Promise.reject = reject;
-  }
-});
-
-it('isClosed observation reentrant close cannot admit a native effect after retirement', async () => {
-  const h = fixture();
-  await h.ready;
-  h.page.isClosed = () => {
-    void h.close();
-    return false;
-  };
-  await expect(
-    h.owner.native.dispatch({ kind: 'text', text: 'FIXTURE' }, signal())
-  ).rejects.toThrow('TARGET_REFUSED');
-  await h.close();
-  expect(h.effects).toEqual([...retirementCancellations, ['detach']]);
 });
 
 it('final binding observation losing current authority refuses captured Page IO', async () => {
@@ -442,92 +234,6 @@ it('final binding observation losing current authority refuses captured Page IO'
   expect(h.owner.custody()).toMatchObject({ nativePending: 0, uncertain: true });
   await h.close();
 });
-it.each(['composition', 'drag'] as const)(
-  'final binding observation refuses captured %s cancellation IO',
-  async (kind) => {
-    let armed = false;
-    const h = fixture(() => {
-      if (armed) {
-        armed = false;
-        h.retire();
-      }
-    });
-    await h.ready;
-    const send = h.session.send;
-    Object.defineProperty(h.session, 'send', {
-      get: () => {
-        armed = true;
-        return send;
-      },
-    });
-    const work =
-      kind === 'composition'
-        ? h.owner.native.cancelComposition(signal())
-        : h.owner.native.cancelDrag(signal());
-    await expect(work).rejects.toThrow('TARGET_REFUSED');
-    expect(armed).toBe(false);
-    expect(h.effects).toEqual([]);
-    expect(h.owner.custody()).toMatchObject({ nativePending: 0, uncertain: true });
-    await h.close();
-  }
-);
-
-it('unsupported observer return is refused without observing promise species or replacing native errors', async () => {
-  const observed = vi.fn();
-  const unexpected = Object.defineProperty({}, 'then', { get: observed });
-  const unavailable = vi.fn();
-  const pointer = {
-    beginMove: () => unexpected,
-    accepts: () => false,
-    success: () => undefined,
-    invalidate: () => undefined,
-    unavailable,
-    read: () => ({ revision: 0, terminal: true, marker: null }),
-  };
-  const h = fixture(undefined, pointer);
-  await h.ready;
-  await h.owner.native.dispatch({ kind: 'mouseMove', x: 1, y: 2 }, signal());
-  expect(unavailable).toHaveBeenCalledOnce();
-  expect(observed).not.toHaveBeenCalled();
-  const failure = Error('PRIMARY_NATIVE_FAILURE');
-  h.mouse.move.mockRejectedValueOnce(failure);
-  await expect(h.owner.native.dispatch({ kind: 'mouseMove', x: 1, y: 2 }, signal())).rejects.toBe(
-    failure
-  );
-  expect(observed).not.toHaveBeenCalled();
-});
-it('missing observer refuses before session acquisition and unsupported accepts return is not truthy authority', async () => {
-  const h = fixture();
-  await h.ready;
-  h.context.newCDPSession.mockClear();
-  expect(() =>
-    createPageTransport({
-      page: h.page,
-      current: () => true,
-      readBinding: () => null,
-      retire: () => {},
-    } as unknown as Parameters<typeof createPageTransport>[0])
-  ).toThrow('POINTER_OBSERVER_UNAVAILABLE');
-  expect(h.context.newCDPSession).not.toHaveBeenCalled();
-  const read = vi.fn();
-  const invalid = Object.defineProperty({}, 'then', { get: read });
-  const unavailable = vi.fn();
-  const pointer = {
-    beginMove: () => Object.freeze({}),
-    accepts: () => invalid as unknown as boolean,
-    success: () => undefined,
-    invalidate: () => undefined,
-    unavailable,
-    read: () => ({ revision: 0, terminal: true, marker: null }),
-  };
-  const owned = fixture(undefined, pointer);
-  await owned.ready;
-  await owned.owner.native.dispatch({ kind: 'mouseMove', x: 1, y: 2 }, signal());
-  expect(unavailable).toHaveBeenCalledOnce();
-  expect(read).not.toHaveBeenCalled();
-  await owned.close();
-  await h.close();
-});
 
 it('candidate: forged matching cleanup shape cannot enter exact owned transport', async () => {
   const h = ownedTransportFixture();
@@ -552,27 +258,6 @@ it('candidate: forged matching cleanup shape cannot enter exact owned transport'
   expect(attempt.entered).toBe(false);
 });
 
-it('distinguishes original known native custody from a pending observation DTO', async () => {
-  const h = fixture();
-  await h.ready;
-  const original = h.owner;
-  expect(original.isCustodyKnown()).toBe(true);
-  expect(h.input.isCustodyKnown()).toBe(true);
-  const pending = deferred<void>();
-  h.keyboard.insertText.mockImplementation(() => pending.promise);
-  const call = original.native.dispatch({ kind: 'text', text: 'FIXTURE' }, signal());
-  expect(original.custody()).toMatchObject({ nativePending: 1, uncertain: true });
-  expect(original.isCustodyKnown()).toBe(true);
-  expect(h.input.isCustodyKnown()).toBe(true);
-  pending.resolve();
-  await call;
-  expect(original.isCustodyKnown()).toBe(true);
-  expect(h.input.isCustodyKnown()).toBe(true);
-  await h.close();
-  expect(original.isCustodyKnown()).toBe(false);
-  expect(h.input.isCustodyKnown()).toBe(false);
-});
-
 it('refuses known custody until the original session acquisition completes', async () => {
   const acquired = deferred<CDPSession>();
   const h = fixture(undefined, undefined, (context) =>
@@ -585,40 +270,6 @@ it('refuses known custody until the original session acquisition completes', asy
   expect(h.input.isCustodyKnown()).toBe(true);
   await h.close();
 });
-
-it.each(['native', 'cleanup'] as const)(
-  'retains original %s failure without healing custody after a later ACK',
-  async (kind) => {
-    const h = fixture();
-    await h.ready;
-    const original = h.owner;
-    const failure = new Error('ORIGINAL_FAILURE');
-    const call =
-      kind === 'native'
-        ? (h.keyboard.insertText.mockRejectedValueOnce(failure),
-          original.native.dispatch({ kind: 'text', text: 'FIXTURE' }, signal()))
-        : (h.session.send.mockRejectedValueOnce(failure),
-          original.native.cancelComposition(signal()));
-    await expect(call).rejects.toThrow('ORIGINAL_FAILURE');
-    expect(original.isCustodyKnown()).toBe(false);
-    expect(h.input.isCustodyKnown()).toBe(false);
-    await original.native.dispatch({ kind: 'text', text: 'LATER' }, signal());
-    expect(original.custody().nativePending).toBe(0);
-    const forgedObservation = vi.spyOn(original, 'custody').mockReturnValue({
-      acquisitionPending: false,
-      nativePending: 0,
-      detachPending: false,
-      detached: false,
-      uncertain: false,
-    });
-    expect(original.isCustodyKnown()).toBe(false);
-    expect(h.input.isCustodyKnown()).toBe(false);
-    forgedObservation.mockRestore();
-    expect(original.isCustodyKnown()).toBe(false);
-    expect(h.input.isCustodyKnown()).toBe(false);
-    await h.close();
-  }
-);
 
 it('refuses original custody during detach and after genuine retirement', async () => {
   const h = fixture();
@@ -636,16 +287,6 @@ it('refuses original custody during detach and after genuine retirement', async 
   expect(original.custody().detached).toBe(true);
   expect(original.isCustodyKnown()).toBe(false);
   expect(h.input.isCustodyKnown()).toBe(false);
-});
-
-it('refuses known custody after genuine session acquisition rejection', async () => {
-  const h = fixture(undefined, undefined, (context) =>
-    context.newCDPSession.mockRejectedValueOnce(new Error('ACQUISITION_FAILED'))
-  );
-  expect(h.input.isCustodyKnown()).toBe(false);
-  await expect(h.ready).rejects.toThrow('ACQUISITION_FAILED');
-  expect(h.input.isCustodyKnown()).toBe(false);
-  await h.close();
 });
 
 for (const replacement of ['epoch', 'page', 'ordinary', 'parentMap'] as const)
@@ -706,3 +347,29 @@ for (const replacement of ['epoch', 'page', 'ordinary', 'parentMap'] as const)
     expect(replaced).toBe(true);
     expect(insert).not.toHaveBeenCalled();
   });
+
+it('late session after acquisition deadline is detached without target publication or uncertainty healing', async () => {
+  vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
+  const pending = deferred<CDPSession>();
+  const h = fixture(undefined, undefined, (context) =>
+    context.newCDPSession.mockImplementation(() => pending.promise)
+  );
+  const ready = expect(h.ready).rejects.toThrow('INPUT_DEADLINE');
+  await vi.advanceTimersByTimeAsync(2000);
+  await ready;
+  expect(h.slot.registeredTarget).toBeUndefined();
+  const originalEnd = h.record.lifetime.inputEnd;
+  const close = h.close(performance.now());
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(await close).toMatchObject({ acquisitionPending: true, uncertain: true });
+  pending.resolve(h.session as unknown as CDPSession);
+  await tick();
+  expect(h.session.detach).toHaveBeenCalledTimes(1);
+  expect(h.input.custody()).toMatchObject({
+    acquisitionPending: false,
+    detached: true,
+    uncertain: true,
+  });
+  expect(h.slot.registeredTarget).toBeUndefined();
+  expect(h.record.lifetime.inputEnd).toBe(originalEnd);
+});

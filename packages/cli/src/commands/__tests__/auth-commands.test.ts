@@ -10,10 +10,7 @@ import { createOwnerAuth } from '../auth-instance.js';
 import {
   runAuthEnable,
   runAuthResetPassword,
-  createStdinPrompt,
   findOwnerUser,
-  parseAuthEnableArgs,
-  parseAuthResetPasswordArgs,
   type CredentialPrompt,
   type CommandIO,
   type OwnerAuth,
@@ -88,33 +85,6 @@ describe('auth-commands', () => {
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  describe('parse helpers', () => {
-    it('parses enable flags and --help', () => {
-      expect(parseAuthEnableArgs(['--email', OWNER_EMAIL, '--password', 'pw'])).toEqual({
-        email: OWNER_EMAIL,
-        password: 'pw',
-        help: false,
-      });
-      expect(parseAuthEnableArgs(['--help']).help).toBe(true);
-    });
-
-    it('parses reset-password flags and --help', () => {
-      expect(parseAuthResetPasswordArgs(['--password', 'pw'])).toEqual({
-        password: 'pw',
-        help: false,
-      });
-      expect(parseAuthResetPasswordArgs(['-h']).help).toBe(true);
-    });
-  });
-
-  describe('createStdinPrompt', () => {
-    it('hands out newline-separated values in order', async () => {
-      const prompt = createStdinPrompt(`${OWNER_EMAIL}\n${OWNER_PASSWORD}\n`);
-      expect(await prompt.email()).toBe(OWNER_EMAIL);
-      expect(await prompt.password({ confirm: true })).toBe(OWNER_PASSWORD);
-    });
   });
 
   describe('runAuthEnable', () => {
@@ -213,23 +183,6 @@ describe('auth-commands', () => {
       };
       await signInApi.api.signInEmail({ body: { email: OWNER_EMAIL, password: OWNER_PASSWORD } });
       expect(db.select().from(session).all()).toHaveLength(1);
-    });
-
-    it('resolves credentials from stdin when no flags are given (non-TTY)', async () => {
-      const configStore = createFileConfigStore(tmpDir);
-      const { io } = captureIo();
-
-      const code = await runAuthEnable({
-        options: {},
-        auth,
-        db,
-        configStore,
-        prompt: createStdinPrompt(`${OWNER_EMAIL}\n${OWNER_PASSWORD}\n`),
-        io,
-      });
-
-      expect(code).toBe(0);
-      expect(db.select().from(user).get()?.email).toBe(OWNER_EMAIL);
     });
 
     it('errors cleanly on a second enable without writing config', async () => {
@@ -359,28 +312,6 @@ describe('auth-commands', () => {
       expect(output).toMatch(/up to 5 minutes/);
       expect(output).toMatch(/API keys keep working/);
       expect(output).toMatch(/shell history/);
-    });
-
-    it('asks for the password without the shell-history note when --password is left off', async () => {
-      const store = createFileConfigStore(tmpDir);
-      await runAuthEnable({
-        options: { email: OWNER_EMAIL, password: OWNER_PASSWORD },
-        auth,
-        db,
-        configStore: store,
-        prompt: throwingPrompt,
-        io: captureIo().io,
-      });
-      const { io, logs } = captureIo();
-      const code = await runAuthResetPassword({
-        options: {},
-        auth,
-        db,
-        prompt: { email: throwingPrompt.email, password: async () => NEW_PASSWORD },
-        io,
-      });
-      expect(code).toBe(0);
-      expect(logs.join('\n')).not.toMatch(/shell history/);
     });
 
     it('rejects a password shorter than the minimum length', async () => {

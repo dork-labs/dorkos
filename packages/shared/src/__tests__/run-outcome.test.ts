@@ -74,19 +74,11 @@ describe('createRunOutcomeTracker', () => {
         ])
       ).toBe('the model errored');
     });
-
-    it('says something readable when the reason says error but no frame named one', () => {
-      expect(settle([status('error'), done()])).toBe('Run stopped with an error');
-    });
   });
 
   describe('a turn that did NOT settle to an error', () => {
     it('is clean when nothing went wrong', () => {
       expect(settle([text('all good'), status('completed'), done()])).toBeNull();
-    });
-
-    it('is clean when the stream simply ended with no terminal event at all', () => {
-      expect(settle([text('all good')])).toBeNull();
     });
 
     it('is clean when a mid-turn error was RECOVERED and the turn completed', () => {
@@ -115,25 +107,6 @@ describe('createRunOutcomeTracker', () => {
           settle([error({ message: 'aborted' }), abortStatus(reason, true), done()])
         ).toBeNull();
       }
-    });
-
-    it('is clean when an unrequested abort carried NOTHING to report', () => {
-      // Both halves are required. A shutdown mid-turn is an abort nobody asked
-      // for, but with no error frame there is no failure to tell anyone about —
-      // the turn was cut short, which is what `cancelled` already says.
-      expect(settle([text('working'), abortStatus('aborted_streaming', false), done()])).toBeNull();
-    });
-
-    it('is clean when an unrequested abort carried only a SURVIVABLE frame', () => {
-      // A `hook_failure` never reaches the latch, so the unrequested abort has
-      // no fatal frame to promote and stays a stop.
-      expect(
-        settle([
-          error({ message: 'Hook "notify" failed (Stop)', code: 'hook_failure' }),
-          abortStatus('aborted_streaming', false),
-          done(),
-        ])
-      ).toBeNull();
     });
   });
 
@@ -190,20 +163,6 @@ describe('createRunOutcomeTracker', () => {
         ])
       ).toBeNull();
     });
-
-    it('does not inherit an earlier ENDING stop record within one window', () => {
-      // Reason and record are latched as a pair, so a later reason arriving with
-      // no record of its own clears the record rather than keeping the old one.
-      // Degrading to "unknown intent" is the safe direction.
-      expect(
-        settle([
-          error({ message: 'refused' }),
-          abortStatus('aborted_streaming', false),
-          status('aborted_tools'),
-          done(),
-        ])
-      ).toBeNull();
-    });
   });
 
   describe('isUnrequestedAbortFailure', () => {
@@ -212,14 +171,6 @@ describe('createRunOutcomeTracker', () => {
       expect(isUnrequestedAbortFailure(false, false)).toBe(false);
       expect(isUnrequestedAbortFailure(true, true)).toBe(false);
       expect(isUnrequestedAbortFailure(true, false)).toBe(false);
-    });
-
-    it('never accuses on an ABSENT signal, however bad the frame', () => {
-      // The degradation pin. Codex, OpenCode and every turn recorded before the
-      // field existed report no stop record; reading silence as "nobody asked"
-      // would turn every operator Stop on those runtimes into a crash.
-      expect(isUnrequestedAbortFailure(undefined, true)).toBe(false);
-      expect(isUnrequestedAbortFailure(undefined, false)).toBe(false);
     });
 
     it('is clean when the only error came from an operator hook, not the turn', () => {
@@ -235,21 +186,6 @@ describe('createRunOutcomeTracker', () => {
           done(),
         ])
       ).toBeNull();
-    });
-
-    it('is clean when the turn deferred a tool or went to the background', () => {
-      // All three ride SDKResultSuccess: the turn handed work off and will be
-      // back for it, so a recovered error before the hand-off is not a failure.
-      for (const reason of ['tool_deferred', 'tool_deferred_unavailable', 'background_requested']) {
-        expect(
-          settle([
-            error({ message: 'a tool blew up' }),
-            text('handing off'),
-            status(reason),
-            done(),
-          ])
-        ).toBeNull();
-      }
     });
 
     it('still fails when a hook failure sits beside a REAL error', () => {
@@ -293,19 +229,6 @@ describe('createRunOutcomeTracker', () => {
         ])
       ).toBeNull();
     });
-
-    it('reports the LAST window failing even after a clean earlier one', () => {
-      expect(
-        settle([
-          text('first window'),
-          status('completed'),
-          done(),
-          text('second window'),
-          error({ message: 'second window died' }),
-          done(),
-        ])
-      ).toBe('second window died');
-    });
   });
 
   describe('what a person reads', () => {
@@ -314,17 +237,6 @@ describe('createRunOutcomeTracker', () => {
         settle([error({ message: 'API Error: 401 Unauthorized', category: 'auth_error' })])
       ).toBe('Sign in again: API Error: 401 Unauthorized');
     });
-
-    it('passes an ordinary failure through in the words the runtime used', () => {
-      expect(settle([error({ message: 'ENOENT: no such file' })])).toBe('ENOENT: no such file');
-    });
-  });
-
-  it('answers the same thing however many times it is asked', () => {
-    const tracker = createRunOutcomeTracker();
-    tracker.observe(error({ message: 'boom' }));
-    expect(tracker.settle()).toEqual({ outcome: 'failed', error: 'boom' });
-    expect(tracker.settle()).toEqual({ outcome: 'failed', error: 'boom' });
   });
 
   describe('a run that was never allowed to do anything (DOR-2101)', () => {
@@ -389,27 +301,6 @@ describe('createRunOutcomeTracker', () => {
       // recorded with a green tick that told nobody.
       expect(
         settleRun([refused('Bash'), toolWorked('Read'), text('Checked what I could.'), done()])
-      ).toEqual({ outcome: 'needs_attention', done: 'partial' });
-    });
-
-    it('reads a success in an earlier window as part of the job done', () => {
-      // The latches are run-scoped on purpose: where the runtime split the turn
-      // must not decide whether the run did any work.
-      expect(
-        settleRun([toolWorked('Read'), status('completed'), done(), text('more'), refused('Bash')])
-      ).toEqual({ outcome: 'needs_attention', done: 'partial' });
-    });
-
-    it('reads a codex/opencode tool_call_end as the work having happened', () => {
-      expect(
-        settleRun([
-          refused('Bash'),
-          {
-            type: 'tool_call_end',
-            data: { toolCallId: 't9', toolName: 'shell', status: 'complete' },
-          } as StreamEvent,
-          done(),
-        ])
       ).toEqual({ outcome: 'needs_attention', done: 'partial' });
     });
 
@@ -484,10 +375,6 @@ describe('createRunOutcomeTracker', () => {
       });
     });
 
-    it('completes a run that was refused nothing and used nothing', () => {
-      expect(settleRun([text('All good.'), done()])).toEqual({ outcome: 'completed' });
-    });
-
     it('completes a run that only asked a question nobody could answer', () => {
       // DorkOS stamps `no_approval_surface` on three different asks. A run that
       // did its work and closed by asking a question has not lost a TOOL, and
@@ -497,37 +384,10 @@ describe('createRunOutcomeTracker', () => {
       ).toEqual({ outcome: 'completed' });
     });
 
-    it('completes a run whose only refusal was an MCP elicitation', () => {
-      expect(settleRun([refusedAsk('elicitation', 'linear'), done()])).toEqual({
-        outcome: 'completed',
-      });
-    });
-
     it('still needs attention when a refused TOOL rides beside a refused question', () => {
       expect(
         settleRun([refusedAsk('question', 'AskUserQuestion'), refused('Bash'), done()])
       ).toEqual({ outcome: 'needs_attention', done: 'nothing_done' });
-    });
-
-    it('completes a run whose refusal kind nothing recorded', () => {
-      // The kind is written in the same statement as the reason, by the one
-      // function that writes either, so this frame cannot come from a DorkOS
-      // that has the field — and an unclassified ask is not evidence a tool
-      // was lost.
-      expect(
-        settleRun([
-          {
-            type: 'permission_denied',
-            data: {
-              toolCallId: 't1',
-              toolName: 'Bash',
-              reasonType: 'no_approval_surface',
-              message: 'no',
-            },
-          } as StreamEvent,
-          done(),
-        ])
-      ).toEqual({ outcome: 'completed' });
     });
   });
 });

@@ -315,7 +315,7 @@ gates:
   # --- pr-gates.yml ---
   - id: wf.pr-gates.pr-gates
     source: .github/workflows/pr-gates.yml
-    purpose: Fails while the head lacks Security's sign-off (security-reviewed after the head, or a passing cloud security-verdict), so auto-merge waits for it (DOR-5107, DOR-5119). QA and design labels are notes for the daily sweep, not gates.
+    purpose: Fails while the head lacks Security's sign-off, so auto-merge waits for it (DOR-5107, DOR-5119). Security's sign-off is a signed review marker or the cloud verdict (a comment whose signature verifies against main's ci/security/allowed_signers for this head, or a passing security-verdict). QA and design labels are notes for the daily sweep, not gates.
 
   # --- hold-reason.yml ---
   - id: wf.hold-reason.hold-reason
