@@ -5,6 +5,7 @@ covers:
   - "fix(accounts): Main's own account row never offers to let agents pick it (DOR-5033)"
   - "fix(accounts): the guards read Main's own row, the confirming caller and the new pin as they ship (DOR-5033)"
   - "fix(accounts): the account pick route's 428 uses the shared step-up answer in the API document (DOR-5033)"
+  - "fix(accounts): the agent-computer write census lists the account pick switch as the hub's (DOR-5033)"
 ---
 
 ### Fixed
