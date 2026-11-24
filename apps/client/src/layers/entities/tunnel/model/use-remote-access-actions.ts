@@ -20,9 +20,19 @@ import { broadcastTunnelChange } from './use-tunnel-sync';
 import { useRemoteAccessStore } from './remote-access-store';
 import { isManagedReport, remoteAccessKeys, startTarget } from './remote-access-report';
 
+/**
+ * The exposure guard's codes: remote access's problem code, and the old
+ * spelling `POST /api/tunnel/start` still answers until it moves (DOR-4979).
+ */
+const EXPOSURE_REFUSAL_CODES = new Set([
+  'auth_required_for_exposure',
+  'AUTH_REQUIRED_FOR_EXPOSURE',
+]);
+
 /** Whether a refusal is the exposure guard's: remote access needs a login first. */
 function isExposureRefusal(err: unknown): boolean {
-  return (err as { code?: string } | null)?.code === 'AUTH_REQUIRED_FOR_EXPOSURE';
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && EXPOSURE_REFUSAL_CODES.has(code);
 }
 
 /**
@@ -127,7 +137,7 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
 
       // Exposing an unprotected instance is blocked (409). Route the person
       // into owner-account creation, then retry the start once login is on.
-      if (refusal.code === 'AUTH_REQUIRED_FOR_EXPOSURE') {
+      if (isExposureRefusal(refusal)) {
         useRemoteAccessStore.getState().abandonStart();
         requestOwnerSetup({
           reason: 'exposure',
@@ -139,20 +149,20 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
 
       // A TUNNEL_PORT that Remote Access can't reach is a setting to fix, not a
       // tunnel that is up: say the server's sentence (DOR-4263).
-      if (refusal.code === 'TUNNEL_PORT_MISMATCH') {
+      if (refusal.code === 'tunnel_port_mismatch') {
         useRemoteAccessStore
           .getState()
           .failStart(err instanceof Error ? err.message : 'Couldn’t open your link. Try again.');
         return;
       }
 
-      // The route's OTHER 409 is "Tunnel is already running", and it is not a
-      // failure — it is the answer converging on a tunnel that is up. Painting
-      // an error over a live tunnel is how a person ends up turning off working
-      // remote access to fix it. Reachable for real now that ngrok reconnects
-      // are reported (DOR-1738): a start pressed during one is a no-op.
-      // Managed access has no such refusal; a 409 there is an ordinary failure.
-      if (!managed && refusal.status === 409) {
+      // `tunnel_running` is not a failure: it is the answer converging on a
+      // tunnel that is up, with its address in `url`. Painting an error over a
+      // live tunnel is how a person ends up turning off working remote access
+      // to fix it. Reachable for real now that ngrok reconnects are reported
+      // (DOR-1738): a start pressed during one is a no-op. Managed access has
+      // no such refusal.
+      if (!managed && refusal.code === 'tunnel_running') {
         useRemoteAccessStore.getState().convergeStart(refusal.body?.url ?? null);
         queryClient.invalidateQueries({ queryKey: configKeys.all });
         broadcastTunnelChange();

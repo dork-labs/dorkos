@@ -13,7 +13,7 @@ import {
   RemoteCommunityEnrollRequestSchema,
 } from '@dorkos/shared/community-views';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import {
   getRemoteCommunityAdapter,
   getRemoteCommunityEnrollmentStore,
@@ -25,6 +25,9 @@ import { remoteRoomAccessOf } from '../services/communities/remote/remote-commun
 import { getRoomService } from '../services/rooms/index.js';
 import { getAgentDmsStore } from '../services/communities/remote/dms/agent-dms-store.js';
 import { communityFailure, communityTarget, verifiedConnection } from './remote-community-http.js';
+
+/** An agent this install hasn't added to the space, or has removed. */
+const NOT_ADDED = 'That agent isn’t in this space.';
 
 /**
  * Register the agent routes on the `/api/communities` routes.
@@ -92,11 +95,13 @@ export function registerRemoteCommunityAgentRoutes(router: Hono<ApiEnv>): void {
     const { owner, ref } = target;
     const localAgentId = c.req.param('localAgentId');
     const input = RemoteCommunityEnrollRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!input.success) return c.json({ error: 'Use a valid space handle.' }, 400);
+    if (!input.success)
+      return validationProblem(c, input.error, { detail: 'Use a valid space handle.' });
     try {
       await verifiedConnection(ref, owner, 'enrollAgent');
       const localAgent = resolveRemoteCommunityLocalAgent(localAgentId);
-      if (!localAgent) return c.json({ error: 'Local agent not found.' }, 404);
+      if (!localAgent)
+        return problem(c, 'not_found', { detail: 'That agent isn’t on this computer.' });
       const adapter = getRemoteCommunityAdapter(ref, owner);
       const member = await adapter.recoverAgent({
         // Keep the public Mesh manifest id durable. The local author id is
@@ -138,7 +143,7 @@ export function registerRemoteCommunityAgentRoutes(router: Hono<ApiEnv>): void {
     try {
       const enrollments = getRemoteCommunityEnrollmentStore();
       const binding = enrollments.findAnyRemoteMember(ref, localAgentId, owner);
-      if (!binding) return c.json({ error: 'Agent enrollment not found.' }, 404);
+      if (!binding) return problem(c, 'not_found', { detail: NOT_ADDED });
       // Fence the exact local enrollment before any remote cleanup. This aborts
       // its stream and pending work, revokes only its mirror accessors, and
       // prevents a directory pass already in flight from restoring that grant.
@@ -177,7 +182,7 @@ export function registerRemoteCommunityAgentRoutes(router: Hono<ApiEnv>): void {
         c.req.param('localAgentId'),
         owner
       );
-      if (!binding) return c.json({ error: 'Active agent enrollment not found.' }, 404);
+      if (!binding) return problem(c, 'not_found', { detail: NOT_ADDED });
       await getRemoteCommunityAdapter(ref, owner).addMember(
         c.req.param('roomId'),
         binding.remoteMemberId
@@ -201,7 +206,7 @@ export function registerRemoteCommunityAgentRoutes(router: Hono<ApiEnv>): void {
         localAgentId,
         owner
       );
-      if (!binding) return c.json({ error: 'Active agent enrollment not found.' }, 404);
+      if (!binding) return problem(c, 'not_found', { detail: NOT_ADDED });
       await getRemoteCommunityAdapter(ref, owner).removeMember(roomId, binding.remoteMemberId);
       await getRemoteCommunityLifecycle().leaveRoom(ref, roomId, localAgentId, owner);
       return c.json(

@@ -278,9 +278,15 @@ describe('a start against a tunnel that is already up converges (DOR-1738)', () 
     const { result, transport } = setup();
     await settled(result);
     vi.mocked(transport.startTunnel).mockRejectedValue(
-      Object.assign(new Error('Tunnel is already running'), {
+      Object.assign(new Error('Remote access is already on.'), {
         status: 409,
-        body: { error: 'Tunnel is already running', url: 'https://abc.ngrok.app' },
+        code: 'tunnel_running',
+        body: {
+          code: 'tunnel_running',
+          status: 409,
+          detail: 'Remote access is already on.',
+          url: 'https://abc.ngrok.app',
+        },
       })
     );
 
@@ -301,7 +307,7 @@ describe('a start against a tunnel that is already up converges (DOR-1738)', () 
     vi.mocked(transport.startTunnel).mockRejectedValue(
       Object.assign(new Error('Exposing DorkOS requires a login. Create an owner account first.'), {
         status: 409,
-        code: 'AUTH_REQUIRED_FOR_EXPOSURE',
+        code: 'auth_required_for_exposure',
       })
     );
 
@@ -320,13 +326,12 @@ describe('a start against a tunnel that is already up converges (DOR-1738)', () 
   it('says a TUNNEL_PORT refusal as an error, never as a tunnel that is up (DOR-4263)', async () => {
     const { result, transport } = setup();
     await settled(result);
-    const sentence =
-      'Remote Access only reaches DorkOS on port 4242, not 6241. Unset TUNNEL_PORT, or point it at that port.';
+    const sentence = 'Remote Access can’t reach that port. Unset TUNNEL_PORT, or fix it.';
     vi.mocked(transport.startTunnel).mockRejectedValue(
       Object.assign(new Error(sentence), {
         status: 409,
-        code: 'TUNNEL_PORT_MISMATCH',
-        body: { error: sentence, code: 'TUNNEL_PORT_MISMATCH' },
+        code: 'tunnel_port_mismatch',
+        body: { code: 'tunnel_port_mismatch', status: 409, detail: sentence },
       })
     );
 

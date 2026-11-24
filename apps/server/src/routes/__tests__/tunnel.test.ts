@@ -296,7 +296,10 @@ describe('Tunnel Route', () => {
       const res = await request(server).post('/api/tunnel/start');
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('No ngrok auth token configured');
+      expect(res.body).toMatchObject({
+        code: 'tunnel_token_missing',
+        detail: 'Add an ngrok auth token first.',
+      });
       expect(tunnelManager.start).not.toHaveBeenCalled();
     });
 
@@ -312,7 +315,7 @@ describe('Tunnel Route', () => {
       const res = await request(server).post('/api/tunnel/start');
 
       expect(res.status).toBe(409);
-      expect(res.body.error).toBe('Tunnel is already running');
+      expect(res.body.code).toBe('tunnel_running');
       expect(res.body.url).toBe('https://already-running.ngrok.io');
       expect(tunnelManager.start).not.toHaveBeenCalled();
     });
@@ -336,12 +339,12 @@ describe('Tunnel Route', () => {
       const res = await request(server).post('/api/tunnel/start');
 
       expect(res.status).toBe(409);
-      expect(res.body.error).toBe('Tunnel is already running');
+      expect(res.body.code).toBe('tunnel_running');
       expect(res.body.url).toBe('https://reconnecting.ngrok.io');
       expect(tunnelManager.start).not.toHaveBeenCalled();
     });
 
-    it('returns 409 AUTH_REQUIRED_FOR_EXPOSURE when the exposure guard blocks (no login)', async () => {
+    it('returns 409 auth_required_for_exposure when the exposure guard blocks (no login)', async () => {
       mutableEnv.NGROK_AUTHTOKEN = 'test-token-123';
       setConfig(undefined);
       mockCanExpose.mockReturnValue(false);
@@ -349,9 +352,10 @@ describe('Tunnel Route', () => {
       const res = await request(server).post('/api/tunnel/start');
 
       expect(res.status).toBe(409);
-      expect(res.body).toEqual({
-        error: 'Exposing DorkOS requires a login. Create an owner account first.',
-        code: 'AUTH_REQUIRED_FOR_EXPOSURE',
+      expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+      expect(res.body).toMatchObject({
+        detail: 'Exposing DorkOS requires a login. Create an owner account first.',
+        code: 'auth_required_for_exposure',
       });
       // Blocked before any ngrok work — no tunnel is opened.
       expect(tunnelManager.start).not.toHaveBeenCalled();
@@ -365,7 +369,12 @@ describe('Tunnel Route', () => {
       const res = await request(server).post('/api/tunnel/start');
 
       expect(res.status).toBe(500);
-      expect(res.body.error).toBe('Connection failed');
+      // A fixed sentence: the error's own text stays in the log (DOR-4979).
+      expect(res.body).toMatchObject({
+        code: 'internal_error',
+        detail: 'Couldn’t open your link. Try again.',
+      });
+      expect(JSON.stringify(res.body)).not.toContain('Connection failed');
     });
 
     it('answers a TUNNEL_PORT it cannot use with 409 and a stable code, never 500 (DOR-4263)', async () => {
@@ -376,10 +385,9 @@ describe('Tunnel Route', () => {
       const res = await request(server).post('/api/tunnel/start');
 
       expect(res.status).toBe(409);
-      expect(res.body).toEqual({
-        error:
-          'Remote Access only reaches DorkOS on port 4242, not 6241. Unset TUNNEL_PORT, or point it at that port.',
-        code: 'TUNNEL_PORT_MISMATCH',
+      expect(res.body).toMatchObject({
+        detail: 'Remote Access can’t reach that port. Unset TUNNEL_PORT, or fix it.',
+        code: 'tunnel_port_mismatch',
       });
       // A refusal to fix, not a fault: nothing is saved as on.
       expect(configManager.set).not.toHaveBeenCalledWith(
@@ -468,7 +476,7 @@ describe('Tunnel Route', () => {
           .set('x-dorkos-agent', 'agent-token-abc');
 
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('operator_only_config');
+        expect(res.body.code).toBe('person_only');
         expect(tunnelManager.start).not.toHaveBeenCalled();
         expect(configManager.set).not.toHaveBeenCalled();
       });
@@ -482,7 +490,7 @@ describe('Tunnel Route', () => {
         // what the cockpit can") reaching a live effect here. `canExpose()` is
         // mocked true for the whole file, and on a real install it is false
         // whenever login is off — so the login-off caller this exercises would
-        // meet a 409 AUTH_REQUIRED_FOR_EXPOSURE a few lines later and no tunnel
+        // meet a 409 auth_required_for_exposure a few lines later and no tunnel
         // would open. What is pinned is the BARS' own behaviour: a caller
         // presenting no agent identity and no cookie clears them, which is what
         // keeps the cockpit's own enable flow working once an owner exists.
@@ -522,7 +530,7 @@ describe('Tunnel Route', () => {
           .set('x-dorkos-agent', 'agent-token-abc');
 
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('operator_only_config');
+        expect(res.body.code).toBe('person_only');
         expect(res.body.url).toBeUndefined();
       });
 
@@ -540,7 +548,7 @@ describe('Tunnel Route', () => {
         );
 
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('operator_cookie_required');
+        expect(res.body.code).toBe('person_only');
         expect(tunnelManager.start).not.toHaveBeenCalled();
       });
 
@@ -570,12 +578,12 @@ describe('Tunnel Route', () => {
           '/api/tunnel/start'
         );
         expect(guest.status).toBe(403);
-        expect(guest.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+        expect(guest.body.code).toBe('operator_only');
         const away = await request(appWithCaller({ userId: 'u1', credential: 'cookie' }))
           .post('/api/tunnel/start')
           .set('X-Forwarded-For', '203.0.113.9');
         expect(away.status).toBe(403);
-        expect(away.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+        expect(away.body.code).toBe('operator_only');
         expect(tunnelManager.start).not.toHaveBeenCalled();
       });
 
@@ -709,7 +717,11 @@ describe('Tunnel Route', () => {
       const res = await request(server).post('/api/tunnel/stop');
 
       expect(res.status).toBe(500);
-      expect(res.body.error).toBe('Disconnect failed');
+      expect(res.body).toMatchObject({
+        code: 'internal_error',
+        detail: 'Couldn’t close your link. DorkOS can’t tell if it’s still on.',
+      });
+      expect(JSON.stringify(res.body)).not.toContain('Disconnect failed');
     });
 
     it('writes the failure to the log (DOR-1738)', async () => {

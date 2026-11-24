@@ -328,9 +328,10 @@ describe('the dialog paints what the shared model says', () => {
     // "Already running" means the server HAS one, so its config says so too.
     serverNowSays({ connected: true, isRunning: true, url: 'https://abc.ngrok.app' });
     vi.mocked(transport.startTunnel).mockRejectedValue(
-      Object.assign(new Error('Tunnel is already running'), {
+      Object.assign(new Error('Remote access is already on.'), {
         status: 409,
-        body: { error: 'Tunnel is already running', url: 'https://abc.ngrok.app' },
+        code: 'tunnel_running',
+        body: { code: 'tunnel_running', status: 409, url: 'https://abc.ngrok.app' },
       })
     );
 

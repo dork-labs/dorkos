@@ -20,6 +20,7 @@ import {
   CommunityUnsupportedError,
   StaleCommunityCursorError,
 } from '@dorkos/shared/community-adapter';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import { PinnedHttpError } from './pinned-origin.js';
 import { CommunityDeletedError, CommunityTakenDownError } from './remote-community-adapter.js';
 
@@ -27,10 +28,10 @@ import { CommunityDeletedError, CommunityTakenDownError } from './remote-communi
 export interface CommunityRefusal {
   /** HTTP status in the same class the Community used. */
   status: number;
-  /** Stable local code a client can branch on. */
-  code: string;
-  /** Plain wording safe to show a person. */
-  error: string;
+  /** The problem code a client branches on (DOR-4979): never the Community's own code. */
+  code: ProblemCode;
+  /** Plain wording safe to show a person: one fixed sentence, never the Community's text. */
+  detail: string;
   /** Whole seconds until the person can try again, sent on as `Retry-After`. Slow mode only. */
   retryAfterSeconds?: number;
 }
@@ -39,34 +40,43 @@ export interface CommunityRefusal {
 export type CommunityRefusalAction = 'enroll-agent' | 'rename' | 'accept-rules' | 'report';
 
 /** What a Community's `409 STATE_CONFLICT` means for a person's own conduct (DOR-2770). */
-const CONDUCT_CONFLICTS: Partial<Record<CommunityRefusalAction, string>> = {
-  rename: 'That name is taken in this space. Try another.',
-  'accept-rules': 'The rules changed. Read them again first.',
-  report: 'You can’t report this message.',
+const CONDUCT_CONFLICTS: Partial<Record<CommunityRefusalAction, CommunityRefusal>> = {
+  rename: {
+    status: 409,
+    code: 'name_taken',
+    detail: 'That name is taken in this space. Try another.',
+  },
+  'accept-rules': {
+    status: 412,
+    code: 'precondition_failed',
+    detail: 'The rules changed. Read them again first.',
+  },
+  report: { status: 409, code: 'conflict', detail: 'You can’t report this message.' },
 };
 
 const NOT_FOUND: CommunityRefusal = {
   status: 404,
-  code: 'COMMUNITY_NOT_FOUND',
-  error: 'That isn’t available in this space.',
+  code: 'not_found',
+  detail: 'That isn’t available in this space.',
 };
 
+/** The channel moved on since it was loaded: "changed since you looked", so 412. */
 const STALE: CommunityRefusal = {
-  status: 410,
-  code: 'COMMUNITY_CURSOR_STALE',
-  error: 'This channel changed since it was loaded. Refresh to catch up.',
+  status: 412,
+  code: 'precondition_failed',
+  detail: 'This channel changed since it was loaded. Refresh to catch up.',
 };
 
 const DELETED: CommunityRefusal = {
   status: 410,
-  code: 'COMMUNITY_DELETED',
-  error: 'This space was deleted.',
+  code: 'space_deleted',
+  detail: 'This space was deleted.',
 };
 
 const TAKEN_DOWN: CommunityRefusal = {
   status: 423,
-  code: 'COMMUNITY_TAKEN_DOWN',
-  error: 'This space was taken down.',
+  code: 'space_taken_down',
+  detail: 'This space was taken down.',
 };
 
 /**
@@ -83,8 +93,6 @@ export function communityGoneRefusal(lifecycle: string | undefined): CommunityRe
   return null;
 }
 
-const REJECTED = 'The space didn’t accept that request.';
-
 /** The caps a Community sets, as `409` codes, in the app's own words. */
 const LIMIT_MESSAGES: Partial<Record<string, string>> = {
   AGENT_LIMIT_REACHED: 'You’ve reached your agent limit in this space. Remove one to add another.',
@@ -96,18 +104,18 @@ const LIMIT_MESSAGES: Partial<Record<string, string>> = {
 const MODERATION_HOLDS: Partial<Record<string, CommunityRefusal>> = {
   COMMUNITY_MUTED: {
     status: 403,
-    code: 'COMMUNITY_MUTED',
-    error: 'You’re muted in this space for now.',
+    code: 'space_muted',
+    detail: 'You’re muted in this space for now.',
   },
   COMMUNITY_SLOW_MODE: {
     status: 429,
-    code: 'COMMUNITY_SLOW_MODE',
-    error: 'This channel is in slow mode. Wait a moment, then post again.',
+    code: 'space_slow_mode',
+    detail: 'This channel is in slow mode. Wait a moment, then post again.',
   },
   COMMUNITY_RULES_NOT_ACCEPTED: {
     status: 403,
-    code: 'COMMUNITY_RULES_NOT_ACCEPTED',
-    error: 'Accept this space’s rules before you post.',
+    code: 'space_rules_not_accepted',
+    detail: 'Accept this space’s rules before you post.',
   },
 };
 
@@ -142,14 +150,14 @@ export function communityRefusal(
   if (error instanceof CommunityUnsupportedError)
     return {
       status: 409,
-      code: 'COMMUNITY_UNSUPPORTED',
-      error: 'This space doesn’t support that.',
+      code: 'space_unsupported',
+      detail: 'This space doesn’t support that.',
     };
   if (!(error instanceof PinnedHttpError)) return null;
   const { status, remoteCode } = error;
   // A suspension arrives as 503, but it is the Community's decision, not an outage.
   if (remoteCode === 'COMMUNITY_SUSPENDED')
-    return { status: 423, code: 'COMMUNITY_SUSPENDED', error: 'This space is suspended.' };
+    return { status: 423, code: 'space_suspended', detail: 'This space is suspended.' };
   if (status < 400 || status >= 500) return null;
   // The space's moderation holds this person's posts: say which hold, so they know what to do.
   const held = remoteCode ? MODERATION_HOLDS[remoteCode] : undefined;
@@ -157,81 +165,69 @@ export function communityRefusal(
     return { ...held, retryAfterSeconds: error.retryAfterSeconds };
   if (held) return held;
   const conflict = action && status === 409 ? CONDUCT_CONFLICTS[action] : undefined;
-  if (conflict && remoteCode === 'STATE_CONFLICT')
-    return { status: 409, code: 'COMMUNITY_CONFLICT', error: conflict };
+  if (conflict && remoteCode === 'STATE_CONFLICT') return conflict;
   switch (status) {
     case 401:
     case 403:
-      return {
-        status: 403,
-        code: 'COMMUNITY_ACCESS_DENIED',
-        error: 'The space didn’t allow that.',
-      };
+      return { status: 403, code: 'forbidden', detail: 'The space didn’t allow that.' };
     case 404:
       return NOT_FOUND;
     case 409: {
       // A cap is a state the person can act on: name which one.
       const limit = remoteCode ? LIMIT_MESSAGES[remoteCode] : undefined;
-      if (limit) return { status: 409, code: 'COMMUNITY_LIMIT_REACHED', error: limit };
+      if (limit) return { status: 409, code: 'space_limit_reached', detail: limit };
       if (remoteCode === 'NESTED_THREAD')
         return {
           status: 409,
-          code: 'COMMUNITY_CONFLICT',
-          error: 'Replies can only go on a top-level message.',
+          code: 'conflict',
+          detail: 'Replies can only go on a top-level message.',
         };
       if (remoteCode === 'COMMUNITY_UNAVAILABLE')
-        return {
-          status: 409,
-          code: 'COMMUNITY_CONFLICT',
-          error: 'This space isn’t open right now.',
-        };
+        return { status: 409, code: 'space_not_open', detail: 'This space isn’t open right now.' };
+      // Any other clash means the space moved on since this was read: 412, as everywhere else.
       return {
-        status: 409,
-        code: 'COMMUNITY_CONFLICT',
-        error: 'That no longer matches the space. Refresh and try again.',
+        status: 412,
+        code: 'precondition_failed',
+        detail: 'That no longer matches the space. Refresh and try again.',
       };
     }
     case 410:
       return STALE;
     case 413:
-      return {
-        status: 413,
-        code: 'COMMUNITY_TOO_LARGE',
-        error: 'That’s too large for this space.',
-      };
+      return { status: 413, code: 'request_too_large', detail: 'That’s too large for this space.' };
     case 415:
       return {
         status: 415,
-        code: 'COMMUNITY_UNSUPPORTED_FILE',
-        error: 'This space doesn’t accept that type of file.',
+        code: 'unsupported_media_type',
+        detail: 'This space doesn’t accept that type of file.',
       };
     case 423:
       if (remoteCode === 'COMMUNITY_HELD')
         return {
           status: 423,
-          code: 'COMMUNITY_HELD',
-          error:
-            'This space is on hold. You can read it, but no one can post. Its owner can still export it.',
+          code: 'space_on_hold',
+          detail: 'This space is on hold. You can read it, but no one can post.',
         };
       return remoteCode === 'COMMUNITY_DELETION_PENDING'
-        ? { status: 423, code: 'COMMUNITY_READ_ONLY', error: 'This space is being deleted.' }
+        ? { status: 423, code: 'space_read_only', detail: 'This space is being deleted.' }
         : {
             status: 423,
-            code: 'COMMUNITY_READ_ONLY',
-            error: 'This space is archived, so it’s read-only.',
+            code: 'space_read_only',
+            detail: 'This space is archived, so it’s read-only.',
           };
     case 429:
       // Community servers from before DOR-2254 answered the agent cap with 429 RATE_LIMITED.
       // Current servers answer 409 AGENT_LIMIT_REACHED (above); this keeps older ones readable.
-      return {
-        status: 429,
-        code: 'COMMUNITY_LIMIT_REACHED',
-        error:
-          action === 'enroll-agent'
-            ? 'You’ve reached this space’s limit on active agents. Remove one to add another.'
-            : 'This space’s limit was reached. Try again later.',
-      };
+      return action === 'enroll-agent'
+        ? {
+            status: 409,
+            code: 'space_limit_reached',
+            detail:
+              'You’ve reached this space’s limit on active agents. Remove one to add another.',
+          }
+        : { status: 429, code: 'rate_limited', detail: 'This space is busy. Try again later.' };
     default:
-      return { status, code: 'COMMUNITY_REJECTED', error: REJECTED };
+      // The Community's own status, kept in the 4xx class it used.
+      return { status, code: 'invalid_request', detail: 'The space didn’t accept that request.' };
   }
 }

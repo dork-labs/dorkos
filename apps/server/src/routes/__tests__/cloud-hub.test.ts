@@ -89,7 +89,7 @@ describe('linking on a hub', () => {
   it.each(WRITES)('refuses %s before it reaches the link manager', async (path, effect) => {
     const res = await request(server).post(path).set('Host', 'localhost:4242');
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('HUB_LINKED_BY_CLOUD');
+    expect(res.body.code).toBe('hub_linked_by_cloud');
     expect(effect).not.toHaveBeenCalled();
   });
 

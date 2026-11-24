@@ -168,7 +168,8 @@ const fixture = vi.hoisted(() => {
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn(() => undefined) },
 }));
-vi.mock('../community-connections.js', () => ({
+vi.mock('../community-problems.js', async (original) => ({
+  ...(await original<typeof import('../community-problems.js')>()),
   resolveCommunityOwner: () => fixture.currentOwner,
 }));
 const dmsStore = vi.hoisted(() => ({
@@ -341,9 +342,10 @@ describe('qualified remote community writes and live projections', () => {
     fixture.adapter.listRooms.mockRejectedValueOnce(new RemoteConnectionAuthorizationError());
     const response = await request(testServer).get(`/api/communities/${fixture.ref}/rooms`);
     expect(response.status).toBe(409);
-    expect(response.body).toEqual({
-      code: 'COMMUNITY_RECONNECT_REQUIRED',
-      error: 'Reconnect this space to continue.',
+    expect(response.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(response.body).toMatchObject({
+      code: 'reconnect_required',
+      detail: 'Reconnect this space to continue.',
     });
   });
 
@@ -365,7 +367,10 @@ describe('qualified remote community writes and live projections', () => {
     });
     const response = await request(testServer).get(`/api/communities/${fixture.ref}/rooms`);
     expect(response.status).toBe(502);
-    expect(response.body).toEqual({ error: 'Space unavailable.' });
+    expect(response.body).toMatchObject({
+      code: 'upstream_unavailable',
+      detail: 'The space can’t be reached right now. Try again.',
+    });
   });
 
   it('refuses a live stream when verified access is read-only', async () => {
@@ -392,7 +397,7 @@ describe('qualified remote community writes and live projections', () => {
       `/api/communities/${fixture.ref}/rooms/room-a/events`
     );
     expect(response.status).toBe(403);
-    expect(response.body.code).toBe('COMMUNITY_ACCESS_DENIED');
+    expect(response.body.code).toBe('forbidden');
     expect(fixture.adapter.subscribeRoom).not.toHaveBeenCalled();
   });
 
@@ -1002,10 +1007,10 @@ describe('qualified remote community writes and live projections', () => {
     const response = await request(testServer)
       .post(`/api/communities/${fixture.ref}/agents/mesh-manifest-a/enroll`)
       .send({});
-    expect(response.status).toBe(429);
-    expect(response.body).toEqual({
-      code: 'COMMUNITY_LIMIT_REACHED',
-      error: 'You’ve reached this space’s limit on active agents. Remove one to add another.',
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      code: 'space_limit_reached',
+      detail: 'You’ve reached this space’s limit on active agents. Remove one to add another.',
     });
   });
 
@@ -1023,9 +1028,9 @@ describe('qualified remote community writes and live projections', () => {
     );
     expect(hidden.status).toBe(404);
     expect(hidden.body).toEqual(missing.body);
-    expect(hidden.body).toEqual({
-      code: 'COMMUNITY_NOT_FOUND',
-      error: 'That isn’t available in this space.',
+    expect(hidden.body).toMatchObject({
+      code: 'not_found',
+      detail: 'That isn’t available in this space.',
     });
   });
 
@@ -1036,20 +1041,23 @@ describe('qualified remote community writes and live projections', () => {
         .post(`/api/communities/${fixture.ref}/rooms/room-a/entries`)
         .send({ text: 'hello', idempotencyKey: 'outage-key' });
       expect(response.status).toBe(502);
-      expect(response.body).toEqual({ error: 'Space unavailable.' });
+      expect(response.body).toMatchObject({
+        code: 'upstream_unavailable',
+        detail: 'The space can’t be reached right now. Try again.',
+      });
     }
   });
 
   // DOR-2575. Purpose: once a community is recorded deleted or taken down it has no capabilities
   // left, and a post or upload to it is answered with the gone refusal, not "not allowed", since
   // the app returns a person's refused message to their draft only on the gone codes. It fails
-  // if a gone community answers 403 COMMUNITY_ACCESS_DENIED, or if either request reaches it.
+  // if a gone community answers 403 `forbidden`, or if either request reaches it.
   it.each([
-    ['deleted', 410, 'COMMUNITY_DELETED', 'This space was deleted.'],
-    ['taken_down', 423, 'COMMUNITY_TAKEN_DOWN', 'This space was taken down.'],
+    ['deleted', 410, 'space_deleted', 'This space was deleted.'],
+    ['taken_down', 423, 'space_taken_down', 'This space was taken down.'],
   ] as const)(
     'answers a post and an upload to a %s community with its gone refusal',
-    async (lifecycle, status, code, error) => {
+    async (lifecycle, status, code, detail) => {
       const none = { read: false, post: false, enrollAgent: false, stream: false };
       const gone = connectionWithAccess({
         state: 'verified',
@@ -1071,7 +1079,7 @@ describe('qualified remote community writes and live projections', () => {
 
       for (const response of [post, upload]) {
         expect(response.status).toBe(status);
-        expect(response.body).toEqual({ code, error });
+        expect(response.body).toMatchObject({ code, detail });
       }
       expect(fixture.adapter.postEntry).not.toHaveBeenCalled();
       expect(fixture.adapter.uploadAttachment).not.toHaveBeenCalled();
@@ -1086,9 +1094,9 @@ describe('qualified remote community writes and live projections', () => {
       .post(`/api/communities/${fixture.ref}/rooms/room-a/entries`)
       .send({ text: 'hello', idempotencyKey: 'read-only-key' });
     expect(response.status).toBe(423);
-    expect(response.body).toEqual({
-      code: 'COMMUNITY_READ_ONLY',
-      error: 'This space is being deleted.',
+    expect(response.body).toMatchObject({
+      code: 'space_read_only',
+      detail: 'This space is being deleted.',
     });
   });
 
@@ -1267,7 +1275,10 @@ describe('qualified remote community writes and live projections', () => {
       `/api/communities/${fixture.ref}/rooms/room-a/deliveries/delivery-retry-a/retry`
     );
     expect(terminal.status).toBe(409);
-    expect(terminal.body).toEqual({ error: 'Delivery cannot be retried.' });
+    expect(terminal.body).toMatchObject({
+      code: 'conflict',
+      detail: 'That message can’t be sent again.',
+    });
   });
 
   it('stops local remote-room work through the owner-qualified lifecycle without a remote request', async () => {

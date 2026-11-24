@@ -15,15 +15,9 @@ import {
 } from '@dorkos/shared/session-relay';
 import { MessageDispositionSchema } from '@dorkos/shared/schemas';
 import { HubComputerListSchema } from '@dorkos/shared/session-relay-link';
+import { problemResponse } from '../openapi/problem-openapi.js';
 
 const TAGS = ['Hub'];
-
-const ErrorSchema = z.object({
-  error: z.string(),
-  code: z.string(),
-  message: z.string().optional(),
-  feature: z.string().optional(),
-});
 
 const ComputerParams = z.object({ computerId: z.string() });
 const SessionParams = ComputerParams.extend({
@@ -35,20 +29,29 @@ const json = (schema: z.ZodType, description: string) => ({
   content: { 'application/json': { schema } },
 });
 
-/** Every refusal these routes can answer with, beside the success. */
+/**
+ * Every refusal these routes can answer with, beside the success: problem
+ * documents in our own words, never the computer's (DOR-4979).
+ */
 const REFUSALS = {
-  400: json(ErrorSchema, 'Not a request the relay carries'),
-  403: json(
-    ErrorSchema,
-    "Not the person's own browser sign-in: an agent or an API key never reaches these routes"
+  400: problemResponse('Not a request the relay carries (`invalid_request`)'),
+  403: problemResponse(
+    "Not the person's own browser sign-in (`person_only`): an agent or an API key never " +
+      'reaches these routes. Or the computer refused it (`forbidden`)'
   ),
-  404: json(ErrorSchema, 'Not a hub, no such linked computer, or no such chat or agent on it'),
-  502: json(ErrorSchema, 'The computer turned the request away (`code: computer_refused`)'),
-  501: json(ErrorSchema, 'The computer needs an update for this (`code: needs_update`)'),
-  503: json(
-    ErrorSchema,
+  404: problemResponse('Not a hub, no such linked computer, or no such chat or agent on it'),
+  409: problemResponse('The computer could not do that right now (`conflict`)'),
+  429: problemResponse('Too many requests to the computer (`rate_limited`)'),
+  502: problemResponse(
+    'The computer turned the request away (`computer_refused`), or failed it ' +
+      '(`upstream_unavailable`)'
+  ),
+  501: problemResponse(
+    'The computer needs an update for this; `feature` names it (`needs_update`)'
+  ),
+  503: problemResponse(
     'The computer is not connected. It is being woken; try again after `Retry-After` seconds ' +
-      '(`code: computer_waking`).'
+      '(`computer_waking`).'
   ),
 };
 
@@ -102,7 +105,7 @@ export function registerHubComputersOpenApi(registry: OpenAPIRegistry): void {
         content: { 'text/event-stream': { schema: z.string() } },
       },
       ...REFUSALS,
-      406: json(ErrorSchema, 'The request does not accept `text/event-stream`'),
+      406: problemResponse('The request does not accept `text/event-stream` (`not_acceptable`)'),
     },
   });
 

@@ -36,7 +36,7 @@ import {
 } from '@dorkos/shared/community-adapter';
 import type { ApiEnv } from '../http/api-chain.js';
 import { logger } from '../lib/logger.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import {
   getRemoteCommunityAdapter,
@@ -108,13 +108,15 @@ async function readTail(
   return { entries: tail, nextCursor: cursor ?? null };
 }
 
+/** An agent this install hasn't added to the space. */
+const AGENT_NOT_HERE = 'That agent isn’t in this space.';
+
 /** A space's refusal to reach an agent that takes no direct messages, said plainly. */
 function notTakingDms(c: Context, error: unknown): Response | null {
   if (!(error instanceof PinnedHttpError) || error.remoteCode !== AGENT_NOT_TAKING_DMS) return null;
-  return c.json(
-    { code: AGENT_NOT_TAKING_DMS, error: 'This agent isn’t taking direct messages.' },
-    409
-  );
+  return problem(c, 'agent_not_taking_dms', {
+    detail: 'This agent isn’t taking direct messages.',
+  });
 }
 
 /**
@@ -179,12 +181,15 @@ export function registerRemoteCommunityDmRoutes(router: Hono<ApiEnv>): void {
     if (target instanceof Response) return target;
     const { owner, ref } = target;
     const input = RemoteCommunityStartDmRequestSchema.safeParse(readJsonBody(c));
-    if (!input.success) return c.json({ error: 'Name the agent to message.' }, 400);
+    if (!input.success)
+      return validationProblem(c, input.error, { detail: 'Name the agent to message.' });
     try {
       await verifiedConnection(ref, owner, 'post');
       const adapter = getRemoteCommunityAdapter(ref, owner);
       if (!(await adapter.supportsDirectMessages()))
-        return c.json({ error: 'This space doesn’t hold direct messages.' }, 404);
+        return problem(c, 'space_unsupported', {
+          detail: 'This space doesn’t hold direct messages.',
+        });
       const dm = await adapter.startDirectMessage(input.data.agentMemberId);
       return c.json(RemoteCommunityStartDmResponseSchema.parse({ dm: project(ref, dm, null) }));
     } catch (error) {
@@ -198,16 +203,21 @@ export function registerRemoteCommunityDmRoutes(router: Hono<ApiEnv>): void {
     const { owner, ref } = target;
     const localAgentId = c.req.param('localAgentId');
     const input = RemoteCommunityAgentDmsRequestSchema.safeParse(readJsonBody(c));
-    if (!input.success) return c.json({ error: 'Say whether it takes direct messages.' }, 400);
+    if (!input.success)
+      return validationProblem(c, input.error, {
+        detail: 'Say whether it takes direct messages.',
+      });
     try {
       await verifiedConnection(ref, owner, 'enrollAgent');
       const enrollment = getRemoteCommunityEnrollmentStore()
         .activeForOwner(ref, owner)
         .find((item) => item.localAgentId === localAgentId);
-      if (!enrollment) return c.json({ error: 'Agent not found in this space.' }, 404);
+      if (!enrollment) return problem(c, 'not_found', { detail: AGENT_NOT_HERE });
       const adapter = getRemoteCommunityAdapter(ref, owner);
       if (!(await adapter.supportsDirectMessages()))
-        return c.json({ error: 'This space doesn’t hold direct messages.' }, 404);
+        return problem(c, 'space_unsupported', {
+          detail: 'This space doesn’t hold direct messages.',
+        });
       const accepts = await adapter.setAgentDirectMessages(
         enrollment.remoteMemberId,
         input.data.accepts
@@ -230,9 +240,10 @@ export function registerRemoteCommunityDmRoutes(router: Hono<ApiEnv>): void {
     const enrollment = getRemoteCommunityEnrollmentStore()
       .activeForOwner(ref, owner)
       .find((item) => item.localAgentId === query.agent);
-    if (!enrollment) return c.json({ error: 'Agent not found in this space.' }, 404);
+    if (!enrollment) return problem(c, 'not_found', { detail: AGENT_NOT_HERE });
     const after = query.after ? CommunityCursorSchema.safeParse(query.after) : undefined;
-    if (after && !after.success) return c.json({ error: 'Use a valid cursor.' }, 400);
+    if (after && !after.success)
+      return problem(c, 'invalid_request', { detail: 'Use a valid cursor.' });
     try {
       await verifiedConnection(ref, owner, 'read');
       const adapter = getRemoteCommunityAdapter(ref, owner);
@@ -241,7 +252,7 @@ export function registerRemoteCommunityDmRoutes(router: Hono<ApiEnv>): void {
         actingMemberId: enrollment.remoteMemberId,
       });
       if (!theirs.some((dm) => dm.id === roomId))
-        return c.json({ error: 'Direct message not found.' }, 404);
+        return problem(c, 'not_found', { detail: 'That direct message isn’t here.' });
       const page = await readTail(adapter, roomId, enrollment.remoteMemberId, after?.data);
       const entries = page.entries.map((entry) => remoteEntry(entry, owner));
       return c.json(

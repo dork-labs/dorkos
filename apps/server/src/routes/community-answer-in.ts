@@ -24,8 +24,10 @@ import {
   CommunityWakeAgentsFromSchema,
 } from '@dorkos/shared/community-connections';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { logger, logError } from '../lib/logger.js';
 import { RemoteConnectionNotFoundError } from '../services/communities/remote/connection-store.js';
+import { connectionNotFound as notFound } from './community-problems.js';
 import type { RemoteWakePolicy } from '../services/communities/remote/wake/wake-policy.js';
 import { AnswerInChangedError } from '../services/communities/remote/wake/answer-in-store.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
@@ -87,7 +89,9 @@ export function addWakeAgentsFromRoutes(
     const { owner, ref } = named;
     const body = CommunityWakeAgentsFromSchema.safeParse(readJsonBody(c));
     if (!body.success) {
-      return c.json({ error: 'Choose who can wake your agents: me or members.' }, 400);
+      return validationProblem(c, body.error, {
+        detail: 'Choose who can wake your agents: me or members.',
+      });
     }
     const next = body.data.wakeAgentsFrom;
     const run = async () => {
@@ -147,10 +151,9 @@ export function addAnswerInRoutes(
     const { owner, ref } = named;
     const body = CommunityAnswerInSchema.safeParse(readJsonBody(c));
     if (!body.success) {
-      return c.json(
-        { error: `List up to ${COMMUNITY_ANSWER_IN_MAX} channel names, like help or welcome.` },
-        400
-      );
+      return validationProblem(c, body.error, {
+        detail: `List up to ${COMMUNITY_ANSWER_IN_MAX} channel names, like help or welcome.`,
+      });
     }
     const next = body.data.answerIn;
     /** Save it; a free save lands only if it still adds no channel when it writes. */
@@ -162,7 +165,9 @@ export function addAnswerInRoutes(
         return c.json(body.data);
       } catch (error) {
         if (error instanceof AnswerInChangedError) {
-          return c.json({ error: error.message, code: 'ANSWER_IN_CHANGED' }, 409);
+          return problem(c, 'precondition_failed', {
+            detail: 'Where your agents answer changed meanwhile. Try again.',
+          });
         }
         return failure(c, error);
       }
@@ -189,11 +194,10 @@ export function addAnswerInRoutes(
   });
 }
 
-function notFound(c: Context): Response {
-  return c.json({ error: 'Space connection not found.' }, 404);
-}
-
 function failure(c: Context, error: unknown): Response {
   if (error instanceof RemoteConnectionNotFoundError) return notFound(c);
-  return c.json({ error: 'Could not save where your agents answer. Try again.' }, 500);
+  logger.warn('[Communities] Could not read or save where agents answer', logError(error));
+  return problem(c, 'internal_error', {
+    detail: 'Couldn’t save where your agents answer. Try again.',
+  });
 }

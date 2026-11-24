@@ -7,20 +7,9 @@ import {
   ComputerFrameSchema,
   ComputerControlLeaseSchema,
   ComputerInputSchema,
-  ComputerErrorCodeSchema,
 } from '@dorkos/shared/computer-schemas';
+import { problemResponse } from '../core/openapi/problem-openapi.js';
 
-const error = z
-  .object({
-    error: z.string(),
-    code: z
-      .union([
-        ComputerErrorCodeSchema,
-        z.enum(['invalid-client', 'invalid-input', 'not-a-person', 'not-the-owner']),
-      ])
-      .optional(),
-  })
-  .strict();
 const success = z.object({ ok: z.literal(true) }).strict();
 const headers = z.object({
   'X-Client-Id': z
@@ -109,10 +98,20 @@ export function registerComputerOpenApi(registry: OpenAPIRegistry): void {
       },
       responses: {
         200: response(operation.schema, 'Observed result'),
-        400: response(error, 'Invalid request, disabled experiment or unsupported host'),
-        403: response(error, 'The caller is not the account owner'),
-        409: response(error, 'Control lost or cleanup unconfirmed'),
-        503: response(error, 'Computer unavailable, not ready or setup failed'),
+        400: problemResponse(
+          'No app window (`invalid_request`), a body that fails its checks, the experiment off ' +
+            '(`computer_disabled`), an unsupported host (`computer_unsupported`), or a sign-in ' +
+            'needed inside it (`computer_sign_in_required`)'
+        ),
+        403: problemResponse('The caller is not the account owner (`person_only`, `owner_only`)'),
+        409: problemResponse(
+          'Control lost (`computer_control_lost`) or cleanup unconfirmed ' +
+            '(`computer_cleanup_uncertain`)'
+        ),
+        503: problemResponse(
+          'Computer unavailable or not ready (`temporarily_unavailable`), or setup failed ' +
+            '(`computer_setup_failed`)'
+        ),
       },
     });
 }

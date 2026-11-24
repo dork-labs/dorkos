@@ -40,7 +40,6 @@
  * @module routes/hub-computers
  */
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   RelayRequestSchema,
   missingRelayFeature,
@@ -50,9 +49,9 @@ import {
 } from '@dorkos/shared/session-relay';
 import type { AuditOutcome } from '@dorkos/shared/audit-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { errorBody } from '../lib/route-utils.js';
+import { logger } from '../lib/logger.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { describeUserAgent } from '../lib/http/user-agent.js';
@@ -118,31 +117,45 @@ export const HUB_COMPUTER_RETRY_AFTER_SECONDS = 5;
 const NEEDS_UPDATE_MESSAGE = 'This computer needs an update for that.';
 
 /**
- * A computer's 401 refuses the hub, not the person: passed through, it would
- * read as the owner being signed out here.
+ * Answer a linked computer's refusal as a problem document (DOR-4979), by its
+ * status: our code and sentence, never the computer's own words, which are
+ * logged instead. A computer's 401 refuses the hub, not the person: passed
+ * through, it would read as the owner being signed out here.
  */
-const COMPUTER_TURNED_AWAY: RelayError = {
-  status: 502,
-  code: 'computer_refused',
-  message: 'Your computer turned this request away.',
-};
-
-/** Answer a refusal in the relay's own words. */
 function relayFailure(c: Context<ApiEnv>, error: RelayError): Response {
-  return c.json(
-    {
-      error: error.message,
-      code: error.code,
-      message: error.message,
-      ...(error.feature ? { feature: error.feature } : {}),
-    },
-    error.status as ContentfulStatusCode
-  );
+  logger.info('[HubRelay] A linked computer refused a request', {
+    status: error.status,
+    code: error.code,
+  });
+  if (error.code === 'needs_update' || error.status === 501) {
+    return problem(c, 'needs_update', {
+      detail: NEEDS_UPDATE_MESSAGE,
+      ...(error.feature ? { extensions: { feature: error.feature } } : {}),
+    });
+  }
+  switch (error.status) {
+    case 400:
+      return invalid(c);
+    case 401:
+      return problem(c, 'computer_refused', { detail: 'Your computer turned this request away.' });
+    case 403:
+      return problem(c, 'forbidden', { detail: 'Your computer didn’t allow that.' });
+    case 404:
+      return problem(c, 'not_found', { detail: 'Your computer doesn’t have that chat.' });
+    case 409:
+      return problem(c, 'conflict', { detail: 'Your computer couldn’t do that right now.' });
+    case 429:
+      return problem(c, 'rate_limited', { detail: 'Too many requests to your computer. Wait.' });
+    default:
+      return problem(c, 'upstream_unavailable', {
+        detail: 'Your computer couldn’t finish that. Try again.',
+      });
+  }
 }
 
 /** A 400 for a request that is not one of the protocol's shapes. */
 function invalid(c: Context<ApiEnv>): Response {
-  return relayFailure(c, { status: 400, code: 'invalid', message: 'That request is not valid.' });
+  return problem(c, 'invalid_request', { detail: 'That request is not valid.' });
 }
 
 /** Parse a request built from the path and body, or `null` when it is not one. */
@@ -204,16 +217,15 @@ export function createHubComputerRoutes(
   router.use('*', async (c, next) => {
     if (!deps.isHub()) return apiNotFound(c);
     if (presentsAgentIdentity(honoRequestFacts(c))) {
-      return c.json(errorBody("Agents can't reach your computers.", 'FORBIDDEN'), 403);
+      return problem(c, 'person_only', { detail: 'Agents can’t reach your computers.' });
     }
     // The gate already asked for a credential; this holds even if it ever did not.
     const user = c.get('user');
-    if (!user) return c.json(errorBody('Sign in to reach your computers.', 'UNAUTHORIZED'), 401);
+    if (!user) return problem(c, 'unauthenticated', { detail: 'Sign in to reach your computers.' });
     if (user.credential !== 'cookie') {
-      return c.json(
-        errorBody('Manage your computers from your own signed-in browser.', 'FORBIDDEN'),
-        403
-      );
+      return problem(c, 'person_only', {
+        detail: 'Manage your computers from your own signed-in browser.',
+      });
     }
     // A browser without its device cookie gets one with this answer, and this
     // very request already names it: a client that never keeps cookies (curl
@@ -256,9 +268,10 @@ export function createHubComputerRoutes(
     const computer = deps.connection(computerId);
     if (computer?.connected) return computer;
     deps.wake(computerId);
-    c.header('Retry-After', String(HUB_COMPUTER_RETRY_AFTER_SECONDS));
-    const message = 'Waking your computer. Try again in a moment.';
-    return c.json({ error: message, code: 'computer_waking', message }, 503);
+    return problem(c, 'computer_waking', {
+      detail: 'Waking your computer. Try again in a moment.',
+      retryAfterMs: HUB_COMPUTER_RETRY_AFTER_SECONDS * 1000,
+    });
   }
 
   /** The 501 for a feature the computer did not advertise, or `null`. */
@@ -269,12 +282,7 @@ export function createHubComputerRoutes(
   ): Response | null {
     const feature = missingRelayFeature(computer.features, request);
     return feature
-      ? relayFailure(c, {
-          status: 501,
-          code: 'needs_update',
-          feature,
-          message: NEEDS_UPDATE_MESSAGE,
-        })
+      ? problem(c, 'needs_update', { detail: NEEDS_UPDATE_MESSAGE, extensions: { feature } })
       : null;
   }
 
@@ -300,7 +308,7 @@ export function createHubComputerRoutes(
       auditRelayed({ ...audit, computerId }, outcome, result.ok ? undefined : result.error);
     }
     if (result.ok) return c.json(result.body);
-    return relayFailure(c, result.error.status === 401 ? COMPUTER_TURNED_AWAY : result.error);
+    return relayFailure(c, result.error);
   }
 
   mountHubComputerLinkRoutes(router, links);
@@ -332,7 +340,7 @@ export function createHubComputerRoutes(
 
   router.get('/:computerId/sessions/:sessionId/stream', (c) => {
     if (!(c.req.header('accept') ?? '').includes('text/event-stream')) {
-      return c.json(errorBody('This address is an event stream.', 'NOT_ACCEPTABLE'), 406);
+      return problem(c, 'not_acceptable', { detail: 'This address is an event stream.' });
     }
     const computerId = c.req.param('computerId');
     const resume = c.req.header('last-event-id') ?? c.req.query('resume');

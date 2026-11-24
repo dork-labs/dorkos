@@ -41,7 +41,8 @@ const fixture = vi.hoisted(() => {
   };
 });
 
-vi.mock('../community-connections.js', () => ({
+vi.mock('../community-problems.js', async (original) => ({
+  ...(await original<typeof import('../community-problems.js')>()),
   resolveCommunityOwner: () => 'owner-a',
 }));
 vi.mock('../../services/core/config-manager.js', () => ({
@@ -149,7 +150,7 @@ describe('a person’s own conduct in a space, through this computer', () => {
         .send({ version: 3 }),
     ]) {
       expect(response.status).toBe(403);
-      expect(response.body.code).toBe('COMMUNITY_PERSON_REQUIRED');
+      expect(response.body.code).toBe('person_only');
     }
     expect(fixture.adapter.getStanding).not.toHaveBeenCalled();
     expect(fixture.adapter.acceptRules).not.toHaveBeenCalled();
@@ -187,7 +188,7 @@ describe('a person’s own conduct in a space, through this computer', () => {
     expect((await request(server).get(`${base}/rooms/room-a/standing`)).status).toBe(200);
     const refused = await request(server).post(`${base}/rules/accept`).send({ version: 3 });
     expect(refused.status).toBe(403);
-    expect(refused.body.code).toBe('COMMUNITY_ACCESS_DENIED');
+    expect(refused.body.code).toBe('forbidden');
     expect(fixture.adapter.acceptRules).not.toHaveBeenCalled();
   });
 
@@ -215,17 +216,19 @@ describe('a person’s own conduct in a space, through this computer', () => {
       .put(`${base}/me/display-name`)
       .send({ displayName: 'Olive Owner' });
     expect(taken.status).toBe(409);
-    expect(taken.body.error).toBe('That name is taken in this space. Try another.');
+    expect(taken.body.detail).toBe('That name is taken in this space. Try another.');
+    expect(taken.body.code).toBe('name_taken');
 
     fixture.adapter.acceptRules.mockRejectedValueOnce(new PinnedHttpError(409, 'STATE_CONFLICT'));
     const stale = await request(server).post(`${base}/rules/accept`).send({ version: 2 });
-    expect(stale.body.error).toBe('The rules changed. Read them again first.');
+    expect(stale.status).toBe(412);
+    expect(stale.body.detail).toBe('The rules changed. Read them again first.');
 
     fixture.adapter.reportEntry.mockRejectedValueOnce(new PinnedHttpError(409, 'STATE_CONFLICT'));
     const own = await request(server)
       .post(`${base}/rooms/room-a/entries/entry-a/reports`)
       .send({ reason: 'spam' });
-    expect(own.body.error).toBe('You can’t report this message.');
+    expect(own.body.detail).toBe('You can’t report this message.');
   });
 
   it('names each hold on a refused post, with slow mode’s wait as Retry-After', async () => {
@@ -239,20 +242,20 @@ describe('a person’s own conduct in a space, through this computer', () => {
     );
     const slow = await post();
     expect(slow.status).toBe(429);
-    expect(slow.body.code).toBe('COMMUNITY_SLOW_MODE');
+    expect(slow.body.code).toBe('space_slow_mode');
     expect(slow.headers['retry-after']).toBe('12');
 
     fixture.adapter.postEntry.mockRejectedValueOnce(new PinnedHttpError(403, 'COMMUNITY_MUTED'));
     const muted = await post();
-    expect(muted.body).toEqual({
-      code: 'COMMUNITY_MUTED',
-      error: 'You’re muted in this space for now.',
+    expect(muted.body).toMatchObject({
+      code: 'space_muted',
+      detail: 'You’re muted in this space for now.',
     });
     expect(muted.headers['retry-after']).toBeUndefined();
 
     fixture.adapter.postEntry.mockRejectedValueOnce(
       new PinnedHttpError(403, 'COMMUNITY_RULES_NOT_ACCEPTED')
     );
-    expect((await post()).body.code).toBe('COMMUNITY_RULES_NOT_ACCEPTED');
+    expect((await post()).body.code).toBe('space_rules_not_accepted');
   });
 });

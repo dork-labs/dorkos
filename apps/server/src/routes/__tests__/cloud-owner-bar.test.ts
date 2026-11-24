@@ -350,9 +350,10 @@ function send(write: Write, headers: Record<string, string> = {}) {
   return write.body === undefined ? req : req.send(write.body);
 }
 
-/** The sentence and code a refused caller got, whichever shape the route answers in. */
-function refusalOf(body: { code?: unknown; message?: unknown; error?: unknown }) {
-  return { code: body.code, sentence: body.message ?? body.error };
+/** The sentence and code a refused caller got: every account write answers a problem document. */
+function refusalOf(body: { code?: unknown; detail?: unknown; type?: unknown }) {
+  expect(body.type).toBe(`urn:dorkos:problem:${String(body.code)}`);
+  return { code: body.code, sentence: body.detail };
 }
 
 describe('the DorkOS account owner bar', () => {

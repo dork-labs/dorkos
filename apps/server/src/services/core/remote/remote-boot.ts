@@ -118,7 +118,7 @@ export async function autostartOwnTunnel(deps: OwnTunnelBootDeps): Promise<void>
   if (!deps.canExpose()) {
     logger.warn(
       '[Tunnel] Autostart skipped — exposing DorkOS requires an owner account for other ' +
-        'devices to sign in as. Create one first (AUTH_REQUIRED_FOR_EXPOSURE).'
+        'devices to sign in as. Create one first (auth_required_for_exposure).'
     );
     return;
   }

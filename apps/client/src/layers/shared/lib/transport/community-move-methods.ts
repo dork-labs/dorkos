@@ -20,17 +20,30 @@ import {
   UPLOAD_STALLED_MESSAGE,
   UPLOAD_STALL_TIMEOUT_MS,
 } from './upload-contract';
+import { isProblem, readErrorBody } from '@dorkos/shared/problem';
 import { buildQueryString } from './http-client';
 
 /**
- * Whether a parsed body is the move route's answer.
+ * The move route's answer from a parsed body: its `ok` envelope, or its refusal
+ * (a problem document, DOR-4979) read into the same envelope, with `mayExist`
+ * kept when the move may still be there. `null` for anything else.
  *
  * @param body - The parsed response body.
  */
-function isMoveResponse(body: unknown): body is CloudCommunityMoveResponse {
-  return (
-    typeof body === 'object' && body !== null && typeof (body as { ok?: unknown }).ok === 'boolean'
-  );
+function moveResponseOf(body: unknown): CloudCommunityMoveResponse | null {
+  if (isProblem(body)) {
+    const mayExist = (body as { mayExist?: unknown }).mayExist === true;
+    return {
+      ok: false,
+      message: readErrorBody(body, 'Couldn’t start the move. Try again.').message,
+      ...(mayExist ? { mayExist: true as const } : {}),
+    };
+  }
+  return typeof body === 'object' &&
+    body !== null &&
+    typeof (body as { ok?: unknown }).ok === 'boolean'
+    ? (body as CloudCommunityMoveResponse)
+    : null;
 }
 
 /**
@@ -90,7 +103,8 @@ export function startHostedCommunityMoveOverHttp(
       } catch {
         body = undefined;
       }
-      if (isMoveResponse(body)) resolve(body);
+      const answer = moveResponseOf(body);
+      if (answer) resolve(answer);
       else reject(new Error(`HTTP ${xhr.status}`));
     });
     xhr.addEventListener('error', () => {

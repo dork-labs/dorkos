@@ -226,13 +226,13 @@ export async function agentSteps(w: World): Promise<void> {
           'An agent past the limit is refused with a reason the person can act on',
           'The Community refuses the enrollment with 429 "Active agent limit reached." ' +
             '(apps/server/src/services/spaces/routes/community/agents/enrollment.ts), but the DorkOS app answers POST ' +
-            '/api/communities/:ref/agents/:localAgentId/enroll with 502 "Space unavailable." because fail() in ' +
+            '/api/communities/:ref/agents/:localAgentId/enroll with 502 "The space can’t be reached right now." because fail() in ' +
             'apps/server/src/routes/remote-communities.ts maps every unrecognised Community refusal to 502. Repro: run a ' +
             'Community with COMMUNITY_AGENTS_PER_OWNER=1, enroll one local agent from the channel Members panel, then ' +
-            'add a second: the panel says "Space unavailable." while the Community is up.',
+            'add a second: the panel says "The space can’t be reached right now." while the Community is up.',
           async () => {
             assert(status < 500, `enroll refusal is a ${status}`);
-            assert(!/unavailable/i.test(refusal), `the panel says "${refusal}"`);
+            assert(!/unavailable|can’t be reached/i.test(refusal), `the panel says "${refusal}"`);
           }
         );
         Object.assign(evidence, {

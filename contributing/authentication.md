@@ -115,7 +115,7 @@ export function isExposureAllowed(state: ExposureState): boolean {
 
 Two enforcement points consume it:
 
-- **Tunnel start** (`routes/tunnel.ts`) and the boot-time autostart (`index.ts`) call `canExpose()`; on `false` they respond `409 { code: 'AUTH_REQUIRED_FOR_EXPOSURE' }` (and skip the autostart). The client (`features/auth`) matches on `AUTH_REQUIRED_FOR_EXPOSURE` to route the operator into owner-account creation, then retries the tunnel.
+- **Tunnel start** (`routes/tunnel.ts`) and the boot-time autostart (`index.ts`) call `canExpose()`; on `false` the route answers a `409` problem document with `code: 'auth_required_for_exposure'` (and the autostart is skipped). The client (`features/auth`) matches on `auth_required_for_exposure` to route the operator into owner-account creation, then retries the tunnel.
 - **Non-loopback bind** (`index.ts`) calls `checkBindAllowed({ host, exposureAllowed, allowInsecureBind })` before the server starts listening. A non-loopback host with the guard failing **refuses to start** (hard gate, non-zero exit) with an actionable message. `DORKOS_ALLOW_INSECURE_BIND=true` is a narrow, loud-logging escape hatch set only by the container images (the `integration` and `runtime` targets of the root `Dockerfile`), which own the network boundary.
 
 ### The `/api` host guard is the login-off complement (DOR-532)
@@ -224,7 +224,7 @@ app.all('/api/auth/*', (c) => auth.handler(c.req.raw)); // body already consumed
 **Cause:** `auth.enabled` is `true` and the request carries no valid session cookie or API key.
 **Fix:** Sign in (the client shows `LoginScreen` automatically), or send `Authorization: Bearer <api-key>`. In tests, build the app without calling `initAuth` so `verifyRequestAuth` returns `null` only when intended, or sign in against a temp DB.
 
-### `409 { code: 'AUTH_REQUIRED_FOR_EXPOSURE' }` when starting a tunnel
+### `409` `auth_required_for_exposure` when starting a tunnel
 
 **Cause:** The exposure guard blocked exposure — either `auth.enabled` is `false` or no owner account exists.
 **Fix:** Enable login and create an owner (Settings → Login & security, or `dorkos auth enable`), then retry.

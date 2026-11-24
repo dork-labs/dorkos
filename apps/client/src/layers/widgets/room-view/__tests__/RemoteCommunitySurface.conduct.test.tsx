@@ -182,7 +182,7 @@ describe('a person’s standing in a space channel', () => {
   it('keeps sending open when slow mode refuses without saying how long', async () => {
     const transport = mount(standing({ slowModeSeconds: 30 }));
     vi.mocked(transport.postRemoteCommunityEntry).mockRejectedValueOnce(
-      Object.assign(new Error('Slow'), { code: 'COMMUNITY_SLOW_MODE', status: 429 })
+      Object.assign(new Error('Slow'), { code: 'space_slow_mode', status: 429 })
     );
     expect(await screen.findByText('Slow mode: one message every 30s.')).toBeInTheDocument();
     const input = await send('Too soon');
@@ -219,7 +219,7 @@ describe('a person’s standing in a space channel', () => {
     expect(await screen.findByText('Slow mode: one message every 30s.')).toBeInTheDocument();
     vi.mocked(transport.postRemoteCommunityEntry).mockRejectedValueOnce(
       Object.assign(new Error('Slow'), {
-        code: 'COMMUNITY_SLOW_MODE',
+        code: 'space_slow_mode',
         status: 429,
         retryAfterMs: 12_000,
       })
@@ -244,7 +244,7 @@ describe('a person’s standing in a space channel', () => {
       standing({ rules: { text: 'New rules.', version: 1, acceptedVersion: 0 } })
     );
     vi.mocked(transport.postRemoteCommunityEntry).mockRejectedValueOnce(
-      Object.assign(new Error('Rules'), { code: 'COMMUNITY_RULES_NOT_ACCEPTED', status: 403 })
+      Object.assign(new Error('Rules'), { code: 'space_rules_not_accepted', status: 403 })
     );
     await send('Hi');
     expect(await screen.findByRole('button', { name: 'Read the rules' })).toBeInTheDocument();

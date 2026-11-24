@@ -267,7 +267,8 @@ describe('reaching a computer', () => {
     expect(res.headers['retry-after']).toBe('5');
     expect(res.body).toMatchObject({
       code: 'computer_waking',
-      message: 'Waking your computer. Try again in a moment.',
+      detail: 'Waking your computer. Try again in a moment.',
+      retryAfterMs: 5000,
     });
     expect(deps.wake).toHaveBeenCalledWith(COMPUTER);
   });
@@ -289,18 +290,22 @@ describe('reaching a computer', () => {
     expect(res.status).toBe(502);
     expect(res.body).toMatchObject({
       code: 'computer_refused',
-      message: 'Your computer turned this request away.',
+      detail: 'Your computer turned this request away.',
     });
   });
 
-  it('answers the computer`s refusal with its own status and sentence', async () => {
+  it('answers the computer`s refusal with its status, in our words, never its own', async () => {
     fake.computer.request.mockResolvedValueOnce({
       ok: false,
       error: { status: 404, code: 'not_found', message: 'No such chat.' },
     } as never);
     const res = await request(server).get(`${BASE}/agents/${AGENT}/chats`);
     expect(res.status).toBe(404);
-    expect(res.body).toMatchObject({ code: 'not_found', message: 'No such chat.' });
+    expect(res.body).toMatchObject({
+      code: 'not_found',
+      detail: 'Your computer doesn’t have that chat.',
+    });
+    expect(JSON.stringify(res.body)).not.toContain('No such chat.');
   });
 });
 

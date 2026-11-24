@@ -18,7 +18,7 @@ import type { Hono } from 'hono';
 import { formatRelayLinkCode } from '@dorkos/shared/session-relay-link';
 import type { AuditActor, AuditOutcome } from '@dorkos/shared/audit-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { errorBody } from '../lib/route-utils.js';
+import { problem } from '@dorkos/http-kit';
 import { currentAuditActor } from '../services/audit/audit-context.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import {
@@ -81,7 +81,7 @@ export function mountHubComputerLinkRoutes(
   router.post('/link-code', (c) => {
     const origin = deps.servingOrigin();
     if (!origin) {
-      return c.json(errorBody('This hub is not serving yet.', 'HUB_NOT_SERVING'), 503);
+      return problem(c, 'temporarily_unavailable', { detail: 'This hub isn’t serving yet.' });
     }
     const minted = deps.mint(currentAuditActor()?.actor);
     auditLinkChange({

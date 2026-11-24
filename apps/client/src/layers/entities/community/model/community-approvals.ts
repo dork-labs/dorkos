@@ -107,7 +107,7 @@ function isPairingBusy(error: unknown): boolean {
     typeof error === 'object' &&
     error !== null &&
     (error as { status?: unknown }).status === 409 &&
-    (error as { code?: unknown }).code === 'PAIRING_BUSY'
+    (error as { code?: unknown }).code === 'pairing_busy'
   );
 }
 

@@ -8,7 +8,7 @@
  *   returns `401 { code: 'AUTH_REQUIRED' }`, so the `features/auth` `AuthGuard`
  *   can render the login screen without every call site re-checking status.
  * - `features/settings` (the tunnel exposure flow) calls {@link requestOwnerSetup}
- *   when a tunnel start is rejected with `AUTH_REQUIRED_FOR_EXPOSURE`, and
+ *   when a tunnel start is rejected with `auth_required_for_exposure`, and
  *   `features/auth` (the owner-setup host) reads it — a cross-feature handoff that
  *   would otherwise be a forbidden model-to-model import.
  *
