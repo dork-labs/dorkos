@@ -269,7 +269,10 @@ else
     account=${account#.}
     case "$account" in *@*) account="" ;; esac
   fi
-  session=${CLAUDE_SESSION_ID:-}
+  # Claude Code sets CLAUDE_CODE_SESSION_ID; CLAUDE_SESSION_ID is the older
+  # name. The first 8 characters name the session's transcript,
+  # ~/.claude*/projects/<cwd-slug>/<session-id>.jsonl.
+  session=${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-}}
   session=${session:0:8}
   line=$(jq -cn --arg h "$harness" --arg s "$session" --arg a "$account" '
     {v: 1} + (if $h != "" then {harness: $h} else {} end)
