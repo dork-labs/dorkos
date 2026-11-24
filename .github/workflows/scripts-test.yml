@@ -786,6 +786,13 @@ jobs:
       - name: Daily sweep fixtures
         run: bash scripts/test-daily-sweep.sh
 
+      # daily-release.sh decides the daily release's next step and picks the
+      # commit it ships (DOR-5123). A wrong rule cuts from a commit whose
+      # full run or queue checks were not green, or publishes twice. Stub gh,
+      # npm and gate, a throwaway repo; git and jq only.
+      - name: Daily release fixtures
+        run: bash scripts/test-daily-release.sh
+
       # release-branch-contents.sh is the rule for what a pull request into a
       # release/v<X.Y.Z> branch may carry (DOR-4639): only cherry-picks of main
       # with a matching patch-id and the release commit. A rule that quietly
