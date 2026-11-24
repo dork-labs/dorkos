@@ -585,3 +585,83 @@ describe('POST /api/runtimes/claude-code/project-accounts/without-credits', () =
     expect(state.sets).toBe(0);
   });
 });
+
+describe('PUT /api/runtimes/claude-code/accounts/:id/agents-may-pick (DOR-5033)', () => {
+  const put = (id: string) =>
+    request(server).put(`/api/runtimes/claude-code/accounts/${id}/agents-may-pick`);
+  const rows = () => claudeCode().accounts as Record<string, unknown>[];
+
+  // Purpose: a person's switch writes the flag on the one row, keeps every
+  // other field, and names who changed it in Activity.
+  it("lets agents pick a registry row, keeping the row's other fields, and records it", async () => {
+    const res = await put('work').send({ agentsMayPick: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ agentsMayPick: true });
+    expect(rows()[0]).toEqual({
+      id: 'work',
+      path: '/claude-work',
+      label: 'Work',
+      onlyProjects: null,
+      agentsMayPick: true,
+    });
+    expect(rows()[1]).not.toHaveProperty('agentsMayPick');
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: 'config',
+        eventType: 'config.accounts_updated',
+        resourceId: 'work',
+        summary: 'Agents may now pick Work by name',
+        metadata: { account: 'work', agentsMayPick: true },
+      })
+    );
+  });
+
+  it('takes it back with false, and records that too', async () => {
+    rows()[0].agentsMayPick = true;
+    const res = await put('work').send({ agentsMayPick: false });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ agentsMayPick: false });
+    expect(rows()[0].agentsMayPick).toBe(false);
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: 'Agents may no longer pick Work by name' })
+    );
+  });
+
+  it('records nothing when the flag already says so', async () => {
+    const res = await put('work').send({ agentsMayPick: false });
+    expect(res.status).toBe(200);
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 for an unknown account, and for Main, which has no row', async () => {
+    for (const id of ['ghost', 'default']) {
+      const res = await put(id).send({ agentsMayPick: true });
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('unknown_account');
+    }
+    expect(state.sets).toBe(0);
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('answers 400 for a body without a boolean and writes nothing', async () => {
+    const res = await put('work').send({ agentsMayPick: 'yes' });
+    expect(res.status).toBe(400);
+    expect(state.sets).toBe(0);
+  });
+
+  // Purpose: an agent can never let itself spend an account (DOR-5033 review).
+  it('refuses an agent with 403 and writes nothing', async () => {
+    const res = await put('work')
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ agentsMayPick: true });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('person_only');
+    expect(res.body.error).toBe('Only a person can choose which accounts agents may pick.');
+    expect(state.sets).toBe(0);
+    expect(rows()[0]).not.toHaveProperty('agentsMayPick');
+    expect(emit).not.toHaveBeenCalled();
+  });
+});

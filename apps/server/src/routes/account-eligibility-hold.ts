@@ -5,8 +5,8 @@
  *
  * A rule that widens where an account may work waits for the owner to confirm
  * it's them (DOR-4355): letting a project use more accounts, an account work in
- * more projects, or agents move to an account on their own again. Narrowing one
- * stays immediate.
+ * more projects, agents move to an account on their own again, or agents pick
+ * an account by name (DOR-5033). Narrowing one stays immediate.
  *
  * @module routes/account-eligibility-hold
  */
@@ -44,11 +44,28 @@ export const NO_AUTO_MOVE_BAR: PersonBarCopy = {
     'decision only a person makes. Ask them to change it in Settings → Runtimes.',
 };
 
+/** What the person bar says when anything but a person flips an account's agents-may-pick switch. */
+export const AGENTS_MAY_PICK_BAR: PersonBarCopy = {
+  error: 'Only a person can choose which accounts agents may pick.',
+  code: 'person_only',
+  subject: 'which Claude accounts agents may pick',
+  crossSite: (origin) =>
+    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
+    `Which accounts agents may pick is something a person sets in their own copy of the ` +
+    `app, not something another site can change for them.`,
+  agent:
+    'DorkOS changed nothing. Which Claude accounts agents may pick is a decision only a ' +
+    'person makes. Ask them to change it in Settings → Runtimes.',
+};
+
 /** What a failed project account list save says. */
 export const PROJECT_ACCOUNTS_FAILED = 'Could not save which accounts this project may use.';
 
 /** What a failed account project list save says. */
 export const ONLY_PROJECTS_FAILED = 'Could not save which projects this account may use.';
+
+/** What a failed agents-may-pick switch save says. */
+export const AGENTS_MAY_PICK_FAILED = 'Could not save whether agents may pick this account.';
 
 /** What a failed automatic-move switch save says. */
 export const NO_AUTO_MOVE_FAILED = 'Could not save whether agents move to this account.';

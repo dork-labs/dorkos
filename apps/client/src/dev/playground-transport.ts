@@ -404,6 +404,9 @@ export function createPlaygroundTransport(): Transport {
       if (prop === 'setAccountNoAutoMove') {
         return async (_id: string, noAutoMove: boolean) => ({ noAutoMove });
       }
+      if (prop === 'setAccountAgentsMayPick') {
+        return async (_id: string, agentsMayPick: boolean) => ({ agentsMayPick });
+      }
       // The DorkOS model form (the first run's "Other service" row) reads what
       // is saved before it draws; nothing saved and no credits is the honest
       // answer, and `null` is neither.

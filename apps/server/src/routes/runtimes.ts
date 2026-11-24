@@ -73,6 +73,7 @@ import { respondWithSignInLanding } from '../http/sign-in-landing-response.js';
 import type { SignInFailureReason } from '@dorkos/shared/sign-in-landing';
 import { readQuery } from '../http/request-query.js';
 import { mountAccountEligibilityRoutes } from './runtimes-account-eligibility.js';
+import { mountAgentsMayPickRoute } from './runtimes-account-agents-may-pick.js';
 import {
   connectErrorProblem,
   refuseNonLocalProvisioning,
@@ -161,6 +162,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
   // §8.6), in their own module; mounted first so no `/:type/...` pattern below
   // can shadow them.
   mountAccountEligibilityRoutes(router, deps.activity);
+  mountAgentsMayPickRoute(router, deps.activity);
 
   /**
    * POST /api/runtimes/opencode/provision — opt-in, on-demand OpenCode install.

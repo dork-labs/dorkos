@@ -212,6 +212,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'rooms.repo.worktreeReapDays',
       'rooms.responseGate',
       'rooms.turnLimitsEnabled',
+      // Whether agents may pick an account by name (DOR-5033).
+      'runtimes.claudeCode.accounts[].agentsMayPick',
       'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',
@@ -572,6 +574,7 @@ describe('findOperatorOnlyPaths — settings that live inside a list (DOR-1113)'
       'connectors.rawMcpServers[].url',
     ]);
     expect(findOperatorOnlyPaths({ runtimes: { claudeCode: { accounts: [] } } })).toEqual([
+      'runtimes.claudeCode.accounts[].agentsMayPick',
       'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].label',

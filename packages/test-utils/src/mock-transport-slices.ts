@@ -77,6 +77,7 @@ type SliceMethods =
   | 'confirmAuthenticator'
   | 'removeOwnerFactor'
   | 'setAccountNoAutoMove'
+  | 'setAccountAgentsMayPick'
   | 'getFrameBridgeStatus'
   | 'getAgentLevel'
   | 'getAgentInstructionsTemplate'
@@ -198,6 +199,11 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     setAccountNoAutoMove: vi
       .fn()
       .mockImplementation(async (_accountId: string, noAutoMove: boolean) => ({ noAutoMove })),
+    setAccountAgentsMayPick: vi
+      .fn()
+      .mockImplementation(async (_accountId: string, agentsMayPick: boolean) => ({
+        agentsMayPick,
+      })),
     // DorkOS has served no page into a frame, so the canvas says nothing.
     getFrameBridgeStatus: vi.fn().mockResolvedValue({ bridge: 'unknown' }),
     confirmRelayAdapterReferences: vi.fn().mockResolvedValue({ ok: true }),

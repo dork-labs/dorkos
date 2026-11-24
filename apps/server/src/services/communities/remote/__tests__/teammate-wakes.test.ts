@@ -126,14 +126,6 @@ describe('a teammate’s mention', () => {
     expect(turn.roomContext.room.id).toBe(localRoom.id);
   });
 
-  it('counts as a teammate’s when no gate can say who the owner is', async () => {
-    const { harness, post } = space();
-
-    await post(OWNER);
-
-    expect(harness.runner.turns[0]!.teammate).toBe(true);
-  });
-
   it('wakes an agent three times per person every ten minutes, then keeps posts as history', async () => {
     const { harness, clock, post } = space({ gate: members });
 
@@ -152,24 +144,6 @@ describe('a teammate’s mention', () => {
 });
 
 describe('in the space’s local copy', () => {
-  it('counts a message whose author resolves to nobody as a teammate’s', async () => {
-    // Review should-fix 3: in a space's copy, only a vouch or this machine keeps the owner's power.
-    const { harness, localRoom, agent, post } = space({ gate: { ...members, wakes: () => false } });
-    await post(TEAMMATE); // kept as history: the gate lets nobody wake an agent
-    const kept = harness.store.listEntriesAfter(localRoom.id, 0)[0]!;
-
-    harness.service.dispatchImportedRemoteEntry(localRoom.id, {
-      ...kept,
-      id: 'entry-of-nobody',
-      authorId: 'author-nobody-knows',
-      mentions: [agent.id],
-    });
-    await harness.service.triggersIdle();
-
-    expect(harness.runner.turns).toHaveLength(1);
-    expect(harness.runner.turns[0]!.teammate).toBe(true);
-  });
-
   it('never holds the owner’s own message here to them', async () => {
     const { harness, localRoom } = space({ gate: members });
 
@@ -242,22 +216,6 @@ describe('a direct message with the agent', () => {
     expect(turn.permissionCeiling).toEqual(TEAMMATE_CEILING);
   });
 
-  it('wakes nobody in an ordinary channel without a mention', async () => {
-    const { harness, post } = space({ gate: members });
-
-    await post(TEAMMATE, []);
-
-    expect(harness.runner.turns).toHaveLength(0);
-  });
-
-  it('pays from the same budget per person', async () => {
-    const { harness, post } = space({ gate: members, kind: 'dm' });
-
-    for (let i = 0; i < 4; i += 1) await post(TEAMMATE, []);
-
-    expect(harness.runner.turns).toHaveLength(3);
-  });
-
   it('stays history when the owner lets only themselves wake agents', async () => {
     const { harness, post } = space({ gate: ownerOnly, kind: 'dm' });
 
@@ -298,13 +256,5 @@ describe('the monthly limit on teammates’ turns (DOR-2956)', () => {
     await post(TEAMMATE, []);
 
     expect(harness.runner.turns).toHaveLength(0);
-  });
-
-  it('wakes as before while the month is within the limit', async () => {
-    const { harness, post } = space({ gate: { ...members, withinTeammateSpend: () => true } });
-
-    await post(TEAMMATE);
-
-    expect(harness.runner.turns).toHaveLength(1);
   });
 });

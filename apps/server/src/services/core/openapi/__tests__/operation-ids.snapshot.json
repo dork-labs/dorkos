@@ -477,6 +477,7 @@
   "PUT /api/rooms/{id}/canvas/{documentId}/diff": "rooms.updateCanvasDiff",
   "PUT /api/rooms/{id}/files/content": "rooms.updateFilesContent",
   "PUT /api/rooms/{id}/follow": "rooms.updateFollow",
+  "PUT /api/runtimes/claude-code/accounts/{id}/agents-may-pick": "runtimes.updateClaudeCodeAccountsAgentsMayPick",
   "PUT /api/runtimes/claude-code/accounts/{id}/no-auto-move": "runtimes.updateClaudeCodeAccountsNoAutoMove",
   "PUT /api/runtimes/claude-code/accounts/{id}/only-projects": "runtimes.updateClaudeCodeAccountsOnlyProjects",
   "PUT /api/runtimes/claude-code/project-accounts": "runtimes.updateClaudeCodeProjectAccounts",

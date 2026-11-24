@@ -821,6 +821,10 @@ export const CONFIG_WRITE_POLICY = {
   // would let an agent's seat move onto an account the person reserved, which
   // is moving spend, so only a person changes it.
   'runtimes.claudeCode.accounts[].noAutoMove': 'operator-only',
+  // Whether agents may pick an account by name while no mini app decides
+  // (DOR-5033). Setting it opens an account to agents' own spending, so an
+  // agent that could write it could let itself spend any account.
+  'runtimes.claudeCode.accounts[].agentsMayPick': 'operator-only',
   'runtimes.claudeCode.defaultAccountOnlyProjects': 'operator-only',
   'runtimes.claudeCode.projectAccounts': 'operator-only',
   // The execution defaults for new sessions on each runtime. Writable, and the

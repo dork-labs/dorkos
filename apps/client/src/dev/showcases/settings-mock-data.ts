@@ -206,6 +206,9 @@ export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
         color: DEFAULT_ACCOUNT_COLORS[0]!,
         colorIsDefault: true,
         isAccountRoot: true,
+        // Opened to agents' own picks (DOR-5033), so the showcase draws the
+        // "Agents may pick this account" switch on as well as off.
+        agentsMayPick: true,
       },
       {
         id: 'acme-corp',
@@ -217,6 +220,9 @@ export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
         // Kept to the client's own repository (spec `flow-multiproject` §8.5),
         // so the row shows its "Only for" line.
         onlyProjects: [{ root: '/Users/dev/Dev/acme-app', name: 'acme-app' }],
+        // Main's own row (the default is its folder): its "Agents may pick this
+        // account" switch is drawn off and disabled (DOR-5033).
+        isDefault: true,
       },
       {
         id: 'claude3',

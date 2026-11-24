@@ -433,6 +433,27 @@ describe('describeClaudeCodeAccounts: the row new sessions run on (resolvedAccou
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
+  // Purpose: Settings never offers "Agents may pick this account" on Main, which
+  // core always refuses (DOR-5033), so the server says which rows are Main.
+  it("marks Main's alias row, and a second row on Main's folder, as Main (DOR-5033)", () => {
+    const second = path.join(tmp, '.claude2');
+    const described = describeClaudeCodeAccounts(
+      fakeConfig({
+        defaultAccount: second,
+        accounts: [
+          row('acme', second),
+          row('twin', second),
+          row('side', path.join(tmp, '.claude')),
+        ],
+      })
+    );
+    expect(described.accounts.map((a) => [a.id, a.isDefault])).toEqual([
+      ['acme', true],
+      ['twin', true],
+      ['side', undefined],
+    ]);
+  });
+
   it('names the row whose folder the default is, even with a trailing slash', () => {
     const second = path.join(tmp, '.claude2');
     const described = describeClaudeCodeAccounts(

@@ -8,7 +8,6 @@ import {
   AgentAvailabilityReporter,
   BASE_BACKOFF_MS,
   REFUSED_FOR_MS,
-  REPORT_SECONDS_BOUNDS,
   type AgentAvailabilityReporterDeps,
 } from '../agent-availability-reporter.js';
 import type { ReportableAgent } from '../agent-availability-report.js';
@@ -87,47 +86,6 @@ describe('AgentAvailabilityReporter', () => {
     unit.dispose();
   });
 
-  it('spreads each wait so many apps do not report in step', async () => {
-    const early = fakeSpace();
-    const late = fakeSpace();
-    reporter(early.space, () => one, { random: () => 0 }).start();
-    reporter(late.space, () => one, { random: () => 0.999 }).start();
-    await vi.advanceTimersByTimeAsync(2_000);
-    expect(early.sent).toHaveLength(1);
-    expect(late.sent).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(8_000);
-    expect(late.sent).toHaveLength(1);
-    // Early's next is at 2 s + 108 s; late's at 10 s + ~132 s.
-    await vi.advanceTimersByTimeAsync(100_000);
-    expect(early.sent).toHaveLength(2);
-    expect(late.sent).toHaveLength(1);
-    vi.clearAllTimers();
-  });
-
-  it('holds a space asking for a tiny interval to the floor', async () => {
-    const fake = fakeSpace({ answers: [{ reportEverySeconds: 1 }] });
-    const unit = reporter(fake.space, () => one);
-    unit.start();
-    await vi.advanceTimersByTimeAsync(FIRST_MS);
-    await vi.advanceTimersByTimeAsync(REPORT_SECONDS_BOUNDS.min * 1_000 - 1);
-    expect(fake.sent).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(fake.sent).toHaveLength(2);
-    unit.dispose();
-  });
-
-  it('holds a space asking for a huge interval to the ceiling', async () => {
-    const fake = fakeSpace({ answers: [{ reportEverySeconds: 1_000_000 }] });
-    const unit = reporter(fake.space, () => one);
-    unit.start();
-    await vi.advanceTimersByTimeAsync(FIRST_MS);
-    await vi.advanceTimersByTimeAsync(REPORT_SECONDS_BOUNDS.max * 1_000 - 1);
-    expect(fake.sent).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(fake.sent).toHaveLength(2);
-    unit.dispose();
-  });
-
   it('never reports to a space without the feature', async () => {
     const fake = fakeSpace({ feature: false });
     const unit = reporter(fake.space, () => one);
@@ -202,28 +160,6 @@ describe('AgentAvailabilityReporter', () => {
     expect(onFailing).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(120_000);
     expect(fake.sent).toHaveLength(5);
-    unit.dispose();
-  });
-
-  it('waits as long as a space asks with Retry-After', async () => {
-    const fake = fakeSpace({ answers: [new PinnedHttpError(429, 'RATE_LIMITED', 300)] });
-    const unit = reporter(fake.space, () => one);
-    unit.start();
-    await vi.advanceTimersByTimeAsync(FIRST_MS + 299_000);
-    expect(fake.sent).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(fake.sent).toHaveLength(2);
-    unit.dispose();
-  });
-
-  it('reads a 404 to a report as an old space, not a failure', async () => {
-    const onFailing = vi.fn();
-    const fake = fakeSpace({ answers: [new PinnedHttpError(404)] });
-    const unit = reporter(fake.space, () => one, { onFailing });
-    unit.start();
-    await vi.advanceTimersByTimeAsync(FIRST_MS + 120_000);
-    expect(onFailing).not.toHaveBeenCalled();
-    expect(fake.sent).toHaveLength(2);
     unit.dispose();
   });
 

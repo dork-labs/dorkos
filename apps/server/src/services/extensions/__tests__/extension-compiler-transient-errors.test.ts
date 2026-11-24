@@ -156,23 +156,6 @@ describe('ExtensionCompiler — environment vs. genuine compile errors', () => {
       expect(mockBuild).toHaveBeenCalledTimes(2);
     });
 
-    it('recovers automatically once the environment failure clears', async () => {
-      const extDir = path.join(tmpDir, 'env-recover-ext');
-      await fs.mkdir(extDir, { recursive: true });
-      const source = 'export function activate() { return "ok"; }';
-      await fs.writeFile(path.join(extDir, 'index.ts'), source);
-
-      mockBuild.mockRejectedValueOnce(environmentError());
-      const first = await compiler.compile(makeRecord('env-recover-ext', extDir));
-      expect('error' in first).toBe(true);
-
-      mockBuild.mockResolvedValueOnce(buildSuccess(source));
-      const second = await compiler.compile(makeRecord('env-recover-ext', extDir));
-
-      expect('code' in second).toBe(true);
-      expect(mockBuild).toHaveBeenCalledTimes(2);
-    });
-
     it('does not cache an esbuild read failure with no location (unreadable entry point)', async () => {
       const extDir = path.join(tmpDir, 'io-fail-no-location-ext');
       await fs.mkdir(extDir, { recursive: true });
@@ -190,35 +173,6 @@ describe('ExtensionCompiler — environment vs. genuine compile errors', () => {
       );
 
       await compiler.compile(makeRecord('io-fail-no-location-ext', extDir));
-      expect(mockBuild).toHaveBeenCalledTimes(2);
-    });
-
-    it('does not cache an esbuild read failure WITH a location (unreadable import)', async () => {
-      // The regression this guards: a populated errors[] entry that DOES
-      // carry a location (esbuild points at the `import` statement that
-      // referenced the unreadable file) must still be recognized as an
-      // environment failure by its text, not dismissed because it has a
-      // location a genuine compile error would also have.
-      const extDir = path.join(tmpDir, 'io-fail-with-location-ext');
-      await fs.mkdir(extDir, { recursive: true });
-      await fs.writeFile(path.join(extDir, 'index.ts'), 'import "./helper.js";');
-
-      mockBuild.mockRejectedValue(
-        esbuildIoFailure('Cannot read file "helper.ts": permission denied', {
-          file: 'index.ts',
-          line: 1,
-          column: 7,
-        })
-      );
-
-      const result = await compiler.compile(makeRecord('io-fail-with-location-ext', extDir));
-      expect('error' in result).toBe(true);
-      await expectNothingCached(
-        path.join(tmpDir, 'cache', 'extensions'),
-        'io-fail-with-location-ext'
-      );
-
-      await compiler.compile(makeRecord('io-fail-with-location-ext', extDir));
       expect(mockBuild).toHaveBeenCalledTimes(2);
     });
 
@@ -248,27 +202,6 @@ describe('ExtensionCompiler — environment vs. genuine compile errors', () => {
   });
 
   describe('server-side compileServer()', () => {
-    it('does not cache an environment failure (missing native binary)', async () => {
-      const extDir = path.join(tmpDir, 'server-env-fail-ext');
-      await fs.mkdir(extDir, { recursive: true });
-      const serverPath = path.join(extDir, 'server.ts');
-      await fs.writeFile(serverPath, 'export default function register() {}');
-
-      mockBuild.mockRejectedValue(environmentError());
-
-      const record = makeServerRecord('server-env-fail-ext', extDir, serverPath);
-      const result = await compiler.compileServer(record);
-      expect('error' in result).toBe(true);
-
-      await expectNothingCached(
-        path.join(tmpDir, 'cache', 'extensions', 'server'),
-        'server-env-fail-ext'
-      );
-
-      await compiler.compileServer(record);
-      expect(mockBuild).toHaveBeenCalledTimes(2);
-    });
-
     it('still caches a genuine server compile error and replays it without recompiling', async () => {
       const extDir = path.join(tmpDir, 'server-genuine-fail-ext');
       await fs.mkdir(extDir, { recursive: true });

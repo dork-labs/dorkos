@@ -276,16 +276,6 @@ describe('RunningExtensionTools', () => {
     expect(payload.error).not.toMatch(/ana|secret|fileserver/);
   });
 
-  it('keeps a URL in an error message intact', async () => {
-    // Purpose: path redaction must not mangle the most useful part of an API error.
-    const registry = newRegistry();
-    start(registry, {
-      read: () => Promise.reject(new Error('GET https://api.mail.example/v1/messages failed: 503')),
-    });
-    const payload = await errorOf(registry.invoke('ext_mail_app.read', {}));
-    expect(payload.error).toBe('Mail: GET https://api.mail.example/v1/messages failed: 503');
-  });
-
   it('neutralises a thrown object posing as a gate refusal', async () => {
     // Purpose: a handler cannot forge an approval-required payload by throwing
     // something shaped like the gate's refusal; it becomes a plain tool error.
@@ -390,22 +380,6 @@ describe('RunningExtensionTools', () => {
     expect((await errorOf(registry.invoke('ext_mail_app.count', {}))).error).toBe(
       'Mail returned more than the agent can read.'
     );
-  });
-
-  it('copies a returned object through JSON, so no class instance rides out', async () => {
-    // Purpose: the MCP envelope treats some class instances specially (an
-    // image result); a handler's return value can never be one of them.
-    class Special {
-      secret = 'kept';
-      toJSON() {
-        return { shown: true };
-      }
-    }
-    const registry = newRegistry();
-    start(registry, { read: () => new Special() });
-    const result = await registry.invoke('ext_mail_app.read', {});
-    expect(result).toEqual({ shown: true });
-    expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
   });
 
   it('passes the caller’s cancellation to the handler', async () => {

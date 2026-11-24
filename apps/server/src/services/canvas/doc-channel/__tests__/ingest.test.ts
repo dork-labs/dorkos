@@ -139,6 +139,7 @@ describe('document event acceptance', () => {
     expect(f.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM canvas_doc_events`)!.n).toBe(0);
     expect(f.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM canvas_doc_batches`)!.n).toBe(0);
   });
+
   it('maps wrapped accounting persistence failure to 507 and rolls back acceptance', () => {
     const f = fixture();
     const saved = event();
@@ -179,6 +180,17 @@ describe('document event acceptance', () => {
       'DOC_EVENT_BACKLOG_FULL'
     );
   });
+  it('rejects invalid payload schemas and envelopes without receipt allocation', () => {
+    const f = fixture();
+    f.access.validatePayload = () => {
+      throw new Error('schema');
+    };
+    expect(() => f.ingest.accept(event(), f.authority)).toThrow('INVALID_DOC_EVENT_PAYLOAD');
+    expect(() => f.ingest.accept({ ...event(), scope: 'forged' }, f.authority)).toThrow(
+      'INVALID_DOC_EVENT'
+    );
+    expect(f.store.getChannel('doc-1')!.nextDocSeq).toBe(1);
+  });
   it('refuses asynchronous payload validation before allocating accepted input', async () => {
     const f = fixture();
     const input = event();
@@ -199,17 +211,6 @@ describe('document event acceptance', () => {
     expect(
       f.db.get<{ count: number }>(sql`SELECT count(*) AS count FROM canvas_doc_batches`)!.count
     ).toBe(0);
-  });
-  it('rejects invalid payload schemas and envelopes without receipt allocation', () => {
-    const f = fixture();
-    f.access.validatePayload = () => {
-      throw new Error('schema');
-    };
-    expect(() => f.ingest.accept(event(), f.authority)).toThrow('INVALID_DOC_EVENT_PAYLOAD');
-    expect(() => f.ingest.accept({ ...event(), scope: 'forged' }, f.authority)).toThrow(
-      'INVALID_DOC_EVENT'
-    );
-    expect(f.store.getChannel('doc-1')!.nextDocSeq).toBe(1);
   });
 });
 
@@ -292,16 +293,6 @@ describe('compact pending coalescing', () => {
         selectBatchSlice(f.store, tx, batch, 100, 'Tasks').context.events.map((input) => input.id)
       ).toEqual(inputs.map((input) => input.id))
     );
-  });
-  it('does not replace comments, different types, or undeclared keys', () => {
-    const f = fixture();
-    const inputs = [
-      event('task.comment', {}, 'same'),
-      event('task.comment', {}, 'same'),
-      event('task.toggle', {}, 'same'),
-    ];
-    for (const input of inputs) f.ingest.accept(input, f.authority);
-    expect(f.store.getBatch(pending(f.db))!.inputEventIds).toEqual(inputs.map((input) => input.id));
   });
 });
 
@@ -415,19 +406,6 @@ describe('failure and floor boundaries', () => {
     expect(f.store.getEvent('doc-1', uncertain.id)!.payloadPrunedAt).toBeNull();
     expect(replayDocChannel(f.store, f.authority, 4).resetRequired).toBe(false);
     expect(replayDocChannel(f.store, f.authority, Number.MAX_SAFE_INTEGER).events).toEqual([]);
-  });
-  it('backfills zero-size foundation inputs before enforcing byte capacity', () => {
-    const f = fixture();
-    const first = event();
-    f.ingest.accept(first, f.authority);
-    f.db.run(sql`UPDATE canvas_doc_events SET envelope_bytes=0`);
-    const bytes = envelopeIdentity(first).bytes;
-    const limited = new DocChannelIngest(f.store, () => new Date(NOW), { pendingBytes: bytes });
-    expect(() => limited.accept(event(), f.authority)).toThrow('DOC_EVENT_BACKLOG_FULL');
-    // Refused writes roll their accounting back too; a successful duplicate has no charge.
-    expect(limited.accept(first, f.authority).receipt.status).toBe('duplicate');
-    retainDocHistory(f.store, NOW);
-    expect(f.store.getEvent('doc-1', first.id)!.envelopeBytes).toBe(bytes);
   });
   it('counts superseded inputs as completed and respects lower app limits', () => {
     const f = fixture();

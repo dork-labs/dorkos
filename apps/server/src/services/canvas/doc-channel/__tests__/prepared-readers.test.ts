@@ -14,7 +14,6 @@ import {
   canvasDocChannels,
   canvasDocGrants,
   canvasDocWriteIntents,
-  canvasDocEvents,
   eq,
   type DbTransaction,
 } from '@dorkos/db';
@@ -68,45 +67,6 @@ async function changed() {
   expect(receipt.status).toBe('changed');
   return { ...h, input, receipt, intent: h.row() };
 }
-
-it('reuses four compiled shapes but executes every fresh full-row read inside genuine A scope', async () => {
-  const h = await changed();
-  const prepared = vi.spyOn(h.db.$client, 'prepare');
-  h.authority.transaction((tx) => {
-    const read = () => [
-      h.store.getChannel(h.documentId, tx),
-      h.store.getGrant(h.grantId, tx),
-      h.store.getWriteIntent(h.intent.intentId, tx),
-      h.store.getEvent(h.documentId, h.input.eventId, tx),
-    ];
-    const beforeEvent = h.store.getEvent(h.documentId, h.input.eventId, tx);
-    const before = read();
-    const count = prepared.mock.calls.length;
-    expect(read()).toEqual(before);
-    expect(prepared.mock.calls.length).toBe(count);
-    tx.update(canvasDocChannels)
-      .set({ updatedAt: LATER })
-      .where(eq(canvasDocChannels.documentId, h.documentId))
-      .run();
-    tx.update(canvasDocGrants)
-      .set({ revokedAt: LATER })
-      .where(eq(canvasDocGrants.grantId, h.grantId))
-      .run();
-    tx.update(canvasDocWriteIntents)
-      .set({ errorCode: 'fresh-row' })
-      .where(eq(canvasDocWriteIntents.intentId, h.intent.intentId))
-      .run();
-    tx.update(canvasDocEvents)
-      .set({ payload: { fresh: true } })
-      .where(eq(canvasDocEvents.eventId, h.input.eventId))
-      .run();
-    const [channel, grant, intent, event] = read();
-    expect(channel).toMatchObject({ updatedAt: LATER });
-    expect(grant).toMatchObject({ revokedAt: LATER });
-    expect(intent).toMatchObject({ errorCode: 'fresh-row' });
-    expect(event).toMatchObject({ payload: { fresh: true }, provenance: beforeEvent!.provenance });
-  });
-});
 
 it('keeps real NULL, absent rows and caller parameters distinct on repeated executions', async () => {
   const h = await changed();

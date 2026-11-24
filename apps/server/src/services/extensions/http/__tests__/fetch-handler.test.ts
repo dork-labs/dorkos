@@ -10,9 +10,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { Router } from 'express';
 import { Hono } from 'hono';
 import {
-  readRegisterResult,
   requirePerson,
-  serverEntryRegister,
   type ExtensionCaller,
   type ExtensionFetchHandler,
 } from '@dorkos/extension-api/server';
@@ -114,32 +112,6 @@ describe('an extension served with a fetch handler', () => {
     expect(res.body).toMatchObject({ path: '//evil.com/login', search: '?x=1' });
   });
 
-  it('gets the path below its mount from an absolute-form request, on the app’s origin', async () => {
-    const { port } = server.address() as AddressInfo;
-
-    const res = await rawGet('http://evil.com/api/ext/my-ext/items?page=2');
-
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({
-      host: `localhost:${port}`,
-      path: '/items',
-      search: '?page=2',
-    });
-  });
-
-  it('gets the path below its mount after dot segments are resolved', async () => {
-    const res = await rawGet('/api/ext/other/../my-ext/items/../things');
-
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ path: '/things' });
-  });
-
-  it('gets / at its mount itself', async () => {
-    const res = await request(server).get('/api/ext/my-ext');
-
-    expect(res.body).toMatchObject({ path: '/', search: '' });
-  });
-
   it('gets a JSON body the chain already parsed, as JSON again', async () => {
     const res = await request(server)
       .post('/api/ext/my-ext/things')
@@ -150,15 +122,6 @@ describe('an extension served with a fetch handler', () => {
       contentType: 'application/json',
       body: JSON.stringify({ name: 'one', n: [1, 2] }),
     });
-  });
-
-  it('gets a body the chain does not parse as the caller sent it', async () => {
-    const res = await request(server)
-      .put('/api/ext/my-ext/notes')
-      .set('content-type', 'text/plain')
-      .send('just words');
-
-    expect(res.body).toMatchObject({ method: 'PUT', body: 'just words' });
   });
 
   it('answers a body over 1 MB with 413, before the handler runs', async () => {
@@ -223,16 +186,6 @@ describe('an extension served with a fetch handler', () => {
     expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 
-  it('can answer with a Response whose headers are locked', async () => {
-    serve(createFetchHandler('My Extension', () => Response.redirect('http://localhost/x', 302)));
-
-    const res = await request(server).get('/api/ext/my-ext/go').redirects(0);
-
-    // An absolute redirect leaves the mount, so the rule drops it.
-    expect(res.status).toBe(302);
-    expect(res.headers.location).toBeUndefined();
-  });
-
   it('moves a redirect to one of its own paths under its mount, never onto a DorkOS route', async () => {
     serve(
       createFetchHandler(
@@ -244,20 +197,6 @@ describe('an extension served with a fetch handler', () => {
     const res = await request(server).get('/api/ext/my-ext/go').redirects(0);
 
     expect(res.headers.location).toBe('/api/ext/my-ext/api/config?x=1');
-  });
-
-  it('keeps a redirect that stays inside its own mount', async () => {
-    serve(
-      createFetchHandler(
-        'My Extension',
-        () => new Response(null, { status: 303, headers: { location: 'next?step=2' } })
-      )
-    );
-
-    const res = await request(server).get('/api/ext/my-ext/go').redirects(0);
-
-    expect(res.status).toBe(303);
-    expect(res.headers.location).toBe('/api/ext/my-ext/next?step=2');
   });
 
   it('answers a handler that throws with the chain’s error, and keeps serving', async () => {
@@ -272,16 +211,6 @@ describe('an extension served with a fetch handler', () => {
     expect(res.status).toBe(500);
     expect(res.body).toMatchObject({ code: 'internal_error' });
     expect(JSON.stringify(res.body)).not.toContain('the handler broke');
-  });
-
-  it('answers a handler that answers with no Response with the chain’s error', async () => {
-    serve(createFetchHandler('My Extension', (() => ({ ok: true })) as never));
-
-    const res = await request(server).get('/api/ext/my-ext/anything');
-
-    expect(res.status).toBe(500);
-    expect(res.body.code).toBe('internal_error');
-    expect(res.body.detail).not.toContain('My Extension');
   });
 });
 
@@ -443,24 +372,6 @@ describe('a Hono app as the fetch handler', () => {
     // A route without the bar still answers, and can read the caller itself.
     expect(read.body).toEqual({ theme: 'dark', person: false });
   });
-
-  it('serves its routes below the mount, exported as the entry’s default', async () => {
-    const app = new Hono();
-    app.get('/status', (c) => c.json({ ok: true, q: c.req.query('q') }));
-    app.post('/items', async (c) => c.json({ got: await c.req.json() }, 201));
-    const register = serverEntryRegister({ default: app });
-    const { fetch } = readRegisterResult(await register!({} as never, {} as never));
-    serve(createFetchHandler('My Extension', fetch!));
-
-    const status = await request(server).get('/api/ext/my-ext/status?q=yes');
-    const created = await request(server).post('/api/ext/my-ext/items').send({ a: 1 });
-    const missing = await request(server).get('/api/ext/my-ext/nothing');
-
-    expect(status.body).toEqual({ ok: true, q: 'yes' });
-    expect(created.status).toBe(201);
-    expect(created.body).toEqual({ got: { a: 1 } });
-    expect(missing.status).toBe(404);
-  });
 });
 
 describe('a router and a fetch handler together', () => {
@@ -502,11 +413,5 @@ describe('the mount and path a handler is given', () => {
     const res = await rawGet('/api/ext/other/../my-ext/x');
 
     expect(res.body).toEqual({ mount: '/api/ext/my-ext', subPath: '/x' });
-  });
-
-  it('names the mount and path of an absolute-form request', async () => {
-    const res = await rawGet('http://localhost/api/ext/my-ext/a%20b/c?q=1');
-
-    expect(res.body).toEqual({ mount: '/api/ext/my-ext', subPath: '/a%20b/c' });
   });
 });

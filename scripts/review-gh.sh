@@ -25,6 +25,7 @@
 #   review-gh.sh diff                          print the pull request's diff
 #   review-gh.sh view <jsonFields>             print PR metadata as JSON
 #   review-gh.sh summary <body>                 post the top-level summary comment
+#                                               (the helper appends its marker)
 #   review-gh.sh inline <path> <line> <body>    post one line-level review comment
 #   review-gh.sh security-verdict pass 0        post the Security lens's verdict
 #   review-gh.sh security-verdict fail <musts> <categories>
@@ -34,8 +35,11 @@
 # Environment, set by the workflow and out of the model's reach:
 #   REVIEW_REPO  OWNER/REPO, no host prefix (validated below)
 #   REVIEW_PR    the pull request number (validated below)
-#   REVIEW_HEAD_SHA  the head commit the review is about (security-verdict;
-#                when unset, the PR's current head is resolved, as for inline)
+#   REVIEW_HEAD_SHA  the head commit the review is about (summary marker and
+#                security-verdict; when unset, the PR's current head is
+#                resolved, as for inline)
+#   REVIEW_MODE  full or push-recheck, as decided by the workflow before the
+#                review; stamped into the summary's marker
 #   REVIEW_FINDINGS_DIR  absolute path of the private directory where
 #                `security-findings` saves the details. When set, a `fail`
 #                verdict needs those details saved first, and a `pass` discards
@@ -118,7 +122,24 @@ case "$sub" in
   summary)
     [ "$#" -eq 1 ] || die "summary takes one argument, the comment body (got $#)"
     [ -n "$1" ] || die "summary body must not be empty"
-    exec gh pr comment "$pr" --repo "$repo" --body "$1"
+    # The summary's last line is a hidden marker written here, never by the
+    # model: the head this review is about and the mode the workflow decided
+    # (REVIEW_MODE, from "Decide the review mode"). scripts/review-mode.sh reads
+    # only summaries whose last line is this marker with mode=full, so the next
+    # push's mode comes from what this workflow recorded. A REVIEW_MODE other
+    # than the two values (unset on a run of an older workflow) is written as
+    # `unknown`, which review-mode.sh never counts, so it costs at most one more
+    # full review.
+    review_head
+    mode=${REVIEW_MODE:-}
+    case "$mode" in
+      full | push-recheck) ;;
+      *) mode=unknown ;;
+    esac
+    body="$1
+
+<!-- dorkos-review-summary v1 head=$sha mode=$mode -->"
+    exec gh pr comment "$pr" --repo "$repo" --body "$body"
     ;;
 
   inline)
