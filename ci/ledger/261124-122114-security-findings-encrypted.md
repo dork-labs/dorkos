@@ -7,7 +7,7 @@ actor: agent
 gates:
   - wf.claude-code-review.review
   - wf.scripts-test.fixtures
-prs: []
+prs: [4249]
 ratchet-release: []
 field-changes: []
 ---
