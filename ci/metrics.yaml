@@ -165,6 +165,16 @@ tracked:
       timelines (GraphQL timelineItems: added, removed, merged), with the p50
       minutes from ejection to the next queue entry reported beside it; not
       computed by the daily collector. Lower is better.
+  - id: tracked.conflict-untold
+    unit: count
+    definition: >-
+      Open pull requests into main with auto-merge on that conflict with main
+      and carry no queue-reentry merge-main note for their current head (the
+      `<!-- queue-reentry head=<sha> -->` marker), at the reading. GitHub runs
+      no checks or review on a conflicting pull request, so these wait with
+      nothing telling their author. Read by hand with
+      `scripts/queue-reentry.sh sweep --dry-run` (each `COMMENT conflicting`
+      line is one); not computed by the daily collector. Lower is better.
   - id: tracked.desktop-release-wall-clock
     unit: minutes
     definition: >-
