@@ -73,7 +73,7 @@ const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
  * on the vocabulary. Restated as a Zod enum rather than imported because this
  * module is deliberately dependency-light (it is bridged to JSON Schema and read
  * by the CLI); the two are pinned together by
- * `packages/shared/src/__tests__/config-schema.test.ts`.
+ * `packages/shared/src/__tests__/config-schema/config-schema.test.ts`.
  *
  * This is `runtimes.<runtime>.defaultTrustStop`, one runtime's own answer. It
  * ships `null`, which adds no answer of its own: the runtime follows the global
