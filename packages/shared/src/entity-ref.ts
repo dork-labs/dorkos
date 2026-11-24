@@ -215,16 +215,41 @@ function checkWorktree(name: string): EntityRefRefusal | null {
 const LABEL_MAX_LENGTH = 200;
 const URL_MAX_LENGTH = 2048;
 
+/** The invisible characters an emoji sequence is built with: ZWJ and the tag characters. */
+const EMOJI_JOINER = /^[\u200d\u{e0020}-\u{e007f}]$/u;
+
 /**
- * A label is one line of visible text: no control character (C0, DEL, C1,
- * NEL among them) and no invisible one (`\p{Cf}` such as a direction override
- * or a zero-width space, U+2028, U+2029), the rule a relay display name
- * follows. So a label of only zero-width characters is refused too.
+ * What may sit just before an {@link EMOJI_JOINER} inside an emoji sequence: a
+ * pictograph, a regional indicator, a skin-tone modifier, VS16 or another
+ * joiner (`👩‍💻`, `🏳️‍🌈`, a flag tag sequence).
+ */
+const EMOJI_PART =
+  /^(?:[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}]|\ufe0f|\u200d|[\u{e0020}-\u{e007f}])$/u;
+
+/** Whether `text` holds an invisible character that is not part of an emoji sequence. */
+function hasStrayInvisible(text: string): boolean {
+  let previous = '';
+  for (const char of text) {
+    const joined = EMOJI_JOINER.test(char) && EMOJI_PART.test(previous);
+    if (INVISIBLE_CHARACTER.test(char) && !joined) return true;
+    previous = char;
+  }
+  return false;
+}
+
+/**
+ * A label is one line of visible text: no control character (C0, DEL and C1,
+ * NEL among them, which is stricter than a relay display name, where C1
+ * passes) and no invisible one (`\p{Cf}` such as a direction override or a
+ * zero-width space, U+2028, U+2029). The one exception is the joiners an
+ * emoji sequence is made of, allowed only straight after a part of one, so
+ * `👩‍💻` passes while a bare or between-letters ZWJ does not. A label of only
+ * zero-width characters is refused.
  */
 function checkLabel(label: string | undefined): EntityRefRefusal | null {
   if (label === undefined) return null;
   const fits = label.trim().length > 0 && label.length <= LABEL_MAX_LENGTH;
-  const clean = !CONTROL_CHARACTER.test(label) && !INVISIBLE_CHARACTER.test(label);
+  const clean = !CONTROL_CHARACTER.test(label) && !hasStrayInvisible(label);
   return fits && clean ? null : 'bad-label';
 }
 
@@ -247,8 +272,14 @@ function checkUrl(url: string | undefined): EntityRefRefusal | null {
   if (url.length > URL_MAX_LENGTH || URL_UNSAFE.test(url)) return 'bad-url';
   if (CONTROL_CHARACTER.test(url) || INVISIBLE_CHARACTER.test(url)) return 'bad-url';
   try {
-    if (url.startsWith('/'))
-      return new URL(url, APP_PATH_ORIGIN).origin === APP_PATH_ORIGIN ? null : 'bad-url';
+    if (url.startsWith('/')) {
+      // Same origin, and unchanged by resolving: a path that dot segments or
+      // escapes would rewrite (`/..//evil.example` becomes `//evil.example`)
+      // is not the path a later reader will resolve the same way.
+      const resolved = new URL(url, APP_PATH_ORIGIN);
+      const same = resolved.pathname + resolved.search + resolved.hash === url;
+      return resolved.origin === APP_PATH_ORIGIN && same ? null : 'bad-url';
+    }
     const { protocol } = new URL(url);
     return protocol === 'https:' || protocol === 'http:' ? null : 'bad-url';
   } catch {

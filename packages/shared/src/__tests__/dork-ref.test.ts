@@ -148,6 +148,10 @@ describe('dorkUriFromLink', () => {
       expect(dorkUriFromLink(`${prefix}dork%253Achat%253Aabc`)).toBeNull();
       expect(dorkUriFromLink(`${prefix}dork:chat:a%2525b`)).toBeNull();
       expect(dorkUriFromLink(`${prefix}dork:chat:%E0%A4%A`)).toBeNull();
+      expect(dorkUriFromLink(`${prefix}dork:chat:a%3Fb`)).toBeNull();
+      expect(dorkUriFromLink(`${prefix}dork:chat:a%23b`)).toBeNull();
+      expect(dorkUriFromLink(`${prefix}dork:chat:a%20b`)).toBeNull();
+      expect(dorkUriFromLink(`${prefix}dork:chat:a%0Ab`)).toBeNull();
     }
   });
 });

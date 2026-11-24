@@ -75,6 +75,8 @@ export const RESERVED_ADDRESS_WORDS: readonly string[] = [
   SYSTEM_HANDLE,
   ...BROADCAST_RESERVATIONS,
   ...DORK_KINDS,
+  // Not a kind yet: reserved for the kind a project gets once it has an opaque id.
+  'project',
 ];
 
 /** A word with its separators dropped, so `no_reply` and `noreply` compare equal. */

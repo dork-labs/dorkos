@@ -205,7 +205,8 @@ export function dorkLinkPath(ref: DorkReference<string>): string {
  * A query string or fragment after the URI is ignored. The URI is
  * percent-decoded exactly once, since some tools encode the `:`; a URI that
  * still holds a `%` after that one decode (a double-encoded link) is refused,
- * not decoded again, because a `dork:` string never contains a `%`.
+ * not decoded again, and so is one that decodes to a `?`, `#` or whitespace:
+ * a `dork:` string never contains any of them.
  *
  * @param link - The path or desktop URL.
  * @returns The `dork:` string, or null when the link is not a `/r/` link to
@@ -224,5 +225,5 @@ export function dorkUriFromLink(link: string): string | null {
   } catch {
     return null;
   }
-  return uri.startsWith(DORK_SCHEME) && !uri.includes('%') ? uri : null;
+  return uri.startsWith(DORK_SCHEME) && !/[%?#\s]/.test(uri) ? uri : null;
 }

@@ -105,6 +105,8 @@ describe('address refusals', () => {
     ['reserved', 'dork:mailer-daemon/owl'],
     ['reserved', 'dork:acme/dorkos'],
     ['reserved', 'dork:acme/here'],
+    ['reserved', 'dork:acme/project'],
+    ['reserved', 'dork:project/owl'],
   ])('%s: %j', (reason, input) => {
     expect(parseDorkAddress(input)).toEqual({ ok: false, reason });
   });

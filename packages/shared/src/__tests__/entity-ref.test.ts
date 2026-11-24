@@ -219,6 +219,14 @@ describe('branch and worktree: built only from a value the caller holds', () => 
 describe('display hints', () => {
   it.each([
     ['a label with accents and emoji', { label: 'Caf\u00e9 launch \u{1F680}' }],
+    ['a ZWJ emoji', { label: 'Add \u{1F469}\u200d\u{1F4BB} dev mode' }],
+    ['a ZWJ emoji with a skin tone', { label: '\u{1F469}\u{1F3FD}\u200d\u{1F4BB}' }],
+    ['the rainbow flag', { label: '\u{1F3F3}\ufe0f\u200d\u{1F308}' }],
+    [
+      'a flag tag sequence',
+      { label: '\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}' },
+    ],
+    ['an app path with a query and a fragment', { url: '/session?session=abc#top' }],
     ['an app path', { url: '/session?session=abc' }],
     ['an escaped backslash, which stays in the path', { url: '/%5Cevil.example' }],
     ['an escaped tab, which stays in the path', { url: '/%09/evil.example' }],
@@ -248,6 +256,12 @@ describe('display hints', () => {
     ['bad-label', { label: 'next\u0085line' }],
     ['bad-label', { label: 'tab\there' }],
     ['bad-label', { label: 'bom\ufeff' }],
+    ['bad-label', { label: '\u200d' }],
+    ['bad-label', { label: 'a\u200db' }],
+    ['bad-label', { label: '\u200d\u{1F4BB}' }],
+    ['bad-label', { label: 'tag\u{E0067}' }],
+    ['bad-label', { label: '\u{1F469}\u200b\u{1F4BB}' }],
+    ['bad-label', { label: '\u202eabc' }],
     ['bad-url', { url: 'javascript:alert(1)' }],
     ['bad-url', { url: 'data:text/html,x' }],
     ['bad-url', { url: '//evil.example/x' }],
@@ -262,6 +276,11 @@ describe('display hints', () => {
     ['bad-url', { url: '/\u200b/evil.example' }],
     ['bad-url', { url: 'https://ok.example\\@evil.example' }],
     ['bad-url', { url: 'java\tscript:alert(1)' }],
+    ['bad-url', { url: '/..//evil.example' }],
+    ['bad-url', { url: '/r/../..//evil.example' }],
+    ['bad-url', { url: '/%2e%2e//evil.example' }],
+    ['bad-url', { url: '/.%2E/x' }],
+    ['bad-url', { url: '/a/./b' }],
     ['bad-url', { url: `https://x.example/${'u'.repeat(2048)}` }],
   ])('%s: %j', (reason, extras) => {
     expect(entityRef('chat', CHAT, extras)).toEqual({ ok: false, reason });
