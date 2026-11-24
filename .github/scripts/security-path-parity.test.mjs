@@ -98,6 +98,11 @@ const additions = [
   ['scripts/check-design-tokens.ts', 'scripts/check-design-tokens.test.ts'],
   ['scripts/design-tokens/rule-guard.ts', 'scripts/design-tokensx/rule-guard.ts'],
   ['scripts/design-tokens/fixtures/rules.json', 'scripts/__tests__/check-design-tokens.test.ts'],
+  // pr-gates trusts main's signers file and its own check script, so a change to
+  // either waits for Security. The fixtures stay ungated.
+  ['ci/security/allowed_signers', 'ci/security/allowed_signers.md'],
+  ['ci/security/findings-recipients.txt', 'ci/security/findings-recipients.txt.old'],
+  ['scripts/pr-gates-check.sh', 'scripts/test-pr-gates-check.sh'],
 ];
 for (const [match, miss] of additions) {
   test(`new trust path and rename: ${match}`, () => {
