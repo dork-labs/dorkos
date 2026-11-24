@@ -11,6 +11,6 @@
     "packages/evals": 5,
     "packages/harness": 1,
     "packages/mesh": 1,
-    "packages/relay": 6
+    "packages/relay": 2
   }
 }

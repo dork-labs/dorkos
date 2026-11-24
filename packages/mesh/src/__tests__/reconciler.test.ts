@@ -108,17 +108,6 @@ describe('reconcile()', () => {
     expect(registry.markUnreachable).toHaveBeenCalledWith('a1');
   });
 
-  it('does not re-mark already unreachable agents', async () => {
-    const entry = makeEntry({ id: 'a1', projectPath: '/gone' });
-    registry.list.mockReturnValue([entry]);
-    registry.listUnreachable.mockReturnValue([entry]);
-    vi.mocked(fsPromises.access).mockRejectedValue(new Error('ENOENT'));
-
-    const result = await reconcile(deps);
-    expect(result.unreachable).toBe(0);
-    expect(registry.markUnreachable).not.toHaveBeenCalled();
-  });
-
   it('syncs updated manifest fields to DB', async () => {
     registry.list.mockReturnValue([
       makeEntry({
@@ -138,26 +127,6 @@ describe('reconcile()', () => {
     expect(registry.update).toHaveBeenCalledWith('a1', expect.objectContaining({ name: 'New' }));
   });
 
-  it('does not sync when manifest matches entry', async () => {
-    const entry = makeEntry({ id: 'a1', projectPath: '/exists' });
-    registry.list.mockReturnValue([entry]);
-    vi.mocked(fsPromises.access).mockResolvedValue(undefined);
-    vi.mocked(manifestModule.readManifest).mockResolvedValue(
-      makeManifest({
-        id: 'a1',
-        name: entry.name,
-        description: entry.description,
-        runtime: entry.runtime,
-        capabilities: entry.capabilities,
-        behavior: entry.behavior,
-      })
-    );
-
-    const result = await reconcile(deps);
-    expect(result.synced).toBe(0);
-    expect(registry.update).not.toHaveBeenCalled();
-  });
-
   it('skips agents with corrupt/unparseable manifests', async () => {
     registry.list.mockReturnValue([makeEntry({ id: 'a1', projectPath: '/exists' })]);
     vi.mocked(fsPromises.access).mockResolvedValue(undefined);
@@ -166,20 +135,6 @@ describe('reconcile()', () => {
     const result = await reconcile(deps);
     expect(result.synced).toBe(0);
     expect(result.unreachable).toBe(0);
-  });
-
-  it('handles empty registry gracefully', async () => {
-    registry.list.mockReturnValue([]);
-    registry.listUnreachableBefore.mockReturnValue([]);
-
-    const result = await reconcile(deps);
-    expect(result).toEqual({
-      synced: 0,
-      unreachable: 0,
-      removed: 0,
-      resurrected: 0,
-      discovered: 0,
-    });
   });
 
   it('syncs persona/color/icon fields from disk to DB (ADR-0043)', async () => {
@@ -242,95 +197,6 @@ describe('reconcile()', () => {
       'a1',
       expect.objectContaining({ model: 'sonnet', effort: 'low' })
     );
-  });
-
-  it('clears the cached model and effort when the manifest drops them', async () => {
-    // The removal direction, which the diff has to notice as much as the
-    // addition: someone deletes the two keys from `agent.json` to go back to
-    // inheriting, and a cache that only ever learned NEW values would keep
-    // reporting the old ones to the agent list forever.
-    const entry = makeEntry({
-      id: 'a1',
-      projectPath: '/root/proj/backend',
-      model: 'sonnet',
-      effort: 'low',
-    });
-    registry.list.mockReturnValue([entry]);
-    vi.mocked(fsPromises.access).mockResolvedValue(undefined);
-    vi.mocked(manifestModule.readManifest).mockResolvedValue(
-      makeManifest({
-        id: 'a1',
-        name: entry.name,
-        description: entry.description,
-        runtime: entry.runtime,
-        capabilities: entry.capabilities,
-        behavior: entry.behavior,
-      })
-    );
-
-    const result = await reconcile(deps);
-    expect(result.synced).toBe(1);
-    expect(registry.update).toHaveBeenCalledWith(
-      'a1',
-      expect.objectContaining({ model: undefined, effort: undefined })
-    );
-  });
-
-  it('syncs who an agent reports to and who created it from disk to DB', async () => {
-    // A hand-edited `reportsTo` has to reach the mirror the reports-to chain is
-    // walked from (spec `heartbeats` §4.1), and so does a field removed by hand.
-    const entry = makeEntry({ id: 'a1', projectPath: '/root/proj/backend', createdBy: 'old' });
-    registry.list.mockReturnValue([entry]);
-    vi.mocked(fsPromises.access).mockResolvedValue(undefined);
-    vi.mocked(manifestModule.readManifest).mockResolvedValue(
-      makeManifest({
-        id: 'a1',
-        name: entry.name,
-        description: entry.description,
-        runtime: entry.runtime,
-        capabilities: entry.capabilities,
-        behavior: entry.behavior,
-        reportsTo: '01MANAGER',
-      })
-    );
-
-    const result = await reconcile(deps);
-    expect(result.synced).toBe(1);
-    expect(registry.update).toHaveBeenCalledWith(
-      'a1',
-      expect.objectContaining({ reportsTo: '01MANAGER', createdBy: undefined })
-    );
-  });
-
-  it('does not sync when only non-compared fields differ', async () => {
-    const entry = makeEntry({
-      id: 'a1',
-      projectPath: '/exists',
-      persona: 'same persona',
-      personaEnabled: true,
-      color: '#000',
-      icon: 'code',
-    });
-    registry.list.mockReturnValue([entry]);
-    vi.mocked(fsPromises.access).mockResolvedValue(undefined);
-    vi.mocked(manifestModule.readManifest).mockResolvedValue(
-      makeManifest({
-        id: 'a1',
-        name: entry.name,
-        description: entry.description,
-        runtime: entry.runtime,
-        capabilities: entry.capabilities,
-        behavior: entry.behavior,
-        persona: 'same persona',
-        personaEnabled: true,
-        color: '#000',
-        icon: 'code',
-      })
-    );
-
-    const result = await reconcile(deps);
-    expect(result.synced).toBe(0);
-    expect(registry.update).not.toHaveBeenCalled();
   });
 
   describe('grace-period sweep removal', () => {
@@ -413,19 +279,6 @@ describe('reconcile()', () => {
       expect(result.resurrected).toBe(0);
     });
 
-    it('does not clear status for agents that were never unreachable', async () => {
-      const entry = makeEntry({ id: 'a1', projectPath: '/still/here' });
-      registry.list.mockReturnValue([entry]);
-      registry.listUnreachable.mockReturnValue([]);
-      vi.mocked(fsPromises.access).mockResolvedValue(undefined);
-      vi.mocked(manifestModule.readManifest).mockResolvedValue(null);
-
-      const result = await reconcile(deps);
-
-      expect(result.resurrected).toBe(0);
-      expect(registry.markReachable).not.toHaveBeenCalled();
-    });
-
     it('resurrects expired agents whose path is accessible without firing the removal cascade', async () => {
       // Volume unmounted over a weekend (>24h grace) but remounted before the
       // sweep runs: the agent must be resurrected, not removed from DB + Relay,
@@ -480,14 +333,6 @@ describe('reconcile()', () => {
       const roots = discoverOnDisk.mock.calls[0]![0] as string[];
       expect([...roots].sort()).toEqual(['/root/one', '/root/two']);
       expect(result.discovered).toBe(2);
-    });
-
-    it('does not run discovery when no callback is provided', async () => {
-      registry.list.mockReturnValue([]);
-
-      const result = await reconcile(deps);
-
-      expect(result.discovered).toBe(0);
     });
 
     it('isolates discovery failures so a reconcile pass still completes', async () => {

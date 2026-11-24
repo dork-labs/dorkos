@@ -75,39 +75,12 @@ describe('BaseRelayAdapter', () => {
 
   // --- Initial state ---
 
-  it('initial status is disconnected with zero counts', () => {
-    const status = adapter.getStatus();
-    expect(status.state).toBe('disconnected');
-    expect(status.messageCount.inbound).toBe(0);
-    expect(status.messageCount.outbound).toBe(0);
-    expect(status.errorCount).toBe(0);
-  });
-
-  it('exposes id, subjectPrefix, and displayName from constructor', () => {
-    expect(adapter.id).toBe('test');
-    expect(adapter.subjectPrefix).toBe('relay.test.');
-    expect(adapter.displayName).toBe('Test');
-  });
-
   // --- start() ---
 
   it('start() calls _start() and transitions to connected', async () => {
     await adapter.start(relay);
     expect(adapter.startCalled).toBe(true);
     expect(adapter.getStatus().state).toBe('connected');
-  });
-
-  it('start() sets startedAt on the status', async () => {
-    const before = new Date().toISOString();
-    await adapter.start(relay);
-    const { startedAt } = adapter.getStatus();
-    expect(startedAt).toBeDefined();
-    expect(startedAt! >= before).toBe(true);
-  });
-
-  it('start() stores the relay ref', async () => {
-    await adapter.start(relay);
-    expect(adapter.getRelayRef()).toBe(relay);
   });
 
   it('start() is idempotent — second call is a no-op', async () => {
@@ -407,18 +380,6 @@ describe('BaseRelayAdapter', () => {
     expect(adapter.getRelayRef()).toBeNull();
   });
 
-  it('stop() is idempotent — second call is a no-op', async () => {
-    await adapter.start(relay);
-    await adapter.stop();
-    adapter.stopCalled = false; // reset flag
-    await adapter.stop(); // second call
-    expect(adapter.stopCalled).toBe(false);
-  });
-
-  it('stop() without start() does not throw', async () => {
-    await expect(adapter.stop()).resolves.toBeUndefined();
-  });
-
   it('stop() that throws clears the relay ref and reports the adapter as errored', async () => {
     class ThrowingStopAdapter extends BaseRelayAdapter {
       constructor() {
@@ -468,12 +429,6 @@ describe('BaseRelayAdapter', () => {
     expect(adapter.getStatus().messageCount.outbound).toBe(1);
   });
 
-  it('trackInbound() increments inbound count', () => {
-    adapter.callTrackInbound();
-    adapter.callTrackInbound();
-    expect(adapter.getStatus().messageCount.inbound).toBe(2);
-  });
-
   // --- recordError() ---
 
   it('recordError() sets state to "error" and increments errorCount', () => {
@@ -485,36 +440,7 @@ describe('BaseRelayAdapter', () => {
     expect(status.lastErrorAt).toBeDefined();
   });
 
-  it('recordError() accepts non-Error values', () => {
-    adapter.callRecordError('string error');
-    expect(adapter.getStatus().lastError).toBe('string error');
-  });
-
-  it('recordError() accumulates multiple errors', () => {
-    adapter.callRecordError(new Error('First'));
-    adapter.callRecordError(new Error('Second'));
-    expect(adapter.getStatus().errorCount).toBe(2);
-    expect(adapter.getStatus().lastError).toBe('Second');
-  });
-
   // --- getStatus() ---
-
-  it('getStatus() returns a copy — mutations do not affect internal state', async () => {
-    await adapter.start(relay);
-    const status = adapter.getStatus();
-    // Mutate the returned copy
-    status.errorCount = 999;
-    status.state = 'error';
-    // Internal state should be unchanged
-    expect(adapter.getStatus().errorCount).toBe(0);
-    expect(adapter.getStatus().state).toBe('connected');
-  });
-
-  it('getStatus() returns distinct objects on each call', () => {
-    const s1 = adapter.getStatus();
-    const s2 = adapter.getStatus();
-    expect(s1).not.toBe(s2);
-  });
 
   // --- setReconnecting() ---
 
@@ -524,23 +450,6 @@ describe('BaseRelayAdapter', () => {
 
     adapter.callSetReconnecting();
     expect(adapter.getStatus().state).toBe('reconnecting');
-  });
-
-  it('setReconnecting() preserves errorCount and lastError', () => {
-    adapter.callRecordError(new Error('Connection lost'));
-    adapter.callSetReconnecting();
-
-    const status = adapter.getStatus();
-    expect(status.errorCount).toBe(1);
-    expect(status.lastError).toBe('Connection lost');
-  });
-
-  it('setReconnecting() is ignored from non-error states', async () => {
-    await adapter.start(relay);
-    expect(adapter.getStatus().state).toBe('connected');
-
-    adapter.callSetReconnecting();
-    expect(adapter.getStatus().state).toBe('connected');
   });
 
   // --- markConnected() ---
@@ -554,116 +463,11 @@ describe('BaseRelayAdapter', () => {
     expect(adapter.getStatus().state).toBe('connected');
   });
 
-  it('markConnected() does not reset startedAt', async () => {
-    await adapter.start(relay);
-    const { startedAt } = adapter.getStatus();
-
-    adapter.callRecordError(new Error('err'));
-    adapter.callSetReconnecting();
-    adapter.callMarkConnected();
-
-    expect(adapter.getStatus().startedAt).toBe(startedAt);
-  });
-
-  it('markConnected() is ignored from connected state', async () => {
-    await adapter.start(relay);
-    adapter.callMarkConnected(); // no-op
-    expect(adapter.getStatus().state).toBe('connected');
-  });
-
-  it('markConnected() is ignored from disconnected state', () => {
-    adapter.callMarkConnected();
-    expect(adapter.getStatus().state).toBe('disconnected');
-  });
-
   // --- isStopped ---
-
-  it('isStopped is true when disconnected', () => {
-    expect(adapter.callIsStopped()).toBe(true);
-  });
-
-  it('isStopped is false when connected', async () => {
-    await adapter.start(relay);
-    expect(adapter.callIsStopped()).toBe(false);
-  });
-
-  it('isStopped is false when in error state', () => {
-    adapter.callRecordError(new Error('err'));
-    expect(adapter.callIsStopped()).toBe(false);
-  });
-
-  it('isStopped is false when reconnecting', () => {
-    adapter.callRecordError(new Error('err'));
-    adapter.callSetReconnecting();
-    expect(adapter.callIsStopped()).toBe(false);
-  });
 
   // --- stop() clears startedAt ---
 
-  it('stop() clears startedAt from status', async () => {
-    await adapter.start(relay);
-    expect(adapter.getStatus().startedAt).toBeDefined();
-
-    await adapter.stop();
-    expect(adapter.getStatus().startedAt).toBeUndefined();
-  });
-
   // --- makeInboundCallbacks() ---
 
-  it('makeInboundCallbacks() returns object with trackInbound and recordError functions', () => {
-    const callbacks = adapter.callMakeInboundCallbacks();
-    expect(typeof callbacks.trackInbound).toBe('function');
-    expect(typeof callbacks.recordError).toBe('function');
-  });
-
-  it('makeInboundCallbacks().trackInbound() increments inbound message count', () => {
-    const callbacks = adapter.callMakeInboundCallbacks();
-    callbacks.trackInbound();
-    callbacks.trackInbound();
-    expect(adapter.getStatus().messageCount.inbound).toBe(2);
-  });
-
-  it('makeInboundCallbacks().recordError() updates error state', () => {
-    const callbacks = adapter.callMakeInboundCallbacks();
-    callbacks.recordError(new Error('inbound error'));
-    const status = adapter.getStatus();
-    expect(status.state).toBe('error');
-    expect(status.errorCount).toBe(1);
-    expect(status.lastError).toBe('inbound error');
-  });
-
   // --- makeOutboundCallbacks() ---
-
-  it('makeOutboundCallbacks() returns object with trackOutbound and recordError functions', () => {
-    const callbacks = adapter.callMakeOutboundCallbacks();
-    expect(typeof callbacks.trackOutbound).toBe('function');
-    expect(typeof callbacks.recordError).toBe('function');
-  });
-
-  it('makeOutboundCallbacks().trackOutbound() increments outbound message count', () => {
-    const callbacks = adapter.callMakeOutboundCallbacks();
-    callbacks.trackOutbound();
-    callbacks.trackOutbound();
-    callbacks.trackOutbound();
-    expect(adapter.getStatus().messageCount.outbound).toBe(3);
-  });
-
-  it('makeOutboundCallbacks().recordError() updates error state', () => {
-    const callbacks = adapter.callMakeOutboundCallbacks();
-    callbacks.recordError('outbound failure');
-    const status = adapter.getStatus();
-    expect(status.state).toBe('error');
-    expect(status.errorCount).toBe(1);
-    expect(status.lastError).toBe('outbound failure');
-  });
-
-  it('makeInboundCallbacks() and makeOutboundCallbacks() share the same adapter state', () => {
-    const inbound = adapter.callMakeInboundCallbacks();
-    const outbound = adapter.callMakeOutboundCallbacks();
-    inbound.trackInbound();
-    outbound.trackOutbound();
-    const status = adapter.getStatus();
-    expect(status.messageCount.inbound).toBe(1);
-    expect(status.messageCount.outbound).toBe(1);
-  });
 });

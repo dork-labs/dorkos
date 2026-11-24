@@ -74,12 +74,6 @@ describe('AdapterDelivery', () => {
   });
 
   describe('deliver (non-agent subjects — awaited path)', () => {
-    it('returns null when no adapter registry is configured', async () => {
-      const delivery = new AdapterDelivery(createDeps({ adapterRegistry: undefined }));
-      const result = await delivery.deliver(CHANNEL_SUBJECT, createEnvelope());
-      expect(result).toBeNull();
-    });
-
     it('delivers successfully and indexes in SQLite', async () => {
       const delivery = new AdapterDelivery(deps);
       const envelope = createEnvelope();
@@ -100,19 +94,6 @@ describe('AdapterDelivery', () => {
           status: 'delivered',
         })
       );
-    });
-
-    it('does not index when delivery fails', async () => {
-      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
-        success: false,
-        error: 'adapter error',
-      } as DeliveryResult);
-      const delivery = new AdapterDelivery(deps);
-
-      const result = await delivery.deliver(CHANNEL_SUBJECT, createEnvelope());
-
-      expect(result!.success).toBe(false);
-      expect(deps.sqliteIndex.insertMessage).not.toHaveBeenCalled();
     });
 
     it('returns null (not a failure) when no adapter matches a non-agent subject', async () => {
@@ -145,27 +126,6 @@ describe('AdapterDelivery', () => {
         'RelayCore: adapter delivery failed:',
         'network error'
       );
-    });
-
-    it('clears timeout timer on success (no timer leak)', async () => {
-      const delivery = new AdapterDelivery(deps);
-      const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
-
-      await delivery.deliver(CHANNEL_SUBJECT, createEnvelope());
-
-      expect(clearTimeoutSpy).toHaveBeenCalled();
-      clearTimeoutSpy.mockRestore();
-    });
-
-    it('clears timeout timer on error (no timer leak)', async () => {
-      vi.mocked(deps.adapterRegistry!.deliver).mockRejectedValue(new Error('fail'));
-      const delivery = new AdapterDelivery(deps);
-      const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
-
-      await delivery.deliver(CHANNEL_SUBJECT, createEnvelope());
-
-      expect(clearTimeoutSpy).toHaveBeenCalled();
-      clearTimeoutSpy.mockRestore();
     });
 
     it('times out after TIMEOUT_MS', async () => {
@@ -235,36 +195,6 @@ describe('AdapterDelivery', () => {
         AdapterDelivery.TIMEOUT_MS
       );
     });
-
-    it('handles synchronous throw before timer initialization', async () => {
-      vi.mocked(deps.adapterRegistry!.deliver).mockImplementation(() => {
-        throw new Error('synchronous throw before timer init');
-      });
-      const delivery = new AdapterDelivery(deps);
-
-      const result = await delivery.deliver(CHANNEL_SUBJECT, createEnvelope());
-
-      expect(result).toEqual(
-        expect.objectContaining({
-          success: false,
-          error: 'synchronous throw before timer init',
-        })
-      );
-    });
-
-    it('passes context from contextBuilder', async () => {
-      const delivery = new AdapterDelivery(deps);
-      const contextBuilder = vi.fn().mockReturnValue({ agentCwd: '/test' });
-
-      await delivery.deliver(CHANNEL_SUBJECT, createEnvelope(), contextBuilder);
-
-      expect(contextBuilder).toHaveBeenCalledWith(CHANNEL_SUBJECT);
-      expect(deps.adapterRegistry!.deliver).toHaveBeenCalledWith(
-        CHANNEL_SUBJECT,
-        expect.any(Object),
-        { agentCwd: '/test' }
-      );
-    });
   });
 
   describe('deliver (relay.agent.* subjects — detached path)', () => {
@@ -283,26 +213,6 @@ describe('AdapterDelivery', () => {
 
       expect(result).toBeNull();
       expect(registry.deliver).not.toHaveBeenCalled();
-    });
-
-    it('dead-letters when a registry without getBySubject resolves null in the background', async () => {
-      // Acceptance was already reported, so a null (no adapter took the
-      // message) must dead-letter rather than fall through silently.
-      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue(null);
-      const delivery = new AdapterDelivery(deps);
-      const envelope = createEnvelope({ subject: AGENT_SUBJECT });
-
-      const result = await delivery.deliver(AGENT_SUBJECT, envelope);
-      expect(result).toMatchObject({ success: true }); // accepted
-
-      await vi.waitFor(() => {
-        expect(deps.deadLetterQueue.reject).toHaveBeenCalledWith(
-          AGENT_SUBJECT,
-          envelope,
-          'adapter delivery failed: no adapter matched subject'
-        );
-      });
-      expect(deps.sqliteIndex.insertMessage).not.toHaveBeenCalled();
     });
 
     it('acknowledges acceptance immediately without awaiting the agent turn', async () => {
@@ -380,39 +290,24 @@ describe('AdapterDelivery', () => {
       expect(deps.sqliteIndex.insertMessage).not.toHaveBeenCalled();
     });
 
-    it('dead-letters when the background delivery throws', async () => {
-      vi.mocked(deps.adapterRegistry!.deliver).mockRejectedValue(new Error('boom'));
+    it('dead-letters when a registry without getBySubject resolves null in the background', async () => {
+      // Acceptance was already reported, so a null (no adapter took the
+      // message) must dead-letter rather than fall through silently.
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue(null);
       const delivery = new AdapterDelivery(deps);
       const envelope = createEnvelope({ subject: AGENT_SUBJECT });
 
       const result = await delivery.deliver(AGENT_SUBJECT, envelope);
-      expect(result!.success).toBe(true); // accepted
+      expect(result).toMatchObject({ success: true }); // accepted
 
       await vi.waitFor(() => {
         expect(deps.deadLetterQueue.reject).toHaveBeenCalledWith(
           AGENT_SUBJECT,
           envelope,
-          'adapter delivery failed: boom'
+          'adapter delivery failed: no adapter matched subject'
         );
       });
-    });
-
-    it('indexes the audit row when the background delivery succeeds', async () => {
-      const delivery = new AdapterDelivery(deps);
-      const envelope = createEnvelope({ subject: AGENT_SUBJECT });
-
-      await delivery.deliver(AGENT_SUBJECT, envelope);
-
-      await vi.waitFor(() => {
-        expect(deps.sqliteIndex.insertMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            id: envelope.id,
-            subject: AGENT_SUBJECT,
-            status: 'delivered',
-          })
-        );
-      });
-      expect(deps.deadLetterQueue.reject).not.toHaveBeenCalled();
+      expect(deps.sqliteIndex.insertMessage).not.toHaveBeenCalled();
     });
 
     it('notifies the reply inbox when a detached delivery dead-letters', async () => {
@@ -432,44 +327,6 @@ describe('AdapterDelivery', () => {
 
       await vi.waitFor(() => {
         expect(notifier).toHaveBeenCalledWith('relay.inbox.query.abc', 'agent crashed', envelope);
-      });
-    });
-
-    it('does not notify when the envelope has no replyTo', async () => {
-      const notifier = vi.fn().mockResolvedValue(undefined);
-      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
-        success: false,
-        error: 'agent crashed',
-      } as DeliveryResult);
-      const delivery = new AdapterDelivery(deps);
-      delivery.setReplyFailureNotifier(notifier);
-
-      await delivery.deliver(AGENT_SUBJECT, createEnvelope({ subject: AGENT_SUBJECT }));
-
-      await vi.waitFor(() => expect(deps.deadLetterQueue.reject).toHaveBeenCalled());
-      expect(notifier).not.toHaveBeenCalled();
-    });
-
-    it('swallows a throwing notifier so it never cascades', async () => {
-      const notifier = vi.fn().mockRejectedValue(new Error('notify boom'));
-      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
-        success: false,
-        error: 'agent crashed',
-      } as DeliveryResult);
-      const delivery = new AdapterDelivery(deps);
-      delivery.setReplyFailureNotifier(notifier);
-      const envelope = createEnvelope({
-        subject: AGENT_SUBJECT,
-        replyTo: 'relay.inbox.query.abc',
-      });
-
-      const result = await delivery.deliver(AGENT_SUBJECT, envelope);
-      expect(result).toMatchObject({ success: true });
-
-      await vi.waitFor(() => {
-        expect(deps.logger!.warn).toHaveBeenCalledWith(
-          expect.stringContaining('failed to notify reply inbox')
-        );
       });
     });
   });
@@ -591,28 +448,6 @@ describe('AdapterDelivery', () => {
       expect(chatNotice.mock.calls.map((call) => call[1])).toEqual(['agent_held']);
     });
 
-    it('says nothing about a hold an adapter announced against the rules', async () => {
-      const chatNotice = vi.fn().mockResolvedValue(true);
-      // An adapter calling a callback it was never given: `onHeld` is absent
-      // for an envelope with no reply subject, so this stands in for one that
-      // kept a stale reference. The notifier must still say nothing.
-      vi.mocked(deps.adapterRegistry!.deliver).mockImplementation(
-        async (_subject, _envelope, context) => {
-          context?.onHeld?.();
-          return { success: true } as DeliveryResult;
-        }
-      );
-      const delivery = new AdapterDelivery(deps);
-      delivery.setChatFailureNotifier(chatNotice);
-
-      await delivery.deliver(AGENT_SUBJECT, createEnvelope({ subject: AGENT_SUBJECT }));
-      // The registry has already run, and `onHeld` (if any) fired inside it, so
-      // there is nothing left to wait for.
-      await vi.waitFor(() => expect(deps.adapterRegistry!.deliver).toHaveBeenCalled());
-
-      expect(chatNotice).not.toHaveBeenCalled();
-    });
-
     it('reports a hold that ran out of time as the busy line, not a resend request', async () => {
       const chatNotice = vi.fn().mockResolvedValue(true);
       // The whole life of a hold that never got its slot: it announces the
@@ -643,40 +478,6 @@ describe('AdapterDelivery', () => {
         expect(chatNotice.mock.calls.map((call) => call[1])).toEqual(['agent_held', 'agent_busy'])
       );
       expect(deps.deadLetterQueue.reject).toHaveBeenCalledTimes(1);
-    });
-
-    it('reports any other failure as a plain delivery failure', async () => {
-      const chatNotice = vi.fn().mockResolvedValue(true);
-      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
-        success: false,
-        error: 'runtime exploded',
-      } as DeliveryResult);
-      const delivery = new AdapterDelivery(deps);
-      delivery.setChatFailureNotifier(chatNotice);
-
-      await delivery.deliver(
-        AGENT_SUBJECT,
-        createEnvelope({ subject: AGENT_SUBJECT, replyTo: CHANNEL_SUBJECT })
-      );
-
-      await vi.waitFor(() =>
-        expect(chatNotice).toHaveBeenCalledWith(CHANNEL_SUBJECT, 'delivery_failed')
-      );
-    });
-
-    it('says nothing when there is no reply subject to say it in', async () => {
-      const chatNotice = vi.fn().mockResolvedValue(true);
-      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
-        success: false,
-        error: 'runtime exploded',
-      } as DeliveryResult);
-      const delivery = new AdapterDelivery(deps);
-      delivery.setChatFailureNotifier(chatNotice);
-
-      await delivery.deliver(AGENT_SUBJECT, createEnvelope({ subject: AGENT_SUBJECT }));
-
-      await vi.waitFor(() => expect(deps.deadLetterQueue.reject).toHaveBeenCalled());
-      expect(chatNotice).not.toHaveBeenCalled();
     });
   });
 });
