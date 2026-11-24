@@ -8,29 +8,25 @@ import { errorCodeOf } from './error-code';
 
 /** The coded file-service failures the explorer distinguishes. */
 export type CrudErrorCode =
-  | 'CONFLICT'
-  | 'COPY_INTO_SELF'
-  | 'DIR_NOT_EMPTY'
-  | 'NOT_FOUND'
-  | 'REFUSE_ROOT'
-  | 'OUTSIDE_BOUNDARY';
+  | 'already_exists'
+  | 'copy_into_self'
+  | 'folder_not_empty'
+  | 'not_found'
+  | 'working_folder_root'
+  | 'outside_boundary';
 
 const KNOWN_CODES: readonly CrudErrorCode[] = [
-  'CONFLICT',
-  'COPY_INTO_SELF',
-  'DIR_NOT_EMPTY',
-  'NOT_FOUND',
-  'REFUSE_ROOT',
-  'OUTSIDE_BOUNDARY',
+  'already_exists',
+  'copy_into_self',
+  'folder_not_empty',
+  'not_found',
+  'working_folder_root',
+  'outside_boundary',
 ];
 
 /** Read the stable `code` off a thrown file-service error, if present. */
 export function getErrorCode(err: unknown): CrudErrorCode | undefined {
-  const sent = errorCodeOf(err);
-  // A path outside the boundary that reaches the server's error handler is
-  // answered `outside_boundary` (DOR-4979); the file routes' own refusal still
-  // says `OUTSIDE_BOUNDARY` until they move over. Both are the same refusal.
-  const code = sent === 'outside_boundary' ? 'OUTSIDE_BOUNDARY' : sent;
+  const code = errorCodeOf(err);
   return code !== undefined && (KNOWN_CODES as readonly string[]).includes(code)
     ? (code as CrudErrorCode)
     : undefined;
@@ -64,12 +60,12 @@ export const ROOM_REPO_CONFIG_UNSAFE_FALLBACK =
 
 /** User-facing, boundary-safe message for each coded failure. */
 const MESSAGES: Record<CrudErrorCode, string> = {
-  CONFLICT: 'That name already exists',
-  COPY_INTO_SELF: COPY_INTO_SELF_MESSAGE,
-  DIR_NOT_EMPTY: 'This folder isn’t empty',
-  NOT_FOUND: 'That item no longer exists',
-  REFUSE_ROOT: 'Can’t change the top folder',
-  OUTSIDE_BOUNDARY: 'That’s outside the folders DorkOS can use',
+  already_exists: 'That name already exists',
+  copy_into_self: COPY_INTO_SELF_MESSAGE,
+  folder_not_empty: 'This folder isn’t empty',
+  not_found: 'That item no longer exists',
+  working_folder_root: 'Can’t change the top folder',
+  outside_boundary: 'That’s outside the folders DorkOS can use',
 };
 
 /**

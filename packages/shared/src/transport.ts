@@ -1438,7 +1438,7 @@ export interface Transport extends TransportSlices {
   revertDiffBaseline(cwd: string, filePath: string, sessionId: string): Promise<void>;
   /**
    * Create a new file or directory within `cwd`. Rejects (409, thrown with
-   * `code: 'CONFLICT'`) when the target already exists. `content` seeds a new
+   * `code: 'already_exists'`) when the target already exists. `content` seeds a new
    * file's bytes (ignored for `type: 'dir'`). The write is atomic for files.
    *
    * @param cwd - Session working directory the path is resolved within.
@@ -1467,7 +1467,7 @@ export interface Transport extends TransportSlices {
   ): Promise<FileMutationResponse>;
   /**
    * Move or rename an entry within `cwd`. Both `from` and `to` are confined to
-   * `cwd`; rejects (409, thrown with `code: 'CONFLICT'`) when `to` already
+   * `cwd`; rejects (409, thrown with `code: 'already_exists'`) when `to` already
    * exists.
    *
    * @param cwd - Session working directory both paths are resolved within.
@@ -1478,9 +1478,9 @@ export interface Transport extends TransportSlices {
   /**
    * Copy an entry within `cwd`, recursively for directories. Both `from` and
    * `to` are confined to `cwd`; rejects when `from` is missing (thrown with
-   * `code: 'NOT_FOUND'`), when `to` already exists (`code: 'CONFLICT'`), or
+   * `code: 'not_found'`), when `to` already exists (`code: 'already_exists'`), or
    * when a directory would be copied into its own subtree
-   * (`code: 'COPY_INTO_SELF'`).
+   * (`code: 'copy_into_self'`).
    *
    * @param cwd - Session working directory both paths are resolved within.
    * @param from - Source path, absolute or relative to `cwd`.

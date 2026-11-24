@@ -279,6 +279,13 @@
           "too_large",
           "not_a_file",
           "binary_file",
+          "not_a_folder",
+          "already_exists",
+          "folder_not_empty",
+          "copy_into_self",
+          "working_folder_root",
+          "range_not_satisfiable",
+          "save_not_applied",
           "schedule_package_owned",
           "past_due"
         ],
@@ -30999,7 +31006,7 @@
           "Files"
         ],
         "summary": "Save an existing file within the working directory",
-        "description": "Confined to cwd. Cooperating ordinary and checkbox writes share the installation file gate. A stale content baseline returns 409 with current content. A replaced physical identity returns 412 FILE_IDENTITY_CHANGED; reload before saving again. This does not create files or produce a document event receipt without optional documentSave metadata. That lane is operator-only and chat-document-only, validates the server-projected incarnation, and returns an original host saved receipt without route-delivery claims. Identical retries never repeat the file effect. A duplicate acknowledges the original operation: its hash is historical, not proof against later writes. A no-op without a prior committed save has no saved receipt.",
+        "description": "Confined to cwd. Cooperating ordinary and checkbox writes share the installation file gate. A stale content baseline returns 412 `precondition_failed` with the current content. A replaced physical identity returns 412 `precondition_failed` too; reload before saving again. This does not create files or produce a document event receipt without optional documentSave metadata. That lane is operator-only and chat-document-only, validates the server-projected incarnation, and returns an original host saved receipt without route-delivery claims. Identical retries never repeat the file effect. A duplicate acknowledges the original operation: its hash is historical, not proof against later writes. A no-op without a prior committed save has no saved receipt.",
         "requestBody": {
           "required": true,
           "content": {
@@ -31022,176 +31029,79 @@
             }
           },
           "400": {
-            "description": "Invalid body, path or non-file target",
+            "description": "`invalid_request` (a bad body, or a path with a NUL byte or one that cannot be followed) or `not_a_file` (the path is a folder)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Outside the permitted directory or permission denied",
+            "description": "`outside_boundary` (the path leaves the working directory) or `forbidden` (the system would not let DorkOS write it)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Existing file not found, or the document save was refused; a refused save may name which check refused (DOR-4442)",
+            "description": "`not_found`: no file at that path, or the document save was refused; for the owner, `detail` names the check that refused (DOR-4442)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "reason": {
-                      "type": "string",
-                      "enum": [
-                        "not_session",
-                        "no_recorded_folder",
-                        "root_mismatch",
-                        "folder_gone",
-                        "outside_boundary"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "The content baseline no longer matches",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "CONFLICT"
-                      ]
-                    },
-                    "currentHash": {
-                      "type": "string"
-                    },
-                    "currentContent": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "currentHash",
-                    "currentContent"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "412": {
-            "description": "The physical identity changed before replacement; reload the file",
+            "description": "`precondition_failed`: the file changed since the caller read it (the body carries `currentHash` and `currentContent`), the file was replaced while saving, or a document save reused its id for different content. `save_not_applied`: the recorded document save failed before it changed the file. The file is unchanged; send a new save.",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
                     },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "FILE_IDENTITY_CHANGED",
-                        "DOC_SAVE_ID_CONFLICT",
-                        "DOC_SAVE_FAILED"
-                      ]
+                    {
+                      "type": "object",
+                      "properties": {
+                        "currentHash": {
+                          "type": "string",
+                          "description": "The SHA-256 of the file as it is now."
+                        },
+                        "currentContent": {
+                          "type": "string",
+                          "description": "The file as it is now."
+                        }
+                      }
                     }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  ],
+                  "description": "The error document every failed API request is answered with (RFC 9457)."
                 }
               }
             }
           },
           "500": {
-            "description": "Save unavailable; includes unresolved checkbox admission evidence",
+            "description": "`internal_error`: the save failed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "The original save remains uncertain; no effect is replayed and no receipt is invented",
+            "description": "`temporarily_unavailable`: the original document save is uncertain; no effect is replayed and no receipt is invented",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -50081,31 +49991,41 @@
             }
           },
           "400": {
-            "description": "Invalid path",
+            "description": "`invalid_request` (a bad query, or a path with a NUL byte) or `not_a_folder` (the path is a file)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Access denied (path outside home directory)",
+            "description": "`outside_boundary` (the path is outside the folders DorkOS may use) or `forbidden` (the system would not let DorkOS read it)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Directory not found",
+            "description": "`not_found`: no folder at that path",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: the folder could not be read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -50139,6 +50059,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "directory.getDefault"

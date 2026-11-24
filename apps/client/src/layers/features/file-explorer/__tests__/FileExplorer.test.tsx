@@ -213,7 +213,7 @@ describe('FileExplorer', () => {
     const transport = createMockTransport();
     transport.readFileTree = vi.fn(async () => ({ entries: [file('existing.ts')] }));
     transport.createEntry = vi.fn(async () => {
-      throw Object.assign(new Error('exists'), { code: 'CONFLICT' });
+      throw Object.assign(new Error('exists'), { code: 'already_exists' });
     });
 
     renderExplorer(transport);
@@ -237,7 +237,7 @@ describe('FileExplorer', () => {
     const transport = createMockTransport();
     transport.readFileTree = vi.fn(async () => ({ entries: [file('a.ts'), file('b.ts')] }));
     transport.renameEntry = vi.fn(async () => {
-      throw Object.assign(new Error('exists'), { code: 'CONFLICT' });
+      throw Object.assign(new Error('exists'), { code: 'already_exists' });
     });
 
     renderExplorer(transport);
@@ -266,7 +266,7 @@ describe('FileExplorer', () => {
         : { entries: [dir('dst'), file('x.ts')] }
     );
     transport.renameEntry = vi.fn(async () => {
-      throw Object.assign(new Error('exists'), { code: 'CONFLICT' });
+      throw Object.assign(new Error('exists'), { code: 'already_exists' });
     });
 
     renderExplorer(transport);
@@ -311,7 +311,8 @@ describe('FileExplorer', () => {
       opts?.path ? { entries: [] } : { entries: [dir('pkg')] }
     );
     transport.deleteEntry = vi.fn(async (_cwd, _path, opts?: { recursive?: boolean }) => {
-      if (!opts?.recursive) throw Object.assign(new Error('not empty'), { code: 'DIR_NOT_EMPTY' });
+      if (!opts?.recursive)
+        throw Object.assign(new Error('not empty'), { code: 'folder_not_empty' });
       return { ok: true as const };
     });
 
@@ -431,11 +432,11 @@ describe('FileExplorer', () => {
       opts?.path === 'pkg' ? { entries: [file('pkg/index.ts')] } : { entries: [dir('pkg')] }
     );
     transport.deleteEntry = vi.fn((_cwd, _path, opts?: { recursive?: boolean }) =>
-      // Non-recursive → DIR_NOT_EMPTY (surfaces the confirm); recursive → hangs
+      // Non-recursive → folder_not_empty (surfaces the confirm); recursive → hangs
       // until the test rejects, so the optimistic removal commits first.
       opts?.recursive
         ? new Promise<never>((_resolve, reject) => (deferred.reject = reject))
-        : Promise.reject(Object.assign(new Error('not empty'), { code: 'DIR_NOT_EMPTY' }))
+        : Promise.reject(Object.assign(new Error('not empty'), { code: 'folder_not_empty' }))
     );
 
     renderExplorer(transport);
@@ -447,7 +448,7 @@ describe('FileExplorer', () => {
       expect(screen.getByRole('treeitem', { name: 'pkg' })).toHaveAttribute('aria-selected', 'true')
     );
 
-    // Delete pkg → DIR_NOT_EMPTY → confirm, then confirm the recursive delete.
+    // Delete pkg → folder_not_empty → confirm, then confirm the recursive delete.
     fireEvent.keyDown(screen.getByRole('tree'), { key: 'Delete' });
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog).toHaveTextContent(/isn.t empty/i);

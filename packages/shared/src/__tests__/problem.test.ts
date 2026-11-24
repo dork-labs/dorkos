@@ -103,6 +103,13 @@ describe('PROBLEM_CODE_LIST', () => {
       ['too_large', 413],
       ['not_a_file', 400],
       ['binary_file', 415],
+      ['not_a_folder', 400],
+      ['already_exists', 409],
+      ['folder_not_empty', 409],
+      ['copy_into_self', 400],
+      ['working_folder_root', 400],
+      ['range_not_satisfiable', 416],
+      ['save_not_applied', 412],
       ['schedule_package_owned', 409],
       ['past_due', 400],
     ];

@@ -236,6 +236,20 @@ export const PROBLEM_CODE_LIST = [
   { code: 'too_large', status: 413, title: 'That file is too large to open here.' },
   { code: 'not_a_file', status: 400, title: 'That path is a folder, not a file.' },
   { code: 'binary_file', status: 415, title: 'That file isn’t text.' },
+  // A chat's working folder: the file explorer, the folder picker and file saves.
+  { code: 'not_a_folder', status: 400, title: 'That path is a file, not a folder.' },
+  { code: 'already_exists', status: 409, title: 'Something with that name is already there.' },
+  { code: 'folder_not_empty', status: 409, title: 'That folder isn’t empty.' },
+  { code: 'copy_into_self', status: 400, title: 'A folder can’t be copied into itself.' },
+  /** The chat's top folder itself was the target of a create, delete, move or copy. */
+  { code: 'working_folder_root', status: 400, title: 'The chat’s top folder can’t be changed.' },
+  { code: 'range_not_satisfiable', status: 416, title: 'That part of the file doesn’t exist.' },
+  /**
+   * A canvas document save the server recorded as failed before it touched
+   * the file. The file is unchanged; send a new save (the same save id keeps
+   * answering with this failure).
+   */
+  { code: 'save_not_applied', status: 412, title: 'That save failed before it changed the file.' },
   // Tasks, to-dos, the work queue and settings.
   {
     code: 'schedule_package_owned',

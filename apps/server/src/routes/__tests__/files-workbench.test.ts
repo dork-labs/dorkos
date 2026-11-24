@@ -126,7 +126,7 @@ describe('Workbench file routes', () => {
         .get('/api/files/tree')
         .query({ cwd: dir, path: 'README.md' });
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('NOT_A_DIRECTORY');
+      expect(res.body.code).toBe('not_a_folder');
     });
 
     it('returns 404 for a missing directory', async () => {
@@ -134,7 +134,7 @@ describe('Workbench file routes', () => {
         .get('/api/files/tree')
         .query({ cwd: dir, path: 'nope' });
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('NOT_FOUND');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('rejects a path that escapes the working directory with 403', async () => {
@@ -143,7 +143,7 @@ describe('Workbench file routes', () => {
         .get('/api/files/tree')
         .query({ cwd: dir, path: '../../etc' });
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
   });
 
@@ -165,7 +165,7 @@ describe('Workbench file routes', () => {
         .get('/api/files/content')
         .query({ cwd: dir, path: 'bin' });
       expect(res.status).toBe(415);
-      expect(res.body.code).toBe('BINARY_FILE');
+      expect(res.body.code).toBe('binary_file');
     });
 
     it('rejects a file over the 5 MB text cap with 413', async () => {
@@ -175,7 +175,7 @@ describe('Workbench file routes', () => {
         .get('/api/files/content')
         .query({ cwd: dir, path: 'big.txt' });
       expect(res.status).toBe(413);
-      expect(res.body.code).toBe('TOO_LARGE');
+      expect(res.body.code).toBe('too_large');
     });
 
     it('returns 404 for a missing file', async () => {
@@ -183,7 +183,7 @@ describe('Workbench file routes', () => {
         .get('/api/files/content')
         .query({ cwd: dir, path: 'gone' });
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('NOT_FOUND');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('rejects a path that escapes the working directory with 403', async () => {
@@ -192,7 +192,7 @@ describe('Workbench file routes', () => {
         .get('/api/files/content')
         .query({ cwd: dir, path: '../../etc/passwd' });
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
   });
 
@@ -228,7 +228,7 @@ describe('Workbench file routes', () => {
         .post('/api/files')
         .send({ cwd: dir, path: 'dupe.txt', type: 'file', content: 'new\n' });
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('CONFLICT');
+      expect(res.body.code).toBe('already_exists');
       // The existing file is untouched.
       expect(await fs.readFile(path.join(dir, 'dupe.txt'), 'utf8')).toBe('old\n');
     });
@@ -239,7 +239,7 @@ describe('Workbench file routes', () => {
         .post('/api/files')
         .send({ cwd: dir, path: '../evil.txt', type: 'file' });
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
   });
 
@@ -262,7 +262,7 @@ describe('Workbench file routes', () => {
         .delete('/api/files')
         .query({ cwd: dir, path: 'tree' });
       expect(refused.status).toBe(409);
-      expect(refused.body.code).toBe('DIR_NOT_EMPTY');
+      expect(refused.body.code).toBe('folder_not_empty');
 
       const ok = await request(testServer)
         .delete('/api/files')
@@ -274,13 +274,13 @@ describe('Workbench file routes', () => {
     it('refuses to delete the cwd root with 400', async () => {
       const res = await request(testServer).delete('/api/files').query({ cwd: dir, path: '.' });
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('REFUSE_ROOT');
+      expect(res.body.code).toBe('working_folder_root');
     });
 
     it('returns 404 for a missing path', async () => {
       const res = await request(testServer).delete('/api/files').query({ cwd: dir, path: 'gone' });
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('NOT_FOUND');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('rejects a path that escapes the working directory with 403', async () => {
@@ -289,7 +289,7 @@ describe('Workbench file routes', () => {
         .delete('/api/files')
         .query({ cwd: dir, path: '../../etc/passwd' });
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
   });
 
@@ -321,7 +321,7 @@ describe('Workbench file routes', () => {
         .post('/api/files/rename')
         .send({ cwd: dir, from: 'from.txt', to: 'to.txt' });
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('CONFLICT');
+      expect(res.body.code).toBe('already_exists');
       // Neither file was touched.
       expect(await fs.readFile(path.join(dir, 'to.txt'), 'utf8')).toBe('existing\n');
       expect(await fs.readFile(path.join(dir, 'from.txt'), 'utf8')).toBe('x\n');
@@ -332,7 +332,7 @@ describe('Workbench file routes', () => {
         .post('/api/files/rename')
         .send({ cwd: dir, from: 'gone.txt', to: 'to.txt' });
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('NOT_FOUND');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('rejects a from-path that escapes the working directory with 403', async () => {
@@ -341,7 +341,7 @@ describe('Workbench file routes', () => {
         .post('/api/files/rename')
         .send({ cwd: dir, from: '../../etc/passwd', to: 'to.txt' });
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
   });
 

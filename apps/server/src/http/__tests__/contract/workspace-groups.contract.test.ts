@@ -148,27 +148,33 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
   {
     name: 'GET /api/directory refuses a folder outside the boundary',
     path: '/api/directory?path=/etc',
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/directory refuses a walk out of the boundary',
     path: `/api/directory?path=${q(`${REPO_ROOT}/../../..`)}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/directory refuses a NUL byte',
     path: `/api/directory?path=${q(`${REPO_ROOT}/a\0b`)}`,
-    expect: { status: 400, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'GET /api/directory answers 404 for a folder that does not exist',
     path: `/api/directory?path=${q(path.join(REPO_ROOT, 'no-such-folder'))}`,
-    expect: { status: 404, body: { error: 'Directory not found' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'That folder doesn’t exist.' }),
+    },
   },
   {
     name: 'GET /api/directory refuses a file',
     path: `/api/directory?path=${q(path.join(REPO_ROOT, 'package.json'))}`,
-    expect: { status: 400, body: { error: 'Not a directory' } },
+    expect: {
+      status: 400,
+      body: problemBody('not_a_folder', { detail: 'That path is a file, not a folder.' }),
+    },
   },
   {
     name: 'GET /api/directory refuses an empty path',
@@ -238,10 +244,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { parentPath: SCRATCH, folderName: 'Not Kebab' },
     expect: {
       status: 400,
-      body: {
-        error:
-          'Invalid folder name. Lowercase letters, numbers, and hyphens only. Must start with a letter.',
-      },
+      body: problemBody('invalid_request', {
+        detail: 'Use lowercase letters, numbers and hyphens, starting with a letter.',
+      }),
     },
   },
   {
@@ -249,14 +254,14 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/directory',
     body: { parentPath: '/tmp', folderName: 'contract-escape' },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'POST /api/directory refuses a NUL byte in the parent',
     method: 'POST',
     path: '/api/directory',
     body: { parentPath: `${SCRATCH}\0`, folderName: 'contract-nul' },
-    expect: { status: 400, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'POST /api/directory makes a missing parent inside the boundary on the way',
@@ -277,7 +282,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/directory',
     body: { parentPath: SCRATCH, folderName: NEW_FOLDER },
-    expect: { status: 409, body: { error: 'Directory already exists' } },
+    expect: {
+      status: 409,
+      body: problemBody('already_exists', { detail: 'A folder with that name is already there.' }),
+    },
   },
   {
     name: 'PUT /api/directory is not a route',

@@ -1712,18 +1712,14 @@ registry.registerPath({
       description: 'Directory listing',
       content: { 'application/json': { schema: BrowseDirectoryResponseSchema } },
     },
-    400: {
-      description: 'Invalid path',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Access denied (path outside home directory)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Directory not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request` (a bad query, or a path with a NUL byte) or `not_a_folder` (the path is a file)'
+    ),
+    403: problemResponse(
+      '`outside_boundary` (the path is outside the folders DorkOS may use) or `forbidden` (the system would not let DorkOS read it)'
+    ),
+    404: problemResponse('`not_found`: no folder at that path'),
+    500: problemResponse('`internal_error`: the folder could not be read'),
   },
 });
 
@@ -1742,6 +1738,7 @@ registry.registerPath({
         },
       },
     },
+    500: { $ref: '#/components/responses/InternalErrorProblem' },
   },
 });
 

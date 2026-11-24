@@ -82,11 +82,6 @@ afterAll(() => {
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
 const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json\b/ };
-const OUTSIDE = {
-  error: 'Access denied: path outside directory boundary',
-  code: 'OUTSIDE_BOUNDARY',
-};
-const NULL_BYTE = { error: 'Invalid path: null bytes not allowed', code: 'NULL_BYTE' };
 const PATH_OUTSIDE = problemBody('outside_boundary', {
   detail: 'Pick a folder inside the ones DorkOS may use.',
 });
@@ -106,6 +101,7 @@ const UPLOAD_MISSING = problemBody('not_found', { detail: 'That upload doesn’t
 const SERVE_START_OUTSIDE = problemBody('outside_boundary', {
   detail: 'Pick a file inside the chat’s folder.',
 });
+const FILE_MISSING = problemBody('not_found', { detail: 'That file doesn’t exist.' });
 const NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
 });
@@ -220,60 +216,61 @@ contractSuite('file, diff, upload and profile groups', [
     headers: { range: 'bytes=20-' },
     expect: {
       status: 416,
-      headers: { ...JSON_TYPE, 'content-range': 'bytes */10' },
-      body: { error: 'Requested range not satisfiable', code: 'RANGE_NOT_SATISFIABLE' },
+      headers: { ...PROBLEM_TYPE, 'content-range': 'bytes */10' },
+      body: problemBody('range_not_satisfiable', {
+        detail: 'That part of the file doesn’t exist.',
+      }),
     },
   },
   {
     name: 'GET /api/files/raw is a 404 for a missing file',
     path: `/api/files/raw?${at('missing.svg')}`,
-    expect: { status: 404, body: { error: 'File not found', code: 'NOT_FOUND' } },
+    expect: { status: 404, body: FILE_MISSING },
   },
   {
     name: 'GET /api/files/raw refuses a type it does not serve',
     path: `/api/files/raw?${at('notes.txt')}`,
     expect: {
       status: 415,
-      body: {
-        error: 'Only image, PDF, 3D-model, audio, and video files can be served',
-        code: 'UNSUPPORTED_TYPE',
-      },
+      body: problemBody('unsupported_media_type', {
+        detail: 'Only pictures, PDFs, 3D models, sound and video open here.',
+      }),
     },
   },
   {
     name: 'GET /api/files/raw refuses a folder',
     path: `/api/files/raw?cwd=${q(CWD)}&path=${q('sub.png')}`,
-    expect: { status: 404, body: { error: 'File not found', code: 'NOT_FOUND' } },
+    expect: { status: 404, body: FILE_MISSING },
   },
   {
     name: 'GET /api/files/raw refuses a .. walk out of the working directory',
     path: `/api/files/raw?${at('../../../../etc/hosts.png')}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: PATH_OUTSIDE },
   },
   {
     name: 'GET /api/files/raw refuses an encoded %2e%2e walk',
     path: `/api/files/raw?cwd=${q(CWD)}&path=%252e%252e/%2e%2e/%2e%2e/%2e%2e/x.png`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: PATH_OUTSIDE },
   },
   {
     name: 'GET /api/files/raw refuses an absolute path outside the boundary',
     path: `/api/files/raw?${at(OUTSIDE_FILE)}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: PATH_OUTSIDE },
   },
   {
     name: 'GET /api/files/raw refuses a symlink out of the working directory',
     path: `/api/files/raw?${at('escape.svg')}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: PATH_OUTSIDE },
   },
   {
     name: 'GET /api/files/raw refuses a NUL byte',
     path: `/api/files/raw?cwd=${q(CWD)}&path=pic%00.svg`,
-    expect: { status: 400, body: NULL_BYTE },
+    expect: { status: 400, body: PATH_NUL },
   },
   {
     name: 'GET /api/files/raw refuses a working directory outside the boundary',
     path: `/api/files/raw?cwd=${q(OUTSIDE_DIR)}&path=x.svg`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: PATH_OUTSIDE },
   },
   {
     name: 'GET /api/files/raw refuses a missing query',
@@ -294,7 +291,7 @@ contractSuite('file, diff, upload and profile groups', [
   {
     name: 'GET /api/files refuses a folder outside the boundary',
     path: `/api/files?cwd=${q(OUTSIDE_DIR)}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: PATH_OUTSIDE },
   },
   {
     name: 'GET /api/files/tree lists one level',
@@ -304,12 +301,15 @@ contractSuite('file, diff, upload and profile groups', [
   {
     name: 'GET /api/files/tree refuses a file',
     path: `/api/files/tree?${at('notes.txt')}`,
-    expect: { status: 400, body: { error: 'Not a directory', code: 'NOT_A_DIRECTORY' } },
+    expect: {
+      status: 400,
+      body: problemBody('not_a_folder', { detail: 'That path is a file, not a folder.' }),
+    },
   },
   {
     name: 'GET /api/files/tree refuses a .. walk',
     path: `/api/files/tree?${at('../../..')}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: PATH_OUTSIDE },
   },
   {
     name: 'GET /api/files/content reads a text file with its hash',
@@ -331,18 +331,23 @@ contractSuite('file, diff, upload and profile groups', [
     path: `/api/files/content?${at('binary.txt')}`,
     expect: {
       status: 415,
-      body: { error: 'Binary files cannot be opened as text', code: 'BINARY_FILE' },
+      body: problemBody('binary_file', {
+        detail: 'That file isn’t text, so it can’t open here.',
+      }),
     },
   },
   {
     name: 'GET /api/files/content refuses a folder',
     path: `/api/files/content?${at('sub')}`,
-    expect: { status: 400, body: { error: 'Not a regular file', code: 'NOT_A_FILE' } },
+    expect: {
+      status: 400,
+      body: problemBody('not_a_file', { detail: 'That path is a folder, not a file.' }),
+    },
   },
   {
     name: 'GET /api/files/content is a 404 for a missing file',
     path: `/api/files/content?${at('missing.txt')}`,
-    expect: { status: 404, body: { error: 'File not found', code: 'NOT_FOUND' } },
+    expect: { status: 404, body: FILE_MISSING },
   },
   {
     name: 'PUT /api/files/content writes nothing for the same bytes',
@@ -360,10 +365,14 @@ contractSuite('file, diff, upload and profile groups', [
     path: '/api/files/content',
     body: { cwd: CWD, path: 'notes.txt', content: 'x', expectedHash: '0'.repeat(64) },
     expect: {
-      status: 409,
-      schema: z.object({
-        error: z.literal('File changed on disk since it was opened'),
-        code: z.literal('CONFLICT'),
+      status: 412,
+      headers: PROBLEM_TYPE,
+      schema: z.strictObject({
+        type: z.literal('urn:dorkos:problem:precondition_failed'),
+        title: z.string(),
+        status: z.literal(412),
+        code: z.literal('precondition_failed'),
+        detail: z.literal('This file changed since you opened it.'),
         currentHash: z.string(),
         currentContent: z.literal(NOTES),
       }),
@@ -374,14 +383,14 @@ contractSuite('file, diff, upload and profile groups', [
     method: 'PUT',
     path: '/api/files/content',
     body: { cwd: CWD, path: 'new.txt', content: 'x' },
-    expect: { status: 404, body: { error: 'File not found', code: 'NOT_FOUND' } },
+    expect: { status: 404, body: FILE_MISSING },
   },
   {
     name: 'PUT /api/files/content refuses a symlink out',
     method: 'PUT',
     path: '/api/files/content',
     body: { cwd: CWD, path: 'escape.svg', content: 'x' },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: PATH_OUTSIDE },
   },
   {
     name: 'PUT /api/files/content refuses an empty body',
@@ -412,7 +421,12 @@ contractSuite('file, diff, upload and profile groups', [
     method: 'POST',
     path: '/api/files',
     body: { cwd: CWD, path: 'made/new.txt', type: 'file' },
-    expect: { status: 409, body: { error: 'Target already exists', code: 'CONFLICT' } },
+    expect: {
+      status: 409,
+      body: problemBody('already_exists', {
+        detail: 'Something with that name is already there.',
+      }),
+    },
   },
   {
     name: 'POST /api/files refuses the working directory itself',
@@ -421,7 +435,9 @@ contractSuite('file, diff, upload and profile groups', [
     body: { cwd: CWD, path: '.', type: 'dir' },
     expect: {
       status: 400,
-      body: { error: 'Refusing to create over the working-directory root', code: 'REFUSE_ROOT' },
+      body: problemBody('working_folder_root', {
+        detail: 'The chat’s top folder can’t be replaced.',
+      }),
     },
   },
   {
@@ -429,7 +445,7 @@ contractSuite('file, diff, upload and profile groups', [
     method: 'POST',
     path: '/api/files',
     body: { cwd: CWD, path: '../../escape.txt', type: 'file' },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: PATH_OUTSIDE },
   },
   {
     name: 'POST /api/files/copy copies a file (after the cases above)',
@@ -445,7 +461,7 @@ contractSuite('file, diff, upload and profile groups', [
     body: { cwd: CWD, from: 'made', to: 'made/inner' },
     expect: {
       status: 400,
-      body: { error: 'Refusing to copy a folder into itself', code: 'COPY_INTO_SELF' },
+      body: problemBody('copy_into_self', { detail: 'A folder can’t be copied into itself.' }),
     },
   },
   {
@@ -460,7 +476,10 @@ contractSuite('file, diff, upload and profile groups', [
     method: 'POST',
     path: '/api/files/rename',
     body: { cwd: CWD, from: 'made/nothing.txt', to: 'made/other.txt' },
-    expect: { status: 404, body: { error: 'Source not found', code: 'NOT_FOUND' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'The item to move isn’t there anymore.' }),
+    },
   },
   {
     name: 'DELETE /api/files refuses a non-empty folder without recursive',
@@ -468,7 +487,9 @@ contractSuite('file, diff, upload and profile groups', [
     path: `/api/files?${at('made')}`,
     expect: {
       status: 409,
-      body: { error: 'Directory is not empty; pass recursive', code: 'DIR_NOT_EMPTY' },
+      body: problemBody('folder_not_empty', {
+        detail: 'That folder isn’t empty, so nothing was deleted.',
+      }),
     },
   },
   {
@@ -483,7 +504,9 @@ contractSuite('file, diff, upload and profile groups', [
     path: `/api/files?${at('.')}`,
     expect: {
       status: 400,
-      body: { error: 'Refusing to delete the working-directory root', code: 'REFUSE_ROOT' },
+      body: problemBody('working_folder_root', {
+        detail: 'The chat’s top folder can’t be deleted.',
+      }),
     },
   },
   {
@@ -491,7 +514,10 @@ contractSuite('file, diff, upload and profile groups', [
     method: 'POST',
     path: '/api/files/reveal',
     body: { cwd: CWD, path: 'nothing-here.txt' },
-    expect: { status: 404, body: { error: 'Path not found', code: 'NOT_FOUND' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'That isn’t there anymore.' }),
+    },
   },
   {
     name: 'POST /api/files/reveal refuses an empty body',
