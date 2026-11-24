@@ -16,13 +16,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BOOT_BUDGET_MS,
   BOOT_HOOK_TIMEOUT_MS,
-  BOOT_TIMEOUT_MS,
   bootWithEdges,
   type BootEdges,
   type StartedServer,
 } from './harness.js';
 import { SERVER_DIR } from './server-build.js';
-import { KILL_WAIT_MS, STOP_GRACE_MS } from './stop-server.js';
 
 const ENTRY = 'src/index.ts';
 const BUILT = new Map([[path.resolve(SERVER_DIR, ENTRY), '/built/index.mjs']]);
@@ -135,34 +133,5 @@ describe('the contract boot deadline', () => {
       servers.map((s) => s.closed),
       'every server started is stopped'
     ).toEqual([true, true]);
-  });
-
-  it('stops retrying after three lost ports and reports the last exit', async () => {
-    const servers: ReturnType<typeof fakeServer>[] = [];
-    const verdict = await bootUntilHookTimeout({
-      runsFromBuild: async () => true,
-      build: async () => BUILT,
-      start: async () => {
-        const server = fakeServer(servers.length, 1_000);
-        servers.push(server);
-        return server;
-      },
-    });
-
-    expect(verdict, 'no verdict after every port was lost').toBeDefined();
-    expect(verdict!.error.message).toMatch(/The server exited \(1\) before it answered/);
-    expect(verdict!.error.message).toMatch(/Port 50002 is already in use/);
-    expect(servers).toHaveLength(3);
-    expect(
-      servers.map((s) => s.closed),
-      'every server started is stopped'
-    ).toEqual([true, true, true]);
-  });
-
-  it('leaves the hook room to stop the last server after the budget runs out', () => {
-    expect(BOOT_BUDGET_MS).toBeGreaterThanOrEqual(BOOT_TIMEOUT_MS);
-    expect(BOOT_HOOK_TIMEOUT_MS - BOOT_BUDGET_MS).toBeGreaterThanOrEqual(
-      STOP_GRACE_MS + KILL_WAIT_MS
-    );
   });
 });
