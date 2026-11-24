@@ -15,7 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadHandFiles } from '../load.ts';
 import { aggregateDays, rotateTimings } from '../local.ts';
 import { machineReading } from '../machine.ts';
@@ -81,7 +81,17 @@ describe('bin/time-wrap.sh', () => {
       detached: true,
       stdio: 'ignore',
     });
-    await new Promise((r) => setTimeout(r, 400));
+    // The wrap writes START, then sets its traps two lines later. Wait for the
+    // START line rather than guessing how long the shell takes to boot, then
+    // leave a short margin for those two lines.
+    await vi.waitFor(
+      () =>
+        expect(existsSync(timingsFile(repo)) && readFileSync(timingsFile(repo), 'utf8')).toContain(
+          '"e":"S"'
+        ),
+      { timeout: 5_000 }
+    );
+    await new Promise((r) => setTimeout(r, 50));
     process.kill(-child.pid!, sig);
     const code = await new Promise<number | null>((r) => child.on('exit', (c) => r(c)));
     const n = { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 }[sig];

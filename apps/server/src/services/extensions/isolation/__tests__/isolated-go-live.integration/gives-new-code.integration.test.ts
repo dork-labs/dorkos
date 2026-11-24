@@ -119,7 +119,8 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       const pid = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
       await st.manager.disable(ID);
       expect(alive(pid)).toBe(false);
-      await new Promise((r) => setTimeout(r, 600));
+      // An absence check: well past the harness's longest restart backoff (40 ms).
+      await new Promise((r) => setTimeout(r, 200));
       expect(st.manager.getServerHandler(ID)).toBeNull();
       expect(sends.stopped).toContain(ID);
     },
