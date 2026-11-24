@@ -279,8 +279,10 @@ function commitProblem(
     .map((line) => PICK_LINE.exec(line.trim())?.[1])
     .filter((sha): sha is string => !!sha);
   if (picks.length > 1) return ['multiple-sources', 'names more than one cherry-picked source'];
-  if (picks.length === 1) {
-    const source = picks[0];
+  // `picks` holds only strings, so `source` is defined whenever there is one pick;
+  // the check is there for noUncheckedIndexedAccess, not as a new rule.
+  const source = picks[0];
+  if (picks.length === 1 && source !== undefined) {
     if (!input.isMainAncestor(source))
       return ['source-not-on-main', `its source ${source.slice(0, 12)} is not on main`];
     if (input.isInBase(source))

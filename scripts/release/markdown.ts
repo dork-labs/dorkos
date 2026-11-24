@@ -23,12 +23,16 @@ const MENTION =
   /(?<![A-Za-z0-9_+\-/\\])@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)(\/[A-Za-z0-9._-]+)?/g;
 
 /**
- * Apply `rewrite` to the prose of each line, skipping fenced blocks and inline
- * code spans. Fence rules match `release_mentions.py`: a closing fence uses the
+ * Apply `rewrite` to the prose of each line, and `code` (by default, nothing)
+ * to fenced lines and inline code spans. Fence rules match `release_mentions.py`: a closing fence uses the
  * opening character, is at least as long, and has no info string; a backtick in
  * the info string makes the line inline code, not a fence.
  */
-export function mapProse(lines: readonly string[], rewrite: (prose: string) => string): string[] {
+export function mapProse(
+  lines: readonly string[],
+  rewrite: (prose: string) => string,
+  code: (code: string) => string = (text) => text
+): string[] {
   const out: string[] = [];
   let open: string | undefined;
   for (const line of lines) {
@@ -37,15 +41,15 @@ export function mapProse(lines: readonly string[], rewrite: (prose: string) => s
       const marker = fence?.[1];
       if (marker && marker[0] === open[0] && marker.length >= open.length && !fence[2]?.trim())
         open = undefined;
-      out.push(line);
+      out.push(code(line));
       continue;
     }
     if (fence?.[1] && !(fence[1][0] === '`' && fence[2]?.includes('`'))) {
       open = fence[1];
-      out.push(line);
+      out.push(code(line));
       continue;
     }
-    out.push(mapOutsideInlineCode(line, rewrite));
+    out.push(mapOutsideInlineCode(line, rewrite, code));
   }
   return out;
 }
@@ -74,12 +78,28 @@ export function escapeMdx(lines: readonly string[]): string[] {
   return mapProse(lines, (prose) => prose.replace(/(?<!\\)\{/g, '\\{').replace(/</g, '&lt;'));
 }
 
-function mapOutsideInlineCode(line: string, rewrite: (prose: string) => string): string {
+/**
+ * The lines with every fenced line and inline code span blanked (a span becomes
+ * one space), so a check over the result sees only prose.
+ */
+export function proseOnly(lines: readonly string[]): string[] {
+  return mapProse(
+    lines,
+    (prose) => prose,
+    () => ' '
+  );
+}
+
+function mapOutsideInlineCode(
+  line: string,
+  rewrite: (prose: string) => string,
+  code: (code: string) => string
+): string {
   let out = '';
   let last = 0;
   for (const match of line.matchAll(INLINE_CODE)) {
     const start = match.index ?? 0;
-    out += rewrite(line.slice(last, start)) + match[0];
+    out += rewrite(line.slice(last, start)) + code(match[0]);
     last = start + match[0].length;
   }
   return out + rewrite(line.slice(last));

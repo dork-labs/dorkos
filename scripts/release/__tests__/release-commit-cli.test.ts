@@ -4,12 +4,21 @@
  * stays unwired until go-live).
  */
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { COMMIT_NOT_WIRED, main } from '../release-commit.ts';
+import { COMMIT_NOT_WIRED, NOTHING_TO_RELEASE_EXIT, main } from '../release-commit.ts';
 import { fixtureRepo, FIXTURE_DATE, FIXTURE_PREVIOUS, type FixtureRepo } from './fixture-repo.ts';
 
 const SCRIPT = fileURLToPath(new URL('../release-commit.ts', import.meta.url));
@@ -132,11 +141,25 @@ describe('release-commit refusals', () => {
     expect(main([...args(path.join(scratch, 'out')), '--force'])).toBe(2);
   });
 
-  it('exits 1 when there is nothing to release', () => {
+  it('exits 3, not 1, when there is nothing to release', () => {
     for (const name of readdirSync(path.join(repo.dir, 'changelog/unreleased')))
       if (name.endsWith('.md')) repo.remove(`changelog/unreleased/${name}`);
-    expect(main(args(path.join(scratch, 'out')))).toBe(1);
+    expect(main(args(path.join(scratch, 'out')))).toBe(NOTHING_TO_RELEASE_EXIT);
+    expect(NOTHING_TO_RELEASE_EXIT).toBe(3);
     expect(errors[0]).toMatch(/Nothing to release/);
+  });
+
+  it('exits 1 on a malformed fragment', () => {
+    repo.write('changelog/unreleased/261102-000000-x.md', '### Improved\n\n- x\n');
+    expect(main(args(path.join(scratch, 'out')))).toBe(1);
+  });
+
+  it('refuses to read through a symlinked folder', () => {
+    const elsewhere = path.join(scratch, 'elsewhere');
+    renameSync(path.join(repo.dir, 'changelog'), elsewhere);
+    symlinkSync(elsewhere, path.join(repo.dir, 'changelog'));
+    expect(main(args(path.join(scratch, 'out')))).toBe(1);
+    expect(errors[0]).toMatch(/changelog\/unreleased goes through a symlink/);
   });
 
   it('refuses an --out that is not empty, or inside the release point', () => {

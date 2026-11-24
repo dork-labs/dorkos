@@ -9,8 +9,14 @@
  * and the branch ref is created, never moved: a branch that already exists is
  * an error, not something to overwrite.
  *
+ * The plan was built from a checkout, which can lag P. So before writing
+ * anything, P's own tree is read through the same caller and every planned
+ * file's `before` must hash to P's blob for that path (an added file must be
+ * absent), and P's fragments must be exactly the ones the plan compiled.
+ *
  * @module scripts/release/git-data
  */
+import { createHash } from 'node:crypto';
 import { ReleaseCommitError } from './errors.ts';
 import { assertSelfCheck, releaseSubject, type ReleasePlan } from './plan.ts';
 
@@ -49,7 +55,7 @@ const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
  * parent and no author (so GitHub signs it as the App), then the branch ref.
  */
 export async function commitViaGitData(
-  plan: Pick<ReleasePlan, 'version' | 'changes'>,
+  plan: Pick<ReleasePlan, 'version' | 'changes' | 'fragments'>,
   gh: GhCaller,
   target: GitDataTarget
 ): Promise<GitDataResult> {
@@ -66,11 +72,18 @@ export async function commitViaGitData(
   if (!isRecord(parent) || parent.sha !== target.parent || !isRecord(parent.tree))
     throw new ReleaseCommitError(`GitHub did not return the commit ${target.parent}.`);
   const baseTree = sha(parent.tree.sha, 'the parent tree');
+  const blobs = await readTree(gh, `${base}/trees/${baseTree}?recursive=1`, baseTree);
+  assertPlanMatchesTree(plan, blobs, target.parent);
 
   const entries: Record<string, unknown>[] = [];
   for (const change of plan.changes) {
     if (change.status === 'D') {
-      entries.push({ path: change.path, mode: '100644', type: 'blob', sha: null });
+      entries.push({
+        path: change.path,
+        mode: blobs.get(change.path)?.mode,
+        type: 'blob',
+        sha: null,
+      });
       continue;
     }
     if (change.after === undefined)
@@ -81,7 +94,8 @@ export async function commitViaGitData(
     });
     entries.push({
       path: change.path,
-      mode: '100644',
+      // A modified file keeps its mode (an executable stays one); an added one is plain.
+      mode: blobs.get(change.path)?.mode ?? '100644',
       type: 'blob',
       sha: sha(isRecord(blob) ? blob.sha : undefined, `the blob for ${change.path}`),
     });
@@ -107,6 +121,69 @@ export async function commitViaGitData(
   )
     throw new ReleaseCommitError(`GitHub did not create ${ref} at ${commitSha}.`);
   return { commit: commitSha, tree: treeSha, ref };
+}
+
+/** Git's blob id for `text`: sha1 over `blob <byte length>\0` and the bytes. */
+export function gitBlobSha(text: string): string {
+  const bytes = Buffer.from(text, 'utf8');
+  return createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+}
+
+interface TreeBlob {
+  sha: string;
+  mode: string;
+}
+
+async function readTree(
+  gh: GhCaller,
+  path: string,
+  treeSha: string
+): Promise<Map<string, TreeBlob>> {
+  const tree = await gh('GET', path);
+  if (!isRecord(tree) || tree.sha !== treeSha || !Array.isArray(tree.tree))
+    throw new ReleaseCommitError(`GitHub did not return the tree ${treeSha}.`);
+  // A truncated listing could hide a fragment or a file the plan changes.
+  if (tree.truncated !== false)
+    throw new ReleaseCommitError(`GitHub returned only part of the tree ${treeSha}.`);
+  const blobs = new Map<string, TreeBlob>();
+  for (const entry of tree.tree)
+    if (
+      isRecord(entry) &&
+      entry.type === 'blob' &&
+      typeof entry.path === 'string' &&
+      typeof entry.mode === 'string'
+    )
+      blobs.set(entry.path, { sha: sha(entry.sha, entry.path), mode: entry.mode });
+  return blobs;
+}
+
+function assertPlanMatchesTree(
+  plan: Pick<ReleasePlan, 'changes' | 'fragments'>,
+  blobs: ReadonlyMap<string, TreeBlob>,
+  parent: string
+): void {
+  const lagging = (why: string) =>
+    new ReleaseCommitError(
+      `The plan was not built from ${parent.slice(0, 12)}: ${why}. Plan again from that commit.`
+    );
+  for (const change of plan.changes) {
+    const inP = blobs.get(change.path);
+    if (change.status === 'A') {
+      if (inP) throw lagging(`${change.path} already exists there`);
+      continue;
+    }
+    if (!inP) throw lagging(`${change.path} is not there`);
+    if (change.before === undefined || gitBlobSha(change.before) !== inP.sha)
+      throw lagging(`${change.path} differs there`);
+  }
+  const fragments = [...blobs.keys()]
+    .filter((path) => /^changelog\/unreleased\/[^/]+\.md$/.test(path))
+    .map((path) => path.slice('changelog/unreleased/'.length))
+    .sort();
+  if (fragments.join('\n') !== [...plan.fragments].sort().join('\n'))
+    throw lagging(
+      `its fragments are ${fragments.join(', ') || 'none'}, not the ${plan.fragments.length} the plan compiled`
+    );
 }
 
 function sha(value: unknown, what: string): string {

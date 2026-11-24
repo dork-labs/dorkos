@@ -258,7 +258,7 @@ export function planJson(plan: ReleasePlan): string {
         subject: releaseSubject(plan.version),
         fragments: plan.fragments,
         files: plan.changes.map((change) => ({ path: change.path, status: change.status })),
-        unfragmentedCommits: plan.unfragmented,
+        unfragmentedCommits: plan.unfragmented.map(({ sha, subject }) => ({ sha, subject })),
       },
       null,
       2

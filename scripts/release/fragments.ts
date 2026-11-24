@@ -9,7 +9,8 @@
  *
  * @module scripts/release/fragments
  */
-import { ReleaseCommitError } from './errors.ts';
+import { NothingToReleaseError, ReleaseCommitError } from './errors.ts';
+import { proseOnly } from './markdown.ts';
 
 /** The headings a fragment may use, in the order the release section prints them. */
 export const CATEGORY_ORDER = [
@@ -51,7 +52,8 @@ const SEEDED = 'dorkos-changelog:seeded';
 const HEADING = /^###\s+(.+?)\s*$/;
 const FENCE = /^\s*(`{3,}|~{3,})/;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
-const BREAKING_BULLET = /\bBREAKING\b|^\s*[-*]\s+\*\*Breaking\b/;
+// "BREAKING" as its own word: not inside NON-BREAKING or an identifier.
+const BREAKING_BULLET = /(?<![A-Za-z0-9_-])BREAKING(?![A-Za-z0-9_-])|^\s*[-*]\s+\*\*Breaking\b/;
 const BREAKING_SUBJECT = /^[a-z]+(\([^)]*\))?!:/;
 
 /** Parse one fragment; throws {@link ReleaseCommitError} on anything it cannot place. */
@@ -60,6 +62,8 @@ export function parseFragment(file: string, text: string): Fragment {
   if (text.includes('\r')) throw fail('has Windows line endings; save it with LF only.');
   if (text.includes(SEEDED))
     throw fail('is still a hook-seeded fragment; rewrite the bullet for a person first.');
+  if (text.includes('<!--'))
+    throw fail('has an HTML comment (<!--), which the docs page would show as text; delete it.');
   const lines = text.split('\n');
   let body = 0;
   const covers: string[] = [];
@@ -113,10 +117,7 @@ export function parseFragments(entries: readonly { name: string; text: string }[
     throw new ReleaseCommitError(
       `changelog/unreleased/${stray.name} is not a fragment; only .md files and .gitkeep belong there.`
     );
-  if (!files.length)
-    throw new ReleaseCommitError(
-      'Nothing to release: changelog/unreleased/ has no fragments at this commit.'
-    );
+  if (!files.length) throw new NothingToReleaseError();
   return [...files]
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .map((entry) => parseFragment(entry.name, entry.text));
@@ -196,8 +197,9 @@ export function compareVersions(
 function isBreaking(fragment: Fragment): boolean {
   if (fragment.sections.Removed) return true;
   if (fragment.covers.some((item) => BREAKING_SUBJECT.test(item))) return true;
+  // Code is skipped: a `BREAKING` in an example is not a claim about this release.
   return CATEGORY_ORDER.some((category) =>
-    (fragment.sections[category] ?? []).some((line) => BREAKING_BULLET.test(line))
+    proseOnly(fragment.sections[category] ?? []).some((line) => BREAKING_BULLET.test(line))
   );
 }
 

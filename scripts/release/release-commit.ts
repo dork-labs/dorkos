@@ -11,17 +11,20 @@
  * - `--previous`: the last released version; P's VERSION must equal it.
  * - `--date`: the release date. Required, never taken from the clock.
  * - `--version`: overrides the bump; must be greater than `--previous`.
- * - `--commits`: `<sha> <subject>` per line for `v<previous>..P`, which the
- *   workflow writes; the PR body lists its `feat`/`fix` commits with no fragment.
+ * - `--commits`: one line per commit in `v<previous>..P`, which the workflow
+ *   writes: `<sha> <subject>`, then optionally a tab and the tab-separated
+ *   paths the commit added. The PR body lists its `feat`/`fix` commits that
+ *   neither added a fragment nor are named by one's `covers:`.
  * - `--out`: an empty directory outside the checkout. Gets `tree/<path>` for
  *   every added or modified file, `plan.json`, `notes.md` and `pr-body.md`.
  * - `--json`: print `plan.json` instead of the summary.
  * - `--dry-run` is the default and the only mode. `--commit` is refused:
  *   `commitViaGitData` is not wired until go-live.
  *
- * Exit 0: planned (and written, with `--out`). Exit 1: refused, for example
- * nothing to release or a commit `release-branch-contents` would reject.
- * Exit 2: bad arguments or an unreadable checkout.
+ * Exit 0: planned (and written, with `--out`). Exit 1: refused, for example a
+ * malformed fragment or a commit `release-branch-contents` would reject.
+ * Exit 2: bad arguments or an unreadable checkout. Exit 3: nothing to release
+ * (no fragments at P), which is no release today rather than a failure.
  *
  * @module scripts/release/release-commit
  */
@@ -37,22 +40,31 @@ import {
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { runIfMain } from '../../packages/cli/scripts/release-branch/entry.ts';
-import { ReleaseCommitError } from './errors.ts';
+import { NothingToReleaseError, ReleaseCommitError } from './errors.ts';
 import { buildReleasePlan, planJson, type ReleasePlan, type RepoReader } from './plan.ts';
+
+/** The exit code for a release point with no fragments: no release today. */
+export const NOTHING_TO_RELEASE_EXIT = 3;
 
 /** The message `--commit` is refused with. */
 export const COMMIT_NOT_WIRED =
   'Committing is not wired until go-live. daily-release.yml will call commitViaGitData; until then this tool only plans (--dry-run).';
 
-/** A {@link RepoReader} over a checkout on disk that refuses symlinks and paths outside it. */
+/**
+ * A {@link RepoReader} over a checkout on disk. It refuses a path outside the
+ * checkout and any path with a symlink in it, the file itself or any folder
+ * above it: the real path must be exactly the path asked for.
+ */
 export function diskReader(repoDir: string): RepoReader {
   const root = realpathSync(repoDir);
   const resolve = (relative: string) => {
     const full = path.resolve(root, relative);
     if (full !== root && !full.startsWith(root + path.sep))
       throw new ReleaseCommitError(`${relative} is outside the checkout.`);
-    if (existsSync(full) && lstatSync(full).isSymbolicLink())
-      throw new ReleaseCommitError(`${relative} is a symlink; the release reads only real files.`);
+    if (realpathOfNearest(full) !== full)
+      throw new ReleaseCommitError(
+        `${relative} goes through a symlink; the release reads only real files.`
+      );
     return full;
   };
   return {
@@ -167,6 +179,7 @@ export function main(argv: readonly string[]): number {
     return 0;
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
+    if (error instanceof NothingToReleaseError) return NOTHING_TO_RELEASE_EXIT;
     return error instanceof ReleaseCommitError ? 1 : 2;
   }
 }

@@ -1,9 +1,10 @@
 /**
  * `commitViaGitData` against a fake GitHub: the calls it makes, in order, and
- * every answer it refuses to build on. Nothing here reaches the network.
+ * every answer it refuses to build on, including a plan built from a checkout
+ * that lags P. Nothing here reaches the network.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { commitViaGitData, type GhCaller } from '../git-data.ts';
+import { commitViaGitData, gitBlobSha, type GhCaller } from '../git-data.ts';
 import type { ReleasePlan } from '../plan.ts';
 import { fixtureRepo, type FixtureRepo } from './fixture-repo.ts';
 
@@ -18,8 +19,34 @@ interface Call {
   body?: Record<string, unknown>;
 }
 
-/** A fake GitHub that answers the Git Data API, with `override` to break one answer. */
-function fakeGh(override: (call: Call) => unknown = () => undefined): {
+interface TreeEntry {
+  path: string;
+  mode: string;
+  type: string;
+  sha: string;
+}
+
+/** P's tree as the plan saw it: every file it modifies or deletes, plus one it leaves alone. */
+function treeOfP(): TreeEntry[] {
+  return [
+    { path: 'README.md', mode: '100644', type: 'blob', sha: gitBlobSha('hello\n') },
+    { path: 'changelog', mode: '040000', type: 'tree', sha: '5'.repeat(40) },
+    ...plan.changes.flatMap((change) =>
+      change.before === undefined
+        ? []
+        : [{ path: change.path, mode: '100644', type: 'blob', sha: gitBlobSha(change.before) }]
+    ),
+  ];
+}
+
+/**
+ * A fake GitHub that answers the Git Data API from {@link treeOfP} (or `tree`),
+ * with `override` to break one answer.
+ */
+function fakeGh(
+  override: (call: Call) => unknown = () => undefined,
+  tree: TreeEntry[] = treeOfP()
+): {
   gh: GhCaller;
   calls: Call[];
 } {
@@ -31,6 +58,8 @@ function fakeGh(override: (call: Call) => unknown = () => undefined): {
     const forced = override(call);
     if (forced !== undefined) return forced;
     if (path.endsWith(`/git/commits/${P}`)) return { sha: P, tree: { sha: BASE_TREE } };
+    if (path.endsWith(`/git/trees/${BASE_TREE}?recursive=1`))
+      return { sha: BASE_TREE, tree, truncated: false };
     if (path.endsWith('/git/blobs')) return { sha: (++blobs).toString(16).padStart(40, 'a') };
     if (path.endsWith('/git/trees')) return { sha: TREE };
     if (path.endsWith('/git/commits')) return { sha: COMMIT, tree: { sha: TREE } };
@@ -63,12 +92,13 @@ describe('commitViaGitData', () => {
       calls.map((call) => `${call.method} ${call.path.replace('/repos/dork-labs/dorkos', '')}`)
     ).toEqual([
       `GET /git/commits/${P}`,
+      `GET /git/trees/${BASE_TREE}?recursive=1`,
       ...written.map(() => 'POST /git/blobs'),
       'POST /git/trees',
       'POST /git/commits',
       'POST /git/refs',
     ]);
-    const firstBlob = calls[1]?.body;
+    const firstBlob = calls[2]?.body;
     expect(Buffer.from(String(firstBlob?.content), 'base64').toString('utf8')).toBe(
       written[0]?.after
     );
@@ -138,5 +168,72 @@ describe('commitViaGitData', () => {
     await expect(commitViaGitData(plan, gh, { repo: 'a/b', parent: P })).rejects.toThrow(
       /did not create/
     );
+  });
+
+  it('names a blob the way git does', () => {
+    // `printf 'hello\n' | git hash-object --stdin`
+    expect(gitBlobSha('hello\n')).toBe('ce013625030ba8dba906f756967f9e9ca394464a');
+  });
+
+  it('refuses a plan from a checkout that lags P, before writing anything', async () => {
+    const lagging = treeOfP().map((entry) =>
+      entry.path === 'CHANGELOG.md' ? { ...entry, sha: gitBlobSha('a newer changelog\n') } : entry
+    );
+    const { gh, calls } = fakeGh(undefined, lagging);
+    await expect(commitViaGitData(plan, gh, { repo: 'a/b', parent: P })).rejects.toThrow(
+      /not built from 111111111111: CHANGELOG.md differs there/
+    );
+    expect(calls.some((call) => call.method === 'POST')).toBe(false);
+  });
+
+  it('refuses when P already has a file the plan adds, or lacks one it changes', async () => {
+    const added = plan.changes.find((change) => change.status === 'A')?.path ?? '';
+    const withAdd = [...treeOfP(), { path: added, mode: '100644', type: 'blob', sha: TREE }];
+    await expect(
+      commitViaGitData(plan, fakeGh(undefined, withAdd).gh, { repo: 'a/b', parent: P })
+    ).rejects.toThrow(/already exists there/);
+    const withoutVersion = treeOfP().filter((entry) => entry.path !== 'VERSION');
+    await expect(
+      commitViaGitData(plan, fakeGh(undefined, withoutVersion).gh, { repo: 'a/b', parent: P })
+    ).rejects.toThrow(/VERSION is not there/);
+  });
+
+  it('refuses when P holds a fragment the plan did not compile', async () => {
+    const extra = [
+      ...treeOfP(),
+      {
+        path: 'changelog/unreleased/261102-000000-late.md',
+        mode: '100644',
+        type: 'blob',
+        sha: gitBlobSha('### Fixed\n\n- Late.\n'),
+      },
+    ];
+    await expect(
+      commitViaGitData(plan, fakeGh(undefined, extra).gh, { repo: 'a/b', parent: P })
+    ).rejects.toThrow(/its fragments are .*261102-000000-late.md/);
+  });
+
+  it('refuses a truncated tree listing', async () => {
+    const { gh } = fakeGh((call) =>
+      call.path.includes('recursive=1')
+        ? { sha: BASE_TREE, tree: treeOfP(), truncated: true }
+        : undefined
+    );
+    await expect(commitViaGitData(plan, gh, { repo: 'a/b', parent: P })).rejects.toThrow(
+      /only part of the tree/
+    );
+  });
+
+  it("keeps a modified file's mode from P", async () => {
+    const executable = treeOfP().map((entry) =>
+      entry.path === 'VERSION' ? { ...entry, mode: '100755' } : entry
+    );
+    const { gh, calls } = fakeGh(undefined, executable);
+    await commitViaGitData(plan, gh, { repo: 'a/b', parent: P });
+    const entries = calls.find((call) => call.path.endsWith('/git/trees'))?.body?.tree as {
+      path: string;
+      mode: string;
+    }[];
+    expect(entries.find((entry) => entry.path === 'VERSION')?.mode).toBe('100755');
   });
 });

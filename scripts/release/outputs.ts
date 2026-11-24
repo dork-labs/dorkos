@@ -10,37 +10,50 @@ import { ReleaseCommitError } from './errors.ts';
 import type { BumpDecision, Fragment } from './fragments.ts';
 import { backtickMentions } from './markdown.ts';
 
-/** One commit in `v<previous>..P`, as the workflow lists it (`<sha> <subject>`). */
+/**
+ * One commit in `v<previous>..P`, as the workflow lists it: `<sha> <subject>`,
+ * then optionally a tab and the tab-separated paths the commit added (from
+ * `git log --diff-filter=A --name-only`).
+ */
 export interface ListedCommit {
   /** The commit SHA, 7 to 40 hex characters. */
   sha: string;
   /** Its subject line. */
   subject: string;
+  /** The paths the commit added; empty when the line listed none. */
+  added: string[];
 }
 
-const COMMIT_LINE = /^([0-9a-f]{7,40}) (.+)$/;
+const COMMIT_LINE = /^([0-9a-f]{7,40}) ([^\t]+)$/;
 const USER_FACING = /^(feat|fix)(\([^)]*\))?!?: /;
 const PR_SUFFIX = / \(#\d+\)$/;
+const FRAGMENT_PATH = /^changelog\/unreleased\/[^/]+\.md$/;
 
-/** Parse the `--commits` file: one `<sha> <subject>` per line, blank lines ignored. */
+/**
+ * Parse the `--commits` file: one `<sha> <subject>[\t<added path>...]` per
+ * line, blank lines ignored.
+ */
 export function parseCommitList(text: string): ListedCommit[] {
   return text.split('\n').flatMap((line, index) => {
     if (!line.trim()) return [];
-    const match = COMMIT_LINE.exec(line.trimEnd());
-    if (!match?.[1] || !match[2])
+    const [head = '', ...added] = line.trimEnd().split('\t');
+    const match = COMMIT_LINE.exec(head);
+    if (!match?.[1] || !match[2] || added.some((entry) => !entry.trim()))
       throw new ReleaseCommitError(
-        `--commits line ${index + 1} is not "<sha> <subject>": ${JSON.stringify(line.slice(0, 80))}`
+        `--commits line ${index + 1} is not "<sha> <subject>[<tab><added path>...]": ${JSON.stringify(line.slice(0, 80))}`
       );
-    return [{ sha: match[1], subject: match[2] }];
+    return [{ sha: match[1], subject: match[2], added }];
   });
 }
 
 /**
- * The `feat` and `fix` commits no fragment's `covers:` names. A claim matches
- * a commit by its subject (a squash merge's trailing ` (#N)` ignored on both
- * sides), by a SHA prefix, or by `#N` for the PR number in the subject. The
- * PR check's word-comparison fallback is not repeated here, so this list errs
- * towards naming a commit; the weekly pass decides what it needs.
+ * The `feat` and `fix` commits with no changelog entry. A commit is covered
+ * when it added a `changelog/unreleased/*.md` fragment itself (how a squash
+ * merge carries its entry), or when a fragment's `covers:` names it: by its
+ * subject (a squash merge's trailing ` (#N)` ignored on both sides), by a SHA
+ * prefix, or by `#N` for the PR number in the subject. The PR check's
+ * word-comparison fallback is not repeated, so the list errs towards naming a
+ * commit; the weekly pass decides what it needs.
  */
 export function unfragmentedCommits(
   commits: readonly ListedCommit[],
@@ -48,7 +61,10 @@ export function unfragmentedCommits(
 ): ListedCommit[] {
   const claims = fragments.flatMap((fragment) => fragment.covers);
   return commits.filter(
-    (commit) => USER_FACING.test(commit.subject) && !claims.some((claim) => covers(claim, commit))
+    (commit) =>
+      USER_FACING.test(commit.subject) &&
+      !commit.added.some((file) => FRAGMENT_PATH.test(file)) &&
+      !claims.some((claim) => covers(claim, commit))
   );
 }
 

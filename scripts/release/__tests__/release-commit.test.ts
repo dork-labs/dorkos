@@ -70,6 +70,23 @@ describe('the version bump', () => {
       '### Changed\n\n- **Breaking:** the export now needs a sign-in.\n'
     );
     expect(repo.plan().decision.breaking).toBe(true);
+    repo.write(
+      'changelog/unreleased/261102-000000-api.md',
+      '### Changed\n\n- The API is BREAKING for old clients.\n'
+    );
+    expect(repo.plan().decision.breaking).toBe(true);
+  });
+
+  it('does not read BREAKING inside code or a longer word as breaking', () => {
+    const file = 'changelog/unreleased/261102-000000-api.md';
+    for (const text of [
+      '### Changed\n\n- Mark the change `BREAKING` in the commit footer.\n',
+      '### Changed\n\n- The update is NON-BREAKING for every client.\n',
+      '### Changed\n\n- Write the footer like this:\n\n  ```text\n  BREAKING CHANGE: x\n  ```\n',
+    ]) {
+      repo.write(file, text);
+      expect(repo.plan().decision, text).toMatchObject({ breaking: false, bump: 'patch' });
+    }
   });
 
   it('takes --version when it moves forward', () => {
@@ -120,6 +137,14 @@ describe('refusals before anything is planned', () => {
     expect(() => repo.plan()).toThrow(/### Improved/);
     repo.write(file, 'Stray words.\n\n### Fixed\n\n- x\n');
     expect(() => repo.plan()).toThrow(/before its first ### heading/);
+  });
+
+  it('refuses an HTML comment, which the docs page would show as text', () => {
+    repo.write(
+      'changelog/unreleased/261102-000000-x.md',
+      '### Fixed\n\n<!-- a note to the reviewer -->\n- x\n'
+    );
+    expect(() => repo.plan()).toThrow(/has an HTML comment \(<!--\)/);
   });
 
   it('refuses a date that is not a real YYYY-MM-DD', () => {
@@ -290,6 +315,24 @@ describe('the outputs', () => {
     expect(plan.prBody).toContain('- bbbbbbb222 feat(rooms): something nobody wrote up (#11)');
     expect(plan.prBody).toContain('`@someone-zz9`');
     expect(plan.prBody).not.toContain('ccccccc');
+  });
+
+  it('counts a commit that added a fragment as covered, whatever its subject', () => {
+    const commits = [
+      // A squash subject no covers: line names, but the merge added a fragment.
+      'aaaaaaa1111 feat(api): name every operation (#4162)\tchangelog/unreleased/261122-x.md\tdocs/a.md',
+      // Added files, but no fragment among them.
+      'bbbbbbb2222 fix(api): fix a thing (#4163)\tdocs/a.md',
+      // A fragment in another folder does not count.
+      'ccccccc3333 fix(api): fix another (#4164)\tchangelog/archive/x.md',
+    ].join('\n');
+    expect(repo.plan({ commits }).unfragmented.map((commit) => commit.sha)).toEqual([
+      'bbbbbbb2222',
+      'ccccccc3333',
+    ]);
+    expect(() => repo.plan({ commits: 'aaaaaaa1111 fix(x): y\t\tdocs/a.md' })).toThrow(
+      /--commits line 1/
+    );
   });
 
   it('refuses a commits line that is not "<sha> <subject>"', () => {

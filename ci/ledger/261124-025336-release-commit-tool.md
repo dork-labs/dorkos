@@ -16,6 +16,9 @@ ci-steward's `daily-release.yml` will, and `commitViaGitData` stays unwired unti
 
 Its three suites import `packages/cli/scripts/release-branch/rules.ts`, the rule behind
 `release-branch-contents`, so they go on `REPO_WIDE_SUITES` in `scripts/vitest.repo.config.ts`
-(a change to the rule can turn them red from outside `scripts/`). No gate's retries, shards,
+(a change to the rule can turn them red from outside `scripts/`). `scripts/tsconfig.json` now
+typechecks `scripts/release`, which pulls in `rules.ts` under `noUncheckedIndexedAccess`, so
+`rules.ts` gains one `source !== undefined` guard that cannot change a verdict (a single pick
+is always a string). No gate's retries, shards,
 timeout or required status changes, and no metric should move, so this is hygiene. Revert the
 list entries if they make `typecheck` slow or flaky; each suite runs in about a second.
