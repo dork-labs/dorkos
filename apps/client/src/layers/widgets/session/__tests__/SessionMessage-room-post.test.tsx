@@ -105,7 +105,7 @@ describe('a room post in a room-attached chat', () => {
     const author = renderRow(userMessage(own));
 
     expect(author).toMatchObject({ kind: 'human', displayName: 'Dorian' });
-    expect(screen.getByTestId('room-post-mark')).toBeDefined();
+    expect(screen.getByTestId('room-post-mark')).toBeInTheDocument();
   });
 
   it('never draws a post whose author the room lost as the person', () => {

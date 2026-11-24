@@ -42,32 +42,32 @@ describe('SlashCommandList', () => {
     render(
       <SlashCommandList filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
     );
-    expect(screen.getByText('/daily:plan')).toBeDefined();
-    expect(screen.getByText('/daily:eod')).toBeDefined();
-    expect(screen.getByText('/meeting:prep')).toBeDefined();
+    expect(screen.getByText('/daily:plan')).toBeInTheDocument();
+    expect(screen.getByText('/daily:eod')).toBeInTheDocument();
+    expect(screen.getByText('/meeting:prep')).toBeInTheDocument();
   });
 
   it('shows descriptions', () => {
     render(
       <SlashCommandList filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
     );
-    expect(screen.getByText('Morning planning')).toBeDefined();
-    expect(screen.getByText('End of day review')).toBeDefined();
+    expect(screen.getByText('Morning planning')).toBeInTheDocument();
+    expect(screen.getByText('End of day review')).toBeInTheDocument();
   });
 
   it('shows argument hints', () => {
     render(
       <SlashCommandList filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
     );
-    expect(screen.getByText('[name]')).toBeDefined();
+    expect(screen.getByText('[name]')).toBeInTheDocument();
   });
 
   it('groups commands by namespace', () => {
     render(
       <SlashCommandList filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
     );
-    expect(screen.getByText('daily')).toBeDefined();
-    expect(screen.getByText('meeting')).toBeDefined();
+    expect(screen.getByText('daily')).toBeInTheDocument();
+    expect(screen.getByText('meeting')).toBeInTheDocument();
   });
 
   describe('selection highlighting', () => {
@@ -109,7 +109,7 @@ describe('SlashCommandList', () => {
 
   it('renders empty state when no commands match', () => {
     render(<SlashCommandList filteredCommands={[]} selectedIndex={0} onSelect={vi.fn()} />);
-    expect(screen.getByText('No commands found.')).toBeDefined();
+    expect(screen.getByText('No commands found.')).toBeInTheDocument();
   });
 
   describe('alias provenance (DOR-120)', () => {
@@ -123,7 +123,7 @@ describe('SlashCommandList', () => {
           onSelect={vi.fn()}
         />
       );
-      expect(screen.getByText('matched /stats')).toBeDefined();
+      expect(screen.getByText('matched /stats')).toBeInTheDocument();
     });
 
     it('shows no provenance hint when the command matched by name', () => {
@@ -154,7 +154,7 @@ describe('SlashCommandList', () => {
           onSelect={vi.fn()}
         />
       );
-      expect(screen.getByText('Not supported by Codex')).toBeDefined();
+      expect(screen.getByText('Not supported by Codex')).toBeInTheDocument();
       const option = screen.getByRole('option');
       expect(option.getAttribute('aria-disabled')).toBe('true');
     });

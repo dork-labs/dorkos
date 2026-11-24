@@ -27,7 +27,7 @@ const doneTask: TaskItem = { id: '3', subject: 'Done task', status: 'completed' 
 describe('TaskRow', () => {
   it('renders task subject', () => {
     render(<TaskRow task={pendingTask} {...baseProps} />);
-    expect(screen.getByText('Pending task')).toBeDefined();
+    expect(screen.getByText('Pending task')).toBeInTheDocument();
   });
 
   it('applies bold styling to in-progress tasks', () => {

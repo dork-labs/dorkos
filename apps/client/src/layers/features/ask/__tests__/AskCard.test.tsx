@@ -110,11 +110,11 @@ describe('the Ask card', () => {
       }
     );
     expect(screen.getByText(text.trim()).className).not.toContain('truncate');
-    expect(screen.getByText(input)).toBeDefined();
-    expect(screen.getByText('K7MR-4XQ9-HT3W')).toBeDefined();
+    expect(screen.getByText(input)).toBeInTheDocument();
+    expect(screen.getByText('K7MR-4XQ9-HT3W')).toBeInTheDocument();
     expect(
       screen.getByText('You’re answering from Safari on a phone over Remote Access.')
-    ).toBeDefined();
+    ).toBeInTheDocument();
   });
 
   it('answers on A only when the card has focus, and types the letter otherwise', async () => {
@@ -159,7 +159,7 @@ describe('the Ask card', () => {
 
   it('replaces the buttons with a receipt in the same commit', async () => {
     wrap(<InteractionAsk ask={ask('tc-4')} />);
-    expect(screen.getByText('Allow')).toBeDefined();
+    expect(screen.getByText('Allow')).toBeInTheDocument();
 
     act(() =>
       recordAskReceipt('tc-4', {
@@ -171,7 +171,7 @@ describe('the Ask card', () => {
     );
 
     await waitFor(() => expect(screen.queryByText('Allow')).toBeNull());
-    expect(screen.getByText(/Already answered by Dorian/)).toBeDefined();
+    expect(screen.getByText(/Already answered by Dorian/)).toBeInTheDocument();
     expect(screen.queryByText('Don’t allow')).toBeNull();
   });
 
@@ -194,7 +194,7 @@ describe('the Ask card', () => {
       clearAskReceipts();
       const view = wrap(<InteractionAsk ask={ask('tc-end')} />);
       act(() => recordAskReceipt('tc-end', receipt));
-      await waitFor(() => expect(screen.getByText(line)).toBeDefined());
+      await waitFor(() => expect(screen.getByText(line)).toBeInTheDocument());
       view.unmount();
     }
   });
@@ -219,8 +219,8 @@ describe('what the card says', () => {
       />
     );
 
-    expect(screen.getByText('/tmp/p3-review.md')).toBeDefined();
-    expect(screen.getByText('Path is outside allowed working directories')).toBeDefined();
+    expect(screen.getByText('/tmp/p3-review.md')).toBeInTheDocument();
+    expect(screen.getByText('Path is outside allowed working directories')).toBeInTheDocument();
   });
 
   it('counts down from when the prompt STARTED, not from what was left when it arrived', () => {
@@ -241,7 +241,7 @@ describe('what the card says', () => {
       />
     );
 
-    expect(screen.getByText('4 min left')).toBeDefined();
+    expect(screen.getByText('4 min left')).toBeInTheDocument();
   });
 
   it('counts a question down too, which had no budget on the wire at all', () => {
@@ -263,7 +263,7 @@ describe('what the card says', () => {
       />
     );
 
-    expect(screen.getByText('4 min left')).toBeDefined();
+    expect(screen.getByText('4 min left')).toBeInTheDocument();
   });
 
   it('reads as waiting, with no draining bar, once the prompt has parked', () => {
@@ -285,7 +285,7 @@ describe('what the card says', () => {
       />
     );
 
-    expect(screen.getByText('waiting for you')).toBeDefined();
+    expect(screen.getByText('waiting for you')).toBeInTheDocument();
     expect(screen.queryByText(/expired/)).toBeNull();
     expect(document.querySelector('[data-slot="ask-countdown"] [aria-hidden]')).toBeNull();
   });
@@ -326,7 +326,7 @@ describe('what the card says', () => {
       />
     );
 
-    expect(screen.getByText('waiting for you')).toBeDefined();
+    expect(screen.getByText('waiting for you')).toBeInTheDocument();
     expect(document.querySelector('[data-slot="ask-countdown"] [aria-hidden]')).toBeNull();
     expect(document.querySelector('[data-slot="ask-allow"]')).not.toBeNull();
   });
@@ -344,7 +344,7 @@ describe('what the card says', () => {
       />
     );
 
-    expect(screen.getByText('2 min left')).toBeDefined();
+    expect(screen.getByText('2 min left')).toBeInTheDocument();
     expect(document.querySelector('[data-slot="ask-countdown"] [aria-hidden]')).not.toBeNull();
   });
 });
@@ -394,6 +394,6 @@ describe('a burst', () => {
     wrap(<AskList asks={many} />);
 
     expect(screen.getAllByTestId('interaction-ask')).toHaveLength(6);
-    expect(screen.getByText(/1 more is waiting/)).toBeDefined();
+    expect(screen.getByText(/1 more is waiting/)).toBeInTheDocument();
   });
 });

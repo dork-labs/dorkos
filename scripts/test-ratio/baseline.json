@@ -2,8 +2,8 @@
   "$comment": "The test budget (scripts/test-ratio/check-test-ratio.ts). Each package passes while under either its ratio (lines of test per line of source) or its count of test lines. Both only fall. Run `pnpm check:test-ratio -- --update --package <pkg>` after deleting tests; never raise or remove an entry by hand.",
   "packages": {
     "apps/client": {
-      "ratio": 0.79,
-      "tests": 351194
+      "ratio": 0.78,
+      "tests": 349917
     },
     "apps/design-system": {
       "ratio": 0.91,

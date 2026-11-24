@@ -87,6 +87,28 @@ describe('Dialog portable behavior', () => {
     );
   });
 
+  // A grid's `auto` track is sized by its content, so one wide child widened every
+  // sibling past the dialog. A caller's `flex flex-col` (ResponsiveDialogContent) must not
+  // pull the close button into the flow, where it sat bottom-left for five days.
+  it('pins its column to the box and keeps the close button out of a flex column', async () => {
+    render(
+      <Dialog open>
+        <DialogContent className="flex flex-col">
+          <DialogTitle>Details</DialogTitle>
+          <DialogDescription>Room details.</DialogDescription>
+        </DialogContent>
+      </Dialog>
+    );
+    const panel = await screen.findByRole('dialog');
+    expect(panel).toHaveClass('grid-cols-[minmax(0,1fr)]');
+    expect(panel).not.toHaveClass('w-full');
+    expect(panel.className).not.toContain('sm:rounded-xl');
+    const close = screen.getByRole('button', { name: 'Close' });
+    expect(close).toHaveClass('absolute', 'top-4', 'right-4');
+    for (const inFlow of ['sticky', 'row-span-full', 'self-start', 'justify-self-end'])
+      expect(close).not.toHaveClass(inFlow);
+  });
+
   it('uses the nearest provider for content and explicit Portal container for handmade content', async () => {
     const provided = host();
     const explicit = host();

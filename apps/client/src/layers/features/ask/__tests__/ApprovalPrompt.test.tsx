@@ -62,14 +62,14 @@ describe('ApprovalPrompt', () => {
         approvalRequestCode="K7MR-4XQ9-HT3W"
       />
     );
-    expect(screen.getByText(text.trim())).toBeDefined();
+    expect(screen.getByText(text.trim())).toBeInTheDocument();
     expect(
       screen.getByText('You’re answering from Safari on a phone over Remote Access.')
-    ).toBeDefined();
+    ).toBeInTheDocument();
     // A one-time Allow here goes straight through, so the card never says it asks.
     expect(screen.queryByText('Allowing asks you to confirm it’s you.')).toBeNull();
     expect(screen.queryByText('Always allow asks you to confirm it’s you.')).toBeNull();
-    expect(screen.getByText('K7MR-4XQ9-HT3W')).toBeDefined();
+    expect(screen.getByText('K7MR-4XQ9-HT3W')).toBeInTheDocument();
   });
 
   it('says only Always allow asks to confirm on a remote prompt that offers it', () => {
@@ -77,7 +77,7 @@ describe('ApprovalPrompt', () => {
     render(
       <ApprovalPrompt {...baseProps} approvalHasSuggestions approvalRequestCode="K7MR-4XQ9-HT3W" />
     );
-    expect(screen.getByText('Always allow asks you to confirm it’s you.')).toBeDefined();
+    expect(screen.getByText('Always allow asks you to confirm it’s you.')).toBeInTheDocument();
     expect(screen.queryByText('Allowing asks you to confirm it’s you.')).toBeNull();
   });
 
@@ -93,7 +93,7 @@ describe('ApprovalPrompt', () => {
     );
     render(<ApprovalPrompt {...baseProps} approvalHasSuggestions />);
     fireEvent.click(screen.getByRole('button', { name }));
-    expect(await screen.findByText('Not confirmed. Nothing was allowed.')).toBeDefined();
+    expect(await screen.findByText('Not confirmed. Nothing was allowed.')).toBeInTheDocument();
     await waitFor(() =>
       expect((screen.getByRole('button', { name: /^Allow/ }) as HTMLButtonElement).disabled).toBe(
         false
@@ -107,7 +107,7 @@ describe('ApprovalPrompt', () => {
       // affordance for the times you want to say more, not a step in the flow.
       render(<ApprovalPrompt {...baseProps} />);
       expect(screen.queryByLabelText('Reason for not allowing')).toBeNull();
-      expect(screen.getByRole('button', { name: /add a reason/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /add a reason/i })).toBeInTheDocument();
     });
 
     it('sends what was typed with the denial', async () => {
@@ -193,7 +193,7 @@ describe('ApprovalPrompt', () => {
       ref.current!.approve();
 
       await waitFor(() => {
-        expect(screen.getByText('Allowed')).toBeDefined();
+        expect(screen.getByText('Allowed')).toBeInTheDocument();
         // Check icon should be present with success color
         const container = screen.getByTestId('tool-approval-decided');
         const svg = container.querySelector('svg');
@@ -212,7 +212,7 @@ describe('ApprovalPrompt', () => {
       ref.current!.deny();
 
       await waitFor(() => {
-        expect(screen.getByText('Not allowed')).toBeDefined();
+        expect(screen.getByText('Not allowed')).toBeInTheDocument();
         // X icon should be present with error color
         const container = screen.getByTestId('tool-approval-decided');
         const svg = container.querySelector('svg');
@@ -231,7 +231,7 @@ describe('ApprovalPrompt', () => {
       ref.current!.approve();
 
       await waitFor(() => {
-        expect(screen.getByText('Allowed')).toBeDefined();
+        expect(screen.getByText('Allowed')).toBeInTheDocument();
       });
 
       // After decided, deny should not fire
@@ -269,7 +269,7 @@ describe('ApprovalPrompt', () => {
       ref.current!.approve();
 
       await waitFor(() => {
-        expect(screen.getByText('Allowed')).toBeDefined();
+        expect(screen.getByText('Allowed')).toBeInTheDocument();
       });
       // No user-facing error surfaced for the raced answer.
       expect(screen.queryByText(/try again/)).toBeNull();
@@ -286,7 +286,7 @@ describe('ApprovalPrompt', () => {
       ref.current!.deny();
 
       await waitFor(() => {
-        expect(screen.getByText('Not allowed')).toBeDefined();
+        expect(screen.getByText('Not allowed')).toBeInTheDocument();
       });
       expect(screen.queryByText(/try again/)).toBeNull();
       expect(screen.queryByText(/failed/i)).toBeNull();
@@ -302,7 +302,7 @@ describe('ApprovalPrompt', () => {
       ref.current!.approve();
 
       await waitFor(() => {
-        expect(screen.getByText(/Couldn’t send your answer/)).toBeDefined();
+        expect(screen.getByText(/Couldn’t send your answer/)).toBeInTheDocument();
       });
       expect(screen.queryByText('Allowed')).toBeNull();
     });
@@ -394,9 +394,9 @@ describe('ApprovalPrompt', () => {
       await act(async () => vi.advanceTimersByTime(600_000));
 
       expect(screen.queryByTestId('tool-approval-decided')).toBeNull();
-      expect(screen.getByText('waiting for you')).toBeDefined();
-      expect(screen.getByRole('button', { name: /^Allow/ })).toBeDefined();
-      expect(screen.getByRole('button', { name: /^Don’t allow/ })).toBeDefined();
+      expect(screen.getByText('waiting for you')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Allow/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Don’t allow/ })).toBeInTheDocument();
       // No draining bar over a wait that is not counting down.
       expect(document.querySelector('[data-slot="ask-countdown"] [aria-hidden]')).toBeNull();
     });
@@ -414,14 +414,14 @@ describe('ApprovalPrompt', () => {
         approvalParked: true,
       });
 
-      expect(screen.getByText('waiting for you')).toBeDefined();
+      expect(screen.getByText('waiting for you')).toBeInTheDocument();
       expect(screen.queryByText(/remaining/)).toBeNull();
       expect(document.querySelector('[data-slot="ask-countdown"] [aria-hidden]')).toBeNull();
-      expect(screen.getByRole('button', { name: /^Allow/ })).toBeDefined();
+      expect(screen.getByRole('button', { name: /^Allow/ })).toBeInTheDocument();
 
       // And it stays that way: no interval is ticking a ceiling down behind it.
       await act(async () => vi.advanceTimersByTime(120_000));
-      expect(screen.getByText('waiting for you')).toBeDefined();
+      expect(screen.getByText('waiting for you')).toBeInTheDocument();
       expect(screen.queryByText(/remaining/)).toBeNull();
     });
 
@@ -434,7 +434,7 @@ describe('ApprovalPrompt', () => {
         approvalParked: true,
       });
 
-      expect(screen.getByText('waiting for you')).toBeDefined();
+      expect(screen.getByText('waiting for you')).toBeInTheDocument();
       expect(document.querySelector('[data-slot="ask-countdown"] [aria-hidden]')).toBeNull();
     });
 
@@ -447,15 +447,15 @@ describe('ApprovalPrompt', () => {
       await renderAsync({ ...baseProps, timeoutMs: 600_000, approvalRemainingMs: 500 });
 
       // Approve/Deny are live before the (tiny) remaining window elapses.
-      expect(screen.getByRole('button', { name: /^Allow/ })).toBeDefined();
+      expect(screen.getByRole('button', { name: /^Allow/ })).toBeInTheDocument();
 
       // Drain the near-zero remaining window plus an interval tick.
       await act(async () => vi.advanceTimersByTime(1_000));
 
       expect(screen.queryByTestId('tool-approval-decided')).toBeNull();
-      expect(screen.getByText('waiting for you')).toBeDefined();
-      expect(screen.getByRole('button', { name: /^Allow/ })).toBeDefined();
-      expect(screen.getByRole('button', { name: /^Don’t allow/ })).toBeDefined();
+      expect(screen.getByText('waiting for you')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Allow/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Don’t allow/ })).toBeInTheDocument();
       // Nothing was answered on anybody's behalf.
       expect(mockApproveTool).not.toHaveBeenCalled();
       expect(mockDenyTool).not.toHaveBeenCalled();
@@ -474,7 +474,7 @@ describe('ApprovalPrompt', () => {
         await vi.runAllTimersAsync();
       });
 
-      expect(screen.getByText('Allowed')).toBeDefined();
+      expect(screen.getByText('Allowed')).toBeInTheDocument();
       // No countdown in the decided state
       expect(document.querySelector('[data-slot="ask-countdown"]')).toBeNull();
       // No timeout message
@@ -498,8 +498,8 @@ describe('ApprovalPrompt', () => {
           input='{"channel": "#general"}'
         />
       );
-      expect(screen.getByText('Slack')).toBeDefined();
-      expect(screen.getByText('Send Message')).toBeDefined();
+      expect(screen.getByText('Slack')).toBeInTheDocument();
+      expect(screen.getByText('Send Message')).toBeInTheDocument();
     });
   });
 });
@@ -561,14 +561,16 @@ describe('Always allow on an MCP card that offers its whole server (DOR-4101)', 
     render(<ApprovalPrompt {...mcpProps} approvalAlwaysAllowBreadth="server" />);
     fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
     expect(mockApproveTool).not.toHaveBeenCalled();
-    expect(screen.getByText('Always allow, in this project')).toBeDefined();
+    expect(screen.getByText('Always allow, in this project')).toBeInTheDocument();
     const just = screen.getByRole('radio', { name: /^Just Create Issue$/ });
     expect((just as HTMLInputElement).checked).toBe(true);
     expect(document.activeElement).toBe(just);
-    expect(screen.getByText('Every tool from Made Up, including ones it adds later')).toBeDefined();
-    expect(screen.getByRole('button', { name: /^Always allow Create Issue$/ })).toBeDefined();
+    expect(
+      screen.getByText('Every tool from Made Up, including ones it adds later')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Always allow Create Issue$/ })).toBeInTheDocument();
     // No stand-in for a name the card doesn't know (DOR-4117).
-    expect(screen.getByText('It still asks before other Made Up tools.')).toBeDefined();
+    expect(screen.getByText('It still asks before other Made Up tools.')).toBeInTheDocument();
   });
 
   it('"Just {tool}" sends the tool pick; the server pick sends server', async () => {
@@ -589,7 +591,7 @@ describe('Always allow on an MCP card that offers its whole server (DOR-4101)', 
     fireEvent.keyDown(screen.getByRole('radio', { name: /^Just/ }), { key: 'Escape' });
     expect(mockDenyTool).not.toHaveBeenCalled();
     expect(screen.queryByRole('radio')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Always allow…' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Always allow…' })).toBeInTheDocument();
   });
 
   it('Enter in the choice sends the checked pick', async () => {
@@ -629,7 +631,7 @@ describe('a routine ask is calm and says who and what (DOR-4117)', () => {
         approvalTitle="Claude wants to use a made-up tool"
       />
     );
-    expect(screen.getByText('Atlas wants to use Create Issue from Made Up')).toBeDefined();
+    expect(screen.getByText('Atlas wants to use Create Issue from Made Up')).toBeInTheDocument();
   });
 
   it('names the server when an outside tool borrows a built-in name (Security)', () => {
@@ -637,7 +639,7 @@ describe('a routine ask is calm and says who and what (DOR-4117)', () => {
     const headline = document.querySelector('[data-slot="ask-headline"]')!;
     expect(headline.textContent).toBe('Atlas wants to use Bash from Evil');
     // The badge line below stays as it was.
-    expect(screen.getByText('Evil')).toBeDefined();
+    expect(screen.getByText('Evil')).toBeInTheDocument();
   });
 
   it('names the server with no agent name too, over the runtime’s sentence', () => {
@@ -675,8 +677,8 @@ describe('ApprovalPrompt on Wi-Fi (DOR-2969)', () => {
     render(<ApprovalPrompt {...baseProps} approvalHasSuggestions />);
     expect(screen.queryByRole('button', { name: /always allow/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Allow/ })).toBeNull();
-    expect(screen.getByRole('button', { name: /^Deny/ })).toBeDefined();
-    expect(screen.getByText('Answer at your computer or over Remote Access.')).toBeDefined();
+    expect(screen.getByRole('button', { name: /^Deny/ })).toBeInTheDocument();
+    expect(screen.getByText('Answer at your computer or over Remote Access.')).toBeInTheDocument();
   });
 
   it('ignores both Allow shortcuts on Wi-Fi', async () => {
