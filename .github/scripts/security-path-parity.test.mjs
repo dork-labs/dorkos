@@ -107,6 +107,8 @@ const additions = [
   ['ci/security/x.txt', 'ci/securityx/x.txt'],
   ['scripts/pr-gates-check.sh', 'scripts/test-pr-gates-check.sh'],
   ['scripts/security-findings.sh', 'scripts/test-security-findings.sh'],
+  // queue-reentry turns auto-merge back on with a write token (#4273), like queue-repeat-guard.
+  ['scripts/queue-reentry.sh', 'scripts/test-queue-reentry.sh'],
 ];
 for (const [match, miss] of additions) {
   test(`new trust path and rename: ${match}`, () => {
