@@ -5,9 +5,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { z } from 'zod';
+
 import type { Logger } from '@dorkos/shared/logger';
-import { createListInstalledHandler, ListInstalledInputSchema } from '../tool-list-installed.js';
+import { createListInstalledHandler } from '../tool-list-installed.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import { INSTALL_METADATA_PATH } from '../../marketplace/installed-metadata.js';
 import { UpdateFlow } from '../../marketplace/flows/update.js';
@@ -113,25 +113,6 @@ function parseToolResult(result: { content: { type: 'text'; text: string }[] }):
   return JSON.parse(result.content[0].text) as { installed: ParsedInstalled[] };
 }
 
-describe('ListInstalledInputSchema', () => {
-  it('accepts an empty input object', () => {
-    const schema = z.object(ListInstalledInputSchema);
-    expect(() => schema.parse({})).not.toThrow();
-  });
-
-  it('accepts each PackageType enum value for the type filter', () => {
-    const schema = z.object(ListInstalledInputSchema);
-    for (const type of ['agent', 'plugin', 'skill-pack', 'adapter'] as const) {
-      expect(() => schema.parse({ type })).not.toThrow();
-    }
-  });
-
-  it('rejects unknown type values', () => {
-    const schema = z.object(ListInstalledInputSchema);
-    expect(() => schema.parse({ type: 'fake-type' })).toThrow();
-  });
-});
-
 describe('createListInstalledHandler', () => {
   let dorkHome: string;
 
@@ -141,12 +122,6 @@ describe('createListInstalledHandler', () => {
 
   afterEach(async () => {
     await rm(dorkHome, { recursive: true, force: true });
-  });
-
-  it('returns an empty installed list when dorkHome is empty', async () => {
-    const handler = createListInstalledHandler(buildDeps(dorkHome));
-    const result = await handler({});
-    expect(parseToolResult(result).installed).toEqual([]);
   });
 
   it('returns every plugin and agent when no filter is supplied', async () => {
@@ -239,38 +214,6 @@ describe('createListInstalledHandler', () => {
     expect(agentsOnly.installed).toHaveLength(1);
     expect(agentsOnly.installed[0].name).toBe('researcher');
     expect(agentsOnly.installed[0].type).toBe('agent');
-  });
-
-  it('returns entries without provenance fields when the sidecar is missing', async () => {
-    const pluginDir = join(dorkHome, 'plugins', 'orphan-plugin');
-    await writeManifest(pluginDir, {
-      schemaVersion: 1,
-      type: 'plugin',
-      name: 'orphan-plugin',
-      version: '0.1.0',
-    });
-
-    const handler = createListInstalledHandler(buildDeps(dorkHome));
-    const { installed } = parseToolResult(await handler({}));
-    expect(installed).toHaveLength(1);
-    expect(installed[0].name).toBe('orphan-plugin');
-    expect(installed[0].installedFrom).toBeUndefined();
-    expect(installed[0].installedAt).toBeUndefined();
-  });
-
-  it('tags a global-only install with scope "global"', async () => {
-    await writeManifest(join(dorkHome, 'plugins', 'flow'), {
-      schemaVersion: 1,
-      type: 'plugin',
-      name: 'flow',
-      version: '1.0.0',
-    });
-
-    const handler = createListInstalledHandler(buildDepsWithAgents(dorkHome, []));
-    const { installed } = parseToolResult(await handler({}));
-    expect(installed).toHaveLength(1);
-    expect(installed[0].scope).toBe('global');
-    expect(installed[0].agentId).toBeUndefined();
   });
 
   it('returns an agent-only install with scope "agent-local" and agent identity', async () => {

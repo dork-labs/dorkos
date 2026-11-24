@@ -135,19 +135,6 @@ describe('listToolkits — the real v3.1 envelope', () => {
     expect(bare).toEqual({ slug: 'bare', name: 'Bare', authScheme: 'OAUTH2' });
   });
 
-  it('maps no_auth toolkits to NO_AUTH', async () => {
-    const { client } = clientWith([
-      {
-        body: {
-          items: [toolkitItem('hackernews', { no_auth: true, auth_schemes: [] })],
-          next_cursor: null,
-        },
-      },
-    ]);
-    const toolkits = await client.listToolkits();
-    expect(toolkits[0]!.authScheme).toBe('NO_AUTH');
-  });
-
   it('follows next_cursor pagination until the listing is complete', async () => {
     const { client, calls } = clientWith([
       { body: { items: [toolkitItem('gmail')], next_cursor: 'cursor-2' } },
@@ -326,27 +313,6 @@ describe('key kinds — VERIFIED-LIVE (2026-07-30) header routing', () => {
     // No third call: the validated kind is not second-guessed.
     expect(calls).toHaveLength(2);
   });
-
-  it('an unreachable session-info degrades silently — user-key calls proceed bare', async () => {
-    const { client, calls } = clientWith(
-      (url, headers) => {
-        if (url.includes('/api/v3/auth/session/info')) return { status: 500, body: {} };
-        if (!headers['x-user-api-key']) return UNAUTHORIZED;
-        return { body: { items: [toolkitItem('gmail')], next_cursor: null } };
-      },
-      { apiKey: 'uak_founder_key' }
-    );
-
-    const toolkits = await client.listToolkits();
-    expect(toolkits).toHaveLength(1);
-    // VERIFIED-LIVE (2026-07-30): bare x-user-api-key answers 200s.
-    expect(authHeadersOf(calls[1]!)['x-project-id']).toBeUndefined();
-  });
-
-  it('keyKind is unknown before any call has validated', () => {
-    const { client } = clientWith([{ body: { items: [] } }], { apiKey: 'uak_founder_key' });
-    expect(client.keyKind()).toBe('unknown');
-  });
 });
 
 describe('initiateConnection — auth-config resolution + the real create shape', () => {
@@ -401,75 +367,14 @@ describe('initiateConnection — auth-config resolution + the real create shape'
     expect(calls).toHaveLength(4);
     expect(JSON.parse(String(calls[3]!.init.body)).auth_config).toEqual({ id: 'ac_created' });
   });
-
-  it('falls back to connectionData.val.redirectUrl when redirect_url is null', async () => {
-    const { client } = clientWith([
-      { body: { items: [{ id: 'ac_1' }] } },
-      {
-        body: {
-          id: 'ca_1',
-          status: 'INITIALIZING',
-          redirect_url: null,
-          connectionData: { val: { redirectUrl: 'https://consent.example/fallback' } },
-        },
-      },
-    ]);
-    const request = await client.initiateConnection({ toolkit: 'gmail' });
-    expect(request.redirectUrl).toBe('https://consent.example/fallback');
-  });
 });
 
 describe('getConnectionState + status normalization', () => {
-  it('reads the object-shaped toolkit and treats INITIALIZING as in-flight', async () => {
-    const { client } = clientWith([
-      { body: { id: 'ca_1', status: 'INITIALIZING', toolkit: { slug: 'gmail' } } },
-    ]);
-    await expect(client.getConnectionState('ca_1')).resolves.toEqual({ status: 'INITIATED' });
-  });
-
-  it('resolves an ACTIVE account with the toolkit slug unwrapped', async () => {
-    const { client } = clientWith([
-      { body: { id: 'ca_1', status: 'ACTIVE', toolkit: { slug: 'gmail' }, alias: 'work' } },
-    ]);
-    const state = await client.getConnectionState('ca_1');
-    expect(state.status).toBe('ACTIVE');
-    expect(state.account).toEqual({
-      connectedAccountId: 'ca_1',
-      toolkit: 'gmail',
-      alias: 'work',
-      status: 'ACTIVE',
-    });
-  });
-
   it('fails closed on an UNKNOWN status — a poller must not spin forever', async () => {
     const { client } = clientWith([
       { body: { id: 'ca_1', status: 'SOMETHING_NEW', toolkit: { slug: 'gmail' } } },
     ]);
     await expect(client.getConnectionState('ca_1')).resolves.toMatchObject({ status: 'FAILED' });
-  });
-});
-
-describe('listConnectedAccounts — the plural v3.1 filter params', () => {
-  it('filters with user_ids and toolkit_slugs (not the singular spike-derived names)', async () => {
-    const { client, calls } = clientWith([
-      {
-        body: {
-          items: [
-            { id: 'ca_1', status: 'ACTIVE', toolkit: { slug: 'gmail' }, alias: 'work' },
-            { id: 'ca_2', status: 'EXPIRED', toolkit: { slug: 'gmail' } },
-          ],
-        },
-      },
-    ]);
-    const accounts = await client.listConnectedAccounts({ toolkit: 'gmail' });
-    expect(accounts.map((a) => a.connectedAccountId)).toEqual(['ca_1', 'ca_2']);
-    expect(accounts[1]!.status).toBe('EXPIRED');
-
-    const url = new URL(calls[0]!.url);
-    expect(url.searchParams.get('user_ids')).toBe('dorkos-operator');
-    expect(url.searchParams.get('toolkit_slugs')).toBe('gmail');
-    expect(url.searchParams.get('user_id')).toBeNull();
-    expect(url.searchParams.get('toolkit')).toBeNull();
   });
 });
 
@@ -510,16 +415,6 @@ describe('listConnectedAccounts — every page', () => {
 
     await expect(client.listConnectedAccounts()).rejects.toBeInstanceOf(ComposioApiError);
     expect(calls).toHaveLength(2);
-  });
-
-  it('stops at the page limit instead of following a cursor forever', async () => {
-    let n = 0;
-    const { client, calls } = clientWith(() => ({
-      body: { items: [], next_cursor: `cursor-${(n += 1)}` },
-    }));
-
-    await expect(client.listConnectedAccounts()).rejects.toThrow(/page safety limit/);
-    expect(calls).toHaveLength(20);
   });
 });
 

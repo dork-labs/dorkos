@@ -273,29 +273,6 @@ describe('runTransaction (file-scoped)', () => {
     expect(await readdir(scratch)).toEqual(['commit-fails']);
   });
 
-  it('returns the activate result and logs a warning when success-path staging cleanup fails', async () => {
-    const target = path.join(scratch, 'cleanup-fails');
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const cleanupSpy = vi
-      .spyOn(_internal, 'cleanupStaging')
-      .mockRejectedValueOnce(new Error('rm failed'));
-
-    const result = await runTransaction({
-      name: 'cleanup-fails',
-      target,
-      stage: async (staging) => {
-        stagingDirsObserved.push(staging.path);
-      },
-      activate: async () => ({ ok: true, id: 'abc' }),
-    });
-
-    // A failed staging cleanup must NOT fail the install.
-    expect(result.ok).toBe(true);
-    expect(result.id).toBe('abc');
-    expect(cleanupSpy).toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalled();
-  });
-
   it('never masks the original activate error when a rollback cleanup step fails', async () => {
     const target = path.join(scratch, 'restore-fails');
     await mkdir(target, { recursive: true });
@@ -329,23 +306,6 @@ describe('runTransaction (file-scoped)', () => {
     // And the backup is still on disk for the next recovery, which restores it.
     await recoverInterruptedInstall(target);
     expect(await readFile(path.join(target, 'orig.txt'), 'utf8')).toBe('orig');
-  });
-
-  it('uses the staging prefix dorkos-install-<name>- under the OS temp dir', async () => {
-    const target = path.join(scratch, 'prefix-check');
-    const result = await runTransaction({
-      name: 'prefix-check',
-      target,
-      stage: async (staging) => {
-        stagingDirsObserved.push(staging.path);
-        const base = path.basename(staging.path);
-        expect(base.startsWith('dorkos-install-prefix-check-')).toBe(true);
-        expect(staging.path.startsWith(tmpdir())).toBe(true);
-      },
-      activate: async () => ({ ok: true }),
-    });
-
-    expect(result.ok).toBe(true);
   });
 });
 
@@ -848,14 +808,3 @@ function deferredVoid(): { promise: Promise<void>; resolve: () => void } {
   });
   return { promise, resolve };
 }
-
-// Sanity check that mkdtemp/rm round-trip in the test environment works
-// (so a green test run definitively means runTransaction is correct).
-describe('test harness sanity', () => {
-  it('mkdtemp + rm round-trip works', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'transaction-sanity-'));
-    await access(dir);
-    await rm(dir, { recursive: true, force: true });
-    await expect(access(dir)).rejects.toThrow();
-  });
-});

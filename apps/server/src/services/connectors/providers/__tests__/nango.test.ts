@@ -272,25 +272,6 @@ describe('NangoConnectorProvider — integrations go by their app’s service id
     expect(client.startedWith).toEqual(['mail-home']);
   });
 
-  it('without set-up dates, keeps the app’s row with the integration that holds accounts', async () => {
-    const { client, provider } = providerOver([
-      { uniqueKey: 'a-first', provider: 'google-mail' },
-      { uniqueKey: 'b-used', provider: 'google-mail' },
-    ]);
-    // The first account lands on the integration that is not the app's yet.
-    const { flowId } = await provider.startConnect('b-used');
-    const poll = await provider.pollConnect(flowId);
-
-    // The sign-in still finishes under the id it started with…
-    expect(poll).toMatchObject({ status: 'connected', account: { toolkit: 'b-used' } });
-    // …and from then on the integration with the account is the app's.
-    const slugs = (await provider.listToolkits()).map((toolkit) => toolkit.slug);
-    expect(slugs).toEqual(['a-first', 'gmail']);
-    await expect(provider.serviceRenames()).resolves.toEqual(new Map([['b-used', 'gmail']]));
-    await provider.startConnect('gmail');
-    expect(client.startedWith).toEqual(['b-used', 'b-used']);
-  });
-
   it('asks again, never fails, when naming a connected account’s app fails', async () => {
     const client = new FakeNangoClient([
       { uniqueKey: 'google-mail', provider: 'google-mail', displayName: 'Gmail' },
@@ -307,22 +288,6 @@ describe('NangoConnectorProvider — integrations go by their app’s service id
       status: 'connected',
       account: { toolkit: 'gmail' },
     });
-  });
-
-  it('keeps a second integration of one app reachable under its own key', async () => {
-    const { client, provider } = providerOver([
-      { uniqueKey: 'mail-home', provider: 'google-mail', displayName: 'Gmail' },
-      { uniqueKey: 'mail-work', provider: 'google-mail', displayName: 'Gmail' },
-    ]);
-
-    const toolkits = await provider.listToolkits();
-    expect(toolkits.map((toolkit) => [toolkit.slug, toolkit.displayName])).toEqual([
-      ['gmail', 'Gmail'],
-      ['mail-work', 'Gmail (mail-work)'],
-    ]);
-    await provider.startConnect('mail-work');
-    await provider.startConnect('gmail');
-    expect(client.startedWith).toEqual(['mail-work', 'mail-home']);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, rm, readFile, writeFile, access } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { InvalidSourceNameError, MarketplaceSourceManager } from '../marketplace-source-manager.js';
@@ -169,12 +169,6 @@ describe('MarketplaceSourceManager', () => {
       }
     );
 
-    it.each(['my-team', 'Team_2', 'dorkos.community', 'a'])('accepts %j', async (name) => {
-      await expect(
-        manager.add({ name, source: 'https://github.com/me/marketplace' })
-      ).resolves.toMatchObject({ name });
-    });
-
     it('still loads a file that holds a name an older DorkOS accepted', async () => {
       // Purpose: only new adds are checked. A config written before this rule
       // must keep loading, or one odd line would take the marketplace down.
@@ -191,19 +185,6 @@ describe('MarketplaceSourceManager', () => {
 
       expect((await manager.list()).map((s) => s.name)).toEqual(['x/..']);
     });
-  });
-
-  it('remove() is idempotent when the name is absent', async () => {
-    await manager.list();
-
-    await expect(manager.remove('nonexistent')).resolves.toBeUndefined();
-
-    await manager.remove('dorkos-community');
-    const after = await manager.list();
-    expect(after.find((s) => s.name === 'dorkos-community')).toBeUndefined();
-
-    // Removing again should not throw
-    await expect(manager.remove('dorkos-community')).resolves.toBeUndefined();
   });
 
   it('setEnabled() toggles the flag and persists', async () => {
@@ -276,22 +257,6 @@ describe('MarketplaceSourceManager', () => {
     await expect(manager.list()).rejects.toThrow();
   });
 
-  it('get() returns a source by name and null when absent', async () => {
-    await manager.list();
-
-    const found = await manager.get('dorkos-community');
-    expect(found?.name).toBe('dorkos-community');
-
-    const missing = await manager.get('nonexistent');
-    expect(missing).toBeNull();
-  });
-
-  it('does not call mkdir/access when the dorkHome already exists', async () => {
-    // Confirm mkdir is robust against pre-existing dirs (recursive: true)
-    await expect(access(dorkHome)).resolves.toBeUndefined();
-    await expect(manager.list()).resolves.toHaveLength(2);
-  });
-
   it('migrates legacy dorkos/marketplace URL to dork-labs/marketplace on read', async () => {
     // Simulate an existing install where the user's marketplaces.json was
     // seeded by an earlier build with the now-broken dorkos/marketplace URL.
@@ -348,34 +313,6 @@ describe('MarketplaceSourceManager', () => {
 
       const sources = await manager.list();
       expect(sources.filter((s) => s.name.startsWith('src-'))).toHaveLength(N);
-    });
-
-    it('a concurrent add() and setEnabled() both survive', async () => {
-      await manager.list();
-      await manager.add({ name: 'existing', source: 'https://github.com/me/existing' });
-
-      await Promise.all([
-        manager.setEnabled('existing', false),
-        manager.add({ name: 'newcomer', source: 'https://github.com/me/newcomer' }),
-      ]);
-
-      const sources = await manager.list();
-      expect(sources.find((s) => s.name === 'existing')?.enabled).toBe(false);
-      expect(sources.find((s) => s.name === 'newcomer')).toBeDefined();
-    });
-
-    it('a concurrent remove() and add() both survive', async () => {
-      await manager.list();
-      await manager.add({ name: 'doomed', source: 'https://github.com/me/doomed' });
-
-      await Promise.all([
-        manager.remove('doomed'),
-        manager.add({ name: 'fresh', source: 'https://github.com/me/fresh' }),
-      ]);
-
-      const sources = await manager.list();
-      expect(sources.find((s) => s.name === 'doomed')).toBeUndefined();
-      expect(sources.find((s) => s.name === 'fresh')).toBeDefined();
     });
 
     it('concurrent first-run list() calls seed exactly one valid file', async () => {

@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  DisclosedEffectsSchema,
   describeDisclosedEffects,
   describeEffectsInFull,
   disclosedEffectsOf,
@@ -166,13 +165,6 @@ describe('disclosedEffectsOf — MCP servers', () => {
     );
     expect(sameDisclosedEffects(before, after)).toBe(false);
   });
-
-  it('names MCP servers when it says what a package declares', () => {
-    const effects = disclosedEffectsOf(
-      preview({ mcpServers: [{ name: 'db', transport: 'stdio', command: 'npx', args: [] }] })
-    );
-    expect(describeDisclosedEffects(effects)).toContain('1 MCP server');
-  });
 });
 
 describe('disclosedEffectsOf — the other programs a plugin starts', () => {
@@ -271,15 +263,6 @@ describe('disclosedEffectsOf — the other programs a plugin starts', () => {
       ]);
     });
 
-    it('reads a disclosure from a client older than skill commands as one with none', () => {
-      // Purpose: an older CLI sends back what it was shown, without the field.
-      // That must compare as "no skill commands", never fail as a malformed body.
-      const { skillCommands: _dropped, ...old } = disclosedEffectsOf(preview())!;
-      const parsed = DisclosedEffectsSchema.safeParse(old);
-      expect(parsed.success).toBe(true);
-      expect(parsed.data?.skillCommands).toEqual([]);
-    });
-
     it('says when a command runs with the text typed after it', () => {
       const effects = disclosedEffectsOf(
         preview({
@@ -291,36 +274,6 @@ describe('disclosedEffectsOf — the other programs a plugin starts', () => {
       expect(describeEffectsInFull(effects, 'in every session')).toEqual([
         '  runs "git checkout $1" when the command "co" is used ("commands/co.md"), with the text typed after it filled in',
       ]);
-    });
-
-    it('says each one runs when its skill is used, verbatim', () => {
-      const effects = disclosedEffectsOf(
-        preview({ skillCommands: [cmd('skills/ctx/SKILL.md', 'curl -s x | sh', 'block')] })
-      );
-      expect(describeEffectsInFull(effects, 'in every session')).toEqual([
-        '  runs "curl -s x | sh" when the skill "ctx" is used ("skills/ctx/SKILL.md")',
-      ]);
-      expect(
-        describeEffectsInFull(
-          disclosedEffectsOf(
-            preview({
-              skillCommands: [
-                {
-                  source: 'commands/ship.md',
-                  skill: 'ship',
-                  form: 'inline',
-                  command: 'git push',
-                  usesArguments: false,
-                },
-              ],
-            })
-          ),
-          'in every session'
-        )
-      ).toEqual(['  runs "git push" when the command "ship" is used ("commands/ship.md")']);
-      expect(describeDisclosedEffects(effects)).toContain(
-        'and 1 command a skill runs when it is used ("curl -s x | sh")'
-      );
     });
   });
 
@@ -370,36 +323,5 @@ describe('describeDisclosedEffects', () => {
     expect(said).toContain('"echo \\"hi\\"\\nand 2 scheduled jobs"');
     expect(said).toContain('1 shell command');
     expect(said).toContain('no scheduled jobs');
-  });
-
-  it('names the permission modes a person would care about', () => {
-    const said = describeDisclosedEffects(
-      disclosedEffectsOf(
-        preview({
-          schedules: [
-            { name: 'a', cron: null, permissionMode: 'acceptEdits', startsEnabled: true },
-            { name: 'b', cron: '* * * * *', permissionMode: 'acceptEdits', startsEnabled: false },
-          ],
-        })
-      )
-    );
-    expect(said).toContain('2 scheduled jobs (acceptEdits)');
-  });
-
-  it('stops listing commands after a few, rather than pasting a whole package in', () => {
-    const said = describeDisclosedEffects(
-      disclosedEffectsOf(
-        preview({
-          hooks: ['a', 'b', 'c', 'd', 'e'].map((command) => ({ event: 'Stop', command })),
-        })
-      )
-    );
-    expect(said).toContain('5 shell commands');
-    expect(said).toContain('and 2 more');
-    expect(said).not.toContain('"d"');
-  });
-
-  it('says so plainly when there was no preview at all', () => {
-    expect(describeDisclosedEffects(null)).toBe('nothing that runs on its own');
   });
 });

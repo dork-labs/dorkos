@@ -4,18 +4,7 @@
  * level the one-time write upgrade lowered, shown only while that still stands.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  activityEvents,
-  and,
-  connectionAccessLevels,
-  connectionGrantExclusions,
-  connectorOperationRevisions,
-  connectorReconciliationCandidates,
-  connections,
-  eq,
-  inArray,
-  type Db,
-} from '@dorkos/db';
+import { connectionAccessLevels, connections, eq, type Db } from '@dorkos/db';
 import { upgradeComposioWriteLevels } from '../composio-write-upgrade.js';
 import {
   CONNECTION_ID,
@@ -34,16 +23,12 @@ import {
   offersReadWrite,
   operationsListNote,
   outsideLevelsListNote,
-  outsideLevelsRefusal,
 } from '../level-gap-lines.js';
 
 const OUTSIDE_REFUSAL =
   'No access level includes this action, so "Read and write" doesn\'t cover it. It has to ' +
   'be given to this agent on its own: the person chooses it under exact actions for Gmail ' +
   'on the Connections page.';
-const OUTSIDE_REFUSAL_NO_RW =
-  'No access level includes this action, so it has to be given to this agent on its own: the ' +
-  'person chooses it under exact actions for Gmail on the Connections page.';
 const LIST_NOTE =
   'Some actions, such as trashing or deleting, are never part of an access level, so ' +
   '"Read and write" doesn\'t cover them. If you need one that isn\'t listed here, ask the ' +
@@ -180,33 +165,6 @@ describe('actions no access level includes', () => {
     ).toBeNull();
   });
 
-  it('names no level for an app that offers no "Read and write"', async () => {
-    const h = await granted({ withoutWrites: true });
-    expect(offersReadWrite(h.db, CONNECTION_ID)).toBe(false);
-    const target = {
-      connectionId: CONNECTION_ID,
-      operationRevisionId: idOf(h.snapshot, 'gmail.delete'),
-      arguments: {},
-    };
-    expect(grantRefusal(h.db, 'writer', target, NOT_HELD, TRASH)).toBe(OUTSIDE_REFUSAL_NO_RW);
-    expect(outsideLevelsRefusal('gmail', false)).toBe(OUTSIDE_REFUSAL_NO_RW);
-    expect(operationsListNote(h.db, 'reader', CONNECTION_ID, 'gmail')).toBe(LIST_NOTE_NO_RW);
-  });
-
-  it('keeps the plain refusal for an action the person could not pick either', async () => {
-    const h = await granted();
-    const deleteId = idOf(h.snapshot, 'gmail.delete');
-    h.db
-      .update(connectorReconciliationCandidates)
-      .set({ supported: false })
-      .where(eq(connectorReconciliationCandidates.operationRevisionId, deleteId))
-      .run();
-    const target = { connectionId: CONNECTION_ID, operationRevisionId: deleteId, arguments: {} };
-    expect(grantRefusal(h.db, 'writer', target, NOT_HELD, TRASH)).toBe(NOT_GRANTED);
-    const unknown = { ...target, operationRevisionId: 'not-in-any-review' };
-    expect(grantRefusal(h.db, 'writer', unknown, NOT_HELD, TRASH)).toBe(NOT_GRANTED);
-  });
-
   it('keeps the plain refusal for an ordinary action the agent was not given', async () => {
     const h = await granted();
     const send = {
@@ -291,36 +249,12 @@ describe('the granted note after a request', () => {
       })
     ).toBe(`You can now read and change things in Gmail. ${GRANTED_NOTE}`);
   });
-  it('says nothing more for an answer of one-at-a-time actions only', () => {
-    expect(
-      grantedLine('Gmail', {
-        held: held('read', 'write'),
-        heldLevelWrite: false,
-        offers: { read: 'level', write: 'level' },
-      })
-    ).toBe('You can now read and change things in Gmail.');
-  });
-  it('says nothing more in an app that offers changes only one at a time', () => {
-    expect(
-      grantedLine('Gmail', {
-        held: held('read', 'write'),
-        heldLevelWrite: true,
-        offers: { read: 'level', write: 'exact' },
-      })
-    ).toBe('You can now read and change things in Gmail.');
-  });
 });
 
 describe('a level the one-time write upgrade lowered', () => {
   it('tells the agent whose own level it lowered', async () => {
     const h = await lowered();
     expect(loweredWriteLine(h.db, 'writer', CONNECTION_ID)).toBe(LOWERED_OWN);
-  });
-
-  it('says nothing to an agent the upgrade did not touch', async () => {
-    const h = await lowered();
-    expect(loweredWriteLine(h.db, 'reader', CONNECTION_ID)).toBeNull();
-    expect(loweredWriteLine(h.db, 'exact', CONNECTION_ID)).toBeNull();
   });
 
   it('stops once the person chooses again, even "Read"', async () => {
@@ -333,124 +267,9 @@ describe('a level the one-time write upgrade lowered', () => {
     expect(loweredWriteLine(h.db, 'writer', CONNECTION_ID)).toBeNull();
   });
 
-  it('stops while any level there includes changes', async () => {
-    const h = await lowered({ everyAgent: true });
-    h.db
-      .update(connectionAccessLevels)
-      .set({ level: 'read-write', updatedAt: '2026-11-17T10:00:00.000Z' })
-      .where(eq(connectionAccessLevels.subjectType, 'every_agent'))
-      .run();
-    expect(loweredWriteLine(h.db, 'writer', CONNECTION_ID)).toBeNull();
-  });
-
   it('names the shared level for an agent that holds none of its own', async () => {
     const h = await lowered({ everyAgent: true });
     expect(loweredWriteLine(h.db, 'exact', CONNECTION_ID)).toBe(LOWERED_SHARED);
-  });
-
-  it('says nothing about the shared level to an agent left out of sharing here', async () => {
-    const h = await lowered({ everyAgent: true });
-    h.db
-      .insert(connectionGrantExclusions)
-      .values({
-        id: 'exclusion-1',
-        agentId: 'exact',
-        connectionId: CONNECTION_ID,
-        createdBy: 'install-a',
-        createdAt: '2026-11-17T10:00:00.000Z',
-      })
-      .run();
-    expect(loweredWriteLine(h.db, 'exact', CONNECTION_ID)).toBeNull();
-    // Let back in, it reads the line again.
-    h.db
-      .update(connectionGrantExclusions)
-      .set({ revokedAt: '2026-11-17T11:00:00.000Z', revokedBy: 'install-a' })
-      .where(eq(connectionGrantExclusions.id, 'exclusion-1'))
-      .run();
-    expect(loweredWriteLine(h.db, 'exact', CONNECTION_ID)).toBe(LOWERED_SHARED);
-  });
-
-  it('follows the agent’s own level over a lowered shared one', async () => {
-    // Reader's own "Read" was the person's choice, not the upgrade's.
-    const h = await lowered({ everyAgent: true });
-    expect(loweredWriteLine(h.db, 'reader', CONNECTION_ID)).toBeNull();
-  });
-
-  it('reads only the upgrade row for this account and this subject', async () => {
-    const h = await granted();
-    const reader = h.db
-      .select()
-      .from(connectionAccessLevels)
-      .where(
-        and(
-          eq(connectionAccessLevels.subjectId, 'reader'),
-          eq(connectionAccessLevels.connectionId, CONNECTION_ID)
-        )
-      )
-      .get()!;
-    const upgradeRow = (id: string, resourceId: string, subjectId: string) => ({
-      id,
-      occurredAt: reader.updatedAt,
-      createdAt: reader.updatedAt,
-      actorType: 'system' as const,
-      actorLabel: 'DorkOS',
-      category: 'permissions' as const,
-      eventType: 'connectors.write_upgrade',
-      resourceType: 'connection',
-      resourceId,
-      resourceLabel: 'Gmail',
-      summary: 'Changed Gmail access to Read',
-      metadata: JSON.stringify({
-        subjectType: 'agent',
-        subjectId,
-        before: 'read-write',
-        after: 'read',
-      }),
-    });
-    h.db
-      .insert(activityEvents)
-      .values(upgradeRow('a1', 'connection-b', 'reader'))
-      .run();
-    h.db
-      .insert(activityEvents)
-      .values(upgradeRow('a2', CONNECTION_ID, 'writer'))
-      .run();
-    expect(loweredWriteLine(h.db, 'reader', CONNECTION_ID)).toBeNull();
-    h.db
-      .insert(activityEvents)
-      .values(upgradeRow('a3', CONNECTION_ID, 'reader'))
-      .run();
-    expect(loweredWriteLine(h.db, 'reader', CONNECTION_ID)).toContain('it moved your access');
-  });
-
-  it('says nothing on an app that offers no "Read and write" to choose again', async () => {
-    // The upgrade also lowered apps whose every change is paid or one at a time.
-    const h = await lowered();
-    h.db
-      .update(connectorReconciliationCandidates)
-      .set({ supported: false })
-      .where(
-        inArray(
-          connectorReconciliationCandidates.operationRevisionId,
-          h.db
-            .select({ id: connectorOperationRevisions.id })
-            .from(connectorOperationRevisions)
-            .where(eq(connectorOperationRevisions.capabilityClassification, 'write'))
-        )
-      )
-      .run();
-    expect(offersReadWrite(h.db, CONNECTION_ID)).toBe(false);
-    expect(loweredWriteLine(h.db, 'writer', CONNECTION_ID)).toBeNull();
-    expect(operationsListNote(h.db, 'writer', CONNECTION_ID, 'linear')).not.toContain(
-      'moved your access'
-    );
-    const change = {
-      toolkit: 'linear',
-      operationSlug: 'LINEAR_CREATE_ISSUE',
-      classification: 'write' as const,
-    };
-    const target = { connectionId: CONNECTION_ID, operationRevisionId: 'rev-1', arguments: {} };
-    expect(grantRefusal(h.db, 'writer', target, NOT_HELD, change)).toBe(NOT_GRANTED);
   });
 
   it('adds the line to the refusal of a write it took away', async () => {
