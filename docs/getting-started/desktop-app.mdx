@@ -153,7 +153,7 @@ To find out why an update didn't show up, look in `~/.dork/logs/updater.log` (on
 
 ## Opening DorkOS on your phone or tablet
 
-On a Mac, on the same home or office Wi-Fi, turn on **Let devices on my Wi-Fi in** in **Settings → Remote access**, then scan the QR code it shows. It needs a login, and the connection isn't encrypted yet; see [Securing your instance](/docs/self-hosting/securing-your-instance#on-your-own-wi-fi). From anywhere else, use remote access in the same tab.
+Your phone or tablet can open DorkOS on any network it shares with your Mac: at home, at the office, or on a VPN such as Tailscale. On a Mac, turn on **Let devices on my network in** in **Settings → Remote access**, then scan the QR code it shows. On Tailscale, open the address that starts with `100.` instead, since the QR code's name only works on the same local network. It needs a login, and the connection isn't encrypted yet; see [Securing your instance](/docs/self-hosting/securing-your-instance#on-your-own-network). From anywhere else, use remote access in the same tab.
 
 ## When to use the CLI or the web app instead
 
@@ -161,7 +161,7 @@ The desktop app is a good fit if you want DorkOS running locally, all the time, 
 
 - **Run on Linux.** There's no Linux build yet; use the [one-liner, npm, or Docker](/docs/getting-started/installation).
 - **Run on an Intel Mac.** The macOS build is Apple Silicon only.
-- **Open to your Wi-Fi on Windows.** The Wi-Fi switch works on a Mac for now. On Windows, use remote access, or run the CLI with `DORKOS_HOST` pointed at your network; see [Deployment](/docs/self-hosting/deployment).
+- **Open to your network on Windows.** The network switch works on a Mac for now. On Windows, use remote access, or run the CLI with `DORKOS_HOST` pointed at your network; see [Deployment](/docs/self-hosting/deployment).
 
 For any of those, the [web app](/docs/getting-started/installation) is the same DorkOS, just reached through a browser tab.
 

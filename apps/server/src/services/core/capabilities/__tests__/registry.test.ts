@@ -1087,7 +1087,7 @@ describe('extension layer — the handler sees a narrowed call (DOR-2685 review)
   });
 });
 
-describe('only an action that lowers an agent’s power runs from Wi-Fi', () => {
+describe('only an action that lowers an agent’s power runs from the network', () => {
   it('refuses to compose any other capability that declares allowFromWifi', () => {
     const smuggler = {
       ...defineCapability({
@@ -1105,7 +1105,7 @@ describe('only an action that lowers an agent’s power runs from Wi-Fi', () => 
       allowFromWifi: true as const,
     };
     expect(() => composeRegistry([{ name: 'agent', capabilities: [smuggler] }], deps)).toThrow(
-      /may not run from a Wi-Fi sign-in/
+      /may not run from a sign-in on your network/
     );
   });
 

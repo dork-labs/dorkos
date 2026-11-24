@@ -28,7 +28,7 @@ import { TrustNote, WifiSignInRequests } from './WifiSignInRequests';
  */
 const ROUTE_LABELS: Record<SignedInDeviceRoute, string | null> = {
   local: null,
-  wifi: 'Wi-Fi',
+  wifi: 'Your network',
   tunnel: 'Remote access',
   managed: 'Remote access',
   network: 'Another network',
@@ -44,8 +44,8 @@ const ROUTE_LABELS: Record<SignedInDeviceRoute, string | null> = {
  * computer DorkOS runs on, which the server decides (`canSignOutOthers`).
  * Signing a device out closes whatever it had open.
  *
- * At that computer it also lists Wi-Fi devices waiting to sign in, and each
- * Wi-Fi row has a "Run agents from this device" switch (DOR-4744).
+ * At that computer it also lists devices on the network waiting to sign in, and each
+ * network row has a "Run agents from this device" switch (DOR-4744).
  */
 export function SignedInDevicesSection() {
   const devices = useSignedInDevices();
@@ -146,7 +146,7 @@ function DeviceRow({
   canSignOut: boolean;
   signingOut: boolean;
   onSignOut: () => void;
-  /** Set at the computer DorkOS runs on, where a Wi-Fi row's switch can change. */
+  /** Set at the computer DorkOS runs on, where a network row's switch can change. */
   trust: DeviceTrust | null;
 }) {
   const via = ROUTE_LABELS[device.route];
@@ -169,7 +169,7 @@ function DeviceRow({
 }
 
 /**
- * The opt-in that lets one Wi-Fi device run agents at their own level. Off for
+ * The opt-in that lets one device on the network run agents at their own level. Off for
  * every new device; changed only at the computer DorkOS runs on, and turning
  * it on asks for a passkey there.
  */
@@ -185,7 +185,7 @@ function RunsAgentsSwitch({
   const warning = (
     <>
       <p className="text-muted-foreground text-xs">
-        Anyone on the same Wi-Fi could take over this sign-in.
+        Anyone on the same network could take over this sign-in.
       </p>
       <p className="text-muted-foreground text-xs">It turns off after 12 hours idle.</p>
     </>
@@ -258,7 +258,7 @@ function DeviceSummary({
               className="hidden sm:inline-flex"
               title="Not encrypted between this device and the computer DorkOS runs on."
             >
-              Plain Wi-Fi
+              Not encrypted
             </Badge>
           )}
         </div>

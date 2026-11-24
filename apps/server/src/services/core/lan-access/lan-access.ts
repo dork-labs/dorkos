@@ -1,5 +1,5 @@
 /**
- * Wi-Fi access (DOR-2930): one switch that lets other devices on the same
+ * Network access (DOR-2930): one switch that lets other devices on the same
  * network open DorkOS, with no restart.
  *
  * ## The shape
@@ -16,7 +16,7 @@
  * All three must hold, and the controller rechecks them on every settings write:
  *
  * 1. The person turned the switch on (`server.lanAccess`).
- * 2. An owner account exists for Wi-Fi devices to sign in as (`canExpose`),
+ * 2. An owner account exists for devices on the network to sign in as (`canExpose`),
  *    the same bar the tunnel meets. With no owner the switch turns off, in
  *    config too, so it cannot spring open again later.
  * 3. Neither `DORKOS_HOST` nor `DORKOS_ALLOW_INSECURE_BIND` is set in the
@@ -57,7 +57,7 @@ const SUPPORTED_PLATFORMS: readonly NodeJS.Platform[] = ['darwin'];
 
 /** What Settings shows on a computer the switch does not work on yet. */
 export const LAN_ACCESS_UNSUPPORTED_MESSAGE =
-  'Wi-Fi access works on a Mac for now. Elsewhere, set DORKOS_HOST.';
+  'Network access works on a Mac for now. Elsewhere, set DORKOS_HOST.';
 
 /** How long open connections may finish before a close cuts them, in milliseconds. */
 const CLOSE_GRACE_MS = 1_000;
@@ -87,9 +87,10 @@ export interface LanAccessDeps {
   bindHost?: string;
   /**
    * Whether a connecting peer is on this computer's own networks
-   * (`isLocalNetworkPeer`). Anyone else is cut at the socket.
+   * (`isLocalNetworkPeer`), given the address it connected from and the
+   * address on this computer it connected to. Anyone else is cut at the socket.
    */
-  isLocalPeer: (address: string | undefined) => boolean;
+  isLocalPeer: (address: string | undefined, localAddress: string | undefined) => boolean;
   /** The operating system; defaults to this one. See {@link SUPPORTED_PLATFORMS}. */
   platform?: NodeJS.Platform;
 }
@@ -127,7 +128,7 @@ function listenOn(server: Server, port: number, host: string): Promise<void> {
   });
 }
 
-/** The Wi-Fi access controller. One per server; see the module doc. */
+/** The network access controller. One per server; see the module doc. */
 export class LanAccess {
   private source: LanListenerSource | null = null;
   private server: Server | null = null;
@@ -170,7 +171,7 @@ export class LanAccess {
     const run = this.queue
       .then(() => this.reconcileNow())
       .catch((error: unknown) => {
-        logger.warn('[LanAccess] Could not apply the Wi-Fi access setting', logError(error));
+        logger.warn('[LanAccess] Could not apply the network access setting', logError(error));
         return this.status();
       });
     this.queue = run;
@@ -182,7 +183,7 @@ export class LanAccess {
     return SUPPORTED_PLATFORMS.includes(this.deps.platform ?? process.platform);
   }
 
-  /** Where Wi-Fi access stands right now. */
+  /** Where network access stands right now. */
   status(): LanAccessStatus {
     const listening = this.server !== null;
     return {
@@ -216,7 +217,7 @@ export class LanAccess {
     if (wanted && !this.deps.canExpose()) {
       // Login is off (or no owner exists). The switch cannot stay on without it,
       // so it goes off for good rather than waiting to reopen.
-      logger.info('[LanAccess] Login is off, so Wi-Fi access is turned off too');
+      logger.info('[LanAccess] Login is off, so network access is turned off too');
       this.deps.writeSetting(false);
       wanted = false;
     }
@@ -241,7 +242,7 @@ export class LanAccess {
       // Checked and tracked from the first connection: a peer off this computer's
       // own networks is cut before it is answered, and a close can cut the rest.
       candidate.on('connection', (socket: Socket) => {
-        if (!this.deps.isLocalPeer(socket.remoteAddress)) {
+        if (!this.deps.isLocalPeer(socket.remoteAddress, socket.localAddress)) {
           socket.destroy();
           return;
         }

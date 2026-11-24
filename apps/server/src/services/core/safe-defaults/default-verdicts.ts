@@ -642,7 +642,7 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
   'remoteAccess.enabled': {
     value: true,
     reason:
-      'The master switch for reaching DorkOS from another device ships on, so an upgrade closes no door a person already opened. On grants nothing by itself: each way in (the own tunnel, managed remote access, Wi-Fi) starts off and needs its own setup by a person at this computer, and every request from another device still needs a session or a key. Off is the one-switch way to close them all, open to an agent too, and PROTECTIVE_CARRYOVERS keeps it off through a wipe (DOR-3650).',
+      'The master switch for reaching DorkOS from another device ships on, so an upgrade closes no door a person already opened. On grants nothing by itself: each way in (the own tunnel, managed remote access, network access) starts off and needs its own setup by a person at this computer, and every request from another device still needs a session or a key. Off is the one-switch way to close them all, open to an agent too, and PROTECTIVE_CARRYOVERS keeps it off through a wipe (DOR-3650).',
   },
   'rooms.repo.enabled': {
     value: true,

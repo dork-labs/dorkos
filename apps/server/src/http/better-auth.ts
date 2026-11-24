@@ -88,13 +88,13 @@ export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): 
       .toLowerCase()
       .replace(/\/{2,}/g, '/')
       .replace(/\/$/, '');
-    // Over Wi-Fi a device signs in with a code from this computer, never a
+    // Over the network a device signs in with a code from this computer, never a
     // password (`sessions/wifi-auth-paths.ts`, DOR-4744). The listener's own mark decides.
     if (ingressOf(c.env.incoming) === 'wifi' && !wifiAuthPathAllowed(authPath)) {
       return c.json(
         {
           code: WIFI_SIGN_IN_NEEDS_CODE,
-          message: 'On Wi-Fi, sign in with a code from the computer DorkOS runs on.',
+          message: 'On your network, sign in with a code from the computer DorkOS runs on.',
         },
         403
       );
@@ -254,7 +254,7 @@ export const SIGN_IN_NEEDS_HTTPS = 'SIGN_IN_NEEDS_HTTPS';
  * `Secure` cookie without a word, so the sign-in "works" and the person lands
  * back on the sign-in screen, forever. This sees that case on the way out: a
  * response that sets a session cookie, for a plain-http request to a
- * non-loopback `Host`. The Wi-Fi listener is the exception, since it rewrites
+ * non-loopback `Host`. The network listener is the exception, since it rewrites
  * the cookie for plain `http` itself (`lan-cookies.ts`).
  *
  * The account or session the request made stays; only the answer changes, so

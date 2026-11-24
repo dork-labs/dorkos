@@ -5,7 +5,7 @@ import { useWifiCodeSignIn } from '../model/use-auth-session';
 import { CodeGroups } from './CodeGroups';
 
 /**
- * Sign-in on a device reaching DorkOS over Wi-Fi (DOR-4744). Wi-Fi takes no
+ * Sign-in on a device reaching DorkOS over the network (DOR-4744). A network sign-in takes no
  * password: the device asks the computer DorkOS runs on, shows a short code
  * to match there, and then takes the one-time code the owner sees after
  * approving. Rendered by the {@link AuthGuard} when the server says so.
@@ -36,7 +36,7 @@ export function WifiSignInScreen() {
           {/* While waiting, the steps below say this again. */}
           {!waiting && (
             <p className="text-muted-foreground mt-1 text-sm">
-              On Wi-Fi, this device signs in with a code from the computer DorkOS runs on.
+              This device signs in with a code from the computer DorkOS runs on.
             </p>
           )}
         </div>
