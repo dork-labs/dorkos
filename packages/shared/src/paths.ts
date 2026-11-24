@@ -84,14 +84,10 @@ function splitAbsolute(value: string): SplitPath | null {
  * Two things it deliberately does NOT do, both because they need knowledge this
  * module does not have:
  *
- * - **Symlinks.** `~/code` and `/Volumes/ssd/code` can be the same directory;
- *   resolving that needs the filesystem. OpenCode stores the real path it
- *   resolved at session-create time, so the two spellings are reconciled before
- *   they reach here — by `canonicalDirectory` in `./canonical-directory`
- *   (DOR-695). Two callers do that today: the OpenCode session listing and the
- *   per-agent fan-out. The codex, test-mode and claude-code listings do not, so
- *   they still answer by spelling alone. A caller that skips it gets the older,
- *   narrower answer rather than a wrong one.
+ * - **Symlinks.** `~/code` and `/Volumes/ssd/code` can be the same directory.
+ *   The server's tracked session listings and per-agent fan-out reconcile those
+ *   spellings with the filesystem (DOR-695/DOR-3605). This function only
+ *   compares the paths it receives.
  * - **Case.** macOS and Windows are usually case-insensitive, Linux is not, and
  *   folding blindly would merge two genuinely different directories on Linux.
  *   `canonicalDirectory` deliberately does not fold it either, so this is still

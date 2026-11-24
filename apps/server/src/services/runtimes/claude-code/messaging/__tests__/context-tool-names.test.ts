@@ -728,7 +728,6 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'approval-verdict-block.ts',
       'asar-path.ts',
       'cli-invocation.ts',
-      'derive-title.ts',
       'dorkos-mcp-injection.ts',
       'dorkos-tool-names.ts',
       'gen-ui-context.ts',
@@ -749,8 +748,18 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'untrusted-fence.ts',
     ]);
 
+    const sessionModules = (await readdir(join(dir, 'session')))
+      .filter((name) => name.endsWith('.ts'))
+      .sort();
+    expect(sessionModules).toEqual([
+      'derive-title.ts',
+      'event-queue.ts',
+      'project-membership.ts',
+      'session-registry.ts',
+    ]);
+
     const offenders: string[] = [];
-    for (const name of modules) {
+    for (const name of [...modules, ...sessionModules.map((name) => `session/${name}`)]) {
       // `room-tools-context.ts` is the one module here whose JOB is to name
       // tools, and it is exempt from the source scan for a reason that is not a
       // weakening: its body is a TEMPLATE, `${t}post_to_room`, which is neither

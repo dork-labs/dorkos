@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { wrapKickoff } from '@dorkos/shared/kickoff';
-import { deriveSessionTitle } from '../derive-title.js';
+import { deriveSessionTitle } from '../session/derive-title.js';
 
 describe('deriveSessionTitle', () => {
   it('returns empty string for empty or whitespace input', () => {

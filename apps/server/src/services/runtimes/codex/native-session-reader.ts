@@ -7,7 +7,6 @@ import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { describeRuntimeError } from '@dorkos/shared/runtime-error-classification';
 import type { Session, HistoryMessage, HistoryToolCall, MessagePart } from '@dorkos/shared/types';
-import { isWithinDirectory } from '@dorkos/shared/paths';
 import { resolveCodexHome, codexRolloutRootsIn } from './codex-home.js';
 import { discoverCodexRollouts } from '../../search/codex-discovery.js';
 import { projectCodexLines } from '../../search/projections/codex.js';
@@ -18,6 +17,7 @@ import {
   type SessionAttachmentStore,
 } from '../../session/attachments/index.js';
 import { validateBoundaryOrDorkHome } from '../../../lib/boundary.js';
+import { projectMembership } from '../shared/session/project-membership.js';
 
 /**
  * How long one inventory of the Codex home is reused before the rollout roots
@@ -230,9 +230,8 @@ export class CodexNativeSessionReader {
   }
 
   async listSessions(directory: string): Promise<Session[]> {
-    const files = (await this.containers()).filter((file) =>
-      isWithinDirectory(file.containerPath ?? undefined, directory)
-    );
+    const isMember = projectMembership(directory);
+    const files = (await this.containers()).filter((file) => isMember(file.containerPath));
     const sessions = await Promise.all(files.map((file) => this.session(file)));
     const found = sessions.filter((session): session is Session => session !== null);
     for (const session of found) this.knownNativeSessions.add(session.id);

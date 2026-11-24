@@ -46,9 +46,8 @@ import { ROW_GLYPH_CLASS } from './row-glyph';
  * Direct chat, or any other chat of its — so the row stands for the agent
  * wherever you are talking to it.
  *
- * "Belongs to it" is THE canonical membership rule — the agent's directory or
- * any folder inside it, through the shared `isWithinDirectory` predicate that
- * `selectAgentSessions` and the server's own listing use (DOR-674/DOR-1550).
+ * The active target comes from the router. A session located in the agent's
+ * directory or any of its subfolders lights the agent row (DOR-674/DOR-1550).
  * Exact equality here meant a session started at `<project>/packages/api` sat
  * in the agent's own session list while the agent's row stayed dark, which
  * reads as the wrong agent being open. The consequence of the wider rule,

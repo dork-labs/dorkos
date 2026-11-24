@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useCommands } from '@/layers/entities/command';
-import { useSessions, selectAgentSessions } from '@/layers/entities/session';
+import { useAgentSessions } from '@/layers/entities/session';
 import { useMenuExtensionPages, useSlotContributions } from '@/layers/shared/model';
 import { extensionPageHref, SETTINGS_TAB_DIRECTORY, settingsTabsFor } from '@/layers/shared/lib';
 import { useIsHub } from '@/layers/entities/config';
@@ -181,17 +181,8 @@ const NO_ROWS: ReturnType<typeof useRemoteAccessPaletteItems> = [];
 export function usePaletteItems(activeCwd: string | null, now: number): PaletteItems {
   const { data: agentPathsData, isLoading: agentsLoading } = useMeshAgentPaths();
   const rooms = usePaletteRooms();
-  const { sessions: cwdSessions } = useSessions();
-
-  /**
-   * The conversation the active directory is on — newest first, by the
-   * canonical membership rule (DOR-203). The slash commands below are that
-   * RUNTIME's, so the palette has to name it.
-   */
-  const activeSession = useMemo(() => {
-    if (!cwdSessions || !activeCwd) return null;
-    return selectAgentSessions(cwdSessions, activeCwd)[0] ?? null;
-  }, [cwdSessions, activeCwd]);
+  const { sessions: agentSessions } = useAgentSessions(activeCwd);
+  const activeSession = agentSessions[0];
 
   // Which runtime's commands, said out loud. Asking with no context at all left
   // the server to cold-discover the DEFAULT runtime, so a Codex conversation on

@@ -50,7 +50,7 @@ import { executeDoeTurn, type ActiveTurn } from './execute-turn.js';
 import { DoeSessionRuntime } from './session-runtime.js';
 import { DOE_CAPABILITIES } from './runtime-constants.js';
 import { canonicalDoeCwd } from './session-store.js';
-import { DoeEventQueue } from './event-queue.js';
+import { RuntimeEventQueue } from '../shared/session/event-queue.js';
 import { DoeApprovals } from './approvals.js';
 import { type DoeHostOptions, type DoeHostAssembly } from './tools.js';
 import { renderDoeContextEntry } from './context.js';
@@ -154,7 +154,7 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
       cwd,
       permissionMode: opts?.permissionMode ?? existing?.session.permissionMode ?? 'default',
     });
-    const queue = new DoeEventQueue<StreamEvent>();
+    const queue = new RuntimeEventQueue<StreamEvent>();
     const controller = new AbortController();
     const turn: ActiveTurn = {
       controller,

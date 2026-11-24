@@ -3,12 +3,16 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { SqliteModelStore, type JsonValue } from '@dorkos/doe';
 import type { Session, SessionSettings } from '@dorkos/shared/types';
-import { isWithinDirectory } from '@dorkos/shared/paths';
+import { sessionShownToPerson, shownToPerson, titleShownToPerson } from '@dorkos/shared/kickoff';
+import { UNTITLED_CHAT_TITLE } from '@dorkos/shared/session-link';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
-import { sessionShownToPerson, shownToPerson, titleShownToPerson } from '@dorkos/shared/kickoff';
-import { deriveSessionTitle } from '../shared/derive-title.js';
-import { DoeEventQueue } from './event-queue.js';
+import { deriveSessionTitle } from '../shared/session/derive-title.js';
+import { projectMembership } from '../shared/session/project-membership.js';
+import {
+  sessionMessagePreview,
+  TrackedSessionRegistry,
+} from '../shared/session/session-registry.js';
 
 /** The engine's independent data directory, outside vendor-owned session stores. */
 export function doeSessionsDirectory(): string {
@@ -31,6 +35,17 @@ export function canonicalDoeCwd(cwd: string): string {
   }
 }
 
+/** Display legacy rows and new drafts without setting a durable first-message title. */
+function displaySession(session: Session): Session {
+  const shown = sessionShownToPerson(session);
+  return {
+    ...shown,
+    title: shown.title.trim()
+      ? shown.title
+      : shown.lastMessagePreview?.trim() || UNTITLED_CHAT_TITLE,
+  };
+}
+
 /** Session metadata and immutable inference selection; never a credential value. */
 export interface DoeSessionRecord {
   session: Session;
@@ -41,7 +56,7 @@ export interface DoeSessionRecord {
 export class DoeSessionStore {
   readonly models: SqliteModelStore;
   private readonly db: Database.Database;
-  private readonly listeners = new Set<DoeEventQueue<SessionListEvent>>();
+  private readonly tracked: TrackedSessionRegistry<never>;
   private closed = false;
 
   /** Open only the supplied directory; construction resolves no model credentials. */
@@ -51,6 +66,22 @@ export class DoeSessionStore {
     this.db.pragma('journal_mode = WAL');
     this.db.exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, record TEXT NOT NULL)');
     this.models = new SqliteModelStore(path.join(directory, 'models.sqlite'));
+    this.tracked = new TrackedSessionRegistry<never>({
+      runtime: 'doe',
+      defaultPermissionMode: 'default',
+      projectMembership: (projectDir) =>
+        projectMembership(projectDir, { resolveStoredProject: canonicalDoeCwd }),
+      display: displaySession,
+      source: {
+        get: (id) => this.get(id)?.session,
+        values: () => {
+          const rows = this.db.prepare('SELECT record FROM sessions ORDER BY id').all() as {
+            record: string;
+          }[];
+          return rows.map((row) => (JSON.parse(row.record) as DoeSessionRecord).session);
+        },
+      },
+    });
   }
 
   /** Read metadata without creating a session. */
@@ -59,21 +90,18 @@ export class DoeSessionStore {
       { record: string } | undefined;
     if (!row) return null;
     const record = JSON.parse(row.record) as DoeSessionRecord;
-    // A title or preview stored from a greeting kickoff reads as untitled (DOR-4976).
+    // A legacy greeting title reads as untitled so a person's message can name the chat.
     return { ...record, session: sessionShownToPerson(record.session) };
   }
 
-  /** Read all durable metadata, then scope it by canonical project membership. */
+  /** Read display metadata without setting a title on the stored record. */
+  getForDisplay(id: string): Session | null {
+    return this.tracked.get(id);
+  }
+
+  /** Scope display metadata by canonical project membership. */
   list(projectDir?: string): Session[] {
-    const rows = this.db.prepare('SELECT record FROM sessions ORDER BY id').all() as {
-      record: string;
-    }[];
-    const sessions = rows.map((row) =>
-      sessionShownToPerson((JSON.parse(row.record) as DoeSessionRecord).session)
-    );
-    return projectDir === undefined
-      ? sessions
-      : sessions.filter((session) => isWithinDirectory(session.cwd, canonicalDoeCwd(projectDir)));
+    return this.tracked.list(projectDir);
   }
 
   /** A tracked record belongs only to its cwd subtree; unbound sessions remain reachable by id. */
@@ -82,7 +110,9 @@ export class DoeSessionStore {
     return (
       record !== null &&
       (record.session.cwd === undefined ||
-        isWithinDirectory(record.session.cwd, canonicalDoeCwd(projectDir)))
+        projectMembership(projectDir, { resolveStoredProject: canonicalDoeCwd })(
+          record.session.cwd
+        ))
     );
   }
 
@@ -116,10 +146,7 @@ export class DoeSessionStore {
         'INSERT INTO sessions(id,record) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record'
       )
       .run(record.session.id, JSON.stringify(record));
-    if (record.session.cwd !== undefined) {
-      const event: SessionListEvent = { type: 'session_upserted', session: { ...record.session } };
-      for (const listener of this.listeners) listener.push(event);
-    }
+    this.tracked.publishSaved(record.session);
   }
 
   /** Patch inference against current metadata after asynchronous setup, preserving settings. */
@@ -146,40 +173,33 @@ export class DoeSessionStore {
   /** Record the person's own message and derive a title only once. */
   message(id: string, content: string, cwd: string, title?: string): DoeSessionRecord {
     const record = this.get(id)!;
-    if (!record.session.title) record.session.title = title ?? deriveSessionTitle(content);
+    const preview = sessionMessagePreview(content, '');
+    if (!record.session.title.trim()) {
+      const suppliedTitle = titleShownToPerson(title);
+      const firstTitle = suppliedTitle.trim()
+        ? suppliedTitle
+        : deriveSessionTitle(content) || preview.trim();
+      if (firstTitle) record.session.title = firstTitle;
+    }
     record.session.cwd = canonicalDoeCwd(cwd);
-    const shown = shownToPerson(content);
-    record.session.lastMessagePreview = titleShownToPerson(
-      [...shown.split('\n')[0]!].slice(0, 80).join('')
-    );
+    record.session.lastMessagePreview = preview;
     record.session.updatedAt = new Date().toISOString();
-    // A greeting kickoff is DorkOS writing, not the person (DOR-4976).
-    if (shown) record.session.userLastMessageAt = record.session.updatedAt;
+    // The greeting kickoff does not count as a person's message (DOR-4976).
+    if (shownToPerson(content)) record.session.userLastMessageAt = record.session.updatedAt;
     this.save(record);
     return record;
   }
 
   /** Inventory followed by copied updates; return() tears down parked readers. */
   subscribe(): AsyncIterableIterator<SessionListEvent> {
-    const queue = new DoeEventQueue<SessionListEvent>();
-    for (const session of this.list()) {
-      if (session.cwd !== undefined) queue.push({ type: 'session_upserted', session });
-    }
-    this.listeners.add(queue);
-    const finish = queue.return.bind(queue);
-    queue.return = () => {
-      this.listeners.delete(queue);
-      return finish();
-    };
-    return queue;
+    return this.tracked.subscribe();
   }
 
   /** Close this runtime's stores and readers exactly once. */
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    for (const listener of this.listeners) void listener.return();
-    this.listeners.clear();
+    this.tracked.closeSubscribers();
     this.models.close();
     this.db.close();
   }

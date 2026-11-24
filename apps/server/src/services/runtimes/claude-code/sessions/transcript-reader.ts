@@ -15,7 +15,7 @@ import type { TranscriptLine } from './transcript-parser.js';
 import { classifyOrigin } from './classify-origin.js';
 import { isKickoffEnvelope, titleShownToPerson } from '@dorkos/shared/kickoff';
 import { needsOpeningScan, personTitleText, readOpeningTurn } from './transcripts/opening-turn.js';
-import { deriveSessionTitle } from '../../shared/derive-title.js';
+import { deriveSessionTitle } from '../../shared/session/derive-title.js';
 import { projectSlug, subtreeSlugScope } from './project-slug.js';
 import { SessionRootIndex, accountForTranscript } from './session-root-index.js';
 import { SessionLocator, type FindSessionOptions } from './transcripts/session-locator.js';

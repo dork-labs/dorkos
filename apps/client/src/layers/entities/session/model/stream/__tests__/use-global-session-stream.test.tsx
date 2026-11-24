@@ -70,6 +70,26 @@ describe('reconcileSessionsCache', () => {
     expect(list[0].title).toBe('Renamed');
   });
 
+  it('updates and removes a row already listed through a project alias', () => {
+    const projectAlias = sessionKeys.list('/project-link');
+    const unrelatedProject = sessionKeys.list('/unrelated-project');
+    const native = session({ id: 'native', runtime: 'codex' });
+    const renamed = { ...native, title: 'Renamed' };
+    const unrelated = session({ id: 'unrelated', cwd: '/unrelated-project' });
+    queryClient.setQueryData(projectAlias, [native]);
+    queryClient.setQueryData(unrelatedProject, [unrelated]);
+
+    reconcileSessionsCache(queryClient, { native: renamed }, {});
+
+    expect(queryClient.getQueryData(projectAlias)).toEqual([renamed]);
+    expect(queryClient.getQueryData(unrelatedProject)).toEqual([unrelated]);
+
+    reconcileSessionsCache(queryClient, {}, { native: renamed });
+
+    expect(queryClient.getQueryData(projectAlias)).toEqual([]);
+    expect(queryClient.getQueryData(unrelatedProject)).toEqual([unrelated]);
+  });
+
   it('removes a session present in prev but absent in next', () => {
     const s = session();
     reconcileSessionsCache(queryClient, { s1: s }, {});
@@ -198,7 +218,9 @@ describe('useGlobalSessionStream', () => {
     expect(queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'))).toEqual([]);
   });
 
-  it('surfaces an externally-created session (e.g. Claude Code CLI) live, without polling', () => {
+  it('surfaces new sessions live and refreshes lists fetched through an alias', () => {
+    const aliasKey = sessionKeys.list('/alias/cwd');
+    queryClient.setQueryData<Session[]>(aliasKey, []);
     renderHook(() => useGlobalSessionStream(), { wrapper });
 
     const external = session({ id: 'cli-1', title: 'CLI session' });
@@ -210,6 +232,7 @@ describe('useGlobalSessionStream', () => {
 
     const list = queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'))!;
     expect(list.map((s) => s.id)).toContain('cli-1');
+    expect(queryClient.getQueryState(aliasKey)?.isInvalidated).toBe(true);
   });
 
   it('a live retire announce re-ids the optimistic placeholder row in the cache (NF-3)', () => {

@@ -84,24 +84,37 @@ describe('useAgentSessions', () => {
     expect(listSessions).not.toHaveBeenCalledWith('/window/cwd');
   });
 
-  it('returns only sessions whose cwd matches the project path, newest first', async () => {
-    const transport = createMockTransport({
-      listSessions: vi.fn().mockResolvedValue({
-        sessions: [
-          makeSession({ id: 'older', updatedAt: '2026-02-06T10:00:00Z' }),
-          makeSession({ id: 'newer', updatedAt: '2026-02-07T10:00:00Z' }),
-          makeSession({ id: 'foreign', cwd: '/other/project' }),
-        ],
-      }),
+  it('keeps the server’s symlink matches while switching between project scopes', async () => {
+    const alias = '/work/project-link';
+    const other = '/work/other';
+    const older = makeSession({
+      id: 'older',
+      cwd: alias,
+      updatedAt: '2026-02-06T10:00:00Z',
     });
+    const native = makeSession({
+      id: 'native',
+      cwd: '/work/project/packages/api',
+      runtime: 'codex',
+      updatedAt: '2026-02-07T10:00:00Z',
+    });
+    const foreign = makeSession({ id: 'foreign', cwd: other });
+    const listSessions = vi.fn(async (cwd?: string) => ({
+      sessions: cwd === alias ? [older, native] : cwd === other ? [foreign] : [],
+    }));
+    const transport = createMockTransport({ listSessions });
 
-    const { result } = renderHook(() => useAgentSessions('/test/cwd'), {
+    const { result, rerender } = renderHook(({ cwd }) => useAgentSessions(cwd), {
+      initialProps: { cwd: alias },
       wrapper: createWrapper(transport),
     });
 
-    await waitFor(() => {
-      expect(result.current.sessions.map((s) => s.id)).toEqual(['newer', 'older']);
-    });
+    await waitFor(() => expect(result.current.sessions).toEqual([native, older]));
+
+    rerender({ cwd: other });
+    expect(result.current.sessions).not.toContainEqual(native);
+    await waitFor(() => expect(result.current.sessions).toEqual([foreign]));
+    expect(listSessions.mock.calls).toEqual([[alias], [other]]);
   });
 
   it('drops cwd-less sessions — they belong to no agent (DOR-202)', async () => {
