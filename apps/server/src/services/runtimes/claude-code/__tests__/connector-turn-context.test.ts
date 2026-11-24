@@ -82,7 +82,7 @@ describe('ClaudeConnectorTurnContext', () => {
         canonicalCwd: '/repo',
         signal: expect.any(AbortSignal),
       },
-      { isCurrent: expect.any(Function) }
+      { isCurrent: expect.any(Function), readToolTurn: expect.any(Function) }
     );
     expect(principals.resolve).toHaveBeenCalledWith({
       bearer: 'secret-1',

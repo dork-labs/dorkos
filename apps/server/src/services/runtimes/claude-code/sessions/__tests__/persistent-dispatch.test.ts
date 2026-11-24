@@ -1,3 +1,10 @@
+import { randomUUID } from 'node:crypto';
+import type { AgentSession } from '../../agent-types.js';
+import { ConnectorRuntimePrincipalService } from '../../../../connectors/principal/runtime-principal-service.js';
+import {
+  registerTestHomes,
+  clearTestHomes,
+} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { RuntimeRegistry } from '../../../../core/runtime-registry.js';
 /**
  * The composition: a claude-code message reaching a process that is already
@@ -14,6 +21,7 @@ import os from 'node:os';
 import nodePath from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { SessionEvent, SessionStatus } from '@dorkos/shared/session-stream';
 import type { StreamEvent } from '@dorkos/shared/types';
 
@@ -186,6 +194,7 @@ vi.mock('../../../../../config/constants.js', async (importOriginal) => {
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { buildClaudeAgentSdkPluginsArray } from '../../messaging/plugin-activation.js';
 import { buildSystemPromptAppend } from '../../messaging/context-builder.js';
+import { AUTO_DOWNGRADE_STATUS } from '../../messaging/permission-mode-guard.js';
 import { TURN_NOT_STARTED_CODE } from '../../../../session/launch/turn-not-started.js';
 import { extensionSkillPluginRoots } from '../../../../extensions/agent-skills/running-skills-ledger.js';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
@@ -3008,3 +3017,184 @@ describe("a chat's snapshot carries only that chat (DOR-4552)", () => {
     );
   });
 });
+
+it.each([
+  {
+    persistent: false,
+    scenario: 'resume with unconfirmed Auto',
+    sessionMode: 'auto',
+    ceiling: undefined,
+    chosen: 'auto',
+  },
+  {
+    persistent: true,
+    scenario: 'warm with Full under a marked Default ceiling',
+    sessionMode: 'bypassPermissions',
+    ceiling: 'runtime-default',
+    chosen: 'bypassPermissions',
+  },
+  {
+    persistent: false,
+    scenario: 'resume with Full under the agent’s own Ask level',
+    sessionMode: 'bypassPermissions',
+    ceiling: { asks: 'always', reach: 'edit' },
+    chosen: 'default',
+  },
+  {
+    persistent: true,
+    scenario: 'warm after a refused mode change',
+    sessionMode: 'default',
+    ceiling: undefined,
+    chosen: 'default',
+  },
+] as const)(
+  'publishes the actual Claude query through the principal port ($scenario)',
+  async ({ persistent, scenario, sessionMode, ceiling, chosen }) => {
+    optIn.persistentSession = persistent;
+    const dir = fs.realpathSync(dorkHome);
+    const id = randomUUID();
+    cli.nextSdkSessionId = id;
+    registerTestHomes([dir]);
+    runtime.setMeshCore({
+      getByPath: () => ({ id: 'test-agent', name: 'Test agent' }),
+      listWithPaths: () => [],
+      updateLastSeen: () => undefined,
+    });
+    const principals = new ConnectorRuntimePrincipalService({
+      db: settingsDb!,
+      authority: {
+        authorizeTurn: async () => ({
+          owner: { kind: 'local_install', installationId: 'claude-fixture' },
+          agentId: 'test-agent',
+        }),
+        revalidateTurn: async () => true,
+      },
+    });
+    await principals.initializeBoot();
+    runtime.setConnectorRuntimeTools({
+      principals,
+      listenerUrl: 'http://127.0.0.1:1/mcp',
+      agentToolsUrl: 'http://127.0.0.1:1/agent-mcp',
+      isConnectorCapabilityId: () => false,
+    });
+    let session: AgentSession | undefined;
+    runtime.setMcpServerFactory((current) => {
+      session = current;
+      return {};
+    });
+    mockedQuery.mockImplementation((args) => {
+      const process = cli.query(args as Parameters<typeof cli.query>[0]);
+      process.goSilent();
+      return process as unknown as ReturnType<typeof query>;
+    });
+    runtime.ensureSession(id, { cwd: dir, permissionMode: sessionMode });
+    const received: StreamEvent[] = [];
+    const feeds: Promise<void>[] = [];
+    let feedError: unknown;
+    async function openTurn(
+      number: number,
+      options: Pick<MessageOpts, 'levelPermissionMode' | 'permissionCeiling'>
+    ) {
+      const feed = (async () => {
+        for await (const event of runtime.sendMessage(id, 'hello', {
+          cwd: dir,
+          ...options,
+        }))
+          received.push(event);
+      })();
+      feeds.push(feed);
+      void feed.catch((error: unknown) => {
+        feedError = error;
+      });
+      await vi.waitFor(() => {
+        if (feedError) throw feedError;
+        expect(session?.activeQuery).toBeDefined();
+        expect(cli.latest?.received).toHaveLength(number);
+      });
+      const principal = await session!.connectorTurn!.resolvePrincipal();
+      return { caller: await principals.resolveToolTurn(principal), feed };
+    }
+    try {
+      const first = await openTurn(1, { permissionCeiling: ceiling });
+      const process = cli.latest!;
+      expect(process.options.permissionMode).toBe('default');
+      const facts = first.caller.read();
+      expect(facts).toMatchObject({
+        effectiveMode: process.options.permissionMode,
+        chosenMode: chosen,
+        neverAsks: false,
+      });
+      const note: StreamEvent = {
+        type: 'system_status',
+        data: { message: 'Scripted queue delivery' },
+      };
+      facts.session.eventQueue.push(note);
+      facts.session.eventQueueNotify?.();
+      await vi.waitFor(() => expect(received).toContain(note));
+      const originalNotify = facts.session.eventQueueNotify;
+      expect(originalNotify).toBeTypeOf('function');
+      const refusedFirst = scenario === 'warm after a refused mode change';
+      if (refusedFirst) {
+        const setter = vi.spyOn(process, 'setPermissionMode');
+        setter.mockRejectedValueOnce(new Error('Scripted mode refusal'));
+        await runtime.updateSession(id, { permissionMode: 'plan' });
+        expect(setter).toHaveBeenCalledWith('plan');
+        expect(session!.permissionMode).toBe('plan');
+        expect(first.caller.read()).toMatchObject({
+          effectiveMode: 'default',
+          chosenMode: 'default',
+        });
+      }
+      const applied = refusedFirst ? 'acceptEdits' : 'plan';
+      await runtime.updateSession(id, { permissionMode: applied });
+      expect(process.liveSets).toContain(`setPermissionMode:${applied}`);
+      expect(first.caller.read()).toMatchObject({ effectiveMode: applied, chosenMode: applied });
+      process.answer(process.inbox.at(-1)?.uuid);
+      await first.feed;
+      if (sessionMode === 'auto') {
+        expect(received).toContainEqual({
+          type: 'system_status',
+          data: { message: AUTO_DOWNGRADE_STATUS.unconfirmed },
+        });
+      }
+      expect(facts.signal.aborted).toBe(true);
+      if (persistent) {
+        // A normal next turn moves back to Default. After the refusal and retry the
+        // next turn requests the confirmed mode again, so it needs no additional setter.
+        const nextMode = refusedFirst ? applied : 'default';
+        const second = await openTurn(2, { levelPermissionMode: nextMode });
+        expect(cli.latest).toBe(process);
+        expect(process.liveSets.filter((x) => x.startsWith('setPermissionMode:'))).toEqual(
+          refusedFirst
+            ? ['setPermissionMode:acceptEdits']
+            : ['setPermissionMode:plan', 'setPermissionMode:default']
+        );
+        const next = second.caller.read();
+        expect(next).toMatchObject({ effectiveMode: nextMode, chosenMode: nextMode });
+        expect(next.signal).not.toBe(facts.signal);
+        const late: StreamEvent = {
+          type: 'system_status',
+          data: { message: 'Late first-turn note' },
+        };
+        const current: StreamEvent = {
+          type: 'system_status',
+          data: { message: 'Second-turn note' },
+        };
+        facts.session.eventQueue.push(late);
+        originalNotify?.();
+        next.session.eventQueue.push(current);
+        next.session.eventQueueNotify?.();
+        await vi.waitFor(() => expect(received).toContain(current));
+        expect(facts.session.eventQueue).not.toContain(late);
+        process.answer(process.received.at(-1));
+        await second.feed;
+        expect(received).not.toContain(late);
+        expect(next.signal.aborted).toBe(true);
+      }
+    } finally {
+      for (const process of cli.processes) process.endStream();
+      await Promise.allSettled(feeds);
+      clearTestHomes();
+    }
+  }
+);

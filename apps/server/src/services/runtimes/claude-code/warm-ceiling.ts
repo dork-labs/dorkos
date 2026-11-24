@@ -55,7 +55,7 @@ export function decideCeilingedReuse(
   pump: QuietnessSource,
   live: LaunchFingerprint | undefined,
   wanted: LaunchFingerprint,
-  options?: LiveChangeOptions
+  options?: LiveChangeOptions & { toolModeUncertain?: boolean }
 ): ProcessReuse {
   // A ceilinged turn never trusts the recorded mode: a person's live change
   // (`updateSession`) moves the process without moving its fingerprint, so the
@@ -65,6 +65,14 @@ export function decideCeilingedReuse(
       ? { ...live, live: { ...live.live, permissionMode: undefined } }
       : live;
   const reuse = decideProcessReuse(compared, wanted, options);
+  // A timed-out/overlapping native control may apply late. Only a fresh query
+  // resolves that uncertainty; preserve the caller's existing restart/hold door.
+  if (options?.toolModeUncertain && reuse.action !== 'replace')
+    return {
+      action: 'replace',
+      reason: 'permission changes need a restart',
+      changed: ['permissionMode'],
+    };
   const carried = session.backgroundPermissionCeiling;
   const wantedMode = wanted.live.permissionMode;
   if (reuse.action !== 'adjust' || carried === undefined || live === undefined) return reuse;

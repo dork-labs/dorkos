@@ -1,9 +1,10 @@
 /** Existing bounded live mode control, after the settings choice was persisted/published. */
-import type { SessionSettings } from '@dorkos/shared/types';
-import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
+import type { PermissionMode, SessionSettings } from '@dorkos/shared/types';
+import { actsWithoutAsking, tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import type { AgentSession } from '../../agent-types.js';
 import { CLAUDE_CODE_CAPABILITIES, narrowToClaudeCodeMode } from '../../runtime-constants.js';
-import { gatePermissionMode } from '../../turn-permission.js';
+import { observeQueryModeChange } from '../../tool-turn/query-mode.js';
+import { gatePermissionMode, isPersonOnlyMode } from '../../turn-permission.js';
 import { logger } from '../../../../../lib/logger.js';
 import {
   awaitControlAck,
@@ -17,8 +18,9 @@ const CLAUDE_MODES = CLAUDE_CODE_CAPABILITIES.permissionModes.values ?? [];
 /** Start the existing control and return its exact ACK promise without an async wrapper. */
 export function startLivePermissionModeUpdate(
   session: AgentSession,
-  query: NonNullable<AgentSession['activeQuery']>
-): Promise<ControlAck> {
+  query: NonNullable<AgentSession['activeQuery']>,
+  permissionMode: string
+) {
   // Bounded (DOR-1301): on a session winding down, DorkOS has already
   // ended this query's stdin, so the SDK drops the write in silence and
   // returns a promise nothing will settle. Awaiting it hung the PATCH —
@@ -31,10 +33,12 @@ export function startLivePermissionModeUpdate(
   // the running turn and its background work carry (`warm-ceiling.ts`): a
   // person loosening this chat mid-turn never loosens a stranger's turn.
   const liveMode = narrowToClaudeCodeMode(gatePermissionMode(session), 'default');
-  return awaitControlAck(
+  const settle = observeQueryModeChange(query, permissionMode, liveMode);
+  const ack = awaitControlAck(
     () => query.setPermissionMode(liveMode as Parameters<typeof query.setPermissionMode>[0]),
     PERMISSION_MODE_ACK_TIMEOUT_MS
   );
+  return { ack, settle };
 }
 
 /** Compute the existing pending notice synchronously at the owner's ACK resumption. */
@@ -76,4 +80,26 @@ export function finishLivePermissionModeUpdate(
       permissionModePendingUntilNextTurn || tightensDeclaredMode(CLAUDE_MODES, prevMode, mode);
   }
   return permissionModePendingUntilNextTurn;
+}
+
+/**
+ * Whether a suggested mode is one DorkOS may make DURABLE off a single click on
+ * an approval card.
+ *
+ * Two questions, both asked of the runtime's own declaration rather than of the
+ * id's name. Does claude-code declare this mode at all — persisting an
+ * undeclared id would make the settings overlay display a posture the runtime
+ * never adopted (`PATCH /api/sessions/:id`, same check). And does it act
+ * without asking (`actsWithoutAsking`): a card that says "Always Allow" over one
+ * Write is not a person choosing a session that never asks again; that is a
+ * choice made on the dial.
+ *
+ * @param mode - The mode an accepted suggestion asks for.
+ */
+export function isAdoptableMode(mode: PermissionMode): boolean {
+  // Nor "Never ask": a click that allowed one call is not a person choosing a
+  // chat that refuses everything it would ask about (DOR-2838).
+  if (isPersonOnlyMode(mode)) return false;
+  const descriptor = CLAUDE_CODE_CAPABILITIES.permissionModes.values.find((d) => d.id === mode);
+  return descriptor !== undefined && !actsWithoutAsking(descriptor);
 }

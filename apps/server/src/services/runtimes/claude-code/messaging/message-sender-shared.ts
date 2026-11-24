@@ -31,6 +31,7 @@ import type { AdapterManager } from '../../../relay/adapter-manager.js';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
 import type { SessionAttachmentStore } from '../../../session/attachments/index.js';
+import type { ClaudeToolLaunchSettings } from '../tool-turn/live-tool-turn.js';
 import type { AgentSession } from '../agent-types.js';
 import type { LaunchParams } from '../sessions/launch-fingerprint.js';
 import type { ClaudeAgentSdkPlugin } from './plugin-activation.js';
@@ -124,6 +125,8 @@ export type McpServerFactory = (
 
 /** Options bundle for executeSdkQuery, grouping runtime dependencies. */
 export interface MessageSenderOpts {
+  /** Logical owner selected before this send's asynchronous setup. */
+  toolTurnOwner?: AgentSession['connectorTurn'];
   /** Exact injected server owner; absence is unknown, never ordinary authority. */
   requiredLaunches?: import('./launch/required-launch.js').RequiredLaunchOwner;
   cwd: string;
@@ -348,6 +351,8 @@ export function toMcpAppConnection(
 
 /** What one launch resolution produced, for the caller to boot or compare with. */
 export interface ResolvedLaunch {
+  /** Choice and effective mode at the point the launch options were set. */
+  toolTurnSettings?: ClaudeToolLaunchSettings;
   /** Exactly the options to hand `query({ options })`. */
   sdkOptions: Options;
   /**
