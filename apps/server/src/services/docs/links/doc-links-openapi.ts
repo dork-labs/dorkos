@@ -12,14 +12,9 @@ import {
   DocResolveQuerySchema,
   DocResolveSchema,
 } from '@dorkos/shared/doc-links';
-import { ErrorResponseSchema } from '@dorkos/shared/schemas';
+import { problemResponse } from '../../core/openapi/problem-openapi.js';
 import { DOC_INDEX_LIMITS } from './doc-index.js';
 import { DOC_RESOLVE_LIMITS } from './doc-resolve.js';
-
-const error = (description: string) => ({
-  description,
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-});
 
 /**
  * Register `GET /api/documents/index` and `GET /api/documents/resolve` on the OpenAPI registry.
@@ -49,10 +44,12 @@ export function registerDocLinksOpenApi(registry: OpenAPIRegistry): void {
         description: 'The docs in the space',
         content: { 'application/json': { schema: DocIndexSchema } },
       },
-      400: error('`cwd` is missing, not absolute, or not an existing folder'),
-      403: error('`cwd` is outside the directory boundary'),
-      404: error('The `docs.enabled` experiment is off'),
-      500: error('The docs could not be listed'),
+      400: problemResponse(
+        '`invalid_request`: `cwd` is missing, not absolute, or not an existing folder'
+      ),
+      403: problemResponse('`outside_boundary`: `cwd` is outside the directory boundary'),
+      404: problemResponse('`not_found`: the `docs.enabled` experiment is off'),
+      500: problemResponse('`internal_error`: the docs could not be listed'),
     },
   });
 
@@ -75,10 +72,12 @@ export function registerDocLinksOpenApi(registry: OpenAPIRegistry): void {
         description: 'The doc, or null, and whether the whole space was looked through',
         content: { 'application/json': { schema: DocResolveSchema } },
       },
-      400: error('`cwd` or `target` is missing, or `cwd` is not an existing folder'),
-      403: error('`cwd` is outside the directory boundary'),
-      404: error('The `docs.enabled` experiment is off'),
-      500: error('The docs could not be looked through'),
+      400: problemResponse(
+        '`invalid_request`: `cwd` or `target` is missing, or `cwd` is not an existing folder'
+      ),
+      403: problemResponse('`outside_boundary`: `cwd` is outside the directory boundary'),
+      404: problemResponse('`not_found`: the `docs.enabled` experiment is off'),
+      500: problemResponse('`internal_error`: the docs could not be looked through'),
     },
   });
 }

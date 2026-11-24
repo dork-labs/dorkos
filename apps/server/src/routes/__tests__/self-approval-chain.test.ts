@@ -203,7 +203,7 @@ describe('an agent holding the API key cannot approve its own work', () => {
         .send({});
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('operator_cookie_required');
+      expect(res.body.code).toBe('person_only');
       // The subject, not the status: nobody answered this, so it is still waiting.
       expect(stillPending(approvalId), 'the approval must still be waiting on a person').toBe(true);
       // Step 3 of the chain, which is what the agent was actually after: the retry
@@ -226,7 +226,7 @@ describe('an agent holding the API key cannot approve its own work', () => {
         .send({ reason: 'nothing to see here' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('operator_cookie_required');
+      expect(res.body.code).toBe('person_only');
       expect(stillPending(approvalId), 'a denial nobody made must not stick').toBe(true);
     });
 
@@ -241,9 +241,9 @@ describe('an agent holding the API key cannot approve its own work', () => {
 
       // An agent relays this to a person, so it has to read as an instruction.
       // Naming the header would read as a hint about how to get around the bar.
-      expect(res.body.error).toContain('inside DorkOS');
-      expect(res.body.error.toLowerCase()).not.toContain('header');
-      expect(res.body.error.toLowerCase()).not.toContain('x-dorkos');
+      expect(res.body.detail).toContain('inside DorkOS');
+      expect(res.body.detail.toLowerCase()).not.toContain('header');
+      expect(res.body.detail.toLowerCase()).not.toContain('x-dorkos');
     });
 
     it('still refuses the key when the agent also presents its identity', async () => {
@@ -258,7 +258,7 @@ describe('an agent holding the API key cannot approve its own work', () => {
         .send({});
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+      expect(res.body.code).toBe('person_only');
       expect(stillPending(approvalId)).toBe(true);
     });
 
@@ -330,7 +330,7 @@ describe('an agent holding the API key cannot approve its own work', () => {
         .send({});
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+      expect(res.body.code).toBe('person_only');
       expect(stillPending(approvalId)).toBe(true);
     });
   });

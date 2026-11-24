@@ -66,11 +66,6 @@ const JSON_TYPE = { 'content-type': /^application\/json\b/ };
 const NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
 });
-const OUTSIDE = {
-  error: 'Access denied: path outside directory boundary',
-  code: 'OUTSIDE_BOUNDARY',
-};
-const NULL_BYTE = { error: 'Invalid path: null bytes not allowed', code: 'NULL_BYTE' };
 const GIT_OUTSIDE = problemBody('outside_boundary', {
   detail: 'Pick a folder inside the ones DorkOS may use.',
 });
@@ -916,27 +911,33 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
   {
     name: 'GET /api/harness/status refuses a folder outside the boundary',
     path: '/api/harness/status?projectPath=/etc',
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/harness/status refuses a walk out of the boundary',
     path: `/api/harness/status?projectPath=${q(`${REPO_ROOT}/../..`)}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/harness/status refuses a NUL byte',
     path: `/api/harness/status?projectPath=${q(`${REPO_ROOT}\0`)}`,
-    expect: { status: 400, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'GET /api/harness/status refuses a file',
     path: `/api/harness/status?projectPath=${q(path.join(REPO_ROOT, 'package.json'))}`,
-    expect: { status: 400, body: { error: 'Not a directory' } },
+    expect: {
+      status: 400,
+      body: problemBody('not_a_folder', { detail: 'Pick a folder, not a file.' }),
+    },
   },
   {
     name: 'GET /api/harness/status answers 404 for a folder that does not exist',
     path: `/api/harness/status?projectPath=${q(path.join(REPO_ROOT, 'no-such-folder'))}`,
-    expect: { status: 404, body: { error: 'Project directory not found' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'That folder doesn’t exist.' }),
+    },
   },
   {
     name: 'POST /api/harness/sync refuses a folder with nothing set up',
@@ -945,11 +946,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { projectPath: NO_MANIFEST },
     expect: {
       status: 409,
-      body: {
-        error: 'DorkOS isn’t sharing agent files for this folder yet',
-        code: 'harness_not_set_up',
-        message: 'Run `dorkos harness sync --fix` in this folder to set it up.',
-      },
+      body: problemBody('conflict', {
+        detail: 'Run `dorkos harness sync --fix` in this folder to set it up.',
+      }),
     },
   },
   {
@@ -969,7 +968,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/harness/sync',
     body: { projectPath: '/etc' },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'POST /api/harness/sync refuses an agent before reading the body',
@@ -978,13 +977,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: AGENT,
     expect: {
       status: 403,
-      body: {
-        error: 'Only a person can sync agent files',
-        code: 'operator_only_harness_sync',
-        message:
-          'This writes into your project and removes files DorkOS put there, so it is a ' +
-          'decision a person makes in DorkOS rather than something an agent does on your behalf.',
-      },
+      body: problemBody('person_only', {
+        detail: 'Only a person can sync agent files, in DorkOS.',
+      }),
     },
   },
   {
@@ -992,14 +987,14 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/harness/adopt',
     body: { projectPath: NO_MANIFEST, name: 'some-skill' },
-    expect: { status: 409, schema: z.object({ code: z.literal('harness_not_set_up') }).loose() },
+    expect: { status: 409, schema: z.object({ code: z.literal('conflict') }).loose() },
   },
   {
     name: 'POST /api/harness/adopt refuses a NUL byte',
     method: 'POST',
     path: '/api/harness/adopt',
     body: { projectPath: `${REPO_ROOT}\0`, name: 'some-skill' },
-    expect: { status: 400, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'POST /api/harness/adopt refuses an agent',
@@ -1009,7 +1004,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { projectPath: NO_MANIFEST, name: 'some-skill' },
     expect: {
       status: 403,
-      schema: z.object({ code: z.literal('operator_only_harness_adopt') }).loose(),
+      schema: z.object({ code: z.literal('person_only') }).loose(),
     },
   },
   {

@@ -17,6 +17,21 @@ import {
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import type { PermissionWriter } from './permission-history.js';
 
+/** Why the permission service refused a write or a read. */
+export type PermissionErrorCode =
+  | 'UNKNOWN_AREA'
+  | 'INVALID_STATE'
+  | 'FLOOR_NEVER_ALLOWED'
+  | 'UNKNOWN_ACTION'
+  | 'ACTION_HAS_NO_AREA'
+  | 'ALWAYS_ASKS'
+  | 'INVALID_STOP'
+  | 'UNKNOWN_AGENT'
+  | 'UNKNOWN_EVENT'
+  | 'NOT_UNDOABLE'
+  | 'PERMISSIONS_CHANGED'
+  | 'UNDO_CONFLICT';
+
 /** A permission write the service refused, with the HTTP status that fits it. */
 export class PermissionError extends Error {
   /** Marks this class across module instances. */
@@ -31,7 +46,7 @@ export class PermissionError extends Error {
    * @param details - Extra fields the route adds to the body (an Undo's conflicts).
    */
   constructor(
-    readonly code: string,
+    readonly code: PermissionErrorCode,
     message: string,
     readonly status: number = 400,
     readonly details?: Record<string, unknown>

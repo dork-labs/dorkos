@@ -395,7 +395,7 @@ describe('Discovery SSE Integration', () => {
       const res = await request(app).post('/api/discovery/scan').send({ root: '/root/forbidden' });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toBe('Root path outside directory boundary');
+      expect(res.body.code).toBe('outside_boundary');
     });
 
     it('does not call scanner when boundary check fails', async () => {
@@ -495,7 +495,8 @@ describe('Discovery SSE Integration', () => {
 
       const errorEvent = parsed.find((e) => e.type === 'error');
       expect(errorEvent).toBeDefined();
-      expect(errorEvent!.data).toEqual({ error: 'Permission denied' });
+      // A fixed sentence: the error's own text stays in the log.
+      expect(errorEvent!.data).toEqual({ error: 'The scan stopped early. Try again.' });
     });
 
     it('emits a generic error message for non-Error exceptions', async () => {
@@ -509,7 +510,7 @@ describe('Discovery SSE Integration', () => {
 
       const errorEvent = parsed.find((e) => e.type === 'error');
       expect(errorEvent).toBeDefined();
-      expect(errorEvent!.data).toEqual({ error: 'Scan failed' });
+      expect(errorEvent!.data).toEqual({ error: 'The scan stopped early. Try again.' });
     });
 
     it('still returns 200 status for scanner errors (error is in SSE stream)', async () => {

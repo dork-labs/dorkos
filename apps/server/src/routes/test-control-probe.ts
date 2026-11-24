@@ -1,13 +1,15 @@
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import type { Context } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
+import { logger } from '../lib/logger.js';
 
 /**
  * Run a connector probe for as long as its caller waits, and answer with what
  * it returned. A caller that leaves aborts the probe, and gets no answer.
  *
  * @param c - The request.
- * @param failure - The message for a probe that failed without a message.
+ * @param failure - What a failed probe answers; its cause goes to the log.
  * @param run - The probe, handed the signal that says the caller left.
  */
 export async function holdWhileTheCallerWaits(
@@ -30,7 +32,8 @@ export async function holdWhileTheCallerWaits(
   } catch (error) {
     if (controller.signal.aborted)
       return new Response(null, { headers: RESPONSE_ALREADY_SENT.headers });
-    return c.json({ error: error instanceof Error ? error.message : failure }, 500);
+    logger.error('[TestControl] probe failed', { error });
+    return problem(c, 'internal_error', { detail: failure });
   } finally {
     incoming.off('aborted', abort);
     outgoing.off('close', abortClosedResponse);

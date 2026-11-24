@@ -101,8 +101,8 @@ describe('PATCH /api/mesh/agents/:id', () => {
       const res = await patch({ [field]: value }, 'agent-token-abc');
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('NEEDS_APPROVAL');
-      expect(res.body.error).toContain('update_agent_execution');
+      expect(res.body.code).toBe('needs_approval');
+      expect(res.body.detail).toContain('update_agent_execution');
       expect(meshCore.update).not.toHaveBeenCalled();
     }
   );
@@ -225,7 +225,7 @@ describe('PATCH /api/mesh/agents/:id', () => {
     const res = await patch({ model: 'opus' });
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('NEEDS_APPROVAL');
+    expect(res.body.code).toBe('needs_approval');
     expect(meshCore.update).not.toHaveBeenCalled();
   });
 

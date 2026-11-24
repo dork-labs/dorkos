@@ -135,12 +135,8 @@ describe('POST /api/harness/adopt', () => {
     expect(refusedAdopt.status).toBe(refusedSync.status);
     expect(refusedAdopt.status).toBe(403);
     expect(Object.keys(refusedAdopt.body).sort()).toEqual(Object.keys(refusedSync.body).sort());
-    expect(refusedAdopt.body.code).toBe('operator_only_harness_adopt');
-    expect(refusedAdopt.body.error).toBe('Only a person can move a skill');
-    expect(refusedAdopt.body.message).toBe(
-      'This moves a file inside your project, so it is a decision a person makes in DorkOS ' +
-        'rather than something an agent does on your behalf.'
-    );
+    expect(refusedAdopt.body.code).toBe('person_only');
+    expect(refusedAdopt.body.detail).toBe('Only a person can move a skill, in DorkOS.');
 
     // Ahead of validation, so a caller that may not do this at all gets one
     // answer whatever it sent rather than a schema it can probe.
@@ -166,7 +162,7 @@ describe('POST /api/harness/adopt', () => {
 
     const noManifest = await adoptSkill(bare, 'release-notes');
     expect(noManifest.status).toBe(409);
-    expect(noManifest.body.code).toBe('harness_not_set_up');
+    expect(noManifest.body.code).toBe('conflict');
     expect(diffSnapshots(before, snapshotTree(bare))).toEqual(NO_CHANGES);
 
     const relative = await adoptSkill('some/relative/project', 'release-notes');

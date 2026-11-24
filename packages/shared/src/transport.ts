@@ -2677,7 +2677,7 @@ export interface Transport extends TransportSlices {
 
   /**
    * Undo one change from the permission history, as a new change. Rejects with
-   * `code: 'UNDO_CONFLICT'` (409, the conflicts on the error's `body`) when a
+   * `code: 'precondition_failed'` (412, the conflicts on the error's `body`) when a
    * key changed since; `force` sets it back anyway. Only a person can call this.
    *
    * @param eventId - The `permission.changed` event, from the history.

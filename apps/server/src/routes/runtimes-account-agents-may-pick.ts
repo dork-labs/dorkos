@@ -18,11 +18,9 @@
  * @module routes/runtimes-account-agents-may-pick
  */
 import type { Hono } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { z } from 'zod';
 import { readClaudeAccountSettings } from '@dorkos/shared/config-schema';
 import { AgentsMayPickSchema } from '@dorkos/shared/project-schemas';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { logger } from '../lib/logger.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
@@ -62,30 +60,27 @@ export function mountAgentsMayPickRoute(
   router.put('/claude-code/accounts/:id/agents-may-pick', async (c) => {
     const caller = honoRequestFacts(c);
     const refusal = assessPerson(caller, AGENTS_MAY_PICK_BAR);
-    if (refusal) return c.json(refusal.body, refusal.status as ContentfulStatusCode);
+    if (refusal) return sendProblem(c, refusal.body);
     const parsed = AgentsMayPickSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) {
-      return c.json(
-        { error: 'Send `agentsMayPick` as true or false.', details: z.treeifyError(parsed.error) },
-        400
-      );
+      return validationProblem(c, parsed.error, {
+        detail: 'Send `agentsMayPick` as true or false.',
+      });
     }
     const accountId = c.req.param('id');
-    const unknownAccount = {
-      error: `There is no Claude account named "${accountId}".`,
-      code: 'unknown_account',
-    };
-    if (storedFlag(accountId) === 'gone') return c.json(unknownAccount, 404);
+    const unknownAccount = () =>
+      problem(c, 'not_found', { detail: 'No Claude account has that name.' });
+    if (storedFlag(accountId) === 'gone') return unknownAccount();
     const { agentsMayPick } = parsed.data;
     const run = async (who: RequestFacts, free = false) => {
       // Read again: a confirmation can come after the flag moved.
       const prior = storedFlag(accountId);
-      if (prior === 'gone') return c.json(unknownAccount, 404);
+      if (prior === 'gone') return unknownAccount();
       // Opening was free only while it was already open (Security S5 on DOR-4355 M3).
       if (free && agentsMayPick && !prior) return accountRulesChanged(c);
       const stored = configManager.get('runtimes');
       if (!writeAgentsMayPick(configManager, accountId, agentsMayPick)) {
-        return c.json(unknownAccount, 404);
+        return unknownAccount();
       }
       logConfigWrite(
         'the agents-may-pick route',
@@ -124,7 +119,7 @@ export function mountAgentsMayPickRoute(
       logger.error('[Runtimes] could not save an account agents-may-pick flag', {
         err: String(err),
       });
-      return c.json({ error: AGENTS_MAY_PICK_FAILED }, 500);
+      return problem(c, 'internal_error', { detail: AGENTS_MAY_PICK_FAILED });
     }
   });
 }

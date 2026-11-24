@@ -46,7 +46,15 @@ import { getRemoteConnectionStore } from '../services/communities/remote/state.j
 import type { AgentMcpServerService } from '../services/mesh/agent-mcp-server-service.js';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import {
+  problem,
+  problemBody,
+  readJsonBody,
+  sendProblem,
+  validationProblem,
+} from '@dorkos/http-kit';
+import type { Problem } from '@dorkos/shared/problem';
+import { logger } from '../lib/logger.js';
 import { readQuery } from '../http/request-query.js';
 
 /** The slice of the agent registry the seeding routes use. */
@@ -141,11 +149,12 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   /** Test-only owner-qualified replay barrier. Production never mounts these routes. */
   router.get('/community-subscription', (c) => {
     const parsed = remoteCommunitySubscriptionQuerySchema.safeParse(readQuery(c));
-    if (!parsed.success) return c.json({ error: 'A community ref and roomId are required.' }, 400);
-    if (!remoteCommunitySubscriptionProbe)
-      return c.json({ error: 'Community subscription probe is unavailable.' }, 503);
+    if (!parsed.success) return validationProblem(c, parsed.error);
+    if (!remoteCommunitySubscriptionProbe) {
+      return problem(c, 'temporarily_unavailable', { detail: 'The subscription probe is off.' });
+    }
     const value = remoteCommunitySubscriptionProbe(parsed.data.ref, parsed.data.roomId);
-    if (!value) return c.json({ error: 'Community room subscription is unavailable.' }, 404);
+    if (!value) return problem(c, 'not_found', { detail: 'No subscription for that room.' });
     return c.json(value);
   });
 
@@ -198,7 +207,8 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
         scenarioStore.setDefault(name);
       }
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : 'Unknown error' }, 400);
+      logger.warn('[TestControl] scenario refused', { err });
+      return problem(c, 'invalid_request', { detail: 'That scenario couldn’t be set.' });
     }
     return c.json({ ok: true, scenario: name });
   });
@@ -236,7 +246,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
     const { sessionId, canonicalId, runtime } = result.data;
     // A draft is not bound yet; declare on the runtime its first send will choose.
     const resolved = await resolveTestModeRuntime(sessionId, runtime);
-    if ('error' in resolved) return c.json({ error: resolved.error }, resolved.status);
+    if ('refused' in resolved) return sendProblem(c, resolved.refused);
     resolved.runtime.declareCanonicalSessionId(sessionId, canonicalId);
     return c.json({ ok: true, sessionId, canonicalId });
   });
@@ -341,31 +351,31 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
    * the env-var gating there.
    *
    * @param sessionId - The session the caller named.
-   * @returns The owning runtime, or the status and message to answer with.
+   * @returns The owning runtime, or the problem to answer with. A session on a
+   *   real runtime is refused: these controls speak only for test-mode's
+   *   scripted process, and a real runtime's session is the operator's own.
    */
   async function resolveTestModeRuntime(
     sessionId: string,
     runtimeType?: string
-  ): Promise<{ runtime: TestModeRuntime } | { status: 400 | 500; error: string }> {
+  ): Promise<{ runtime: TestModeRuntime } | { refused: Problem }> {
     let runtime: AgentRuntime;
     try {
       runtime = runtimeType
         ? runtimeRegistry.get(runtimeType)
         : await runtimeRegistry.resolveForSession(sessionId);
     } catch (err) {
+      logger.error('[TestControl] could not resolve the session runtime', { err, sessionId });
       return {
-        status: 500,
-        error: err instanceof Error ? err.message : 'could not resolve the session runtime',
+        refused: problemBody('internal_error', { detail: 'Couldn’t find that chat’s program.' }),
       };
     }
     const { TestModeRuntime } = await import('../services/runtimes/test-mode/test-mode-runtime.js');
     if (!(runtime instanceof TestModeRuntime)) {
       return {
-        status: 400,
-        error:
-          `Session ${sessionId} is bound to '${runtime.type}', which is not a test-mode runtime. ` +
-          `The held-process controls only speak for test-mode's scripted process; a real runtime's ` +
-          `persistent session is the operator's own setting.`,
+        refused: problemBody('invalid_request', {
+          detail: 'That chat isn’t on the test runtime, so these controls don’t apply.',
+        }),
       };
     }
     return { runtime };
@@ -406,7 +416,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
     }
     const { sessionId, enabled } = result.data;
     const runtime = await resolveTestModeRuntime(sessionId);
-    if ('error' in runtime) return c.json({ error: runtime.error }, runtime.status);
+    if ('refused' in runtime) return sendProblem(c, runtime.refused);
     heldProcesses.setEnabled(sessionId, enabled);
     return c.json({ ok: true, sessionId, enabled });
   });
@@ -431,7 +441,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
     }
     const { sessionId } = result.data;
     const resolved = await resolveTestModeRuntime(sessionId);
-    if ('error' in resolved) return c.json({ error: resolved.error }, resolved.status);
+    if ('refused' in resolved) return sendProblem(c, resolved.refused);
     const { runtime } = resolved;
     return c.json({
       enabled: heldProcesses.isEnabled(sessionId),
@@ -458,7 +468,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
     }
     const { sessionId } = result.data;
     const resolved = await resolveTestModeRuntime(sessionId);
-    if ('error' in resolved) return c.json({ error: resolved.error }, resolved.status);
+    if ('refused' in resolved) return sendProblem(c, resolved.refused);
     await resolved.runtime.reapSession?.(sessionId);
     return c.json({ ok: true });
   });
@@ -499,11 +509,12 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
     }
     const { roomId, agentPath, text, message } = result.data;
     const worktrees = tryGetRoomWorktreeManager();
-    if (!worktrees) return c.json({ error: 'Room repos are not wired here' }, 409);
+    if (!worktrees)
+      return problem(c, 'room_repos_disabled', { detail: 'Room repos aren’t wired here.' });
     try {
       const agentName = getRoomAuthors().agentNameOf(agentPath);
       if (agentName === null) {
-        return c.json({ error: `No agent is registered at ${agentPath}` }, 404);
+        return problem(c, 'not_found', { detail: 'No agent is registered at that path.' });
       }
       const handle = await worktrees.ensureWorktree(roomId, agentPath, agentName);
       const target = path.join(handle.path, result.data.path);
@@ -522,7 +533,8 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
       );
       return c.json({ ok: true, commit, worktree: handle.path, slug: handle.slug });
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+      logger.error('[TestControl] room-worktree-commit failed', { err });
+      return problem(c, 'internal_error', { detail: 'Couldn’t commit in that copy.' });
     }
   });
 
@@ -579,20 +591,15 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
 
     const agent = deps.meshCore?.()?.getByPath(agentPath);
     if (!agent) {
-      return c.json(
-        {
-          error:
-            `No agent is registered at ${agentPath}, so no identity can be minted for it. ` +
-            `Register it first — a token for an unregistered path would be a forgery, ` +
-            `not a test fixture.`,
-        },
-        404
-      );
+      // A token for an unregistered path would be a forgery, not a test fixture.
+      return problem(c, 'not_found', { detail: 'Register the agent first, then mint its token.' });
     }
 
     const service = getAgentIdentityService();
     if (!service) {
-      return c.json({ error: 'The agent identity service is not running on this server.' }, 503);
+      return problem(c, 'temporarily_unavailable', {
+        detail: 'The agent identity service isn’t running here.',
+      });
     }
 
     const token = await service.mint({
@@ -627,7 +634,8 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
         if (runtime instanceof TestModeRuntime) runtime.resetTrackedSessions();
       }
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : 'Reset failed' }, 500);
+      logger.error('[TestControl] reset failed', { err });
+      return problem(c, 'internal_error', { detail: 'The test reset failed.' });
     }
     return c.json({ ok: true });
   });
@@ -829,16 +837,11 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
       return validationProblem(c, input.error);
     }
     if (runtimeRegistry.has(FIXTURE_AGENT_RUNTIME)) {
-      return c.json(
-        {
-          error:
-            `seed-agent: '${FIXTURE_AGENT_RUNTIME}' is registered on this server, so sessions ` +
-            `seeded from this agent would bind to it instead of the server default ` +
-            `('${runtimeRegistry.getDefaultType()}'). Point FIXTURE_AGENT_RUNTIME at a runtime ` +
-            `this server does not register.`,
-        },
-        500
-      );
+      // Sessions seeded from this agent would bind to that runtime instead of the
+      // server default: point FIXTURE_AGENT_RUNTIME at one this server does not register.
+      return problem(c, 'internal_error', {
+        detail: 'seed-agent: the fixture runtime is registered here. Pick another one.',
+      });
     }
     const { slot, instance } = input.data;
     const agentDir = e2eAgentDir(slot, instance);
@@ -863,7 +866,8 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
     };
     await writeManifest(agentDir, manifest);
 
-    // Every refusal below is a 500 rather than a quiet `{ ok: true }`. A seed
+    // Every refusal below is a 500 rather than a quiet `{ ok: true }`, and
+    // the server log carries the cause, since a detail never does. A seed
     // route that half-worked is what this ticket was: the caller gets a
     // directory, believes it has an agent, and fails ten assertions later in a
     // spec about the sidebar. Say it here, where the cause is.
@@ -876,14 +880,10 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
     // and put the hole straight back.
     const meshCore = deps.meshCore?.();
     if (!meshCore) {
-      return c.json(
-        {
-          error:
-            'seed-agent: this server has no meshCore, so the seeded agent cannot be registered. ' +
-            'Sessions in it would be invisible to GET /api/sessions/recent.',
-        },
-        500
-      );
+      // Sessions in an unregistered agent would be invisible to GET /api/sessions/recent.
+      return problem(c, 'internal_error', {
+        detail: 'seed-agent: this server has no mesh, so the agent can’t be registered.',
+      });
     }
     // The catch is what keeps a thrown registration legible. A rejected handler
     // would reach the chain's generic error handler, which answers 500 with no
@@ -893,28 +893,25 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
     try {
       outcome = await meshCore.syncFromDisk(agentDir);
     } catch (err) {
-      return c.json(
-        {
-          error:
-            `seed-agent: wrote the manifest at ${agentDir} but mesh registration threw: ` +
-            `${err instanceof Error ? err.message : String(err)}`,
-        },
-        500
-      );
+      logger.error('[TestControl] seed-agent: mesh registration threw', { err, agentDir });
+      return problem(c, 'internal_error', {
+        detail: 'seed-agent: mesh registration threw. The server log has why.',
+      });
     }
+    // `no-manifest`: `readManifest` answered null for the folder (the write did
+    // not land, the file is unreadable, or it fails AgentManifestSchema).
+    // `duplicate-id`: another folder holds this path-derived id, a stale row
+    // from when the fixture lived elsewhere; wipe this server's DORK_HOME.
     if (outcome !== 'synced') {
-      return c.json(
-        {
-          error:
-            `seed-agent: wrote the manifest but the mesh refused it (${outcome}). ` +
-            `'no-manifest' means \`readManifest\` answered null for ${agentDir} — the write did ` +
-            `not land, or the file is unreadable, or it no longer satisfies AgentManifestSchema. ` +
-            `'duplicate-id' means another directory holds id ${manifest.id}; since that id is ` +
-            `derived from this path, it means a stale row survives from when the fixture lived ` +
-            `elsewhere — wipe this server's DORK_HOME.`,
-        },
-        500
-      );
+      logger.error('[TestControl] seed-agent: the mesh refused the agent', {
+        outcome,
+        agentDir,
+        agentId: manifest.id,
+      });
+      return problem(c, 'internal_error', {
+        detail: 'seed-agent: the mesh refused the agent. See `outcome`.',
+        extensions: { outcome },
+      });
     }
     return c.json({ ok: true, agentDir, agentId: manifest.id });
   });
@@ -999,7 +996,8 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
 
       return c.json({ ok: true, roomId: opened.id, slug: opened.slug, chatId });
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : 'seed-bridge failed' }, 500);
+      logger.error('[TestControl] seed-bridge failed', { err });
+      return problem(c, 'internal_error', { detail: 'seed-bridge failed.' });
     }
   });
 
@@ -1030,7 +1028,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   router.post('/seed-oauth-mcp-agent', async (c) => {
     const port = c.env.incoming.socket.localPort;
     if (!port) {
-      return c.json({ error: 'could not resolve the listen port' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t read the listen port.' });
     }
     // Dial the server on the SAME host it bound (via `localDialHost`), not a
     // hardcoded `127.0.0.1`: `DORKOS_HOST=localhost` resolves to `::1` on macOS,
@@ -1102,7 +1100,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
     }
     const service = deps.agentMcpServers?.();
     if (!service) {
-      return c.json({ error: 'agentMcpServerService unavailable' }, 500);
+      return problem(c, 'temporarily_unavailable', { detail: 'The MCP server service is off.' });
     }
     // Resolve the path the SAME way `GET /api/mcp-config` does (realpath-canonical),
     // so the probe reads the identical cwd key the injection resolver caches under.
@@ -1180,7 +1178,8 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
       return validationProblem(c, parsed.error);
     }
     const probe = deps.connectorRequestProbe?.();
-    if (!probe) return c.json({ error: 'Service request probe is unavailable.' }, 503);
+    if (!probe)
+      return problem(c, 'temporarily_unavailable', { detail: 'The request probe is off.' });
     const { sessionId, request } = parsed.data;
     return holdWhileTheCallerWaits(c, 'Request probe failed.', async (signal) =>
       probe({
@@ -1199,7 +1198,8 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
       return validationProblem(c, parsed.error);
     }
     const probe = deps.connectorExecutionProbe?.();
-    if (!probe) return c.json({ error: 'Service access probe is unavailable.' }, 503);
+    if (!probe)
+      return problem(c, 'temporarily_unavailable', { detail: 'The access probe is off.' });
     const { sessionId, target } = parsed.data;
     return holdWhileTheCallerWaits(c, 'Service access probe failed.', async (signal) =>
       probe({

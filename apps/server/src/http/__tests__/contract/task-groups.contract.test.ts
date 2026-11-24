@@ -348,7 +348,7 @@ contractSuite(
       name: 'GET /api/tasks refuses a foreign Host',
       path: '/api/tasks',
       headers: { host: 'evil.example.com' },
-      expect: { status: 403, schema: z.object({ error: z.string() }).loose() },
+      expect: { status: 403, schema: z.object({ code: z.literal('host_not_allowed') }).loose() },
     },
     {
       name: 'GET /api/tasks answers a same-origin browser with its CORS headers',

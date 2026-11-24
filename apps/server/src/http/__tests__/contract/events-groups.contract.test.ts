@@ -45,7 +45,7 @@ const NOT_FOUND = problemBody('not_found', {
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
-const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
+const HOST_REFUSED = z.object({ code: z.literal('host_not_allowed') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 /** The global stream's ceiling on concurrent readers (`SSE.MAX_TOTAL_CLIENTS`). */
 const MAX_CLIENTS = 500;

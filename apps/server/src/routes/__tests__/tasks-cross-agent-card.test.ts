@@ -136,7 +136,7 @@ describe('agent A setting the mode of agent B’s task', () => {
         .set(AGENT_IDENTITY_HEADER, token)
         .send({});
       expect(res.status, token).toBe(403);
-      expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+      expect(res.body.code).toBe('person_only');
     }
     expect(approvals.listPending().some((row) => row.approvalId === card.approvalId)).toBe(true);
   });

@@ -25,12 +25,12 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
 import { BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
-import { errorBody } from '../lib/route-utils.js';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 import { DocPathError, resolveDocSpace } from '../services/docs/doc-space.js';
 import { docsEnabled } from '../services/docs/docs-enabled.js';
 import { buildDocIndex } from '../services/docs/links/doc-index.js';
 import { resolveDocTarget } from '../services/docs/links/doc-resolve.js';
-import { validationProblem } from '@dorkos/http-kit';
+import { problem, validationProblem } from '@dorkos/http-kit';
 import { apiNotFound } from '../http/unclaimed.js';
 
 /** What the routes read, injectable for tests. */
@@ -51,10 +51,14 @@ const liveDeps: DocLinkRouteDeps = {
 
 /** The answer for a failed doc read: the boundary's 403, a bad space's 400, else 500. */
 function failure(c: Context<ApiEnv>, err: unknown, route: string, cwd: string): Response {
-  if (err instanceof BoundaryError) return c.json(errorBody(err.message, err.code), 403);
-  if (err instanceof DocPathError) return c.json(errorBody(err.message, 'INVALID_DOC_SPACE'), 400);
+  if (err instanceof BoundaryError) return boundaryProblem(c, err);
+  if (err instanceof DocPathError) {
+    return problem(c, 'invalid_request', {
+      detail: 'Docs need an existing folder. Pick another one.',
+    });
+  }
   logger.error(`[docs] GET ${route} failed`, { err, cwd });
-  return c.json(errorBody('Couldn’t list the docs here.', 'DOC_INDEX_FAILED'), 500);
+  return problem(c, 'internal_error', { detail: 'Couldn’t list the docs here.' });
 }
 
 /**

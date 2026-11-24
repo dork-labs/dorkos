@@ -6,7 +6,8 @@ import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
-import { validationProblem } from '@dorkos/http-kit';
+import { problem, validationProblem } from '@dorkos/http-kit';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -40,7 +41,9 @@ router.get('/', async (c) => {
     let runtime: AgentRuntime;
     if (runtimeParam !== undefined) {
       if (!runtimeRegistry.has(runtimeParam)) {
-        return c.json({ error: `Unknown runtime: ${runtimeParam}` }, 400);
+        return problem(c, 'invalid_request', {
+          detail: 'No agent program by that name runs here.',
+        });
       }
       runtime = runtimeRegistry.get(runtimeParam);
     } else if (sessionId) {
@@ -56,11 +59,9 @@ router.get('/', async (c) => {
     const commands = await runtime.getCommands(refresh, validatedCwd);
     return c.json(commands);
   } catch (err) {
-    if (err instanceof BoundaryError) {
-      return c.json({ error: err.message, code: err.code }, 403);
-    }
+    if (err instanceof BoundaryError) return boundaryProblem(c, err);
     logger.error('[commands] GET / failed', { err, cwd: parsed.data.cwd, sessionId });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error', { detail: 'Couldn’t list the commands. Try again.' });
   }
 });
 

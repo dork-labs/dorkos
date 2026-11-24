@@ -358,7 +358,7 @@ test.describe('The request card @permissions', () => {
       data: { answer: 'always' },
     });
     expect(always.status()).toBe(409);
-    expect(((await always.json()) as { code: string }).code).toBe('ALWAYS_NOT_OFFERED');
+    expect(((await always.json()) as { code: string }).code).toBe('always_not_offered');
 
     await gotoActivity(basePage);
     const card = await openCard(basePage.page, approvalId);
@@ -390,7 +390,7 @@ test.describe('The request card @permissions', () => {
         data: { answer },
       });
       expect(granted.status()).toBe(409);
-      expect((await granted.json()).code).toBe('APPROVAL_INCOMPLETE');
+      expect((await granted.json()).code).toBe('conflict');
     }
     await basePage.page.setViewportSize({ width: 390, height: 844 });
     await gotoActivity(basePage);

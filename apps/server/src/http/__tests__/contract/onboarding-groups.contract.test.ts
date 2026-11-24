@@ -54,20 +54,26 @@ const NOT_FOUND = problemBody('not_found', {
 });
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
-const NOT_HERE = { error: 'Setup is only available on this computer.' };
+const NOT_HERE = problemBody('operator_only', {
+  detail: 'Setup is only available on this computer.',
+});
 /**
  * The session gate's 401. Another device needs a person session even with the
  * this-computer password off (ADR 261015-125850 rule 3); the route's own
  * answers to a signed-in caller at another name are in the login-on suite.
  */
 const GATE_REFUSED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
-const SETUP_REFUSED = (code: string) => ({ error: 'Only the owner can set up DorkOS.', code });
-const CHOOSE = { error: 'Choose how your agents run.' };
+const SETUP_REFUSED = problemBody('person_only', { detail: 'Only the owner can set up DorkOS.' });
+const CHOOSE = problemBody('invalid_request', { detail: 'Choose how your agents run.' });
 const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const TOO_LARGE = problemBody('request_too_large', {
   detail: 'That is too large to send in one request.',
 });
-const FINISHED = { error: 'Setup is already finished.', code: 'onboarding_complete' };
+const FINISHED = problemBody('already_resolved', { detail: 'Setup is already finished.' });
+const SUBSCRIPTION_TOKEN = problemBody('invalid_request', {
+  detail: 'Anthropic subscription tokens cannot run DorkOS agents. Use an API key.',
+});
+const NO_KEY = problemBody('invalid_request', { detail: 'Enter an API key.' });
 const WELCOME = z.object({ roomId: z.string().min(1), entryId: z.string().min(1) }).strict();
 /** Above the app-wide 1 MB limit. */
 const OVERSIZE = JSON.stringify({ padding: 'x'.repeat(1_500_000) });
@@ -140,8 +146,8 @@ contractSuite(
       body: { path: 'none' },
       expect: {
         status: 403,
-        headers: JSON_TYPE,
-        schema: z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose(),
+        headers: { 'content-type': /^application\/problem\+json\b/ },
+        schema: z.object({ code: z.literal('host_not_allowed') }).loose(),
       },
     },
     {
@@ -150,7 +156,7 @@ contractSuite(
       path: '/api/onboarding/first-run',
       headers: AGENT,
       body: { path: 'none' },
-      expect: { status: 403, headers: JSON_TYPE, body: SETUP_REFUSED('not-a-person') },
+      expect: { status: 403, headers: PROBLEM_TYPE, body: SETUP_REFUSED },
     },
     {
       name: 'POST /api/onboarding/first-run refuses an approval token',
@@ -158,7 +164,7 @@ contractSuite(
       path: '/api/onboarding/first-run',
       headers: { 'X-DorkOS-Approval': 'abc' },
       body: { path: 'none' },
-      expect: { status: 403, body: SETUP_REFUSED('not-a-person') },
+      expect: { status: 403, body: SETUP_REFUSED },
     },
     {
       name: 'POST /api/onboarding/first-run refuses an agent before its body',
@@ -166,28 +172,28 @@ contractSuite(
       path: '/api/onboarding/first-run',
       headers: AGENT,
       body: { path: 'nowhere' },
-      expect: { status: 403, body: SETUP_REFUSED('not-a-person') },
+      expect: { status: 403, body: SETUP_REFUSED },
     },
     {
       name: 'POST /api/onboarding/welcome refuses an agent',
       method: 'POST',
       path: '/api/onboarding/welcome',
       headers: AGENT,
-      expect: { status: 403, headers: JSON_TYPE, body: SETUP_REFUSED('not-a-person') },
+      expect: { status: 403, headers: PROBLEM_TYPE, body: SETUP_REFUSED },
     },
     {
       name: 'POST /api/onboarding/welcome refuses an approval token',
       method: 'POST',
       path: '/api/onboarding/welcome',
       headers: { 'X-DorkOS-Approval': 'abc' },
-      expect: { status: 403, body: SETUP_REFUSED('not-a-person') },
+      expect: { status: 403, body: SETUP_REFUSED },
     },
     // What the body must be.
     {
       name: 'POST /api/onboarding/first-run refuses no body at all',
       method: 'POST',
       path: '/api/onboarding/first-run',
-      expect: { status: 400, headers: JSON_TYPE, body: CHOOSE },
+      expect: { status: 400, headers: PROBLEM_TYPE, body: CHOOSE },
     },
     {
       name: 'POST /api/onboarding/first-run refuses an empty object',
@@ -277,22 +283,19 @@ contractSuite(
       { path: 'own', choice: { kind: 'anthropic', apiKey: 'sk-ant-oat01-contract' } },
       {
         status: 400,
-        headers: JSON_TYPE,
-        body: {
-          error: 'Anthropic subscription tokens cannot run DorkOS agents. Use an API key.',
-          code: 'invalid_key',
-        },
+        headers: PROBLEM_TYPE,
+        body: SUBSCRIPTION_TOKEN,
       }
     ),
     pick(
       'POST /api/onboarding/first-run refuses a key of blanks',
       { path: 'own', choice: { kind: 'openai', apiKey: '   ' } },
-      { status: 400, body: { error: 'Enter an API key.', code: 'invalid_key' } }
+      { status: 400, body: NO_KEY }
     ),
     pick(
       'POST /api/onboarding/first-run refuses a hand-typed hosted setup with no key',
       { path: 'own', choice: { kind: 'custom', inference: CUSTOM_API_KEY } },
-      { status: 400, body: { error: 'Enter an API key.', code: 'invalid_key' } }
+      { status: 400, body: NO_KEY }
     ),
     pick(
       'POST /api/onboarding/first-run refuses a hand-typed subscription token',
@@ -302,10 +305,7 @@ contractSuite(
       },
       {
         status: 400,
-        body: {
-          error: 'Anthropic subscription tokens cannot run DorkOS agents. Use an API key.',
-          code: 'invalid_key',
-        },
+        body: SUBSCRIPTION_TOKEN,
       }
     ),
     {
@@ -428,7 +428,7 @@ contractSuite(
     pick(
       'POST /api/onboarding/first-run refuses a pick once the first run is finished',
       { path: 'none' },
-      { status: 409, headers: JSON_TYPE, body: FINISHED }
+      { status: 409, headers: PROBLEM_TYPE, body: FINISHED }
     ),
     pick(
       'POST /api/onboarding/first-run checks a key before it says the first run is finished',
@@ -535,13 +535,13 @@ describe('contract: first-run setup with login on', () => {
       path: '/api/onboarding/first-run',
       headers: { ...apiKey, ...origin },
       body: { path: 'none' },
-      expect: { status: 403, body: SETUP_REFUSED('not-a-person') },
+      expect: { status: 403, body: SETUP_REFUSED },
     });
     await check(server, {
       method: 'POST',
       path: '/api/onboarding/welcome',
       headers: { ...apiKey, ...origin },
-      expect: { status: 403, body: SETUP_REFUSED('not-a-person') },
+      expect: { status: 403, body: SETUP_REFUSED },
     });
   });
 

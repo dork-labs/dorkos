@@ -677,7 +677,7 @@ contractSuite('marketplace groups', [
     name: 'GET /api/marketplace/sources refuses a foreign Host',
     path: '/api/marketplace/sources',
     headers: { host: 'evil.example.com' },
-    expect: { status: 403, schema: z.object({ error: z.string() }).loose() },
+    expect: { status: 403, schema: z.object({ code: z.literal('host_not_allowed') }).loose() },
   },
   {
     name: 'GET /api/marketplace/installed answers a same-origin browser with its CORS headers',

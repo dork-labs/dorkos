@@ -137,7 +137,7 @@ describe('the paid-run card', () => {
 
   it('says the limit was reached when it stops Allow once at the tap (spec §4.4)', async () => {
     const refused = Object.assign(new Error('The monthly limit was reached. Nothing was spent.'), {
-      code: 'SPEND_LIMIT',
+      code: 'spend_limit_reached',
       status: 409,
     });
     renderCard(paidApproval(UNDER_LIMIT), {

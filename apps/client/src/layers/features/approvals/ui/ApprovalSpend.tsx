@@ -7,7 +7,7 @@ import { useSafeNavigate } from '@/layers/shared/model';
 export const SPEND_LIMIT_RECEIPT = 'The monthly limit was reached. Nothing was spent.';
 
 /** The code the grant route answers when the limit stops an Allow once. */
-export const SPEND_LIMIT_CODE = 'SPEND_LIMIT';
+export const SPEND_LIMIT_CODE = 'spend_limit_reached';
 
 /** One run's price as the card says it: reported, a person's estimate, or unknown. */
 function priceText(spend: ApprovalSpend): string {

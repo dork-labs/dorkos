@@ -244,7 +244,7 @@ describe('Commands Routes', () => {
       const res = await request(testServer).get('/api/commands').query({ cwd: '/etc/shadow' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
   });
 
@@ -317,7 +317,8 @@ describe('Commands Routes', () => {
         .get('/api/commands')
         .query({ runtime: 'bogus-runtime' });
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/unknown runtime/i);
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.detail).toBe('No agent program by that name runs here.');
       expect(runtimeRegistry.get).not.toHaveBeenCalled();
       expect(runtimeRegistry.resolveForSession).not.toHaveBeenCalled();
     });

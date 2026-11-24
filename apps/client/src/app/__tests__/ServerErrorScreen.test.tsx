@@ -104,7 +104,7 @@ describe('ServerErrorScreen', () => {
     const refusal =
       'This instance does not answer to the address "phone.ngrok.app". ' +
       'If that is how you reach DorkOS, list it in DORKOS_TRUSTED_HOSTS, or turn on login.';
-    renderScreen({ status: 403, message: refusal, code: 'HOST_NOT_ALLOWED' });
+    renderScreen({ status: 403, message: refusal, code: 'host_not_allowed' });
 
     expect(await screen.findByText(refusal)).toBeInTheDocument();
   });
@@ -128,7 +128,7 @@ describe('ServerErrorScreen', () => {
     // a full window of text is not more honest than a clamped one. The part
     // that says what to do comes first.
     const long = `This instance does not answer to the address "${'a'.repeat(253)}". Set DORKOS_TRUSTED_HOSTS.`;
-    renderScreen({ status: 403, message: long, code: 'HOST_NOT_ALLOWED' });
+    renderScreen({ status: 403, message: long, code: 'host_not_allowed' });
     await screen.findByText(HEADLINE);
 
     expect(screen.queryByText(long)).not.toBeInTheDocument();

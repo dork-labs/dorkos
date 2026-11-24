@@ -158,7 +158,7 @@ describe('a person’s actions', () => {
   it('refuses an id that cannot be a job’s, writing nothing', async () => {
     const response = await act('NOT-A-JOB', 'urgent');
     expect(response.status).toBe(400);
-    expect(response.body.code).toBe('invalid_id');
+    expect(response.body.code).toBe('invalid_request');
     expect(marks()).toEqual([]);
     expect(audit).not.toHaveBeenCalled();
   });
@@ -266,6 +266,6 @@ describe('anyone but a person at this computer', () => {
         app.route('/api/system', router);
       },
     });
-    await expectEveryRouteRefused(403, 'local_only');
+    await expectEveryRouteRefused(403, 'operator_only');
   });
 });

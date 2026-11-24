@@ -97,7 +97,7 @@ describe('permission routes', () => {
         const { app, world } = build();
         const res = await send(app, write, { [AGENT_IDENTITY_HEADER]: 'dork_unverifiable' });
         expect(res.status).toBe(403);
-        expect(res.body.error).toBe(
+        expect(res.body.detail).toBe(
           'Only a person can change permissions. Agents can ask the person.'
         );
         expect(world.events).toEqual([]);
@@ -108,7 +108,7 @@ describe('permission routes', () => {
       const { app, world } = build({ agentIdentity: true });
       const res = await send(app, write);
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+      expect(res.body.code).toBe('person_only');
       expect(world.events).toEqual([]);
     });
 
@@ -116,7 +116,7 @@ describe('permission routes', () => {
       const { app } = build();
       const res = await send(app, write, { [APPROVAL_TOKEN_HEADER]: 'tok' });
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('REQUESTER_CANNOT_DECIDE');
+      expect(res.body.code).toBe('person_only');
     });
 
     it.each(WRITES)('with login on, refuses a per-user API key: $method $path', async (write) => {
@@ -126,7 +126,7 @@ describe('permission routes', () => {
       });
       const res = await send(app, write);
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('operator_cookie_required');
+      expect(res.body.code).toBe('person_only');
     });
 
     it.each(WRITES)(
@@ -161,7 +161,7 @@ describe('permission routes', () => {
           .patch('/api/permissions/defaults')
           .send({ areas: { [area]: 'allowed' }, surface: 'settings' });
         expect(res.status).toBe(400);
-        expect(res.body.code).toBe('FLOOR_NEVER_ALLOWED');
+        expect(res.body.code).toBe('invalid_request');
       }
     );
 
@@ -182,9 +182,9 @@ describe('permission routes', () => {
         .patch('/api/agents/agent-test/permissions')
         .send({ actions: { 'nope.verb': 'ask' }, surface: 'agent-page' });
       expect(area.status).toBe(400);
-      expect(area.body.code).toBe('UNKNOWN_AREA');
+      expect(area.body.code).toBe('invalid_request');
       expect(action.status).toBe(400);
-      expect(action.body.code).toBe('UNKNOWN_ACTION');
+      expect(action.body.code).toBe('invalid_request');
     });
 
     it('writes one event naming every agent a default change brought along', async () => {
@@ -250,19 +250,19 @@ describe('permission routes', () => {
       );
       const res = await request(app).post(`/api/permissions/history/${world.events[0]!.id}/undo`);
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('operator_cookie_required');
+      expect(res.body.code).toBe('person_only');
     });
 
-    it('answers a conflict with 409 and its conflicts, and force sets it back', async () => {
+    it('answers a conflict with 412 and its conflicts, and force sets it back', async () => {
       const { app, world } = build();
       const eventId = await oneChange(app, world);
       await request(app)
         .patch('/api/permissions/defaults')
         .send({ areas: { rooms: 'blocked' }, surface: 'settings' });
       const refused = await request(app).post(`/api/permissions/history/${eventId}/undo`);
-      expect(refused.status).toBe(409);
+      expect(refused.status).toBe(412);
       expect(refused.body).toMatchObject({
-        code: 'UNDO_CONFLICT',
+        code: 'precondition_failed',
         conflicts: [{ current: 'blocked', reason: 'changed-since' }],
       });
       const forced = await request(app)
@@ -276,7 +276,7 @@ describe('permission routes', () => {
       const { app } = build();
       const res = await request(app).post('/api/permissions/history/nope/undo');
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('UNKNOWN_EVENT');
+      expect(res.body.code).toBe('not_found');
     });
   });
 

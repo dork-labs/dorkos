@@ -75,7 +75,7 @@ describe('LoadGateQueueCard', () => {
   it('shows no card on a device the server refuses', async () => {
     const refused = Object.assign(new Error('Do this at the computer running DorkOS.'), {
       status: 403,
-      code: 'local_only',
+      code: 'operator_only',
     });
     const transport = transportWith([], {
       getLoadGateWaitingLine: vi.fn().mockRejectedValue(refused),

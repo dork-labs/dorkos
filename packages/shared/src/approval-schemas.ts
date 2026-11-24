@@ -775,7 +775,7 @@ export const GrantApprovalBodySchema = z
   .object({
     /**
      * `once` (the default) allows this one call. `always` also sets this action
-     * to Allowed for the agent that asked. Refused with 409 `ALWAYS_NOT_OFFERED`
+     * to Allowed for the agent that asked. Refused with 409 `always_not_offered`
      * when DorkOS does not know which agent asked, the action has no area, or its
      * area is never Allowed; the card's `alwaysOffered` says so in advance.
      */

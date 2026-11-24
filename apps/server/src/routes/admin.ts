@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import { Hono, type Context } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRateLimit } from '../http/rate-limiter.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, problemBody, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { refuseFrontDoorChange } from '../lib/caller-authority.js';
 import { env } from '../env.js';
@@ -16,52 +16,26 @@ import { ResetTokenStore, RESET_TOKEN_TTL_DESCRIPTION } from '../services/core/a
 function refuseResetAway(c: Context<ApiEnv>): Response | undefined {
   const refusal = refuseFrontDoorChange(honoRequestFacts(c), 'DorkOS');
   if (!refusal) return undefined;
-  return c.json(
-    { error: 'Reset DorkOS in the app on the computer it runs on.', code: refusal.code },
-    403
-  );
+  return problem(c, 'operator_only', {
+    detail: 'Reset DorkOS in the app on the computer it runs on.',
+  });
 }
 
 /**
- * Error code accompanying the 409 when the desktop app owns the server's
- * lifecycle.
- *
- * The client renders `error` on its own now (`system-methods.ts` goes through
- * `fetchJSON`, which reads it off the body), so these messages are shown as
- * written rather than wrapped in the raw JSON they arrive in. The code is here
- * so a client CAN branch, and so logs and tests match on something stable.
+ * What a reset without a live one-time token is told: missing, mistyped,
+ * expired or already spent (DOR-1707). One answer for all four on purpose. A
+ * caller holding a real token never sees it, and telling an attacker whether
+ * its guess was the right shape, the right value too late, or right but already
+ * used narrows nothing it should be helped to narrow.
  */
-export const MANAGED_BY_DESKTOP_CODE = 'MANAGED_BY_DESKTOP';
+const RESET_TOKEN_REQUIRED_MESSAGE = `Nothing was deleted. Start the reset again, then confirm within ${RESET_TOKEN_TTL_DESCRIPTION}.`;
 
 /**
- * Error code accompanying the 403 when a reset arrives without a live one-time
- * token — missing, mistyped, expired, or already spent (DOR-1707).
- *
- * One code for all four on purpose. A caller holding a real token never sees any
- * of them, and telling an attacker whether its guess was the right shape, the
- * right value too late, or right but already used narrows nothing it should be
- * helped to narrow.
+ * What both halves of a reset say when the desktop app owns the lifecycle. It
+ * names no folder: a problem's detail never carries a path.
  */
-export const RESET_TOKEN_REQUIRED_CODE = 'RESET_TOKEN_REQUIRED';
-
-/**
- * What a reset without a live token is told. The deadline is read from the
- * token's own TTL, so the sentence cannot outlive the number it describes.
- */
-const RESET_TOKEN_REQUIRED_MESSAGE =
-  'Nothing has been deleted. Resetting DorkOS takes two steps now: ask DorkOS to start the ' +
-  `reset, then confirm it within ${RESET_TOKEN_TTL_DESCRIPTION}. Open Settings and start the ` +
-  'reset again.';
-
-/**
- * What both halves of a reset say when the desktop app owns the lifecycle.
- *
- * @param dorkHome - Data directory, named so "delete it yourself" is actionable.
- */
-const desktopManagedResetRefusal = (dorkHome: string) =>
-  'The DorkOS app starts and stops the server for you, so it cannot reset itself from here. ' +
-  'Nothing has been deleted. To start over, quit DorkOS, delete the folder at ' +
-  `${dorkHome}, then open DorkOS again. It will set itself up from scratch.`;
+const DESKTOP_MANAGED_RESET_REFUSAL =
+  'Nothing was deleted. Quit DorkOS, delete its data folder, then open it again.';
 
 /**
  * What each admin action says when the desktop app owns the lifecycle.
@@ -79,22 +53,18 @@ const desktopManagedResetRefusal = (dorkHome: string) =>
  * build older than that change — none of which can drive the shell, and all of
  * which are better off being told to do it at the machine.
  */
-const DESKTOP_MANAGED_REFUSALS: Record<string, (dorkHome: string) => string> = {
-  '/restart': () =>
-    'The DorkOS app starts and stops the server for you, so restarting it from here would ' +
-    'leave you with no server running. Quit DorkOS and open it again instead. That does the ' +
-    'same thing.',
-  '/reset': desktopManagedResetRefusal,
+const DESKTOP_MANAGED_REFUSALS: Record<string, string> = {
+  '/restart': 'Quit DorkOS and open it again. That restarts the server.',
+  '/reset': DESKTOP_MANAGED_RESET_REFUSAL,
   // The first step of a reset gets the same answer as the second: a person who
   // arms a reset here is refused for the same reason and needs the same
   // instructions, and "this action is not available" would send them looking for
   // the button they already pressed.
-  '/reset/prepare': desktopManagedResetRefusal,
+  '/reset/prepare': DESKTOP_MANAGED_RESET_REFUSAL,
 };
 
 /** Said when the refusal fires on a path with no specific copy (an unknown admin route). */
-const GENERIC_DESKTOP_MANAGED_REFUSAL =
-  'The DorkOS app starts and stops the server for you, so this action is not available here.';
+const GENERIC_DESKTOP_MANAGED_REFUSAL = 'The DorkOS app runs this server, so do this there.';
 
 /** Where the admin routes are mounted. */
 const ADMIN_MOUNT = '/api/admin';
@@ -110,12 +80,16 @@ const ADMIN_MOUNT = '/api/admin';
  * (see {@link createAdminRoutes}).
  *
  * @param routerPath - The request path, relative to the admin mount.
- * @param dorkHome - Data directory, named by the reset copy.
  */
-function desktopManagedMessage(routerPath: string, dorkHome: string): string {
+function desktopManagedMessage(routerPath: string): string {
   const normalized = routerPath.toLowerCase().replace(/\/+$/, '') || '/';
-  return DESKTOP_MANAGED_REFUSALS[normalized]?.(dorkHome) ?? GENERIC_DESKTOP_MANAGED_REFUSAL;
+  return DESKTOP_MANAGED_REFUSALS[normalized] ?? GENERIC_DESKTOP_MANAGED_REFUSAL;
 }
+
+/** Every admin limiter's refusal. */
+const TOO_MANY_ADMIN_REQUESTS = problemBody('rate_limited', {
+  detail: 'Too many admin requests. Try again later.',
+});
 
 /** Dependencies injected into the admin router. */
 export interface AdminDeps {
@@ -159,7 +133,7 @@ function triggerRestart(): void {
  * when a supervisor started the server as a child it does not restart. A
  * supervisor in that position sets `DORKOS_MANAGED_BY` in the server's
  * environment, and both endpoints then answer 409 with
- * {@link MANAGED_BY_DESKTOP_CODE} instead of exiting.
+ * `managed_by_desktop` instead of exiting.
  *
  * `desktop` is the only value today: the Electron shell sets it before spawning
  * the server as a `UtilityProcess`. Setting it is the desktop's side of the
@@ -214,10 +188,7 @@ export function createAdminRoutes(deps: AdminDeps): Hono<ApiEnv> {
   router.use('*', async (c, next) => {
     if (env.DORKOS_MANAGED_BY !== 'desktop') return next();
     const routerPath = c.req.path.slice(ADMIN_MOUNT.length) || '/';
-    return c.json(
-      { error: desktopManagedMessage(routerPath, deps.dorkHome), code: MANAGED_BY_DESKTOP_CODE },
-      409
-    );
+    return problem(c, 'managed_by_desktop', { detail: desktopManagedMessage(routerPath) });
   });
 
   // Keys through the shared `rateLimitKey` — the TCP peer address, not the
@@ -241,7 +212,7 @@ export function createAdminRoutes(deps: AdminDeps): Hono<ApiEnv> {
     windowMs: 5 * 60 * 1000, // 5 minutes
     limit: 3,
     headers: 'legacy',
-    message: { error: 'Too many admin requests. Try again later.' },
+    message: TOO_MANY_ADMIN_REQUESTS,
     countsWhen: (c) => c.res.status !== 403,
   });
 
@@ -255,7 +226,7 @@ export function createAdminRoutes(deps: AdminDeps): Hono<ApiEnv> {
     windowMs: 5 * 60 * 1000, // 5 minutes
     limit: 10,
     headers: 'legacy',
-    message: { error: 'Too many admin requests. Try again later.' },
+    message: TOO_MANY_ADMIN_REQUESTS,
   });
 
   const resetTokens = new ResetTokenStore();
@@ -277,14 +248,16 @@ export function createAdminRoutes(deps: AdminDeps): Hono<ApiEnv> {
       token?: unknown;
     };
     if (confirm !== 'reset') {
-      return c.json({ error: 'Missing or invalid confirm field. Send { confirm: "reset" }.' }, 400);
+      return problem(c, 'invalid_request', {
+        detail: 'Send { confirm: "reset" } to reset DorkOS.',
+      });
     }
 
     // Checked BEFORE anything is torn down, and it is the last word: no branch
     // below this reaches `fs.rm` without a token that was minted, unexpired, and
     // unspent.
     if (!resetTokens.consume(token)) {
-      return c.json({ error: RESET_TOKEN_REQUIRED_MESSAGE, code: RESET_TOKEN_REQUIRED_CODE }, 403);
+      return problem(c, 'forbidden', { detail: RESET_TOKEN_REQUIRED_MESSAGE });
     }
 
     setImmediate(async () => {

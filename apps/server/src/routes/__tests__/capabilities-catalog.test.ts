@@ -170,6 +170,7 @@ describe('GET /api/capabilities/catalog', () => {
       `/api/capabilities/catalog?cursor=${bad}`
     );
     expect(res.status).toBe(400);
-    expect(String(res.body.error)).toContain('cursor');
+    expect(res.body.code).toBe('invalid_request');
+    expect(String(res.body.detail)).toContain('cursor');
   });
 });

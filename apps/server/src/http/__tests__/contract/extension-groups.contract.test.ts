@@ -69,7 +69,7 @@ const deleteBody = (body: object) => ({
   'content-length': String(Buffer.byteLength(JSON.stringify(body))),
 });
 const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
-const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
+const HOST_REFUSED = z.object({ code: z.literal('host_not_allowed') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 /** The person bar's cookie refusal under login: `person_only`, whatever the surface. */
 const COOKIE_REQUIRED = z.object({ code: z.literal('person_only') }).loose();

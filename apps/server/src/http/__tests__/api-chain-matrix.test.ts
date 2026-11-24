@@ -547,7 +547,7 @@ describe('a managed hostname that skipped the managed ingress', () => {
     try {
       const answered = await getAt('/api/chain-probe', { host: 'abc.remote.example' }, served.port);
       expect(answered.status).toBe(403);
-      expect(answered.body).toEqual({ error: 'Forbidden.' });
+      expect(answered.body).toMatchObject({ code: 'forbidden', status: 403 });
       expect(stable(answered)).toMatchSnapshot();
     } finally {
       delete managed.managedHosts;

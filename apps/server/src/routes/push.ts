@@ -13,10 +13,9 @@
  */
 import { Hono, type Context } from 'hono';
 import { RegisterPushSubscriptionRequestSchema } from '@dorkos/shared/notification-schemas';
-import { errorBody } from '../lib/route-utils.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { notificationEntitlement } from '../services/notifications/notification-entitlement.js';
 import {
@@ -24,9 +23,6 @@ import {
   type PushSubscriptionStore,
 } from '../services/notifications/push-subscription-store.js';
 import type { WebPushChannel } from '../services/notifications/channels/web-push.js';
-
-/** Refusal code for a caller that may not touch this install's push devices. */
-const NOT_THE_OPERATOR_CODE = 'PUSH_OPERATOR_ONLY';
 
 /** What a caller that may not touch push devices is told. */
 const NOT_THE_OPERATOR =
@@ -45,7 +41,7 @@ function refusedNonOperator(c: Context<ApiEnv>): Response | undefined {
   if (notificationEntitlement(readCallerPrincipal(honoRequestFacts(c))) === 'manage') {
     return undefined;
   }
-  return c.json(errorBody(NOT_THE_OPERATOR, NOT_THE_OPERATOR_CODE), 403);
+  return problem(c, 'operator_only', { detail: NOT_THE_OPERATOR });
 }
 
 /**

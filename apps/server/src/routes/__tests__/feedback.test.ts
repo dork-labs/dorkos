@@ -135,7 +135,7 @@ describe('feedback route', () => {
       .post('/api/feedback')
       .send({ kind: 'bug', message: '' });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('INVALID_FEEDBACK');
+    expect(res.body.code).toBe('invalid_request');
     expect(mockSend).not.toHaveBeenCalled();
   });
 
@@ -169,7 +169,7 @@ describe('feedback route', () => {
         .send({ kind: 'bug', message: 'hi', includeTranscript: true, roomId: 'room-1' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('PERSON_REQUIRED');
+      expect(res.body.code).toBe('person_only');
       expect(mockGetRoomTranscript).not.toHaveBeenCalled();
       expect(mockSend).not.toHaveBeenCalled();
     });
@@ -219,7 +219,7 @@ describe('feedback route', () => {
         .send({ kind: 'bug', message: 'hi', reporterEmail: 'attacker@evil.test' });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('INVALID_FEEDBACK');
+      expect(res.body.code).toBe('invalid_request');
       expect(mockResolveIdentity).not.toHaveBeenCalled();
       expect(mockSend).not.toHaveBeenCalled();
     });
@@ -629,7 +629,10 @@ describe('feedback route', () => {
       const res = await request(fixtureTarget.mount(buildApp())).get('/api/feedback/mine');
 
       expect(res.status).toBe(502);
-      expect(res.body).toEqual({ error: 'Could not reach the feedback service' });
+      expect(res.body).toMatchObject({
+        code: 'upstream_unavailable',
+        detail: 'Couldn’t reach the feedback service.',
+      });
     });
   });
 

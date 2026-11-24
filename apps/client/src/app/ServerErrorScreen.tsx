@@ -9,7 +9,7 @@ import { BootBlockedScreen } from './BootBlockedScreen';
  * `http-client.ts` hangs it on the thrown error — and the server's own
  * `host-guard.test.ts` pins the string from the other side.
  */
-const HOST_NOT_ALLOWED_CODE = 'HOST_NOT_ALLOWED';
+const HOST_NOT_ALLOWED_CODE = 'host_not_allowed';
 
 /**
  * The longest server-written line this screen will print.
@@ -70,7 +70,7 @@ export function ServerErrorScreen({ status, message, code }: ServerErrorScreenPr
   // CDN can answer 403 with any body it likes, and keying on the number alone
   // would print a stranger's text full-screen inside DorkOS chrome — inert, but
   // a page that looks like it is speaking for the product. Only this server
-  // sets `HOST_NOT_ALLOWED`. Raw error text stays off every other failure for
+  // sets `host_not_allowed`. Raw error text stays off every other failure for
   // the reasons the frame gives, and even this one is clamped.
   const refusal = code === HOST_NOT_ALLOWED_CODE && message ? message : undefined;
   const detail =

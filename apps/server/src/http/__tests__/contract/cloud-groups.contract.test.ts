@@ -440,7 +440,7 @@ contractSuite(
       name: 'GET /api/cloud/status refuses a foreign Host',
       path: '/api/cloud/status',
       headers: { host: 'evil.example.com' },
-      expect: { status: 403, headers: JSON_TYPE },
+      expect: { status: 403, headers: { 'content-type': /^application\/problem\+json\b/ } },
     },
     {
       name: 'POST /api/cloud/link/start answers a foreign Origin with the CORS 403',

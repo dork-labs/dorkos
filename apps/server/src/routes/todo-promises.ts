@@ -18,7 +18,6 @@
  * @module routes/todo-promises
  */
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   ConfirmTodoPromiseRequestSchema,
   CreateTodoPromiseRequestSchema,
@@ -27,18 +26,13 @@ import {
 } from '@dorkos/shared/todo-promise-schemas';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { presentsProgramCredential } from '../lib/caller-authority.js';
-import { errorBody } from '../lib/route-utils.js';
+import { todoRefusal } from './todos.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
-import {
-  TodoPromiseError,
-  type TodoPromiseActor,
-  type TodoPromiseErrorCode,
-  type TodoPromiseService,
-} from '../services/todos/index.js';
+import { type TodoPromiseActor, type TodoPromiseService } from '../services/todos/index.js';
 import type { TodoConfirm } from '../services/todos/notice/todo-confirm.js';
 
 /** What the to-do routes need. */
@@ -78,24 +72,6 @@ export interface TodoPromiseRouterDeps {
   confirm: Pick<TodoConfirm, 'answer'>;
 }
 
-/** The HTTP status for each refusal. */
-const STATUS: Record<TodoPromiseErrorCode, ContentfulStatusCode> = {
-  NOT_FOUND: 404,
-  NOT_YOURS: 403,
-  NOTHING_TO_CHANGE: 400,
-  CONFLICT: 409,
-  PAST_DUE: 400,
-  NO_AGENT: 403,
-  UNKNOWN_AGENT: 404,
-  TOO_MANY: 429,
-};
-
-/** Answer a {@link TodoPromiseError} with its status, or rethrow. */
-function refusal(c: Context<ApiEnv>, err: unknown): Response {
-  if (!(err instanceof TodoPromiseError)) throw err;
-  return c.json(errorBody(err.message, err.code), STATUS[err.code]);
-}
-
 /** The refusal for a person who is not this install's owner. */
 const NOT_YOUR_AGENT = 'Only the owner of this agent can change its to-dos.';
 
@@ -117,13 +93,13 @@ function actorOf(
   const facts = honoRequestFacts(c);
   if (presentsAgentIdentity(facts)) {
     return {
-      refused: c.json(
-        errorBody('Agents change their own promises with todo_promise_update.', 'NOT_A_PERSON'),
-        403
-      ),
+      refused: problem(c, 'person_only', {
+        detail: 'Agents change their own promises with todo_promise_update.',
+      }),
     };
   }
-  if (!deps.isOwner(facts)) return { refused: c.json(errorBody(NOT_YOUR_AGENT, 'NOT_YOURS'), 403) };
+  if (!deps.isOwner(facts))
+    return { refused: problem(c, 'owner_only', { detail: NOT_YOUR_AGENT }) };
   return { actor: personOf(facts, deps) };
 }
 
@@ -180,7 +156,7 @@ export function createTodoPromisesRoutes(deps: TodoPromiseRouterDeps): Hono<ApiE
     try {
       return c.json(deps.service.update(caller.actor, c.req.param('id'), body.data));
     } catch (err) {
-      return refusal(c, err);
+      return todoRefusal(c, err);
     }
   });
 
@@ -194,7 +170,7 @@ export function createTodoPromisesRoutes(deps: TodoPromiseRouterDeps): Hono<ApiE
     try {
       return c.json(deps.confirm.answer(caller.actor, c.req.param('id'), body.data.answer));
     } catch (err) {
-      return refusal(c, err);
+      return todoRefusal(c, err);
     }
   });
 
@@ -214,23 +190,22 @@ export function createAgentTodoPromisesRoutes(deps: TodoPromiseRouterDeps): Hono
   router.post('/', (c) => {
     const facts = honoRequestFacts(c);
     if (presentsAgentIdentity(facts)) {
-      return c.json(
-        errorBody('Agents record their own promises with todo_promise_add.', 'NOT_A_PERSON'),
-        403
-      );
+      return problem(c, 'person_only', {
+        detail: 'Agents record their own promises with todo_promise_add.',
+      });
     }
-    if (!deps.isOwner(facts)) return c.json(errorBody(NOT_YOUR_AGENT, 'NOT_YOURS'), 403);
+    if (!deps.isOwner(facts)) return problem(c, 'owner_only', { detail: NOT_YOUR_AGENT });
     const body = CreateTodoPromiseRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!body.success) return validationProblem(c, body.error);
     // Mounted under `/api/agents/:id/todo-promises`: the parent path's parameter.
     const agentId = c.req.param('id') as string;
     if (!deps.agentExists(agentId)) {
-      return c.json(errorBody('No agent on the team has that id.', 'UNKNOWN_AGENT'), 404);
+      return problem(c, 'not_found', { detail: 'No agent on the team has that id.' });
     }
     try {
       return c.json(deps.service.create(agentId, body.data, personOf(facts, deps)), 201);
     } catch (err) {
-      return refusal(c, err);
+      return todoRefusal(c, err);
     }
   });
 

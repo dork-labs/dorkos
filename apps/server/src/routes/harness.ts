@@ -182,7 +182,8 @@ import { BoundaryError, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
@@ -248,17 +249,8 @@ const HarnessAdoptBody = HarnessAdoptBodySchema.refine(
   { path: ['projectPath'], error: 'projectPath must be an absolute path' }
 );
 
-/**
- * Machine-readable refusal code when something that is not a person calls the
- * sync, and the one for a project with no manifest.
- *
- * Module-private: nothing outside branches on either yet, and an exported name
- * nothing imports is surface that goes stale. The route suite asserts the
- * literals, which is what makes a silent rename a red rather than a shrug.
- */
-const HARNESS_SYNC_OPERATOR_ONLY_CODE = 'operator_only_harness_sync';
-const HARNESS_ADOPT_OPERATOR_ONLY_CODE = 'operator_only_harness_adopt';
-const HARNESS_NOT_SET_UP_CODE = 'harness_not_set_up';
+/** What a sync or adopt says on a project with no manifest: set it up first. */
+const HARNESS_NOT_SET_UP = 'Run `dorkos harness sync --fix` in this folder to set it up.';
 
 /** What the harness router reads, and — for the sync alone — writes through. */
 export interface HarnessRouterDeps {
@@ -377,26 +369,28 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
     try {
       resolved = await validateBoundaryOrDorkHome(projectPath);
     } catch (err: unknown) {
-      if (err instanceof BoundaryError) {
-        if (err.code === 'NULL_BYTE') return c.json({ error: err.message, code: err.code }, 400);
-        return c.json({ error: err.message, code: err.code }, 403);
-      }
+      if (err instanceof BoundaryError) return boundaryProblem(c, err);
       logger.error(`[harness] ${where} boundary check failed`, { err, projectPath });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t check that folder. Try again.' });
     }
 
     // The absent-project case the status model hands back (see the module doc).
     try {
-      if (!(await stat(resolved)).isDirectory()) return c.json({ error: 'Not a directory' }, 400);
+      if (!(await stat(resolved)).isDirectory()) {
+        return problem(c, 'not_a_folder', { detail: 'Pick a folder, not a file.' });
+      }
     } catch (err: unknown) {
       const code = (err as NodeJS.ErrnoException).code;
-      if (code === 'ENOENT') return c.json({ error: 'Project directory not found' }, 404);
-      if (code === 'EACCES') return c.json({ error: 'Permission denied' }, 403);
+      if (code === 'ENOENT')
+        return problem(c, 'not_found', { detail: 'That folder doesn’t exist.' });
+      if (code === 'EACCES') {
+        return problem(c, 'forbidden', { detail: 'DorkOS isn’t allowed to read that folder.' });
+      }
       logger.error(`[harness] ${where} could not read the project directory`, {
         err,
         projectPath: resolved,
       });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t read that folder. Try again.' });
     }
 
     return resolved;
@@ -438,7 +432,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
       // Logged, not echoed: the engine's message can name a path the caller did
       // not send, and every state a person can act on is already a 200.
       logger.error('[harness] GET /status failed', { err, projectPath: resolved });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t read this folder’s agent files.' });
     }
   });
 
@@ -448,16 +442,10 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
     // uses: a caller that may not do this at all gets one answer whatever it
     // sent, rather than a schema it can probe.
     if (!resolveDecisionAuthority(readCallerAuthority(honoRequestFacts(c))).allowed) {
-      return c.json(
-        {
-          error: 'Only a person can sync agent files',
-          code: HARNESS_SYNC_OPERATOR_ONLY_CODE,
-          message:
-            'This writes into your project and removes files DorkOS put there, so it is a ' +
-            'decision a person makes in DorkOS rather than something an agent does on your behalf.',
-        },
-        403
-      );
+      // It writes into the project and removes files DorkOS put there.
+      return problem(c, 'person_only', {
+        detail: 'Only a person can sync agent files, in DorkOS.',
+      });
     }
 
     const parsed = HarnessSyncBody.safeParse(readJsonBody(c));
@@ -471,14 +459,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
     // Before the seam, because `loadManifest` throws ENOENT there and a project
     // with nothing set up is not a sync that did no work.
     if (!existsSync(join(resolved, HARNESS_MANIFEST_PATH))) {
-      return c.json(
-        {
-          error: 'DorkOS isn’t sharing agent files for this folder yet',
-          code: HARNESS_NOT_SET_UP_CODE,
-          message: 'Run `dorkos harness sync --fix` in this folder to set it up.',
-        },
-        409
-      );
+      return problem(c, 'conflict', { detail: HARNESS_NOT_SET_UP });
     }
 
     try {
@@ -588,7 +569,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
       // Logged, not echoed, for the reason the GET gives: the engine's message
       // can name a path the caller never sent.
       logger.error('[harness] POST /sync failed', { err, projectPath: resolved });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t sync agent files. Try again.' });
     }
   });
 
@@ -597,16 +578,8 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
     // Ahead of validation, the same order and for the same reason as the sync:
     // a caller that may not do this at all gets one answer whatever it sent.
     if (!resolveDecisionAuthority(readCallerAuthority(honoRequestFacts(c))).allowed) {
-      return c.json(
-        {
-          error: 'Only a person can move a skill',
-          code: HARNESS_ADOPT_OPERATOR_ONLY_CODE,
-          message:
-            'This moves a file inside your project, so it is a decision a person makes in DorkOS ' +
-            'rather than something an agent does on your behalf.',
-        },
-        403
-      );
+      // It moves a file inside the project.
+      return problem(c, 'person_only', { detail: 'Only a person can move a skill, in DorkOS.' });
     }
 
     const parsed = HarnessAdoptBody.safeParse(readJsonBody(c));
@@ -620,14 +593,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
     // Before the engine, because `loadManifest` throws ENOENT there and a
     // project that shares nothing is not an adopt that did no work.
     if (!existsSync(join(resolved, HARNESS_MANIFEST_PATH))) {
-      return c.json(
-        {
-          error: 'DorkOS isn’t sharing agent files for this folder yet',
-          code: HARNESS_NOT_SET_UP_CODE,
-          message: 'Run `dorkos harness sync --fix` in this folder to set it up.',
-        },
-        409
-      );
+      return problem(c, 'conflict', { detail: HARNESS_NOT_SET_UP });
     }
 
     const { name, claudeOnly } = parsed.data;
@@ -689,7 +655,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
       // Logged, not echoed, for the reason the two routes above give: the
       // engine's message can name a path the caller never sent.
       logger.error('[harness] POST /adopt failed', { err, projectPath: resolved });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t move that skill. Try again.' });
     }
   });
 

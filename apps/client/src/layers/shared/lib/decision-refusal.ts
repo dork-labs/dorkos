@@ -37,16 +37,12 @@ const SHOW_SERVER_MESSAGE = new Set([
   'person_only',
   // A Wi-Fi answer needs the desk or Remote Access; it must never open a password sheet.
   'not_from_wifi',
-  // Old spelling until the approvals routes move (DOR-4979).
-  'NOT_FROM_WIFI',
   // Always allow on a request that does not offer it.
-  'ALWAYS_NOT_OFFERED',
-  // Always allow could not be saved, so nothing was allowed.
-  'ALWAYS_ALLOW_NOT_RECORDED',
+  'always_not_offered',
   // The request was already decided, or its window closed, while the card was up.
-  'APPROVAL_NOT_PENDING',
-  'APPROVAL_EXPIRED',
-  'UNKNOWN_APPROVAL',
+  'already_resolved',
+  'expired',
+  'not_found',
 ]);
 
 /**

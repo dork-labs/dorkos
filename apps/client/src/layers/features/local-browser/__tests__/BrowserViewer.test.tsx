@@ -160,10 +160,10 @@ describe('watch-only browser viewer', () => {
   });
 
   it.each([
-    ['viewer_person_only', 'Sign in to DorkOS as its owner to watch.'],
-    ['viewer_denied', 'Sign in to DorkOS as its owner to watch.'],
-    ['viewer_local_only', 'Open DorkOS on your computer to watch.'],
-    ['viewer_unavailable', 'The live view stopped.'],
+    ['person_only', 'Sign in to DorkOS as its owner to watch.'],
+    ['owner_only', 'Sign in to DorkOS as its owner to watch.'],
+    ['operator_only', 'Open DorkOS on your computer to watch.'],
+    ['temporarily_unavailable', 'The live view stopped.'],
   ])('explains %s without hiding the recovery action', async (code, message) => {
     const f = fixture();
     vi.mocked(f.transport.subscribeBrowserViewer).mockRejectedValueOnce(
@@ -171,7 +171,7 @@ describe('watch-only browser viewer', () => {
     );
     const view = render(f.tree());
     expect(await screen.findByText(message)).toBeInTheDocument();
-    if (code === 'viewer_unavailable')
+    if (code === 'temporarily_unavailable')
       expect(screen.getByRole('button', { name: 'Reconnect' })).toBeInTheDocument();
     else expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
     view.unmount();

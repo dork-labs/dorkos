@@ -70,7 +70,7 @@ const VALIDATION_FAILED = z
   .loose();
 const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
-const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
+const HOST_REFUSED = z.object({ code: z.literal('host_not_allowed') }).loose();
 const OWNER_REQUIRED = problemBody('person_only', {
   detail: 'Programs and agents can’t make account decisions.',
 });

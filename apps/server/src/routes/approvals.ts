@@ -98,11 +98,10 @@
  *
  * @module routes/approvals
  */
-import { decisionFailureResponse } from './approval-decision-response.js';
+import { decisionFailureProblem, decisionFailureResponse } from './approval-decision-response.js';
 import { registerHookReviewRoutes } from './hook-review-routes.js';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { z } from 'zod';
 import {
   DenyApprovalBodySchema,
   GrantApprovalBodySchema,
@@ -128,7 +127,11 @@ import type {
   LoginEnabledLookup,
 } from '../services/core/approvals/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
-import { decisionAuthority, requirePersonToDecide } from './approval-person-bars.js';
+import {
+  decisionAuthority,
+  decisionRefusalProblem,
+  requirePersonToDecide,
+} from './approval-person-bars.js';
 import {
   PermissionError,
   type PermissionAgentRef,
@@ -136,13 +139,19 @@ import {
   type PermissionWriter,
 } from '../services/core/permissions/index.js';
 import { titleForMcpTool } from '../services/core/mcp-tool-tiers.js';
-import { writerForPosture } from './permissions.js';
+import { permissionProblemBody, writerForPosture } from './permissions.js';
+import { isProblem, type Problem } from '@dorkos/shared/problem';
 import { logger } from '../lib/logger.js';
 import { projectsOfFolders } from '../services/projects/project-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import {
+  problem,
+  problemBody,
+  readJsonBody,
+  sendProblem,
+  validationProblem,
+} from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
-import { NOT_FROM_WIFI } from '../services/core/auth/sessions/wifi-level.js';
 import { wifiTurnHeld } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { WIFI_DENY_REASON_REFUSAL } from './session-answer-wifi.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
@@ -300,29 +309,28 @@ export function createApprovalsRoutes(
   /** Read both person bars again when the held action commits. */
   const personFromFacts = (facts: RequestFacts): Person | StepUpCommitResult => {
     const authority = decisionAuthority(facts, options.isLoginEnabled);
-    if (!authority.allowed)
-      return { status: authority.status, body: { error: authority.error, code: authority.code } };
+    if (!authority.allowed) {
+      const body = decisionRefusalProblem(authority);
+      return { status: body.status, body };
+    }
     const refusal = requirePersonToDecide(facts, options.isLoginEnabled);
-    if (refusal)
-      return { status: refusal.status, body: { error: refusal.error, code: refusal.code } };
+    if (refusal) return { status: refusal.status, body: refusal };
     return { ...authority, facts };
   };
   const personOrRefuse = (c: Context<ApiEnv>): Person | Response => {
     const result = personFromFacts(honoRequestFacts(c));
-    return 'facts' in result
-      ? result
-      : c.json(result.body as never, result.status as ContentfulStatusCode);
+    return 'facts' in result ? result : sendProblem(c, result.body as Problem);
   };
 
   /** A stored device label, never a browser-supplied label on the answer. */
   const answeringFrom = async (facts: RequestFacts): Promise<string | undefined> =>
     (await remoteAnswerDevice(facts))?.label;
 
-  /** Answer a decision failure with its status and code. */
-  const failed = (c: Context<ApiEnv>, failure: ApprovalDecisionFailure): Response => {
-    const mapped = decisionFailureResponse(failure);
-    return c.json(mapped.body, mapped.status as ContentfulStatusCode);
-  };
+  /** Answer a decision failure with its problem document. */
+  const failed = (c: Context<ApiEnv>, failure: ApprovalDecisionFailure): Response =>
+    sendProblem(c, decisionFailureProblem(failure));
+  /** A commit's refusal: the problem, with its own status. */
+  const refused = (body: Problem): StepUpCommitResult => ({ status: body.status, body });
 
   /**
    * Put back what an Always allow wrote, after the yes it came with was refused.
@@ -414,7 +422,7 @@ export function createApprovalsRoutes(
       // told which part failed.
       const agent = scope.agentPath ? options.permissions?.agentByPath(scope.agentPath) : undefined;
       if (!scope.alwaysOffered || !scope.area || !agent || !options.permissions) {
-        return result({ error: ALWAYS_NOT_OFFERED_MESSAGE, code: 'ALWAYS_NOT_OFFERED' }, 409);
+        return refused(problemBody('always_not_offered', { detail: ALWAYS_NOT_OFFERED_MESSAGE }));
       }
       // A closed or already-answered card must not leave a setting behind.
       if (scope.state !== 'pending' || scope.closed) {
@@ -434,19 +442,15 @@ export function createApprovalsRoutes(
         );
         alwaysWrite = { agentId: agent.id, changes };
       } catch (err) {
-        if (err instanceof PermissionError) {
-          return result({ error: err.message, code: err.code }, 409);
-        }
+        if (err instanceof PermissionError) return refused(permissionProblemBody(err));
         logger.error('[Approvals] Always allow could not be recorded; nothing was granted', {
           approvalId,
           err: err instanceof Error ? err.message : String(err),
         });
-        return result(
-          {
-            error: 'DorkOS could not save Always allow, so it allowed nothing. Try again.',
-            code: 'ALWAYS_ALLOW_NOT_RECORDED',
-          },
-          500
+        return refused(
+          problemBody('internal_error', {
+            detail: 'DorkOS couldn’t save Always allow, so it allowed nothing. Try again.',
+          })
         );
       }
     }
@@ -489,14 +493,10 @@ export function createApprovalsRoutes(
           writerForPosture(authority.posture, authority.facts.user)
         );
         if (!undone) {
-          return result(
-            {
-              error:
-                'Someone else answered this request first, and DorkOS could not take back the ' +
-                "Always allow it had just saved. Check the agent's Permissions page.",
-              code: 'ALWAYS_ALLOW_NOT_UNDONE',
-            },
-            500
+          return refused(
+            problemBody('internal_error', {
+              detail: 'Someone answered first, and Always allow stayed saved. Check Permissions.',
+            })
           );
         }
       }
@@ -539,7 +539,9 @@ export function createApprovalsRoutes(
   // Open like `/pending`: it is the same card's text, swept the same way.
   router.get('/:id/full-detail', (c) => {
     const text = approvals.fullDetail(c.req.param('id'));
-    if (text === undefined) return c.json({ error: 'No pending card with a full list' }, 404);
+    if (text === undefined) {
+      return problem(c, 'not_found', { detail: 'No waiting card has a full list.' });
+    }
     return c.json({ text });
   });
 
@@ -551,16 +553,13 @@ export function createApprovalsRoutes(
     // destructive (DOR-2969), raising what agents may do (DOR-3037) and a
     // paid run (DOR-4204 PR 2, Security Must 2).
     const wifi = refuseApprovalYesFromWifi(honoRequestFacts(c));
-    if (wifi) return c.json(wifi, 403);
+    if (wifi) return problem(c, 'not_from_wifi', { detail: wifi.error });
     const spend = approvals.answerScope(c.req.param('id'))?.spend === true;
 
     // An empty POST reads as `{}`, as Express 5's undefined `req.body` did, and
     // `answer` defaults to `once`, so an absent body is a plain one-time yes.
     const parsed = GrantApprovalBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!parsed.success) {
-      const details = z.flattenError(parsed.error);
-      return c.json({ error: 'Validation failed', code: 'INVALID_GRANT_BODY', details }, 400);
-    }
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const { answer } = parsed.data;
     const id = c.req.param('id');
     // A paid run's bars, at the tap and again at a held answer's confirmation.
@@ -575,7 +574,7 @@ export function createApprovalsRoutes(
           })
         : null;
     const spendRefused = refuseSpend(authority.facts);
-    if (spendRefused) return c.json(spendRefused.body, spendRefused.status);
+    if (spendRefused) return sendProblem(c, spendRefused);
 
     // Two Always allows for the same agent and action run one after the other:
     // run side by side, both would read "not set" before either wrote, and the
@@ -606,6 +605,7 @@ export function createApprovalsRoutes(
       (isAtThisComputer(authority.facts) && !holdsAtDesk)
     ) {
       const result = await apply(authority);
+      if (result.status >= 400 && isProblem(result.body)) return sendProblem(c, result.body);
       return c.json(result.body as never, result.status as ContentfulStatusCode);
     }
     const card = approvals.getPending(id);
@@ -620,14 +620,11 @@ export function createApprovalsRoutes(
         !first.agentPath ||
         !options.permissions?.agentByPath(first.agentPath))
     ) {
-      return c.json({ error: ALWAYS_NOT_OFFERED_MESSAGE, code: 'ALWAYS_NOT_OFFERED' }, 409);
+      return problem(c, 'always_not_offered', { detail: ALWAYS_NOT_OFFERED_MESSAGE });
     }
     const hash = approvals.stepUpHash(id)!;
     if (authority.facts.user?.credential !== 'cookie' || !authority.facts.user.sessionId) {
-      return c.json(
-        { error: 'Sign in to DorkOS to decide an approval.', code: 'not-a-person' },
-        403
-      );
+      return problem(c, 'person_only', { detail: 'Sign in to DorkOS to decide an approval.' });
     }
     const from = await answeringFrom(authority.facts);
     return holdForStepUp(c, {
@@ -643,9 +640,9 @@ export function createApprovalsRoutes(
         if (!('facts' in person)) return person;
         // The same Wi-Fi rule as the request: a confirmation finished on Wi-Fi allows nothing.
         const wifi = refuseApprovalYesFromWifi(confirming);
-        if (wifi) return { status: 403, body: wifi };
+        if (wifi) return refused(problemBody('not_from_wifi', { detail: wifi.error }));
         const spendAtConfirm = refuseSpend(confirming);
-        if (spendAtConfirm) return spendAtConfirm;
+        if (spendAtConfirm) return refused(spendAtConfirm);
         return apply({ ...person, answeringFrom: from, confirmedWith: 'password' }, hash);
       },
     });
@@ -664,13 +661,9 @@ export function createApprovalsRoutes(
     const scope = approvals.answerScope(id);
     if (!scope) return failed(c, 'unknown');
     if (!scope.agentPath || !scope.alwaysOffered) {
-      return c.json(
-        {
-          error: 'This request never suggests Always allow, so there is nothing to turn off.',
-          code: 'SUGGESTION_NOT_OFFERED',
-        },
-        409
-      );
+      return problem(c, 'always_not_offered', {
+        detail: 'This request never suggests Always allow, so there’s nothing to turn off.',
+      });
     }
     if (options.activity) {
       const writer = writerForPosture(authority.posture, authority.facts.user);
@@ -709,16 +702,13 @@ export function createApprovalsRoutes(
     // An empty POST reads as `{}`, as Express 5's undefined `req.body` did, and
     // a reason is optional, so an absent body is a valid bare denial.
     const parsed = DenyApprovalBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!parsed.success) {
-      const details = z.flattenError(parsed.error);
-      return c.json({ error: 'Validation failed', code: 'INVALID_DENY_BODY', details }, 400);
-    }
+    if (!parsed.success) return validationProblem(c, parsed.error);
 
     // From Wi-Fi a Deny carries no reason: the agent reads it, in a turn that
     // may run at its own level (DOR-3037). A bare Deny still lands, and so does
     // the owner's own reason (DOR-3242).
     if (parsed.data.reason?.trim() && wifiTurnHeld(honoRequestFacts(c))) {
-      return c.json({ error: WIFI_DENY_REASON_REFUSAL, code: NOT_FROM_WIFI }, 403);
+      return problem(c, 'not_from_wifi', { detail: WIFI_DENY_REASON_REFUSAL });
     }
     const id = c.req.param('id');
     const scope = approvals.answerScope(id);

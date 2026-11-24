@@ -103,7 +103,7 @@ describe('routes registered before the body is parsed', () => {
   it('still sit behind the host guard', async () => {
     const res = await request(server).post('/api/early/echo').set('Host', 'rebound.example');
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('HOST_NOT_ALLOWED');
+    expect(res.body.code).toBe('host_not_allowed');
   });
 });
 

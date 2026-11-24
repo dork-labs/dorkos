@@ -357,7 +357,7 @@ describe('an agent adding someone who may approve on a chat connection', () => {
       .set('Origin', ORIGIN)
       .send({ answer: 'always' });
     expect(always.status).toBe(409);
-    expect(always.body.code).toBe('ALWAYS_NOT_OFFERED');
+    expect(always.body.code).toBe('always_not_offered');
     expect(manager.updateConfig).not.toHaveBeenCalled();
   });
 
@@ -390,7 +390,7 @@ describe('an agent adding someone who may approve on a chat connection', () => {
   it('turns the card down when the agent’s turn is marked before the yes', async () => {
     const asked = await agentAddsApprover();
     const done = await duringMarkedTurn(() => yesWithStepUp(asked.body.approvalId));
-    expect(done.body).toMatchObject({ status: 409, result: { code: 'agent_raise_marked' } });
+    expect(done.body).toMatchObject({ status: 412, result: { code: 'precondition_failed' } });
     expect(manager.updateConfig).not.toHaveBeenCalled();
   });
 
@@ -399,7 +399,7 @@ describe('an agent adding someone who may approve on a chat connection', () => {
     const now = Date.now();
     vi.spyOn(Date, 'now').mockReturnValue(now + AGENT_RAISE_TTL_MS + 1);
     const done = await yesWithStepUp(asked.body.approvalId);
-    expect(done.body).toMatchObject({ status: 409, result: { code: 'agent_raise_expired' } });
+    expect(done.body).toMatchObject({ status: 410, result: { code: 'expired' } });
     expect(manager.updateConfig).not.toHaveBeenCalled();
   });
 

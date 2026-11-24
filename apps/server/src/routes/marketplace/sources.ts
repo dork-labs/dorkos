@@ -87,7 +87,7 @@ export function mountSourceRoutes(
       return c.json({ sources: listed });
     } catch (err) {
       logger.error('[Marketplace] Failed to list sources', err);
-      return c.json({ error: 'Failed to list marketplace sources' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t list the marketplace sources.' });
     }
   });
 

@@ -9,9 +9,9 @@ vi.mock('../../lib/api-client.js', () => {
   class ApiError extends Error {
     constructor(
       public status: number,
-      public body: { error?: string; code?: string }
+      public body: { detail?: string; code?: string }
     ) {
-      super(body.error ?? `HTTP ${status}`);
+      super(body.detail ?? `HTTP ${status}`);
     }
   }
   return { ApiError, apiCall: vi.fn() };
@@ -160,8 +160,10 @@ describe('dorkos permissions', () => {
   it("prints the server's floor refusal as it is", async () => {
     apiCallMock.mockRejectedValue(
       new ApiError(400, {
-        error: 'Safety limits and Reach & secrets are never Allowed. Choose Ask or Blocked.',
-        code: 'FLOOR_NEVER_ALLOWED',
+        title: 'The request didn’t pass its checks.',
+        status: 400,
+        code: 'invalid_request',
+        detail: 'Safety limits and Reach & secrets are never Allowed. Choose Ask or Blocked.',
       })
     );
     expect(await runPermissionsDispatcher(['set', 'reach', 'allowed'])).toBe(1);
@@ -245,9 +247,11 @@ describe('dorkos permissions', () => {
 
   it('on a conflict, names it and the --force next step', async () => {
     apiCallMock.mockRejectedValue(
-      new ApiError(409, {
-        error: 'This has changed since. Set it back anyway?',
-        code: 'UNDO_CONFLICT',
+      new ApiError(412, {
+        title: 'Something changed since you last looked.',
+        status: 412,
+        code: 'precondition_failed',
+        detail: 'This has changed since. Set it back anyway?',
         conflicts: [
           {
             change: {
@@ -260,7 +264,7 @@ describe('dorkos permissions', () => {
             reason: 'changed-since',
           },
         ],
-      } as { error: string; code: string })
+      } as { detail: string; code: string })
     );
     expect(await runPermissionsDispatcher(['undo', 'e1'])).toBe(1);
     expect(err()).toContain('This has changed since.');

@@ -15,7 +15,6 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
-import { NOT_FROM_WIFI } from '../../services/core/auth/sessions/wifi-level.js';
 import { refuseAgentSelfFilesFromWifi, WIFI_AGENT_FILES_REFUSAL } from '../agent-execution-gate.js';
 import { refuseOutsiderAgentFiles } from '../../services/core/operator/agent-file-inputs.js';
 import { recordTurnLevels } from '../../services/core/turn-power/turn-levels.js';
@@ -63,7 +62,8 @@ describe('PATCH /api/agents/current from Wi-Fi', () => {
       .set('x-test-via', 'wifi')
       .send({ [field]: value });
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: WIFI_AGENT_FILES_REFUSAL, code: NOT_FROM_WIFI });
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body).toMatchObject({ code: 'not_from_wifi', detail: WIFI_AGENT_FILES_REFUSAL });
   });
 
   it('takes any other field from Wi-Fi, and every field at this computer', async () => {

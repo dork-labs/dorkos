@@ -256,7 +256,7 @@ function ActionStepUpSheet({
       const code = (result.result as { code?: string } | null)?.code;
       if (
         (stage.view.kind === 'approval.grant' || stage.view.kind === 'approval.grant-always') &&
-        ['APPROVAL_NOT_PENDING', 'APPROVAL_EXPIRED', 'UNKNOWN_APPROVAL'].includes(code ?? '')
+        ['already_resolved', 'expired', 'not_found'].includes(code ?? '')
       ) {
         setStage({
           kind: 'ended',

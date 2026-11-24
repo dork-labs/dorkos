@@ -10,6 +10,7 @@
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from '../zod-openapi.js';
 import { CAPABILITY_TIERS } from '../capabilities.js';
+import { ProblemSchema } from '../problem.js';
 import {
   AgentPermissionsSchema,
   PermissionAreaIdSchema,
@@ -332,7 +333,7 @@ export const UndoPermissionChangeBodySchema = z
   .object({
     /**
      * Set a key back even when it changed since the recorded change. Without it,
-     * a key that moved on is a conflict: refused (409 `UNDO_CONFLICT`) for a
+     * a key that moved on is a conflict: refused (412 `precondition_failed`, with `conflicts`) for a
      * change to one agent or to the defaults alone, or left alone and reported
      * for a change that reached several.
      */
@@ -385,14 +386,14 @@ export const UndoPermissionChangeResponseSchema = z
 /** `POST /api/permissions/history/:eventId/undo` response. */
 export type UndoPermissionChangeResponse = z.infer<typeof UndoPermissionChangeResponseSchema>;
 
-/** The 409 `UNDO_CONFLICT` body: what changed since, so the person can decide. */
-export const UndoConflictResponseSchema = z
-  .object({
-    error: z.string(),
-    code: z.literal('UNDO_CONFLICT'),
-    conflicts: z.array(PermissionUndoSkipSchema),
-  })
-  .openapi('UndoConflictResponse');
+/**
+ * The 412 `precondition_failed` problem a refused Undo carries: the problem's
+ * own members and `conflicts`, what changed since, so the person can decide.
+ */
+export const UndoConflictResponseSchema = ProblemSchema.extend({
+  code: z.literal('precondition_failed'),
+  conflicts: z.array(PermissionUndoSkipSchema),
+}).openapi('UndoConflictResponse');
 
-/** The 409 `UNDO_CONFLICT` body. */
+/** The 412 problem a refused Undo carries. */
 export type UndoConflictResponse = z.infer<typeof UndoConflictResponseSchema>;

@@ -27,7 +27,7 @@ _openapi:
           before the agent is told the answer, so the resumed call and the new
           setting agree. It records its own `permission.changed` event beside
           the `permission.answered` event every answer records. It is refused
-          (409 `ALWAYS_NOT_OFFERED`) when DorkOS does not know which agent
+          (409 `always_not_offered`) when DorkOS does not know which agent
           asked, the action has no permission area, or the area is one that is
           never Allowed (Safety limits, Permissions, Reach & secrets). The
           pending card says so in advance as `alwaysOffered`. A refusal comes

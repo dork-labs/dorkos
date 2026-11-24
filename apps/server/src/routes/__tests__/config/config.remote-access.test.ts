@@ -236,7 +236,7 @@ describe('the Remote Access switch (DOR-3650)', () => {
         await request(server).get('/api/probe').set(headers).expect(200);
         await turnOff();
         const res = await request(server).get('/api/probe').set(headers).expect(403);
-        expect(res.body.code).toBe('REMOTE_ACCESS_OFF');
+        expect(res.body.code).toBe('forbidden');
       }
     );
 

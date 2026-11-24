@@ -103,7 +103,7 @@ describe('Discovery Route', () => {
         .send({ root: '/etc/secrets' });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toBe('Root path outside directory boundary');
+      expect(res.body.code).toBe('outside_boundary');
       expect(mockIsWithinBoundary).toHaveBeenCalledWith('/etc/secrets');
     });
 

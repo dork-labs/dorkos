@@ -24,7 +24,10 @@
  *
  * @module services/core/approvals/agent-raise/agent-raise-cards
  */
+import { problemBody } from '@dorkos/http-kit';
+import type { Problem, ProblemCode } from '@dorkos/shared/problem';
 import type { ApprovalService } from '../approval-service.js';
+import { logger } from '../../../../lib/logger.js';
 import { hashApprovalInput } from '../approval-input-hash.js';
 import { recordAudit } from '../../../audit/audit-trail.js';
 import type { AgentIdentity } from '../../agent-identity/agent-identity-service.js';
@@ -250,8 +253,14 @@ export function raiseAgentCard(caller: AgentRaiseCaller, write: AgentRaiseWrite)
   };
 }
 
-/** Why a card can't be answered yes, in the words the person reads. */
-export type AgentRaiseRefusal = { status: 409; body: { error: string; code: string } };
+/** Why a card can't be answered yes: a problem document, with its status. */
+export type AgentRaiseRefusal = { status: number; body: Problem };
+
+/** A refusal of a yes, as the grant route hands it back. */
+function raiseRefusal(code: ProblemCode, detail: string): AgentRaiseRefusal {
+  const body = problemBody(code, { detail });
+  return { status: body.status, body };
+}
 
 /**
  * Check a card before the person's yes is recorded: it still waits, it hasn't
@@ -263,25 +272,21 @@ export type AgentRaiseRefusal = { status: 409; body: { error: string; code: stri
  */
 export function refuseAgentRaiseYes(approvalId: string): AgentRaiseRefusal | undefined {
   const raise = pending.get(approvalId);
-  const askAgain = (error: string, code: string): AgentRaiseRefusal => ({
-    status: 409,
-    body: { error, code },
-  });
   if (!raise) {
-    return askAgain(
-      'This card can no longer be answered. Ask the agent to ask again.',
-      'agent_raise_gone'
+    return raiseRefusal(
+      'already_resolved',
+      'This card can no longer be answered. Ask the agent to ask again.'
     );
   }
   if (Date.now() >= raise.expiresAt) {
     retire(raise, 'Nobody answered in time. The agent has to ask again.');
-    return askAgain('This card expired. Ask the agent to ask again.', 'agent_raise_expired');
+    return raiseRefusal('expired', 'This card expired. Ask the agent to ask again.');
   }
   if (turnMarked(raise.agentPath, raise.sessionId)) {
     retire(raise, 'The agent’s turn read words from outside your team since it asked.');
-    return askAgain(
-      'The agent read outside words since asking, so this card no longer counts.',
-      'agent_raise_marked'
+    return raiseRefusal(
+      'precondition_failed',
+      'The agent read outside words since asking, so this card no longer counts.'
     );
   }
   return undefined;
@@ -293,7 +298,7 @@ export function refuseAgentRaiseYes(approvalId: string): AgentRaiseRefusal | und
  *
  * @param approvalId - The card the person said yes to.
  * @param approvedBy - The person, as the audit trail names them.
- * @returns The write's own answer, or a 409 when the card is gone.
+ * @returns The write's own answer, or a problem when the card is gone or the write threw.
  */
 export async function commitAgentRaise(
   approvalId: string,
@@ -301,13 +306,10 @@ export async function commitAgentRaise(
 ): Promise<{ status: number; body: unknown }> {
   const raise = pending.get(approvalId);
   if (!raise) {
-    return {
-      status: 409,
-      body: {
-        error: 'This card was already used. Ask the agent to ask again.',
-        code: 'agent_raise_gone',
-      },
-    };
+    return raiseRefusal(
+      'already_resolved',
+      'This card was already used. Ask the agent to ask again.'
+    );
   }
   // Single use: forget it before running, so a second yes finds nothing.
   clearTimeout(raise.timer);
@@ -317,10 +319,9 @@ export async function commitAgentRaise(
   try {
     result = await raise.run();
   } catch (err) {
-    result = {
-      status: 500,
-      body: { error: err instanceof Error ? err.message : 'The change failed.' },
-    };
+    // The cause goes to the log; the person reads a fixed sentence.
+    logger.error('[AgentRaise] A confirmed change failed', { approvalId, err });
+    result = raiseRefusal('internal_error', 'That change failed. Ask the agent to ask again.');
   }
   recordAudit({
     action: `${AGENT_RAISE_PREFIX}${raise.kind}`,

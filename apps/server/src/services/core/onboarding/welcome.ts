@@ -46,9 +46,6 @@ export interface WelcomeDeps {
 
 /** #team, or DorkBot's seat in it, is not there to post into yet. */
 export class WelcomeUnavailableError extends Error {
-  /** The HTTP status the route answers with. */
-  readonly status = 503;
-
   /**
    * Build the refusal.
    *
@@ -80,7 +77,7 @@ export function postFirstRunWelcome(deps: WelcomeDeps): OnboardingWelcomeResult 
     return { roomId: room.id, entryId: stored };
   }
   if (firstRunClosed(onboarding)) {
-    throw new FirstRunError(409, 'onboarding_complete', 'Setup is already finished.');
+    throw new FirstRunError('onboarding_complete', 'Setup is already finished.');
   }
   const dorkbot = deps.rooms
     .listAgentMembers(room.id)

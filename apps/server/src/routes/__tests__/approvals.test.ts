@@ -254,7 +254,7 @@ describe('approvals routes', () => {
     it('404s an approval that does not exist', async () => {
       const res = await request(app).post('/api/approvals/01JZZZZZZZZZZZZZZZZZZZZZZZ/grant').send();
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('UNKNOWN_APPROVAL');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('409s a second decision', async () => {
@@ -263,7 +263,7 @@ describe('approvals routes', () => {
 
       const res = await request(app).post(`/api/approvals/${ticket.approvalId}/grant`).send();
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('APPROVAL_NOT_PENDING');
+      expect(res.body.code).toBe('already_resolved');
     });
 
     it('410s an approval whose window closed', async () => {
@@ -274,7 +274,7 @@ describe('approvals routes', () => {
 
       const res = await request(app).post(`/api/approvals/${ticket.approvalId}/grant`).send();
       expect(res.status).toBe(410);
-      expect(res.body.code).toBe('APPROVAL_EXPIRED');
+      expect(res.body.code).toBe('expired');
     });
   });
 
@@ -309,14 +309,14 @@ describe('approvals routes', () => {
         .post(`/api/approvals/${ticket.approvalId}/deny`)
         .send({ reason: 42 });
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('INVALID_DENY_BODY');
-      expect(res.body.details).toBeTruthy();
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.issues).toBeTruthy();
     });
 
     it('404s an approval that does not exist', async () => {
       const res = await request(app).post('/api/approvals/01JZZZZZZZZZZZZZZZZZZZZZZZ/deny').send();
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('UNKNOWN_APPROVAL');
+      expect(res.body.code).toBe('not_found');
     });
   });
 
@@ -329,7 +329,7 @@ describe('approvals routes', () => {
         .send();
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+      expect(res.body.code).toBe('person_only');
       // Untouched: the token still cannot be spent.
       expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
     });
@@ -342,7 +342,7 @@ describe('approvals routes', () => {
         .send();
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+      expect(res.body.code).toBe('person_only');
     });
 
     it('403s a caller whose agent token did NOT resolve — a revoked agent is still an agent', async () => {
@@ -354,7 +354,7 @@ describe('approvals routes', () => {
         .send();
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+      expect(res.body.code).toBe('person_only');
       expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
     });
 
@@ -367,7 +367,7 @@ describe('approvals routes', () => {
         .send();
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('REQUESTER_CANNOT_DECIDE');
+      expect(res.body.code).toBe('person_only');
       expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
     });
 
@@ -390,14 +390,14 @@ describe('approvals routes', () => {
         .post(`/api/approvals/${ticket.approvalId}/grant`)
         .send();
       expect(asAgent.status).toBe(403);
-      expect(asAgent.body.code).toBe('AGENT_CANNOT_DECIDE');
+      expect(asAgent.body.code).toBe('person_only');
 
       const asRequester = await request(buildApp())
         .post(`/api/approvals/${ticket.approvalId}/grant`)
         .set(APPROVAL_TOKEN_HEADER, ticket.token)
         .send();
       expect(asRequester.status).toBe(403);
-      expect(asRequester.body.code).toBe('REQUESTER_CANNOT_DECIDE');
+      expect(asRequester.body.code).toBe('person_only');
 
       expect(approvals.consume(ticket.token, binding).outcome).toBe('pending');
     });
@@ -411,7 +411,7 @@ describe('approvals routes', () => {
         .send();
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('REQUESTER_CANNOT_DECIDE');
+      expect(res.body.code).toBe('person_only');
     });
 
     it('still lets an agent read what is pending — only deciding is blocked', async () => {
@@ -432,7 +432,7 @@ describe('approvals routes', () => {
           .send();
 
         expect(res.status).toBe(401);
-        expect(res.body.code).toBe('AUTH_REQUIRED');
+        expect(res.body.code).toBe('unauthenticated');
         expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
       });
 
@@ -475,7 +475,7 @@ describe('approvals routes', () => {
           .send();
 
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+        expect(res.body.code).toBe('person_only');
       });
 
       it('refuses a plain grant from a per-user API key, and leaves it pending (DOR-474)', async () => {
@@ -491,7 +491,7 @@ describe('approvals routes', () => {
           .send();
 
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('operator_cookie_required');
+        expect(res.body.code).toBe('person_only');
         expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
         expect(emitted, 'a refused decision writes no Activity record').toEqual([]);
       });
@@ -506,7 +506,7 @@ describe('approvals routes', () => {
           .send({ reason: 'nothing to see here' });
 
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('operator_cookie_required');
+        expect(res.body.code).toBe('person_only');
         expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
       });
 
@@ -694,7 +694,7 @@ describe('approvals routes', () => {
         .send({ answer: 'always' });
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('ALWAYS_NOT_OFFERED');
+      expect(res.body.code).toBe('always_not_offered');
       expect(approvals.getPending(ticket.approvalId)).toBeDefined();
       expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
       expect(world.agents.get('agent-dorkbot')?.permissions).toBeUndefined();
@@ -761,7 +761,7 @@ describe('approvals routes', () => {
           .send({ answer: 'always' });
 
         expect(res.status).toBe(500);
-        expect(res.body.code).toBe('ALWAYS_ALLOW_NOT_UNDONE');
+        expect(res.body.code).toBe('internal_error');
         expect(emitted).toEqual([]);
       });
     });
@@ -849,7 +849,7 @@ describe('approvals routes', () => {
         .send({ answer: 'always' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+      expect(res.body.code).toBe('person_only');
       expect(world.agents.get('agent-dorkbot')?.permissions).toBeUndefined();
     });
 
@@ -874,7 +874,7 @@ describe('approvals routes', () => {
         .send({ answer: 'forever' });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('INVALID_GRANT_BODY');
+      expect(res.body.code).toBe('invalid_request');
       expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
     });
 

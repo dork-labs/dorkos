@@ -77,8 +77,15 @@ const PROBLEM: Record<TodoPromiseErrorCode, ProblemCode> = {
   TOO_MANY: 'rate_limited',
 };
 
-/** Answer a {@link TodoPromiseError} as a problem document, or rethrow. */
-function refusal(c: Context<ApiEnv>, err: unknown): Response {
+/**
+ * Answer a {@link TodoPromiseError} as a problem document, or rethrow. The
+ * to-do and promise routes share it: the service's sentences are fixed.
+ *
+ * @param c - The Hono context.
+ * @param err - What the service threw.
+ * @returns The response.
+ */
+export function todoRefusal(c: Context<ApiEnv>, err: unknown): Response {
   if (!(err instanceof TodoPromiseError)) throw err;
   return problem(c, PROBLEM[err.code], { detail: err.message });
 }
@@ -187,7 +194,7 @@ export function createTodosRoutes(deps: TodoRouterDeps): Hono<ApiEnv> {
       });
       return c.json(todo, 201);
     } catch (err) {
-      return refusal(c, err);
+      return todoRefusal(c, err);
     }
   });
 
@@ -205,7 +212,7 @@ export function createTodosRoutes(deps: TodoRouterDeps): Hono<ApiEnv> {
         })
       );
     } catch (err) {
-      return refusal(c, err);
+      return todoRefusal(c, err);
     }
   });
 
