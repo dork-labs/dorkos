@@ -14,11 +14,11 @@
  *
  * The environment it reads:
  *
- * - `DORKOS_HARNESS`, or `CLAUDECODE` for `claude-code`: the harness.
- * - `DORKOS_SESSION_ID`, under any harness: the chat. Under Claude Code only,
- *   `CLAUDE_CODE_SESSION_ID` and then `CLAUDE_SESSION_ID` stand in when it is
- *   unset, so a Claude variable left in a Codex or OpenCode shell never
- *   names another harness's chat.
+ * - `DORKOS_HARNESS` names the harness when set. Otherwise a Claude Code
+ *   session uses `CLAUDECODE`, and a native Codex chat uses `CODEX_THREAD_ID`.
+ * - `DORKOS_SESSION_ID` names the chat under any harness. Without it, Claude
+ *   Code uses `CLAUDE_CODE_SESSION_ID` and then `CLAUDE_SESSION_ID`; Codex
+ *   uses `CODEX_THREAD_ID`.
  * - `CLAUDE_CONFIG_DIR`, under Claude Code only: the account, as
  *   `open-pr.sh` derives it.
  * - `DORKOS_AGENT_ID` and `DORKOS_SPACE_ID`: the agent and its space, a bare
@@ -87,25 +87,32 @@ export function surfaceFromEnv(vars: NodeJS.ProcessEnv): string {
  * @returns The writer's fields.
  */
 export function fieldsFromEnv(vars: NodeJS.ProcessEnv, surface?: string): ProvenanceFields {
+  const dorkosChat = env(vars, 'DORKOS_SESSION_ID');
+  const claudeChat = env(vars, 'CLAUDE_CODE_SESSION_ID') ?? env(vars, 'CLAUDE_SESSION_ID');
+  const codexChat = env(vars, 'CODEX_THREAD_ID');
   let harness = env(vars, 'DORKOS_HARNESS');
-  if (harness === undefined && env(vars, 'CLAUDECODE') !== undefined) harness = 'claude-code';
-  const isClaudeCode = harness === 'claude-code';
+  if (harness === undefined) {
+    // A bare Codex shell can inherit CLAUDECODE without a Claude session.
+    if (env(vars, 'CLAUDECODE') && (claudeChat || dorkosChat || !codexChat))
+      harness = 'claude-code';
+    else if (codexChat) harness = 'codex';
+  }
+  let chat = dorkosChat;
   let account: string | undefined;
-  if (isClaudeCode) {
+  if (harness === 'claude-code') {
+    chat ??= claudeChat;
     // The config dir's basename, one leading dot dropped: `~/.claude3` is `claude3`.
     account = basename(env(vars, 'CLAUDE_CONFIG_DIR') ?? 'claude').replace(/^\./, '');
     if (account.includes('@')) account = undefined;
+  } else if (harness === 'codex') {
+    chat ??= codexChat;
   }
   const fields: Partial<Record<keyof ProvenanceFields, string | undefined>> = {
     harness,
     surface: surface ?? surfaceFromEnv(vars),
     account,
     agent: asReference('agent', env(vars, 'DORKOS_AGENT_ID')),
-    chat:
-      env(vars, 'DORKOS_SESSION_ID') ??
-      (isClaudeCode
-        ? (env(vars, 'CLAUDE_CODE_SESSION_ID') ?? env(vars, 'CLAUDE_SESSION_ID'))
-        : undefined),
+    chat,
     space: asReference('space', env(vars, 'DORKOS_SPACE_ID')),
   };
   return Object.fromEntries(

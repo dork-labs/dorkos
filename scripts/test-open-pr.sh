@@ -25,7 +25,7 @@ fail=0
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=Fixture GIT_AUTHOR_EMAIL=fixture@example.invalid
 export GIT_COMMITTER_NAME=Fixture GIT_COMMITTER_EMAIL=fixture@example.invalid
-unset CLAUDECODE CLAUDE_CODE_SESSION_ID CLAUDE_SESSION_ID DORKOS_HARNESS DORKOS_SESSION_ID DORKOS_AGENT_ID DORKOS_SPACE_ID
+unset CLAUDECODE CLAUDE_CODE_SESSION_ID CLAUDE_SESSION_ID CODEX_THREAD_ID DORKOS_HARNESS DORKOS_SESSION_ID DORKOS_AGENT_ID DORKOS_SPACE_ID
 unset OPEN_PR_CAP OPEN_PR_BASE OPEN_PR_REMOTE OPEN_PR_TSX CI
 export CLAUDE_CONFIG_DIR=/nowhere/claude
 
@@ -391,7 +391,7 @@ fake_open
 check 'neither checkout has tsx: the minimal line, naming both places' "0,yes,yes" \
   "$rc,$(has "$out" "$MINIMAL"),$(has "$out" "fake-wt/node_modules/.bin/tsx, ")"
 
-# The real CLI, from the environment Claude Code and DorkOS set. Fake ids only.
+# The real CLI, from the environment each harness sets. Fake ids only.
 CHAT=7c1e4b2a-9f3d-4e8b-a6c5-a1b2c3d4e5f6
 AGENT=01KJXYKJYW4N8QGQ5W4GB6YM9J
 SPACE=01JD3F1W2KQ8Z0YV9N6B5T4RMA
@@ -410,10 +410,10 @@ if [ -x "$real_tsx" ]; then
     "$(has "$(body)" '<!-- agent:provenance {"v":2,"harness":"claude-code","surface":"bare-cli","account":"claude2","chat":"dork:chat:7c1e4b2a"} -->')"
   check 'and the note names them' yes "$(has "$out" '(omitted: agent, space)')"
 
-  # Public: the chat is cut to 8 characters, and no machine detail goes in.
-  DORKOS_HARNESS=codex DORKOS_SESSION_ID=$CHAT DORKOS_AGENT_ID=$AGENT HOSTNAME=made-up-host real
-  check 'public: the chat is 8 characters' "yes,no" \
-    "$(has "$(body)" '"chat":"dork:chat:7c1e4b2a"}'),$(has "$(body)" "$CHAT")"
+  CODEX_THREAD_ID=$CHAT HOSTNAME=made-up-host real
+  public_codex='<!-- agent:provenance {"v":2,"harness":"codex","surface":"bare-cli","chat":"dork:chat:7c1e4b2a"} -->'
+  check 'bare Codex signs the PR with its public prefix and omits the full thread from the body and output' "yes,no,no" \
+    "$(has "$(body)" "$public_codex"),$(has "$(body)" "$CHAT"),$(has "$out" "$CHAT")"
   for key in host turn resumeUrl instanceId sessionId made-up-host; do
     check "public: no $key" no "$(has "$(body)" "$key")"
   done
