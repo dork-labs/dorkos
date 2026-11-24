@@ -103,6 +103,16 @@
       ]
     },
     {
+      "guide": "architecture-target.md",
+      "description": "The living target architecture: space side and computer side, one contract, two entries, turns, ways in, mini apps and the core test, the process rule, the build order and what is retired",
+      "patterns": [
+        "decisions/",
+        "research/20261124_architecture-direction-review",
+        "packages/shared/src/session-relay-agent-computer",
+        "apps/server/src/lib/server-role"
+      ]
+    },
+    {
       "guide": "design-system.md",
       "description": "Color palette, typography, spacing, motion specs",
       "patterns": [

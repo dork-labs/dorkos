@@ -14,6 +14,8 @@ amends: [0320]
 
 Accepted (operator decision, direct chat, 2026-10-15). Dorian approved the accounts-and-devices plan and its schedule option A: "Let's go with A for the slip". The login groundwork lands before launch, and launch moves from late January 2027 to early February 2027 (about 2 weeks, range 1 to 3). The plan was agreed after two adversarial review rounds on each of two drafts. Build plan: [`plans/2026-10-accounts-and-devices.md`](../plans/2026-10-accounts-and-devices.md). Tickets: DOR-2964 to DOR-2971, children of DOR-2932.
 
+**Amended by** [261124-150515](261124-150515-sequence-work-for-the-best-product-not-toward-dates.md) (accepted 2026-11-24): the launch dates in the Status line are retired: "launch moves from late January 2027 to early February 2027 (about 2 weeks, range 1 to 3)". What this record decided to build stands, and its place in the order is in `meta/ROADMAP.md`.
+
 **Amends** [0320](0320-optional-local-login-required-on-exposure.md) (it stays Accepted). Retired: the single global "Require login" switch as the thing that decides whether a request needs a person session, and "exposure hard-requires creating the owner account" as the only protection for exposed installs. What stands: no account is required to run DorkOS, exposure still needs an owner credential, Better Auth sessions and per-account API keys stay, and the tunnel passcode stays retired.
 
 [0319](0319-account-first-cloud-identity-device-link.md) stands unchanged: the DorkOS account and the local login are never merged. This ADR does not make "Continue with DorkOS" a way to sign in at the Mac.

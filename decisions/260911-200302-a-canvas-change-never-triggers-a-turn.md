@@ -14,6 +14,8 @@ amends: null
 
 Accepted (extracted from spec `room-canvas`).
 
+**Amended by** [261001-185204](261001-185204-granted-document-events-use-a-durable-outbox.md) (accepted 2026-11-24): an explicitly granted upstream document event may now reach its owning agent through a durable server outbox, which "none of which triggers a turn, and we will add no fourth" did not allow. Content updates, downstream events, state patches and presence counts still wake nobody, so the quiet canvas stays the default.
+
 ## Context
 
 Giving a room a shared canvas creates a new class of event — "somebody changed the table" — and the

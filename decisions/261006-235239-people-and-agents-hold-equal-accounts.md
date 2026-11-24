@@ -14,6 +14,8 @@ amends: [0320, 260814-025326]
 
 Accepted (operator decision, 2026-10-06; Linear DOR-2735). Direction: equal accounts are after-launch work; until they land, one Owner per server holds the levers, as today.
 
+**Amended by** [261124-150515](261124-150515-sequence-work-for-the-best-product-not-toward-dates.md) (accepted 2026-11-24): the phrase "equal accounts are after-launch work" in the Status line is retired. The decision stands, and its place in the order is in `meta/ROADMAP.md`. Until equal accounts land, one Owner per server still holds the levers.
+
 **Amends** (each stays Accepted):
 
 - [0320](0320-optional-local-login-required-on-exposure.md): retires "registration auto-closes after the first user" and the single-person trust domain behind it. Optional local login, login required on exposure, and per-account API keys stand.
