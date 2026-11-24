@@ -138,6 +138,8 @@ export interface SessionStartedResult {
   title: string;
   /** A markdown link that opens the chat, to use instead of its id. */
   link: string;
+  /** Its `dork:chat:` reference, for a `/r/` link, or null when the id cannot be one. */
+  ref: string | null;
   /** The runtime it runs on. */
   runtime: string;
   /** The account it was started on, or `null` when the usual choice decides. */

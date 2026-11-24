@@ -71,6 +71,7 @@ describe('readChat — include status', () => {
         id: TARGET,
         title: 'Build',
         link: `[Build](/session?session=${TARGET})`,
+        ref: `dork:chat:${TARGET}`,
         agent: 'Bo',
         state: 'running',
       },

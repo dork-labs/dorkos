@@ -89,10 +89,15 @@ describe('useEntryActions — the action set', () => {
     // Spelled out rather than compared against `ENTRY_ACTION_ORDER`. The hook now
     // BUILDS its output by mapping over that constant, so asserting against it
     // would compare the constant with itself and pass through any reordering.
-    expect(actionsFor(entry()).current.map((a) => a.id)).toEqual(['reply', 'copy', 'mention']);
+    expect(actionsFor(entry()).current.map((a) => a.id)).toEqual([
+      'reply',
+      'copy',
+      'mention',
+      'link',
+    ]);
   });
 
-  it('adds View profile LAST, so no finger already trained on this row moves', () => {
+  it('adds View profile after every older command, so no finger trained on this row moves', () => {
     // Position is the contract here, not just membership: `room-entry-actions`
     // walks this row with arrow keys and counts presses to reach Reply, and the
     // profile action arrived after every other command had been there for
@@ -100,8 +105,14 @@ describe('useEntryActions — the action set', () => {
     // author to the roster — see `EntryActionsInput.onViewProfile`.
     const withProfile = actionsFor(entry(), { author: author(), onViewProfile: () => {} });
 
-    expect(withProfile.current.map((a) => a.id)).toEqual(['reply', 'copy', 'mention', 'profile']);
-    expect(withProfile.current.at(-1)?.label).toBe('View profile');
+    expect(withProfile.current.map((a) => a.id)).toEqual([
+      'reply',
+      'copy',
+      'mention',
+      'profile',
+      'link',
+    ]);
+    expect(withProfile.current.at(-2)?.label).toBe('View profile');
   });
 
   it('adds Make a to-do after View profile, and only when the row offers it (DOR-3088)', () => {
@@ -119,8 +130,9 @@ describe('useEntryActions — the action set', () => {
       'mention',
       'profile',
       'todo',
+      'link',
     ]);
-    withTodo.current.at(-1)!.run();
+    withTodo.current.at(-2)!.run();
     expect(makeTodo).toHaveBeenCalledOnce();
     expect(actionsFor(entry()).current.map((a) => a.id)).not.toContain('todo');
   });
@@ -207,6 +219,24 @@ describe('useEntryActions — the action set', () => {
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 
+  it('copies the message’s full /r/ link, last of all, and says it did (DOR-5046)', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+
+    const link = actionsFor(entry({ id: '01JD3G7Z7P1Q4R8S9T0U2V3W4X' })).current.at(-1)!;
+    expect(link.label).toBe('Copy link');
+    link.run();
+
+    expect(writeText).toHaveBeenCalledWith(
+      `${window.location.origin}/r/dork:entry:01JD3G7Z7P1Q4R8S9T0U2V3W4X`
+    );
+    await vi.waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Copied'));
+  });
+
+  it('offers no Copy link for a message whose id cannot be a reference', () => {
+    expect(actionsFor(entry({ id: 'has.dots' })).current.map((a) => a.id)).not.toContain('link');
+  });
+
   it('writes the verified handle into the draft, not the display name', () => {
     // A display name routinely contains spaces, which the mention pattern
     // cannot span — inserting one would address nobody and say nothing about it.
@@ -231,13 +261,14 @@ describe('useEntryActions — the action set', () => {
       (a) => a.id
     );
 
-    expect(ids).toEqual(['reply', 'copy']);
+    expect(ids).toEqual(['reply', 'copy', 'link']);
   });
 
   it('does not offer to mention an author who has left the room', () => {
     expect(actionsFor(entry(), { author: undefined }).current.map((a) => a.id)).toEqual([
       'reply',
       'copy',
+      'link',
     ]);
   });
 
@@ -246,7 +277,7 @@ describe('useEntryActions — the action set', () => {
 
     expect(
       actionsFor(entry({ authorId: VIEWER }), { author: own }).current.map((a) => a.id)
-    ).toEqual(['reply', 'copy']);
+    ).toEqual(['reply', 'copy', 'link']);
   });
 
   it('still asks for the caret on a second reply press', () => {

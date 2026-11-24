@@ -59,7 +59,17 @@ export const ENTRY_ACTIONS_SECTIONS: PlaygroundSection[] = [
     title: 'How many actions',
     page: 'entry-actions',
     category: 'Entry Actions',
-    keywords: ['reply', 'copy', 'mention', 'action set', 'count', 'pill', 'width', 'reactions'],
+    keywords: [
+      'reply',
+      'copy',
+      'mention',
+      'link',
+      'action set',
+      'count',
+      'pill',
+      'width',
+      'reactions',
+    ],
   },
   {
     id: 'grouped-and-ungrouped',

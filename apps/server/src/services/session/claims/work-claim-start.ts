@@ -26,6 +26,7 @@
  *
  * @module services/session/claims/work-claim-start
  */
+import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
 import { chatMarkdownLink } from '@dorkos/shared/session-link';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { chatTitleOf, maySeeChat } from '../chat-messages/chat-message-wiring.js';
@@ -64,6 +65,8 @@ export interface SessionAlreadyRunningResult {
   title: string | null;
   /** A markdown link that opens it, to use instead of its id. */
   link: string;
+  /** Its `dork:chat:` reference, for a `/r/` link, or null when the id cannot be one. */
+  ref: string | null;
   /** The work key it holds, normalised. */
   claim: string;
   /** Always `already-running`: nothing new was started. */
@@ -120,6 +123,7 @@ export async function claimForStart(input: ClaimForStartInput): Promise<ClaimFor
       sessionId: holder,
       title,
       link,
+      ref: dorkReferenceOrNull('chat', holder),
       claim: key,
       status: 'already-running',
       note: `Already running: ${link}, on ${key} since ${result.holder.claimedAt}. Nothing new started. Message that chat instead (a message wakes it), or call again with startAnyway: true for a second chat.`,

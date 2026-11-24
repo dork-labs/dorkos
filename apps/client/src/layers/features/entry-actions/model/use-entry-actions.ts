@@ -4,7 +4,7 @@
  * @module features/entry-actions/model/use-entry-actions
  */
 import { useMemo } from 'react';
-import { AtSign, CircleCheck, Copy, Reply, User } from 'lucide-react';
+import { AtSign, CircleCheck, Copy, Link, Reply, User } from 'lucide-react';
 import {
   replyRootFor,
   threadDraftKey,
@@ -14,7 +14,7 @@ import {
   type AuthorRef,
   type RoomEntry,
 } from '@/layers/entities/room';
-import { useCopyFeedback } from '@/layers/shared/lib';
+import { dorkShareUrl, useCopyFeedback } from '@/layers/shared/lib';
 import { ENTRY_ACTION_ORDER, type EntryAction, type EntryActionSlot } from '../lib/entry-actions';
 
 /** The message an action set is being built for. */
@@ -107,6 +107,9 @@ export function useEntryActions({
 }: EntryActionsInput): EntryAction[] {
   const rootEntryId = replyRootFor(entry);
   const text = entry.body.text;
+  // The message's own `/r/` link (DOR-5046): it opens the room scrolled to this
+  // message, in its thread when it is a reply, wherever it is pasted.
+  const link = dorkShareUrl('entry', entry.id);
   const handle = author?.id === viewerAuthorId ? undefined : (author?.handle ?? undefined);
   const authorName = author?.displayName;
   const { copy } = useCopyFeedback({ toastOnSettle: true });
@@ -156,6 +159,10 @@ export function useEntryActions({
       available.todo = { id: 'todo', label: 'Make a to-do', icon: CircleCheck, run: onMakeTodo };
     }
 
+    if (link !== null) {
+      available.link = { id: 'link', label: 'Copy link', icon: Link, run: () => void copy(link) };
+    }
+
     if (handle !== undefined) {
       available.mention = {
         id: 'mention',
@@ -175,5 +182,5 @@ export function useEntryActions({
     return ENTRY_ACTION_ORDER.map((slot) => available[slot]).filter(
       (action): action is EntryAction => action !== undefined
     );
-  }, [roomId, rootEntryId, text, handle, authorName, onViewProfile, onMakeTodo, copy]);
+  }, [roomId, rootEntryId, text, link, handle, authorName, onViewProfile, onMakeTodo, copy]);
 }

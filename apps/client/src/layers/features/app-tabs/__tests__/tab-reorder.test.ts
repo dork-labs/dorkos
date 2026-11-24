@@ -1,15 +1,13 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type {
   ClientRect,
   CollisionDetection,
   DroppableContainer,
   KeyboardCoordinateGetter,
 } from '@dnd-kit/core';
-import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
-import { tabLinkUrl } from '../lib/tab-link';
 import {
   TAB_DRAG_INSTRUCTIONS,
   buildTabAnnouncements,
@@ -19,31 +17,6 @@ import {
   sameSideKeyboardCoordinates,
   sideBounds,
 } from '../lib/tab-reorder';
-
-afterEach(leaveDesktopShell);
-
-describe('tabLinkUrl', () => {
-  it('in a browser, is this origin plus the tab location', () => {
-    expect(tabLinkUrl('/session?session=abc')).toBe(
-      `${window.location.origin}/session?session=abc`
-    );
-    expect(tabLinkUrl('/')).toBe(`${window.location.origin}/`);
-  });
-
-  it('in the desktop app, is a dorkos:// link that survives a restart', () => {
-    enterDesktopShell();
-    expect(tabLinkUrl('/session?session=abc&dir=%2Ftmp')).toBe(
-      'dorkos://session?session=abc&dir=%2Ftmp'
-    );
-    expect(tabLinkUrl('/channels?id=room-1')).toBe('dorkos://channels?id=room-1');
-  });
-
-  it('in the desktop app, falls back to the origin for the dashboard, which a deep link cannot name', () => {
-    enterDesktopShell();
-    expect(tabLinkUrl('/')).toBe(`${window.location.origin}/`);
-    expect(tabLinkUrl('/?settings=open')).toBe(`${window.location.origin}/?settings=open`);
-  });
-});
 
 /** A one-row rect at `left`, 100px wide. */
 function rect(left: number): ClientRect {

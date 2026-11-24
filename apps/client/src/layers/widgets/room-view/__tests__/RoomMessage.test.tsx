@@ -198,7 +198,8 @@ describe('RoomMessage — the action surface', () => {
     row.focus();
     fireEvent.keyDown(row, { key: 'ArrowRight' });
     const first = screen.getByRole('button', { name: 'React with thumbsup' });
-    const last = screen.getByRole('button', { name: 'Mention Ana' });
+    // Copy link is the capsule's last command (DOR-5046).
+    const last = screen.getByRole('button', { name: 'Copy link' });
 
     fireEvent.keyDown(first, { key: 'End', ctrlKey: true });
     expect(last).not.toHaveFocus();

@@ -1,4 +1,4 @@
-import { AtSign, Copy, Reply } from 'lucide-react';
+import { AtSign, Copy, Link, Reply } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import type { MessageAuthor, MessageGrouping } from '@/layers/shared/model';
 import type { AuthorRef, RoomEntry } from '@/layers/entities/room';
@@ -257,6 +257,7 @@ const SPECIMEN_ACTIONS: EntryAction[] = [
   { id: 'reply', label: 'Reply in thread', icon: Reply, run: () => {} },
   { id: 'copy', label: 'Copy text', icon: Copy, run: () => {} },
   { id: 'mention', label: 'Mention Ana', icon: AtSign, run: () => {} },
+  { id: 'link', label: 'Copy link', icon: Link, run: () => {} },
 ];
 
 /** An inert quick row, so the capsule can be drawn at its live width. */
@@ -289,10 +290,10 @@ function ActionCountSection() {
   return (
     <PlaygroundSection
       title="How many actions"
-      description="Reply and Copy are always offered; Mention appears only when an @ would actually reach the author — so a live capsule carries six or seven slots once its three quick reactions and the picker are counted. The bar is also shown below at widths no live row produces today."
+      description="Reply, Copy text and Copy link are always offered; Mention appears only when an @ would actually reach the author — so a live capsule carries seven or eight slots once its three quick reactions and the picker are counted. The bar is also shown below at widths no live row produces today."
     >
       <div>
-        <ShowcaseLabel>Two — your own message</ShowcaseLabel>
+        <ShowcaseLabel>Three — your own message</ShowcaseLabel>
         <p className="text-muted-foreground mb-2 text-xs">
           No Mention: you are never offered a mention of yourself, the same way the mention picker
           leaves you out.
@@ -303,7 +304,7 @@ function ActionCountSection() {
       </div>
 
       <div>
-        <ShowcaseLabel>Two — an author no @ can reach</ShowcaseLabel>
+        <ShowcaseLabel>Three — an author no @ can reach</ShowcaseLabel>
         <p className="text-muted-foreground mb-2 text-xs">
           Someone who has left the room has no mention handle, and offering a mention that silently
           addresses nobody is worse than not offering one.
@@ -314,7 +315,7 @@ function ActionCountSection() {
       </div>
 
       <div>
-        <ShowcaseLabel>Three — somebody else, still in the room</ShowcaseLabel>
+        <ShowcaseLabel>Four — somebody else, still in the room</ShowcaseLabel>
         <ShowcaseDemo>
           <BenchRow entry={THEIRS_ENTRY} />
         </ShowcaseDemo>
@@ -323,15 +324,15 @@ function ActionCountSection() {
       <div>
         <ShowcaseLabel>The whole capsule — reactions, divider, commands</ShowcaseLabel>
         <p className="text-muted-foreground mb-2 text-xs">
-          Seven buttons at its widest: three quick emoji, the picker, then reply, copy and mention,
-          with a divider ruled between the reactions and the commands. The 👍 is drawn as one the
-          reader already left, which is how a quick-row button says the message already carries
-          yours.
+          Eight buttons at its widest: three quick emoji, the picker, then reply, copy text, mention
+          and copy link, with a divider ruled between the reactions and the commands. The 👍 is
+          drawn as one the reader already left, which is how a quick-row button says the message
+          already carries yours.
         </p>
         <ShowcaseDemo>
           <div className="flex flex-col items-start gap-3">
+            <Specimen count={4} withReactions />
             <Specimen count={3} withReactions />
-            <Specimen count={2} withReactions />
           </div>
         </ShowcaseDemo>
       </div>

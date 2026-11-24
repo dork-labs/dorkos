@@ -13,7 +13,7 @@ import type { LucideIcon } from 'lucide-react';
 
 /** One position in the capsule. Stable — tests and telemetry name these. */
 export type EntryActionSlot =
-  'react' | 'react-more' | 'run-with' | 'reply' | 'copy' | 'mention' | 'profile' | 'todo';
+  'react' | 'react-more' | 'run-with' | 'reply' | 'copy' | 'mention' | 'profile' | 'todo' | 'link';
 
 /**
  * Which action this is.
@@ -62,6 +62,9 @@ export interface EntryAction {
  * **`todo` comes after it, for the same reason** (DOR-3088): "Make a to-do" arrived last, so it
  * goes last, and every arrow count to a command before it stays what it was.
  *
+ * **`link` comes last of all, for the same reason** (DOR-5046): "Copy link" puts the message's
+ * `/r/` link on the clipboard, and it arrived after every other command.
+ *
  * **`run-with` sits with the other menu-opener, not with the commands.** It
  * arrived when the session's lone "Run this with…" control and this capsule
  * became one surface, and it is placed beside `react-more` because both open a
@@ -85,4 +88,5 @@ export const ENTRY_ACTION_ORDER: readonly EntryActionSlot[] = [
   'mention',
   'profile',
   'todo',
+  'link',
 ];
