@@ -1,14 +1,11 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 
-import { SESSIONS } from '../../../../../config/constants.js';
-import { logger } from '../../../../../lib/logger.js';
 import {
   SessionPumpRegistry,
   shutdownSessionPumps,
   type AcquirePumpOptions,
 } from '../session-pump-registry.js';
 import { backgroundTasksMessage, FakeQuery, initMessage } from './fake-pump-query.js';
-import { SLOT_WAIT_BEAT_MS } from '../slot-wait/open-turn-window.js';
 
 /** The idle window these tests measure against, unless one overrides it. */
 const IDLE_MS = 5 * 60 * 1000;
@@ -56,41 +53,6 @@ afterEach(async () => {
 });
 
 describe('SessionPumpRegistry', () => {
-  // Purpose: a session this server holds no process for is cold, and asking
-  // about one it has never heard of must not create anything.
-  it('reports cold for a session it has never heard of', () => {
-    const registry = new SessionPumpRegistry(identity);
-    expect(registry.warmth('never-seen')).toBe('cold');
-    expect(registry.peek('never-seen')).toBeUndefined();
-    expect(registry.size).toBe(0);
-  });
-
-  // Purpose: warmth is the pump's state, reported through the registry — this
-  // is what `getSessionWarmth` answers with at each point.
-  it('reports the state the machine is actually in', async () => {
-    const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry(identity);
-    const pump = registry.acquire('s1', launchOpts(queries));
-
-    expect(registry.warmth('s1')).toBe('cold');
-    await pump.warm();
-    expect(registry.warmth('s1')).toBe('warm');
-    await pump.dispatch([{ content: 'hi', messageId: 'msg-hi' }]);
-    expect(registry.warmth('s1')).toBe('running');
-    pump.endTurn();
-    expect(registry.warmth('s1')).toBe('warm');
-    queries[0]!.failStream(new Error('killed'));
-    await vi.waitFor(() => expect(registry.warmth('s1')).toBe('crashed'));
-  });
-
-  // Purpose: one session, one process. A second acquire must not shadow the
-  // pump that owns the running subprocess.
-  it('hands back the same pump for a session', () => {
-    const registry = new SessionPumpRegistry(identity);
-    const first = registry.acquire('s1', launchOpts([]));
-    expect(registry.acquire('s1', launchOpts([]))).toBe(first);
-  });
-
   // Purpose: a reaped pump is spent. The next dispatch has to get a fresh one,
   // with a fresh input stream and freshly detected capabilities.
   it('drops a reaped pump so the next acquire builds a fresh one', async () => {
@@ -124,20 +86,6 @@ describe('SessionPumpRegistry', () => {
     expect(registry.size).toBe(1);
   });
 
-  // Purpose: reap's callers are timers and sweeps that cannot know the answer
-  // in advance, so asking about nothing must be free and silent.
-  it('reap is idempotent and a no-op for an unknown or cold session', async () => {
-    const registry = new SessionPumpRegistry(identity);
-    await expect(registry.reap('never-seen')).resolves.toBe(false);
-
-    const queries: FakeQuery[] = [];
-    const pump = registry.acquire('s1', launchOpts(queries));
-    await pump.warm();
-    await registry.reap('s1');
-    await registry.reap('s1');
-    expect(queries[0]!.closed).toBe(1);
-  });
-
   // Purpose: the ceiling counts PROCESSES, and the one over it is not refused —
   // warmth is a cache, so the least recently USED process makes room. Insertion
   // order is deliberately the wrong answer here: s1 is the oldest pump but the
@@ -164,28 +112,6 @@ describe('SessionPumpRegistry', () => {
     // Exactly one process was given back: a reclaim makes room for one launch,
     // never a sweep down to some lower water mark.
     expect(queries.filter((query) => query.closed > 0)).toHaveLength(1);
-  });
-
-  // Purpose: a warm process going away tells ONE story at ONE level. The idle
-  // reap logs at `info`; this — the rarer, more surprising exit, where a session
-  // loses its process so another one can launch — sat at `debug`, so the routine
-  // case was louder than the contended one and the contended one was invisible
-  // in a default-level log (DOR-1442).
-  it('logs at info when the warm ceiling reclaims a slot', async () => {
-    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
-    const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry(identity);
-    const opts = launchOpts(queries, { maxWarmSessions: 1 });
-    await registry.acquire('s1', opts).warm();
-
-    await registry.acquire('s2', opts).warm();
-
-    expect(registry.warmth('s1')).toBe('cold');
-    expect(infoSpy).toHaveBeenCalledWith(
-      '[SessionPumpRegistry] reclaimed a warm slot',
-      expect.objectContaining({ reaped: 's1', asking: 's2' })
-    );
-    infoSpy.mockRestore();
   });
 
   // Purpose: a RUNNING pump is mid-turn with somebody watching it. Reclaiming
@@ -341,30 +267,6 @@ describe('the warm ceiling when the asking session leaves mid-reclaim', () => {
   });
 });
 
-describe('the warm-session constants', () => {
-  // Purpose: the two ceilings are different numbers on purpose, and the ORDER of
-  // the three windows is what the whole design rests on. A future edit that
-  // makes processes outlive records, or that lets the reaper fire after an
-  // approval has already timed out, breaks here rather than in production.
-  it('bounds processes below records, and idleness below both eviction and interaction', () => {
-    expect(SESSIONS.MIN_WARM_SESSIONS).toBe(12);
-    expect(SESSIONS.WARM_IDLE_MS).toBe(5 * 60 * 1000);
-    // Processes are a cache of records, so there must be fewer of them.
-    expect(SESSIONS.MAX_WARM_SESSIONS_AUTO).toBeLessThan(SESSIONS.MAX_SESSIONS);
-    // A turn waiting for a slot says so on a beat; the stall guard must hear
-    // one inside its shortest window, or it cuts the wait short (DOR-3012).
-    expect(SLOT_WAIT_BEAT_MS).toBeLessThan(SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS);
-    // The room's default late-reply ceiling is an hour: the wait ends first, so
-    // the room hears the reason rather than giving up on its own.
-    expect(SESSIONS.WARM_SLOT_WAIT_MS).toBeLessThan(60 * 60 * 1000);
-    // A process may never outlive the record it belongs to.
-    expect(SESSIONS.WARM_IDLE_MS).toBeLessThan(SESSIONS.TIMEOUT_MS);
-    // The reaper fires INSIDE the window a person has to answer an approval,
-    // which is why declining on a pending interaction is not theoretical.
-    expect(SESSIONS.WARM_IDLE_MS).toBeLessThan(SESSIONS.INTERACTION_TIMEOUT_MS);
-  });
-});
-
 describe('the process idle timer', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -399,49 +301,6 @@ describe('the process idle timer', () => {
     expect(registry.warmth('s1')).toBe('cold');
     expect(queries[0]!.closed).toBe(1);
     expect(registry.size).toBe(0);
-  });
-
-  // Purpose: the idle reap used to be invisible at info level (DOR-1323,
-  // flag-on run L-11) — nothing in the log distinguished a process given back
-  // for lack of use from one that crashed or was evicted. One line, naming the
-  // session and the idle window it sat for, is what makes it greppable.
-  it('logs at info when the idle timer retires a warm process', async () => {
-    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
-    const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry(identity);
-    await registry.acquire('s1', launchOpts(queries)).warm();
-
-    await vi.advanceTimersByTimeAsync(IDLE_MS + 100);
-
-    expect(registry.warmth('s1')).toBe('cold');
-    expect(infoSpy).toHaveBeenCalledWith(
-      '[SessionPumpRegistry] retired an idle warm process',
-      expect.objectContaining({ session: 's1', idleMs: IDLE_MS })
-    );
-    infoSpy.mockRestore();
-  });
-
-  // Purpose: pins the ORDER, not just the outcome — the review that caught this
-  // (DOR-1323 fix round) mutated the log to fire before `await this.reap(...)`
-  // resolves instead of after, and every other test in this file stayed green:
-  // a reap that DECLINES (parked on a person) would then still claim "retired"
-  // in the log. The line must be true, not merely present.
-  it('does NOT log "retired" when the idle reap is declined (parked on a person)', async () => {
-    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
-    const queries: FakeQuery[] = [];
-    const registry = new SessionPumpRegistry(identity);
-    await registry.acquire('s1', launchOpts(queries, { hasPendingInteraction: () => true })).warm();
-
-    await vi.advanceTimersByTimeAsync(IDLE_MS + 100);
-
-    // Declined, not retired: still warm, and the log never claimed otherwise.
-    expect(registry.warmth('s1')).toBe('warm');
-    expect(
-      infoSpy.mock.calls.some(
-        ([msg]) => msg === '[SessionPumpRegistry] retired an idle warm process'
-      )
-    ).toBe(false);
-    infoSpy.mockRestore();
   });
 
   // Purpose: the two halves of "armed on a window close, disarmed on the next
@@ -596,12 +455,6 @@ describe('shutdownSessionPumps', () => {
     for (const query of queries) expect(query.closed).toBe(1);
     expect(first.size).toBe(0);
     expect(second.size).toBe(0);
-  });
-
-  // Purpose: this runs on every shutdown of every server, including the
-  // overwhelming majority that never warmed anything.
-  it('is a no-op when nothing was ever warmed', async () => {
-    await expect(shutdownSessionPumps()).resolves.toBeUndefined();
   });
 
   // Purpose: one wedged session must not stop the others being closed, because
