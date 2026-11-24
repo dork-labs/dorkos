@@ -441,8 +441,10 @@ describe('contract: the global event stream, driven by hand (login off)', () => 
       path: '/api/events',
       expect: {
         status: 503,
-        headers: JSON_TYPE,
-        body: { error: 'Too many SSE clients' },
+        headers: PROBLEM_TYPE,
+        body: problemBody('temporarily_unavailable', {
+          detail: 'Too many live connections are open. Try again soon.',
+        }),
       },
     });
 

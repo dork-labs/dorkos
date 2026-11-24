@@ -22,10 +22,9 @@ import type { Context } from 'hono';
 import { DevtoolsActionResultSchema, DevtoolsIngestSchema } from '@dorkos/shared/schemas';
 import { devtoolsCaptureStore } from '../services/session/index.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
-import { errorBody, parseSessionId } from '../lib/route-utils.js';
-
-const INVALID_SESSION_ID = errorBody('Invalid session ID', 'INVALID_SESSION_ID');
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { parseSessionId } from '../lib/route-utils.js';
+import { invalidSessionId } from './session-route-replies.js';
 
 /**
  * Handler for `POST /api/sessions/:id/devtools/ingest`. Zod-validated and
@@ -40,7 +39,7 @@ const INVALID_SESSION_ID = errorBody('Invalid session ID', 'INVALID_SESSION_ID')
  */
 export function sessionDevtoolsIngestHandler(c: Context<ApiEnv>): Response {
   const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
+  if (!sessionId) return invalidSessionId(c);
 
   const parsed = DevtoolsIngestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
@@ -55,9 +54,11 @@ export function sessionDevtoolsIngestHandler(c: Context<ApiEnv>): Response {
         (i.code === 'custom' && i.path.at(-1) === 'args')
     );
     if (overCap) {
-      return c.json(errorBody('DevTools ingest batch too large', 'BATCH_TOO_LARGE'), 413);
+      return problem(c, 'request_too_large', {
+        detail: 'That DevTools batch is over the size limit.',
+      });
     }
-    return c.json(errorBody('Invalid DevTools ingest batch', 'VALIDATION_ERROR'), 400);
+    return validationProblem(c, parsed.error);
   }
 
   // Deliberately NO session-existence check: like the durable event stream
@@ -102,11 +103,11 @@ export function sessionDevtoolsIngestHandler(c: Context<ApiEnv>): Response {
  */
 export function sessionDevtoolsActionHandler(c: Context<ApiEnv>): Response {
   const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
+  if (!sessionId) return invalidSessionId(c);
 
   const parsed = DevtoolsActionResultSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json(errorBody('Invalid DevTools action result', 'VALIDATION_ERROR'), 400);
+    return validationProblem(c, parsed.error);
   }
 
   // Keyed by `requestId` alone, never by session id — a first-turn canonical

@@ -69,8 +69,8 @@ describe('a waiting copy whose folder is gone', () => {
 
     const response = await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(shown);
 
-    expect(response.status).toBe(409);
-    expect(response.body.code).toBe('stale_approval');
+    expect(response.status).toBe(412);
+    expect(response.body).toMatchObject({ code: 'precondition_failed' });
     expect(state.extensions).toEqual(before);
     expect(await pending()).toEqual([]);
   });

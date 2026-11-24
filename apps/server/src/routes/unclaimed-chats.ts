@@ -20,8 +20,8 @@
  *   "Leave" action (DOR-883, spec §12, design-decisions D-3 item 4): calls
  *   the platform's own leave, through the adapter, and writes NO room and NO
  *   binding — a real removal, not a mute. An adapter that cannot leave a chat
- *   (every adapter except Telegram today) surfaces its refusal as a 500 with a
- *   descriptive message; the 501 below is the fallback for the case where no
+ *   (every adapter except Telegram today) surfaces its refusal as a 500 `internal_error`
+ *   carrying the platform's reason; the 501 below is the fallback for the case where no
  *   leave capability is wired at all.
  *
  * @module routes/unclaimed-chats
@@ -37,8 +37,9 @@ import { RoomError } from '../services/rooms/room-errors.js';
 import { bridgeChatTypeForBinding } from './relay-adapters.js';
 import { holdBindingRaise, modeStartsLooser } from './relay-binding-step-up.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
+import { logError, logger } from '../lib/logger.js';
 
 /** Minimal mesh lookup the claim route needs to validate an agent exists. */
 export interface UnclaimedChatsMeshLike {
@@ -67,7 +68,7 @@ export interface UnclaimedChatsRouterDeps {
    * (DOR-883). An install whose adapter cannot leave a chat (every adapter
    * except Telegram today) still lists, claims, ignores, and blocks; only
    * `/leave` itself errors — a per-adapter "cannot leave" refusal surfaces as a
-   * 500 with a descriptive message (thrown by AdapterManager.leaveChat), while
+   * 500 `internal_error` with its reason (thrown by AdapterManager.leaveChat), while
    * the `if (!leaveChat)` 501 below covers the case where no leave capability
    * is wired at all.
    *
@@ -110,14 +111,16 @@ export function createUnclaimedChatsRoutes(deps: UnclaimedChatsRouterDeps): Hono
   const claimChat = async (c: Context<ApiEnv>): Promise<Response> => {
     const chat = store.getById(c.req.param('id') ?? '');
     if (!chat) {
-      return c.json({ error: 'Unclaimed chat not found' }, 404);
+      return problem(c, 'not_found', { detail: 'That chat isn’t waiting to be claimed.' });
     }
     const result = ClaimRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!result.success) {
       return validationProblem(c, result.error);
     }
     if (meshCore && !meshCore.getProjectPath(result.data.agentId)) {
-      return c.json({ error: `Agent '${result.data.agentId}' not found in mesh registry` }, 400);
+      return problem(c, 'invalid_request', {
+        detail: 'That agent isn’t registered. Pick another.',
+      });
     }
 
     // The unclaimed row's `channelType` is subject-derived (`human-subject.ts`
@@ -148,20 +151,19 @@ export function createUnclaimedChatsRoutes(deps: UnclaimedChatsRouterDeps): Hono
       // The exact race the spec calls out: a manually created binding took
       // this chat between the card being shown and the claim being clicked.
       if (err instanceof BindingConflictError) {
-        return c.json(
-          {
-            error: err.message,
-            code: 'CHAT_ALREADY_BOUND',
+        return problem(c, 'chat_already_bound', {
+          detail: err.message,
+          extensions: {
             conflict: {
               bindingId: err.conflict.id,
               agentId: err.conflict.agentId,
               label: err.conflict.label,
             },
           },
-          409
-        );
+        });
       }
-      return c.json({ error: err instanceof Error ? err.message : 'Claim failed' }, 500);
+      logger.error('[unclaimed-chats] claim failed', logError(err));
+      return problem(c, 'internal_error', { detail: 'Couldn’t claim that chat. Try again.' });
     }
     store.claim(chat.id, result.data.agentId);
 
@@ -227,12 +229,12 @@ export function createUnclaimedChatsRoutes(deps: UnclaimedChatsRouterDeps): Hono
         agentPath,
       });
     } catch (err) {
+      // A room refusal is a sentence written for a person; anything else is an
+      // exception, which goes to the log and never into the answer.
+      if (!(err instanceof RoomError))
+        logger.warn('[unclaimed-chats] bridging failed', logError(err));
       const message =
-        err instanceof RoomError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Bridge failed';
+        err instanceof RoomError ? err.message : 'The chat’s room couldn’t be made. Try again.';
       return c.json({ binding, bridgeError: message }, 201);
     }
 
@@ -259,7 +261,7 @@ export function createUnclaimedChatsRoutes(deps: UnclaimedChatsRouterDeps): Hono
   router.post('/:id/ignore', (c) => {
     const chat = store.getById(c.req.param('id'));
     if (!chat) {
-      return c.json({ error: 'Unclaimed chat not found' }, 404);
+      return problem(c, 'not_found', { detail: 'That chat isn’t waiting to be claimed.' });
     }
     store.ignore(chat.id);
     return c.body(null, 204);
@@ -268,7 +270,7 @@ export function createUnclaimedChatsRoutes(deps: UnclaimedChatsRouterDeps): Hono
   router.post('/:id/block', (c) => {
     const chat = store.getById(c.req.param('id'));
     if (!chat) {
-      return c.json({ error: 'Unclaimed chat not found' }, 404);
+      return problem(c, 'not_found', { detail: 'That chat isn’t waiting to be claimed.' });
     }
     store.block(chat.id);
     return c.body(null, 204);
@@ -277,10 +279,13 @@ export function createUnclaimedChatsRoutes(deps: UnclaimedChatsRouterDeps): Hono
   router.post('/:id/leave', async (c) => {
     const chat = store.getById(c.req.param('id'));
     if (!chat) {
-      return c.json({ error: 'Unclaimed chat not found' }, 404);
+      return problem(c, 'not_found', { detail: 'That chat isn’t waiting to be claimed.' });
     }
     if (!leaveChat) {
-      return c.json({ error: 'This adapter cannot leave a chat on its platform yet.' }, 501);
+      return problem(c, 'temporarily_unavailable', {
+        status: 501,
+        detail: 'This app can’t leave a chat yet.',
+      });
     }
     try {
       // The platform call runs BEFORE the row is touched: if it throws, the
@@ -288,7 +293,10 @@ export function createUnclaimedChatsRoutes(deps: UnclaimedChatsRouterDeps): Hono
       // silently hiding a chat the bot never actually left.
       await leaveChat(chat.adapterId, chat.chatId);
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : 'Leave failed' }, 500);
+      // The platform's own words go to the log, never into the answer: they are
+      // an outside service's raw text.
+      logger.warn('[unclaimed-chats] leaving a chat failed', logError(err));
+      return problem(c, 'internal_error', { detail: 'Couldn’t leave that chat. Try again.' });
     }
     // Leaving is stronger than Block, not a second name for it: the bot is no
     // longer in the chat at all, so nothing further CAN arrive. `block` is the

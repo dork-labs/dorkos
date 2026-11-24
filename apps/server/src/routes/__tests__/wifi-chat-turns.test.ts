@@ -90,7 +90,6 @@ import {
   clampClaudeMode,
   resolveModeDecision,
 } from '../../services/runtimes/claude-code/turn-permission.js';
-import { NOT_FROM_WIFI } from '../../services/core/auth/sessions/wifi-level.js';
 import {
   endSession,
   resetLiveConnectionsForTests,
@@ -270,7 +269,7 @@ describe("the owner's own sign-in on Wi-Fi (DOR-3242)", () => {
       .set('x-test-signed-in', 'owner')
       .send({ permissionMode: 'bypassPermissions' });
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: WIFI_RAISE_REFUSAL, code: NOT_FROM_WIFI });
+    expect(res.body).toMatchObject({ detail: WIFI_RAISE_REFUSAL, code: 'not_from_wifi' });
   });
 });
 
@@ -463,7 +462,7 @@ describe("a chat's permission mode from Wi-Fi", () => {
       .set('x-test-via', 'wifi')
       .send({ permissionMode: 'bypassPermissions' });
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: WIFI_RAISE_REFUSAL, code: NOT_FROM_WIFI });
+    expect(res.body).toMatchObject({ detail: WIFI_RAISE_REFUSAL, code: 'not_from_wifi' });
     expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
   });
 

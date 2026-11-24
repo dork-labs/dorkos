@@ -131,4 +131,21 @@ describe('POST /api/sessions/:id/mcp-app/resource', () => {
       .send({ uri: 'ui://dashboard/main' });
     expect(res.status).toBe(400);
   });
+
+  it('answers a failed read as upstream_unavailable in fixed words, never the server’s', async () => {
+    const { McpAppResourceError } = await import('../../services/mcp-apps/index.js');
+    resolveAppResource.mockRejectedValueOnce(
+      new McpAppResourceError('READ_FAILED', 'Failed to read ui://secret/path from fixture-app')
+    );
+    const res = await request(testServer)
+      .post(`/api/sessions/${SESSION_ID}/mcp-app/resource`)
+      .send({ serverName: 'fixture-app', uri: 'ui://dashboard/main' });
+
+    expect(res.status).toBe(502);
+    expect(res.body).toMatchObject({
+      code: 'upstream_unavailable',
+      detail: 'The tool server didn’t send its app. Try again.',
+    });
+    expect(JSON.stringify(res.body)).not.toContain('ui://secret');
+  });
 });

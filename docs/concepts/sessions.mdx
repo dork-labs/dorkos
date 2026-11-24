@@ -105,7 +105,7 @@ inactivity as a backstop.
 
 A request that carries an agent token (`X-DorkOS-Agent`) reads agent work only. `GET /api/sessions`
 and `/api/sessions/recent` leave a person's own chats out, and every `/api/sessions/:id` route,
-reading or writing, answers `404 SESSION_NOT_FOUND` for one, the same answer as a chat that does
+reading or writing, answers `404 session_not_found` for one, the same answer as a chat that does
 not exist. Starting a new chat with `create: true` is the one thing an agent may do under an id
 nobody has used yet. The live list on `/api/events` leaves a person's own chats out of an agent's
 stream too. Without the header you are the owner and read everything, so this keeps your chats
@@ -163,7 +163,7 @@ How far you have read in a chat is stored server-side, in the same table rooms u
 
 The stored position counts the messages the server has confirmed, not durable-stream sequence
 numbers, so it survives a reconnect and a replay. Both endpoints are people-only: a caller resolved
-as an agent gets `403 PEOPLE_ONLY`, and no request can name a user other than the caller. A cursor
+as an agent gets `403 person_only`, and no request can name a user other than the caller. A cursor
 that actually moves is broadcast as a `read_cursor` event on the global `GET /api/events` stream,
 which is what updates a second window without polling. Only your own open windows hear about it; agents never do.
 

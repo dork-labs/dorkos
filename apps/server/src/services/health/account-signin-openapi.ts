@@ -6,6 +6,7 @@
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
+import { problemResponse } from '../core/openapi/problem-openapi.js';
 
 const empty = z.object({}).strict();
 const identity = z.object({
@@ -25,7 +26,7 @@ const identity = z.object({
 const folder = z.object({ accountId: z.string(), path: z.string(), label: z.string() });
 const organization = z.object({ id: z.uuid(), label: z.string() });
 const account = z.object({ accountId: z.string(), path: z.string(), name: z.string(), identity });
-const error = { description: 'The request is refused' };
+const error = problemResponse('The request is refused');
 const owner =
   'The person only: agents, API keys and teammates are refused, and with login on it needs the owner’s browser session. No secret, account id or unmasked email is returned.';
 

@@ -69,19 +69,19 @@ export const DECISION_OFFER_TTL_MS = 15 * 60 * 1000;
 /** The largest per-project settings value core keeps for an extension (§7.10). */
 export const PROJECT_SETTINGS_MAX_BYTES = 16 * 1024;
 
-/** `409` when the extension that raised the decision is not running. */
+/** The inbox's code when the extension that raised the decision is not running (wire: `not_running`). */
 export const DECISION_NOT_RUNNING_CODE = 'not_running';
 
-/** `409` when the decision was settled before this answer landed. */
+/** The inbox's code when the decision was settled before this answer landed (wire: `already_resolved`). */
 export const DECISION_ALREADY_RESOLVED_CODE = 'already_resolved';
 
-/** `504` when the extension did not answer within its 5 seconds. */
+/** The inbox's code when the extension did not answer within its 5 seconds (wire: `504 temporarily_unavailable`). */
 export const DECISION_EXTENSION_TIMEOUT_CODE = 'extension_timeout';
 
-/** `409` when the question changed after the person saw it. */
+/** The inbox's code when the question changed after the person saw it (wire: `412 precondition_failed`). */
 export const DECISION_STALE_CODE = 'stale_decision';
 
-/** `409` when a follow-up offer was used, dismissed, or is too old. */
+/** The inbox's code when a follow-up offer was used, dismissed, or is too old (wire: `already_resolved`). */
 export const DECISION_OFFER_GONE_CODE = 'offer_gone';
 
 /** One choice chip of a question. */
@@ -393,13 +393,3 @@ export const StartWorkRequestSchema = z
 
 /** Body of `POST /api/extensions/:id/start-work`. */
 export type StartWorkRequest = z.infer<typeof StartWorkRequestSchema>;
-
-/** A refused start: the sentence to show, and which rule refused it. */
-export const StartWorkErrorResponseSchema = z
-  .object({
-    /** Plain words, safe to show as they are. */
-    error: z.string(),
-    /** Which rule refused it. */
-    code: z.enum(START_WORK_ERROR_CODES),
-  })
-  .openapi('StartWorkErrorResponse');

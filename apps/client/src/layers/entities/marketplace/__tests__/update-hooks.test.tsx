@@ -262,7 +262,7 @@ describe('useApplyUpdates', () => {
     const transport = createMockTransport();
     vi.mocked(transport.checkMarketplaceUpdates).mockResolvedValue({ checks: [makeCheck()] });
     vi.mocked(transport.applyMarketplaceUpdates).mockRejectedValue(
-      Object.assign(new Error('changed'), { code: 'disclosure_changed', status: 409 })
+      Object.assign(new Error('changed'), { code: 'precondition_failed', status: 409 })
     );
     const { wrapper } = setup(transport);
 

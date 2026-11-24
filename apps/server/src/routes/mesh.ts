@@ -53,7 +53,13 @@ import {
   refuseAgentSelfFilesFromWifi,
 } from '../middleware/agent-execution-gate.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import {
+  agentNotFound,
+  outsideBoundary,
+  registrationProblem,
+  unprocessable,
+} from './mesh-problems.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { enrichTopology, type TopologyEnrichmentDeps } from './mesh-topology.js';
@@ -89,7 +95,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
       try {
         validatedRoots.push(await validateBoundary(root));
       } catch {
-        return c.json({ error: `Path outside boundary: ${root}` }, 403);
+        return outsideBoundary(c);
       }
     }
 
@@ -111,7 +117,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
       const message = err instanceof Error ? err.message : 'Discovery failed';
       const stack = err instanceof Error ? err.stack : undefined;
       console.error('[Mesh] Discovery failed:', message, stack ?? err);
-      return c.json({ error: message }, 500);
+      return problem(c, 'internal_error', { detail: 'The folder scan failed. Try again.' });
     }
   });
 
@@ -122,7 +128,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   // registered, so the response's name and id can differ from what was asked
   // for. Registration used to write over that file, which cost this repo its
   // own committed manifest (DOR-1019). A manifest that is there but unreadable
-  // is refused with a 422 naming the file.
+  // is refused with a 422.
   router.post('/agents', async (c) => {
     const result = RegisterAgentRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
@@ -138,7 +144,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
     try {
       validatedPath = await validateBoundaryOrDorkHome(projectPath);
     } catch {
-      return c.json({ error: `Path outside boundary: ${projectPath}` }, 403);
+      return outsideBoundary(c);
     }
 
     // Validate the scan root (ADR-0032): it must sit inside the boundary (or
@@ -151,16 +157,15 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
       try {
         validatedScanRoot = await validateBoundaryOrDorkHome(scanRoot);
       } catch {
-        return c.json({ error: `Scan root outside boundary: ${scanRoot}` }, 403);
+        return outsideBoundary(c);
       }
       const isAncestor =
         validatedPath === validatedScanRoot ||
         validatedPath.startsWith(validatedScanRoot + path.sep);
       if (!isAncestor) {
-        return c.json(
-          { error: `Scan root must be an ancestor of the agent path: ${scanRoot}` },
-          400
-        );
+        return problem(c, 'invalid_request', {
+          detail: '`scanRoot` must be a folder that holds the agent’s folder.',
+        });
       }
     }
 
@@ -172,14 +177,9 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
     // review).
     const adoptable = (await probeManifest(validatedPath)).state === 'present';
     if (!adoptable && (!overrides?.name || !overrides?.runtime)) {
-      return c.json(
-        {
-          error:
-            'overrides.name and overrides.runtime are required to register a directory that has ' +
-            'no .dork/agent.json of its own',
-        },
-        400
-      );
+      return problem(c, 'invalid_request', {
+        detail: 'Send overrides.name and overrides.runtime: this folder has no agent.json yet.',
+      });
     }
 
     // The same identity gate the `mesh_register` MCP tool uses, and for the same
@@ -194,9 +194,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
       icon: overrides?.icon,
       color: overrides?.color,
     });
-    if (!identity.ok) {
-      return c.json({ error: identity.error, code: identity.code }, 400);
-    }
+    if (!identity.ok) return problem(c, 'invalid_request', { detail: identity.error });
 
     try {
       const manifest = await meshCore.registerByPath(
@@ -258,8 +256,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
 
       return c.json(manifest, 201);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Registration failed';
-      return c.json({ error: message }, 422);
+      return registrationProblem(c, err);
     }
   });
 
@@ -299,8 +296,8 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
       // Mesh enforces the same wildcard invariant the schema does, plus any
       // future rule validation — a rejected rule is the caller's mistake (400),
       // never a server fault (500).
-      const message = err instanceof Error ? err.message : 'Access rule rejected';
-      return c.json({ error: message }, 400);
+      logger.warn('[Mesh] access rule refused', { err });
+      return problem(c, 'invalid_request', { detail: 'That access rule isn’t allowed.' });
     }
     // This endpoint only ever writes user-configured grants — bridge-written
     // defaults are never created or removed here — so origin is always 'explicit'.
@@ -343,7 +340,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   // MUST come before GET /agents/:id to avoid being swallowed by the param route
   router.get('/agents/:id/access', (c) => {
     const agents = meshCore.getAgentAccess(c.req.param('id'));
-    if (!agents) return c.json({ error: 'Agent not found' }, 404);
+    if (!agents) return agentNotFound(c);
     return c.json({ agents });
   });
 
@@ -351,7 +348,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   // MUST come before GET /agents/:id to avoid being swallowed by the param route
   router.get('/agents/:id/health', (c) => {
     const health = meshCore.getAgentHealth(c.req.param('id'));
-    if (!health) return c.json({ error: 'Agent not found' }, 404);
+    if (!health) return agentNotFound(c);
     return c.json(health);
   });
 
@@ -361,7 +358,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
     const parsed = HeartbeatRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     const event = parsed.success ? (parsed.data.event ?? 'heartbeat') : 'heartbeat';
     const healthBefore = meshCore.getAgentHealth(id);
-    if (!healthBefore) return c.json({ error: 'Agent not found' }, 404);
+    if (!healthBefore) return agentNotFound(c);
 
     const previousStatus = healthBefore.status;
     meshCore.updateLastSeen(id, event);
@@ -395,9 +392,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   // GET /agents/:id — Get single agent
   router.get('/agents/:id', (c) => {
     const agent = meshCore.get(c.req.param('id'));
-    if (!agent) {
-      return c.json({ error: 'Agent not found' }, 404);
-    }
+    if (!agent) return agentNotFound(c);
     return c.json(agent);
   });
 
@@ -413,16 +408,14 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   router.delete('/agents/:id/data', async (c) => {
     const id = c.req.param('id');
     const agent = meshCore.get(id);
-    if (!agent) {
-      return c.json({ error: 'Agent not found' }, 404);
-    }
+    if (!agent) return agentNotFound(c);
     if (agent.isSystem) {
-      return c.json({ error: 'System agents cannot be deleted' }, 403);
+      return problem(c, 'forbidden', { detail: 'A system agent can’t be deleted.' });
     }
 
     const projectPath = meshCore.getProjectPath(id);
     if (!projectPath) {
-      return c.json({ error: 'Agent project path not found' }, 404);
+      return problem(c, 'not_found', { detail: 'This agent’s folder isn’t known.' });
     }
 
     let validatedPath: string;
@@ -433,7 +426,7 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
       // registering the same path is allowed via the seam.
       validatedPath = await validateBoundary(projectPath);
     } catch {
-      return c.json({ error: `Path outside boundary: ${projectPath}` }, 403);
+      return outsideBoundary(c);
     }
 
     // A manifest git tracks belongs to somebody's repo, and this route deletes
@@ -441,15 +434,9 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
     // than half-deleting, and says what to do instead (DOR-1019). Removing the
     // agent without its data still works and leaves the file alone.
     if (await isManifestGitTracked(validatedPath, logger)) {
-      return c.json(
-        {
-          error:
-            `Cannot delete ${path.join(validatedPath, '.dork')}: agent.json in it is tracked by ` +
-            `git, so it belongs to that repository. Remove the agent without its data, then delete ` +
-            `the files with git if you want them gone.`,
-        },
-        409
-      );
+      return problem(c, 'conflict', {
+        detail: 'Git tracks this agent’s files. Remove the agent without its data instead.',
+      });
     }
 
     await meshCore.unregister(id);
@@ -479,11 +466,9 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   router.delete('/agents/:id', async (c) => {
     const id = c.req.param('id');
     const agent = meshCore.get(id);
-    if (!agent) {
-      return c.json({ error: 'Agent not found' }, 404);
-    }
+    if (!agent) return agentNotFound(c);
     if (agent.isSystem) {
-      return c.json({ error: 'System agents cannot be removed' }, 403);
+      return problem(c, 'forbidden', { detail: 'A system agent can’t be removed.' });
     }
 
     // Surface any marketplace installs this leaves behind. Unregister keeps the
@@ -530,15 +515,14 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
     try {
       resolvedPath = await validateBoundary(result.data.path);
     } catch {
-      return c.json({ error: `Path outside boundary: ${result.data.path}` }, 403);
+      return outsideBoundary(c);
     }
 
     try {
       await meshCore.deny(resolvedPath, result.data.reason, result.data.denier);
       return c.json({ success: true }, 201);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Denial failed';
-      return c.json({ error: message }, 422);
+      return unprocessable(c, err, 'This folder couldn’t be hidden from discovery.');
     }
   });
 
@@ -554,18 +538,18 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   router.delete('/denied', async (c) => {
     const filePath = readQuery(c).path;
     if (typeof filePath !== 'string' || filePath === '') {
-      return c.json({ error: 'Missing required parameter: path' }, 400);
+      return problem(c, 'invalid_request', { detail: 'Send the folder as `path`.' });
     }
     // Reject paths with traversal segments
     if (filePath.includes('..') || filePath.includes('\0')) {
-      return c.json({ error: 'Invalid path' }, 400);
+      return problem(c, 'invalid_request', { detail: 'That path isn’t allowed.' });
     }
 
     let resolvedPath: string;
     try {
       resolvedPath = await validateBoundary(filePath);
     } catch {
-      return c.json({ error: `Path outside boundary: ${filePath}` }, 403);
+      return outsideBoundary(c);
     }
 
     await meshCore.undeny(resolvedPath);

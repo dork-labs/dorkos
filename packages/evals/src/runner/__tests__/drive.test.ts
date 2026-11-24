@@ -90,8 +90,8 @@ async function startFakeServer(
           headers: req.headers,
         };
         if (opts.lockCode) {
-          res.writeHead(opts.lockCode, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ code: 'SESSION_LOCKED' }));
+          res.writeHead(opts.lockCode, { 'Content-Type': 'application/problem+json' });
+          res.end(JSON.stringify({ status: opts.lockCode, code: 'session_locked' }));
           return;
         }
         res.writeHead(202, { 'Content-Type': 'application/json' });

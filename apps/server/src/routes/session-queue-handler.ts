@@ -22,7 +22,7 @@
 import type { Context, Hono } from 'hono';
 import { UpdateQueuedMessageRequestSchema } from '@dorkos/shared/schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { wifiTurnHeld } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import {
@@ -31,7 +31,8 @@ import {
   listQueuedMessages,
 } from '../services/session/index.js';
 import type { MeshCore } from '@dorkos/mesh';
-import { errorBody, parseSessionId } from '../lib/route-utils.js';
+import { parseSessionId } from '../lib/route-utils.js';
+import { invalidSessionId } from './session-route-replies.js';
 import { chatPlaceRefusal, limitedTurnQueueRefusal } from './session-launcher.js';
 import {
   noteRemovedByPerson,
@@ -41,18 +42,16 @@ import {
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { isQueuedMessageSteering } from '../services/session/message-dispatcher/state.js';
 
-const INVALID_SESSION_ID = errorBody('Invalid session ID', 'INVALID_SESSION_ID');
-const INVALID_MESSAGE_ID = errorBody('Invalid message ID', 'INVALID_MESSAGE_ID');
-const NOT_QUEUED = errorBody('No such queued message', 'QUEUED_MESSAGE_NOT_FOUND');
-const SEND_NOW_PERSON_ONLY = errorBody(
-  'Only a person in the DorkOS app can send another chat’s message now.',
-  'person_only'
-);
-const NOT_A_CHAT_MESSAGE = errorBody(
-  'Only a message from another chat can be sent now. Move your own instead.',
-  'NOT_A_CHAT_MESSAGE'
-);
-const ALREADY_STARTING = errorBody('That message is already starting.', 'QUEUED_MESSAGE_LAUNCHING');
+/** A message id that is empty. */
+const invalidMessageId = (c: Context) =>
+  problem(c, 'invalid_request', { detail: 'That message id isn’t valid.' });
+/** An id this queue does not have. */
+const notQueued = (c: Context) => problem(c, 'queued_message_not_found');
+/** A message already on its way into the running turn. */
+const alreadyStarting = (c: Context) => problem(c, 'queued_message_launching');
+/** A refusal of the place rule (DOR-3644 S1), by its sentence. */
+const placeRefused = (c: Context, detail: string) =>
+  problem(c, 'desk_not_own', { detail, status: 403 });
 
 /** Read the `messageId` path param: an empty one is refused rather than guessed at. */
 function parseMessageId(raw: string | undefined): string | undefined {
@@ -67,7 +66,7 @@ function parseMessageId(raw: string | undefined): string | undefined {
  */
 export function sessionQueueListHandler(c: Context<ApiEnv>): Response {
   const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
+  if (!sessionId) return invalidSessionId(c);
   return c.json({ queue: listQueuedMessages(sessionId) });
 }
 
@@ -84,19 +83,19 @@ export function sessionQueueListHandler(c: Context<ApiEnv>): Response {
 export function sessionQueueUpdateHandler(meshCore: MeshCore | undefined) {
   return async (c: Context<ApiEnv>): Promise<Response> => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
+    if (!sessionId) return invalidSessionId(c);
     const messageId = parseMessageId(c.req.param('messageId'));
-    if (!messageId) return c.json(INVALID_MESSAGE_ID, 400);
+    if (!messageId) return invalidMessageId(c);
     // A waiting message runs as its chat's agent, so only a caller who could post
     // into that chat may reword or move it (DOR-3644 S1).
     const facts = honoRequestFacts(c);
     const refused = await chatPlaceRefusal(facts, meshCore, sessionId);
-    if (refused) return c.json(errorBody(refused.message, 'DESK_NOT_OWN'), 403);
+    if (refused) return placeRefused(c, refused.message);
     const limited = limitedTurnQueueRefusal(facts);
-    if (limited) return c.json(errorBody(limited, 'LIMITED_TURN'), 403);
+    if (limited) return problem(c, 'forbidden', { detail: limited });
     // An empty body is answered with the same 400 as a malformed one.
     const parsed = UpdateQueuedMessageRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const { content, move } = parsed.data;
     const message = editQueuedMessage(sessionId, messageId, {
       ...(content !== undefined ? { content } : {}),
@@ -108,18 +107,14 @@ export function sessionQueueUpdateHandler(meshCore: MeshCore | undefined) {
         : {}),
     });
     if (message === 'not-yours') {
-      return c.json(
-        errorBody(
-          'Another chat sent this message. It can be moved or removed, not reworded.',
-          'QUEUED_MESSAGE_NOT_YOURS'
-        ),
-        409
-      );
+      return problem(c, 'conflict', {
+        detail: 'Another chat sent this message. It can be moved or removed, not reworded.',
+      });
     }
     // Covers both "no such message on this queue" and "the move named an anchor
     // that is not on it" — from the caller's side those are one thing: an id
     // this queue does not have.
-    if (!message) return c.json(NOT_QUEUED, 404);
+    if (!message) return notQueued(c);
     return c.json({ message, queue: listQueuedMessages(sessionId) });
   };
 }
@@ -134,22 +129,22 @@ export function sessionQueueUpdateHandler(meshCore: MeshCore | undefined) {
 export function sessionQueueRemoveHandler(meshCore: MeshCore | undefined) {
   return async (c: Context<ApiEnv>): Promise<Response> => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
+    if (!sessionId) return invalidSessionId(c);
     const messageId = parseMessageId(c.req.param('messageId'));
-    if (!messageId) return c.json(INVALID_MESSAGE_ID, 400);
+    if (!messageId) return invalidMessageId(c);
     // Removing a person's waiting message from another agent's chat is that chat's
     // business, not a stranger's (DOR-3644 S1).
     const facts = honoRequestFacts(c);
     const refused = await chatPlaceRefusal(facts, meshCore, sessionId);
-    if (refused) return c.json(errorBody(refused.message, 'DESK_NOT_OWN'), 403);
+    if (refused) return placeRefused(c, refused.message);
     const limited = limitedTurnQueueRefusal(facts);
-    if (limited) return c.json(errorBody(limited, 'LIMITED_TURN'), 403);
+    if (limited) return problem(c, 'forbidden', { detail: limited });
     // Being sent into the running turn right now (Send now): it is on its way.
-    if (isQueuedMessageSteering(messageId)) return c.json(ALREADY_STARTING, 409);
+    if (isQueuedMessageSteering(messageId)) return alreadyStarting(c);
     // Another chat's message: read before it goes, so its sender can be told
     // by name who took it off (DOR-3060).
     const fromChats = queuedChatRecordsOf(sessionId, messageId);
-    if (!cancelQueuedMessage(sessionId, messageId)) return c.json(NOT_QUEUED, 404);
+    if (!cancelQueuedMessage(sessionId, messageId)) return notQueued(c);
     noteRemovedByPerson(fromChats);
     return c.json({ queue: listQueuedMessages(sessionId) });
   };
@@ -165,18 +160,26 @@ export function sessionQueueRemoveHandler(meshCore: MeshCore | undefined) {
 export function sessionQueueSteerHandler(meshCore: MeshCore | undefined) {
   return async (c: Context<ApiEnv>): Promise<Response> => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
+    if (!sessionId) return invalidSessionId(c);
     const messageId = parseMessageId(c.req.param('messageId'));
-    if (!messageId) return c.json(INVALID_MESSAGE_ID, 400);
+    if (!messageId) return invalidMessageId(c);
     // A person's act: an agent pushing another agent's words into a running
     // turn is the laundering this route must never offer.
-    if (!clearsTheAgentBar(honoRequestFacts(c))) return c.json(SEND_NOW_PERSON_ONLY, 403);
+    if (!clearsTheAgentBar(honoRequestFacts(c))) {
+      return problem(c, 'person_only', {
+        detail: 'Only a person in the DorkOS app can send another chat’s message now.',
+      });
+    }
     const refused = await chatPlaceRefusal(honoRequestFacts(c), meshCore, sessionId);
-    if (refused) return c.json(errorBody(refused.message, 'DESK_NOT_OWN'), 403);
+    if (refused) return placeRefused(c, refused.message);
     const result = await steerQueuedChatMessage(sessionId, messageId);
-    if (result.outcome === 'not-found') return c.json(NOT_QUEUED, 404);
-    if (result.outcome === 'not-chat-row') return c.json(NOT_A_CHAT_MESSAGE, 409);
-    if (result.outcome === 'launching') return c.json(ALREADY_STARTING, 409);
+    if (result.outcome === 'not-found') return notQueued(c);
+    if (result.outcome === 'not-chat-row') {
+      return problem(c, 'conflict', {
+        detail: 'Only a message from another chat can be sent now. Move your own instead.',
+      });
+    }
+    if (result.outcome === 'launching') return alreadyStarting(c);
     return c.json(result);
   };
 }

@@ -6,12 +6,7 @@
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { ErrorResponseSchema } from '@dorkos/shared/schemas';
-
-const error = (description: string) => ({
-  description,
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-});
+import { problemResponse as error } from '../../core/openapi/problem-openapi.js';
 
 /** The bar every route here carries, said once. */
 const PERSON_BAR =
@@ -54,7 +49,7 @@ export function registerExtensionRemovalOpenApi(registry: OpenAPIRegistry): void
           },
         },
       },
-      500: error('The list could not be read'),
+      500: error('`internal_error`: the list could not be read'),
     },
   });
 
@@ -75,13 +70,13 @@ export function registerExtensionRemovalOpenApi(registry: OpenAPIRegistry): void
         description: 'Removed',
         content: { 'application/json': { schema: z.object({ removed: z.string() }) } },
       },
-      400: error('Invalid extension id'),
-      401: error('Login is enabled and the caller is not signed in'),
-      403: error('Refused: an agent or another site cannot remove an extension'),
-      404: error('No such extension'),
+      400: error('`invalid_request`: an invalid extension id'),
+      401: error('`unauthenticated`: login is on and the caller is not signed in'),
+      403: error('`person_only`: an agent or another site cannot remove an extension'),
+      404: error('`not_found`: no such extension'),
       409: error(
-        'It ships with DorkOS (`core`), came with a plugin (`plugin`), runs from a dev link ' +
-          '(`dev_link`), or its folder is not one DorkOS would delete (`unexpected_folder`)'
+        '`conflict` (`detail` says which): it ships with DorkOS, came with a plugin, runs ' +
+          'from a dev link, or its folder is not one DorkOS would delete'
       ),
     },
   });
@@ -98,11 +93,11 @@ export function registerExtensionRemovalOpenApi(registry: OpenAPIRegistry): void
     request: { params: z.object({ id: z.string() }) },
     responses: {
       204: { description: 'Forgotten' },
-      400: error('Invalid extension id'),
-      401: error('Login is enabled and the caller is not signed in'),
-      403: error('Refused: an agent or another site cannot forget an approval'),
-      404: error('No approval is left for this id'),
-      409: error('It is still installed (`installed`): stop it running or remove it instead'),
+      400: error('`invalid_request`: an invalid extension id'),
+      401: error('`unauthenticated`: login is on and the caller is not signed in'),
+      403: error('`person_only`: an agent or another site cannot forget an approval'),
+      404: error('`not_found`: no approval is left for this id'),
+      409: error('`conflict`: it is still installed; stop it running or remove it instead'),
     },
   });
 }

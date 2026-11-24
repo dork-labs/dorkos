@@ -32,9 +32,8 @@
 import { holdExtensionPowerChange } from './extension-decision-step-up.js';
 import { declaresBridgeCapability } from '@dorkos/shared/extension-approval-schemas';
 import type { Context, Hono } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
-import type { ExtensionStatus, RoomAccessErrorCode } from '@dorkos/extension-api';
+import type { ExtensionStatus } from '@dorkos/extension-api';
 import { getRoomService, type AuthorRecord } from '../services/rooms/index.js';
 import { getReadCursorService } from '../services/core/read-cursor-service.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
@@ -63,23 +62,14 @@ import { callerAccessOf } from './caller-access.js';
 import { resolveCaller } from './room-caller.js';
 import { ROOM_WRITE_REFUSAL_MESSAGE, refuseRoomWrite } from './extensions-rooms-bar.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { sdkErrorRefusal, sdkRefusal } from './extensions-sdk-refusal.js';
 
 /** The statuses of a mini app that is turned on. */
 const TURNED_ON: ReadonlySet<ExtensionStatus> = new Set(['enabled', 'compiled', 'active']);
 
-/** The HTTP status for each refusal. */
-const STATUS_FOR: Record<RoomAccessErrorCode, ContentfulStatusCode> = {
-  room_not_allowed: 403,
-  not_found: 404,
-  person_required: 403,
-  extension_off: 409,
-  invalid_input: 400,
-  unavailable: 503,
-};
-
 /** What a mini app that never asked for rooms is told. */
 const NO_ROOMS_DECLARED =
-  'This mini app does not ask for rooms. Add "capabilities": { "rooms": true } to its manifest.';
+  'This mini app doesn’t ask for rooms. Add "capabilities": { "rooms": true }.';
 
 /** Whether a mini app's manifest asks for rooms (`capabilities.rooms`). */
 function asksForRooms(record: { manifest: { capabilities?: { rooms?: boolean } } }): boolean {
@@ -98,12 +88,10 @@ const RoomAccessBodySchema = z
 
 /** What the person bar says when it refuses a room-access change. */
 const ROOM_ACCESS_BAR: PersonBarCopy = {
-  error: 'Only a person can choose which rooms a mini app uses.',
-  code: 'room_access_person_required',
+  code: 'person_only',
   subject: 'which rooms a mini app uses',
   crossSite: (origin) =>
-    `Nothing changed. This request came from ${origin}, which is not DorkOS. ` +
-    `Only a person using DorkOS can choose which rooms a mini app uses.`,
+    `Nothing changed. ${origin} isn’t DorkOS. Choose a mini app’s rooms in DorkOS itself.`,
   agent: 'Nothing changed. Only a person can choose which rooms a mini app uses.',
 };
 
@@ -111,11 +99,6 @@ const threads = new ExtensionRoomThreads({
   rooms: getRoomService,
   cursors: getReadCursorService,
 });
-
-/** A refusal, answered. */
-function refuse(c: Context<ApiEnv>, code: RoomAccessErrorCode, message: string): Response {
-  return c.json({ error: message, code }, STATUS_FOR[code]);
-}
 
 /**
  * Mount the `api.rooms` routes and the room-access setting on the extensions router.
@@ -138,29 +121,30 @@ export function registerExtensionRoomRoutes(
     c: Context<ApiEnv>
   ): { viewer: AuthorRecord; extensionId: string; extensionName: string } | Response => {
     const extensionId = c.req.param('id') ?? '';
-    if (!safeExtId.test(extensionId)) return c.json({ error: 'Invalid extension ID' }, 400);
+    if (!safeExtId.test(extensionId))
+      return sdkRefusal(c, 'invalid_input', 'Use a valid mini app ID.');
     const facts = honoRequestFacts(c);
     if (presentsAgentIdentity(facts)) {
-      return refuse(c, 'person_required', 'Only the person can use a mini app’s rooms.');
+      return sdkRefusal(c, 'person_required', 'Only the person can use a mini app’s rooms.');
     }
     const record = extensionManager.get(extensionId);
-    if (!record) return refuse(c, 'not_found', `No mini app named ${extensionId}.`);
+    if (!record) return sdkRefusal(c, 'not_found', `No mini app named ${extensionId}.`);
     if (!TURNED_ON.has(record.status)) {
-      return refuse(
+      return sdkRefusal(
         c,
         'extension_off',
         `Turn on ${record.manifest.name} in Settings → Extensions first.`
       );
     }
-    if (!asksForRooms(record)) return refuse(c, 'room_not_allowed', NO_ROOMS_DECLARED);
+    if (!asksForRooms(record)) return sdkRefusal(c, 'room_not_allowed', NO_ROOMS_DECLARED);
     let viewer: AuthorRecord;
     try {
       viewer = resolveCaller(facts, callerAccessOf(c.req.method));
     } catch {
-      return refuse(c, 'person_required', 'Only the person can use a mini app’s rooms.');
+      return sdkRefusal(c, 'person_required', 'Only the person can use a mini app’s rooms.');
     }
     if (viewer.kind !== 'human') {
-      return refuse(c, 'person_required', 'Only the person can use a mini app’s rooms.');
+      return sdkRefusal(c, 'person_required', 'Only the person can use a mini app’s rooms.');
     }
     return { viewer, extensionId, extensionName: record.manifest.name };
   };
@@ -170,9 +154,9 @@ export function registerExtensionRoomRoutes(
     try {
       return run();
     } catch (err) {
-      if (err instanceof ExtensionRoomError) return refuse(c, err.code, err.message);
+      if (err instanceof ExtensionRoomError) return sdkErrorRefusal(c, err);
       logger.error('[Extensions] A mini app room call failed', err);
-      return refuse(c, 'unavailable', 'DorkOS could not do that. Try again.');
+      return sdkRefusal(c, 'unavailable', 'DorkOS could not do that. Try again.');
     }
   };
 
@@ -206,7 +190,11 @@ export function registerExtensionRoomRoutes(
       .map((id) => id.trim())
       .filter((id) => id.length > 0);
     if (ids.length > UNREAD_THREADS_MAX) {
-      return refuse(c, 'invalid_input', `Ask about at most ${UNREAD_THREADS_MAX} threads at once.`);
+      return sdkRefusal(
+        c,
+        'invalid_input',
+        `Ask about at most ${UNREAD_THREADS_MAX} threads at once.`
+      );
     }
     return answer(c, () =>
       c.json({
@@ -231,7 +219,7 @@ export function registerExtensionRoomRoutes(
     const refusal = refuseRoomWrite(honoRequestFacts(c));
     if (refusal) {
       auditRefused(refusal);
-      return refuse(c, 'person_required', ROOM_WRITE_REFUSAL_MESSAGE[refusal]);
+      return sdkRefusal(c, 'person_required', ROOM_WRITE_REFUSAL_MESSAGE[refusal]);
     }
     const caller = callerFor(c);
     if (caller instanceof Response) {
@@ -241,7 +229,7 @@ export function registerExtensionRoomRoutes(
     const body = ReplyBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!body.success) {
       auditRefused('invalid_input');
-      return refuse(
+      return sdkRefusal(
         c,
         'invalid_input',
         `Write a reply of 1 to ${REPLY_MAX_CHARS.toLocaleString('en-US')} characters.`
@@ -261,11 +249,11 @@ export function registerExtensionRoomRoutes(
     } catch (err) {
       if (err instanceof ExtensionRoomError) {
         auditReply(caller, roomId, entryId, 'refused', err.code);
-        return refuse(c, err.code, err.message);
+        return sdkErrorRefusal(c, err);
       }
       logger.error('[Extensions] A mini app reply failed', err);
       auditReply(caller, roomId, entryId, 'failed');
-      return refuse(c, 'unavailable', 'The reply was not posted. Try again.');
+      return sdkRefusal(c, 'unavailable', 'The reply was not posted. Try again.');
     }
   });
 
@@ -274,7 +262,7 @@ export function registerExtensionRoomRoutes(
     if (caller instanceof Response) return caller;
     const refusal = refuseRoomWrite(honoRequestFacts(c));
     if (refusal) {
-      return refuse(
+      return sdkRefusal(
         c,
         'person_required',
         ROOM_WRITE_REFUSAL_MESSAGE[refusal].replace('Nothing was posted.', 'Nothing changed.')
@@ -299,7 +287,7 @@ export function registerExtensionRoomRoutes(
     try {
       threads.requireThread(caller.extensionId, caller.viewer, roomId, entryId);
     } catch (err) {
-      if (err instanceof ExtensionRoomError) return refuse(c, err.code, err.message);
+      if (err instanceof ExtensionRoomError) return sdkErrorRefusal(c, err);
       throw err;
     }
     const resume = Number(
@@ -316,30 +304,31 @@ export function registerExtensionRoomRoutes(
 
   router.get('/:id/room-access', (c) => {
     const id = c.req.param('id');
-    if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+    if (!safeExtId.test(id)) return sdkRefusal(c, 'invalid_input', 'Use a valid mini app ID.');
     // Withheld from agents, as the leaf is in `config_get`: the ids can name
     // private rooms an agent is not in.
     if (presentsAgentIdentity(honoRequestFacts(c))) {
-      return refuse(c, 'person_required', 'Only the person can see which rooms a mini app uses.');
+      return sdkRefusal(
+        c,
+        'person_required',
+        'Only the person can see which rooms a mini app uses.'
+      );
     }
-    if (!extensionManager.get(id)) return c.json({ error: `No mini app named ${id}.` }, 404);
+    if (!extensionManager.get(id)) return sdkRefusal(c, 'not_found', `No mini app named ${id}.`);
     return c.json({ roomIds: allowedRoomIds(id) });
   });
 
   router.put('/:id/room-access', (c) => {
     const id = c.req.param('id');
-    if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+    if (!safeExtId.test(id)) return sdkRefusal(c, 'invalid_input', 'Use a valid mini app ID.');
     const refused = refusedNotAPerson(c, ROOM_ACCESS_BAR);
     if (refused) return refused;
     const record = extensionManager.get(id);
-    if (!record) return c.json({ error: `No mini app named ${id}.` }, 404);
-    if (!asksForRooms(record)) return refuse(c, 'invalid_input', NO_ROOMS_DECLARED);
+    if (!record) return sdkRefusal(c, 'not_found', `No mini app named ${id}.`);
+    if (!asksForRooms(record)) return sdkRefusal(c, 'invalid_input', NO_ROOMS_DECLARED);
     const body = RoomAccessBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!body.success) {
-      return c.json(
-        { error: `Pick at most ${ROOM_ACCESS_MAX} rooms.`, code: 'invalid_input' },
-        400
-      );
+      return sdkRefusal(c, 'invalid_input', `Pick at most ${ROOM_ACCESS_MAX} rooms.`);
     }
     // Only rooms the person is in: a mini app reads with the person's own
     // membership, so a room they cannot read would grant nothing but noise.
@@ -354,7 +343,7 @@ export function registerExtensionRoomRoutes(
       }
     });
     if (unknown.length > 0) {
-      return c.json({ error: 'Pick only rooms you are in.', code: 'invalid_input' }, 400);
+      return sdkRefusal(c, 'invalid_input', 'Pick only rooms you are in.');
     }
     // Recorded in the audit trail as a settings change by `setAllowedRooms`.
     const run = () => {
@@ -362,7 +351,7 @@ export function registerExtensionRoomRoutes(
         try {
           service.requireMembership(roomId, viewer.id);
         } catch {
-          return c.json({ error: 'Pick only rooms you are in.', code: 'invalid_input' }, 400);
+          return sdkRefusal(c, 'invalid_input', 'Pick only rooms you are in.');
         }
       }
       const roomIds = setAllowedRooms(id, body.data.roomIds);

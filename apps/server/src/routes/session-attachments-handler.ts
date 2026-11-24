@@ -24,10 +24,14 @@ import type { Context } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { tryGetSessionAttachmentStore } from '../services/session/attachments/index.js';
-import { errorBody, parseSessionId, discardStream } from '../lib/route-utils.js';
+import { problem, problemBody } from '@dorkos/http-kit';
+import { PROBLEM_CONTENT_TYPE, type Problem } from '@dorkos/shared/problem';
+import { parseSessionId, discardStream } from '../lib/route-utils.js';
+import { invalidSessionId } from './session-route-replies.js';
 import { logger } from '../lib/logger.js';
 
-const NO_SUCH_IMAGE = errorBody('No such image.', 'ATTACHMENT_NOT_FOUND');
+/** The answer to an image this chat does not have, whatever the reason. */
+const noSuchImage = (c: Context) => problem(c, 'not_found', { detail: 'No such image.' });
 
 /**
  * Handler for `GET /api/sessions/:id/attachments/:file`, where `:file` is
@@ -40,17 +44,17 @@ const NO_SUCH_IMAGE = errorBody('No such image.', 'ATTACHMENT_NOT_FOUND');
  *
  * The image is piped straight to the Node response
  * (`http/raw-node-stream.ts`), so a read that fails before its first byte can
- * still answer a JSON 500.
+ * still answer a 500 problem document.
  *
  * @param c - The request context (`:id` and `:file` route params); answers
  *   200 / 304 / 404 / 500.
  */
 export async function sessionAttachmentHandler(c: Context<ApiEnv>): Promise<Response> {
   const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+  if (!sessionId) return invalidSessionId(c);
 
   const store = tryGetSessionAttachmentStore();
-  if (!store) return c.json(NO_SUCH_IMAGE, 404);
+  if (!store) return noSuchImage(c);
 
   // The route pattern binds one segment, so this is always a string.
   const file = c.req.param('file') ?? '';
@@ -65,9 +69,9 @@ export async function sessionAttachmentHandler(c: Context<ApiEnv>): Promise<Resp
     // to whoever asked — a distinct code would only tell a prober that their
     // traversal attempt was recognized.
     logger.debug('[session-attachments] refused a read', { err, sessionId });
-    return c.json(NO_SUCH_IMAGE, 404);
+    return noSuchImage(c);
   }
-  if (!stored) return c.json(NO_SUCH_IMAGE, 404);
+  if (!stored) return noSuchImage(c);
   const image = stored;
 
   // Somebody is looking at this picture RIGHT NOW — the strongest in-use
@@ -106,10 +110,9 @@ export async function sessionAttachmentHandler(c: Context<ApiEnv>): Promise<Resp
       image.stream.on('error', (streamErr) => {
         logger.error('[session-attachments] stream failed', { err: streamErr, sessionId });
         if (!res.headersSent) {
-          sendJsonError(
+          sendProblemRaw(
             res,
-            500,
-            errorBody('Could not read that image.', 'ATTACHMENT_READ_FAILED')
+            problemBody('internal_error', { detail: 'Couldn’t read that image.' })
           );
         } else res.destroy(streamErr);
       });
@@ -119,14 +122,13 @@ export async function sessionAttachmentHandler(c: Context<ApiEnv>): Promise<Resp
 }
 
 /**
- * Answer a JSON error on a raw response whose image headers were set but not
- * sent, as Express's `res.status(n).json(body)` did: the type and length are
- * the body's, the other headers stay.
+ * Answer a problem document on a raw response whose image headers were set
+ * but not sent: the type and length are the problem's, the other headers stay.
  */
-function sendJsonError(res: ServerResponse, status: number, body: object): void {
+function sendProblemRaw(res: ServerResponse, body: Problem): void {
   const text = JSON.stringify(body);
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.statusCode = body.status;
+  res.setHeader('Content-Type', PROBLEM_CONTENT_TYPE);
   res.setHeader('Content-Length', String(Buffer.byteLength(text)));
   res.end(text);
 }

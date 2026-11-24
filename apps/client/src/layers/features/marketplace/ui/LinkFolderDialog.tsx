@@ -42,7 +42,7 @@ import { PermissionItem } from './PermissionPreviewSection';
 type LinkScope = 'global' | 'agent-local';
 
 /** The refusal code for a folder that no longer reads as the card did. */
-const DEV_LINK_CHANGED = 'dev_link_changed';
+const DEV_LINK_CHANGED = 'precondition_failed';
 
 /** The card the server answered with, and what it was asked with. */
 interface ReadyCard {
@@ -73,10 +73,14 @@ export interface LinkFolderDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-/** The message on an error the transport raised, and its `code`. */
+/** The message on an error the transport raised, and the refusal's problem code. */
 function refusalOf(err: unknown): { message: string; code?: string } {
-  const error = err as Error & { code?: string };
-  return { message: error?.message || 'Couldn’t check this folder. Try again.', code: error?.code };
+  const error = err as Error & { code?: unknown };
+  const code = error?.code;
+  return {
+    message: error?.message || 'Couldn’t check this folder. Try again.',
+    ...(typeof code === 'string' ? { code } : {}),
+  };
 }
 
 /**

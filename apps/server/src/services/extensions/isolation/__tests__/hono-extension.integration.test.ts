@@ -238,9 +238,10 @@ describe.each([
     });
 
     expect(res.status).toBe(403);
+    expect(res.headers.get('content-type')).toBe('application/problem+json');
     expect(await res.json()).toMatchObject({
-      error: `Only a person can change ${NAME}'s settings.`,
-      code: 'extension_person_required',
+      code: 'person_only',
+      detail: expect.stringContaining(`${NAME}'s settings`),
     });
   });
 

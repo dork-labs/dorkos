@@ -67,7 +67,9 @@ const ADAPTERS = z.array(z.object({ config: z.object({ id: z.string() }).loose()
 const CATALOG = z.array(z.object({ manifest: z.object({ type: z.string() }).loose() }).loose());
 const BINDINGS = z.object({ bindings: z.array(z.unknown()) }).strict();
 const BINDING_NOT_FOUND = { error: 'Binding not found' };
-const CHAT_NOT_FOUND = { error: 'Unclaimed chat not found' };
+const CHAT_NOT_FOUND = problemBody('not_found', {
+  detail: 'That chat isn’t waiting to be claimed.',
+});
 /** An unknown connection answers exactly like a bad signature (DOR-3650). */
 const WEBHOOK_NOT_FOUND = { error: 'INVALID_SIGNATURE' };
 const TRACING_ABSENT_OR_EMPTY = { error: 'Trace not found' };

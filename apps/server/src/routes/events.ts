@@ -19,6 +19,7 @@
  */
 import type { ServerResponse } from 'node:http';
 import { Hono } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import { SSE } from '../config/constants.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
@@ -59,7 +60,11 @@ const router = new Hono<ApiEnv>();
 router.get('/', (c) => {
   // Answer BEFORE sending SSE headers, so a server at capacity returns a
   // readable 503 rather than a 200 that immediately fails.
-  if (!eventFanOut.hasCapacity()) return c.json({ error: 'Too many SSE clients' }, 503);
+  if (!eventFanOut.hasCapacity()) {
+    return problem(c, 'temporarily_unavailable', {
+      detail: 'Too many live connections are open. Try again soon.',
+    });
+  }
 
   // The principal comes from the chain that already ran the session gate and
   // agent identity, so an addressed event (`interaction_pending`,

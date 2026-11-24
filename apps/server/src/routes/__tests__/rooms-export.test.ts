@@ -173,10 +173,10 @@ describe('GET /api/rooms/:id/export', () => {
     const res = await request(testServer).get('/api/rooms/room_nope/export');
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('ROOM_NOT_FOUND');
+    expect(res.body.code).toBe('room_not_found');
     // The refusal is a JSON error, not a truncated export: the header line is
     // pulled from the generator BEFORE any response header is written.
-    expect(res.headers['content-type']).toContain('application/json');
+    expect(res.headers['content-type']).toContain('application/problem+json');
   });
 
   it('exports as whoever is asking — an agent gets only what was said after it joined', async () => {

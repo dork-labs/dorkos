@@ -67,10 +67,10 @@ export interface RoomFilesSectionProps {
 
 /** Calm, actionable setup refusals for the states the server names. */
 const SETUP_REFUSALS = new Map<string, string>([
-  ['ROOM_REPOS_DISABLED', 'Room files are turned off for this DorkOS.'],
-  ['ROOM_REPO_GIT_UNAVAILABLE', 'Git isn’t available on this computer.'],
-  ['MERGE_IN_FLIGHT', 'This room’s files are busy. Try again.'],
-  ['ROOM_ARCHIVED', 'Bring this room back before setting up files.'],
+  ['room_repos_disabled', 'Room files are turned off for this DorkOS.'],
+  ['room_repo_git_unavailable', 'Git isn’t available on this computer.'],
+  ['merge_in_flight', 'This room’s files are busy. Try again.'],
+  ['room_archived', 'Bring this room back before setting up files.'],
 ]);
 
 function setupRefusal(error: unknown): string {
@@ -116,7 +116,7 @@ export function RoomFilesSection({ roomId, canChange, canSetUp = false }: RoomFi
       } catch (error) {
         // Another successful press may have won the race. The room has files,
         // which is the requested outcome, so refresh instead of apologising.
-        if (errorCodeOf(error) === 'ROOM_REPO_EXISTS') return null;
+        if (errorCodeOf(error) === 'room_repo_exists') return null;
         throw error;
       }
     },

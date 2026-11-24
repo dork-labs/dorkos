@@ -29,11 +29,11 @@ function wrapper(transport: Transport) {
 describe('readChatConflict', () => {
   it('reads the binding that already owns the chat', () => {
     const err = Object.assign(new Error('already bound'), {
-      code: 'CHAT_ALREADY_BOUND',
+      code: 'chat_already_bound',
       status: 409,
       body: {
         error: 'already bound',
-        code: 'CHAT_ALREADY_BOUND',
+        code: 'chat_already_bound',
         conflict: { bindingId: 'b-1', agentId: 'dorkbot', label: '' },
       },
     });
@@ -56,8 +56,8 @@ describe('readChatConflict', () => {
     // move, and offering a move that cannot be performed is worse than the
     // plain error.
     const err = Object.assign(new Error('already bound'), {
-      code: 'CHAT_ALREADY_BOUND',
-      body: { code: 'CHAT_ALREADY_BOUND' },
+      code: 'chat_already_bound',
+      body: { code: 'chat_already_bound' },
     });
 
     expect(readChatConflict(err, NEXT)).toBeNull();

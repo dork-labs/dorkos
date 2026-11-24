@@ -338,7 +338,9 @@ describe('isolated app host', () => {
         }
         if (forgotten) {
           forgotten = false;
-          return new Response(JSON.stringify({ code: 'caller_token_invalid' }), { status: 403 });
+          return new Response(JSON.stringify({ code: 'caller_token_invalid', status: 403 }), {
+            status: 403,
+          });
         }
         return new Response(JSON.stringify({ own: true }));
       });

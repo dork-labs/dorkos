@@ -74,9 +74,11 @@ function refusal(code: string, message = 'refused', body?: unknown): Error {
 
 /** A lost race, with the conflict body the server sends. */
 function lostRace(path: string): Error {
-  return refusal('FILE_CHANGED', 'Somebody changed these files after you opened them.', {
-    error: 'Somebody changed these files after you opened them.',
-    code: 'FILE_CHANGED',
+  return refusal('file_changed', 'Somebody changed these files after you opened them.', {
+    title: 'Somebody changed these files since you opened them.',
+    status: 409,
+    detail: 'Somebody changed these files after you opened them.',
+    code: 'file_changed',
     conflict: { path, commit: 'ddd4444', lastCommit: THEIRS },
   });
 }
@@ -175,7 +177,7 @@ describe('renaming a room’s file', () => {
 
   it('puts the name back and says so when the new name is taken', async () => {
     const transport = roomWith({ '': [file('notes.md')] });
-    transport.moveRoomFile = refuseAndFreeze(transport, refusal('ROOM_FILE_EXISTS'));
+    transport.moveRoomFile = refuseAndFreeze(transport, refusal('room_file_exists'));
     renderSection(transport);
 
     await press('notes.md', 'F2');
@@ -194,7 +196,7 @@ describe('renaming a room’s file', () => {
 
   it('tells a paused room plainly, and rolls the row back', async () => {
     const transport = roomWith({ '': [file('notes.md')] });
-    transport.moveRoomFile = refuseAndFreeze(transport, refusal('MAIN_CHECKOUT_DIRTY'));
+    transport.moveRoomFile = refuseAndFreeze(transport, refusal('main_checkout_dirty'));
     renderSection(transport);
 
     await press('notes.md', 'F2');
@@ -229,7 +231,7 @@ describe('renaming a room’s file', () => {
 
   it('a move into a folder that is refused puts the row back where it was', async () => {
     const transport = roomWith({ '': [file('notes.md'), file('docs', 'dir')], docs: [] });
-    transport.moveRoomFile = refuseAndFreeze(transport, refusal('MERGE_IN_FLIGHT'));
+    transport.moveRoomFile = refuseAndFreeze(transport, refusal('merge_in_flight'));
     renderSection(transport);
 
     const row = await screen.findByRole('treeitem', { name: 'notes.md' });
@@ -260,7 +262,7 @@ describe('renaming a room’s file', () => {
       .fn()
       .mockRejectedValue(
         refusal(
-          'ROOM_FILE_NOT_READABLE',
+          'room_file_not_readable',
           'This room already has `Docs/`, and a name that differs only in capital letters or accents is the same folder on some computers. Use `Docs/` instead.'
         )
       );
@@ -318,7 +320,7 @@ describe('deleting from a room’s files', () => {
 
   it('a refused delete puts the row back', async () => {
     const transport = roomWith({ '': [file('notes.md')] });
-    transport.deleteRoomFile = refuseAndFreeze(transport, refusal('MERGE_IN_FLIGHT'));
+    transport.deleteRoomFile = refuseAndFreeze(transport, refusal('merge_in_flight'));
     renderSection(transport);
 
     await press('notes.md', 'Delete');
@@ -526,7 +528,7 @@ describe('uploading into a room’s files', () => {
 
   it('rolls back the optimistic rows when the room refuses', async () => {
     const transport = roomWith({ '': [file('notes.md')] });
-    transport.uploadRoomFiles = refuseAndFreeze(transport, refusal('REPO_CAP_EXCEEDED'));
+    transport.uploadRoomFiles = refuseAndFreeze(transport, refusal('repo_cap_exceeded'));
     renderSection(transport);
     await screen.findByRole('treeitem', { name: 'notes.md' });
 
@@ -631,7 +633,7 @@ describe('making new files in a room', () => {
       .fn()
       .mockRejectedValue(
         refusal(
-          'ROOM_FILE_NOT_READABLE',
+          'room_file_not_readable',
           'This room’s files are set to ignore `build/out.md`, so saving it would not keep it. Change the room’s `.gitignore` first, or save somewhere else.'
         )
       );

@@ -49,7 +49,6 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
-import { OPERATOR_COOKIE_REQUIRED_CODE } from '../../lib/caller-authority.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -135,6 +134,23 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
       expect(res.body.success).toBe(true);
       expect(scheduler.cancelRun).toHaveBeenCalledWith(runId);
     });
+
+    it('answers a stop nobody confirmed in fixed words, never the bus’s own error text', async () => {
+      vi.mocked(scheduler.cancelRun).mockResolvedValueOnce({
+        state: 'unconfirmed',
+        why: 'send_failed',
+        reason: 'The stop request could not be sent: EACCES /private/relay/socket',
+      });
+      const res = await request(fixtureServer).post(`/api/tasks/runs/${runId}/cancel`);
+
+      expect(res.status).toBe(502);
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({
+        code: 'upstream_unavailable',
+        detail: 'The stop couldn’t be sent. The agent may still be working.',
+      });
+      expect(JSON.stringify(res.body)).not.toContain('EACCES');
+    });
   });
 
   describe('with login ON — an API key is not a person in the cockpit', () => {
@@ -151,7 +167,7 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
       const res = await request(fixtureServer).delete(`/api/tasks/${schedule.id}`);
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe(OPERATOR_COOKIE_REQUIRED_CODE);
+      expect(res.body.code).toBe('person_only');
       // The bar fired before anything happened: the schedule is still there.
       expect(store.getTask(schedule.id)).not.toBeNull();
     });
@@ -162,7 +178,7 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
       const res = await request(fixtureServer).delete(`/api/tasks/${schedule.id}`);
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe(OPERATOR_COOKIE_REQUIRED_CODE);
+      expect(res.body.code).toBe('person_only');
       expect(store.getTask(schedule.id)).not.toBeNull();
     });
 
@@ -172,7 +188,7 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
       const res = await request(fixtureServer).post(`/api/tasks/runs/${runId}/cancel`);
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe(OPERATOR_COOKIE_REQUIRED_CODE);
+      expect(res.body.code).toBe('person_only');
       // Refused before the run was ever touched.
       expect(scheduler.cancelRun).not.toHaveBeenCalled();
     });

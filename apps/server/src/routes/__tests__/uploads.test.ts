@@ -60,14 +60,19 @@ describe('POST /api/uploads', () => {
     const res = await request(testServer).post('/api/uploads').send();
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/cwd/i);
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body).toMatchObject({ code: 'invalid_request' });
+    expect(res.body.detail).toMatch(/cwd/i);
   });
 
   it('returns 400 when no files are attached', async () => {
     const res = await request(testServer).post('/api/uploads?cwd=/test/project').send();
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/no files/i);
+    expect(res.body).toMatchObject({
+      code: 'invalid_request',
+      detail: 'Attach at least one file in `files`.',
+    });
   });
 
   it('returns 200 with upload results for valid file', async () => {
@@ -105,10 +110,11 @@ describe('POST /api/uploads', () => {
       .attach('files', Buffer.from('evil'), 'hack.txt');
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body.code).toBe('outside_boundary');
   });
 
-  it('returns 403 for null byte paths', async () => {
+  it('returns 400 for null byte paths: a bad path, not a refusal', async () => {
     vi.mocked(validateBoundary).mockRejectedValueOnce(
       new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
     );
@@ -117,8 +123,11 @@ describe('POST /api/uploads', () => {
       .post('/api/uploads?cwd=/home/user%00')
       .attach('files', Buffer.from('data'), 'file.txt');
 
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('NULL_BYTE');
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({
+      code: 'invalid_request',
+      detail: 'That path has a character paths can’t hold.',
+    });
   });
 
   it('calls validateBoundary with the cwd query parameter', async () => {
@@ -139,14 +148,16 @@ describe('GET /api/uploads/:filename', () => {
     const res = await request(testServer).get('/api/uploads/test.png');
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/cwd/i);
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body).toMatchObject({ code: 'invalid_request' });
+    expect(res.body.detail).toMatch(/cwd/i);
   });
 
   it('returns 404 for nonexistent file', async () => {
     const res = await request(testServer).get('/api/uploads/missing.png?cwd=/test/project');
 
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe('File not found');
+    expect(res.body).toMatchObject({ code: 'not_found', detail: 'That upload doesn’t exist.' });
   });
 
   it('returns 403 when cwd fails boundary validation', async () => {
@@ -157,7 +168,8 @@ describe('GET /api/uploads/:filename', () => {
     const res = await request(testServer).get('/api/uploads/test.png?cwd=/etc/passwd');
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body.code).toBe('outside_boundary');
   });
 
   it('strips directory traversal via path.basename and returns 404', async () => {
@@ -167,6 +179,6 @@ describe('GET /api/uploads/:filename', () => {
 
     // path.basename strips traversal, resulting in just "passwd" which won't exist
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe('File not found');
+    expect(res.body).toMatchObject({ code: 'not_found', detail: 'That upload doesn’t exist.' });
   });
 });

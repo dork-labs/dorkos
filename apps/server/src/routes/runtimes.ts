@@ -12,7 +12,6 @@
  */
 import { createAccountSigninRoutes } from './account-signin.js';
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import type { RuntimeProvisionProgress, RuntimeProvisionResult } from '@dorkos/shared/transport';
 import { provisionOpenCode } from '../services/runtimes/opencode/providers/provision.js';
@@ -62,17 +61,13 @@ import {
   planDismissFoundFolder,
 } from '../services/runtimes/claude-code/accounts/found-claude-folders.js';
 import { configManager } from '../services/core/config-manager.js';
-import {
-  OPERATOR_ONLY_CONFIG_CODE,
-  OPERATOR_ONLY_CONFIG_ERROR,
-} from '../services/core/operator/config-write-policy.js';
 import { logConfigWrite } from '../services/core/operator/config-write.js';
 import { logger } from '../lib/logger.js';
 import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { respondWithSignInLanding } from '../http/sign-in-landing-response.js';
 import type { SignInFailureReason } from '@dorkos/shared/sign-in-landing';
@@ -80,6 +75,7 @@ import { readQuery } from '../http/request-query.js';
 import { mountAccountEligibilityRoutes } from './runtimes-account-eligibility.js';
 import { mountAgentsMayPickRoute } from './runtimes-account-agents-may-pick.js';
 import {
+  connectErrorProblem,
   refuseNonLocalProvisioning,
   holdCredentialSave,
   refuseCredentialChange,
@@ -213,7 +209,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     if (refused) return refused;
     const parsed = OpenRouterKeyBodySchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ ok: false, error: 'An OpenRouter key is required.' }, 400);
+      return validationProblem(c, parsed.error, { detail: 'An OpenRouter key is required.' });
     }
     const { key } = parsed.data;
     // The same kind of key as a provider's: it chooses whose account every prompt
@@ -233,7 +229,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
             return c.json({ ok: false, error: err.message });
           }
           logger.error('[Runtimes] OpenRouter key store failed unexpectedly');
-          return c.json({ ok: false, error: 'Could not save the OpenRouter key.' }, 500);
+          return problem(c, 'internal_error', { detail: 'Could not save the OpenRouter key.' });
         }
       },
     });
@@ -355,7 +351,9 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
 
     const parsed = OllamaPullBodySchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'That is not a valid Ollama model name.' }, 400);
+      return validationProblem(c, parsed.error, {
+        detail: 'That is not a valid Ollama model name.',
+      });
     }
     const model = parsed.data.model ?? DEFAULT_OLLAMA_MODEL_ID;
 
@@ -403,7 +401,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     } catch {
       // Never surface a store/config failure's detail — it can carry a path.
       logger.error('[Runtimes] Reading the saved key setup failed unexpectedly');
-      return c.json({ error: 'Could not read your saved settings.' }, 500);
+      return problem(c, 'internal_error', { detail: 'Could not read your saved settings.' });
     }
   });
 
@@ -422,7 +420,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     if (refused) return refused;
     const parsed = CheckProviderBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) {
-      return c.json({ error: 'A provider id is required.' }, 400);
+      return validationProblem(c, parsed.error, { detail: 'Name the service the key is for.' });
     }
     try {
       const result = await checkProviderCredential({
@@ -432,11 +430,9 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
       });
       return c.json(result);
     } catch (err) {
-      if (err instanceof ConnectError) {
-        return c.json({ error: err.message }, err.status as ContentfulStatusCode);
-      }
+      if (err instanceof ConnectError) return connectErrorProblem(c, err);
       logger.error('[Runtimes] Provider key check failed unexpectedly');
-      return c.json({ error: 'Could not check the key.' }, 500);
+      return problem(c, 'internal_error', { detail: 'Could not check the key.' });
     }
   });
 
@@ -453,7 +449,9 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     if (refused) return refused;
     const parsed = ProviderCredentialBodySchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'A provider id and API key are required.' }, 400);
+      return validationProblem(c, parsed.error, {
+        detail: 'Send the service name and its API key.',
+      });
     }
     const { providerId, secret } = parsed.data;
     const baseURL = parsed.data.baseURL ?? null;
@@ -469,12 +467,10 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
           const { ref } = await storeProviderCredential({ providerId, secret, baseURL });
           return c.json({ ref });
         } catch (err) {
-          if (err instanceof ConnectError) {
-            return c.json({ error: err.message }, err.status as ContentfulStatusCode);
-          }
+          if (err instanceof ConnectError) return connectErrorProblem(c, err);
           // Never include the secret or a raw stack in the response or log.
           logger.error('[Runtimes] Provider credential store failed unexpectedly');
-          return c.json({ error: 'Could not save the provider key.' }, 500);
+          return problem(c, 'internal_error', { detail: 'Could not save the key. Try again.' });
         }
       },
     });
@@ -497,10 +493,14 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
   router.get('/:runtime/accounts/usage', (c) => {
     const runtime = c.req.param('runtime');
     if (!(LEDGER_RUNTIMES as readonly string[]).includes(runtime)) {
-      return c.json({ error: `Unknown runtime "${runtime}".` }, 400);
+      return problem(c, 'invalid_request', { detail: `Unknown runtime "${runtime}".` });
     }
     const store = getAccountUsageStore();
-    if (!store) return c.json({ error: 'Account usage is not available yet.' }, 503);
+    if (!store) {
+      return problem(c, 'temporarily_unavailable', {
+        detail: 'Account usage is not available yet.',
+      });
+    }
     return c.json({ accounts: store.list(runtime as LedgerRuntime) });
   });
 
@@ -518,30 +518,21 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
   router.post('/claude-code/accounts/:id/probe', async (c) => {
     const caller = honoRequestFacts(c);
     const cookieRefusal = requireOperatorCookieUnderLogin(caller, "an account's usage check");
-    if (cookieRefusal) {
-      return c.json(
-        { error: cookieRefusal.error, code: cookieRefusal.code },
-        cookieRefusal.status as ContentfulStatusCode
-      );
-    }
+    if (cookieRefusal) return problem(c, 'person_only', { detail: cookieRefusal.error });
     if (!trustedCaller(readCallerAuthority(caller))) {
-      return c.json(
-        {
-          error:
-            'Only a person can start an account check here. Agents use the accounts_probe tool.',
-          code: 'PERSON_ONLY',
-        },
-        403
-      );
+      return problem(c, 'person_only', {
+        detail:
+          'Only a person can start an account check here. Agents use the accounts_probe tool.',
+      });
     }
     try {
       return c.json(await probeAccount(c.req.param('id')));
     } catch (err) {
       if (err instanceof UnknownAccountError) {
-        return c.json({ error: err.message, code: err.code }, 404);
+        return problem(c, 'not_found', { detail: err.message });
       }
       if (err instanceof AccountUsageUnavailableError) {
-        return c.json({ error: err.message }, 503);
+        return problem(c, 'temporarily_unavailable', { detail: err.message });
       }
       throw err;
     }
@@ -564,7 +555,9 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
       return c.json({ folders });
     } catch (err) {
       logger.error('[Runtimes] Could not look for Claude account folders', { err: String(err) });
-      return c.json({ error: 'Could not look for Claude account folders.' }, 500);
+      return problem(c, 'internal_error', {
+        detail: 'Could not look for Claude account folders.',
+      });
     }
   });
 
@@ -591,35 +584,22 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
       caller,
       'which account folders are hidden'
     );
-    if (cookieRefusal) {
-      return c.json(
-        { error: cookieRefusal.error, code: cookieRefusal.code },
-        cookieRefusal.status as ContentfulStatusCode
-      );
-    }
+    if (cookieRefusal) return problem(c, 'person_only', { detail: cookieRefusal.error });
     if (!trustedCaller(readCallerAuthority(caller))) {
-      return c.json(
-        {
-          error: OPERATOR_ONLY_CONFIG_ERROR,
-          code: OPERATOR_ONLY_CONFIG_CODE,
-          message: 'Only a person can hide an account folder.',
-        },
-        403
-      );
+      return problem(c, 'person_only', { detail: 'Only a person can hide an account folder.' });
     }
     const parsed = DismissFoundFolderRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) {
-      return c.json({ error: 'Send the folder to hide as `path`.' }, 400);
+      return validationProblem(c, parsed.error, { detail: 'Send the folder to hide as `path`.' });
     }
     try {
       const plan = planDismissFoundFolder(parsed.data.path, {
         runtimes: configManager.get('runtimes'),
       });
       if (plan.outcome === 'not-a-candidate') {
-        return c.json(
-          { error: 'That folder is not one of the account folders found on this computer.' },
-          400
-        );
+        return problem(c, 'invalid_request', {
+          detail: 'That folder is not one of the account folders found on this computer.',
+        });
       }
       if (plan.outcome === 'save') {
         const before = configManager.get('runtimes');
@@ -634,7 +614,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
       return c.body(null, 204);
     } catch (err) {
       logger.error('[Runtimes] Could not hide a Claude account folder', { err: String(err) });
-      return c.json({ error: 'Could not hide that folder. Try again.' }, 500);
+      return problem(c, 'internal_error', { detail: 'Could not hide that folder. Try again.' });
     }
   });
 
@@ -649,11 +629,9 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     try {
       return c.json(await readRuntimeKeyStatus(c.req.param('type')));
     } catch (err) {
-      if (err instanceof ConnectError) {
-        return c.json({ error: err.message }, err.status as ContentfulStatusCode);
-      }
+      if (err instanceof ConnectError) return connectErrorProblem(c, err);
       logger.error('[Runtimes] Reading the saved key status failed unexpectedly');
-      return c.json({ error: 'Could not read your saved key.' }, 500);
+      return problem(c, 'internal_error', { detail: 'Could not read your saved key.' });
     }
   });
 
@@ -668,17 +646,15 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     const type = c.req.param('type');
     const parsed = CheckSecretBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) {
-      return c.json({ error: 'An API key must be a string.' }, 400);
+      return validationProblem(c, parsed.error, { detail: 'An API key must be a string.' });
     }
     try {
       const result = await checkRuntimeCredential(type, parsed.data.secret ?? null);
       return c.json(result);
     } catch (err) {
-      if (err instanceof ConnectError) {
-        return c.json({ error: err.message }, err.status as ContentfulStatusCode);
-      }
+      if (err instanceof ConnectError) return connectErrorProblem(c, err);
       logger.error('[Runtimes] Credential check failed unexpectedly', { type });
-      return c.json({ error: 'Could not check the API key.' }, 500);
+      return problem(c, 'internal_error', { detail: 'Could not check the API key.' });
     }
   });
 
@@ -693,7 +669,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     const type = c.req.param('type');
     const parsed = SecretBodySchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'An API key is required.' }, 400);
+      return validationProblem(c, parsed.error, { detail: 'An API key is required.' });
     }
     const { secret } = parsed.data;
     // The key chooses whose account every prompt is sent on (Security S6 on DOR-4355 M3).
@@ -706,12 +682,10 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
           const { ref } = await storeRuntimeCredential(type, secret);
           return c.json({ ref });
         } catch (err) {
-          if (err instanceof ConnectError) {
-            return c.json({ error: err.message }, err.status as ContentfulStatusCode);
-          }
+          if (err instanceof ConnectError) return connectErrorProblem(c, err);
           // Never include the secret or a raw stack in the response or log.
           logger.error('[Runtimes] Credential store failed unexpectedly', { type });
-          return c.json({ error: 'Could not save the API key.' }, 500);
+          return problem(c, 'internal_error', { detail: 'Could not save the API key.' });
         }
       },
     });

@@ -57,7 +57,7 @@ describe('front-door settings confirmation', () => {
       const refused = await owner.call('patch', '/api/config').send(patch);
       expect(refused.status).toBe(400);
       expect(refused.body.heldActionId).toBeUndefined();
-      expect(refused.body.status).toBeUndefined();
+      expect(refused.body.code).toBe('invalid_request');
     }
   });
 

@@ -58,14 +58,17 @@ describe('Undo on an agent’s schedule mode notice', () => {
 
   it('refused: the button goes, the reason fills the notice, and focus moves to its link (M9)', async () => {
     renderRow(MODE_NOTICE, {
-      // As the transport throws a 409: the headline as the message, the body beside it.
+      // As the transport throws a 409 problem: the detail as the message, the body beside it.
       undoAgentTaskMode: vi.fn().mockRejectedValue(
         Object.assign(new Error('Nothing to undo'), {
           status: 409,
-          code: 'nothing_to_undo',
+          code: 'conflict',
           body: {
-            error: 'Nothing to undo',
-            code: 'nothing_to_undo',
+            type: 'urn:dorkos:problem:conflict',
+            title: 'That clashes with a change made meanwhile.',
+            status: 409,
+            code: 'conflict',
+            detail: 'Nothing to undo',
             message: 'Not undone: this task changed since this notice. It now runs as Default.',
           },
         })

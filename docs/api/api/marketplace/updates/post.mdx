@@ -14,7 +14,7 @@ _openapi:
           it was found in, one at a time. Each target carries the
           `latestVersion` and `disclosed` its check reported, sent back
           untouched: the server recomputes both, and if either moved the whole
-          apply is refused (409 `disclosure_changed`) with nothing reinstalled;
+          apply is refused (412 `precondition_failed`) with nothing reinstalled;
           each reinstall is then held to its disclosure. Each reinstall is
           authorized as `marketplace.install` first. The person applies
           directly; an agent's apply raises the same approval card

@@ -8,7 +8,7 @@ import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
-import { validationProblem } from '@dorkos/http-kit';
+import { problem, validationProblem } from '@dorkos/http-kit';
 
 /**
  * The `/api/activity` routes: the list endpoint.
@@ -27,7 +27,7 @@ export function createActivityRoutes(activityService: ActivityService): Hono<Api
       const result = await activityService.list(query.data);
       return c.json(result);
     } catch (_err) {
-      return c.json({ error: 'Failed to fetch activity events' }, 500);
+      return problem(c, 'internal_error', { detail: 'The activity feed couldn’t be read.' });
     }
   });
 

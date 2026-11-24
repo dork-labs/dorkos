@@ -91,9 +91,11 @@ describe('browser profile routes', () => {
     bar.person = false;
     const response = await t.post(`/profiles/${profile.id}/agents`, { agentId: 'atlas' });
     expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({
-      error: 'Only you can share a browser.',
+    expect(response.headers.get('content-type')).toBe('application/problem+json');
+    expect(await response.json()).toMatchObject({
+      status: 403,
       code: 'person_only',
+      detail: 'Only you can share a browser.',
     });
     expect(t.profiles.get(profile.id)?.agentIds).toEqual([]);
   });
@@ -176,7 +178,10 @@ describe('browser profile routes', () => {
     const before = t.profiles.list().length;
     const res = await t.post('/profiles', { label: 'Work' });
     expect(res.status).toBe(403);
-    expect(await res.json()).toMatchObject({ code: 'profiles_closed' });
+    expect(await res.json()).toMatchObject({
+      code: 'forbidden',
+      detail: 'New browser profiles aren’t available.',
+    });
     expect(t.profiles.list()).toHaveLength(before);
   });
 });

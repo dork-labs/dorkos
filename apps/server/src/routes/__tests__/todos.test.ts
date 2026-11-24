@@ -144,7 +144,7 @@ describe('to-do routes', () => {
       .patch(`/api/todos/${made.body.id}`)
       .send({ state: 'kept' });
     expect(changed.status).toBe(403);
-    expect(changed.body.code).toBe('NOT_YOURS');
+    expect(changed.body.code).toBe('forbidden');
   });
 
   it('reads one to-do for its card, with the chat its turn ran in, and 404s an unknown id', async () => {
@@ -158,7 +158,7 @@ describe('to-do routes', () => {
     expect(one.body).toMatchObject({ what: 'Renew the domain', workSessionId: 'session-work' });
     const missing = await request(fixtureServer).get('/api/todos/nope');
     expect(missing.status).toBe(404);
-    expect(missing.body.code).toBe('NOT_FOUND');
+    expect(missing.body.code).toBe('not_found');
   });
 
   describe("a program finishing the person's own to-do (Security, PR 5a M1)", () => {
@@ -178,7 +178,7 @@ describe('to-do routes', () => {
       for (const change of [{ state: 'kept' }, { note: 'Done' }, { rank: 'a' }]) {
         const res = await request(fixtureServer).patch(`/api/todos/${id}`).send(change);
         expect(res.status, JSON.stringify(change)).toBe(403);
-        expect(res.body.code).toBe('NOT_YOURS');
+        expect(res.body.code).toBe('forbidden');
       }
       expect(power(id)).toEqual({ authority: 'person', marks: '{}' });
     });
@@ -222,7 +222,7 @@ describe('to-do routes', () => {
       for (const change of [{ state: 'kept' }, { note: 'Done' }, { rank: 'a' }]) {
         const res = await request(fixtureServer).patch(`/api/todos/${id}`).send(change);
         expect(res.status, JSON.stringify(change)).toBe(403);
-        expect(res.body.code).toBe('NOT_YOURS');
+        expect(res.body.code).toBe('forbidden');
       }
       expect(power(id)).toEqual({ authority: 'person', marks: '{}' });
     });
@@ -263,7 +263,7 @@ describe('to-do routes', () => {
       .set(AGENT_IDENTITY_HEADER, '/agents/ana')
       .send({ what: 'x', assignee: { kind: 'person', account: 'owner' } });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('NOT_A_PERSON');
+    expect(res.body.code).toBe('person_only');
     expect(db.select().from(todoTable).all()).toEqual([]);
   });
 

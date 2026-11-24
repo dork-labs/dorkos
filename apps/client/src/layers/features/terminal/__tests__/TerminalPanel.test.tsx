@@ -17,7 +17,7 @@ import {
 import { readTerminalTabs, writeTerminalTabs } from '../lib/terminal-id-store';
 
 // Shared, hoist-safe capture of everything written to the stubbed xterm, so
-// tests can assert the `[reconnected]` cue and the TERMINAL_LIMIT copy — plus
+// tests can assert the `[reconnected]` cue and the `terminal_limit` copy — plus
 // a focus() call count for the keyboard-vs-pointer focus gate (DOR-229).
 const xterm = vi.hoisted(() => ({
   writes: [] as string[],
@@ -766,11 +766,11 @@ describe('TerminalPanel', () => {
     );
   });
 
-  it('shows human copy when a create hits the live-terminal cap (TERMINAL_LIMIT)', async () => {
+  it('shows human copy when a create hits the live-terminal cap (terminal_limit)', async () => {
     const transport = createMockTransport({ supportsTerminal: true });
     transport.openTerminal = vi.fn(async () => {
       throw Object.assign(new Error('Terminal limit reached (24 live terminals)'), {
-        code: 'TERMINAL_LIMIT',
+        code: 'terminal_limit',
       });
     });
 

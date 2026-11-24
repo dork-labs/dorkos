@@ -3,7 +3,7 @@
  *
  * @module widgets/session/ui/SessionNotices
  */
-import { AGENT_PAUSED_CODE, type AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { TransportErrorInfo } from '@/layers/shared/model';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { AgentPausedNotice } from '@/layers/entities/mesh';
@@ -44,7 +44,7 @@ function SessionErrorNotice({
   onRetry,
 }: Omit<SessionNoticesProps, 'sessionId'> & { error: TransportErrorInfo }) {
   // A pause naming no agent has nothing to resume, so it shows as a plain error.
-  if (error.code === AGENT_PAUSED_CODE && error.agentId) {
+  if (error.code === 'agent_paused' && error.agentId) {
     return (
       <div className="mx-4 mb-2">
         <AgentPausedNotice

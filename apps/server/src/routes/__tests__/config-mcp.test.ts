@@ -259,7 +259,7 @@ describe('Config MCP endpoints', () => {
       // rotating it is refused rather than minting a token nothing honors.
       (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-secret';
       const res = await request(fixtureServer).post('/api/config/mcp/rotate-token').expect(409);
-      expect(res.body.error).toMatch(/MCP_API_KEY/);
+      expect(res.body.detail).toMatch(/MCP_API_KEY/);
       expect(rotateMcpLocalToken).not.toHaveBeenCalled();
     });
 
@@ -270,7 +270,7 @@ describe('Config MCP endpoints', () => {
         key === 'auth' ? { enabled: true } : undefined
       );
       const res = await request(fixtureServer).post('/api/config/mcp/rotate-token').expect(409);
-      expect(res.body.error).toMatch(/works only on this computer/i);
+      expect(res.body.detail).toMatch(/works only on this computer/i);
       expect(rotateMcpLocalToken).not.toHaveBeenCalled();
     });
   });
@@ -290,7 +290,7 @@ describe('Config MCP endpoints', () => {
       (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-secret';
       vi.mocked(getMcpLocalToken).mockReturnValue('dork_mcp_local_abc123');
       const res = await request(fixtureServer).post('/api/config/mcp/reveal-token').expect(409);
-      expect(res.body.error).toMatch(/MCP_API_KEY/);
+      expect(res.body.detail).toMatch(/MCP_API_KEY/);
       expect(JSON.stringify(res.body)).not.toContain('dork_mcp_local_abc123');
     });
 
@@ -302,7 +302,7 @@ describe('Config MCP endpoints', () => {
       );
       vi.mocked(getMcpLocalToken).mockReturnValue('dork_mcp_local_abc123');
       const res = await request(fixtureServer).post('/api/config/mcp/reveal-token').expect(409);
-      expect(res.body.error).toMatch(/works only on this computer/i);
+      expect(res.body.detail).toMatch(/works only on this computer/i);
       expect(JSON.stringify(res.body)).not.toContain('dork_mcp_local_abc123');
     });
 
@@ -310,7 +310,7 @@ describe('Config MCP endpoints', () => {
       // Purpose: if no token resolved at boot (should not occur normally), the
       // reveal endpoint says so honestly instead of returning an empty value.
       const res = await request(fixtureServer).post('/api/config/mcp/reveal-token').expect(404);
-      expect(res.body.error).toMatch(/no local mcp token/i);
+      expect(res.body.detail).toMatch(/no local mcp token/i);
     });
   });
 

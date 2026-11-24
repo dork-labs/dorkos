@@ -11,7 +11,9 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
-import { refuseFrontDoorChange } from '../lib/caller-authority.js';
+import { problem, type ProblemStatus } from '@dorkos/http-kit';
+import { refuseFrontDoorChange, type OperatorCookieRefusal } from '../lib/caller-authority.js';
+import type { ConnectError } from '../services/runtimes/connect/connect-error.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 
@@ -34,7 +36,9 @@ const RUNTIME_SIGN_IN = "a runtime's sign-in";
  */
 export function refuseNonLoopback(c: Context<ApiEnv>): Response | undefined {
   if (isAtThisComputer(honoRequestFacts(c))) return undefined;
-  return c.json({ error: 'Runtime connect actions are only available locally' }, 403);
+  return problem(c, 'operator_only', {
+    detail: 'Runtime connect actions are only available on this computer.',
+  });
 }
 
 /**
@@ -50,7 +54,41 @@ export function refuseCredentialChange(c: Context<ApiEnv>): Response | undefined
   const notLocal = refuseNonLoopback(c);
   if (notLocal) return notLocal;
   const refusal = refuseFrontDoorChange(honoRequestFacts(c), RUNTIME_SIGN_IN);
-  return refusal ? c.json({ error: refusal.error, code: refusal.code }, 403) : undefined;
+  return refusal ? frontDoorProblem(c, refusal) : undefined;
+}
+
+/**
+ * The front-door bar's refusal (`refuseFrontDoorChange`) as a problem document:
+ * `operator_only`, its sentence as the detail.
+ *
+ * @param c - The request's context.
+ * @param refusal - What the bar decided.
+ * @returns The 403.
+ */
+export function frontDoorProblem(c: Context, refusal: OperatorCookieRefusal): Response {
+  return problem(c, 'operator_only', { detail: refusal.error });
+}
+
+/**
+ * A {@link ConnectError} as a problem document: its status kept, its honest,
+ * secret-free message as the detail. A 4xx is the request's fault
+ * (`invalid_request`); a 5xx is the server's or the service's (`internal_error`).
+ *
+ * @param c - The request's context.
+ * @param err - The connect failure.
+ * @returns The response.
+ */
+export function connectErrorProblem(c: Context, err: ConnectError): Response {
+  if (err.status >= 500) {
+    return problem(c, 'internal_error', {
+      detail: err.message,
+      status: err.status as ProblemStatus,
+    });
+  }
+  return problem(c, 'invalid_request', {
+    detail: err.message,
+    status: err.status as ProblemStatus,
+  });
 }
 
 /**
@@ -92,7 +130,9 @@ export function holdCredentialSave(
  */
 export function refuseNonLocalProvisioning(c: Context<ApiEnv>): Response | undefined {
   if (isAtThisComputer(honoRequestFacts(c))) return undefined;
-  return c.json({ error: 'Runtime provisioning is only available locally' }, 403);
+  return problem(c, 'operator_only', {
+    detail: 'Runtime provisioning is only available on this computer.',
+  });
 }
 
 /**

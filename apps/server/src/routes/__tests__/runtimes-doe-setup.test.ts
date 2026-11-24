@@ -80,6 +80,8 @@ describe('owner authorization before DorkOS model setup effects', () => {
           .set(header, 'present')
           .send(write.body);
         expect(response.status).toBe(403);
+        expect(response.headers['content-type']).toMatch(/^application\/problem\+json/);
+        expect(response.body.code).toBe('person_only');
         expect(configManager.set).not.toHaveBeenCalled();
         expect(storeDoeCredential).not.toHaveBeenCalled();
         expect(logConfigWrite).not.toHaveBeenCalled();
@@ -149,6 +151,7 @@ for (const injected of [
       .put('/api/runtimes/doe/inference')
       .send({ ...inference, ...injected });
     expect(response.status).toBe(400);
+    expect(response.body.code).toBe('invalid_request');
     expect(configManager.set).not.toHaveBeenCalled();
     expect(storeDoeCredential).not.toHaveBeenCalled();
     expect(logConfigWrite).not.toHaveBeenCalled();

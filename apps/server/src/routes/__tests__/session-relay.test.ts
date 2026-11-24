@@ -69,11 +69,10 @@ import {
   removeDamagedApprovalKeys,
 } from '../../services/core/session-relay/approval-key-store.js';
 import { PasskeyEnrolment } from '../../services/core/session-relay/passkeys/passkey-enrolment.js';
-import {
-  createSessionRelayRoutes,
-  SESSION_RELAY_NEEDS_THIS_COMPUTER,
-  type SessionRelayRouteDeps,
-} from '../session-relay.js';
+import { createSessionRelayRoutes, type SessionRelayRouteDeps } from '../session-relay.js';
+
+/** The person-at-this-computer bar's refusal code. */
+const NEEDS_THIS_COMPUTER = 'operator_only';
 
 const target = swappableServer();
 let home: string;
@@ -330,8 +329,9 @@ describe.each(WRITES)('%s, the owner at this computer only', (_label, send) => {
     async (ingress) => {
       const res = await send(request(app({ user: OWNER_COOKIE, ingress })));
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe(SESSION_RELAY_NEEDS_THIS_COMPUTER);
-      expect(res.body.error).toBe('Change this on the computer DorkOS runs on.');
+      expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+      expect(res.body.code).toBe(NEEDS_THIS_COMPUTER);
+      expect(res.body.detail).toBe('Change this on the computer DorkOS runs on.');
       unchanged();
     }
   );
@@ -342,7 +342,7 @@ describe.each(WRITES)('%s, the owner at this computer only', (_label, send) => {
     'lets the owner’s session through %s',
     async (ingress) => {
       const res = await send(request(app({ user: OWNER_COOKIE, ingress })));
-      expect(res.body.code).not.toBe(SESSION_RELAY_NEEDS_THIS_COMPUTER);
+      expect(res.body.code).not.toBe(NEEDS_THIS_COMPUTER);
     }
   );
 
@@ -390,7 +390,8 @@ describe('POST /api/session-relay/link', () => {
       .post('/api/session-relay/link')
       .send(CODE);
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('AUTH_REQUIRED_FOR_EXPOSURE');
+    expect(res.body.code).toBe('conflict');
+    expect(res.body.detail).toBe('Create an owner account first, then link.');
     expect(deps.link).not.toHaveBeenCalled();
   });
 
@@ -402,8 +403,9 @@ describe('POST /api/session-relay/link', () => {
     deps.link.mockResolvedValueOnce({ ok: false, reason });
     const res = await complete(request(app()).post('/api/session-relay/link').send(CODE));
     expect(res.status).toBe(status);
-    expect(res.body.code).toBe(reason);
-    expect(typeof res.body.error).toBe('string');
+    expect(res.body.code).toBe(status === 502 ? 'temporarily_unavailable' : 'conflict');
+    expect(res.body).not.toHaveProperty('reason');
+    expect(typeof res.body.detail).toBe('string');
     expect(readRelayPin(home)).toBeNull();
   });
 
@@ -458,7 +460,8 @@ describe('the owner’s switches on a linked computer', () => {
     clearRelayPin(home);
     const res = await request(app()).post('/api/session-relay/pause');
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('NOT_LINKED');
+    expect(res.body.code).toBe('conflict');
+    expect(res.body.detail).toBe('This computer isn’t linked.');
   });
 });
 
@@ -501,10 +504,10 @@ describe('the owner’s password, for every change that opens access wider', () 
 
     const missing = await send();
     expect(missing.status).toBe(403);
-    expect(missing.body.code).toBe('SESSION_RELAY_NEEDS_THIS_COMPUTER');
+    expect(missing.body.code).toBe(NEEDS_THIS_COMPUTER);
     const wrong = await send('guess');
     expect(wrong.status).toBe(403);
-    expect(wrong.body.code).toBe('SESSION_RELAY_NEEDS_THIS_COMPUTER');
+    expect(wrong.body.code).toBe(NEEDS_THIS_COMPUTER);
     expect(readRelayPin(home)).toEqual(before);
     expect(deps.link).not.toHaveBeenCalled();
 

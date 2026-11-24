@@ -143,8 +143,14 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
       if (staleNext) {
         staleNext = false;
         return json(
-          { error: 'This question changed. Take another look.', code: 'stale_decision' },
-          409
+          {
+            type: 'urn:dorkos:problem:precondition_failed',
+            title: 'Something changed since you last looked.',
+            status: 412,
+            code: 'precondition_failed',
+            detail: 'This question changed. Take another look.',
+          },
+          412
         );
       }
       if (actionResponse.resolved) decisions = [];

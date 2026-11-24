@@ -13,16 +13,13 @@ import {
   ContinueOptionsResponseSchema,
   ContinueSessionRequestSchema,
   ContinueSessionResponseSchema,
-  ErrorResponseSchema,
   LimitPlanResponseSchema,
   WaitForResetRequestSchema,
 } from '@dorkos/shared/schemas';
+import { problemResponse } from '../../core/openapi/problem-openapi.js';
 
 const params = z.object({ id: z.string().uuid() });
-const error = (description: string) => ({
-  description,
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-});
+const error = problemResponse;
 const noLimit = error('The session has not run out of usage, so there is nothing to change.');
 const peopleOnly = error('Only a person can move or hold a session; an agent identity is refused.');
 const flowUnreachable = error(

@@ -303,7 +303,7 @@ describe('POST /api/session-relay/passkeys/start', () => {
       .post('/api/session-relay/passkeys/start')
       .send({ label: 'MacBook passkey' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('SESSION_RELAY_NEEDS_THIS_COMPUTER');
+    expect(res.body.code).toBe('operator_only');
     expect(deps.passkeys.enrolment.open).toBe(false);
   });
 
@@ -342,7 +342,7 @@ describe('POST /api/session-relay/passkeys/start', () => {
         .send({ password: PASSWORD, label: 'MacBook passkey' })
     );
     expect(unlinked.status).toBe(409);
-    expect(unlinked.body.error).toBe('Link this computer to your hub first.');
+    expect(unlinked.body.detail).toBe('Link this computer to your hub first.');
     const { accountId: _account, ...noAccount } = PIN;
     await writeRelayPin(noAccount, home);
     const res = await complete(
@@ -389,7 +389,9 @@ describe('POST /api/session-relay/passkeys/start', () => {
         .send({ password: PASSWORD, label: 'Other', origin: 'https://hub.example.test' })
     );
     expect(other.status).toBe(409);
-    expect(other.body.error).toBe('Your passkeys use another approve page. Remove them to switch.');
+    expect(other.body.detail).toBe(
+      'Your passkeys use another approve page. Remove them to switch.'
+    );
     const second = await start();
     expect(second.statement.origin).toBe(APPROVE);
     expect(second.statement.excludeCredentialIds).toHaveLength(1);
@@ -573,7 +575,7 @@ describe('POST /api/session-relay/passkeys/finish', () => {
       passkey.attest({ challenge: second.res.body.challenge })
     );
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe('That passkey is already added.');
+    expect(res.body.detail).toBe('That passkey is already added.');
   });
 
   it('refuses to add over a damaged keys file, and leaves it exactly as it was', async () => {
@@ -585,7 +587,7 @@ describe('POST /api/session-relay/passkeys/finish', () => {
       authenticatorFor(statement).attest({ challenge: started.body.challenge })
     );
     expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/damaged/);
+    expect(res.body.detail).toMatch(/damaged/);
     expect(lastRefusal()).toBe('store');
     expect(fs.readFileSync(approvalKeysPath(home), 'utf8')).toBe('{"v":1,');
     const again = await complete(
@@ -908,7 +910,7 @@ describe('approve pages a start may not name', () => {
         .send({ password: PASSWORD, label: 'MacBook passkey', origin: PIN.hubOrigin })
     );
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('The approve page can’t be your hub itself.');
+    expect(res.body.detail).toBe('The approve page can’t be your hub itself.');
   });
 
   it('refuses any other approve page for a DorkOS Cloud account', async () => {
@@ -932,7 +934,7 @@ describe('approve pages a start may not name', () => {
         .send({ password: PASSWORD, label: 'MacBook passkey' })
     );
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe('This hub doesn’t name an account yet.');
+    expect(res.body.detail).toBe('This hub doesn’t name an account yet.');
   });
 });
 
@@ -1104,7 +1106,7 @@ describe('an Unlink while a passkey is being written', () => {
       authenticatorFor(statement).attest({ challenge: started.body.challenge })
     );
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe('This computer’s link changed. Start again in Settings.');
+    expect(res.body.detail).toBe('This computer’s link changed. Start again in Settings.');
     expect(fs.existsSync(approvalKeysPath(home))).toBe(false);
     await writeRelayPin(PIN, home);
     expect(fs.existsSync(approvalKeysPath(home))).toBe(false);
@@ -1180,7 +1182,7 @@ describe('a passkeys file that cannot be read just now', () => {
         .delete('/api/session-relay/passkeys')
         .send({ password: PASSWORD });
       expect(res.status).toBe(500);
-      expect(res.body.error).toBe('Couldn’t read the passkeys file here. Try again.');
+      expect(res.body.detail).toBe('Couldn’t read the passkeys file here. Try again.');
     } finally {
       spy.mockRestore();
     }
@@ -1197,6 +1199,6 @@ describe('an issuer written as a fully qualified host', () => {
         .send({ password: PASSWORD, label: 'MacBook passkey', origin: 'https://hub.example.test' })
     );
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('A DorkOS account uses the DorkOS approve page. Leave it unset.');
+    expect(res.body.detail).toBe('A DorkOS account uses the DorkOS approve page. Leave it unset.');
   });
 });

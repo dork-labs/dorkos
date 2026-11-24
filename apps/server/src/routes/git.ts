@@ -6,7 +6,8 @@ import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
-import { validationProblem } from '@dorkos/http-kit';
+import { problem, validationProblem } from '@dorkos/http-kit';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -28,11 +29,9 @@ router.get('/status', async (c) => {
     const result = await getGitStatus(cwd);
     return c.json(result);
   } catch (err) {
-    if (err instanceof BoundaryError) {
-      return c.json({ error: err.message, code: err.code }, 403);
-    }
+    if (err instanceof BoundaryError) return boundaryProblem(c, err);
     logger.error('[git] GET /status failed', { err, dir: parsed.data.dir });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 });
 

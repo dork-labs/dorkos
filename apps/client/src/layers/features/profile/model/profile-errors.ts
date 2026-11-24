@@ -30,7 +30,7 @@ function messageOf(error: unknown): string | undefined {
  * somebody else's, or it is not a spellable handle at all. One shared "couldn't
  * save that" would tell a person to try again with no idea what to change.
  *
- * `INVALID_HANDLE`, `HANDLE_RESERVED` and `HANDLE_LOOKALIKE` pass the server's
+ * `invalid_handle`, `handle_reserved` and `handle_lookalike` pass the server's
  * own sentence through, because only the server knows which rule broke, whose
  * handle it looks like, or whether a reserved word is DorkOS's or somebody's
  * old handle. The grammar alone has five rules (`packages/shared/src/handle.ts`)
@@ -45,19 +45,19 @@ function messageOf(error: unknown): string | undefined {
 export function handleErrorMessage(error: unknown, attempted: string): string {
   const at = `@${attempted}`;
   switch (codeOf(error)) {
-    case 'HANDLE_TAKEN':
+    case 'handle_taken':
       return `${at} is taken. Pick a different one.`;
     // The server knows whether it is a word DorkOS keeps or somebody's old
     // handle, and says which; the fallback covers a refusal with no message.
-    case 'HANDLE_RESERVED':
+    case 'handle_reserved':
       return (
         messageOf(error) ??
         `${at} used to belong to someone else and stays theirs. Pick a different one.`
       );
     // The server names whose handle it looks like, which no sentence here can.
-    case 'HANDLE_LOOKALIKE':
+    case 'handle_lookalike':
       return messageOf(error) ?? `${at} looks too much like another handle. Pick a different one.`;
-    case 'INVALID_HANDLE':
+    case 'invalid_handle':
       return (
         messageOf(error) ??
         'That handle won’t work. Use lowercase letters, numbers, dots, underscores or hyphens.'
@@ -83,11 +83,11 @@ export function avatarErrorMessage(error: unknown): string {
       return 'That photo is over 2 MB. Pick a smaller one.';
     case 'malformed_request':
       return 'That upload didn’t come through. Pick one photo and try again.';
-    case 'AVATAR_TYPE_UNSUPPORTED':
+    case 'avatar_type_unsupported':
       return 'That file isn’t a photo DorkOS can use. Pick a PNG, JPEG or WebP.';
-    case 'AVATAR_MISSING':
+    case 'avatar_missing':
       return 'No photo came through. Pick the file again.';
-    case 'OPERATOR_ONLY':
+    case 'operator_only':
       return 'Only the person at the keyboard can change this photo.';
     default:
       return messageOf(error) ?? 'Couldn’t save your photo. Try again.';
@@ -100,7 +100,7 @@ export function avatarErrorMessage(error: unknown): string {
  * @param error - Whatever the transport threw.
  */
 export function nameErrorMessage(error: unknown): string {
-  if (codeOf(error) === 'OPERATOR_ONLY') {
+  if (codeOf(error) === 'operator_only') {
     return 'Only the person at the keyboard can change this name.';
   }
   return messageOf(error) ?? 'Couldn’t save your name. Try again.';
@@ -111,9 +111,9 @@ export function nameErrorMessage(error: unknown): string {
  * (DOR-1778).
  *
  * Two refusals worth their own sentence, because they are two different things
- * to do about it. `IDENTITY_NOT_EXTERNAL` means the row cannot be claimed at
+ * to do about it. `identity_not_external` means the row cannot be claimed at
  * all — it is somebody on this machine, or an agent — and no retry changes
- * that; `OPERATOR_ONLY` means this is not the caller's install to say so.
+ * that; `operator_only` means this is not the caller's install to say so.
  * Everything else, including a server that never answered, falls back to the
  * one sentence a person can act on.
  *
@@ -122,9 +122,9 @@ export function nameErrorMessage(error: unknown): string {
  */
 export function identityLinkErrorMessage(error: unknown, linking: boolean): string {
   switch (codeOf(error)) {
-    case 'IDENTITY_NOT_EXTERNAL':
+    case 'identity_not_external':
       return 'Only an account on another chat platform can be linked to you.';
-    case 'OPERATOR_ONLY':
+    case 'operator_only':
       return 'Only this install’s owner can link accounts.';
     default:
       return (

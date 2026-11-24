@@ -7,6 +7,7 @@ import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import { HeartbeatStatusSchema, TriageCreditsChoiceSchema } from '@dorkos/shared/heartbeat-schemas';
 import { WakersOffSchema } from '@dorkos/shared/waker-schemas';
+import { problemResponse } from '../core/openapi/problem-openapi.js';
 
 /**
  * Register `GET /api/agents/{id}/heartbeat`, `PUT /api/heartbeats/triage-credits` and
@@ -41,8 +42,8 @@ export function registerHeartbeatsOpenApi(registry: OpenAPIRegistry): void {
         description: 'The heartbeat',
         content: { 'application/json': { schema: HeartbeatStatusSchema } },
       },
-      400: { description: '`days` is not a whole number from 1 to 90' },
-      404: { description: 'No agent with that id' },
+      400: problemResponse('`invalid_request`: `days` is not a whole number from 1 to 90'),
+      404: problemResponse('`not_found`: no agent with that id'),
     },
   });
   registry.registerPath({

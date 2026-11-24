@@ -46,7 +46,7 @@ export type NativeCommandResult =
        *
        * Without it, `ran: true` overstates: it means "the dispatch started",
        * and a caller that treats a QUEUED command as spent on that basis loses
-       * the message when the trigger is then refused — the `SESSION_LOCKED`
+       * the message when the trigger is then refused — the `session_locked`
        * race this whole change is about (DOR-480). A caller holding an undo
        * (the queue's `restore`) must settle it on this, not on `ran` alone.
        * Absent for commands that finish synchronously, where `ran` is the whole
@@ -191,7 +191,7 @@ export function useNativeCommands(
         //
         // The promise is HANDED BACK rather than dropped: this returns before it
         // settles, so `ran: true` alone would tell a queued `/compact` it was
-        // spent even when the trigger came back `SESSION_LOCKED` and no
+        // spent even when the trigger came back `session_locked` and no
         // compaction ever happened. `dispatchCompactIntent` swallows its own
         // errors and resolves to a boolean, so this never rejects.
         const confirmed = dispatchCompactIntent(transport, sessionId, slash.rest || undefined);

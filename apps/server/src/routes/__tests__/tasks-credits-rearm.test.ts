@@ -204,8 +204,8 @@ describe('PATCH /api/tasks/:id — a live schedule on DorkOS credits (DOR-2678)'
     signedInAs = 'user_member';
     const res = await patch(task.id, { enabled: true });
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({
-      error: 'Only the owner of this DorkOS can run a scheduled task on DorkOS credits.',
+    expect(res.body).toMatchObject({
+      detail: 'Only the owner of this DorkOS can run a scheduled task on DorkOS credits.',
       code: 'owner_only',
     });
     expect(store.getTask(task.id)?.enabled).toBe(false);

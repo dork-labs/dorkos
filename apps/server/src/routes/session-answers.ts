@@ -16,7 +16,7 @@ import {
   DIFFERENT_TOOL_APPROVAL,
 } from './tool-approval-step-up.js';
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { Problem } from '@dorkos/shared/problem';
 import {
   ApprovalRequestSchema,
   BatchApprovalRequestSchema,
@@ -24,12 +24,18 @@ import {
   SubmitElicitationRequestSchema,
 } from '@dorkos/shared/schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import {
+  problem,
+  problemBody,
+  readJsonBody,
+  sendProblem,
+  validationProblem,
+} from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import {
+  OPERATOR_COOKIE_REQUIRED_CODE,
   readCallerAuthority,
   requireOperatorCookieUnderLogin,
-  type OperatorCookieRefusal,
 } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
 import { refuseStandingYesFromWifi } from '../services/core/auth/sessions/wifi-level.js';
@@ -38,7 +44,8 @@ import {
   refuseTypedAnswers,
   refuseTypedElicitation,
 } from './session-answer-wifi.js';
-import { errorBody, parseSessionId } from '../lib/route-utils.js';
+import { parseSessionId } from '../lib/route-utils.js';
+import { invalidSessionId } from './session-route-replies.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { getUserById, readOwnerAccount } from '../services/core/auth/index.js';
 import { configManager } from '../services/core/config-manager.js';
@@ -56,8 +63,21 @@ import { resolveAnswererName } from '../services/identity/operator-profile.js';
  * approvals' `DECIDE_NEEDS_APP`.
  */
 const ANSWERING_NEEDS_APP =
-  'Answering an agent has to happen inside DorkOS, by a person who is signed in. ' +
-  'A program holding an API key cannot answer for you. Open DorkOS and answer it there.';
+  'A program with an API key can’t answer. Open DorkOS and answer it there.';
+
+/**
+ * The problem document for a refusal of the answer bar: signing in, a cookie
+ * under login, or anything that is not a person.
+ */
+function answerRefusal(refusal: { code: string; error: string }): Problem {
+  if (refusal.code === 'AUTH_REQUIRED') {
+    return problemBody('unauthenticated', { detail: refusal.error });
+  }
+  if (refusal.code === OPERATOR_COOKIE_REQUIRED_CODE) {
+    return problemBody('person_only', { detail: ANSWERING_NEEDS_APP });
+  }
+  return problemBody('person_only', { detail: refusal.error });
+}
 
 /**
  * Refuse anything that is not a person in the app answering for themselves.
@@ -99,15 +119,13 @@ const ANSWERING_NEEDS_APP =
  * second person exists, one of them cannot quietly widen.
  *
  * @param facts - The request's facts, with the session gate's resolved user.
- * @returns `undefined` when the caller may answer, or the refusal to answer with.
+ * @returns `undefined` when the caller may answer, or the problem to answer with.
  */
-function requirePersonToAnswer(facts: RequestFacts): OperatorCookieRefusal | undefined {
+function requirePersonToAnswer(facts: RequestFacts): Problem | undefined {
   const authority = resolveDecisionAuthority(readCallerAuthority(facts));
-  if (!authority.allowed) {
-    return { status: authority.status, code: authority.code, error: authority.error };
-  }
+  if (!authority.allowed) return answerRefusal(authority);
   const notAPerson = requireOperatorCookieUnderLogin(facts, 'whether a tool runs');
-  return notAPerson ? { ...notAPerson, error: ANSWERING_NEEDS_APP } : undefined;
+  return notAPerson ? answerRefusal(notAPerson) : undefined;
 }
 
 /**
@@ -176,19 +194,28 @@ interface Answering {
 function startAnswer(c: Context<ApiEnv>): Answering | Response {
   const facts = honoRequestFacts(c);
   const refusal = requirePersonToAnswer(facts);
-  if (refusal) {
-    return c.json(
-      { error: refusal.error, code: refusal.code },
-      refusal.status as ContentfulStatusCode
-    );
-  }
+  if (refusal) return sendProblem(c, refusal);
   const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+  if (!sessionId) return invalidSessionId(c);
   return { sessionId, facts };
 }
 
-const INVALID_REQUEST = errorBody('Invalid request', 'VALIDATION_ERROR');
-const ALREADY_RESOLVED = errorBody('Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
+/** The answer was already given, by this window or another. */
+const ALREADY_RESOLVED = (): Problem =>
+  problemBody('already_resolved', {
+    detail: 'This was already answered. Nothing else changed.',
+  });
+
+/** Nothing of this kind is waiting on the session. */
+const NOTHING_PENDING = (what: 'approval' | 'question' | 'elicitation'): Problem =>
+  problemBody('not_found', {
+    detail:
+      what === 'approval'
+        ? 'No request is waiting for an answer here.'
+        : what === 'question'
+          ? 'No question is waiting for an answer here.'
+          : 'No form is waiting for an answer here.',
+  });
 
 /**
  * The six answer routes, each behind {@link requirePersonToAnswer}, and behind
@@ -212,19 +239,19 @@ export function createSessionAnswerRoutes(
     if (answering instanceof Response) return answering;
     const { sessionId, facts } = answering;
     const parsed = ApprovalRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json(INVALID_REQUEST, 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const { toolCallId, alwaysAllow, alwaysAllowBreadth } = parsed.data;
     const wifi = refuseApprovalYesFromWifi(facts);
-    if (wifi) return c.json(wifi, 403);
+    if (wifi) return problem(c, 'not_from_wifi', { detail: wifi.error });
     const held = holdRemoteToolApproval(
       c,
       { sessionId, ids: [toolCallId], always: alwaysAllow, breadth: alwaysAllowBreadth },
       async (confirming, hash) => {
         const refused = requirePersonToAnswer(confirming);
-        if (refused)
-          return { status: refused.status, body: { error: refused.error, code: refused.code } };
+        if (refused) return { status: refused.status, body: refused };
         const standing = refuseStandingYesFromWifi(confirming, alwaysAllow === true);
-        if (standing) return { status: 403, body: standing };
+        if (standing)
+          return { status: 403, body: problemBody('not_from_wifi', { detail: standing.error }) };
         const runtime = await deps.resolveRuntime(sessionId);
         if (pendingToolApprovalHash(sessionId, [toolCallId]) !== hash)
           return DIFFERENT_TOOL_APPROVAL;
@@ -236,8 +263,8 @@ export function createSessionAnswerRoutes(
         return approved
           ? { status: 200, body: { ok: true } }
           : runtime.hasSession(sessionId)
-            ? { status: 409, body: ALREADY_RESOLVED }
-            : { status: 404, body: errorBody('No pending approval', 'NO_PENDING_APPROVAL') };
+            ? { status: 409, body: ALREADY_RESOLVED() }
+            : { status: 404, body: NOTHING_PENDING('approval') };
       }
     );
     if (held) return held;
@@ -248,8 +275,8 @@ export function createSessionAnswerRoutes(
       ...answeredBy(facts),
     });
     if (!approved) {
-      if (runtime.hasSession(sessionId)) return c.json(ALREADY_RESOLVED, 409);
-      return c.json(errorBody('No pending approval', 'NO_PENDING_APPROVAL'), 404);
+      if (runtime.hasSession(sessionId)) return sendProblem(c, ALREADY_RESOLVED());
+      return sendProblem(c, NOTHING_PENDING('approval'));
     }
     return c.json({ ok: true });
   });
@@ -264,21 +291,21 @@ export function createSessionAnswerRoutes(
     if (answering instanceof Response) return answering;
     const { sessionId, facts } = answering;
     const parsed = ApprovalRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json(INVALID_REQUEST, 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const { toolCallId, reason } = parsed.data;
     const runtime = await deps.resolveRuntime(sessionId);
     // A blank field is not a reason. Normalising here keeps every runtime and the
     // receipt copy from having to re-decide what an empty string means.
     const denyReason = reason?.trim() ? reason.trim() : undefined;
     const typed = refuseDenyReason(facts, runtime, sessionId, denyReason);
-    if (typed) return c.json(typed, 403);
+    if (typed) return problem(c, 'not_from_wifi', { detail: typed.error });
     const denied = runtime.approveTool(sessionId, toolCallId, false, {
       denyReason,
       ...answeredBy(facts),
     });
     if (!denied) {
-      if (runtime.hasSession(sessionId)) return c.json(ALREADY_RESOLVED, 409);
-      return c.json(errorBody('No pending approval', 'NO_PENDING_APPROVAL'), 404);
+      if (runtime.hasSession(sessionId)) return sendProblem(c, ALREADY_RESOLVED());
+      return sendProblem(c, NOTHING_PENDING('approval'));
     }
     return c.json({ ok: true });
   });
@@ -299,21 +326,15 @@ export function createSessionAnswerRoutes(
       if (answering instanceof Response) return answering;
       const { sessionId, facts } = answering;
       const parsed = BatchApprovalRequestSchema.safeParse(readJsonBody(c));
-      if (!parsed.success) return c.json(INVALID_REQUEST, 400);
+      if (!parsed.success) return validationProblem(c, parsed.error);
       if (approved) {
         const wifi = refuseApprovalYesFromWifi(facts);
-        if (wifi) return c.json(wifi, 403);
+        if (wifi) return problem(c, 'not_from_wifi', { detail: wifi.error });
         // A remote batch of two or more is refused whole, before anything runs;
         // the app sends remote answers one card at a time. Each is a one-time
         // Allow, which goes straight through like the single route's.
         if (parsed.data.toolCallIds.length > 1 && !isAtThisComputer(facts)) {
-          return c.json(
-            {
-              error: 'Confirm each request separately.',
-              code: 'APPROVALS_REQUIRE_SEPARATE_CONFIRMATION',
-            },
-            403
-          );
+          return problem(c, 'forbidden', { detail: 'Confirm each request separately.' });
         }
       }
       const runtime = await deps.resolveRuntime(sessionId);
@@ -334,15 +355,15 @@ export function createSessionAnswerRoutes(
     if (answering instanceof Response) return answering;
     const { sessionId, facts } = answering;
     const parsed = SubmitAnswersRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json(INVALID_REQUEST, 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const { toolCallId, answers } = parsed.data;
     const runtime = await deps.resolveRuntime(sessionId);
     const typed = refuseTypedAnswers(facts, runtime, sessionId, toolCallId, answers);
-    if (typed) return c.json(typed, 403);
+    if (typed) return problem(c, 'not_from_wifi', { detail: typed.error });
     const ok = runtime.submitAnswers(sessionId, toolCallId, answers, answeredBy(facts));
     if (!ok) {
-      if (runtime.hasSession(sessionId)) return c.json(ALREADY_RESOLVED, 409);
-      return c.json(errorBody('No pending question', 'NO_PENDING_QUESTION'), 404);
+      if (runtime.hasSession(sessionId)) return sendProblem(c, ALREADY_RESOLVED());
+      return sendProblem(c, NOTHING_PENDING('question'));
     }
     return c.json({ ok: true });
   });
@@ -353,11 +374,11 @@ export function createSessionAnswerRoutes(
     if (answering instanceof Response) return answering;
     const { sessionId, facts } = answering;
     const parsed = SubmitElicitationRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json(INVALID_REQUEST, 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const { interactionId, action, content } = parsed.data;
     const runtime = await deps.resolveRuntime(sessionId);
     const typed = refuseTypedElicitation(facts, runtime, sessionId, interactionId, action, content);
-    if (typed) return c.json(typed, 403);
+    if (typed) return problem(c, 'not_from_wifi', { detail: typed.error });
     const ok = runtime.submitElicitation(
       sessionId,
       interactionId,
@@ -366,8 +387,8 @@ export function createSessionAnswerRoutes(
       answeredBy(facts)
     );
     if (!ok) {
-      if (runtime.hasSession(sessionId)) return c.json(ALREADY_RESOLVED, 409);
-      return c.json(errorBody('No pending elicitation', 'NO_PENDING_ELICITATION'), 404);
+      if (runtime.hasSession(sessionId)) return sendProblem(c, ALREADY_RESOLVED());
+      return sendProblem(c, NOTHING_PENDING('elicitation'));
     }
     return c.json({ ok: true });
   });

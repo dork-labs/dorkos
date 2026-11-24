@@ -59,7 +59,7 @@ describe('POST /packages/:name/uninstall', () => {
     const res = await uninstall({}, rawName);
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/package name/i);
+    expect(res.body.detail).toMatch(/package or marketplace name/);
     expect(h.uninstallFlow.uninstall).not.toHaveBeenCalled();
     expect(h.onPluginsChanged).not.toHaveBeenCalled();
   });
@@ -70,7 +70,7 @@ describe('POST /packages/:name/uninstall', () => {
     const res = await uninstall({}, 'missing-pkg');
 
     expect(res.status).toBe(404);
-    expect(res.body.error).toContain('missing-pkg');
+    expect(res.body.detail).toBe("That package isn't installed here.");
     expect(h.onPluginsChanged).not.toHaveBeenCalled();
   });
 

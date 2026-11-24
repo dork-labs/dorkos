@@ -3,6 +3,8 @@ import type { Context } from 'hono';
 import type { ApiEnv } from '../../../http/api-chain.js';
 import { streamToNodeResponse } from '../../../http/raw-node-stream.js';
 import { TOO_LARGE } from './extension-http.js';
+import { problemBody } from '@dorkos/http-kit';
+import { PROBLEM_CONTENT_TYPE } from '@dorkos/shared/problem';
 
 // Match the pinned Node adapter's disposal bounds, without enabling its global
 // cleanup. These bound discarded input, never the extension's 1 MiB allowance.
@@ -61,7 +63,7 @@ function discardBody(incoming: IncomingMessage, signal: AbortSignal) {
 
 /**
  * Flush the complete refusal before closing a connection still carrying input.
- * Known-length JSON lets the caller finish reading even if it stops uploading;
+ * A known-length problem document lets the caller finish reading even if it stops uploading;
  * bounded disposal delays Node's response-end socket close, not the reply bytes.
  *
  * @param c - The real request/response pair behind the API chain.
@@ -72,9 +74,9 @@ export function rejectOversizedBody(c: Context<ApiEnv>): Promise<Response> {
     if (signal.aborted) return;
     const drain = discardBody(c.env.incoming, signal);
     try {
-      const text = JSON.stringify({ error: TOO_LARGE });
+      const text = JSON.stringify(problemBody('request_too_large', { detail: TOO_LARGE }));
       outgoing.writeHead(413, {
-        'content-type': 'application/json',
+        'content-type': PROBLEM_CONTENT_TYPE,
         'content-length': Buffer.byteLength(text),
         connection: 'close',
       });

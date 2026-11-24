@@ -336,7 +336,7 @@ it('preserves a mounted draft through a source change during first send and clai
     const refused = await send();
     expect(seen).toEqual([{ id, runtime: 'test-mode' }]);
     expect(refused.status).toBe(404);
-    expect(refused.body).toMatchObject({ code: 'SESSION_NOT_FOUND' });
+    expect(refused.body).toMatchObject({ code: 'session_not_found' });
     expect(read(id)).toEqual(before);
     expect(
       db.select().from(sessionLocations).where(eq(sessionLocations.id, locationId)).get()?.createdAt

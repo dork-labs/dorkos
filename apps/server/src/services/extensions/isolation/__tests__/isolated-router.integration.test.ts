@@ -364,7 +364,10 @@ describe('when a request or the child goes away', () => {
     const { exits } = await startIsolated('iso');
     const res = await fetch(`${base}/api/ext/iso/exit-before`);
     expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({ error: `${NAME} stopped while answering.` });
+    expect(await res.json()).toMatchObject({
+      code: 'temporarily_unavailable',
+      detail: `${NAME} stopped while answering.`,
+    });
     for (let i = 0; i < 40 && exits.length === 0; i++) await new Promise((r) => setTimeout(r, 25));
     expect(exits[0]?.reason).toBe('server_crashed');
     const other = await fetch(`${base}/api/ext/inproc/items/1`);
@@ -385,7 +388,11 @@ describe('when a request or the child goes away', () => {
     await startIsolated('iso', 300);
     const res = await fetch(`${base}/api/ext/iso/slow`);
     expect(res.status).toBe(504);
-    expect(await res.json()).toEqual({ error: `${NAME} didn't answer in time.` });
+    expect(await res.json()).toMatchObject({
+      code: 'temporarily_unavailable',
+      status: 504,
+      detail: `${NAME} didn't answer in time.`,
+    });
   });
 });
 

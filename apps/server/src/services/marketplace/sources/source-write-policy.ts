@@ -57,41 +57,18 @@
 /** Which package-source write a caller attempted, for the refusal wording. */
 export type MarketplaceSourceAction = 'add' | 'remove';
 
-/** The machine-readable code every package-source refusal carries. */
-export const OPERATOR_ONLY_MARKETPLACE_SOURCE_CODE = 'operator_only_marketplace_source';
-
-/**
- * The one-line `error` field a refusal carries — the sentence a person reads in
- * the cockpit or in CLI output.
- *
- * @param action - Which write was attempted.
- * @returns One plain sentence naming who may do it.
- */
-export function marketplaceSourceRefusalError(action: MarketplaceSourceAction): string {
-  return `Only the person running DorkOS can ${action} a package source`;
-}
-
 /**
  * The refusal an agent reads. Says what did not happen, why the person owns this
  * decision, and exactly what to ask them for — because this text lands in a
  * model's context, and a model that is only told "no" will try again.
  *
  * @param action - Which write was attempted.
- * @returns One paragraph written for the model.
+ * @returns One sentence written for the model (the `detail` of an `operator_only` problem).
  */
 export function describeMarketplaceSourceRefusal(action: MarketplaceSourceAction): string {
   const verb = action === 'add' ? 'added' : 'removed';
-  return (
-    `DorkOS ${verb} nothing. A package source is a feed this install will fetch and run code from, ` +
-    `so which feeds it reads is the person's to choose, not yours. Ask them to change it on the ` +
-    `Marketplace sources page in the DorkOS app. Retrying will not ` +
-    `help and there is no approval that unlocks this. You can still list, refresh, and validate ` +
-    `sources, and install from the sources they already added.`
-  );
+  return `DorkOS ${verb} nothing. Package sources are the person's to choose. Ask them; retrying won't help.`;
 }
-
-/** The code a package-source write answers a program or a caller with no session (DOR-3330). */
-export const MARKETPLACE_SOURCE_NEEDS_APP_CODE = 'marketplace_source_needs_app';
 
 /**
  * What a program, or the person with no session, reads when a package-source
@@ -102,6 +79,6 @@ export const MARKETPLACE_SOURCE_NEEDS_APP_CODE = 'marketplace_source_needs_app';
  */
 export function marketplaceSourceNeedsApp(action: MarketplaceSourceAction): string {
   return action === 'add'
-    ? 'Adding a marketplace needs you signed in. In the DorkOS app, open Marketplace sources and click Add marketplace source.'
-    : 'Removing a marketplace needs you signed in. In the DorkOS app, open Marketplace sources and remove it there.';
+    ? "Adding a source needs you signed in. Add it in the app's Marketplace sources."
+    : "Removing a source needs you signed in. Remove it in the app's Marketplace sources.";
 }

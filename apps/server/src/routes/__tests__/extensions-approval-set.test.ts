@@ -58,8 +58,7 @@ import type { PersonBarCopy } from '../extensions-person-bar.js';
 const target = swappableServer();
 
 const BAR: PersonBarCopy = {
-  error: 'refused',
-  code: 'extension_not_approved_to_run',
+  code: 'person_only',
   subject: 'extensions',
   crossSite: () => 'refused',
   agent: 'refused',
@@ -154,9 +153,10 @@ describe('POST /api/extensions/approve-set, part-way', () => {
       .set('Origin', 'http://localhost:7777')
       .send({ ...BODY, members: [BODY.members[0], { ...BODY.members[0], id: 'writer' }] });
     expect(response.status).toBe(403);
-    expect(response.body).toEqual({
-      error: 'Answer at your computer or over Remote Access.',
-      code: 'NOT_FROM_WIFI',
+    expect(response.headers['content-type']).toBe('application/problem+json');
+    expect(response.body).toMatchObject({
+      code: 'not_from_wifi',
+      detail: 'Answer at your computer or over Remote Access.',
     });
     expect(approveExtensionSet).not.toHaveBeenCalled();
   });
@@ -230,7 +230,7 @@ describe('POST /api/extensions/approve-set, part-way', () => {
       .set('Origin', 'http://localhost:7777')
       .send({ ...BODY, members: [BODY.members[0], { ...BODY.members[0], id: 'writer' }] });
     expect(response.status).toBe(403);
-    expect(response.body.code).toBe('APPROVALS_REQUIRE_SEPARATE_CONFIRMATION');
+    expect(response.body).toMatchObject({ code: 'forbidden', detail: expect.any(String) });
     expect(approveExtensionSet).not.toHaveBeenCalled();
   });
 });

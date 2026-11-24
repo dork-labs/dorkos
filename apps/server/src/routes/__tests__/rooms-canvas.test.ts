@@ -198,7 +198,7 @@ describe('the room canvas routes', () => {
     expect(closed.status).toBe(204);
     const read = await request(testServer).get(`/api/rooms/${roomId}/canvas/${created.body.id}`);
     expect(read.status).toBe(404);
-    expect(read.body.code).toBe('CANVAS_DOCUMENT_NOT_FOUND');
+    expect(read.body.code).toBe('not_found');
   });
 
   it('takes and releases the edit lock', async () => {
@@ -378,7 +378,7 @@ describe('the room canvas routes', () => {
         .send({ documentId: created.body.id });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('PEOPLE_ONLY');
+      expect(res.body.code).toBe('person_only');
       // A refusal that still published would be the whole bug with a red status
       // code on it, so the frames are the assertion rather than the status.
       expect(await frames()).toEqual([]);
@@ -405,7 +405,7 @@ describe('the room canvas routes', () => {
 
       for (const [name, res] of Object.entries({ read, wrote })) {
         expect(res.status, `${name} let an agent at a colleague’s copy`).toBe(403);
-        expect(res.body.code).toBe('PEOPLE_ONLY');
+        expect(res.body.code).toBe('person_only');
       }
     });
 
@@ -425,8 +425,8 @@ describe('the room canvas routes', () => {
       );
 
       expect(read.status).not.toBe(403);
-      expect(read.body.code).toBe('CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM');
-      expect(read.body.error).toContain('not a review');
+      expect(read.body.code).toBe('invalid_request');
+      expect(read.body.detail).toContain('not a review');
     });
 
     it('refuses a real NON-MEMBER the review as if the room did not exist', async () => {
@@ -440,7 +440,7 @@ describe('the room canvas routes', () => {
       // 404, never 403: membership is checked first, so a stranger cannot tell
       // a room it may not see from one that is not there.
       expect(read.status).toBe(404);
-      expect(read.body.code).toBe('ROOM_NOT_FOUND');
+      expect(read.body.code).toBe('room_not_found');
     });
 
     it('lets the PERSON say where they are looking', async () => {
@@ -463,7 +463,7 @@ describe('the room canvas routes', () => {
       // handler could accidentally distinguish them.
       const missing = await request(testServer).get('/api/rooms/no-such-room/canvas');
       expect(missing.status).toBe(404);
-      expect(missing.body.code).toBe('ROOM_NOT_FOUND');
+      expect(missing.body.code).toBe('room_not_found');
     });
 
     it('404s a document id from another room', async () => {
@@ -500,7 +500,7 @@ describe('the room canvas routes', () => {
         .patch(`/api/rooms/${roomId}/canvas/${documentId}`)
         .send({});
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('ROOM_ARCHIVED');
+      expect(res.body.code).toBe('room_archived');
       expect(JSON.stringify(res.body)).not.toContain('example.test/before');
     });
 
@@ -518,7 +518,7 @@ describe('the room canvas routes', () => {
 
       for (const res of [opened, patched, deleted, editing]) {
         expect(res.status).toBe(409);
-        expect(res.body.code).toBe('ROOM_ARCHIVED');
+        expect(res.body.code).toBe('room_archived');
       }
       // And nothing was written on the way to being refused.
       const listed = await request(testServer).get(`/api/rooms/${roomId}/canvas`);
@@ -594,8 +594,8 @@ describe('the room canvas routes', () => {
     ]);
     // The refusal a client will actually hit has to be NAMED, not only listed:
     // a 403 with no code in the prose is one a caller cannot branch on.
-    expect(review?.get?.description).toContain('PEOPLE_ONLY');
-    expect(review?.put?.description).toContain('PEOPLE_ONLY');
+    expect(review?.get?.description).toContain('person_only');
+    expect(review?.put?.description).toContain('person_only');
     // …and the sentence the gate made false has to be gone.
     expect(
       review?.get?.description,

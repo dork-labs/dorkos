@@ -10,6 +10,8 @@
  * @module services/extensions/extension-inbox-context
  */
 import type { RequestHandler } from 'express';
+import { problemBody } from '@dorkos/http-kit';
+import { PROBLEM_CONTENT_TYPE } from '@dorkos/shared/problem';
 import type { InboxApi, PersonCheck, ProjectSettingsReader } from '@dorkos/extension-api/server';
 import type { RequestFacts } from '../../../http/request-facts.js';
 import { assessPerson, type PersonBarCopy } from '../../../routes/extensions-person-bar.js';
@@ -91,15 +93,11 @@ export function createInboxApi(
  */
 export function requirePersonCopy(extensionName: string): PersonBarCopy {
   return {
-    error: `Only a person can change ${extensionName}'s settings.`,
-    code: 'extension_person_required',
+    code: 'person_only',
     subject: `${extensionName}'s settings`,
     crossSite: (origin) =>
-      `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
-      `Only a person using DorkOS can change ${extensionName}'s settings.`,
-    agent:
-      `DorkOS changed nothing. Only a person can change ${extensionName}'s settings. ` +
-      `Ask them to do it in DorkOS.`,
+      `DorkOS changed nothing. ${origin} isn’t DorkOS. Change ${extensionName}'s settings in DorkOS.`,
+    agent: `DorkOS changed nothing. Only a person can change ${extensionName}'s settings.`,
   };
 }
 
@@ -130,8 +128,10 @@ function extensionPersonRefusal(request: RequestFacts, extensionName: string) {
   const refusal = assessPerson(facts, requirePersonCopy(extensionName));
   const fromTheApp = facts.headers[PERSON_APP_HEADER] !== undefined;
   if (refusal && fromTheApp && personSessionWasMissing(facts) && isPersonWithoutSession(facts)) {
-    const message = PERSON_SESSION_REQUIRED_MESSAGE;
-    return { status: 401, body: { error: message, code: PERSON_SESSION_REQUIRED_CODE, message } };
+    const body = problemBody(PERSON_SESSION_REQUIRED_CODE, {
+      detail: PERSON_SESSION_REQUIRED_MESSAGE,
+    });
+    return { status: body.status, body };
   }
   return refusal;
 }
@@ -153,7 +153,7 @@ export function createRequirePerson(extensionId: string, extensionName: string):
   return (req, res, next) => {
     const refusal = extensionPersonRefusal(expressRequestFacts(req, res), extensionName);
     if (refusal) {
-      res.status(refusal.status).json(refusal.body);
+      res.status(refusal.status).type(PROBLEM_CONTENT_TYPE).send(JSON.stringify(refusal.body));
       return;
     }
     runInPersonRequest(extensionId, (end) => {

@@ -460,7 +460,7 @@ describe('front-door write census', () => {
     );
     const ownerRefusal = `{
       const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), RUN_ON_CREDITS);
-      if (refusal) return c.json(refusal, 403);
+      if (refusal) return ownerRefusalReply(c, refusal);
     }`;
     expect(credits?.thenStatement.getText().replace(/\s+/g, '')).toBe(
       ownerRefusal.replace(/\s+/g, '')

@@ -243,7 +243,7 @@ onDecided?.(answers);
 
 There is no optimistic client patch. After the submit endpoint runs, the server re-emits the resolution on the durable `/events` stream, and `foldInteractionResolved` in `project-session-turn.ts` moves the part off `pending`. `markToolCallResponded` in `features/chat/model/use-session-submit.ts` is a deliberate no-op kept so every decision callback has one signature.
 
-Both `QuestionPrompt` and `ApprovalPrompt` treat HTTP 409 (`INTERACTION_ALREADY_RESOLVED`) as success — this handles the race condition where the SDK resolves the interaction before the client's HTTP request arrives.
+Both `QuestionPrompt` and `ApprovalPrompt` treat HTTP 409 (`already_resolved`) as success — this handles the race condition where the SDK resolves the interaction before the client's HTTP request arrives.
 
 **Single vs. multi-question UX.** A single-question prompt renders the one question directly with a Submit button. A multi-question prompt instead renders a step indicator (the question's `header`, falling back to `Question N of M`) plus Back/Next navigation, showing one question at a time. `submit()` advances to the next question on each Enter and only calls the transport once the final question is reached, so the user answers the questions sequentially before anything is submitted.
 
@@ -703,7 +703,7 @@ submitMyNewResult(sessionId: string, toolCallId: string, result: MyResult): bool
 
 Implement in `HttpTransport` (POST to a new route) and update the test mocks.
 
-**Important:** Handle 409 responses in your transport method. The server returns 409 with `{ code: 'INTERACTION_ALREADY_RESOLVED' }` when the SDK resolves the interaction before the HTTP request arrives. Treat this as success in the client.
+**Important:** Handle 409 responses in your transport method. The server returns a 409 problem document with `{ code: 'already_resolved' }` when the SDK resolves the interaction before the HTTP request arrives. Treat this as success in the client.
 
 ### Step 4: Add route (HttpTransport only)
 

@@ -169,11 +169,10 @@ describe('POST /:id/messages — an account that may not work in this project', 
       .send({ content: 'hi', cwd: repo, account: 'work' });
 
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({
-      error: expect.stringContaining("Work can't be used in client-app"),
-      message: res.body.error,
+    expect(res.body).toMatchObject({
+      detail: expect.stringContaining("Work can't be used in client-app"),
       code: 'account_not_allowed_here',
-      project: { root: repo, name: 'client-app' },
+      projectName: 'client-app',
       accountId: 'work',
     });
     expect(fakeRuntime.checkLaunchAccount).toHaveBeenCalledWith(S1, repo, 'work');

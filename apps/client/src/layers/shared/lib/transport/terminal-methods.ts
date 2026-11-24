@@ -214,7 +214,7 @@ export function createTerminalMethods(baseUrl: string) {
         signal,
       });
       if (!res.ok) {
-        // Carry the server's machine-readable code (e.g. TERMINAL_LIMIT → 429)
+        // Carry the server's machine-readable code (e.g. `terminal_limit` → 429)
         // so callers can map known failures to friendlier copy.
         throw await responseError(res, `Couldn’t open the terminal (HTTP ${res.status})`);
       }

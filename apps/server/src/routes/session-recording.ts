@@ -27,15 +27,17 @@ import fs from 'node:fs/promises';
 import type { Context } from 'hono';
 import { DevtoolsRecordingUploadSchema } from '@dorkos/shared/schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { parseUploadForm, type UploadedFile, type UploadForm } from '../http/uploads.js';
 import { devtoolsCaptureStore } from '../services/session/index.js';
 import { configManager } from '../services/core/config-manager.js';
 import { sniffImageContentType } from '../services/identity/image-sniff.js';
-import { pathErrorReply, resolveWithinCwd } from '../lib/file-route-guards.js';
-import { errorBody, parseSessionId } from '../lib/route-utils.js';
+import { resolveWithinCwd } from '../lib/file-route-guards.js';
+import { parseSessionId } from '../lib/route-utils.js';
+import { invalidSessionId } from './session-route-replies.js';
 import { logger } from '../lib/logger.js';
 import { uploadRefusalProblem } from '../http/problems/upload-refusal.js';
+import { pathRefusalProblem } from '../http/problems/boundary-refusal.js';
 
 /** The lease an upload holds while it writes. */
 type RecordingUploadLease = NonNullable<
@@ -51,7 +53,11 @@ const KEYFRAME_FIELD = 'keyframe';
 /** Where a session's recordings live, under the directory `.gitignore` covers. */
 const RECORDINGS_DIR = path.join('.dork', '.temp', 'recordings');
 
-const RETIRED = errorBody('That recording page is no longer available', 'RECORDING_RETIRED');
+/** The upload's page or waiter moved on: nothing was saved. */
+const retired = (c: Context<ApiEnv>): Response =>
+  problem(c, 'conflict', {
+    detail: 'That recording upload is no longer wanted. Nothing was saved.',
+  });
 
 /**
  * Handler for `POST /api/sessions/:id/devtools/recording`.
@@ -72,7 +78,7 @@ export async function sessionDevtoolsRecordingHandler(c: Context<ApiEnv>): Promi
   // registered under the other and strand the tool call. The `requestId` below
   // is single-use and server-minted, which is what actually addresses this.
   const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+  if (!sessionId) return invalidSessionId(c);
 
   // The same ceiling every other upload in the product answers to, read per
   // request so a change in Settings takes effect on the next recording.
@@ -113,19 +119,14 @@ async function finish(c: Context<ApiEnv>, form: UploadForm | undefined): Promise
   // A body that is not multipart is read as the JSON it was, as it was when
   // the multipart parser stepped aside for it.
   const parsed = DevtoolsRecordingUploadSchema.safeParse(form ? form.fields : readJsonBody(c));
-  if (!parsed.success) {
-    return c.json(errorBody('Invalid recording upload', 'VALIDATION_ERROR'), 400);
-  }
+  if (!parsed.success) return validationProblem(c, parsed.error);
   const { requestId, frames, durationMs, error: reported } = parsed.data;
 
   // The ONLY source of a destination. An upload nobody is awaiting has nowhere
   // to go, and inventing one would be a write this request chose.
   const pending = devtoolsCaptureStore.pendingRecording(requestId);
   if (!pending) {
-    return c.json(
-      errorBody('No recording is waiting for that upload', 'RECORDING_NOT_PENDING'),
-      404
-    );
+    return problem(c, 'not_found', { detail: 'No recording is waiting for that upload.' });
   }
 
   const admitted = () =>
@@ -134,22 +135,18 @@ async function finish(c: Context<ApiEnv>, form: UploadForm | undefined): Promise
       documentId: parsed.data.documentId,
       bridgeGeneration: parsed.data.bridgeGeneration,
     });
-  if (!admitted()) return c.json(RETIRED, 409);
+  if (!admitted()) return retired(c);
 
   const files = form?.files ?? [];
   const gif = files.find((file) => file.fieldname === RECORDING_FIELD);
   const keyframe = files.find((file) => file.fieldname === KEYFRAME_FIELD);
   if (!reported && (!gif || frames === undefined || durationMs === undefined)) {
-    return c.json(
-      errorBody(
-        `Attach the recording as the '${RECORDING_FIELD}' field, with its frame count.`,
-        'RECORDING_MISSING'
-      ),
-      400
-    );
+    return problem(c, 'invalid_request', {
+      detail: `Attach the recording as the '${RECORDING_FIELD}' field, with its frame count.`,
+    });
   }
   if (keyframe && keyframe.size > 675000) {
-    return c.json(errorBody('The last frame is too large', 'RECORDING_KEYFRAME_TOO_LARGE'), 413);
+    return problem(c, 'request_too_large', { detail: 'The last frame is too large.' });
   }
 
   // Includes error-only results: no competing response may consume an owner's waiter.
@@ -159,10 +156,7 @@ async function finish(c: Context<ApiEnv>, form: UploadForm | undefined): Promise
     bridgeGeneration: parsed.data.bridgeGeneration,
   });
   if (!lease) {
-    return c.json(
-      errorBody('That recording upload is no longer available', 'RECORDING_RETIRED'),
-      409
-    );
+    return retired(c);
   }
   const current = () => devtoolsCaptureStore.isRecordingUploadCurrent(lease);
   let staging: string | undefined;
@@ -181,17 +175,17 @@ async function finish(c: Context<ApiEnv>, form: UploadForm | undefined): Promise
     const relative = path.join(RECORDINGS_DIR, `${lease.pending.recordingId}.gif`);
     const { resolved } = await resolveWithinCwd(lease.pending.cwd, relative);
     destination = resolved;
-    if (!current()) return c.json(RETIRED, 409);
+    if (!current()) return retired(c);
     await fs.mkdir(path.dirname(resolved), { recursive: true });
-    if (!current()) return c.json(RETIRED, 409);
+    if (!current()) return retired(c);
     staging = path.join(path.dirname(resolved), `.recording-${randomUUID()}.upload`);
     await fs.writeFile(staging, gif!.buffer!, { flag: 'wx' });
-    if (!current()) return c.json(RETIRED, 409);
+    if (!current()) return retired(c);
     // Only the exclusive owner may atomically publish fully written bytes to the server-owned path.
     await fs.rename(staging, resolved);
     published = true;
     staging = undefined;
-    if (!current()) return c.json(RETIRED, 409);
+    if (!current()) return retired(c);
     committed = devtoolsCaptureStore.resolveRecordingUpload(lease, {
       ok: true,
       path: relative,
@@ -200,7 +194,7 @@ async function finish(c: Context<ApiEnv>, form: UploadForm | undefined): Promise
       durationMs: durationMs!,
       keyframe: pngKeyframe(keyframe),
     });
-    if (!committed) return c.json(RETIRED, 409);
+    if (!committed) return retired(c);
     return c.body(null, 204);
   } catch (writeErr) {
     devtoolsCaptureStore.resolveRecordingUpload(lease, {
@@ -208,10 +202,10 @@ async function finish(c: Context<ApiEnv>, form: UploadForm | undefined): Promise
       error: 'The recording couldn’t be saved to this chat’s folder.',
       provenance: 'host',
     });
-    const refused = pathErrorReply(writeErr);
-    if (refused) return c.json(refused.body, refused.status);
+    const refused = pathRefusalProblem(c, writeErr);
+    if (refused) return refused;
     logger.error('[session-recording] could not save a recording', { err: writeErr });
-    return c.json(errorBody('Could not save the recording', 'RECORDING_WRITE_FAILED'), 500);
+    return problem(c, 'internal_error', { detail: 'The recording couldn’t be saved. Try again.' });
   } finally {
     // After the answer, as Express ran it: the client hears now, and the lease
     // is held until the cleanup is done, so no replacement publishes over a
