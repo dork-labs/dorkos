@@ -14,12 +14,14 @@
 import { slackifyMarkdown } from 'slackify-markdown';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
+import { withoutCarriedTurnLimits } from './carried-turn-limits.js';
 
 /**
  * Extract text content from an unknown Relay envelope payload.
  *
  * Checks for `content` and `text` string fields on object payloads,
- * falls back to JSON serialization for other shapes.
+ * falls back to JSON serialization for other shapes, never with the limits
+ * the server carried on the message (`withoutCarriedTurnLimits`).
  *
  * @param payload - The unknown payload from a RelayEnvelope
  */
@@ -33,7 +35,7 @@ export function extractPayloadContent(payload: unknown): string {
   }
 
   try {
-    return JSON.stringify(payload);
+    return JSON.stringify(withoutCarriedTurnLimits(payload));
   } catch {
     return '[unserializable payload]';
   }

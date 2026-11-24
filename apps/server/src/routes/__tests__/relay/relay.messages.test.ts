@@ -120,6 +120,8 @@ describe('Relay routes', () => {
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('RESERVED_SENDER');
+      // It points at an address a program may send from, never a person's (DOR-5151).
+      expect(res.body.error).toContain('(e.g. relay.external.<name>)');
       expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
     });
 

@@ -4,7 +4,9 @@
  * there that can't be read holds the turn at the runtime's default and marks it.
  */
 import { describe, expect, it } from 'vitest';
-import { CARRIED_TURN_LIMITS_FIELD, turnPowerOptions } from '../turn-shaping-sender.js';
+import { turnPowerOptions } from '../turn-shaping-sender.js';
+import { CARRIED_TURN_LIMITS_FIELD } from '../../../lib/carried-turn-limits.js';
+import { extractPayloadContent } from '../../../lib/payload-utils.js';
 
 const TEAMMATE = {
   asks: 'never',
@@ -67,5 +69,15 @@ describe('turnPowerOptions', () => {
     expect(turnPowerOptions(true, false, payload)).toEqual({
       permissionCeiling: ['runtime-default', 'runtime-default'],
     });
+  });
+});
+
+describe('extractPayloadContent', () => {
+  it('leaves the carried limits out of the words a payload with no text is read as', () => {
+    const words = extractPayloadContent({
+      task: 'Run the test suite',
+      [CARRIED_TURN_LIMITS_FIELD]: { carriedMarks: { outsider: true } },
+    });
+    expect(words).toBe('{"task":"Run the test suite"}');
   });
 });

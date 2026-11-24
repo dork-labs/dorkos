@@ -9,6 +9,7 @@ import type {
   TurnPermissionBound,
   TurnPermissionCeiling,
 } from '@dorkos/shared/agent-runtime';
+import { CARRIED_TURN_LIMITS_FIELD } from '../../lib/carried-turn-limits.js';
 
 /**
  * Senders whose payload may shape a turn — its folder, the agent it acts as and
@@ -43,15 +44,6 @@ export const TURN_SHAPING_PAYLOAD_FIELDS = [
   '__bindingPermissions',
   '__untrustedWords',
 ] as const;
-
-/**
- * The payload field that carries the limits the sender's own turns hold onto
- * the turn its message starts: `{ permissionCeiling?, carriedMarks? }`, as
- * `launcherTurnCeiling` builds them on the server (DOR-5151). The server sets
- * it; a route that forwards a caller's payload removes the caller's copy.
- * Every bound in it can only hold a turn lower, never raise it.
- */
-export const CARRIED_TURN_LIMITS_FIELD = '__carriedTurnLimits';
 
 /** The limits a message carries onto its turn ({@link CARRIED_TURN_LIMITS_FIELD}). */
 type CarriedTurnLimits = Pick<MessageOpts, 'permissionCeiling' | 'carriedMarks'>;

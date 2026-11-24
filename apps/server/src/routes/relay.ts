@@ -11,6 +11,7 @@ import {
   extractSessionIdFromSubject,
   isServerManagedSubject,
   SERVER_MANAGED_PREFIXES,
+  withoutCarriedTurnLimits,
 } from '@dorkos/relay';
 import {
   SendMessageRequestSchema,
@@ -144,7 +145,8 @@ export function buildConversations(
     let preview = '';
     let payload: unknown = undefined;
     if (deadLetter?.envelope?.payload) {
-      payload = deadLetter.envelope.payload;
+      // The sender's words, never the limits the server carried on them (DOR-5151).
+      payload = withoutCarriedTurnLimits(deadLetter.envelope.payload);
       const p = payload as Record<string, unknown>;
       const text = p?.content ?? p?.text ?? p?.message;
       preview =
@@ -237,7 +239,7 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
         {
           error:
             `Sender "${result.data.from}" is a reserved server principal and cannot be ` +
-            `asserted by a client. Send from your own principal (e.g. relay.human.console).`,
+            `asserted by a client. Send from your own principal (e.g. relay.external.<name>).`,
           code: 'RESERVED_SENDER',
         },
         403

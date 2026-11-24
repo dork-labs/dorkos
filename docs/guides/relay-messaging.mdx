@@ -166,7 +166,7 @@ Your own message can shape the turn it starts with three fields:
 
 Existing folder and agent checks still apply. Without the nested approval mode, the Relay turn handler uses `default`. A top-level `payload.permissionMode` does not set it. The receiving runtime determines which approval modes it supports.
 
-A message from anyone else can't shape the turn: DorkOS removes those three fields. DorkOS's MCP tools (MCP is the standard that lets AI tools talk to each other) work the same way: they use the sender DorkOS assigns them, and MCP authentication and tool permissions are separate checks.
+A message from anyone else can't shape the turn: DorkOS removes those three fields, and `payload.responseContext`, which asks how the reply is formatted. DorkOS's MCP tools (MCP is the standard that lets AI tools talk to each other) work the same way: they use the sender DorkOS assigns them, and MCP authentication and tool permissions are separate checks.
 
 A message from an agent, a chat, an MCP tool or a program also runs no looser than the receiving runtime's starting level, even in a chat already set higher. When an agent's own running work is held back or marked, a message it sends carries that onto the turn it starts. A message an agent sends never gives the receiving agent more power than a new chat gets, and a message from another company's agent over A2A is never treated as one of yours.
 

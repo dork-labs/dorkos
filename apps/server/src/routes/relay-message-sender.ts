@@ -14,11 +14,13 @@
  * - **Anyone else** sends from `relay.external.http`, held like that agent.
  *
  * Only the person sends from a person's address: anyone else naming one is
- * refused, and the app's window without a session is then asked for the
- * password by the chain (`http/person-session-refusal.ts`). A message that is
- * not the person's never shapes the turn it starts: its folder, agent, mode
- * and word fields are dropped. The limits field is the server's alone, so a
- * caller's copy of it is always dropped.
+ * refused, except a verified agent, which is sent from its own address. The
+ * app's window without a session is then asked for the password by the chain
+ * (`http/person-session-refusal.ts`). A message that is not the person's never
+ * shapes the turn it starts: its folder, agent, mode and word fields, and the
+ * reply format it asks for (`responseContext`, which reaches the receiving
+ * turn's system prompt), are dropped. The limits field is the server's alone,
+ * so a caller's copy of it is always dropped.
  *
  * @module routes/relay-message-sender
  */
@@ -84,6 +86,7 @@ export function relayMessageSender(
     HTTP_RELAY_SENDER;
   const payload = without(data.payload, [
     ...TURN_SHAPING_PAYLOAD_FIELDS,
+    'responseContext',
     CARRIED_TURN_LIMITS_FIELD,
   ]);
   const limits = launcherTurnCeiling(launcher, facts);
