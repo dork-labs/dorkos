@@ -11972,6 +11972,9 @@
             ],
             "default": null
           },
+          "accountPinned": {
+            "type": "boolean"
+          },
           "runOnce": {
             "type": "boolean"
           },
@@ -12759,6 +12762,9 @@
             ],
             "minLength": 1
           },
+          "accountPinned": {
+            "type": "boolean"
+          },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
           },
@@ -12964,6 +12970,9 @@
             ],
             "default": null
           },
+          "accountMove": {
+            "$ref": "#/components/schemas/TaskRunAccountMove"
+          },
           "createdAt": {
             "type": "string"
           }
@@ -13012,6 +13021,59 @@
           null
         ],
         "default": null
+      },
+      "TaskRunAccountMove": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "label"
+            ]
+          },
+          "to": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "label"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "limited",
+              "signed-out"
+            ]
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "reason"
+        ]
       },
       "CancelTaskRunResponse": {
         "type": "object",
