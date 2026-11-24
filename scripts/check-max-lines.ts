@@ -1,6 +1,7 @@
 /**
- * Hold every source file to the 500-line rule with a ratchet: nothing over the
- * limit may grow, nothing new may cross it, and the baseline only goes down.
+ * Hold every source and test file to the 500-line rule with a ratchet: nothing
+ * over the limit may grow, nothing new may cross it, and the baseline only
+ * goes down.
  *
  * WHY THIS EXISTS. `max-lines` (500, blank lines and comments skipped) has been
  * `warn` in `packages/eslint-config/base.js` since the rule was written, and a
@@ -14,7 +15,7 @@
  * governs it (its package's `eslint.config.js`) and only `max-lines` switched
  * on, its limit lowered to zero so the rule always reports, and the count is
  * read back from the rule's own message. So "lines" means exactly what the
- * rule means, and a file the config exempts (tests, `openapi-registry.ts`, the
+ * rule means, and a source file the config exempts (`openapi-registry.ts`, the
  * Zod schema collections, `shared/ui`) is exempt here too. One deliberate
  * difference: `eslint-disable max-lines` comments are NOT honoured, because a
  * one-line comment would otherwise be the cheapest way out of the ratchet.
@@ -23,8 +24,9 @@
  * WHAT FAILS (exit 1):
  *   - grew:      a baselined file is longer than its baseline;
  *   - new:       a file not in the baseline is over the limit;
- *   - stale:     a baselined file shrank, dropped under the limit or is gone,
- *                and the baseline still says the old number. Run `--update`,
+ *   - stale:     a baselined source file shrank, dropped under the limit or is
+ *                gone, and the baseline still says the old number (for test
+ *                files, a note only: see below). Run `--update`,
  *                which only ever lowers or removes entries. Without this a
  *                file could shrink and later grow back to its old number.
  *   - raised:    with `--base <ref>`, an entry is higher than the base's, or
@@ -32,7 +34,20 @@
  *                The baseline is lowered (and carried across a rename) by
  *                `--update`, never raised by hand.
  *
- * Test files are left out (`TEST_FILE`), as the ticket asks.
+ * TEST FILES HAVE THEIR OWN BASELINE (`TEST_BASELINE_PATH`). DOR-2822 left
+ * them out and 627 grew past 500 by 2026-11-23. TypeScript tests (`.ts`,
+ * `.tsx`) follow every rule above, counted the same way; `.mjs` tests are not
+ * measured. Two differences. Every test is held whatever its config says
+ * (`@dorkos/eslint-config/test` switches `max-lines` off); one in a path
+ * ESLint ignores or has no config for is counted with the TypeScript parser
+ * alone. And a stale test entry (shrank, split or deleted) is a note, not a
+ * failure: many PRs split big tests at once, and each would otherwise go red
+ * and conflict with the next on neighbouring baseline lines. `--update` locks
+ * the shrinks in, in the weekly `pruning-tests` run by @dorkos-qa or by
+ * anyone. The accepted gap: until it runs, a shrunk test may regrow up to its
+ * old entry. A separate file because each entry is one line and git refuses
+ * two edits on neighbouring lines: in one sorted list a test sits next to its
+ * source file, so test splits would collide with source shrinks.
  *
  * Exit 2 means it could not run (no config, an unreadable baseline, a parse
  * failure): a gate that cannot measure must not pass.
@@ -48,6 +63,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ESLint } from 'eslint';
@@ -55,15 +71,18 @@ import { ESLint } from 'eslint';
 /** The limit the prefilter assumes. A file with fewer raw lines cannot be over it. */
 export const LIMIT = 500;
 
-/** Where the baseline lives, relative to the root. */
+/** Where the source files' baseline lives, relative to the root. */
 export const BASELINE_PATH = 'scripts/max-lines/baseline.json';
 
+/** Where the test files' baseline lives, relative to the root. */
+export const TEST_BASELINE_PATH = 'scripts/max-lines/test-baseline.json';
+
 /**
- * Test files, which the ticket keeps exempt. Most packages already switch
+ * Test files, held to {@link TEST_BASELINE_PATH}. Most packages switch
  * `max-lines` off for them through `@dorkos/eslint-config/test`; three configs
  * (`packages/cli`, `apps/e2e`, the repo root) never spread it, so the pattern
- * says it once for all of them rather than leaving a test at 501 lines unable
- * to land in those three places only.
+ * says once for all of them what a test file is, rather than trusting each
+ * config's own idea of it.
  */
 const TEST_FILE = /(^|\/)__tests__\/|\.(test|spec)\.tsx?$|^apps\/e2e\/tests\//;
 
@@ -76,6 +95,14 @@ export interface Baseline {
   $comment: string;
   /** Repo-relative path to `max-lines` count, sorted by path. */
   files: Record<string, number>;
+}
+
+/** What {@link measure} found: each over-limit file and its count, per baseline. */
+export interface Counts {
+  /** Source files, held to {@link BASELINE_PATH}. */
+  source: Record<string, number>;
+  /** Test files, held to {@link TEST_BASELINE_PATH}. */
+  tests: Record<string, number>;
 }
 
 /** One reason the check fails. */
@@ -93,16 +120,38 @@ export interface Finding {
 /** A thrown failure that means "could not measure", exit 2. */
 export class MaxLinesError extends Error {}
 
-const COMMENT =
-  'The 500-line ratchet (scripts/check-max-lines.ts, DOR-2822). Each file here was over the limit when measured. A file may shrink, never grow. Run `pnpm check:max-lines -- --update` after shrinking one; never raise a number by hand.';
+/** Each baseline, by which files it holds, with the note written into it. */
+const BASELINES = [
+  {
+    scope: 'source',
+    path: BASELINE_PATH,
+    staleFails: true,
+    comment:
+      'The 500-line ratchet (scripts/check-max-lines.ts, DOR-2822). Each file here was over the limit when measured. A file may shrink, never grow. Run `pnpm check:max-lines -- --update` after shrinking one; never raise a number by hand.',
+  },
+  {
+    scope: 'tests',
+    path: TEST_BASELINE_PATH,
+    staleFails: false,
+    comment:
+      'The 500-line ratchet for test files (scripts/check-max-lines.ts). Each test file here was over the limit when measured. It may shrink, never grow: split it by subject, with shared setup in one fixtures module. New pieces under 500 need no entry. A shrink or deletion is only noted until `pnpm check:max-lines -- --update` locks it in; never raise a number by hand.',
+  },
+] as const satisfies readonly {
+  scope: keyof Counts;
+  path: string;
+  /** Whether a stale entry fails the check or is only noted. */
+  staleFails: boolean;
+  comment: string;
+}[];
 
 /**
  * Measure every in-scope file over the limit.
  *
  * @param root - The tree to measure.
- * @returns Repo-relative path to its `max-lines` count, for files over their limit.
+ * @returns Repo-relative path to its `max-lines` count, for files over their
+ *   limit, split into source files and test files.
  */
-export async function measure(root: string): Promise<Record<string, number>> {
+export async function measure(root: string): Promise<Counts> {
   // Untracked files too, so a local run sees a file before it is added and
   // agrees with CI, which only ever has committed ones.
   const tracked = execFileSync(
@@ -115,7 +164,7 @@ export async function measure(root: string): Promise<Record<string, number>> {
     }
   )
     .split('\0')
-    .filter((file, i, all) => file && !TEST_FILE.test(file) && all.indexOf(file) === i);
+    .filter((file, i, all) => file && all.indexOf(file) === i);
 
   // Raw lines bound the counted ones from above, so reading text is enough to
   // rule out every file at or under the limit without parsing it.
@@ -129,15 +178,21 @@ export async function measure(root: string): Promise<Record<string, number>> {
 
   const eslint = new ESLint({ cwd: root });
   const inScope: string[] = [];
+  const unlinted: string[] = []; // tests ESLint never lints, held all the same
   for (const file of candidates) {
     const abs = join(root, file);
-    if (await eslint.isPathIgnored(abs)) continue;
+    const test = TEST_FILE.test(file);
     let config: { rules?: Record<string, unknown> } | undefined;
     try {
-      config = await eslint.calculateConfigForFile(abs);
+      config = (await eslint.isPathIgnored(abs))
+        ? undefined
+        : await eslint.calculateConfigForFile(abs);
     } catch {
-      continue; // no config governs it, so ESLint never lints it
+      config = undefined; // no config governs it, so ESLint never lints it
     }
+    // Tests are held whatever their config says (it switches the rule off).
+    if (test) (config ? inScope : unlinted).push(file);
+    if (test || !config) continue;
     const rule = config?.rules?.['max-lines'];
     const entry = Array.isArray(rule) ? rule : [rule];
     if (entry[0] === 0 || entry[0] === 'off' || entry[0] === undefined) continue;
@@ -152,7 +207,8 @@ export async function measure(root: string): Promise<Record<string, number>> {
     inScope.push(file);
   }
 
-  // Each file's own options, with only the limit lowered so the rule reports.
+  // The rule as the configs set it, with only the limit lowered so it reports
+  // (and switched on for test files, whose config has it off).
   const counter = new ESLint({
     cwd: root,
     allowInlineConfig: false,
@@ -161,8 +217,11 @@ export async function measure(root: string): Promise<Record<string, number>> {
       rules: { 'max-lines': ['warn', { max: 0, skipBlankLines: true, skipComments: true }] },
     },
   });
-  const counts: Record<string, number> = {};
+  const counts: Counts = { source: {}, tests: {} };
   const results = inScope.length ? await counter.lintFiles(inScope.map((f) => join(root, f))) : [];
+  if (unlinted.length) {
+    results.push(...(await bareCounter(root).lintFiles(unlinted.map((f) => join(root, f)))));
+  }
   for (const result of results) {
     const file = result.filePath.slice(resolve(root).length + 1);
     const fatal = result.messages.find((m) => m.fatal);
@@ -170,9 +229,39 @@ export async function measure(root: string): Promise<Record<string, number>> {
     const message = result.messages.find((m) => m.ruleId === 'max-lines');
     const count = Number(/\((\d+)\)/.exec(message?.message ?? '')?.[1]);
     if (!Number.isInteger(count)) throw new MaxLinesError(`${file}: no max-lines count reported`);
-    if (count > LIMIT) counts[file] = count;
+    if (count > LIMIT) counts[TEST_FILE.test(file) ? 'tests' : 'source'][file] = count;
   }
-  return sortKeys(counts);
+  return { source: sortKeys(counts.source), tests: sortKeys(counts.tests) };
+}
+
+/**
+ * A counter that reads no config and ignores nothing, for test files no config
+ * lints: the same rule and options, with the TypeScript parser every package
+ * uses (taken from `@dorkos/eslint-config`, whose dependency it is).
+ *
+ * @param root - The tree to measure.
+ */
+function bareCounter(root: string): ESLint {
+  let parser: unknown;
+  try {
+    const fromConfig = createRequire(
+      new URL('../packages/eslint-config/package.json', import.meta.url)
+    );
+    parser = (fromConfig('typescript-eslint') as { parser: unknown }).parser;
+  } catch {
+    throw new MaxLinesError('cannot load typescript-eslint to count an unlinted test file');
+  }
+  return new ESLint({
+    cwd: root,
+    overrideConfigFile: true,
+    ignore: false,
+    allowInlineConfig: false,
+    overrideConfig: {
+      files: ['**/*.ts', '**/*.tsx'],
+      languageOptions: { parser: parser as never },
+      rules: { 'max-lines': ['warn', { max: 0, skipBlankLines: true, skipComments: true }] },
+    },
+  });
 }
 
 /**
@@ -277,13 +366,19 @@ export function lowered(
   return sortKeys(next);
 }
 
+/** A stale test entry, which passes: what changed and how to lock it in. */
+export function describeNote(f: Finding): string {
+  const now = f.count === undefined ? 'gone or under the limit' : `down to ${f.count}`;
+  return `${f.file}: ${now} (baseline ${f.baseline}); run \`pnpm check:max-lines -- --update\` to lock it in`;
+}
+
 /** One line a person can act on. */
 export function describe(f: Finding): string {
   switch (f.kind) {
     case 'grew':
       return `${f.file}: grew to ${f.count} lines (baseline ${f.baseline}). Over-limit files may only shrink: move code out.`;
     case 'new':
-      return `${f.file}: ${f.count} lines, over the ${LIMIT}-line limit. Split it before it lands. If you only moved a baselined file, run \`pnpm check:max-lines -- --update\` to carry its entry.`;
+      return `${f.file}: ${f.count} lines, over the ${LIMIT}-line limit. Split it before it lands${TEST_FILE.test(f.file) ? ', by subject, with shared setup in one fixtures module' : ''}. If you only moved a baselined file, run \`pnpm check:max-lines -- --update\` to carry its entry; a move between a test path and a source path carries nothing, so such a file must get under ${LIMIT}.`;
     case 'stale':
       return f.count === undefined
         ? `${f.file}: now under the limit or gone. Run \`pnpm check:max-lines -- --update\` to drop it from the baseline.`
@@ -316,16 +411,20 @@ function readBaseline(text: string, where: string): Record<string, number> {
   return files as Record<string, number>;
 }
 
-function writeBaseline(root: string, files: Record<string, number>): void {
-  const body: Baseline = { $comment: COMMENT, files };
-  writeFileSync(join(root, BASELINE_PATH), `${JSON.stringify(body, null, 2)}\n`);
+function writeBaseline(
+  root: string,
+  { path, comment }: (typeof BASELINES)[number],
+  files: Record<string, number>
+): void {
+  const body: Baseline = { $comment: comment, files };
+  writeFileSync(join(root, path), `${JSON.stringify(body, null, 2)}\n`);
 }
 
 /**
  * The baseline as it was at `ref`, or `null` when that tree had none. A ref
  * git cannot resolve is a failure to measure, never a skipped check.
  */
-function baselineAt(root: string, ref: string): Record<string, number> | null {
+function baselineAt(root: string, ref: string, path: string): Record<string, number> | null {
   try {
     execFileSync('git', ['cat-file', '-e', `${ref}^{commit}`], { cwd: root, stdio: 'ignore' });
   } catch {
@@ -333,7 +432,7 @@ function baselineAt(root: string, ref: string): Record<string, number> | null {
   }
   let text: string;
   try {
-    text = execFileSync('git', ['show', `${ref}:${BASELINE_PATH}`], {
+    text = execFileSync('git', ['show', `${ref}:${path}`], {
       cwd: root,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -341,7 +440,7 @@ function baselineAt(root: string, ref: string): Record<string, number> | null {
   } catch {
     return null;
   }
-  return readBaseline(text, `${BASELINE_PATH} at ${ref}`);
+  return readBaseline(text, `${path} at ${ref}`);
 }
 
 /** Where this branch left `origin/main`, or undefined when that cannot be known. */
@@ -365,50 +464,62 @@ async function main(argv: string[]): Promise<number> {
   };
   const root = resolve(value('--root') ?? process.cwd());
   const counts = await measure(root);
+  const tally = `${Object.keys(counts.source).length} source and ${Object.keys(counts.tests).length} test file(s)`;
 
   if (flag('--init')) {
-    writeBaseline(root, counts);
-    console.log(`max-lines: wrote ${Object.keys(counts).length} file(s) to ${BASELINE_PATH}`);
+    for (const held of BASELINES) writeBaseline(root, held, counts[held.scope]);
+    console.log(`max-lines: wrote ${tally} to ${BASELINES.map((b) => b.path).join(' and ')}`);
     return 0;
   }
-
-  let baselineText: string;
-  try {
-    baselineText = readFileSync(join(root, BASELINE_PATH), 'utf8');
-  } catch {
-    throw new MaxLinesError(`cannot read ${BASELINE_PATH}`);
-  }
-  const baseline = readBaseline(baselineText, BASELINE_PATH);
 
   // The base, for rename detection and the raise check. `--update` defaults
   // to where this branch left main, so a moved file keeps its entry.
   const base = value('--base') ?? (flag('--update') ? mergeBase(root) : undefined);
   const renames = base ? renamesSince(root, base) : new Map<string, string>();
 
-  if (flag('--update')) {
-    const next = lowered(counts, baseline, renames, (base && baselineAt(root, base)) || {});
-    writeBaseline(root, next);
-    console.log(`max-lines: baseline holds ${Object.keys(next).length} file(s)`);
-    // Lowering never fixes growth or a new file; say so rather than hide it.
-    const left = compare(counts, next).filter((f) => f.kind !== 'stale');
-    for (const f of left) console.error(`  ${describe(f)}`);
-    return left.length ? 1 : 0;
+  const problems: Finding[] = [];
+  const notes: Finding[] = [];
+  for (const held of BASELINES) {
+    let text: string;
+    try {
+      text = readFileSync(join(root, held.path), 'utf8');
+    } catch {
+      throw new MaxLinesError(`cannot read ${held.path}`);
+    }
+    const baseline = readBaseline(text, held.path);
+    const measured = counts[held.scope];
+
+    if (flag('--update')) {
+      const next = lowered(
+        measured,
+        baseline,
+        renames,
+        (base && baselineAt(root, base, held.path)) || {}
+      );
+      writeBaseline(root, held, next);
+      console.log(`max-lines: ${held.path} holds ${Object.keys(next).length} file(s)`);
+      // Lowering never fixes growth or a new file; say so rather than hide it.
+      problems.push(...compare(measured, next).filter((f) => f.kind !== 'stale'));
+      continue;
+    }
+
+    for (const f of compare(measured, baseline)) {
+      if (f.kind === 'stale' && !held.staleFails) notes.push(f);
+      else problems.push(f);
+    }
+    const before = base ? baselineAt(root, base, held.path) : null;
+    if (before) problems.push(...raisedAgainst(baseline, before, renames));
   }
 
-  const findings = compare(counts, baseline);
-  if (base) {
-    const before = baselineAt(root, base);
-    if (before) findings.push(...raisedAgainst(baseline, before, renames));
-  }
-
-  if (findings.length === 0) {
-    console.log(
-      `max-lines: clean. ${Object.keys(counts).length} file(s) over ${LIMIT}, none grew, none new.`
-    );
+  if (notes.length) console.log(`max-lines: ${notes.length} note(s), not failures:`);
+  for (const f of notes) console.log(`  ${describeNote(f)}`);
+  if (problems.length === 0) {
+    if (!flag('--update'))
+      console.log(`max-lines: clean. ${tally} over ${LIMIT}, none grew, none new.`);
     return 0;
   }
-  console.error(`max-lines: ${findings.length} problem(s):`);
-  for (const f of findings) console.error(`  ${describe(f)}`);
+  if (!flag('--update')) console.error(`max-lines: ${problems.length} problem(s):`);
+  for (const f of problems) console.error(`  ${describe(f)}`);
   return 1;
 }
 

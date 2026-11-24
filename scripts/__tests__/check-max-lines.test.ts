@@ -1,5 +1,5 @@
 /**
- * The 500-line ratchet (DOR-2822). The pure halves are tested directly; the
+ * The 500-line ratchet (DOR-2822), for source and test files. The pure halves are tested directly; the
  * planted-file cases run the real script against a throwaway git repo with
  * its own ESLint config, so the gate is seen failing, not just reasoned about.
  */
@@ -9,7 +9,13 @@ import { mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BASELINE_PATH, compare, lowered, raisedAgainst } from '../check-max-lines.js';
+import {
+  BASELINE_PATH,
+  TEST_BASELINE_PATH,
+  compare,
+  lowered,
+  raisedAgainst,
+} from '../check-max-lines.js';
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), '..', 'check-max-lines.ts');
 
@@ -175,10 +181,129 @@ describe('the script, on a planted tree', () => {
     expect(run().status).toBe(1);
   });
 
-  it('leaves test files out, as the ticket keeps them exempt', () => {
-    plant('src/__tests__/huge.test.ts', 900);
+  it('holds a new test file to 500 even where its config switches max-lines off', () => {
+    writeFileSync(
+      join(root, 'eslint.config.mjs'),
+      `export default [{ files: ['**/*.ts'], rules: { 'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }] } }, { files: ['**/__tests__/**', '**/*.spec.ts'], rules: { 'max-lines': 'off' } }];\n`
+    );
+    plant('src/__tests__/huge.test.ts', 501);
     plant('src/thing.spec.ts', 900);
-    expect(run().status).toBe(0);
+    plant('src/__tests__/fine.test.ts', 500);
+    const result = run();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      'src/__tests__/huge.test.ts: 501 lines, over the 500-line limit. Split it before it lands, by subject'
+    );
+    expect(result.stderr).toContain('src/thing.spec.ts: 900 lines');
+    expect(result.stderr).not.toContain('fine.test.ts');
+  });
+
+  it('holds a test file in a path ESLint ignores, counted with the TypeScript parser', () => {
+    writeFileSync(
+      join(root, 'eslint.config.mjs'),
+      `export default [{ ignores: ['vendor/**'] }, { files: ['**/*.ts'], rules: { 'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }] } }];\n`
+    );
+    mkdirSync(join(root, 'vendor/__tests__'), { recursive: true });
+    writeFileSync(
+      join(root, 'vendor/__tests__/huge.test.ts'),
+      `const typed: number = 1;\n${source(600)}`
+    );
+    git('add', 'vendor/__tests__/huge.test.ts');
+    const result = run();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      'vendor/__tests__/huge.test.ts: 601 lines, over the 500-line limit'
+    );
+  });
+
+  it('says a move from a source path to a test path carries no entry', () => {
+    mkdirSync(join(root, 'src/__tests__'), { recursive: true });
+    git('mv', 'src/big.ts', 'src/__tests__/big.test.ts');
+    const result = run('--update', '--base', 'HEAD');
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('a move between a test path and a source path carries nothing');
+  });
+
+  describe('with a test file over the limit', () => {
+    const testBaseline = () =>
+      JSON.parse(readFileSync(join(root, TEST_BASELINE_PATH), 'utf8')).files;
+
+    beforeEach(() => {
+      plant('src/__tests__/big.test.ts', 700);
+      expect(run('--update').status).toBe(1); // --update never adds a file
+      expect(run('--init').status).toBe(0);
+      git('add', '-A');
+      git('commit', '-qm', 'big test');
+    });
+
+    it('keeps it in its own baseline, apart from source files', () => {
+      expect(testBaseline()).toEqual({ 'src/__tests__/big.test.ts': 700 });
+      expect(JSON.parse(readFileSync(join(root, BASELINE_PATH), 'utf8')).files).toEqual({
+        'src/big.ts': 600,
+      });
+      expect(run('--base', 'HEAD').status).toBe(0);
+    });
+
+    it('fails when it grows past its entry', () => {
+      plant('src/__tests__/big.test.ts', 701);
+      const result = run();
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        'src/__tests__/big.test.ts: grew to 701 lines (baseline 700)'
+      );
+    });
+
+    it('notes a shrink without failing, and --update locks it in', () => {
+      plant('src/__tests__/big.test.ts', 650);
+      const result = run('--base', 'HEAD');
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(
+        'src/__tests__/big.test.ts: down to 650 (baseline 700); run `pnpm check:max-lines -- --update` to lock it in'
+      );
+      expect(run('--update').status).toBe(0);
+      expect(testBaseline()).toEqual({ 'src/__tests__/big.test.ts': 650 });
+      plant('src/__tests__/big.test.ts', 651);
+      expect(run().status).toBe(1);
+    });
+
+    it('passes a split that deletes it, with a note; the pieces need no entry', () => {
+      git('rm', '-q', 'src/__tests__/big.test.ts');
+      plant('src/__tests__/big-one.test.ts', 350);
+      plant('src/__tests__/big-two.test.ts', 350);
+      plant('src/__tests__/big-fixtures.ts', 40);
+      const result = run('--base', 'HEAD');
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(
+        'src/__tests__/big.test.ts: gone or under the limit (baseline 700)'
+      );
+      expect(run('--update', '--base', 'HEAD').status).toBe(0);
+      expect(testBaseline()).toEqual({});
+      expect(run('--base', 'HEAD').status).toBe(0);
+    });
+
+    it('fails when its entry is removed while it is still over 500', () => {
+      const path = join(root, TEST_BASELINE_PATH);
+      const baseline = JSON.parse(readFileSync(path, 'utf8'));
+      delete baseline.files['src/__tests__/big.test.ts'];
+      writeFileSync(path, JSON.stringify(baseline));
+      const result = run('--base', 'HEAD');
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        'src/__tests__/big.test.ts: 700 lines, over the 500-line limit'
+      );
+    });
+
+    it('refuses a test baseline raised by hand against the base', () => {
+      plant('src/__tests__/big.test.ts', 750);
+      const path = join(root, TEST_BASELINE_PATH);
+      const baseline = JSON.parse(readFileSync(path, 'utf8'));
+      baseline.files['src/__tests__/big.test.ts'] = 750;
+      writeFileSync(path, JSON.stringify(baseline));
+      expect(run().status).toBe(0);
+      const result = run('--base', 'HEAD');
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('baseline raised from 700 to 750');
+    });
   });
 
   it('leaves out a file its config switches max-lines off for', () => {
@@ -242,7 +367,11 @@ describe('the script, on a planted tree', () => {
     expect(run('--base', 'deadbeef').status).toBe(2);
   });
 
-  it('exits 2, never 0, when it cannot read the baseline', () => {
+  it('exits 2, never 0, when it cannot read either baseline', () => {
+    writeFileSync(join(root, TEST_BASELINE_PATH), 'not json');
+    expect(run().status).toBe(2);
+    rmSync(join(root, TEST_BASELINE_PATH));
+    expect(run().status).toBe(2);
     writeFileSync(join(root, BASELINE_PATH), 'not json');
     expect(run().status).toBe(2);
   });

@@ -24,6 +24,8 @@ apps/client/src/layers/
 └── shared/lib/__tests__/
 ```
 
+A new test file over 500 lines (blank lines and comments not counted), or a listed one that grows, fails the file-size ratchet (Hard Rule 9). Split it by subject, with one shared fixtures module beside the pieces. Shrinking or deleting one only prints a note.
+
 ## Required Patterns
 
 ### Environment Directive
