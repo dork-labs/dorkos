@@ -42,6 +42,7 @@ bash scripts/test-assert-migrations-current.sh
 bash scripts/test-should-arm-automerge.sh
 bash scripts/test-should-arm-automerge-input.sh
 bash scripts/test-queue-repeat-guard.sh
+bash scripts/test-queue-reentry.sh
 bash scripts/test-arm-door.sh
 bash scripts/test-pr-gates-check.sh
 bash scripts/test-qa-real-data.sh

@@ -256,6 +256,11 @@ gates:
     source: .github/workflows/queue-repeat-guard.yml
     purpose: On every merge-queue entry, takes a PR back out when its head already failed the same required check in two queue builds, and tells the author once.
 
+  # --- queue-reentry.yml ---
+  - id: wf.queue-reentry.sweep
+    source: .github/workflows/queue-reentry.yml
+    purpose: Never gates a merge. After the merge queue itself takes a PR out, turns auto-merge back on once its head is green and mergeable (at most twice per head, never after a person's dequeue, a hold or a repeat failure), and asks the author once per head to merge main when it conflicts (DOR-5098).
+
   # --- security-verdict.yml ---
   - id: wf.security-verdict.security-verdict
     source: .github/workflows/security-verdict.yml
