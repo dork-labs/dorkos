@@ -418,6 +418,15 @@ export default defineConfig({
     // pinned by scripts/__tests__/vitest-projects.test.ts.
     name: 'server',
     environment: 'node',
+    // TRIAL (ledger 261124-015910, DOR-5130): worker threads instead of the
+    // default child-process forks. Vitest 4 starts a fresh worker for EVERY
+    // test file when `isolate` is on (the default, kept here), and in CI the
+    // per-file `import` phase (5,300-6,300 s summed across workers) outweighs
+    // the test bodies (4,200-5,000 s) in this suite. A thread starts faster
+    // than a process and fetches its modules over a MessagePort instead of
+    // IPC. `isolate: false` was ruled out: Vitest 4 does not reset the module
+    // graph between files without isolation, and 938 files here call vi.mock.
+    pool: 'threads',
     // Vitest 4 no longer auto-excludes dist/, and `tsc` emits compiled
     // *.test.js there — scope discovery to source like every other package.
     // The space server's code (server-merge step 7) keeps two tests beside their source, and
