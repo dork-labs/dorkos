@@ -44,7 +44,7 @@ const router = new Hono<ApiEnv>();
  */
 const refuseAgentRead: MiddlewareHandler<ApiEnv> = async (c, next) =>
   presentsAgentIdentity(honoRequestFacts(c))
-    ? problem(c, 'person_only', { detail: 'Agents can’t read Remote Access.' })
+    ? problem(c, 'person_only', { detail: 'Agents can’t read remote access.' })
     : next();
 
 /** GET /api/tunnel/status — on-demand status check. */
@@ -188,7 +188,7 @@ router.post('/start', async (c) => {
         if (err instanceof TunnelPortMismatchError) {
           logger.warn('[Tunnel] Refused start — TUNNEL_PORT points past Remote Access');
           return problem(c, 'tunnel_port_mismatch', {
-            detail: 'Remote Access can’t reach that port. Unset TUNNEL_PORT, or fix it.',
+            detail: 'Remote access can’t reach that port. Unset TUNNEL_PORT, or fix it.',
           });
         }
         // Say what went wrong in the log, where a person debugging reads it: the

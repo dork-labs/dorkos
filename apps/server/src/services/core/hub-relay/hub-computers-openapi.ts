@@ -41,18 +41,20 @@ const REFUSALS = {
   ),
   404: problemResponse('Not a hub, no such linked computer, or no such chat or agent on it'),
   409: problemResponse('The computer could not do that right now (`conflict`)'),
-  429: problemResponse('Too many requests to the computer (`rate_limited`)'),
+  413: problemResponse('The request is too large to relay (`request_too_large`)'),
+  429: problemResponse('Too many requests to the computer, or at once (`rate_limited`)'),
   502: problemResponse(
-    'The computer turned the request away (`computer_refused`), or failed it ' +
-      '(`upstream_unavailable`)'
+    'The computer turned the request away (`computer_refused`), failed it, or sent an ' +
+      'answer that could not be read (`upstream_unavailable`)'
   ),
   501: problemResponse(
     'The computer needs an update for this; `feature` names it (`needs_update`)'
   ),
   503: problemResponse(
     'The computer is not connected. It is being woken; try again after `Retry-After` seconds ' +
-      '(`computer_waking`).'
+      '(`computer_waking`). Or its connection ended before it answered (`computer_offline`).'
   ),
+  504: problemResponse('The computer did not answer in time (`computer_timed_out`)'),
 };
 
 /**

@@ -229,6 +229,7 @@ describe('a person’s own conduct in a space, through this computer', () => {
       .post(`${base}/rooms/room-a/entries/entry-a/reports`)
       .send({ reason: 'spam' });
     expect(own.body.detail).toBe('You can’t report this message.');
+    expect(own.body.code).toBe('report_not_allowed');
   });
 
   it('names each hold on a refused post, with slow mode’s wait as Retry-After', async () => {

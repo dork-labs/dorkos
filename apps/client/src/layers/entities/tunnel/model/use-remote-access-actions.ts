@@ -21,8 +21,9 @@ import { useRemoteAccessStore } from './remote-access-store';
 import { isManagedReport, remoteAccessKeys, startTarget } from './remote-access-report';
 
 /**
- * The exposure guard's codes: remote access's problem code, and the old
- * spelling `POST /api/tunnel/start` still answers until it moves (DOR-4979).
+ * The exposure guard's codes: the problem code, and the old spelling
+ * `/api/remote-access` still answers on this branch until its own move lands
+ * (DOR-4979). Drop the old spelling once both have.
  */
 const EXPOSURE_REFUSAL_CODES = new Set([
   'auth_required_for_exposure',

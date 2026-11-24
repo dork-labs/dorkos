@@ -76,7 +76,7 @@ export async function startHostedSpaceMove(
   const browser = c.get('user')?.sessionId ?? 'first-run';
   if (pendingMoves.has(browser) || pendingMoves.size >= MAX_HELD_STEP_UPS) {
     req.resume();
-    return problem(c, 'conflict', { detail: 'Confirm or cancel the pending move first.' });
+    return problem(c, 'move_pending', { detail: 'Confirm or cancel the pending move first.' });
   }
   const reservation = Symbol();
   pendingMoves.set(browser, reservation);

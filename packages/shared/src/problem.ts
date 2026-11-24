@@ -388,6 +388,12 @@ export const PROBLEM_CODE_LIST = [
   { code: 'space_limit_reached', status: 409, title: 'This space’s limit was reached.' },
   { code: 'space_unsupported', status: 409, title: 'This space doesn’t support that.' },
   { code: 'name_taken', status: 409, title: 'That name is taken in this space.' },
+  { code: 'report_not_allowed', status: 409, title: 'You can’t report this message.' },
+  {
+    code: 'reply_on_top_level_only',
+    status: 409,
+    title: 'Replies go only on a top-level message.',
+  },
   {
     code: 'agent_not_taking_dms',
     status: 409,
@@ -404,6 +410,10 @@ export const PROBLEM_CODE_LIST = [
   /** Switching now would cut off a reply: switch once it finishes. */
   { code: 'runtime_busy', status: 409, title: 'This runtime is in the middle of a reply.' },
   { code: 'credits_off', status: 409, title: 'DorkOS credits are turned off on this computer.' },
+  /** One move per browser at a time: confirm or cancel the one waiting first. */
+  { code: 'move_pending', status: 409, title: 'Confirm or cancel the pending move first.' },
+  /** A body sent without its size, so it can't be checked before it arrives. */
+  { code: 'length_required', status: 411, title: 'Send the file with its size.' },
   /** A space export this computer has no room to hold while it goes up. */
   { code: 'disk_full', status: 507, title: 'This computer needs more free space.' },
   /** The disk won't say how much space it has: put DORK_HOME on a local disk. */
@@ -424,6 +434,9 @@ export const PROBLEM_CODE_LIST = [
   /** The computer is waking; `retryAfterMs` says when to ask again. */
   { code: 'computer_waking', status: 503, title: 'Waking your computer. Try again soon.' },
   { code: 'computer_refused', status: 502, title: 'Your computer turned this request away.' },
+  /** The linked computer isn't connected to the hub, or its connection ended before an answer. */
+  { code: 'computer_offline', status: 503, title: 'Your computer isn’t connected right now.' },
+  { code: 'computer_timed_out', status: 504, title: 'Your computer didn’t answer in time.' },
   /** The computer lacks what this needs; `feature` names it. */
   { code: 'needs_update', status: 501, title: 'This computer needs an update for that.' },
   { code: 'link_code_refused', status: 401, title: 'That link code didn’t work. Make a new one.' },

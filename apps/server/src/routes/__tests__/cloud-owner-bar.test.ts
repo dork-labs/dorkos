@@ -703,7 +703,9 @@ describe('DorkOS account confirmation', () => {
         const held = await send();
         expect(held.status).toBe(428);
         expect(existsSync(filePath)).toBe(true);
-        expect((await send()).status).toBe(409);
+        const pending = await send();
+        expect(pending.status).toBe(409);
+        expect(pending.body.code).toBe('move_pending');
         expect(moveUploads.stageArchive).toHaveBeenCalledOnce();
         if (ending === 'capacity refused') {
           for (let i = 1; i < MAX_HELD_STEP_UPS_PER_SESSION; i++)

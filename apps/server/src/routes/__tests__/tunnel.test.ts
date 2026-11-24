@@ -386,7 +386,7 @@ describe('Tunnel Route', () => {
 
       expect(res.status).toBe(409);
       expect(res.body).toMatchObject({
-        detail: 'Remote Access can’t reach that port. Unset TUNNEL_PORT, or fix it.',
+        detail: 'Remote access can’t reach that port. Unset TUNNEL_PORT, or fix it.',
         code: 'tunnel_port_mismatch',
       });
       // A refusal to fix, not a fault: nothing is saved as on.

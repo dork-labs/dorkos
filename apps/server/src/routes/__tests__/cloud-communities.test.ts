@@ -991,6 +991,7 @@ describe('moving a community in', () => {
       code: 'disk_space_unknown',
       detail: expect.stringMatching(/free space/),
     });
+    expect(res.body.detail).not.toContain('DORK_HOME');
     expect(serviceRequests()).toHaveLength(0);
     expect(stagedCopies()).toHaveLength(0);
   });
@@ -1020,7 +1021,7 @@ describe('moving a community in', () => {
       client.end(archive);
     });
     expect(answer.status).toBe(411);
-    expect(JSON.parse(answer.body)).toMatchObject({ code: 'invalid_request', status: 411 });
+    expect(JSON.parse(answer.body)).toMatchObject({ code: 'length_required', status: 411 });
     expect(serviceRequests()).toHaveLength(0);
     expect(stagedCopies()).toHaveLength(0);
   });

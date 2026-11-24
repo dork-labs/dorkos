@@ -50,6 +50,7 @@ import {
 import type { AuditOutcome } from '@dorkos/shared/audit-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
@@ -66,6 +67,11 @@ import {
   hubViewers,
   mintBrowserDeviceId,
   readLinkedComputers,
+  RELAY_BAD_ANSWER,
+  RELAY_COMPUTER_OFFLINE,
+  RELAY_HUB_BUSY,
+  RELAY_REQUEST_TOO_LARGE,
+  RELAY_TIMED_OUT,
   type HubComputerConnection,
   type RelayCallRequest,
 } from '../services/core/hub-relay/index.js';
@@ -116,13 +122,43 @@ export const HUB_COMPUTER_RETRY_AFTER_SECONDS = 5;
 /** The wording for a feature a computer did not advertise. */
 const NEEDS_UPDATE_MESSAGE = 'This computer needs an update for that.';
 
+/** The hub's own relay failures, as the connection hands them back. */
+type HubRelayFailure =
+  | typeof RELAY_REQUEST_TOO_LARGE
+  | typeof RELAY_COMPUTER_OFFLINE
+  | typeof RELAY_TIMED_OUT
+  | typeof RELAY_HUB_BUSY
+  | typeof RELAY_BAD_ANSWER;
+
 /**
- * Answer a linked computer's refusal as a problem document (DOR-4979), by its
- * status: our code and sentence, never the computer's own words, which are
- * logged instead. A computer's 401 refuses the hub, not the person: passed
- * through, it would read as the owner being signed out here.
+ * Each of the hub's own failures as a problem (DOR-4979): each has its own way
+ * out, so each keeps its status and code instead of reading as the computer's
+ * refusal. Keyed by the exact objects the connection answers with.
+ */
+const HUB_FAILURES = new Map<HubRelayFailure, { code: ProblemCode; detail: string }>([
+  [RELAY_REQUEST_TOO_LARGE, { code: 'request_too_large', detail: 'That request is too large.' }],
+  [
+    RELAY_COMPUTER_OFFLINE,
+    { code: 'computer_offline', detail: 'Your computer isn’t connected right now. Try again.' },
+  ],
+  [RELAY_TIMED_OUT, { code: 'computer_timed_out', detail: 'Your computer didn’t answer in time.' }],
+  [RELAY_HUB_BUSY, { code: 'rate_limited', detail: 'Too many requests at once. Try again soon.' }],
+  [
+    RELAY_BAD_ANSWER,
+    { code: 'upstream_unavailable', detail: 'Your computer’s answer couldn’t be read.' },
+  ],
+]);
+
+/**
+ * Answer a failed relay as a problem document (DOR-4979): the hub's own
+ * failures by {@link HUB_FAILURES}, and a linked computer's refusal by its
+ * status, in our words, never the computer's own, which are logged instead. A
+ * computer's 401 refuses the hub, not the person: passed through, it would read
+ * as the owner being signed out here.
  */
 function relayFailure(c: Context<ApiEnv>, error: RelayError): Response {
+  const own = HUB_FAILURES.get(error as HubRelayFailure);
+  if (own) return problem(c, own.code, { detail: own.detail });
   logger.info('[HubRelay] A linked computer refused a request', {
     status: error.status,
     code: error.code,
@@ -144,6 +180,8 @@ function relayFailure(c: Context<ApiEnv>, error: RelayError): Response {
       return problem(c, 'not_found', { detail: 'Your computer doesn’t have that chat.' });
     case 409:
       return problem(c, 'conflict', { detail: 'Your computer couldn’t do that right now.' });
+    case 413:
+      return problem(c, 'request_too_large', { detail: 'That’s too large for your computer.' });
     case 429:
       return problem(c, 'rate_limited', { detail: 'Too many requests to your computer. Wait.' });
     default:

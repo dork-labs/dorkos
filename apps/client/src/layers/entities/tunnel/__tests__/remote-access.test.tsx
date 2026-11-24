@@ -326,7 +326,7 @@ describe('a start against a tunnel that is already up converges (DOR-1738)', () 
   it('says a TUNNEL_PORT refusal as an error, never as a tunnel that is up (DOR-4263)', async () => {
     const { result, transport } = setup();
     await settled(result);
-    const sentence = 'Remote Access can’t reach that port. Unset TUNNEL_PORT, or fix it.';
+    const sentence = 'Remote access can’t reach that port. Unset TUNNEL_PORT, or fix it.';
     vi.mocked(transport.startTunnel).mockRejectedValue(
       Object.assign(new Error(sentence), {
         status: 409,

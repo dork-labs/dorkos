@@ -334,11 +334,15 @@
           "space_limit_reached",
           "space_unsupported",
           "name_taken",
+          "report_not_allowed",
+          "reply_on_top_level_only",
           "agent_not_taking_dms",
           "cloud_not_linked",
           "hub_linked_by_cloud",
           "runtime_busy",
           "credits_off",
+          "move_pending",
+          "length_required",
           "disk_full",
           "disk_space_unknown",
           "auth_required_for_exposure",
@@ -347,6 +351,8 @@
           "tunnel_port_mismatch",
           "computer_waking",
           "computer_refused",
+          "computer_offline",
+          "computer_timed_out",
           "needs_update",
           "link_code_refused",
           "already_linked",
@@ -38753,8 +38759,18 @@
               }
             }
           },
+          "413": {
+            "description": "The request is too large to relay (`request_too_large`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "429": {
-            "description": "Too many requests to the computer (`rate_limited`)",
+            "description": "Too many requests to the computer, or at once (`rate_limited`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -38774,7 +38790,7 @@
             }
           },
           "502": {
-            "description": "The computer turned the request away (`computer_refused`), or failed it (`upstream_unavailable`)",
+            "description": "The computer turned the request away (`computer_refused`), failed it, or sent an answer that could not be read (`upstream_unavailable`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -38784,7 +38800,17 @@
             }
           },
           "503": {
-            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`).",
+            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`). Or its connection ended before it answered (`computer_offline`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The computer did not answer in time (`computer_timed_out`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -38894,8 +38920,18 @@
               }
             }
           },
+          "413": {
+            "description": "The request is too large to relay (`request_too_large`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "429": {
-            "description": "Too many requests to the computer (`rate_limited`)",
+            "description": "Too many requests to the computer, or at once (`rate_limited`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -38915,7 +38951,7 @@
             }
           },
           "502": {
-            "description": "The computer turned the request away (`computer_refused`), or failed it (`upstream_unavailable`)",
+            "description": "The computer turned the request away (`computer_refused`), failed it, or sent an answer that could not be read (`upstream_unavailable`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -38925,7 +38961,17 @@
             }
           },
           "503": {
-            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`).",
+            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`). Or its connection ended before it answered (`computer_offline`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The computer did not answer in time (`computer_timed_out`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -39063,8 +39109,18 @@
               }
             }
           },
+          "413": {
+            "description": "The request is too large to relay (`request_too_large`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "429": {
-            "description": "Too many requests to the computer (`rate_limited`)",
+            "description": "Too many requests to the computer, or at once (`rate_limited`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -39084,7 +39140,7 @@
             }
           },
           "502": {
-            "description": "The computer turned the request away (`computer_refused`), or failed it (`upstream_unavailable`)",
+            "description": "The computer turned the request away (`computer_refused`), failed it, or sent an answer that could not be read (`upstream_unavailable`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -39094,7 +39150,17 @@
             }
           },
           "503": {
-            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`).",
+            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`). Or its connection ended before it answered (`computer_offline`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The computer did not answer in time (`computer_timed_out`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -39201,8 +39267,18 @@
               }
             }
           },
+          "413": {
+            "description": "The request is too large to relay (`request_too_large`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "429": {
-            "description": "Too many requests to the computer (`rate_limited`)",
+            "description": "Too many requests to the computer, or at once (`rate_limited`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -39222,7 +39298,7 @@
             }
           },
           "502": {
-            "description": "The computer turned the request away (`computer_refused`), or failed it (`upstream_unavailable`)",
+            "description": "The computer turned the request away (`computer_refused`), failed it, or sent an answer that could not be read (`upstream_unavailable`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -39232,7 +39308,17 @@
             }
           },
           "503": {
-            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`).",
+            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`). Or its connection ended before it answered (`computer_offline`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The computer did not answer in time (`computer_timed_out`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -39357,8 +39443,18 @@
               }
             }
           },
+          "413": {
+            "description": "The request is too large to relay (`request_too_large`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "429": {
-            "description": "Too many requests to the computer (`rate_limited`)",
+            "description": "Too many requests to the computer, or at once (`rate_limited`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -39378,7 +39474,7 @@
             }
           },
           "502": {
-            "description": "The computer turned the request away (`computer_refused`), or failed it (`upstream_unavailable`)",
+            "description": "The computer turned the request away (`computer_refused`), failed it, or sent an answer that could not be read (`upstream_unavailable`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -39388,7 +39484,17 @@
             }
           },
           "503": {
-            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`).",
+            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`). Or its connection ended before it answered (`computer_offline`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The computer did not answer in time (`computer_timed_out`)",
             "content": {
               "application/problem+json": {
                 "schema": {

@@ -117,6 +117,9 @@ describe('communityRefusal', () => {
   });
 
   it('words a reply-on-a-reply and a closed community specifically', () => {
+    expect(communityRefusal(new PinnedHttpError(409, 'NESTED_THREAD'))?.code).toBe(
+      'reply_on_top_level_only'
+    );
     expect(communityRefusal(new PinnedHttpError(409, 'NESTED_THREAD'))?.detail).toBe(
       'Replies can only go on a top-level message.'
     );

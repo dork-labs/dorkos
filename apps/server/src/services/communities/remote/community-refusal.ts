@@ -51,7 +51,7 @@ const CONDUCT_CONFLICTS: Partial<Record<CommunityRefusalAction, CommunityRefusal
     code: 'precondition_failed',
     detail: 'The rules changed. Read them again first.',
   },
-  report: { status: 409, code: 'conflict', detail: 'You can’t report this message.' },
+  report: { status: 409, code: 'report_not_allowed', detail: 'You can’t report this message.' },
 };
 
 const NOT_FOUND: CommunityRefusal = {
@@ -179,7 +179,7 @@ export function communityRefusal(
       if (remoteCode === 'NESTED_THREAD')
         return {
           status: 409,
-          code: 'conflict',
+          code: 'reply_on_top_level_only',
           detail: 'Replies can only go on a top-level message.',
         };
       if (remoteCode === 'COMMUNITY_UNAVAILABLE')

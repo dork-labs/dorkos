@@ -3,8 +3,9 @@ import type { IncomingMessage } from 'node:http';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import type { Context } from 'hono';
 import type { CloudCommunityRefusal } from '@dorkos/shared/cloud-schemas';
-import { problem, type ProblemStatus } from '@dorkos/http-kit';
+import { problem } from '@dorkos/http-kit';
 import type { ProblemCode } from '@dorkos/shared/problem';
+import { noRoomSentence } from '@dorkos/shared/move-sizes';
 import type { ApiEnv } from '../http/api-chain.js';
 import type { AccountOwnerWording } from './cloud-owner-bar.js';
 import { problemOf } from '../services/core/cloud/v1-client.js';
@@ -50,23 +51,6 @@ export const MOVE_ALREADY_CANCELLED =
   'That move was already cancelled. Press Start moving to begin a new one.';
 
 /**
- * A size in the units a person's own computer shows (powers of 1000, as
- * macOS Finder and most file managers count): GB with one decimal from a
- * gigabyte up, then whole MB, KB or bytes.
- *
- * @param bytes - The size in bytes.
- * @param round - `up` for space needed, `down` for space on hand, so a
- *   shortfall never reads as two equal numbers.
- */
-export function describeBytes(bytes: number, round: 'up' | 'down'): string {
-  const fit = round === 'up' ? Math.ceil : Math.floor;
-  if (bytes >= 1e9) return `${(fit(bytes / 1e8) / 10).toFixed(1)} GB`;
-  if (bytes >= 1e6) return `${fit(bytes / 1e6)} MB`;
-  if (bytes >= 1e3) return `${fit(bytes / 1e3)} KB`;
-  return `${bytes} bytes`;
-}
-
-/**
  * The size a request declared in its `Content-Length`, or `null` when it
  * declared none (a chunked body) or one that is not a size.
  *
@@ -79,12 +63,10 @@ export function declaredLength(req: IncomingMessage): number | null {
   return Number.isSafeInteger(bytes) ? bytes : null;
 }
 
-/** Why an export could not be staged: its problem code, status and fixed sentence. */
+/** Why an export could not be staged: its problem code and fixed sentence. */
 export interface StagingRefusal {
   /** The problem code. */
   code: ProblemCode;
-  /** The status, when it is not the code's own. */
-  status?: ProblemStatus;
   /** What the person reads. */
   detail: string;
   /** Sizes a client may show beside it, in bytes: never in the sentence. */
@@ -93,7 +75,7 @@ export interface StagingRefusal {
 
 /**
  * Why an export could not be staged, in words a person can act on, with the
- * code and status that fit it.
+ * code that fits it.
  *
  * @param error - The refusal.
  */
@@ -106,8 +88,7 @@ export function stagingRefusal(error: StagingError): StagingRefusal {
       };
     case 'size_unknown':
       return {
-        code: 'invalid_request',
-        status: 411,
+        code: 'length_required',
         detail: 'The file arrived without its size. Send it from this computer.',
       };
     case 'no_room':
@@ -119,7 +100,7 @@ export function stagingRefusal(error: StagingError): StagingRefusal {
     case 'space_unknown':
       return {
         code: 'disk_space_unknown',
-        detail: 'This disk can’t report its free space. Put DORK_HOME on a local disk.',
+        detail: 'This disk can’t report its free space. Keep DorkOS’s data on a local disk.',
       };
     case 'size_mismatch':
       return { code: 'invalid_request', detail: 'The file didn’t arrive whole. Try again.' };
@@ -135,8 +116,7 @@ export function stagingRefusal(error: StagingError): StagingRefusal {
  */
 export function roomCheckMessage(error: StagingError): string {
   if (error.reason !== 'no_room' || !error.space) return stagingRefusal(error).detail;
-  const { neededBytes, freeBytes } = error.space;
-  return `This computer doesn’t have room to hold the export. It needs ${describeBytes(neededBytes, 'up')} free and has ${describeBytes(freeBytes, 'down')}. Free up some space, then try again.`;
+  return noRoomSentence(error.space.neededBytes, error.space.freeBytes);
 }
 
 /**
@@ -146,12 +126,8 @@ export function roomCheckMessage(error: StagingError): string {
  * @param error - The refusal.
  */
 export function stagingProblem(c: Context, error: StagingError): Response {
-  const { code, detail, status, extensions } = stagingRefusal(error);
-  return problem(c, code, {
-    detail,
-    ...(status === undefined ? {} : { status }),
-    ...(extensions === undefined ? {} : { extensions }),
-  });
+  const { code, detail, extensions } = stagingRefusal(error);
+  return problem(c, code, { detail, ...(extensions === undefined ? {} : { extensions }) });
 }
 
 /**

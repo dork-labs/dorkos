@@ -39,6 +39,13 @@ import {
   type RelayedComputer,
 } from '../hub-computers.js';
 import { problemBody } from '@dorkos/http-kit';
+import {
+  RELAY_BAD_ANSWER,
+  RELAY_COMPUTER_OFFLINE,
+  RELAY_HUB_BUSY,
+  RELAY_REQUEST_TOO_LARGE,
+  RELAY_TIMED_OUT,
+} from '../../services/core/hub-relay/computer-connection.js';
 
 const COMPUTER = 'computer-1';
 const AGENT = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
@@ -292,6 +299,21 @@ describe('reaching a computer', () => {
       code: 'computer_refused',
       detail: 'Your computer turned this request away.',
     });
+  });
+
+  // The hub's own failures each have their way out, so each keeps its status and its own code.
+  it.each([
+    [RELAY_REQUEST_TOO_LARGE, 413, 'request_too_large'],
+    [RELAY_COMPUTER_OFFLINE, 503, 'computer_offline'],
+    [RELAY_TIMED_OUT, 504, 'computer_timed_out'],
+    [RELAY_HUB_BUSY, 429, 'rate_limited'],
+    [RELAY_BAD_ANSWER, 502, 'upstream_unavailable'],
+  ] as const)('answers the hub’s own %o as %i %s', async (error, status, code) => {
+    fake.computer.request.mockResolvedValueOnce({ ok: false, error } as never);
+    const res = await request(server).get(`${BASE}/agents/${AGENT}/chats`);
+    expect(res.status).toBe(status);
+    expect(res.body.code).toBe(code);
+    expect(JSON.stringify(res.body)).not.toContain(error.message);
   });
 
   it('answers the computer`s refusal with its status, in our words, never its own', async () => {
