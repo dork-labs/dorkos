@@ -15,7 +15,7 @@ import { createFakeAuthClient } from './fake-auth-client';
 
 const NOW = new Date().toISOString();
 
-/** This computer signed in, plus a phone on Wi-Fi. */
+/** This computer signed in, plus a phone on the network. */
 function listWith(canSignOutOthers: boolean): SignedInDeviceList {
   return {
     canSignOutOthers,
@@ -67,8 +67,8 @@ describe('SignedInDevicesSection', () => {
     expect(screen.queryByText(/This computer/)).not.toBeInTheDocument();
     expect(screen.getByText('This device')).toBeInTheDocument();
     expect(screen.getByText('Last active just now')).toBeInTheDocument();
-    expect(screen.getByText('Wi-Fi · Last active just now')).toBeInTheDocument();
-    expect(screen.getByText('Plain Wi-Fi')).toBeInTheDocument();
+    expect(screen.getByText('Your network · Last active just now')).toBeInTheDocument();
+    expect(screen.getByText('Not encrypted')).toBeInTheDocument();
   });
 
   it('at this computer, signs out another device and everywhere else', async () => {
@@ -131,12 +131,12 @@ describe('SignedInDevicesSection', () => {
     // The risk is said once, in the confirm, not again on the row.
     const toggle = await screen.findByRole('switch', { name: 'Run agents from Safari on iPhone' });
     expect(
-      screen.queryByText('Anyone on the same Wi-Fi could take over this sign-in.')
+      screen.queryByText('Anyone on the same network could take over this sign-in.')
     ).not.toBeInTheDocument();
     await userEvent.click(toggle);
     expect(await screen.findByText('Run agents from Safari on iPhone?')).toBeInTheDocument();
     expect(
-      screen.getByText('Anyone on the same Wi-Fi could take over this sign-in.')
+      screen.getByText('Anyone on the same network could take over this sign-in.')
     ).toBeInTheDocument();
     expect(screen.getByText('It turns off after 12 hours idle.')).toBeInTheDocument();
     expect(transport.setDeviceRunsAgents).not.toHaveBeenCalled();
@@ -185,7 +185,7 @@ describe('SignedInDevicesSection', () => {
       configurable: true,
     });
 
-    expect(await screen.findByText(/Firefox on Linux · Wi-Fi 192\.168\.1\.40/)).toBeInTheDocument();
+    expect(await screen.findByText(/Firefox on Linux · 192\.168\.1\.40/)).toBeInTheDocument();
     expect(screen.getByLabelText('K 7 Q X')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
     expect(await screen.findByLabelText('A B C 2 3 4')).toBeInTheDocument();

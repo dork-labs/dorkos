@@ -168,15 +168,15 @@ export type SignInTrustChange =
 const TRUST_CHANGES: Record<SignInTrustChange, { action: string; summary: string }> = {
   'wifi-sign-in-approved': {
     action: 'auth.wifi_sign_in_approved',
-    summary: 'A Wi-Fi sign-in was approved on this computer',
+    summary: 'A sign-in from your network was approved on this computer',
   },
   'device-runs-agents-on': {
     action: 'auth.device_runs_agents_on',
-    summary: 'A Wi-Fi device was allowed to run agents',
+    summary: 'A device on your network was allowed to run agents',
   },
   'device-runs-agents-off': {
     action: 'auth.device_runs_agents_off',
-    summary: 'A Wi-Fi device can no longer run agents',
+    summary: 'A device on your network can no longer run agents',
   },
   'passkey-added-here': {
     action: 'auth.passkey_added',

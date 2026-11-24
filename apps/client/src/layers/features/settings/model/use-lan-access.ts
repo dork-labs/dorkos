@@ -5,17 +5,17 @@ import { useTransport } from '@/layers/shared/model';
 import { requestOwnerSetup } from '@/layers/shared/lib';
 import { configKeys } from '@/layers/entities/config';
 
-/** Query key for the Wi-Fi access status. */
+/** Query key for the network access status. */
 export const lanAccessKey = ['lan-access'] as const;
 
 /**
  * How often the status is reread while Settings shows it. The address changes
  * when the computer joins another network, and login can be turned off from
- * another tab, which turns Wi-Fi access off with it.
+ * another tab, which turns network access off with it.
  */
 const REFRESH_MS = 15_000;
 
-/** What {@link useLanAccess} hands the Wi-Fi access card. */
+/** What {@link useLanAccess} hands the network access card. */
 export interface LanAccessModel {
   /** The status, or `undefined` while the first read is in flight. */
   status: LanAccessStatus | undefined;
@@ -28,7 +28,7 @@ export interface LanAccessModel {
 }
 
 /**
- * Wi-Fi access (DOR-2930): read whether other devices on this network can open
+ * Network access (DOR-2930): read whether other devices on this network can open
  * DorkOS, and flip it.
  *
  * A refusal carrying `AUTH_REQUIRED_FOR_EXPOSURE` is the same one the tunnel
@@ -62,7 +62,7 @@ export function useLanAccess(): LanAccessModel {
             // Login first, then the same switch again once the owner exists.
             requestOwnerSetup({
               reason: 'exposure',
-              message: 'Wi-Fi access needs a login.',
+              message: 'Letting devices on your network in needs a login.',
               onComplete: () => void send(true),
             });
           } else {

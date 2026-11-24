@@ -1,5 +1,5 @@
 /**
- * Wi-Fi access routes (DOR-2930), mounted at `/api/lan-access`: where it stands,
+ * Network access routes (DOR-2930), mounted at `/api/lan-access`: where it stands,
  * and the switch that lets devices on the same network open DorkOS.
  *
  * Turning it ON is a person's decision about who can reach this computer, so it
@@ -56,7 +56,7 @@ const SwitchRequestSchema = z.object({ enabled: z.boolean() });
 
 /** What the routes need, injected so tests own it. */
 export interface LanAccessRouteDeps {
-  /** The Wi-Fi access controller. */
+  /** The network access controller. */
   lanAccess: Pick<LanAccess, 'status' | 'reconcile'>;
   /** Write the `server.lanAccess` setting. */
   writeSetting: (enabled: boolean) => void;
@@ -67,7 +67,7 @@ export interface LanAccessRouteDeps {
 /** The bars a person clears before opening this computer to the network. */
 function refuseOpening(c: Context<ApiEnv>, deps: LanAccessRouteDeps): Response | undefined {
   const caller = honoRequestFacts(c);
-  const cookieRefusal = requireOperatorCookieUnderLogin(caller, 'Wi-Fi access');
+  const cookieRefusal = requireOperatorCookieUnderLogin(caller, 'network access');
   if (cookieRefusal) {
     return c.json(
       { error: cookieRefusal.error, code: cookieRefusal.code },
@@ -75,10 +75,10 @@ function refuseOpening(c: Context<ApiEnv>, deps: LanAccessRouteDeps): Response |
     );
   }
   if (!trustedCaller(readCallerAuthority(caller))) {
-    logger.warn('[LanAccess] Refused to open Wi-Fi access for an agent');
+    logger.warn('[LanAccess] Refused to open network access for an agent');
     return c.json({ error: OPERATOR_ONLY_CONFIG_ERROR, code: OPERATOR_ONLY_CONFIG_CODE }, 403);
   }
-  const frontDoor = refuseFrontDoorChange(caller, 'Wi-Fi access');
+  const frontDoor = refuseFrontDoorChange(caller, 'network access');
   if (frontDoor) return c.json({ error: frontDoor.error, code: frontDoor.code }, 403);
   if (!deps.lanAccess.status().supported) {
     return c.json({ error: LAN_ACCESS_UNSUPPORTED_MESSAGE, code: LAN_ACCESS_UNSUPPORTED }, 409);
@@ -111,7 +111,7 @@ export function createLanAccessRoutes(
 ): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
-  /** GET /api/lan-access — whether Wi-Fi access is on, and the addresses to use. */
+  /** GET /api/lan-access — whether network access is on, and the addresses to use. */
   router.get('/', (c) => c.json(deps.lanAccess.status()));
 
   /** POST /api/lan-access — `{ enabled }`. Answers with the status once applied. */
@@ -128,8 +128,8 @@ export function createLanAccessRoutes(
         kind: 'lan-access.enable',
         target: 'wifi-access',
         input: parsed.data,
-        reason: 'Turn on Wi-Fi access to DorkOS.',
-        subject: 'Wi-Fi access',
+        reason: 'Let devices on your network open DorkOS.',
+        subject: 'Network access',
         run: async () => {
           // Environment support and exposure prerequisites can change while held.
           const unavailable = refuseOpening(c, deps);

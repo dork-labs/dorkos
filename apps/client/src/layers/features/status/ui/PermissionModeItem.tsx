@@ -31,7 +31,7 @@ import {
 
 /**
  * Whether one mode runs looser than another, by the rule the server holds a
- * Wi-Fi turn to (`modeRaises`, DOR-3037): it asks less or reaches further, or
+ * Network turn to (`modeRaises`, DOR-3037): it asks less or reaches further, or
  * it is Auto where the other is not and still asks.
  */
 function looserThan(
@@ -164,7 +164,7 @@ export function PermissionModeItem({
   // where a person opens up power for new sessions (spec `full-power-defaults`
   // §6). Read unconditionally, before the early returns below.
   const setControlCenterOpen = useAppStore((s) => s.setControlCenterOpen);
-  // From Wi-Fi a turn runs at the runtime's default at most (DOR-3037).
+  // From the network a turn runs at the runtime's default at most (DOR-3037).
   const onWifi = useOnWifi();
 
   // The picker's panel state lives in a store so a surface that is not the
@@ -217,7 +217,7 @@ export function PermissionModeItem({
   const autoFiltered = !modelSupportsAutoMode && allDescriptors.some((d) => d.id === 'auto');
   const descriptors = autoFiltered ? allDescriptors.filter((d) => d.id !== 'auto') : allDescriptors;
   const chosenDescriptor = descriptors.find((d) => d.id === mode);
-  // From Wi-Fi the line shows the level a turn sent from here really runs at:
+  // From the network the line shows the level a turn sent from here really runs at:
   // the runtime's default, when the chat's own mode is looser (DOR-3037). The
   // dial below still shows, and changes, the chat's own mode.
   const wifiDescriptor = onWifi
@@ -233,10 +233,10 @@ export function PermissionModeItem({
   // enumerate) falls back to the shared names, so the line and the session row
   // never call the same mode two different things.
   const fullLabel = wifiCapped
-    ? `${wifiDescriptor.label} (Wi-Fi)`
+    ? `${wifiDescriptor.label} (network)`
     : (currentDescriptor?.label ?? permissionModeLabel(mode));
-  // At phone width the Wi-Fi pill beside it is an icon already, so the chip
-  // drops its "(Wi-Fi)" and keeps a word that fits.
+  // At phone width the network pill beside it is an icon already, so the chip
+  // drops its "(network)" and keeps a word that fits.
   const currentLabel = compact
     ? compactStatusValue(wifiCapped ? wifiDescriptor.label : fullLabel)
     : fullLabel;

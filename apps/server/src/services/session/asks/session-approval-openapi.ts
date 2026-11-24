@@ -30,7 +30,7 @@ export function registerSessionApprovalOpenApi(registry: OpenAPIRegistry): void 
     responses: {
       200: { description: 'Approved', content: json(z.object({ ok: z.boolean() })) },
       400: failure('Validation error'),
-      403: failure('Only a person may answer; standing yeses are refused from Wi-Fi'),
+      403: failure('Only a person may answer; standing yeses are refused from the network'),
       404: failure('No pending approval'),
       409: failure('The pending interaction was already resolved'),
       428: confirmation,

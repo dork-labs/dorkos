@@ -617,7 +617,10 @@ jobs:
       # Then made read-only, file and directory (0500). Be honest about what that
       # buys, because an earlier version of this comment oversold it: as long as the
       # CONTAINMENT INVARIANT holds, no granted tool can write a file at all, so
-      # there is nothing for these permissions to stop. They mattered while
+      # there is nothing for these permissions to stop. (One fixed exception:
+      # `review-gh.sh security-findings` writes the model's text to one file in
+      # REVIEW_FINDINGS_DIR, outside this directory and the workspace, which the
+      # send step only ever encrypts as opaque bytes and deletes.) They mattered while
       # `Bash(git log:*)`/`Bash(git show:*)` were granted — `--output=<file>` wrote
       # any path — and even then they were the wrong layer, because those same
       # grants could execute a shell and simply `chmod u+w` a directory the runner
@@ -857,6 +860,10 @@ jobs:
           # the PR's current head itself. A SHA from the event payload, never a
           # path, so it cannot point anything into the workspace.
           REVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Where `review-gh.sh security-findings` saves a failing Security
+          # lens's details, for the send step below to encrypt and delete. Out of
+          # the workspace, and chosen here so the model cannot point it anywhere.
+          REVIEW_FINDINGS_DIR: ${{ runner.temp }}/security-findings
           # DEFENCE IN DEPTH, not a control (DOR-464). These blunt one specific
           # escalation: git executes a `diff.external` / `GIT_EXTERNAL_DIFF` driver
           # through `sh -c`, and that driver is configurable from `$HOME/.gitconfig`
@@ -929,6 +936,7 @@ jobs:
               bash ${{ runner.temp }}/trusted/review-gh.sh inline <file> <line> '<body>'
               bash ${{ runner.temp }}/trusted/review-gh.sh security-verdict pass 0
               bash ${{ runner.temp }}/trusted/review-gh.sh security-verdict fail <musts> <categories>
+              bash ${{ runner.temp }}/trusted/review-gh.sh security-findings '<details>'
 
             `view` takes comma-separated JSON field names, e.g. `view labels`,
             `view comments` or `view files` for the changed-file list, and prints
@@ -1034,6 +1042,12 @@ jobs:
             - This repository is public. Never describe a Security Must, an attack
               or an exploit path in any comment, inline or summary. Leave security
               findings out of the code-review comments above as well.
+            - When there are Musts, first save their details with
+              `review-gh.sh security-findings '<details>'`: for each Must, the
+              file and line, who the attacker is, the attack, and the smallest
+              fix. That command posts nothing: the details are encrypted so only
+              DorkOS Security can read them. A fail verdict is refused until they
+              are saved.
             - Post exactly one verdict, as your last action, for this head:
               `review-gh.sh security-verdict pass 0` when there are no Musts, or
               `review-gh.sh security-verdict fail <musts> <categories>`, where
@@ -1154,6 +1168,45 @@ jobs:
             --disallowedTools "Read(//proc/**),Read(//sys/**),Read(//etc/**),Read(~/.claude/**),Read(~/.config/**),Read(~/.ssh/**)"
             --setting-sources user
             --max-turns ${{ steps.pr-size.outputs.max_turns }}
+
+      # A FAILING SECURITY LENS'S DETAILS, TO SECURITY ONLY (Nov 24). The lens may
+      # not describe a Must in public, so the reviewer saves the details through
+      # `review-gh.sh security-findings` into REVIEW_FINDINGS_DIR. This step,
+      # not the model, encrypts them with age to the public key(s) in MAIN's
+      # ci/security/findings-recipients.txt and posts only the ciphertext, as
+      # github-actions[bot]; Security reads it with
+      # `scripts/security-findings.sh decrypt`. No recipients on main: nothing
+      # is sent. The plaintext is deleted on every path (the trap below, and the
+      # script's own), and nothing here prints it. Like the classifier below,
+      # the script runs from main's copy, never the checkout. Best effort: every
+      # failure here is a warning and exit 0 (not `continue-on-error`, which
+      # test-review-classifier.sh keeps to the review step alone), so it never
+      # decides the review's own check.
+      - name: Send the Security lens details to Security, encrypted
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ steps.target.outputs.number }}
+          REPO: ${{ github.repository }}
+          FINDINGS_DIR: ${{ runner.temp }}/security-findings
+        run: |
+          trap 'rm -rf "$FINDINGS_DIR"' EXIT
+          if [ ! -s "$FINDINGS_DIR/findings.txt" ]; then
+            echo "No Security lens details to send."
+            exit 0
+          fi
+          tools="$RUNNER_TEMP/security-findings-tools"
+          mkdir -p "$tools"
+          for f in security-findings.sh install-age.sh; do
+            if ! git show "origin/$DEFAULT_BRANCH:scripts/$f" >"$tools/$f" 2>/dev/null; then
+              echo "::warning::scripts/$f is not on $DEFAULT_BRANCH yet, so the Security lens details were discarded unsent."
+              exit 0
+            fi
+          done
+          git show "origin/$DEFAULT_BRANCH:ci/security/findings-recipients.txt" >"$tools/recipients.txt" 2>/dev/null ||
+            : >"$tools/recipients.txt"
+          bash "$tools/security-findings.sh" post "$FINDINGS_DIR" "$tools/recipients.txt" ||
+            echo "::warning::The Security lens details could not be sent to Security; see the line above."
 
       # Self-explaining infra failures (DOR-396): a review that dies produces a red
       # check indistinguishable from a red check backed by real findings, forcing a
