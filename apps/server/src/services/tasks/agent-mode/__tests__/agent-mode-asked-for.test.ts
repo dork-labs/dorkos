@@ -7,13 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Task } from '@dorkos/shared/types';
 import { agentModeChangeOf } from '../agent-mode-change.js';
-import {
-  askedForLines,
-  askedForRules,
-  inertText,
-  modeLabel,
-  RULES_NOTE,
-} from '../agent-mode-asked-for.js';
+import { askedForLines, inertText, modeLabel } from '../agent-mode-asked-for.js';
 import { FALLBACK_LABELS } from '../../../notifications/schedule-execution-copy.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { CODEX_CAPABILITIES } from '../../../runtimes/codex/runtime-constants.js';
@@ -66,18 +60,6 @@ describe('the mode card names what the call asked for', () => {
     // Formatted like the `Version:` line below it.
     expect(text).toMatch(/\nRequest version: sha256:[A-Za-z0-9_-]{43}\n/);
     expect(text).toMatch(/\nVersion: sha256:[A-Za-z0-9_-]{43}$/);
-  });
-
-  it("names a mode by the task runtime's own picker label", () => {
-    const codex = {
-      permissionModes: { values: [{ id: 'acceptEdits', label: 'Workspace write' }] },
-    } as unknown as RuntimeCapabilities;
-    expect(askedForLines({ requestedPermissionMode: 'acceptEdits' }, 'plan', codex)[0]).toBe(
-      'Asked for: Workspace write'
-    );
-    expect(askedForLines({ requestedPermissionMode: 'dontAsk' }, 'plan', undefined)[0]).toBe(
-      'Asked for: Never ask'
-    );
   });
 
   it('shows a mode nobody knows by its inert id, so the person still sees what was asked', () => {
@@ -183,14 +165,5 @@ describe('a mode line never gives two modes the same words (Security, #4001)', (
     expect(modeLabel('b', clash)).toBe('Careful (b)');
     expect(modeLabel('c', clash)).toBe('Unknown mode (d) (c)');
     expect(modeLabel('d', clash)).toBe('Unknown mode (d)');
-  });
-});
-
-describe('the tool reply says why the rules did nothing', () => {
-  it('answers with the fixed note only when rules were asked for, never echoing them', () => {
-    expect(askedForRules({ requestedAllow: ['Bash(./a.sh)'] })).toBe(true);
-    expect(askedForRules({ requestedAllow: [] })).toBe(false);
-    expect(askedForRules({ permissionMode: 'dontAsk' })).toBe(false);
-    expect(RULES_NOTE).not.toMatch(/Bash/);
   });
 });

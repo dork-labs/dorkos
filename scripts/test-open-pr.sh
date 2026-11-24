@@ -350,7 +350,7 @@ check 'a branch that drops the gates from its own copy still gets main'\''s answ
 
 FAKE_FAIL=merge open
 check 'a failed auto-merge is exit 3' 3 "$rc"
-check 'and it says how to turn it on' yes "$(has "$out" 'gh pr merge --auto')"
+check 'and it says who turns it on' yes "$(has "$out" 'Ask a maintainer to turn it on')"
 
 echo "open-pr fixtures: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

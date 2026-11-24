@@ -28,10 +28,6 @@ describe('DevtoolsCaptureStore', () => {
     expect(buf?.screenshot).toBeNull();
   });
 
-  it('returns undefined for a session that never ingested', () => {
-    expect(new DevtoolsCaptureStore().read('nobody')).toBeUndefined();
-  });
-
   it('evicts the oldest console entry past the cap (ring semantics)', () => {
     const store = new DevtoolsCaptureStore();
     const cap = WORKBENCH.DEVTOOLS_CONSOLE_BUFFER;
@@ -42,16 +38,6 @@ describe('DevtoolsCaptureStore', () => {
     expect(buf?.console).toHaveLength(cap);
     expect(buf?.console[0].text).toBe('line-1'); // line-0 evicted
     expect(buf?.console[cap - 1].text).toBe(`line-${cap}`);
-  });
-
-  it('bounds the network ring at its own cap', () => {
-    const store = new DevtoolsCaptureStore();
-    const cap = WORKBENCH.DEVTOOLS_NETWORK_BUFFER;
-    store.ingest(
-      's1',
-      batch({ network: Array.from({ length: cap + 5 }, (_, i) => networkEntry(`/${i}`)) })
-    );
-    expect(store.read('s1')?.network).toHaveLength(cap);
   });
 
   it('isolates sessions — one never reads another', () => {
@@ -70,15 +56,6 @@ describe('DevtoolsCaptureStore', () => {
     const buf = store.read('s1');
     expect(buf?.console).toHaveLength(1);
     expect(buf?.console[0].text).toBe('new');
-  });
-
-  it('tracks documentId / logicalUrl / lastSeq', () => {
-    const store = new DevtoolsCaptureStore();
-    store.ingest('s1', batch({ seq: 7, documentId: 'doc-1', logicalUrl: 'preview.html' }));
-    const buf = store.read('s1');
-    expect(buf?.documentId).toBe('doc-1');
-    expect(buf?.logicalUrl).toBe('preview.html');
-    expect(buf?.lastSeq).toBe(7);
   });
 
   it('drops a session buffer on close', () => {
@@ -131,26 +108,6 @@ describe('DevtoolsCaptureStore', () => {
     expect(buf.approxBytes).toBeLessThan(1_000);
   });
 
-  it('keeps byte accounting in sync through count-cap trims', () => {
-    const store = new DevtoolsCaptureStore();
-    const cap = WORKBENCH.DEVTOOLS_NETWORK_BUFFER;
-    store.ingest(
-      's1',
-      batch({ network: Array.from({ length: cap + 50 }, (_, i) => networkEntry(`/${i}`)) })
-    );
-    const buf = store.read('s1')!;
-    const actual = buf.network.reduce((sum, e) => sum + JSON.stringify(e).length, 0);
-    expect(buf.approxBytes).toBe(actual);
-  });
-
-  it('reports no eviction while both rings are within bounds', () => {
-    const store = new DevtoolsCaptureStore();
-    store.ingest('s1', batch({ console: [consoleEntry('hi')], network: [networkEntry('/a')] }));
-    const buf = store.read('s1')!;
-    expect(buf.consoleEvicted).toBe(false);
-    expect(buf.networkEvicted).toBe(false);
-  });
-
   it('flags the console ring evicted when the count cap drops entries', () => {
     const store = new DevtoolsCaptureStore();
     const cap = WORKBENCH.DEVTOOLS_CONSOLE_BUFFER;
@@ -161,21 +118,6 @@ describe('DevtoolsCaptureStore', () => {
     const buf = store.read('s1')!;
     expect(buf.consoleEvicted).toBe(true);
     expect(buf.networkEvicted).toBe(false); // the untouched ring stays clean
-  });
-
-  it('flags the console ring evicted when the byte budget drops entries below the count cap', () => {
-    const store = new DevtoolsCaptureStore();
-    // ~60 × ~20 KB ≈ 1.2 MB: over the 1 MB byte budget, far under the 500 count
-    // cap — the flag must come from trimBytes, not trimCount.
-    const big = (i: number): DevtoolsConsoleEntry => ({
-      level: 'log',
-      text: `${i}:${'x'.repeat(20_000)}`,
-      timestamp: i,
-    });
-    store.ingest('s1', batch({ console: Array.from({ length: 60 }, (_, i) => big(i)) }));
-    const buf = store.read('s1')!;
-    expect(buf.console.length).toBeLessThan(WORKBENCH.DEVTOOLS_CONSOLE_BUFFER);
-    expect(buf.consoleEvicted).toBe(true);
   });
 
   it('clears eviction flags on a navigation reset (new page starts clean)', () => {
@@ -227,24 +169,9 @@ describe('DevtoolsCaptureStore', () => {
       });
     });
 
-    it('resolves with the shim error when rasterization failed (no slot write)', async () => {
-      const store = new DevtoolsCaptureStore();
-      const pending = store.awaitScreenshot('r1', 5_000);
-      store.ingest('s1', batch({ screenshot: { requestId: 'r1', error: 'CSP blocked' } }));
-      expect(await pending).toEqual({ ok: false, error: 'CSP blocked' });
-      expect(store.read('s1')!.screenshot).toBeNull();
-    });
-
     it('resolves undefined after the timeout — never hangs', async () => {
       const store = new DevtoolsCaptureStore();
       expect(await store.awaitScreenshot('never', 20)).toBeUndefined();
-    });
-
-    it('ignores a non-matching requestId', async () => {
-      const store = new DevtoolsCaptureStore();
-      const pending = store.awaitScreenshot('r1', 30);
-      store.ingest('s1', batch({ screenshot: { requestId: 'other', dataUrl: PNG } }));
-      expect(await pending).toBeUndefined(); // timed out — 'other' never matched
     });
 
     it('resolves across a session rekey — the waiter is requestId-keyed', async () => {

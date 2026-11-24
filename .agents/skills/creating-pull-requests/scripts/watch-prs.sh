@@ -101,7 +101,9 @@
 #                              remedy reads main's ci/required-checks.json the
 #                              way scripts/open-pr.sh does: once main requires
 #                              not-held, release-window and pr-gates, turn
-#                              auto-merge back on (an ejection turns it off);
+#                              auto-merge on once only in the three sanctioned
+#                              cases (an ejection not yours, a PR opened before
+#                              Nov 24, a draft marked ready or a hold lifted);
 #                              until then the maintainer merges, and nobody
 #                              arms by hand. Never merge it directly
 #   AUTO_MERGE_OFF(ejected,k)  the same, on a head the queue ejected k times
@@ -297,17 +299,17 @@ remedy() {
     'EJECTED(failed_checks)')
       text="Ejected by a failed check in the merge queue. Most of these (85% over 30 days) pass unchanged on re-entry. Do not push and do not rerun. Read the failing merge-group job first: if it covers a package you changed, run its tests locally and fix only if they fail. If the failure is not yours (the same job red on main or in other groups, or a flaky or infra error in its log), re-queue it once yourself: gh pr merge --auto $n. Green PR checks do not prove it is not yours: the browser tests run only in the queue." ;;
     EJECTED_REPEAT*)
-      text="Ejected again for failed checks with no new commit in between. Find the failing job in each merge-group run: gh run list --event merge_group -L 100 --json headBranch,name,conclusion,databaseId, keeping rows whose headBranch contains pr-$n-. The same job each time: treat it as real and do not re-arm it; it is a regression only the queue can see. Read the log, reproduce it locally, fix and push. Only if that job is red on main too, wait for the fix there, then re-arm. Different jobs: likely flaky, so re-arm it: gh pr merge --auto $n." ;;
+      text="Ejected again for failed checks with no new commit in between. Find the failing job in each merge-group run: gh run list --event merge_group -L 100 --json headBranch,name,conclusion,databaseId, keeping rows whose headBranch contains pr-$n-. The same job each time: treat it as real and do not re-queue it; it is a regression only the queue can see. Read the log, reproduce it locally, fix and push. Only if that job is red on main too, wait for the fix there, then re-queue it once. Different jobs: likely flaky, so re-queue it once: gh pr merge --auto $n." ;;
     'EJECTED(merge_conflict)' | 'EJECTED(invalid_merge_commit)' | 'EJECTED(git_tree_invalid)')
-      text="Rebase onto origin/main and push once, then arm it once its checks are green: gh pr merge --auto $n." ;;
+      text="Rebase onto origin/main and push once. The ejection turned auto-merge off, so once the new head's checks are green, re-queue it once: gh pr merge --auto $n." ;;
     'EJECTED(manual)')
-      text="Someone took this PR out of the queue on purpose. Read the timeline and comments before re-arming." ;;
+      text="Someone took this PR out of the queue on purpose. Read the timeline and comments, and do not put it back yourself." ;;
     'EJECTED(checks_timed_out)')
-      text="The queue timed out waiting for checks: a queue or runner stall, not your PR. Do not push and do not rerun. Re-arm it once the stall clears: gh pr merge --auto $n. If it repeats, check githubstatus.com." ;;
+      text="The queue timed out waiting for checks: a queue or runner stall, not your PR. Do not push and do not rerun. Once the stall clears, re-queue it once: gh pr merge --auto $n. If it repeats, check githubstatus.com." ;;
     EJECTED*)
       text="Read the PR timeline for the reason before acting. Do not push to re-roll the queue." ;;
     CONFLICTING)
-      text="Rebase onto origin/main and push once. A conflicting PR runs no CI and no review, so if no review has ever run on this PR, add the re-review label after the push. Arm it once checks are green: gh pr merge --auto $n." ;;
+      text="Rebase onto origin/main and push once. A conflicting PR runs no CI and no review, so if no review has ever run on this PR, add the re-review label after the push." ;;
     FAILING*)
       text="Read the failing log first. Caused by your change: fix it and push. Not yours (the same job is red on main or on other PRs, or the log shows an infra error such as a lost runner): gh run rerun <run-id> --failed, once. If main was broken when this ran and is fixed now, rebase onto origin/main and push once, because a rerun replays the old merge commit. Never push an empty commit." ;;
     CANCELLED*)
@@ -315,7 +317,7 @@ remedy() {
     STUCK_UNMERGEABLE)
       text="A dead queue entry that will never merge. If it is still here after 10 minutes, clear it with the dequeue recipe in the creating-pull-requests skill, then gh pr merge --auto $n." ;;
     STALLED_IN_QUEUE*)
-      text="Queued far longer than normal (the queue's p90 is about 55 minutes): a queue or runner stall, not your PR. Do not push, rerun or re-arm. Check githubstatus.com and the merge_group runs." ;;
+      text="Queued far longer than normal (the queue's p90 is about 55 minutes): a queue or runner stall, not your PR. Do not push, rerun or re-queue. Check githubstatus.com and the merge_group runs." ;;
     'HELD_BY_LABEL(hold,armed)')
       text="Auto-merge is on, and the required not-held check stops the merge while hold is on. Leave the label alone unless you added it and the reason is gone; the PR merges once it is lifted." ;;
     HELD_BY_LABEL*,armed\))
@@ -323,7 +325,7 @@ remedy() {
     HELD_BY_LABEL*)
       text="A hold label is on this PR and auto-merge is off, so nothing will land it. Leave the label alone unless you added it and the reason is gone; whoever lifts it turns auto-merge on." ;;
     UNRESOLVED_THREADS*,armed\))
-      text="Armed or queued: the queue does not wait for review threads, so this PR merges with them open. Address or resolve them now, or disarm while you work: gh pr merge --disable-auto $n." ;;
+      text="Armed or queued: the queue does not wait for review threads, so this PR merges with them open. Address or resolve them now, or fix forward." ;;
     UNRESOLVED_THREADS*)
       text="Unresolved review threads, outdated ones included. Nothing waits on them: once auto-merge is on, this PR merges with them open. Address or resolve them." ;;
     'AUTO_MERGE_OFF(ejected,1)')
@@ -342,7 +344,7 @@ remedy() {
       local absent
       absent=$(auto_merge_absent)
       if [ -z "$absent" ]; then
-        text="Green, but auto-merge is off, so nothing will merge it (an ejection from the queue turns it off). Turn it back on: gh pr merge --auto $n. That is safe because main requires not-held, release-window and pr-gates, so a hold, a freeze or a missing sign-off still stops the merge. Never merge it directly."
+        text="Green, but auto-merge is off, so nothing will merge it. Turn it on once (gh pr merge --auto $n) only if it was ejected for a failure plainly not yours or your own push disarmed it, opened before Nov 24, or a draft you marked ready or a hold you lifted; main requires not-held, release-window and pr-gates, so a hold, a freeze or a missing Security sign-off still stops the merge. Otherwise say so on the PR. Never merge it directly."
       else
         [ "$absent" = unreadable ] && absent="the auto-merge gates (origin/main:ci/required-checks.json is unreadable here)"
         text="Green, and auto-merge is not live yet: main does not require $absent. Until it does, the maintainer merges it. Do not arm, queue or merge it yourself. Tell whoever you report to that it is ready, then stop watching it."

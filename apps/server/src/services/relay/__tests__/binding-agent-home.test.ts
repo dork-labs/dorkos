@@ -101,16 +101,12 @@ describe('a chat a binding creates', () => {
       const id = await createChatIn(cwd);
       const row = db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, id)).get();
 
-      // Recorded as the agent, never the folder it works in.
       expect(row?.agentPath).toBe(agent);
-      // Works in the folder it was placed in, on the agent's own model, with the
-      // binding's mode as given and none stored on the chat.
       expect(runtime.ensureSession).toHaveBeenCalledWith(
         id,
         expect.objectContaining({ cwd, permissionMode: 'default', model: 'claude-haiku-4-5' })
       );
       expect(row?.permissionMode ?? null).toBeNull();
-      // The agent's own turn runs where it was placed.
       const desk = createTurnDeskCheck({
         sessionAgentPath: async () => row?.agentPath ?? null,
         placementOf: async () => ({ cwd, rung, ...(degraded ? { degraded } : {}) }),
@@ -118,8 +114,6 @@ describe('a chat a binding creates', () => {
       await expect(
         desk({ cwd, agentDirectory: undefined, forAgent: agent, sessionKey: id })
       ).resolves.toBeNull();
-      // Each turn is the agent's, and only the agent's, wherever it stands: with
-      // or without the agent named on the turn.
       for (const named of [undefined, { forAgent: agent }]) {
         expect(resolveLevelAgent(cwd, named as never, row?.agentPath)).toEqual({
           agentPath: agent,

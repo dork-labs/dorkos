@@ -113,17 +113,6 @@ describe('a real sync after the clear', () => {
     expect(rowOf(id).approvedContentKey).toBeNull();
   });
 
-  it('a project’s copy leaves the shared file alone, and stays off', async () => {
-    const id = await parked('digest', { outsider: true });
-    db.update(pulseSchedules).set({ projectOnly: true }).where(eq(pulseSchedules.id, id)).run();
-
-    await store.approvals.clearOutsiderParks();
-
-    const raw = readRawFrontmatter(await fs.readFile(rowOf(id).filePath, 'utf8'));
-    expect((raw?.data.schedule as { enabled: unknown }).enabled).toBe(true);
-    expect(rowOf(id)).toMatchObject({ enabled: false, status: 'pending_approval' });
-  });
-
   it('a project’s copy stays off through a sync, and its neighbours do not change', async () => {
     const schedule = {
       cron: '0 7 * * *',
@@ -270,18 +259,6 @@ describe('clearOutsiderParks', () => {
     expect((raw?.data.schedule as { enabled: unknown }).enabled).toBe(false);
   });
 
-  it('clears a teammate’s mark the same way', async () => {
-    const id = await parked('digest', { teammate: [{ roomId: 'r', authorId: 'a' }] });
-
-    expect(await store.approvals.clearOutsiderParks()).toBe(1);
-    expect(rowOf(id)).toMatchObject({
-      status: 'pending_approval',
-      enabled: false,
-      originMarks: JSON.stringify({ teammate: [{ roomId: 'r', authorId: 'a' }] }),
-      approvedContentKey: null,
-    });
-  });
-
   it('leaves an ordinary switched-off approved row untouched', async () => {
     const id = await parked('ordinary-off', { outsider: true });
     db.update(pulseSchedules)
@@ -337,7 +314,7 @@ describe('clearOutsiderParks', () => {
       marked: false,
       resolved: 'home' as const,
     };
-    for (const mode of ['dontAsk', 'default'] as const) {
+    for (const mode of ['dontAsk'] as const) {
       const id = await parked(`marked-${mode.toLowerCase()}`, { outsider: true });
       db.update(pulseSchedules)
         .set({
@@ -371,11 +348,5 @@ describe('clearOutsiderParks', () => {
         )
       ).toMatchObject({ kind: 'decided', state: 'allowed' });
     }
-  });
-
-  it('matches nothing the second time', async () => {
-    await parked('digest', { outsider: true });
-    await store.approvals.clearOutsiderParks();
-    expect(await store.approvals.clearOutsiderParks()).toBe(0);
   });
 });

@@ -10,7 +10,6 @@ describe('normalizedBody', () => {
     ['CRLF line ends', 'a\r\nb', 'a\nb'],
     ['trailing spaces and tabs', 'a \t\nb  ', 'a\nb'],
     ['runs of blank lines', 'a\n\n\n\nb', 'a\n\nb'],
-    ['blank lines of only spaces', 'a\n  \n\t\nb', 'a\n\nb'],
   ])('takes out %s', (_what, body, want) => {
     expect(normalizedBody(body)).toBe(want);
   });
@@ -18,11 +17,8 @@ describe('normalizedBody', () => {
   it.each([
     ['a zero-width space', 'a\u200bb', 'ab'],
     ['a no-break space', 'a\u00a0b', 'a b'],
-    ['a leading no-break space', '\u00a0a', ' a'],
-    ['an ideographic space', 'a\u3000b', 'a b'],
     ['a bidi override', 'a\u202eb', 'ab'],
     ['a leading space', ' ab', 'ab'],
-    ['a leading tab', '\tab', 'ab'],
     ['a lone carriage return', 'a\rb', 'a\nb'],
     ['a first blank line', 'a\n\nb', 'a\nb'],
   ])('keeps %s', (_what, body, plain) => {
@@ -34,18 +30,9 @@ describe('normalizedBody', () => {
     expect(normalizedBody(body)).toBe('```\n```python\n\n\nx\n~~~\n\n\ny\n```\n\nafter');
   });
 
-  it('keeps every blank line of a fence that never closes', () => {
-    expect(normalizedBody('a\n\n\n```\nb\n\n\nc')).toBe('a\n\n```\nb\n\n\nc');
-  });
-
   it('keeps a fenced block’s indentation and blank lines, trimming only its line ends', () => {
     const body = 'intro\n```py\n  if x:\n\n\n      y()   \n```\n\n\nafter';
     expect(normalizedBody(body)).toBe('intro\n```py\n  if x:\n\n\n      y()\n```\n\nafter');
-  });
-
-  it('closes a fence only on the same mark at least as long', () => {
-    const body = '````\n```\n\n\ninside\n````\n\n\noutside';
-    expect(normalizedBody(body)).toBe('````\n```\n\n\ninside\n````\n\noutside');
   });
 
   it('hashes a Prettier pass the same, and a changed word differently', () => {

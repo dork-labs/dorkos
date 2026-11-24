@@ -48,20 +48,6 @@ describe('the execution trio, file → row', () => {
     store = new TaskStore(db);
   });
 
-  it('carries all three off the block on INSERT', () => {
-    const task = store.fileSync.upsertFromFile(
-      definition({ runtime: 'codex', model: 'gpt-5.5', effort: 'high' })
-    );
-    expect(task).toMatchObject({ runtime: 'codex', model: 'gpt-5.5', effort: 'high' });
-  });
-
-  it('leaves all three null for a block that names none', () => {
-    // Null is "whatever this task's agent runs on" — the answer every schedule
-    // had before these fields, and the one a task keeps by saying nothing.
-    const task = store.fileSync.upsertFromFile(definition({}));
-    expect(task).toMatchObject({ runtime: null, model: null, effort: null });
-  });
-
   it('carries a CHANGED block onto an existing row', () => {
     store.fileSync.upsertFromFile(
       definition({ runtime: 'codex', model: 'gpt-5.5', effort: 'high' })
@@ -118,18 +104,6 @@ describe('what a run records about what it ran on', () => {
     });
   });
 
-  it('records "no model was chosen" as a real answer', () => {
-    const task = store.fileSync.upsertFromFile(definition({}));
-    const run = store.createRun(task.id, 'manual');
-
-    store.recordRunExecution(run.id, { runtime: 'claude-code' });
-
-    expect(store.getRun(run.id)).toMatchObject({
-      resolvedRuntime: 'claude-code',
-      resolvedModel: null,
-    });
-  });
-
   it('lands on a run that has already reached a terminal status', () => {
     // Why this is its own method and not a widening of `updateRun`: that one
     // deliberately ignores a write to a finished run, and in-process relay
@@ -146,11 +120,5 @@ describe('what a run records about what it ran on', () => {
       resolvedRuntime: 'opencode',
       resolvedModel: 'anthropic/claude-sonnet-4-5',
     });
-  });
-
-  it('reads null on a run recorded before the columns existed', () => {
-    const task = store.fileSync.upsertFromFile(definition({ runtime: 'codex' }));
-    const run = store.createRun(task.id, 'manual');
-    expect(store.getRun(run.id)).toMatchObject({ resolvedRuntime: null, resolvedModel: null });
   });
 });

@@ -28,8 +28,8 @@ import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createTestDb } from '@dorkos/test-utils/db';
-import type { Db } from '@dorkos/db';
-import { sql } from 'drizzle-orm';
+import { notifications, type Db } from '@dorkos/db';
+import { eq, sql } from 'drizzle-orm';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { hasSchedule } from '@dorkos/skills';
@@ -45,9 +45,34 @@ import {
   AGENT_TIMING_CHANGE_REASON,
 } from '../../services/tasks/timing/effective-timing.js';
 import { raiseStanding } from '../../services/notifications/standing-events.js';
+import {
+  NotificationService,
+  setNotificationService,
+} from '../../services/notifications/notification-service.js';
+import { NotificationStore } from '../../services/notifications/notification-store.js';
+import { setAccountUsageStore } from '../../services/core/usage/current-usage-store.js';
+import {
+  CAREFUL_UNPIN_REASON,
+  UNTOLD_ACCOUNT_MOVE_REASON,
+} from '../../services/tasks/approvals/account-move.js';
+import {
+  initAgentIdentityService,
+  resetAgentIdentityService,
+} from '../../services/core/agent-identity/agent-identity-service.js';
+import { RESTORED_ACCOUNT_REASON } from '../../services/tasks/agent-mode/agent-mode-undo.js';
+import type { AccountUsageStore } from '../../services/core/usage/account-usage-store.js';
 
+/** The trust preset the stand-in config reports; `undefined` reads as Trusted. */
+const preset = vi.hoisted(() => ({ value: undefined as string | undefined }));
 vi.mock('../../services/core/config-manager.js', () => ({
-  configManager: { get: (key: string) => (key === 'auth' ? { enabled: false } : undefined) },
+  configManager: {
+    get: (key: string) =>
+      key === 'auth'
+        ? { enabled: false }
+        : key === 'permissions' && preset.value
+          ? { preset: preset.value }
+          : undefined,
+  },
 }));
 
 vi.mock('../../services/notifications/standing-events.js', async (importOriginal) => ({
@@ -517,6 +542,253 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
         .send({ account: null, description: 'Tidier words' });
 
       expect(res.status).toBe(200);
+    });
+  });
+
+  describe('an agent moving the schedule to another account (DOR-5097)', () => {
+    let notificationStore: NotificationStore;
+
+    beforeEach(() => {
+      setAccountUsageStore({
+        listAccounts: () => [
+          {
+            runtime: 'claude-code',
+            id: 'claude4',
+            label: 'Claude4',
+            path: '/accounts/claude4',
+            routable: true,
+            implicit: false,
+            isDefault: false,
+          },
+          {
+            runtime: 'claude-code',
+            id: 'claude5',
+            label: 'Claude5',
+            path: '/accounts/claude5',
+            routable: true,
+            implicit: false,
+            isDefault: false,
+          },
+          {
+            runtime: 'claude-code',
+            id: 'claude-ab1',
+            label: 'Lab',
+            path: '/accounts/claude-ab1',
+            routable: true,
+            implicit: false,
+            isDefault: false,
+            noAutoMove: true,
+          },
+        ],
+      } as unknown as AccountUsageStore);
+      notificationStore = new NotificationStore(db);
+      setNotificationService(new NotificationService(notificationStore));
+    });
+
+    afterEach(() => {
+      setAccountUsageStore(undefined);
+      setNotificationService(null);
+    });
+
+    /** The `schedule.armed_by_agent` notices stored for the person. */
+    const accountNotices = () =>
+      notificationStore
+        .list({ limit: 50 } as Parameters<NotificationStore['list']>[0])
+        .notifications.filter((n) => n.kind === 'schedule.armed_by_agent');
+
+    /** A registered agent's token: only an agent DorkOS identified may keep a move (S-a). */
+    let scoutToken: string;
+
+    beforeEach(async () => {
+      scoutToken = await initAgentIdentityService(db).mint({
+        agentPath: path.join(dorkHome, 'agents', 'scout'),
+        displayName: 'Scout',
+      });
+    });
+
+    afterEach(() => {
+      preset.value = undefined;
+      resetAgentIdentityService();
+    });
+
+    /** An edit from Scout, a registered agent. */
+    const scoutEdit = (id: string, body: Record<string, unknown>) =>
+      request(fixtureTarget.server)
+        .patch(`/api/tasks/${id}`)
+        .set('x-dorkos-agent', scoutToken)
+        .send(body);
+
+    /** An approved schedule a person put on `account`. */
+    async function approvedOn(account: string): Promise<Task> {
+      const task = await approvedTask();
+      const res = await request(fixtureTarget.server)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ account });
+      expect(res.body).toMatchObject({ status: 'active', account });
+      return res.body as Task;
+    }
+
+    /** A person pressing the notice's Undo. */
+    const undo = (taskId: string, notificationId: string) =>
+      request(fixtureTarget.server)
+        .post(`/api/tasks/${taskId}/undo-agent-mode`)
+        .send({ notificationId });
+
+    it('keeps it approved and running, records it, and tells the person with an Undo', async () => {
+      // Purpose: the ticket. Moving a task off a spent account used to send it
+      // back for approval; who pays is not what the run does.
+      const task = await approvedOn('claude4');
+
+      const res = await scoutEdit(task.id, { account: 'claude5' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ status: 'active', account: 'claude5' });
+      expect(readFileSync(filePath, 'utf-8')).toContain('account: claude5');
+      // The next sync of that file keeps it live.
+      expect((await resync()).status).toBe('active');
+      expect(vi.mocked(raiseStanding)).not.toHaveBeenCalled();
+      const [notice] = accountNotices();
+      expect(notice).toMatchObject({
+        title: expect.stringContaining('to Claude5'),
+        actions: expect.arrayContaining([expect.objectContaining({ id: 'undo-mode' })]),
+      });
+
+      // The Undo puts the old account back, and it stays approved.
+      const first = await undo(task.id, notice!.id);
+      expect(first.status).toBe(200);
+      expect(first.body).toMatchObject({ status: 'active', account: 'claude4' });
+      expect((await resync()).status).toBe('active');
+      // The server's record of the move is spent: the same notice undoes nothing more (C1).
+      expect((await undo(task.id, notice!.id)).status).toBe(409);
+    });
+
+    it('puts back what the server recorded, never what the notice’s words say', async () => {
+      // Purpose: the Undo acts on DorkOS's own record of the move (C1), so a
+      // stored notice whose words changed cannot restore another account.
+      const task = await approvedOn('claude4');
+      await scoutEdit(task.id, { account: 'claude5' });
+      const [notice] = accountNotices();
+      const stored = db.select().from(notifications).where(eq(notifications.id, notice!.id)).get()!;
+      const payload = JSON.parse(stored.dataJson!);
+      payload.accountChange.fromId = 'claude-ab1';
+      db.update(notifications)
+        .set({ dataJson: JSON.stringify(payload) })
+        .where(eq(notifications.id, notice!.id))
+        .run();
+
+      const res = await undo(task.id, notice!.id);
+
+      expect(res.body).toMatchObject({ status: 'active', account: 'claude4' });
+    });
+
+    it('never undoes the same move twice, even once the task is back on that account', async () => {
+      const task = await approvedOn('claude-ab1');
+      await scoutEdit(task.id, { account: 'claude5' });
+      const [notice] = accountNotices();
+      expect((await undo(task.id, notice!.id)).body.account).toBe('claude-ab1');
+      // Back on Claude5 by another way (the row alone); the old notice must not move it again.
+      store.updateTask(task.id, { account: 'claude5' });
+
+      expect((await undo(task.id, notice!.id)).status).toBe(409);
+      expect(store.getTask(task.id)!.account).toBe('claude5');
+    });
+
+    it('waits for the person when Undo puts back an account that needs approval', async () => {
+      // Purpose: Undo must never bring back a restricted account (credits among
+      // them) still approved; it parks, as an agent's move there would (M1).
+      const task = await approvedOn('claude-ab1');
+      await scoutEdit(task.id, { account: 'claude5' });
+      const [notice] = accountNotices();
+
+      const res = await undo(task.id, notice!.id);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        status: 'pending_approval',
+        account: 'claude-ab1',
+        reason: RESTORED_ACCOUNT_REASON,
+      });
+    });
+
+    it('parks a move by a caller DorkOS cannot identify', async () => {
+      // Purpose: a token that names no agent keeps nothing (S-a).
+      const task = await approvedOn('claude4');
+
+      const res = await agentEdit(task.id, { account: 'claude5' });
+
+      expect(res.body).toMatchObject({ status: 'pending_approval', account: 'claude5' });
+      expect(accountNotices()).toHaveLength(0);
+    });
+
+    it('parks an agent’s move off DorkOS credits', async () => {
+      // Purpose: credits are the owner's call, and so is what replaces them (M1).
+      const task = await approvedTask();
+      store.updateTask(task.id, { account: 'dorkos-credits' });
+      store.approvals.recordApproval(task.id);
+
+      const res = await scoutEdit(task.id, { account: 'claude5' });
+
+      expect(res.body).toMatchObject({ status: 'pending_approval', account: 'claude5' });
+      expect(accountNotices()).toHaveLength(0);
+    });
+
+    it('parks an agent’s account move on the Careful preset', async () => {
+      // Purpose: on Careful every agent edit waits for the person (S3).
+      preset.value = 'careful';
+      const task = await approvedOn('claude4');
+
+      const res = await scoutEdit(task.id, { account: 'claude5' });
+
+      expect(res.body).toMatchObject({ status: 'pending_approval', account: 'claude5' });
+      expect(accountNotices()).toHaveLength(0);
+    });
+
+    it('parks the task when an agent takes "This account only" off on Careful', async () => {
+      const task = await approvedOn('claude4');
+      await request(fixtureTarget.server)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ accountPinned: true });
+      preset.value = 'careful';
+
+      const res = await scoutEdit(task.id, { accountPinned: false });
+
+      expect(res.body).toMatchObject({ status: 'pending_approval', reason: CAREFUL_UNPIN_REASON });
+    });
+
+    it('tells the person when an agent takes "This account only" off', async () => {
+      // Purpose: the task's runs may now move; the person pinned it (C2).
+      const task = await approvedOn('claude4');
+      await request(fixtureTarget.server)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ accountPinned: true });
+
+      const res = await scoutEdit(task.id, { accountPinned: false });
+
+      expect(res.body.accountPinned).toBeUndefined();
+      expect(accountNotices().map((n) => n.title)).toEqual([
+        expect.stringContaining('move accounts'),
+      ]);
+    });
+
+    it('still parks a move to an account a person kept out of automatic moves', async () => {
+      const task = await approvedTask();
+
+      const res = await scoutEdit(task.id, { account: 'claude-ab1' });
+
+      expect(res.body).toMatchObject({ status: 'pending_approval', account: 'claude-ab1' });
+      expect(accountNotices()).toHaveLength(0);
+    });
+
+    it('parks instead, saying why, when the person cannot be told', async () => {
+      setNotificationService(null);
+      const task = await approvedOn('claude4');
+
+      const res = await scoutEdit(task.id, { account: 'claude5' });
+
+      expect(res.body).toMatchObject({
+        status: 'pending_approval',
+        reason: UNTOLD_ACCOUNT_MOVE_REASON,
+      });
     });
   });
 });

@@ -205,6 +205,7 @@ import { keySourceBillsPerToken } from '../messaging/per-token-billing.js';
 import type { SessionBundle, PersistentDispatchArgs } from './dispatch/state.js';
 export type { PersistentDispatchArgs } from './dispatch/state.js';
 import { drainUnprojected } from './dispatch/unprojected-window.js';
+import { endSessionTimers } from './dispatch/session-timers.js';
 
 /**
  * Clear what one turn leaves on the session, so the next starts clean. Run when
@@ -1362,11 +1363,9 @@ export class PersistentDispatch {
           bundle.recoveryBilling = undefined;
           bundle.windows?.onRetired(change.to);
         }
-        // Session timers live in the process, so they end with it; the next
-        // process has none until its own first Stop hook says otherwise.
-        if (change.to === 'cold' || change.to === 'reaped' || change.to === 'crashed') {
-          session.pendingTimers = undefined;
-        }
+        // Session timers live in the process, so they end with it, and one
+        // DorkOS took away still pending is owed a note to the agent (DOR-3755).
+        endSessionTimers(key, session, change.to, bundle.pump.teardownReason);
         // Work still held when DorkOS ends the process dies with it. Only a
         // shutdown keeps the record, for the next boot to wake the chat; every
         // other ending (the ceiling, an eviction, a replace, a slot reclaim)
@@ -1490,7 +1489,7 @@ export class PersistentDispatch {
    * @param key - The resolved map key, exactly as {@link acquire} takes
    */
   private async replaceProcess(key: string): Promise<void> {
-    await this.registry.evict(key);
+    await this.registry.evict(key, 'replace');
     this.forget(key);
   }
 

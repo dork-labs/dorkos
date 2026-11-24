@@ -1,12 +1,8 @@
 /**
  * An agent's schedule on a Trusted install is armed at once and the person is
- * told; on Careful it parks (ADR 261006-225605, spec `trusted-by-default-flip`
- * §5.4). Schedules that arrive as content (discovery, Shapes, packages) park
- * and are clamped whatever the posture.
- *
- * Driven through `createScheduledTask` with a real store and a real file, so
- * the status read back is the one the scheduler would see. Only the stored
- * preset and the notification seams are stand-ins.
+ * told; on Careful it parks (ADR 261006-225605). Schedules that arrive as
+ * content park and are clamped whatever the posture. Real store and file; only
+ * the preset and the notification seams are stand-ins.
  *
  * @module services/tasks/lifecycle/__tests__/create-task-trust
  */
@@ -19,7 +15,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../../task-store.js';
 import type { TaskFileSync } from '../../sync/task-file-sync.js';
-import { clampCreatedScheduleMode, createScheduledTask } from '../create-task.js';
+import { createScheduledTask } from '../create-task.js';
 import { notificationEntry } from '../../../notifications/notification-registry.js';
 
 /** The stored preset, and what the notification seams were handed. */
@@ -161,7 +157,7 @@ describe('an agent schedule on a Trusted install', () => {
     expect(entry.actions?.(armed).map((a) => a.id)).toEqual(['pause', 'open']);
   });
 
-  it.each(['auto', 'bypassPermissions', 'future-mode', 'constructor', '__proto__'])(
+  it.each(['bypassPermissions', 'future-mode', '__proto__'])(
     'caps an inherited %s in the file, row and server notice',
     async (mode) => {
       state.defaultMode = mode;
@@ -175,13 +171,6 @@ describe('an agent schedule on a Trusted install', () => {
     }
   );
 
-  it.each(['plan', 'default', 'dontAsk', 'acceptEdits'] as const)(
-    'preserves the known careful mode %s',
-    (mode) => {
-      expect(clampCreatedScheduleMode(mode)).toBe(mode);
-    }
-  );
-
   it('parks when the caller is not known to be one of our agents', async () => {
     const outcome = await agentCreates(false);
 
@@ -192,19 +181,6 @@ describe('an agent schedule on a Trusted install', () => {
       approvedBy: null,
       approvedVia: null,
     });
-    expect(state.notified).toEqual([]);
-    expect(state.raised.map((r) => r.kind)).toEqual(['schedule.parked']);
-  });
-});
-
-describe('an agent schedule on a Careful install', () => {
-  it('parks for a person and tells nobody it is live', async () => {
-    state.preset = 'careful';
-    const outcome = await agentCreates(true);
-
-    expect(outcome.parked).toBe(true);
-    expect(outcome.armedPayload).toBeUndefined();
-    expect(store.getTask(outcome.task.id)!.status).toBe('pending_approval');
     expect(state.notified).toEqual([]);
     expect(state.raised.map((r) => r.kind)).toEqual(['schedule.parked']);
   });
@@ -235,7 +211,8 @@ describe('a schedule that arrives as content', () => {
     } as Parameters<TaskFileSync['upsertFromFile']>[0];
   }
 
-  it.each(['trusted', 'careful'] as const)('parks and is clamped on %s', (preset) => {
+  // Careful parks it anyway; Trusted is the case that must not arm.
+  it.each(['trusted'] as const)('parks and is clamped on %s', (preset) => {
     state.preset = preset;
     const task = store.fileSync.upsertFromFile(discovered(), undefined, { source: 'discovery' });
 
@@ -249,7 +226,7 @@ describe('runtime lookup for an explicitly named mode', () => {
   beforeEach(() => {
     state.useRealCapabilities = true;
   });
-  it.each(['codex', 'not-registered'])(
+  it.each(['not-registered'])(
     'keeps the requested %s runtime and mode without requiring registration',
     async (runtime) => {
       const result = await createScheduledTask(

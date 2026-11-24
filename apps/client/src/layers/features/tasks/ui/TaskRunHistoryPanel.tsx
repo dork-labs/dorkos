@@ -26,6 +26,7 @@ import {
 } from '@/layers/shared/ui';
 import type { TaskRun, TaskRunStatus } from '@dorkos/shared/types';
 import { missedRunsLine, runLateness } from '../lib/run-lateness';
+import { runAccountMoveLine } from '../lib/run-account-move';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -220,6 +221,7 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
   const startedLabel = run.startedAt ? formatAbsoluteTime(run.startedAt) : 'unknown time';
   const lateness = runLateness(run);
   const missedLine = missedRunsLine(run);
+  const accountLine = runAccountMoveLine(run);
 
   return (
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- role/tabIndex/onKeyDown are conditionally set based on isClickable
@@ -327,6 +329,16 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
         {missedLine && (
           <span className="text-muted-foreground truncate" title={missedLine}>
             {missedLine}
+          </span>
+        )}
+        {/* Its own account was out or signed out, so it ran on another (DOR-5097). */}
+        {accountLine && (
+          <span
+            data-slot="run-account-move"
+            className="text-muted-foreground break-words sm:truncate"
+            title={accountLine}
+          >
+            {accountLine}
           </span>
         )}
       </span>

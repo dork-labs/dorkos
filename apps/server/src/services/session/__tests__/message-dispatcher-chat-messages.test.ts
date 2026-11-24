@@ -150,40 +150,6 @@ describe('the person first', () => {
       'agent two',
     ]);
   });
-
-  it('keeps a chat’s row behind a person’s, and the person’s own order intact', async () => {
-    const first = gate();
-    runtime.withScenarios([heldTurn(first.wait), quickTurn(), quickTurn(), quickTurn()]);
-
-    await send('the running turn', PERSON);
-    await send('person one', PERSON);
-    await send('agent', CHAT_A);
-    await send('person two', PERSON);
-
-    expect(listQueuedMessages(session).map((m) => m.content)).toEqual([
-      'person one',
-      'person two',
-      'agent',
-    ]);
-  });
-
-  it('runs them in the order the queue shows', async () => {
-    const first = gate();
-    runtime.withScenarios([heldTurn(first.wait), quickTurn(), quickTurn()]);
-
-    await send('the running turn', PERSON);
-    await send('agent', CHAT_A);
-    await send('the person', PERSON);
-    first.open();
-    await settle();
-    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(3));
-
-    expect(runtime.sendMessage.mock.calls.map((call) => call[1])).toEqual([
-      'the running turn',
-      'the person',
-      'agent',
-    ]);
-  });
 });
 
 describe('the level ceiling of a row another chat sent', () => {

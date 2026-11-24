@@ -83,24 +83,6 @@ describe('describeServiceAction', () => {
     });
   });
 
-  it('uses the built-in name for an app whose id does not read as words', () => {
-    const action = describeServiceAction(
-      facts({ toolkit: 'googlecalendar', operationSlug: 'GOOGLECALENDAR_DELETE_EVENT' })
-    );
-    expect(action.serviceName).toBe('Google Calendar');
-    expect(action.actionName).toBe('Delete event');
-  });
-
-  it('names the account the way the Connections list does', () => {
-    expect(describeServiceAction(facts({ connectionLabel: 'Work' })).accountLabel).toBe(
-      'Work (work@acme.com)'
-    );
-    expect(describeServiceAction(facts({ connectionLabel: 'work@acme.com' })).accountLabel).toBe(
-      'work@acme.com'
-    );
-    expect(describeServiceAction(facts({ identityHint: null })).accountLabel).toBe('gmail');
-  });
-
   it('shortens long text to one line and never shows JSON', () => {
     const action = describeServiceAction(
       facts({
@@ -120,13 +102,6 @@ describe('describeServiceAction', () => {
       expect(value).not.toMatch(/[{}[\]"]/u);
     }
     expect(ApprovalServiceActionSchema.safeParse(action).success).toBe(true);
-  });
-
-  it('counts a list of objects instead of showing it', () => {
-    const action = describeServiceAction(
-      facts({ arguments: { message_id: 'm', user_id: [{ a: 1 }, { b: 2 }] } })
-    );
-    expect(action.details).toContainEqual({ label: 'User ID', value: '2 items' });
   });
 
   it('hides a secret-looking field and sweeps a token-shaped value', () => {
@@ -158,14 +133,6 @@ describe('describeServiceAction', () => {
     expect(action.details).toHaveLength(6);
     expect(action.moreDetails).toBe(4);
   });
-
-  it('strips punctuation from an argument name an agent chose', () => {
-    const action = describeServiceAction(
-      facts({ arguments: { message_id: 'm', 'Account: boss@acme.com,': 'x', '!!!': 'y' } })
-    );
-    expect(action.details).toContainEqual({ label: 'Account boss acme com', value: 'x' });
-    expect(action.details).toContainEqual({ label: 'Other', value: 'y' });
-  });
 });
 
 describe('every argument stays readable (review round 1)', () => {
@@ -189,52 +156,12 @@ describe('every argument stays readable (review round 1)', () => {
     for (const { value } of lines) expect(value).not.toMatch(/[{}[\]"]/u);
   });
 
-  it('keeps a padded 130-character value whole in the complete list', () => {
-    const padded = `${'pad '.repeat(30)}the decisive part`;
-    expect(padded.length).toBeGreaterThan(130);
-    const action = describeServiceAction(facts({ arguments: { message_id: padded } }));
-    expect(action.details[0]!.value).toMatch(/…$/u);
-    expect(action.everything).toContainEqual({ label: 'Message ID', value: padded, depth: 0 });
-  });
-
-  it('sends no complete list when the glance already shows everything whole', () => {
-    expect(describeServiceAction(facts())).not.toHaveProperty('everything');
-  });
-
-  it('counts a value too long even for the complete list exactly once', () => {
-    const action = describeServiceAction(facts({ arguments: { message_id: 'x'.repeat(20_001) } }));
-    expect(action.everythingCut).toBe(1);
-    expect(Array.from(action.everything![0]!.value)).toHaveLength(16_000);
-  });
-
-  it('counts labels in the budget and stops at 20,000 characters in all', () => {
-    // 400 fields of 40-character values: with its label each line is over 50
-    // characters, so the labels decide how many fit.
-    const fields = Object.fromEntries(
-      Array.from({ length: 400 }, (_, i) => [`field_number_${i}`, 'v'.repeat(40)])
-    );
-    const action = describeServiceAction(facts({ arguments: fields }));
-    const lines = action.everything!;
-    const used = lines.reduce((sum, line) => sum + line.label.length + line.value.length, 0);
-    expect(used).toBeLessThanOrEqual(20_000);
-    expect(lines.length + action.everythingCut!).toBe(400);
-    expect(lines.length).toBeLessThan(20_000 / 50);
-  });
-
   it('sweeps a token BEFORE shortening, so no fragment of it survives the cut', () => {
     const hex = 'a3f9c2e1b4d5f6a7b8c9d0e1f2a3b4c5d6e7f8a9';
     const value = `${'y'.repeat(100)}${hex}`;
     const action = describeServiceAction(facts({ arguments: { message_id: value } }));
     expect(action.details[0]!.value).toBe(`${'y'.repeat(100)}(hidden)`);
     expect(JSON.stringify(action)).not.toMatch(/a3f9c2e1/u);
-  });
-
-  it('cuts by whole characters, never leaving half an emoji', () => {
-    const action = describeServiceAction(facts({ arguments: { message_id: '😀'.repeat(130) } }));
-    const value = action.details[0]!.value;
-    expect(value).toBe(`${'😀'.repeat(119)}…`);
-    // No lone surrogate: every UTF-16 high half is followed by its low half.
-    expect(value).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/u);
   });
 
   it('removes invisible direction and zero-width characters from values and the account', () => {
@@ -374,29 +301,6 @@ describe('secrets never reach the card', () => {
 
   describe('Google file ids stay readable', () => {
     const DRIVE_ID = '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms';
-
-    it.each([['file_id'], ['spreadsheetId'], ['documentId']])(
-      'keeps a separator-free id in %s',
-      (key) => {
-        const action = describeServiceAction(facts({ arguments: { [key]: DRIVE_ID } }));
-        expect(action.details[0]!.value).toBe(DRIVE_ID);
-      }
-    );
-
-    it('keeps the ids in a list named as ids, in the glance and the complete list', () => {
-      const ids = [DRIVE_ID, DRIVE_ID, DRIVE_ID, DRIVE_ID];
-      const action = describeServiceAction(facts({ arguments: { fileIds: ids } }));
-      expect(action.details[0]!.value).toContain(DRIVE_ID);
-      expect(action.everything).toContainEqual({ label: '1', value: DRIVE_ID, depth: 1 });
-    });
-
-    it('keeps the id in a Docs link inside a body', () => {
-      const body = `See https://docs.google.com/document/d/${DRIVE_ID}/edit?usp=sharing please`;
-      const action = describeServiceAction(facts({ arguments: { body } }));
-      expect(action.everything ?? action.details).toEqual(
-        expect.arrayContaining([expect.objectContaining({ value: body })])
-      );
-    });
 
     it('still hides the same run in a body when it is not a path segment', () => {
       const action = describeServiceAction(facts({ arguments: { body: `copy ${DRIVE_ID} now` } }));

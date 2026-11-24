@@ -28,9 +28,11 @@ import { DirectNotesDataSchema, type DirectNotesData } from './direct-notes-cont
 import {
   ContextWarningDataSchema,
   TurnCutoffDataSchema,
+  TimersStoppedDataSchema,
   NewSinceDataSchema,
   type ContextWarningData,
   type TurnCutoffData,
+  type TimersStoppedData,
   type NewSinceData,
 } from './owed-notes-context.js';
 
@@ -50,6 +52,7 @@ export type {
   ChatStopCutoff,
   ContextWarningData,
   StalledTurnCutoff,
+  TimersStoppedData,
   TurnCutoffData,
   NewSinceData,
 } from './owed-notes-context.js';
@@ -70,6 +73,7 @@ export type ContextKind =
   | 'doc_events'
   | 'context_warning'
   | 'turn_cutoff'
+  | 'timers_stopped'
   | 'new_since_last_run';
 
 /** Lifetime of an entry — informs adapter placement, not yet load-bearing. */
@@ -935,6 +939,7 @@ export type AdditionalContextEntry =
   | { kind: 'accounts_access'; scope: 'per-turn'; data: AccountsAccessData }
   | { kind: 'context_warning'; scope: 'per-turn'; data: ContextWarningData }
   | { kind: 'turn_cutoff'; scope: 'per-turn'; data: TurnCutoffData }
+  | { kind: 'timers_stopped'; scope: 'per-turn'; data: TimersStoppedData }
   | { kind: 'new_since_last_run'; scope: 'per-turn'; data: NewSinceData };
 
 /** The per-turn bag a runtime receives via `MessageOpts.additionalContext`. */
@@ -974,6 +979,7 @@ export const CONTEXT_TAG = {
   doc_events: 'doc_events',
   context_warning: 'context_warning',
   turn_cutoff: 'turn_cutoff',
+  timers_stopped: 'timers_stopped',
   new_since_last_run: 'new_since_last_run',
 } satisfies Record<ContextKind, string>;
 
@@ -1314,6 +1320,11 @@ export const AdditionalContextEntrySchema = z.discriminatedUnion('kind', [
     kind: z.literal('turn_cutoff'),
     scope: z.literal('per-turn'),
     data: TurnCutoffDataSchema,
+  }),
+  z.object({
+    kind: z.literal('timers_stopped'),
+    scope: z.literal('per-turn'),
+    data: TimersStoppedDataSchema,
   }),
   z.object({
     kind: z.literal('new_since_last_run'),

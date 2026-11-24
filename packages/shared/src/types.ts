@@ -127,6 +127,7 @@ export type {
   Task,
   TaskFileReview,
   TaskRun,
+  TaskRunAccountMove,
   CancelTaskRunResponse,
   TaskTemplate,
   CreateTaskRequest,

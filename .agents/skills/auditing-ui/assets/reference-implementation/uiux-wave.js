@@ -14,8 +14,10 @@
 //
 // Shape: per batch, a worktree implementer, then an adversarial reviewer on the branch before any PR, then a finalizer that rebases, formats, opens the PR and arms-then-verifies auto-merge. Maps to SKILL.md section 7 and the orchestrating-parallel-work skill.
 //
-// One line was adjusted from the original: the reminder about retired vocabulary
-// now points at scripts/check-banned-words.sh rather than naming the words.
+// Two lines were adjusted from the original: the reminder about retired vocabulary
+// now points at scripts/check-banned-words.sh rather than naming the words, and
+// step 5 of the finalizer no longer arms auto-merge (open-pr.sh turns it on at open
+// since DOR-5124; contributing/ci.md, "Merging").
 
 export const meta = {
   name: 'uiux-wave',
@@ -172,7 +174,7 @@ ${SAFETY}
 
    https://claude.ai/code/session_01QPt3HJWnsFo5Tn7KQg7Cxh
    ${b.docsOnly ? '- Labels: skip-changelog and review:light.' : '- No extra labels.'}
-5. Arm auto-merge with bare \`gh pr merge --auto\` (NEVER --squash under the merge queue), then VERIFY the arm took: gh pr view --json autoMergeRequest must be non-null, OR the PR must appear in the merge queue (GraphQL mergeQueue entries). A clean unarmed PR sits forever with no red check and no notification — that state has stranded PRs on this repo for 28+ hours. If neither armed nor queued, retry until one is true.
+5. Open the PR with scripts/open-pr.sh, which turns on auto-merge at open; nobody arms it (contributing/ci.md, "Merging").
 6. Leave the worktree in place. Return the PR number, URL, status, and skippedFindings summary.`;
 
 const results = await pipeline(

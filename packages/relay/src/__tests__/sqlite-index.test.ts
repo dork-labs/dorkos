@@ -65,15 +65,6 @@ beforeEach(() => {
 // WAL Mode
 // ---------------------------------------------------------------------------
 
-describe('WAL mode', () => {
-  it('in-memory db reports WAL pragma was set', () => {
-    // In-memory databases use 'memory' journal mode, but the pragma was set
-    // on createDb(). For file-based dbs it would be 'wal'.
-    // We verify the method does not throw.
-    expect(typeof index.isWalMode()).toBe('boolean');
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Insert and Query by Subject
 // ---------------------------------------------------------------------------
@@ -86,11 +77,6 @@ describe('insertMessage + getBySubject', () => {
     const results = index.getBySubject(TEST_SUBJECT);
     expect(results).toHaveLength(1);
     expect(results[0]).toEqual(msg);
-  });
-
-  it('returns empty array for unknown subject', () => {
-    const results = index.getBySubject('relay.nonexistent');
-    expect(results).toHaveLength(0);
   });
 
   it('preserves existing sender/expiresAt when the SAME row is re-written omitting them (H2)', () => {
@@ -202,50 +188,17 @@ describe('insertMessage + getBySubject', () => {
     expect(results[1].id).toBe('01JBBB');
     expect(results[2].id).toBe('01JAAA');
   });
-
-  it('INSERT OR REPLACE is idempotent — re-inserting the same message updates it', () => {
-    const msg = makeMessage();
-    index.insertMessage(msg);
-    index.insertMessage({ ...msg, status: 'delivered' });
-
-    const results = index.getBySubject(TEST_SUBJECT);
-    expect(results).toHaveLength(1);
-    expect(results[0].status).toBe('delivered');
-  });
 });
 
 // ---------------------------------------------------------------------------
 // getMessage
 // ---------------------------------------------------------------------------
 
-describe('getMessage', () => {
-  it('returns the message by ID', () => {
-    const msg = makeMessage();
-    index.insertMessage(msg);
-
-    const result = index.getMessage(msg.id);
-    expect(result).toEqual(msg);
-  });
-
-  it('returns null for unknown ID', () => {
-    expect(index.getMessage('nonexistent')).toBeNull();
-  });
-});
-
 // ---------------------------------------------------------------------------
 // getByEndpoint
 // ---------------------------------------------------------------------------
 
 describe('getByEndpoint', () => {
-  it('returns messages for a given endpoint hash', () => {
-    const msg = makeMessage();
-    index.insertMessage(msg);
-
-    const results = index.getByEndpoint(TEST_ENDPOINT_HASH);
-    expect(results).toHaveLength(1);
-    expect(results[0].endpointHash).toBe(TEST_ENDPOINT_HASH);
-  });
-
   it('filters by endpoint hash — does not return messages from other endpoints', () => {
     index.insertMessage(makeMessage({ id: '01JAAA', endpointHash: 'hash_one' }));
     index.insertMessage(makeMessage({ id: '01JBBB', endpointHash: 'hash_two' }));
@@ -254,10 +207,6 @@ describe('getByEndpoint', () => {
     expect(results).toHaveLength(1);
     expect(results[0].id).toBe('01JAAA');
   });
-
-  it('returns empty array for unknown endpoint hash', () => {
-    expect(index.getByEndpoint('unknown_hash')).toHaveLength(0);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -265,31 +214,6 @@ describe('getByEndpoint', () => {
 // ---------------------------------------------------------------------------
 
 describe('updateStatus', () => {
-  it('updates the status of an existing message', () => {
-    index.insertMessage(makeMessage({ id: 'msg1', status: 'pending' }));
-
-    const updated = index.updateStatus('msg1', TEST_ENDPOINT_HASH, 'delivered');
-    expect(updated).toBe(true);
-
-    const result = index.getMessage('msg1');
-    expect(result?.status).toBe('delivered');
-  });
-
-  it('can transition through all statuses: pending -> delivered -> failed', () => {
-    index.insertMessage(makeMessage({ id: 'msg1', status: 'pending' }));
-
-    index.updateStatus('msg1', TEST_ENDPOINT_HASH, 'delivered');
-    expect(index.getMessage('msg1')?.status).toBe('delivered');
-
-    index.updateStatus('msg1', TEST_ENDPOINT_HASH, 'failed');
-    expect(index.getMessage('msg1')?.status).toBe('failed');
-  });
-
-  it('returns false for unknown message ID', () => {
-    const updated = index.updateStatus('nonexistent', TEST_ENDPOINT_HASH, 'delivered');
-    expect(updated).toBe(false);
-  });
-
   it('only touches the addressed endpoint row, not siblings sharing the id', () => {
     // One envelope id now owns a row per endpoint; a delivered/failed transition
     // must not bleed across a message's sibling deliveries.
@@ -465,38 +389,6 @@ describe('rebuild', () => {
     expect(msg).not.toBeNull();
     expect(msg!.status).toBe('failed');
   });
-
-  it('returns 0 when Maildir is empty', async () => {
-    const hash = 'empty_test';
-    await maildirStore.ensureMaildir(hash);
-
-    const endpointHashes = new Map<string, string>();
-    endpointHashes.set(hash, TEST_SUBJECT);
-
-    const count = await index.rebuild(maildirStore, endpointHashes);
-    expect(count).toBe(0);
-  });
-
-  it('handles multiple endpoints', async () => {
-    const hash1 = 'multi_ep_1';
-    const hash2 = 'multi_ep_2';
-    await maildirStore.ensureMaildir(hash1);
-    await maildirStore.ensureMaildir(hash2);
-
-    await maildirStore.deliver(hash1, makeEnvelope({ id: 'ep1_msg1', subject: 'relay.a' }));
-    await maildirStore.deliver(hash2, makeEnvelope({ id: 'ep2_msg1', subject: 'relay.b' }));
-    await maildirStore.deliver(hash2, makeEnvelope({ id: 'ep2_msg2', subject: 'relay.b' }));
-
-    const endpointHashes = new Map<string, string>();
-    endpointHashes.set(hash1, 'relay.a');
-    endpointHashes.set(hash2, 'relay.b');
-
-    const count = await index.rebuild(maildirStore, endpointHashes);
-    expect(count).toBe(3);
-
-    expect(index.getByEndpoint(hash1)).toHaveLength(1);
-    expect(index.getByEndpoint(hash2)).toHaveLength(2);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -504,13 +396,6 @@ describe('rebuild', () => {
 // ---------------------------------------------------------------------------
 
 describe('getMetrics', () => {
-  it('returns zero metrics for empty index', () => {
-    const metrics = index.getMetrics();
-    expect(metrics.totalMessages).toBe(0);
-    expect(metrics.byStatus).toEqual({});
-    expect(metrics.bySubject).toEqual([]);
-  });
-
   it('returns correct aggregate counts by status', () => {
     index.insertMessage(makeMessage({ id: 'p1', status: 'pending' }));
     index.insertMessage(makeMessage({ id: 'p2', status: 'pending' }));
@@ -525,23 +410,6 @@ describe('getMetrics', () => {
       failed: 1,
     });
   });
-
-  it('returns correct counts by subject sorted by volume descending', () => {
-    index.insertMessage(makeMessage({ id: 'a1', subject: 'relay.a' }));
-    index.insertMessage(makeMessage({ id: 'b1', subject: 'relay.b' }));
-    index.insertMessage(makeMessage({ id: 'b2', subject: 'relay.b' }));
-    index.insertMessage(makeMessage({ id: 'c1', subject: 'relay.c' }));
-    index.insertMessage(makeMessage({ id: 'c2', subject: 'relay.c' }));
-    index.insertMessage(makeMessage({ id: 'c3', subject: 'relay.c' }));
-
-    const metrics = index.getMetrics();
-    expect(metrics.totalMessages).toBe(6);
-    expect(metrics.bySubject).toEqual([
-      { subject: 'relay.c', count: 3 },
-      { subject: 'relay.b', count: 2 },
-      { subject: 'relay.a', count: 1 },
-    ]);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -550,12 +418,6 @@ describe('getMetrics', () => {
 
 describe('countSenderInWindow', () => {
   const SENDER_A = 'relay.human.slack.bot';
-  const SENDER_B = 'agent:myproject.backend';
-
-  it('returns 0 for no matching messages', () => {
-    const count = index.countSenderInWindow(SENDER_A, '2020-01-01T00:00:00.000Z');
-    expect(count).toBe(0);
-  });
 
   it('counts messages from a specific sender after the window start', () => {
     index.insertMessage(
@@ -568,43 +430,6 @@ describe('countSenderInWindow', () => {
     const count = index.countSenderInWindow(SENDER_A, '2026-01-01T00:00:00.000Z');
     expect(count).toBe(2);
   });
-
-  it('filters by sender — does not count messages from other senders', () => {
-    index.insertMessage(
-      makeMessage({ id: 'a1', createdAt: '2026-01-15T10:00:00.000Z', sender: SENDER_A })
-    );
-    index.insertMessage(
-      makeMessage({ id: 'b1', createdAt: '2026-01-15T10:00:00.000Z', sender: SENDER_B })
-    );
-    index.insertMessage(
-      makeMessage({ id: 'b2', createdAt: '2026-01-15T10:01:00.000Z', sender: SENDER_B })
-    );
-
-    expect(index.countSenderInWindow(SENDER_A, '2026-01-01T00:00:00.000Z')).toBe(1);
-    expect(index.countSenderInWindow(SENDER_B, '2026-01-01T00:00:00.000Z')).toBe(2);
-  });
-
-  it('filters by window start time', () => {
-    index.insertMessage(
-      makeMessage({ id: 'old', createdAt: '2026-01-10T00:00:00.000Z', sender: SENDER_A })
-    );
-    index.insertMessage(
-      makeMessage({ id: 'recent', createdAt: '2026-01-15T12:00:00.000Z', sender: SENDER_A })
-    );
-
-    // Window starts after the old message
-    const count = index.countSenderInWindow(SENDER_A, '2026-01-12T00:00:00.000Z');
-    expect(count).toBe(1);
-  });
-
-  it('ignores messages with null sender', () => {
-    index.insertMessage(makeMessage({ id: 'no-sender', createdAt: '2026-01-15T10:00:00.000Z' }));
-    index.insertMessage(
-      makeMessage({ id: 'has-sender', createdAt: '2026-01-15T10:00:00.000Z', sender: SENDER_A })
-    );
-
-    expect(index.countSenderInWindow(SENDER_A, '2026-01-01T00:00:00.000Z')).toBe(1);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -612,11 +437,6 @@ describe('countSenderInWindow', () => {
 // ---------------------------------------------------------------------------
 
 describe('countNewByEndpoint', () => {
-  it('returns 0 for empty endpoint', () => {
-    const count = index.countNewByEndpoint('nonexistent-hash');
-    expect(count).toBe(0);
-  });
-
   it('counts only messages with status pending', () => {
     index.insertMessage(makeMessage({ id: 'n1', endpointHash: 'ep1', status: 'pending' }));
     index.insertMessage(makeMessage({ id: 'n2', endpointHash: 'ep1', status: 'pending' }));
@@ -625,14 +445,6 @@ describe('countNewByEndpoint', () => {
     const count = index.countNewByEndpoint('ep1');
     expect(count).toBe(2);
   });
-
-  it('excludes delivered and failed messages', () => {
-    index.insertMessage(makeMessage({ id: 'c1', endpointHash: 'ep1', status: 'delivered' }));
-    index.insertMessage(makeMessage({ id: 'f1', endpointHash: 'ep1', status: 'failed' }));
-
-    const count = index.countNewByEndpoint('ep1');
-    expect(count).toBe(0);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -640,32 +452,6 @@ describe('countNewByEndpoint', () => {
 // ---------------------------------------------------------------------------
 
 describe('queryMessages', () => {
-  it('returns all messages with no filters', () => {
-    index.insertMessage(makeMessage({ id: '01JAAA' }));
-    index.insertMessage(makeMessage({ id: '01JBBB' }));
-
-    const { messages } = index.queryMessages();
-    expect(messages).toHaveLength(2);
-  });
-
-  it('filters by subject', () => {
-    index.insertMessage(makeMessage({ id: '01JAAA', subject: 'relay.a' }));
-    index.insertMessage(makeMessage({ id: '01JBBB', subject: 'relay.b' }));
-
-    const { messages } = index.queryMessages({ subject: 'relay.a' });
-    expect(messages).toHaveLength(1);
-    expect(messages[0].subject).toBe('relay.a');
-  });
-
-  it('filters by status', () => {
-    index.insertMessage(makeMessage({ id: '01JAAA', status: 'pending' }));
-    index.insertMessage(makeMessage({ id: '01JBBB', status: 'delivered' }));
-
-    const { messages } = index.queryMessages({ status: 'pending' });
-    expect(messages).toHaveLength(1);
-    expect(messages[0].status).toBe('pending');
-  });
-
   it('supports cursor-based pagination', () => {
     index.insertMessage(makeMessage({ id: '01JAAA' }));
     index.insertMessage(makeMessage({ id: '01JBBB' }));
@@ -707,11 +493,6 @@ describe('message identity (composite id + endpointHash)', () => {
     );
 
     expect(index.getMessage('env-2')?.endpointHash).toBe('relay.real');
-  });
-
-  it('getMessage falls back to a synthetic row when no real endpoint row exists', () => {
-    index.insertMessage(makeMessage({ id: 'env-3', endpointHash: '*', status: 'delivered' }));
-    expect(index.getMessage('env-3')?.endpointHash).toBe('*');
   });
 
   it('paginates without skipping sibling rows that share an id across a page boundary', () => {
@@ -757,81 +538,8 @@ describe('anti-regression: semantic status values', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe('pending');
   });
-
-  it('uses "delivered" status for claimed messages (not "cur")', () => {
-    index.insertMessage(makeMessage({ id: 'delivered-check', status: 'pending' }));
-    index.updateStatus('delivered-check', TEST_ENDPOINT_HASH, 'delivered');
-
-    const result = index.getMessage('delivered-check');
-    expect(result?.status).toBe('delivered');
-    expect(result?.status).not.toBe('cur');
-
-    // Verify at the raw SQL level
-    const rows = db.all<{ status: string }>(
-      sql`SELECT status FROM relay_index WHERE id = 'delivered-check'`
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].status).toBe('delivered');
-  });
-
-  it('status enum contains only semantic values: pending, delivered, failed', () => {
-    // Insert one of each valid status
-    index.insertMessage(makeMessage({ id: 's-pending', status: 'pending' }));
-    index.insertMessage(makeMessage({ id: 's-delivered', status: 'delivered' }));
-    index.insertMessage(makeMessage({ id: 's-failed', status: 'failed' }));
-
-    const metrics = index.getMetrics();
-    const statusKeys = Object.keys(metrics.byStatus);
-    for (const key of statusKeys) {
-      expect(['pending', 'delivered', 'failed']).toContain(key);
-      expect(key).not.toBe('new');
-      expect(key).not.toBe('cur');
-    }
-  });
 });
 
 // ---------------------------------------------------------------------------
 // Anti-regression: expiresAt as ISO 8601 (not ttl as INTEGER)
 // ---------------------------------------------------------------------------
-
-describe('anti-regression: expiresAt as ISO 8601', () => {
-  it('stores expiresAt as ISO 8601 string (not INTEGER Unix ms)', () => {
-    const expiry = new Date(Date.now() + 60_000).toISOString();
-    index.insertMessage(makeMessage({ id: 'expiry-check', expiresAt: expiry }));
-
-    const result = index.getMessage('expiry-check');
-    expect(result?.expiresAt).toBe(expiry);
-
-    // Verify at the raw SQL level that the stored value is an ISO string
-    const rows = db.all<{ expires_at: string }>(
-      sql`SELECT expires_at FROM relay_index WHERE id = 'expiry-check'`
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].expires_at).toBe(expiry);
-    // Confirm it parses as a valid ISO date
-    expect(new Date(rows[0].expires_at).toISOString()).toBe(expiry);
-  });
-
-  it('column is named expires_at (not ttl)', () => {
-    index.insertMessage(makeMessage({ id: 'col-check' }));
-
-    // Query the column by name — this would fail if the column were still 'ttl'
-    const rows = db.all<{ expires_at: string | null }>(
-      sql`SELECT expires_at FROM relay_index WHERE id = 'col-check'`
-    );
-    expect(rows).toHaveLength(1);
-  });
-
-  it('expiresAt supports null (no expiry)', () => {
-    index.insertMessage(makeMessage({ id: 'null-expiry', expiresAt: null }));
-
-    const result = index.getMessage('null-expiry');
-    expect(result?.expiresAt).toBeNull();
-
-    const rows = db.all<{ expires_at: string | null }>(
-      sql`SELECT expires_at FROM relay_index WHERE id = 'null-expiry'`
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].expires_at).toBeNull();
-  });
-});

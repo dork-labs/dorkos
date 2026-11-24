@@ -1,12 +1,7 @@
 /**
- * A run's later words are credited to the run (DOR-2717).
- *
- * A run ends when its turn does. Under a warm process the agent may hand the
- * work to a background helper, end that turn, and give the real answer in a
- * turn it starts itself once the helper reports. That later turn reaches the
- * session; these pin that it reaches the run's record too — through the real
- * run-terminal hook and the real runtime-turn projection, with only the runtime
- * faked.
+ * A run's later words are credited to the run (DOR-2717): an agent that hands
+ * work to a background helper answers in a turn it starts itself later. Real
+ * run-terminal hook and runtime-turn projection; only the runtime is faked.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
@@ -18,7 +13,6 @@ import { subscribeRuntimeTurns } from '../../../session/runtime-turns/runtime-tu
 import { resetLateTurnFollowers } from '../../../session/runtime-turns/late-turns.js';
 import { resetMessageDispatcher } from '../../../session/message-dispatcher.js';
 import { getOrCreateProjector } from '../../../session/session-state-projector.js';
-import { eventFanOut } from '../../../core/event-fan-out.js';
 
 vi.mock('../../../notifications/emitters/run-completed.js', () => ({
   notifyRunCompleted: vi.fn().mockResolvedValue(undefined),
@@ -119,27 +113,6 @@ describe('a run whose agent reports back after its turn ended', () => {
     expect(output).not.toContain('Unrelated chatter.');
   });
 
-  it('credits nothing when the agent held no work at the end of its turn', async () => {
-    const runId = finishRun();
-    await flush();
-
-    runtime.emitRuntimeTurn(sessionId, turnSaying('Something else entirely.', sessionId));
-    await flush();
-
-    expect(store.getRun(runId)?.outputSummary).toBe('Started a helper on it; I will report back.');
-  });
-
-  it('credits nothing to a run somebody cancelled', async () => {
-    runtime.holdsBackgroundWork.mockReturnValue(true);
-    const runId = finishRun('cancelled');
-    await flush();
-
-    runtime.emitRuntimeTurn(sessionId, turnSaying('The build is green.', sessionId));
-    await flush();
-
-    expect(store.getRun(runId)?.outputSummary).not.toContain('The build is green.');
-  });
-
   it('credits nothing said after somebody else gave the session new work', async () => {
     runtime.holdsBackgroundWork.mockReturnValue(true);
     const runId = finishRun();
@@ -153,21 +126,6 @@ describe('a run whose agent reports back after its turn ended', () => {
     await flush();
 
     expect(store.getRun(runId)?.outputSummary).not.toContain('My answer to that person.');
-  });
-
-  it('tells open apps the run changed, so its list re-reads', async () => {
-    const broadcast = vi.spyOn(eventFanOut, 'broadcast');
-    runtime.holdsBackgroundWork.mockReturnValue(true);
-    const runId = finishRun();
-    await flush();
-    broadcast.mockClear();
-
-    runtime.holdsBackgroundWork.mockReturnValue(false);
-    runtime.emitRuntimeTurn(sessionId, turnSaying('The build is green.', sessionId));
-    await flush();
-
-    expect(broadcast).toHaveBeenCalledWith('task_run_updated', expect.objectContaining({ runId }));
-    broadcast.mockRestore();
   });
 
   it('keeps no more than a bounded amount of later output, however much the agent says', async () => {

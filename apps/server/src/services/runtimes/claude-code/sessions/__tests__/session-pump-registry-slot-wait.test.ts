@@ -95,7 +95,7 @@ describe('SessionPumpRegistry, when every slot is mid-turn', () => {
 
     const waiting = registry.acquire('gone', launchOpts()).warm();
     await new Promise((resolve) => setTimeout(resolve, 10));
-    await registry.evict('gone');
+    await registry.evict('gone', 'stop');
 
     await expect(waiting).rejects.toMatchObject({ reason: 'process-gone' });
 

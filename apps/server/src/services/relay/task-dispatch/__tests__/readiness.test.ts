@@ -7,12 +7,7 @@ import {
   type RelayDispatchRefusal,
 } from '../readiness.js';
 
-/**
- * An adapter reporting a chosen connection state, and nothing else the rule
- * reads.
- *
- * @param state - What `getStatus()` reports.
- */
+/** An adapter reporting a chosen connection state. */
 function receiver(state: AdapterStatus['state'] = 'connected'): RelayAdapter {
   return {
     id: 'claude-code',
@@ -26,61 +21,41 @@ function receiver(state: AdapterStatus['state'] = 'connected'): RelayAdapter {
 }
 
 describe('assessTaskDispatch', () => {
-  it('says yes only when something live holds the runtime', () => {
+  it('says yes only when a connected receiver holds the runtime', () => {
     expect(assessTaskDispatch(receiver(), true)).toEqual({ deliverable: true });
-  });
-
-  it('reports the missing receiver BEFORE the missing runtime', () => {
-    // Order is the message. Both facts are false here, and answering
-    // `runtime-not-on-bus` would send an operator to the runtime settings for
-    // an adapter that is simply not running.
-    expect(assessTaskDispatch(undefined, false)).toEqual({
-      deliverable: false,
-      reason: 'no-receiver',
-    });
-  });
-
-  it('refuses every state that is not connected', () => {
-    const states: AdapterStatus['state'][] = [
+    expect(assessTaskDispatch(receiver(), false)).toMatchObject({ reason: 'runtime-not-on-bus' });
+    expect(RELAY_NOT_BUILT).toEqual({ deliverable: false, reason: 'relay-not-built' });
+    for (const state of [
       'disconnected',
       'error',
       'starting',
       'stopping',
       'reconnecting',
-    ];
-    for (const state of states) {
-      expect(assessTaskDispatch(receiver(state), true), state).toEqual({
-        deliverable: false,
+    ] as const) {
+      expect(assessTaskDispatch(receiver(state), true), state).toMatchObject({
         reason: 'receiver-not-connected',
       });
     }
   });
 
-  it('refuses a live receiver that does not hold the runtime', () => {
-    expect(assessTaskDispatch(receiver(), false)).toEqual({
+  it('reports the missing receiver BEFORE the missing runtime', () => {
+    // Answering runtime-not-on-bus would send an operator to the wrong settings.
+    expect(assessTaskDispatch(undefined, false)).toEqual({
       deliverable: false,
-      reason: 'runtime-not-on-bus',
+      reason: 'no-receiver',
     });
-  });
-
-  it('says a relay that never built is not deliverable', () => {
-    expect(RELAY_NOT_BUILT).toEqual({ deliverable: false, reason: 'relay-not-built' });
   });
 });
 
-describe('describeRelayRefusal', () => {
-  it('has a distinct sentence for every refusal', () => {
-    // The reason exists to be read. A duplicated or empty sentence is a state
-    // an operator cannot tell apart from another one.
-    const reasons: RelayDispatchRefusal[] = [
-      'relay-off',
-      'relay-not-built',
-      'no-receiver',
-      'receiver-not-connected',
-      'runtime-not-on-bus',
-    ];
-    const sentences = reasons.map(describeRelayRefusal);
-    expect(new Set(sentences).size).toBe(reasons.length);
-    for (const sentence of sentences) expect(sentence.length).toBeGreaterThan(10);
-  });
+it('describeRelayRefusal has a distinct sentence for every refusal', () => {
+  const reasons: RelayDispatchRefusal[] = [
+    'relay-off',
+    'relay-not-built',
+    'no-receiver',
+    'receiver-not-connected',
+    'runtime-not-on-bus',
+  ];
+  const sentences = reasons.map(describeRelayRefusal);
+  expect(new Set(sentences).size).toBe(reasons.length);
+  for (const sentence of sentences) expect(sentence.length).toBeGreaterThan(10);
 });

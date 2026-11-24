@@ -8,7 +8,8 @@ import type { MatrixCell, RuntimeCapability } from './runtime-capability-types.j
 const ROOM_CONTEXT =
   'apps/server/src/services/runtimes/shared/__tests__/room-context-runtime-neutrality.test.ts';
 const ROOM_REPLIES = 'apps/e2e/tests/rooms/room-tool-only-replies.spec.ts';
-const TASK_RUN = 'apps/server/src/services/tasks/__tests__/task-scheduler-service.test.ts';
+const TASK_RUN =
+  'apps/server/src/services/tasks/__tests__/task-scheduler/task-scheduler.runtimes.test.ts';
 const RELAY_DELIVERY =
   'apps/server/src/services/relay/__tests__/agent-subject-target-runtime.integration.test.ts';
 const EXTENSION_LIST =
@@ -106,7 +107,7 @@ export const PRODUCT_RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       codex: tested(
         'U',
         TASK_RUN,
-        'runs the task on the runtime IT names, not the registry default',
+        'runs on the runtime the task names, and stamps the resolved runtime and model',
         'fails the run loudly when the named runtime is not turned on, and starts no turn'
       ),
       opencode: NAMED_TASK_UNVERIFIED,

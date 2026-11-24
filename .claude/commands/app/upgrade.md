@@ -64,9 +64,9 @@ Every rule below holds in `auto` whether or not anyone is watching. They are
 what make a scheduled run safe; do not relax one to get a lane through.
 
 1. **Nothing merges here.** Every change lands as a PR that rides the normal
-   pipeline — automated review, required checks, merge queue. `merge-tail`
-   arms finished PRs; this command arms only when the queue is **empty**
-   (below). A PR is the unit of blast radius, so one lane never shares a PR
+   pipeline — automated review, required checks, merge queue.
+   `scripts/open-pr.sh` turns on auto-merge at open (`contributing/ci.md`, "Merging"); this command
+   never arms a PR. A PR is the unit of blast radius, so one lane never shares a PR
    with another.
 2. **No major bumps, no runtime-SDK families, no `dependabot.yml` family
    edits, no secret-scanning changes.** Those get a plan and a ticket, never a
@@ -74,7 +74,7 @@ what make a scheduled run safe; do not relax one to get a lane through.
    and the "Deliberate pins" table in `contributing/dependency-overrides.md`.
 3. **Idempotent by construction.** Each lane owns a branch prefix. Before
    opening a PR, look for an open one under that prefix; if it exists, tend it
-   (rebase, re-diagnose, re-arm) instead of opening a second. A run on a quiet
+   (rebase, re-diagnose, re-queue once if ejected) instead of opening a second. A run on a quiet
    day changes nothing and says so.
 4. **The ledger is edited in the same commit as the override.** Every override
    and every version hold has its reason in `contributing/dependency-overrides.md`.
@@ -288,10 +288,11 @@ when it goes red it stays red: Dependabot never diagnoses, and the next week's
 run just force-pushes a bigger version of the same problem. This lane lands
 the green part and quarantines the rest.
 
-Skip the lane when the PR is `CLEAN` and either armed or in the queue — that
-is `merge-tail`'s job. A `CLEAN` PR with `autoMergeRequest: null` **and** no
-queue entry after 3 days is a PR nobody armed: arm it (empty-queue rule in the
-landing procedure) and move on.
+Skip the lane when the PR is `CLEAN` and either armed or in the queue — it is
+already on its way. A `CLEAN` PR with `autoMergeRequest: null` **and** no
+queue entry after 3 days lost its auto-merge (an ejection, or opened before
+Nov 24): if the cause is plainly not the PR's, re-queue it once with
+`gh pr merge --auto <n>`, name it in the report and move on.
 
 ### 2.1 Diagnose before touching
 
@@ -550,11 +551,7 @@ Dependabot PR will be red until a person fixes the secret.
 
 ### 6.3 merge-tail
 
-```bash
-gh run list --workflow merge-tail --limit 3 --json conclusion,createdAt
-```
-
-Three failures in a row means nothing is arming. Headline + notification.
+merge-tail's arming is retired (DOR-5124), so there is nothing to check here.
 
 ---
 
@@ -595,20 +592,11 @@ EOF
 A `fix/codeql-` PR drops `review:light` — it is code, and the automated
 review is the point.
 
-### Arming
+### Merging
 
-`merge-tail` arms every finished PR on a 10-minute tick, so arming here is
-an optimisation, not a requirement. Do it only into an **empty** queue: the
-queue's `ALLGREEN` grouping ejects every entry in a batch when one sibling
-fails, with no recorded reason, and a lockfile PR is the entry most likely to
-be blamed for a neighbour's red.
-
-```bash
-gh api graphql -f query='{ repository(owner:"'"${R%/*}"'",name:"'"${R#*/}"'"){ mergeQueue(branch:"main"){ entries(first:1){ totalCount } } } }' \
-  -q '.data.repository.mergeQueue.entries.totalCount'
-# 0 → gh pr merge --auto --squash <n>      (the queue ignores --squash; harmless)
-# >0 → leave it; say "merge-tail will arm" in the report
-```
+Open each PR with `scripts/open-pr.sh`, which turns on auto-merge at open
+(`contributing/ci.md`, "Merging"); nobody arms it. `gh pr merge --auto <n>` is only for re-queueing once
+after an ejection that is plainly not the PR's.
 
 A PR already in the queue reports `autoMergeRequest: null` — test
 `mergeQueueEntry` (GraphQL only) before concluding nothing will merge it.
@@ -635,7 +623,7 @@ section is non-empty, also send one `PushNotification` with its first line.
 ```markdown
 ## Needs you
 
-- <secret-scanning alert / red baseline / broken updater / three merge-tail failures / a lane that gave up> — one line each, with the link
+- <secret-scanning alert / red baseline / broken updater / a lane that gave up> — one line each, with the link
 
 ## Opened
 
@@ -662,7 +650,7 @@ section is non-empty, also send one `PushNotification` with its first line.
 ## Pipeline
 
 - Dependabot Updates: 5 failures / 7d — 4 structural (transitive, Lane 1 fixed), 1 cosmetic (knip, minimumReleaseAge)
-- lockfile repair: present on #1847 · merge-tail: last 3 green
+- lockfile repair: present on #1847
 ```
 
 `check` and `audit` print only the sections they computed. `plan` /

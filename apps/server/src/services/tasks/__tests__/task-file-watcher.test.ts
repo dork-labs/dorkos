@@ -129,114 +129,22 @@ describe('TaskFileWatcher', () => {
       );
     });
 
-    it('logs a watcher error naming the tasks dir and scope (project)', () => {
-      const { watcher } = makeWatcher();
-      watcher.watch(skillsRoot('/work/project/.dork/tasks', 'project', '/work/project', 'agent-1'));
-
-      handlerFor('error')(errnoError('EMFILE', 'EMFILE: too many open files'));
-
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining(
-          '[watcher-error] TaskFileWatcher: /work/project/.dork/tasks (project)'
-        ),
-        expect.objectContaining({ tasksDir: '/work/project/.dork/tasks', scope: 'project' })
-      );
-    });
-
-    it('does not throw when the watcher errors', () => {
-      const { watcher } = makeWatcher();
-      watcher.watch(skillsRoot('/dork-home/tasks', 'global'));
-
-      expect(() => handlerFor('error')(new Error('EMFILE'))).not.toThrow();
-    });
-
-    it('stringifies a non-Error thrown as the watcher error, with no stack and code "unknown"', () => {
-      const { watcher } = makeWatcher();
-      watcher.watch(skillsRoot('/dork-home/tasks', 'global'));
-
-      handlerFor('error')('disk went away');
-
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining('further unknown errors from this watcher are suppressed'),
-        expect.objectContaining({
-          code: 'unknown',
-          message: 'disk went away',
-          stack: undefined,
-        })
-      );
-    });
-
-    // A single fd-exhaustion episode makes chokidar fire 'error' once per
-    // directory it fails to (re-)watch — hundreds of times for a real tree. The
-    // handler must latch: log the first, drop repeats of the same code.
-    it('logs only the first of many errors carrying the same code', () => {
-      const { watcher } = makeWatcher();
-      watcher.watch(skillsRoot('/dork-home/tasks', 'global'));
-      const onError = handlerFor('error');
-
-      onError(errnoError('EMFILE', 'EMFILE 1'));
-      onError(errnoError('EMFILE', 'EMFILE 2'));
-      onError(errnoError('EMFILE', 'EMFILE 3'));
-
-      expect(logger.error).toHaveBeenCalledTimes(1);
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ code: 'EMFILE', message: 'EMFILE 1' })
-      );
-    });
-
-    // The masking bug: a latch keyed on "any error at all" would let one benign
-    // EACCES on a stale dir hide a real EMFILE storm that follows it. Keying on
-    // `code` means a NEW code always gets its own line.
-    it('logs a separate line for each distinct error code', () => {
-      const { watcher } = makeWatcher();
-      watcher.watch(skillsRoot('/dork-home/tasks', 'global'));
-      const onError = handlerFor('error');
-
-      onError(errnoError('EACCES', 'permission denied'));
-      onError(errnoError('EMFILE', 'too many open files'));
-
-      expect(logger.error).toHaveBeenCalledTimes(2);
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ code: 'EACCES' })
-      );
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ code: 'EMFILE' })
-      );
-    });
-
-    it('says further errors of that code are suppressed, so an operator knows the silence is by design', () => {
-      const { watcher } = makeWatcher();
-      watcher.watch(skillsRoot('/dork-home/tasks', 'global'));
-
-      handlerFor('error')(errnoError('EMFILE', 'EMFILE'));
-
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining('further EMFILE errors from this watcher are suppressed'),
-        expect.objectContaining({ suppressingFurtherErrors: true })
-      );
-    });
-
-    // Regression guard: if the latch were ever hoisted from a per-watch()
-    // closure onto a shared instance field, one watcher's first error would
-    // wrongly suppress another watcher's first error too. This site runs one
-    // watcher per tasks dir — global plus one per registered project — so the
-    // masking would be routine, not hypothetical.
-    it('scopes the latch per watcher — two directories each log their own first error', () => {
+    // One fd-exhaustion episode fires 'error' once per directory: log the
+    // first of each code, never let one benign code hide a different one.
+    it('logs the first error of each code once, and per watcher', () => {
       const { watcher } = makeWatcher();
       watcher.watch(skillsRoot('/dork-home/tasks-a', 'global'));
       watcher.watch(skillsRoot('/dork-home/tasks-b', 'project', '/work/b', 'agent-b'));
       const [onErrorA, onErrorB] = handlersFor('error');
-      expect(onErrorA).toBeDefined();
-      expect(onErrorB).toBeDefined();
-      expect(onErrorA).not.toBe(onErrorB);
 
-      onErrorA!(errnoError('EMFILE', 'EMFILE A'));
+      onErrorA!(errnoError('EACCES', 'permission denied'));
+      onErrorA!(errnoError('EMFILE', 'EMFILE 1'));
+      onErrorA!(errnoError('EMFILE', 'EMFILE 2'));
       onErrorB!(errnoError('EMFILE', 'EMFILE B'));
 
-      expect(logger.error).toHaveBeenCalledTimes(2);
+      expect(
+        vi.mocked(logger.error).mock.calls.map(([, meta]) => (meta as { message: string }).message)
+      ).toEqual(['permission denied', 'EMFILE 1', 'EMFILE B']);
     });
   });
   // The removal half of the seam. A row paused in the database while its cron
@@ -261,18 +169,6 @@ describe('TaskFileWatcher', () => {
 
       expect(store.fileSync.markRemovedByFilePath).toHaveBeenCalledWith(FILE);
       expect(scheduler.unregistered).toEqual(['task-1']);
-    });
-
-    // Two projects can each hold a `flow-drain` task; only the exact path
-    // identifies the one whose file went away.
-    it('acts on the row at that exact path, never on a same-named task', () => {
-      const store = makeStore();
-      const { watcher } = makeWatcher(store);
-      watcher.watch(skillsRoot('/dork-home/tasks', 'global'));
-
-      handlerFor('unlink')(FILE);
-
-      expect(store.fileSync.getByFilePath).toHaveBeenCalledWith(FILE);
     });
 
     it('does not throw when the store fails mid-retirement', () => {

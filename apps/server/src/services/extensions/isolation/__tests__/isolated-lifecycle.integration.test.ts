@@ -5,6 +5,7 @@
  * log, and a malformed, oversized or flooding channel is dropped rather than
  * acted on. DorkOS (this test process) keeps running through all of it.
  */
+import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { IsolatedExit } from '../isolated-host.js';
 import {
@@ -20,6 +21,35 @@ import {
 function stallHost(ms: number): void {
   // Block this event loop without burning a core on the shared machine.
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Wait until the child answers a probe sent after everything it has already
+ * been asked to send. The channel is ordered, so one answer proves every
+ * earlier message from the child has been read (and kept or dropped). A probe
+ * whose answer lands in a second that is already over the cap is dropped, so
+ * this keeps asking until one gets through.
+ *
+ * @param host - A started host.
+ * @param budgetMs - How long to keep asking.
+ * @returns How long it took, in milliseconds.
+ */
+async function drained(host: ReturnType<typeof makeHost>, budgetMs: number): Promise<number> {
+  const started = Date.now();
+  let answered = false;
+  while (!answered) {
+    if (Date.now() - started > budgetMs) {
+      throw new Error(`the child did not answer a probe within ${budgetMs} ms`);
+    }
+    void host.probe('argvFlags').then(
+      () => {
+        answered = true;
+      },
+      () => {}
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return Date.now() - started;
 }
 
 /** Resolve with the first exit a host reports. */
@@ -186,13 +216,25 @@ describe('isolated child failures (real child processes)', () => {
   // Purpose: a child flooding the channel has the excess dropped within the
   // second, once logged, and is not killed for it (anything it sent past the
   // cap, its own replies included, is lost: that is its own doing).
-  it('drops a message flood past the per-second cap', async () => {
-    const host = makeHost(h, { id: 'flood' });
-    await startOk(host);
-    // Not awaited: its own reply arrives after the flood and is dropped with it.
-    void host.probe('floodMessages', 20_000).catch(() => {});
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    expect(h.logs.filter((l) => l.message.includes('too many messages'))).toHaveLength(1);
-    expect(host.running).toBe(true);
-  });
+  //
+  // It waits for the flood to be READ rather than for a fixed time: on a slow
+  // runner (the Windows CI leg) 20,000 messages are not all through the pipe
+  // after half a second, and the old fixed sleep read an empty log (DOR-4888).
+  // A slow pipe can also spread the flood over more than one second, and each
+  // second over the cap logs once, so the bound is one line per second it took.
+  it(
+    'drops a message flood past the per-second cap',
+    async () => {
+      const host = makeHost(h, { id: 'flood' });
+      await startOk(host);
+      // Not awaited: its own reply arrives after the flood and is dropped with it.
+      void host.probe('floodMessages', 20_000).catch(() => {});
+      const tookMs = await drained(host, loadScaledMs(10_000));
+      const warnings = h.logs.filter((l) => l.message.includes('too many messages'));
+      expect(warnings.length).toBeGreaterThanOrEqual(1);
+      expect(warnings.length).toBeLessThanOrEqual(Math.ceil(tookMs / 1_000) + 1);
+      expect(host.running).toBe(true);
+    },
+    Math.min(60_000, loadCeilingMs(12_000))
+  );
 });

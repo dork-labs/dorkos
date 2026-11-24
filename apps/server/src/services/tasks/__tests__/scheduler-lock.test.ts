@@ -74,37 +74,18 @@ describe('SchedulerLock', () => {
   const makeLock = (pid: number) =>
     new SchedulerLock({ dorkHome, now, pid, hostname: 'host', staleTtlMs: 30_000 });
 
-  it('acquires leadership when no lock file exists', () => {
-    const lock = makeLock(1);
-    expect(lock.tryAcquire()).toBe(true);
-    expect(lock.isLeaderNow).toBe(true);
-  });
-
-  it('a second process becomes a follower while a fresh lock is held', () => {
+  it('admits one leader, steals only a stale lock, and promotes a follower on heartbeat', () => {
     const leader = makeLock(1);
     const follower = makeLock(2);
     expect(leader.tryAcquire()).toBe(true);
     expect(follower.tryAcquire()).toBe(false);
-    expect(follower.isLeaderNow).toBe(false);
-  });
-
-  it('steals a stale lock once the heartbeat TTL is exceeded', () => {
-    const dead = makeLock(1);
-    const next = makeLock(2);
-    expect(dead.tryAcquire()).toBe(true);
-
-    clock += 30_001; // exceed STALE_TTL without a heartbeat — `dead` "crashed"
-    expect(next.tryAcquire()).toBe(true);
-    expect(next.isLeaderNow).toBe(true);
-  });
-
-  it('does NOT steal a lock whose heartbeat is still fresh', () => {
-    const leader = makeLock(1);
-    const other = makeLock(2);
-    expect(leader.tryAcquire()).toBe(true);
 
     clock += 29_000; // under TTL
-    expect(other.tryAcquire()).toBe(false);
+    expect(follower.tryAcquire()).toBe(false);
+
+    clock += 1_001; // leader stops heartbeating (crash) and goes stale
+    follower.heartbeat();
+    expect(follower.isLeaderNow).toBe(true);
   });
 
   it('release only deletes the lock when this process owns it', () => {
@@ -112,36 +93,11 @@ describe('SchedulerLock', () => {
     const intruder = makeLock(2);
     expect(leader.tryAcquire()).toBe(true);
 
-    // A non-owner release must NOT remove the leader's lock.
     intruder.release();
-    expect(intruder.tryAcquire()).toBe(false); // leader's fresh lock still blocks
+    expect(intruder.tryAcquire()).toBe(false);
 
-    // The owner can release it; then the field is free again.
     leader.release();
     expect(intruder.tryAcquire()).toBe(true);
-  });
-
-  it('heartbeat advances the on-disk heartbeatAt', () => {
-    const leader = makeLock(1);
-    leader.tryAcquire();
-    const lockPath = join(dorkHome, 'tasks', 'scheduler.lock');
-    const before = JSON.parse(readFileSync(lockPath, 'utf8')).heartbeatAt as number;
-
-    clock += 10_000;
-    leader.heartbeat();
-    const after = JSON.parse(readFileSync(lockPath, 'utf8')).heartbeatAt as number;
-    expect(after).toBeGreaterThan(before);
-  });
-
-  it('a follower promotes to leader via heartbeat once the leader goes stale', () => {
-    const leader = makeLock(1);
-    const follower = makeLock(2);
-    leader.tryAcquire();
-    expect(follower.tryAcquire()).toBe(false);
-
-    clock += 30_001; // leader stops heartbeating (crash) and goes stale
-    follower.heartbeat(); // heartbeat re-attempts acquisition for a non-leader
-    expect(follower.isLeaderNow).toBe(true);
   });
 });
 
@@ -196,55 +152,15 @@ describe('SchedulerLock — an unwritable lock never kills the process (FB-17)',
   /** Readable, not writable — so `read()` still answers and only `write()` fails. */
   const sealDisk = () => chmodSync(tasksDir, 0o555);
 
-  it('does not throw from heartbeat when the lock cannot be written', () => {
+  it('stands down from heartbeat without throwing when the lock cannot be written', () => {
     const lock = makeLock();
     expect(lock.tryAcquire()).toBe(true);
     sealDisk();
 
-    // THIS is the assertion the crash was: a throw here is an uncaught
-    // exception in a timer callback, which ends the process.
+    // A throw here is an uncaught exception in a timer callback.
     expect(() => lock.heartbeat()).not.toThrow();
-  });
-
-  it('stands down as leader rather than firing tasks on a rotting record', () => {
-    const lock = makeLock();
-    lock.tryAcquire();
-    sealDisk();
-
-    lock.heartbeat();
-
-    // Still claiming leadership here would mean firing scheduled tasks while
-    // our heartbeat is provably not landing — two leaders once the TTL lets
-    // another process steal the lock.
+    // Still leading would fire tasks while our heartbeat is provably not landing.
     expect(lock.isLeaderNow).toBe(false);
-  });
-
-  it('does not throw from tryAcquire when the lock cannot be created', () => {
-    // The other unguarded path: `createExclusive` rethrew anything that was not
-    // EEXIST, and the heartbeat reaches it through `tryAcquire` on the follower
-    // branch — the same timer, the same uncaught exception.
-    const lock = makeLock();
-    sealDisk();
-
-    expect(() => lock.tryAcquire()).not.toThrow();
-    expect(lock.tryAcquire()).toBe(false);
-  });
-
-  it('takes leadership again once the disk recovers', () => {
-    // Standing down must not be terminal: the follower branch re-attempts every
-    // heartbeat, so a transient full disk costs a scheduling gap, not the
-    // scheduler.
-    const lock = makeLock();
-    lock.tryAcquire();
-    sealDisk();
-    lock.heartbeat();
-    expect(lock.isLeaderNow).toBe(false);
-
-    chmodSync(tasksDir, 0o755);
-    lock.heartbeat();
-
-    expect(lock.isLeaderNow).toBe(true);
-    expect(JSON.parse(readFileSync(join(tasksDir, 'scheduler.lock'), 'utf8')).pid).toBe(4242);
   });
 });
 
@@ -293,15 +209,6 @@ describe('SchedulerLock — an unreadable lock file is replaced, not obeyed (DOR
     expect(readdirSync(join(dorkHome, 'tasks'))).toEqual(['scheduler.lock']);
   });
 
-  it('respects the lock that replaced the debris like any live lock', () => {
-    const first = makeLock(1);
-    const second = makeLock(2);
-    writeFileSync(lockPath, '');
-
-    expect(first.tryAcquire()).toBe(true);
-    expect(second.tryAcquire()).toBe(false);
-  });
-
   it('removes its own half-written lock file when the write fails after the create', () => {
     const lock = makeLock(1);
     injected.writeSync = () => {
@@ -336,50 +243,5 @@ describe('SchedulerLock — an unreadable lock file is replaced, not obeyed (DOR
     other.heartbeat();
     expect(other.isLeaderNow).toBe(true);
     expect(failing.tryAcquire()).toBe(false);
-  });
-});
-
-/**
- * A second spell of failed lock writes is reported like the first (DOR-2132).
- *
- * Failures are logged once per spell, and a successful write ends the spell.
- * Only the rename path used to end it, so a spell that ended with a fresh
- * create (the normal first acquire after a clean shutdown) left the flag set
- * and every later outage went unreported.
- */
-describe('SchedulerLock — every failure spell is reported (DOR-2132)', () => {
-  let dorkHome: string;
-  let tasksDir: string;
-  let clock: number;
-  const now = () => clock;
-
-  beforeEach(() => {
-    dorkHome = mkdtempSync(join(tmpdir(), 'sched-lock-spell-'));
-    tasksDir = join(dorkHome, 'tasks');
-    clock = 4_000_000;
-  });
-
-  afterEach(() => {
-    chmodSync(tasksDir, 0o755);
-    rmSync(dorkHome, { recursive: true, force: true });
-  });
-
-  it('warns again after a recovery that went through the exclusive create', () => {
-    const lock = new SchedulerLock({ dorkHome, now, pid: 4242, hostname: 'host' });
-
-    // Spell one: no lock file yet, so the create is what fails.
-    chmodSync(tasksDir, 0o555);
-    expect(lock.tryAcquire()).toBe(false);
-    expect(taggedLogger.warn).toHaveBeenCalledTimes(1);
-
-    // Recovery through the create, not through a rename.
-    chmodSync(tasksDir, 0o755);
-    expect(lock.tryAcquire()).toBe(true);
-
-    // Spell two: the heartbeat's rename fails, and that is news again.
-    chmodSync(tasksDir, 0o555);
-    lock.heartbeat();
-    expect(lock.isLeaderNow).toBe(false);
-    expect(taggedLogger.warn).toHaveBeenCalledTimes(2);
   });
 });

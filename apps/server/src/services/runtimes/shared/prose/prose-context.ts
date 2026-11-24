@@ -14,6 +14,7 @@ import { formatDirectNotes } from './direct-notes-block.js';
 import { formatSeedContext } from '../seed-context-block.js';
 import { formatStagedContext } from '../staged-context-block.js';
 import { formatTurnCutoff } from '../../../session/turn-cutoff/turn-cutoff.js';
+import { formatTimersStopped } from '../../../session/turn-cutoff/timers-stopped.js';
 import { formatNewSince } from './new-since-block.js';
 import {
   formatEnv,
@@ -41,6 +42,7 @@ export type ProseContextEntry = Extract<
       | 'approval_verdict'
       | 'direct_notes'
       | 'turn_cutoff'
+      | 'timers_stopped'
       | 'new_since_last_run';
   }
 >;
@@ -71,6 +73,8 @@ export function formatProseContext(entry: ProseContextEntry): string {
       return formatDirectNotes(entry.data);
     case 'turn_cutoff':
       return formatTurnCutoff(entry.data);
+    case 'timers_stopped':
+      return formatTimersStopped(entry.data);
     case 'new_since_last_run':
       return formatNewSince(entry.data);
   }

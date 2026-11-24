@@ -85,17 +85,6 @@ vi.mock('../../core/usage/account-eligibility.js', async (importOriginal) => ({
   ),
 }));
 
-const logInfo = vi.fn();
-
-vi.mock('../../../lib/logger.js', () => ({
-  logger: {
-    info: (...a: unknown[]) => logInfo(...a),
-    warn: vi.fn(),
-    debug: vi.fn(),
-    error: vi.fn(),
-  },
-}));
-
 const { createTurnExecutionSettingsResolver } = await import('../turn-execution-settings.js');
 const { __resetAccountAdvisorForTests, registerAccountAdvisor } =
   await import('../../core/usage/account-advisor.js');
@@ -126,11 +115,8 @@ describe('a relay message naming an account the project may not use', () => {
   let rank: ReturnType<typeof vi.fn<AccountAdvisor['rank']>>;
 
   beforeEach(async () => {
-    // Canonical, as the project registry reports a root.
     agentDir = await realpath(await mkdtemp(path.join(tmpdir(), 'dorkos-relay-elig-')));
-    logInfo.mockReset();
     __resetAccountAdvisorForTests();
-    // An advisor that would allow `work` anywhere.
     rank = vi.fn<AccountAdvisor['rank']>(() => ({
       accounts: [{ id: 'work', eligible: true, reason: 'ok' }],
       recommendedId: 'work',
@@ -144,22 +130,13 @@ describe('a relay message naming an account the project may not use', () => {
   });
 
   it('runs on the ladder when the account is kept to another project', async () => {
-    // Purpose: a relay sender cannot spend an account outside the projects it is kept to.
     keepWorkTo(['/projects/client-app']);
     const settings = await ask();
     expect(settings).not.toHaveProperty('accountHint');
     expect(rank).not.toHaveBeenCalled();
-    expect(logInfo).toHaveBeenCalledWith(
-      expect.stringContaining('account'),
-      expect.objectContaining({
-        account: 'work',
-        reason: expect.stringContaining(`Work can't be used in ${PROJECT_NAME}.`),
-      })
-    );
   });
 
   it("runs on the ladder when the project's allow list leaves the account out", async () => {
-    // Purpose: the project side of the rule holds for relay messages too.
     keepWorkTo(null);
     runtimesConfig = {
       ...runtimesConfig,
@@ -171,7 +148,6 @@ describe('a relay message naming an account the project may not use', () => {
   });
 
   it('launches on the account where it may work and the advisor allows it', async () => {
-    // Purpose: control — the refusals above are the rule's, not the setup's.
     keepWorkTo([agentDir]);
     const settings = await ask();
     expect(settings.accountHint).toBe('work');

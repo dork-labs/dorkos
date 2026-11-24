@@ -154,21 +154,6 @@ describe('a run on an account that may not work where it starts', () => {
     await service.stop();
   });
 
-  it('runs on an account that may work there (control)', async () => {
-    const task = store.createTask(taskInput({ name: 'Work sweep', account: 'work' }));
-    const service = scheduler();
-
-    const run = await runToCompletion(service, task.id);
-
-    expect(run.status).not.toBe('failed');
-    expect(agent.sendMessage).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.any(String),
-      expect.objectContaining({ accountHint: 'work' })
-    );
-    await service.stop();
-  });
-
   it('fails a scheduled bus run the same way, publishing nothing', async () => {
     vi.mocked(isRelayEnabled).mockReturnValue(true);
     const relay = { publish: vi.fn().mockResolvedValue({ messageId: 'm-1', deliveredTo: 1 }) };

@@ -64,6 +64,7 @@ function namedChangeOf(body: unknown, taskId: string): NamedChange | null {
     ...(payload.modeChange?.at ? { modeAt: payload.modeChange.at } : {}),
     ...(payload.promptChange?.at ? { promptAt: payload.promptChange.at } : {}),
     ...(payload.fileChange?.kind === 'lifted' ? { fileLiftAt: payload.fileChange.at } : {}),
+    ...(payload.accountChange?.at ? { accountAt: payload.accountChange.at } : {}),
   };
   return Object.keys(named).length > 0 ? named : null;
 }

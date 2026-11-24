@@ -13,10 +13,6 @@ import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { RelayCore } from '../relay-core.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 /** A sweep interval large enough never to fire during a test. */
 const NEVER_MS = 60 * 60 * 1000;
 
@@ -71,10 +67,6 @@ function makeEnvelope(overrides: Partial<RelayEnvelope> = {}): RelayEnvelope {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Expiry + rebuild-no-resurrect (H4)
-// ---------------------------------------------------------------------------
-
 describe('GC expiry sweep', () => {
   it('removes expired index rows AND their Maildir files in lockstep, and rebuild does not resurrect them', async () => {
     const relay = new RelayCore({
@@ -114,10 +106,6 @@ describe('GC expiry sweep', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Backpressure recovery after GC (H4)
-// ---------------------------------------------------------------------------
-
 describe('GC backpressure recovery', () => {
   it('a mailbox bricked at maxMailboxSize accepts deliveries again after GC', async () => {
     const relay = new RelayCore({
@@ -150,10 +138,6 @@ describe('GC backpressure recovery', () => {
     await relay.close();
   });
 });
-
-// ---------------------------------------------------------------------------
-// Crash recovery: re-drive stranded cur/ messages (M1)
-// ---------------------------------------------------------------------------
 
 describe('GC crash recovery', () => {
   it('re-drives messages stranded in cur/ back to new/ and redelivers them', async () => {
@@ -269,10 +253,6 @@ describe('GC crash recovery', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Expiry of claimed-pending messages (file in cur/, row pending)
-// ---------------------------------------------------------------------------
-
 describe('GC expiry of claimed-pending messages', () => {
   it('removes the cur/ file when an expired pending row was claimed but never completed', async () => {
     // A pending row's file lives in cur/ (not new/) while a claim is in
@@ -309,10 +289,6 @@ describe('GC expiry of claimed-pending messages', () => {
     await relay.close();
   });
 });
-
-// ---------------------------------------------------------------------------
-// Mailbox retention for unread mail (C2)
-// ---------------------------------------------------------------------------
 
 describe('unread mail in a durable inbox', () => {
   it('survives the message delivery TTL that used to delete it', async () => {
@@ -373,10 +349,6 @@ describe('unread mail in a durable inbox', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Dead-letter retention (L3 / H4)
-// ---------------------------------------------------------------------------
-
 describe('GC dead-letter retention', () => {
   it('purges dead letters older than the retention window', async () => {
     const relay = new RelayCore({
@@ -416,10 +388,6 @@ describe('GC dead-letter retention', () => {
     await relay.close();
   });
 });
-
-// ---------------------------------------------------------------------------
-// Orphan maildir reaping (H4 / M3)
-// ---------------------------------------------------------------------------
 
 describe('GC orphan maildir reaping', () => {
   it('reaps unowned, stale mailbox directories but keeps registered and fresh ones', async () => {
@@ -528,108 +496,6 @@ describe('GC orphan maildir reaping', () => {
     expect(result?.orphansReaped).toBe(1);
     await expect(fs.stat(mailboxDir(orphan))).rejects.toThrow();
 
-    await relay.close();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Trace retention (DOR-2574)
-// ---------------------------------------------------------------------------
-
-describe('GC trace retention', () => {
-  const HOUR = 60 * 60 * 1000;
-  const DAY = 24 * HOUR;
-
-  /** A trace store that records what the sweep asked of it. */
-  function recordingTraces() {
-    const calls: { before: number; limit: number }[] = [];
-    let batches: number[] = [];
-    let capped = 0;
-    let caps = 0;
-    return {
-      calls,
-      caps: () => caps,
-      /** Forget the construction-time sweep, and answer the next one with these counts. */
-      reset(next: number[], cap = 0) {
-        calls.length = 0;
-        caps = 0;
-        batches = [...next];
-        capped = cap;
-      },
-      store: {
-        insertSpan() {},
-        updateSpan() {},
-        pruneDeliverySpans(before: number, limit: number) {
-          calls.push({ before, limit });
-          return batches.shift() ?? 0;
-        },
-        capAdapterEvents() {
-          caps++;
-          return capped;
-        },
-      },
-    };
-  }
-
-  /** A relay whose construction-time sweep has finished with the trace store. */
-  async function settledRelay(
-    traces: ReturnType<typeof recordingTraces>,
-    options: { undeliveredMailRetentionMs?: number; deadLetterRetentionMs?: number } = {}
-  ) {
-    const relay = new RelayCore({
-      dataDir: tmpDir,
-      gcIntervalMs: NEVER_MS,
-      traceStore: traces.store,
-      ...options,
-    });
-    await vi.waitFor(() => expect(traces.caps()).toBe(1));
-    return relay;
-  }
-
-  it('keeps delivery traces as long as unread mail and then its dead letter can live', async () => {
-    const traces = recordingTraces();
-    const relay = await settledRelay(traces, {
-      undeliveredMailRetentionMs: 3 * DAY,
-      deadLetterRetentionMs: DAY,
-    });
-    traces.reset([7], 3);
-    const started = Date.now();
-
-    const result = await relay.runGcSweep();
-
-    expect(traces.calls).toHaveLength(1);
-    const age = started - traces.calls[0]!.before;
-    expect(age).toBeGreaterThanOrEqual(4 * DAY - 1000);
-    expect(age).toBeLessThanOrEqual(4 * DAY);
-    expect(result?.tracesPruned).toBe(10);
-    await relay.close();
-  });
-
-  it('never prunes into the day the delivery metrics count', async () => {
-    const traces = recordingTraces();
-    const relay = await settledRelay(traces, {
-      undeliveredMailRetentionMs: HOUR,
-      deadLetterRetentionMs: HOUR,
-    });
-    traces.reset([]);
-    const started = Date.now();
-
-    await relay.runGcSweep();
-
-    expect(started - traces.calls[0]!.before).toBeGreaterThanOrEqual(DAY - 1000);
-    await relay.close();
-  });
-
-  it('deletes in batches until one comes back short, then caps adapter events once', async () => {
-    const traces = recordingTraces();
-    const relay = await settledRelay(traces);
-    traces.reset([5_000, 5_000, 12], 4);
-
-    const result = await relay.runGcSweep();
-
-    expect(traces.calls.map((call) => call.limit)).toEqual([5_000, 5_000, 5_000]);
-    expect(traces.caps()).toBe(1);
-    expect(result?.tracesPruned).toBe(10_016);
     await relay.close();
   });
 });

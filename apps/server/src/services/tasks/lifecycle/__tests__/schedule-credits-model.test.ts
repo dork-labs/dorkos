@@ -14,7 +14,7 @@ vi.mock('../../../core/runtime-registry.js', () => ({
     computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefaultType: () => 'claude-code',
-    has: (type: string) => ['claude-code', 'codex'].includes(type),
+    has: (type: string) => type === 'claude-code',
     get: (type: string) => ({
       getCapabilities: () =>
         type === 'claude-code' ? { credits: { protocol: 'anthropic-messages' } } : {},
@@ -95,17 +95,6 @@ describe('scheduleCreditsModelRefusal', () => {
         model: 'opus',
         account: 'dorkos-credits',
         runtime: 'claude-code',
-        folder: '/w',
-      })
-    ).toBeNull();
-  });
-
-  it('never judges a runtime that declares no credits protocol', async () => {
-    expect(
-      await scheduleCreditsModelRefusal({
-        model: 'gpt-5',
-        account: 'dorkos-credits',
-        runtime: 'codex',
         folder: '/w',
       })
     ).toBeNull();

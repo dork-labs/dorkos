@@ -530,11 +530,19 @@ chore(release): vX.Y.Z
 EOF
 )"
 git push -u origin release/vX.Y.Z
-gh pr create --title "chore(release): vX.Y.Z" --label skip-changelog --body "Release vX.Y.Z"
-gh pr merge --auto <n>
+
+# Verify BEFORE opening: open-pr.sh turns on auto-merge at open, and the
+# version-bump PR has no CI test run (`tests: false`), so nothing else would
+# wait for this proof.
+pnpm heavy pnpm verify    # release row first; must pass at this exact head
+# If the release pins a commit, set the freeze now (see "Pinned commit" below).
+
+printf 'Release vX.Y.Z\n' > "$TMPDIR/release-body.md"
+scripts/open-pr.sh --title "chore(release): vX.Y.Z" --body-file "$TMPDIR/release-body.md" --extra-label skip-changelog
+# open-pr.sh turns on auto-merge at open; nobody arms it (contributing/ci.md, "Merging")
 ```
 
-The version-bump PR has no CI test run (`tests: false`), so arm.sh won't count CI as green. Run local `pnpm verify` via heavy.sh at the PR head (release row first) and arm on that proof. No PM waiver.
+Post the `pnpm verify` result on the PR. No PM waiver.
 
 **Do NOT tag yet** — the queue squashes, so the tag must go on the merged SHA.
 Two traps while the PR is in flight: blog images must use **relative** paths
@@ -550,16 +558,21 @@ may merge between that commit and the release PR, or the squash carries
 unverified code. `publish:cli` refuses a commit that is not on `main` (6.10), so
 tagging a side-branch commit is not a way around it. Instead:
 
-1. Before arming the release PR, take every other PR out of the queue: put
-   `hold` on each armed or queued PR and disarm it (`gh pr merge --disable-auto
-<n>`; a PR already in the queue needs the GraphQL `dequeuePullRequest`).
-   Save the list.
-2. Keep guarding while the release PR is in the queue: anything armed in the
-   meantime gets the same `hold`.
-3. **The queue stays frozen until npm is curl-verified** (6.10:
+1. **Before the release PR opens**, a maintainer freezes everything:
+   `gh variable set MERGE_FREEZE --body "- release vX.Y.Z"`. Setting the
+   variable starts no run, so a `release-window` check that is already green
+   stays green: a PR already queued can still land.
+2. **Wait for the queue to drain** (or dequeue what is ahead of it): the
+   release must go into the queue alone (`release-window` rule 2).
+3. Open the release PR, then name it in the freeze so only it may merge:
+   `gh variable set MERGE_FREEZE --body "<n> release vX.Y.Z"`. Leave it set while the
+   release PR is in the queue.
+4. **The queue stays frozen until npm is curl-verified** (6.10:
    `curl -sf https://registry.npmjs.org/dorkos/X.Y.Z` returns 200). Tagging is
    not the end of the freeze, and neither is starting the publish.
-4. Only then take `hold` off and re-arm the saved list. A harness or CI fix
+5. Only then clear it (`gh variable delete MERGE_FREEZE`) and run
+   `gh workflow run release-window-refresh.yml`, which re-runs the failed
+   `release-window` checks so the held PRs merge on their own. A harness or CI fix
    that turns a red check green goes first, so the next results mean
    something.
 

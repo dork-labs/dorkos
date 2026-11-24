@@ -373,6 +373,12 @@ const TURN_BLOCK_SPECS = {
     'state',
     'When the last turn was stopped early.'
   ),
+  timers_stopped: turn(
+    'Timers stopped',
+    'session/turn-cutoff/timers-stopped.ts',
+    'state',
+    'When DorkOS ended the chat’s process with a timer pending.'
+  ),
   new_since_last_run: turn(
     'New since last run',
     'session/new-since/turn-note.ts',

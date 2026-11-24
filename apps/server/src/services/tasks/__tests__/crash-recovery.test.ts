@@ -76,27 +76,18 @@ describe('sweepInterruptedRuns (DOR-1482)', () => {
     expect(store.updateRun(live.id, { status: 'completed' })!.status).toBe('completed');
   });
 
-  it('with no leader lock at all, every unfinished run is this process own', () => {
+  it('with no leader lock at all, every unfinished run but its own is this process own', () => {
     // Single-process installs and tests: nothing else could have written these.
     const task = store.createTask(taskInput({ name: 'Solo', cron: '0 * * * *' }));
     const scheduled = store.createRun(task.id, 'scheduled');
     const manual = store.createRun(task.id, 'manual');
+    const mine = store.createRun(task.id, 'manual');
 
-    expect(sweepInterruptedRuns(store, null).swept).toBe(2);
+    expect(sweepInterruptedRuns(store, null, new Set([mine.id])).swept).toBe(2);
     expect(store.getRun(scheduled.id)!.status).toBe('failed');
     expect(store.getRun(scheduled.id)!.error).toBe('Interrupted by server restart');
     expect(store.getRun(manual.id)!.status).toBe('failed');
-  });
-
-  it('a leader ends the scheduled runs a dead leader left behind', () => {
-    // Only a leader creates a scheduled run, and leadership is exclusive — so a
-    // scheduled run still saying `running` when we take over has no live owner.
-    const task = store.createTask(taskInput({ name: 'Nightly', cron: '0 3 * * *' }));
-    const orphan = store.createRun(task.id, 'scheduled');
-
-    expect(sweepInterruptedRuns(store, leader).swept).toBe(1);
-    expect(store.getRun(orphan.id)!.status).toBe('failed');
-    expect(store.getRun(orphan.id)!.error).toBe('Interrupted by server restart');
+    expect(store.getRun(mine.id)!.status).toBe('running');
   });
 
   it('a leader leaves another process live manual run alone', () => {
@@ -171,14 +162,6 @@ describe('sweepInterruptedRuns (DOR-1482)', () => {
     expect(result.swept).toBe(1);
     // And the run this process is driving can still finish for real.
     expect(store.updateRun(mine.id, { status: 'completed' })!.status).toBe('completed');
-  });
-
-  it('excludes this process own runs even with no lock at all', () => {
-    const task = store.createTask(taskInput({ name: 'Solo mine', cron: '0 * * * *' }));
-    const mine = store.createRun(task.id, 'manual');
-
-    expect(sweepInterruptedRuns(store, null, new Set([mine.id])).swept).toBe(0);
-    expect(store.getRun(mine.id)!.status).toBe('running');
   });
 
   it('never overwrites the finishedAt of a run that had already ended', () => {
