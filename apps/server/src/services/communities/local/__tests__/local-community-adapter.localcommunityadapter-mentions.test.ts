@@ -1,10 +1,6 @@
 import { AGENT_PATH, OTHER_AGENT_PATH, setup, seed } from './local-community-adapter.fixtures.js';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  CommunityRoomNotFoundError,
-  LOCAL_COMMUNITY,
-  type CommunityRoomListEvent,
-} from '@dorkos/shared/community-adapter';
+import { LOCAL_COMMUNITY, type CommunityRoomListEvent } from '@dorkos/shared/community-adapter';
 import { type RoomHarness } from '../../../rooms/__tests__/room-test-harness.js';
 import { LocalCommunityAdapter } from '../local-community-adapter.js';
 

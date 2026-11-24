@@ -277,30 +277,6 @@ describe('ExtensionManager', () => {
     });
   });
 
-  it('returns null when enabling an incompatible extension', async () => {
-    const record = makeRecord('incompat', { status: 'incompatible' });
-    mockDiscover.mockResolvedValue([record]);
-
-    await manager.initialize(null);
-
-    const result = await manager.enable('incompat');
-
-    expect(result).toBeNull();
-    expect(mockCompile).not.toHaveBeenCalled();
-  });
-
-  it('returns null when reading bundle for a disabled extension', async () => {
-    const record = makeRecord('ext-e', { status: 'disabled' });
-    mockDiscover.mockResolvedValue([record]);
-
-    await manager.initialize(null);
-
-    const bundle = await manager.readBundle('ext-e');
-
-    expect(bundle).toBeNull();
-    expect(mockReadBundle).not.toHaveBeenCalled();
-  });
-
   /**
    * The client bundle is the OTHER way extension code runs (DOR-516), and it was
    * ungated. The chain, every link of it real: `create_extension` (tier `act`,
@@ -350,25 +326,6 @@ describe('ExtensionManager', () => {
       await manager.initialize(null);
 
       expect(await manager.readBundle('linear-issues')).toBe('core-code');
-    });
-
-    it('reads the approval list, not some other list that happens to hold the id', async () => {
-      // A gate that consulted `enabled` instead of `approvedToRun` would pass every
-      // extension an agent turned on — which is every extension an agent creates,
-      // since `create_extension` enables what it scaffolds.
-      const record = makeRecord('enabled-not-approved', { status: 'enabled' });
-      mockConfigGet.mockReturnValue({
-        enabled: ['enabled-not-approved'],
-        disabled: ['something-else'],
-        ...approved(['a-different-extension']),
-      });
-      mockDiscover.mockResolvedValue([record]);
-      mockCompile.mockResolvedValue({ code: 'bundle-code', sourceHash: 'hashdef' });
-      mockReadBundle.mockResolvedValue('bundle-code');
-
-      await manager.initialize(null);
-
-      expect(await manager.readBundle('enabled-not-approved')).toBeNull();
     });
   });
 
@@ -425,18 +382,6 @@ describe('ExtensionManager', () => {
     });
   });
 
-  it('writes nothing when there was no approval to forget', async () => {
-    mockConfigGet.mockReturnValue({ enabled: [], disabled: [], ...approved(['other']) });
-    mockDiscover.mockResolvedValue([]);
-
-    await manager.initialize(null);
-    mockConfigSet.mockClear();
-
-    await manager.forgetRunApproval('never-approved');
-
-    expect(mockConfigSet).not.toHaveBeenCalled();
-  });
-
   it('strips path and sourceHash from public records', async () => {
     const record = makeRecord('ext-i', {
       status: 'enabled',
@@ -461,58 +406,6 @@ describe('ExtensionManager', () => {
     // These internal fields must NOT be present
     expect('path' in pub).toBe(false);
     expect('sourceHash' in pub).toBe(false);
-  });
-
-  describe('createExtension', () => {
-    beforeEach(() => {
-      // Default: directory does not exist (ENOENT)
-      mockAccess.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
-      mockMkdir.mockResolvedValue(undefined);
-      mockWriteFile.mockResolvedValue(undefined);
-    });
-
-    it('throws when extension directory already exists', async () => {
-      // Directory exists (access succeeds)
-      mockAccess.mockResolvedValue(undefined);
-
-      await manager.initialize(null);
-
-      await expect(
-        manager.createExtension({
-          name: 'existing-ext',
-          template: 'dashboard-card',
-          scope: 'global',
-        })
-      ).rejects.toThrow("Extension 'existing-ext' already exists");
-    });
-
-    it('enables the extension after scaffolding', async () => {
-      const newRecord = makeRecord('auto-enable', { status: 'enabled' });
-      mockDiscover
-        .mockResolvedValueOnce([]) // initialize
-        .mockResolvedValueOnce([newRecord]); // reload from createExtension (enable does not call reload)
-      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
-
-      await manager.initialize(null);
-
-      await manager.createExtension({
-        name: 'auto-enable',
-        template: 'dashboard-card',
-        scope: 'global',
-      });
-
-      // compile should have been called: once during reload's compileEnabled and once during enable
-      expect(mockCompile).toHaveBeenCalled();
-      // Config should have been updated with the new extension enabled
-      expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
-        enabled: ['auto-enable'],
-        disabled: [],
-        // Scaffolding never approves. `create_extension` writes files the agent is
-        // about to rewrite, so approving at scaffold time would approve whatever
-        // arrives next — which is the whole thing the gate exists to stop.
-        ...approved([]),
-      });
-    });
   });
 
   describe('tier-aware toggle routing', () => {

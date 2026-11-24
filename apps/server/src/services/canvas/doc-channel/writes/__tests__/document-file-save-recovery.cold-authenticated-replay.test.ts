@@ -465,3 +465,38 @@ it('refused close preserves current birth for discovery and proof-only recovery 
   close();
   expect(f.h.rooms.canvasDocuments.lookupIdentity(f.documentId)).toBeUndefined();
 });
+
+it('never selects a newly approved route during historical original receipt recovery', async () => {
+  const f = await setup(),
+    input = f.input();
+  f.fail();
+  await expect(f.save(input)).rejects.toThrow();
+  f.allow();
+  f.h.http.grants.configure(
+    f.documentId,
+    {
+      routes: [
+        {
+          id: 'new-route',
+          on: 'doc.saved',
+          to: 'agent:owner',
+          turn: { mode: 'immediate', maxBatch: 1 },
+        },
+      ],
+    },
+    f.h.actor
+  );
+  const grantInput = {
+    documentId: f.documentId,
+    routeId: 'new-route',
+    allowedTypes: ['doc.saved'],
+    expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+  };
+  const pending = f.h.http.grants.grant(grantInput, f.h.actor);
+  if (pending.kind !== 'approval_required') throw new Error('Expected actual approval');
+  f.h.approvals.grant(pending.ticket.approvalId);
+  f.h.http.grants.grant(grantInput, f.h.actor, pending.ticket.token);
+  await f.recover(input.documentSave.eventId);
+  expect(f.batches()).toHaveLength(0);
+  expect(f.h.http.channels.listDeliveries(f.documentId, input.documentSave.eventId)).toEqual([]);
+});

@@ -8,14 +8,40 @@
  *
  * This module holds the stand-in ctx and the dispatcher setup the suites share.
  */
-import { vi, type Mock } from 'vitest';
+import { vi, type Mock, type MockInstance } from 'vitest';
 import { type DataProviderContext } from '@dorkos/extension-api/server';
 
 import { CtxDispatcher } from '../../ctx-dispatcher.js';
 import type { CtxChildMessage, HostMessage, RetMessage } from '../../ipc-protocol.js';
 
+/** A member of the raw stand-in ctx: a mock, or a group of them. */
+export type RawMember = Mock & { [key: string]: RawMember };
+
+/** The stand-in ctx and the handles a test reaches it through. */
+export interface FakeCtx {
+  ctx: DataProviderContext;
+  raw: Record<string, RawMember>;
+  secrets: { values: Map<string, string>; keys(): Promise<string[]> };
+  keysSpy: MockInstance<() => Promise<string[]>>;
+  listeners: Map<string, Set<(...args: unknown[]) => void>>;
+  fire: (key: string, ...args: unknown[]) => void;
+  listenerCount: () => number;
+  advisor: () => Record<string, (...args: unknown[]) => unknown> | null;
+  onAction: () => ((event: unknown) => unknown) | null;
+}
+
+/** A dispatcher over a fake ctx, with everything it sends recorded. */
+export interface DispatcherSetup extends FakeCtx {
+  dispatcher: CtxDispatcher;
+  sent: HostMessage[];
+  warnings: string[];
+  handle: (m: CtxChildMessage) => void;
+  call: (path: string, args: unknown, id?: number) => Promise<RetMessage>;
+  inFlight: () => number;
+}
+
 /** A ctx whose every member records its calls; listeners and handlers are kept. */
-export function fakeCtx() {
+export function fakeCtx(): FakeCtx {
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
   const listen = (key: string) =>
     vi.fn((listener: (...args: unknown[]) => void) => {
@@ -46,7 +72,7 @@ export function fakeCtx() {
     }
   }
   const secrets = new SecretStore();
-  const keysSpy = vi.spyOn(secrets, 'keys');
+  const keysSpy: MockInstance<() => Promise<string[]>> = vi.spyOn(secrets, 'keys');
   const ctx = {
     secrets,
     settings: { get: vi.fn(), set: vi.fn(), delete: vi.fn(), getAll: vi.fn() },
@@ -98,7 +124,7 @@ export function fakeCtx() {
   };
   return {
     ctx: ctx as unknown as DataProviderContext,
-    raw: ctx,
+    raw: ctx as unknown as Record<string, RawMember>,
     secrets,
     keysSpy,
     listeners,
@@ -112,7 +138,7 @@ export function fakeCtx() {
 }
 
 /** A dispatcher over a fake ctx, with everything it sends recorded. */
-export function setup(options: { allowAgents?: boolean; slots?: number } = {}) {
+export function setup(options: { allowAgents?: boolean; slots?: number } = {}): DispatcherSetup {
   const fake = fakeCtx();
   const sent: HostMessage[] = [];
   const warnings: string[] = [];

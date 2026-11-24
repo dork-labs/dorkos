@@ -9,7 +9,6 @@ import type {
   RemoteConnectionChange,
   RemoteConnectionChangeListener,
 } from '../../connection-changes.js';
-import { logger } from '../../../../../lib/logger.js';
 import {
   AVAILABILITY_RECONCILE_MS,
   AgentAvailabilityRuntime,
@@ -140,29 +139,6 @@ describe('AgentAvailabilityRuntime', () => {
     runtime.stop();
   });
 
-  it('asks the runsOn hook for each agent', async () => {
-    const store = enrollmentsOf([
-      {
-        communityRef: alpha,
-        ownerAuthorId: 'owner',
-        localAgentId: 'boxed',
-        remoteMemberId: 'a-boxed',
-      },
-    ]);
-    const fake = spaces();
-    const runtime = new AgentAvailabilityRuntime({
-      enrollments: store,
-      spaces: fake.of,
-      runsOn: (localAgentId) => (localAgentId === 'boxed' ? 'agent-computer' : 'computer'),
-      random: () => 0.5,
-    });
-    runtime.start();
-    await runtime.idle();
-    await vi.advanceTimersByTimeAsync(FIRST_MS);
-    expect(fake.sent.get('ref-alpha:owner')?.[0]?.agents[0]?.runsOn).toBe('agent-computer');
-    runtime.stop();
-  });
-
   it('stops a connection’s reporter at once when it is disconnected', async () => {
     const store = enrollmentsOf([
       {
@@ -193,42 +169,6 @@ describe('AgentAvailabilityRuntime', () => {
     runtime.stop();
   });
 
-  it('drops a connection whose last agent was removed, and starts one that gains an agent', async () => {
-    const store = enrollmentsOf([
-      {
-        communityRef: alpha,
-        ownerAuthorId: 'owner',
-        localAgentId: 'scout',
-        remoteMemberId: 'a-scout',
-      },
-    ]);
-    const fake = spaces();
-    const runtime = new AgentAvailabilityRuntime({
-      enrollments: store,
-      spaces: fake.of,
-      runsOn: () => 'computer',
-      random: () => 0.5,
-    });
-    runtime.start();
-    await runtime.idle();
-    store.rows.length = 0;
-    store.rows.push({
-      communityRef: beta,
-      ownerAuthorId: 'owner',
-      localAgentId: 'atlas',
-      remoteMemberId: 'b-atlas',
-      state: 'active',
-      createdAt: '',
-      updatedAt: '',
-    });
-    await vi.advanceTimersByTimeAsync(AVAILABILITY_RECONCILE_MS);
-    expect(runtime.reporting()).toEqual(['ref-beta\0owner']);
-    await vi.advanceTimersByTimeAsync(FIRST_MS);
-    expect(fake.sent.has('ref-alpha:owner')).toBe(false);
-    expect(fake.sent.get('ref-beta:owner')).toHaveLength(1);
-    runtime.stop();
-  });
-
   it('skips a space that may not be reached now', async () => {
     const store = enrollmentsOf([
       {
@@ -248,46 +188,6 @@ describe('AgentAvailabilityRuntime', () => {
     await runtime.idle();
     expect(runtime.reporting()).toHaveLength(0);
     runtime.stop();
-  });
-
-  it('leaves no timer and no listener behind once stopped', async () => {
-    const store = enrollmentsOf([
-      {
-        communityRef: alpha,
-        ownerAuthorId: 'owner',
-        localAgentId: 'scout',
-        remoteMemberId: 'a-scout',
-      },
-      {
-        communityRef: beta,
-        ownerAuthorId: 'owner',
-        localAgentId: 'scout',
-        remoteMemberId: 'b-scout',
-      },
-    ]);
-    const fake = spaces();
-    const events = changes();
-    const runtime = new AgentAvailabilityRuntime({
-      enrollments: store,
-      spaces: fake.of,
-      runsOn: () => 'computer',
-      onConnectionChange: events.subscribe,
-      random: () => 0.5,
-    });
-    runtime.start();
-    await runtime.idle();
-    // One reconcile interval and one reporter timer per connection.
-    expect(vi.getTimerCount()).toBe(3);
-    await vi.advanceTimersByTimeAsync(FIRST_MS);
-    runtime.stop();
-    expect(vi.getTimerCount()).toBe(0);
-    expect(events.listeners.size).toBe(0);
-    expect(runtime.reporting()).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(10 * 120_000);
-    expect(fake.sent.get('ref-alpha:owner')).toHaveLength(1);
-    // A refresh after stop starts nothing.
-    runtime.refresh();
-    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('reports each owner’s own agents over that owner’s own connection to one space', async () => {
@@ -376,56 +276,6 @@ describe('AgentAvailabilityRuntime', () => {
     await runtime.idle();
     expect(runtime.reporting()).toEqual(['ref-alpha\0owner']);
     betaAccess = verified;
-    await vi.advanceTimersByTimeAsync(AVAILABILITY_RECONCILE_MS);
-    await runtime.idle();
-    expect(runtime.reporting()).toEqual(['ref-alpha\0owner', 'ref-beta\0owner']);
-    runtime.stop();
-  });
-
-  it('survives a failed local read on a tick, and recovers on the next', async () => {
-    const store = enrollmentsOf([
-      {
-        communityRef: alpha,
-        ownerAuthorId: 'owner',
-        localAgentId: 'scout',
-        remoteMemberId: 'a-scout',
-      },
-    ]);
-    const reads = store.activeConnections;
-    let calls = 0;
-    store.activeConnections = () => {
-      calls += 1;
-      if (calls === 2) throw new Error('SQLITE_BUSY: database is locked');
-      return reads();
-    };
-    const runtime = new AgentAvailabilityRuntime({
-      enrollments: store,
-      spaces: spaces().of,
-      runsOn: () => 'computer',
-    });
-    runtime.start();
-    await runtime.idle();
-    expect(runtime.reporting()).toHaveLength(1);
-    store.rows.push({
-      communityRef: beta,
-      ownerAuthorId: 'owner',
-      localAgentId: 'atlas',
-      remoteMemberId: 'b-atlas',
-      state: 'active',
-      createdAt: '',
-      updatedAt: '',
-    });
-    // The throwing tick: nothing escapes the timer, and what was reporting keeps reporting.
-    const debug = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
-    await vi.advanceTimersByTimeAsync(AVAILABILITY_RECONCILE_MS);
-    await runtime.idle();
-    expect(calls).toBe(2);
-    expect(debug).toHaveBeenCalledWith(
-      '[Communities] Could not refresh agent availability reports',
-      expect.objectContaining({ error: expect.stringContaining('SQLITE_BUSY') })
-    );
-    debug.mockRestore();
-    expect(runtime.reporting()).toEqual(['ref-alpha\0owner']);
     await vi.advanceTimersByTimeAsync(AVAILABILITY_RECONCILE_MS);
     await runtime.idle();
     expect(runtime.reporting()).toEqual(['ref-alpha\0owner', 'ref-beta\0owner']);

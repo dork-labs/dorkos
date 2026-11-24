@@ -2,17 +2,15 @@
  * Shared setup for the extension-proxy suites: everything the original file declared or
  * registered outside its tests.
  */
-import { it, beforeEach, vi, afterEach } from 'vitest';
+import { beforeEach, vi, afterEach } from 'vitest';
 import http from 'node:http';
 import type { RequestListener } from 'node:http';
 import type { Request, Response } from 'express';
-import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { DataProxyConfig } from '@dorkos/extension-api';
 import { createProxyForwarder, createProxyHandler } from '../extension-proxy.js';
 import { createExtensionApiRoutes } from '../../../../routes/extension-api.js';
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
-import { logger } from '../../../../lib/logger.js';
 
 /** What each test runs against; the hooks below reset it. */
 export const st = {

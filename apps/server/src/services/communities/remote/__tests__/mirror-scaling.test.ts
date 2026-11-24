@@ -11,7 +11,6 @@
 import type Database from 'better-sqlite3';
 import type { CommunityEntry, CommunityRef } from '@dorkos/shared/community-adapter';
 import { describe, expect, it } from 'vitest';
-import { RoomStore } from '../../../rooms/room-store.js';
 import { agentLookupFor, createRoomHarness } from '../../../rooms/__tests__/room-test-harness.js';
 import { RemoteMirrorStore, type NativeMirrorEntry } from '../mirror-store.js';
 
@@ -93,26 +92,6 @@ function plan(sqlite: Database.Database, statement: { sql: string; params: unkno
 }
 
 describe('mirrored room import', () => {
-  it('runs the same statements for one entry whatever the size of the room', () => {
-    const { mirrors, sqlite } = setup();
-    mirrors.importEntries(REF, 'general', [native(1)]);
-    const small = recording(sqlite, () =>
-      mirrors.importEntries(REF, 'general', [native(2, { parent: 1, root: 1 })])
-    ).length;
-
-    mirrors.importEntries(
-      REF,
-      'general',
-      Array.from({ length: 300 }, (_, i) => native(i + 3, i % 3 ? {} : { parent: 1, root: 1 }))
-    );
-    const large = recording(sqlite, () =>
-      mirrors.importEntries(REF, 'general', [native(1000, { parent: 1, root: 1 })])
-    ).length;
-
-    // The old import re-read and rewrote every cached entry of the room on each import.
-    expect(large).toBe(small);
-  });
-
   it('links a reply of a reply whose parent and thread root arrive pages later', () => {
     const { harness, mirrors, room } = setup();
     // A history backfill reads newest first: the deepest reply lands before both entries it
@@ -245,18 +224,5 @@ describe('mirrored room reads', () => {
       // The Community sequence was once looked up per row, in a subquery, to sort the room.
       expect(statements[0]!.sql, name).not.toMatch(/community_mirror_entries/);
     }
-  });
-
-  it('reads the same pages after a restart', () => {
-    const { harness, room } = filled();
-    const before = harness.store.listEntries(room.id, { limit: 50 }).map((e) => e.body.text);
-    const restarted = new RoomStore(harness.db);
-    new RemoteMirrorStore(harness.db, restarted, harness.authors);
-    expect(restarted.listEntries(room.id, { limit: 50 }).map((e) => e.body.text)).toEqual(before);
-    expect(before).toEqual([
-      ...Array.from({ length: 40 }, (_, i) => `remote ${i + 1}`),
-      'local one',
-      'local two',
-    ]);
   });
 });

@@ -1,13 +1,4 @@
-import {
-  REF,
-  ROOM_ID,
-  VERIFIED_AGENT_ACCESS,
-  entry,
-  live,
-  outboxItem,
-  testRoom,
-  snapshot,
-} from './fixtures.js';
+import { REF, ROOM_ID, VERIFIED_AGENT_ACCESS, outboxItem, testRoom, snapshot } from './fixtures.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';

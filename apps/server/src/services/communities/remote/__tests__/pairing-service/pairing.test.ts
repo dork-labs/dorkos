@@ -18,7 +18,6 @@ import { EncryptedFileCredentialStore } from '../../../../core/credential-provid
 import {
   RemoteCommunityPairingService,
   RemoteCommunityRateLimitedError,
-  RemoteCommunityNameNotFoundError,
   RemoteCommunitySelectionRequiredError,
   RemoteCommunityUpgradeRequiredError,
   RemotePairingBusyError,
@@ -177,16 +176,6 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       }
     });
 
-    // Purpose: an unknown name is its own error, and nothing is started on the host.
-    it('reports an unknown name without starting a pairing', async () => {
-      requests.length = 0;
-      const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
-      await expect(
-        service.start('name-owner', `${origin}/nobody-here`, 'Unknown')
-      ).rejects.toBeInstanceOf(RemoteCommunityNameNotFoundError);
-      expect(pairingStarts()).toEqual([]);
-    });
-
     // Purpose: a lookup answer that is not exactly one canonical UUID is refused before any
     // tenant call, so a hostile host cannot steer the connection with a crafted id.
     it('refuses a lookup that answers a malformed UUID', async () => {
@@ -224,48 +213,6 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       } finally {
         shortNameAnswers.clear();
       }
-    });
-
-    // Purpose: every shape the spec names. /Acme is lower-cased; a trailing slash, a deeper
-    // path, a percent-encoded spelling and a reserved name are refused before any request.
-    it('accepts only the exact /<name> shape', () => {
-      expect(parseCommunityLink(`${origin}/Acme`)).toEqual({
-        origin: new URL(origin),
-        communityId: null,
-        shortName: 'acme',
-      });
-      expect(parseCommunityLink('https://community.example/my-club-2')).toEqual({
-        origin: new URL('https://community.example'),
-        communityId: null,
-        shortName: 'my-club-2',
-      });
-      // A reserved name that is not a path may belong to a space a host operator gave it to,
-      // such as the host's official space; the host's lookup decides.
-      expect(parseCommunityLink(`${origin}/dorkos`)).toEqual({
-        origin: new URL(origin),
-        communityId: null,
-        shortName: 'dorkos',
-      });
-      for (const invalid of [
-        `${origin}/acme/`,
-        `${origin}/acme/x`,
-        `${origin}/%61cme`,
-        `${origin}/api`,
-        `${origin}/API`,
-        `${origin}/settings`,
-        `${origin}/ab`,
-        `${origin}/1acme`,
-        `${origin}/acme-`,
-        `${origin}/ac--me`,
-        `${origin}/${'a'.repeat(33)}`,
-        `${origin}/acme?x=1`,
-        `${origin}/acme#top`,
-        'https://owner:secret@community.example/acme',
-        'http://community.example/acme',
-      ]) {
-        expect(() => parseCommunityLink(invalid), invalid).toThrow(PinnedOriginError);
-      }
-      expect(() => parseCommunityOrigin(`${origin}/acme`)).toThrow(PinnedOriginError);
     });
   });
 

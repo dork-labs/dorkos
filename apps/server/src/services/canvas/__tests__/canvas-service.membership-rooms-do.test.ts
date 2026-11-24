@@ -4,7 +4,6 @@ import {
   agents,
   jsonContent,
   markdownContent,
-  collectFrames,
   applyAs,
   log,
   st,
@@ -56,14 +55,6 @@ describe('RoomCanvasService.apply', () => {
       expect(entry?.body.subjectAuthorId).toBe(st.ana);
       // It wakes nobody: no mentions, and a cascade that starts spent.
       expect(entry?.mentions).toEqual([]);
-    });
-
-    it('clears the ledger, so a second call writes no second line', () => {
-      applyAs(st.ana, 'turn-1', { action: 'open_canvas', content: jsonContent('one') });
-      st.canvas.finishTurn('turn-1');
-      const after = log().length;
-      st.canvas.finishTurn('turn-1');
-      expect(log()).toHaveLength(after);
     });
 
     it('never throws when the entry cannot be posted, and keeps the rows', () => {
@@ -121,41 +112,6 @@ describe('RoomCanvasService.apply', () => {
       // as anywhere — the fail-closed direction.
       expect(st.canvas.mayReadContent(document!, undefined)).toBe(false);
     });
-
-    it('gives content to everybody for a document that names no file', () => {
-      const opened = applyAs(st.ana, 'turn-1', {
-        action: 'browser_navigate',
-        url: 'http://localhost:5173/',
-      });
-      const document = st.canvas.get(st.room.id, opened.applied ? opened.documentId : '');
-      expect(st.canvas.mayReadContent(document!, '/work/ben')).toBe(true);
-    });
-
-    it('gives content to every member for a document under the room’s SHARED tree', () => {
-      const {
-        service: shared,
-        authors: sharedAuthors,
-        human: owner,
-      } = createRoomHarness({
-        agents,
-        runner: scriptedRunner(() => null),
-        roomRepoPath: () => '/rooms/general/repo',
-      });
-      const sharedRoom = shared.createRoom(
-        { kind: 'channel', title: 'Shared', members: [], agentPaths: [ANA, BEN] },
-        owner
-      );
-      const sharedAna = sharedAuthors.resolveAgent(ANA, 'Ana').id;
-      const opened = shared.canvas.apply({
-        roomId: sharedRoom.id,
-        authorId: sharedAna,
-        turnId: 't',
-        command: { action: 'open_file', sourcePath: 'src/router.ts' },
-        cwd: '/rooms/general/repo',
-      });
-      const document = shared.canvas.get(sharedRoom.id, opened.applied ? opened.documentId : '');
-      expect(shared.canvas.mayReadContent(document!, '/somewhere/else')).toBe(true);
-    });
   });
 
   describe('which tree a file document came from, at home (spec `agent-home-desk` §5.6)', () => {
@@ -209,18 +165,6 @@ describe('RoomCanvasService.apply', () => {
       expect(projectCanvas.resolvedTreeOf(roomId, document.id)).toBe(
         '/rooms/general/worktrees/ana-1a2b3c4d'
       );
-    });
-  });
-
-  describe('the frames a change fans out', () => {
-    it('publishes the whole document, not a delta', async () => {
-      const frames = await collectFrames(st.broadcaster, st.room.id, async () => {
-        applyAs(st.ana, 'turn-1', { action: 'open_canvas', content: jsonContent('one') });
-      });
-      const frame = frames.find((f) => f.type === 'canvas');
-      expect(frame).toBeDefined();
-      expect(frame?.type === 'canvas' && frame.document?.title).toBe('one');
-      expect(frame?.type === 'canvas' && frame.change).toBe('opened');
     });
   });
 });

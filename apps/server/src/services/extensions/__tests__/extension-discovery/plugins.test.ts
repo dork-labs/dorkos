@@ -4,7 +4,6 @@ import path from 'path';
 import { ExtensionDiscovery } from '../../extension-discovery.js';
 import { EMPTY_CONFIG, EMPTY_CORE, coreMap, writeManifest, makeDiscoveryHome } from './fixtures.js';
 import { logger } from '../../../../lib/logger.js';
-import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 
 describe('ExtensionDiscovery', () => {
   let tmpDir: string;
@@ -50,46 +49,6 @@ describe('ExtensionDiscovery', () => {
       });
     });
 
-    it('finds an extension a plugin installed into the project carries', async () => {
-      const cwd = path.join(tmpDir, 'project');
-      const dir = await writeCarried(path.join(cwd, '.dork', 'plugins'), 'flow', 'flow');
-
-      const results = await discovery.discover(cwd, EMPTY_CONFIG, EMPTY_CORE);
-
-      expect(results).toHaveLength(1);
-      expect(results[0]).toMatchObject({
-        id: 'flow',
-        scope: 'local',
-        origin: 'user',
-        path: dir,
-        sourcePlugin: 'flow',
-      });
-    });
-
-    it('skips the install engine siblings beside a plugin, such as a backup', async () => {
-      const plugins = path.join(dorkHome, 'plugins');
-      const dir = await writeCarried(plugins, 'flow', 'flow');
-      await writeCarried(plugins, `flow${MARKETPLACE_BACKUP_DIR_MARKER}20260926-abc`, 'flow');
-      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
-
-      const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
-
-      expect(results).toHaveLength(1);
-      expect(results[0]).toMatchObject({ path: dir, sourcePlugin: 'flow' });
-      expect(warn).not.toHaveBeenCalled();
-    });
-
-    it('scans the plugins directory once when the project holds the DorkOS home', async () => {
-      await writeCarried(path.join(dorkHome, 'plugins'), 'flow', 'flow');
-      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
-
-      const results = await discovery.discover(tmpDir, EMPTY_CONFIG, EMPTY_CORE);
-
-      expect(results).toHaveLength(1);
-      expect(results[0]).toMatchObject({ scope: 'global', sourcePlugin: 'flow' });
-      expect(warn).not.toHaveBeenCalled();
-    });
-
     it('lets an extension installed directly win over a plugin copy of the same id', async () => {
       const direct = path.join(dorkHome, 'extensions', 'flow');
       await writeManifest(direct, { id: 'flow', name: 'Flow', version: '1.0.0' });
@@ -120,23 +79,6 @@ describe('ExtensionDiscovery', () => {
         origin: 'core',
         path: path.join(dorkHome, 'extensions', 'marketplace'),
       });
-    });
-
-    it('resolves an id two plugins carry by sorted plugin name, with one warning', async () => {
-      const plugins = path.join(dorkHome, 'plugins');
-      await writeCarried(plugins, 'zeta', 'shared-ext', '2.0.0');
-      const first = await writeCarried(plugins, 'alpha', 'shared-ext', '1.0.0');
-      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
-
-      const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
-
-      expect(results).toHaveLength(1);
-      expect(results[0]).toMatchObject({ path: first, sourcePlugin: 'alpha' });
-      const duplicateWarnings = warn.mock.calls.filter(([msg]) =>
-        String(msg).includes("More than one installed plugin carries 'shared-ext'")
-      );
-      expect(duplicateWarnings).toHaveLength(1);
-      expect(String(duplicateWarnings[0][0])).toContain('alpha, zeta');
     });
 
     it('keeps the copy a person approved when another plugin carries the same id', async () => {

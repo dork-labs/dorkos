@@ -1,6 +1,5 @@
 import { setup } from './fixtures.js';
 import { describe, expect, it } from 'vitest';
-import { CtxDispatcher } from '../../ctx-dispatcher.js';
 import type { RetMessage } from '../../ipc-protocol.js';
 
 describe('CtxDispatcher calls', () => {

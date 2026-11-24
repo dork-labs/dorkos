@@ -7,7 +7,6 @@ import {
   quickTurn,
   settle,
   projectorFor,
-  chat,
   personTurn,
 } from './harness.js';
 import { describe, expect, it, vi } from 'vitest';

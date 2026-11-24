@@ -1,4 +1,4 @@
-import { REF, ROOM_ID, VERIFIED_AGENT_ACCESS, live, testRoom, snapshot } from './fixtures.js';
+import { REF, ROOM_ID, VERIFIED_AGENT_ACCESS, testRoom, snapshot } from './fixtures.js';
 import type { CommunityEntry } from '@dorkos/shared/community-adapter';
 import type { CommunityConnectionAccess } from '@dorkos/shared/community-wire';
 import { describe, expect, it, vi } from 'vitest';

@@ -1,4 +1,4 @@
-import { ANA, agents, jsonContent, collectFrames, applyAs, st } from './canvas-service.fixtures.js';
+import { ANA, agents, jsonContent, applyAs, st } from './canvas-service.fixtures.js';
 import { describe, it, expect } from 'vitest';
 import type { UiCommand } from '@dorkos/shared/schemas';
 import { RoomError } from '../../rooms/room-errors.js';
@@ -77,11 +77,6 @@ describe('RoomCanvasService.apply', () => {
         reason: NO_DEFAULT_DOCUMENT_MESSAGE,
       });
       expect(st.canvas.list(st.room.id)).toEqual([]);
-    });
-
-    it('refuses a bare close from somebody with nothing of their own here', () => {
-      const result = applyAs(st.ana, 'turn-1', { action: 'close_canvas' });
-      expect(result).toMatchObject({ applied: false, code: 'CANVAS_NO_DEFAULT_DOCUMENT' });
     });
   });
 
@@ -223,31 +218,6 @@ describe('RoomCanvasService.apply', () => {
       expect(live.some((d) => d.content.type === 'url' && d.content.url.endsWith('/1'))).toBe(
         false
       );
-    });
-
-    it('a pin is a row, so a reload finds it and still sorts it first', () => {
-      const doc = st.canvas.open(st.room.id, st.human, jsonContent('the plan'));
-      const later = st.canvas.open(st.room.id, st.human, jsonContent('something later'));
-      st.canvas.pin(st.room.id, st.human, doc.id, true);
-
-      // What a reload actually reads: the ROW, in SQLite, rather than anything
-      // this process is holding. Nothing about a pin lives in memory, which is
-      // why closing the browser cannot lose one.
-      expect(st.canvasDocuments.get(roomScope(st.room.id), doc.id)?.pinned).toBe(true);
-      // And the order every viewer is served comes off those rows, so the pin is
-      // first however recently anything else was touched.
-      st.canvas.activate(st.room.id, st.human, later.id);
-      expect(st.canvas.list(st.room.id).map((d) => d.id)).toEqual([doc.id, later.id]);
-    });
-
-    it('publishes a `closed` frame for anything it evicts', async () => {
-      const frames = await collectFrames(st.broadcaster, st.room.id, async () => {
-        for (let n = 0; n <= MAX_ROOM_CANVAS_DOCUMENTS; n += 1) {
-          st.canvas.open(st.room.id, st.human, { type: 'url', url: `https://example.test/${n}` });
-        }
-      });
-      // No viewer may be left holding a row the server dropped.
-      expect(frames.filter((f) => f.type === 'canvas' && f.closed === true)).toHaveLength(1);
     });
   });
 

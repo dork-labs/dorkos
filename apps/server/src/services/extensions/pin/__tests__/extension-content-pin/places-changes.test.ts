@@ -1,4 +1,4 @@
-import { stored, IN_PROCESS, copy, PANEL, WITH_PAGE, usePlacesFixture } from './harness.js';
+import { stored, IN_PROCESS, PANEL, WITH_PAGE, usePlacesFixture } from './harness.js';
 import { describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';

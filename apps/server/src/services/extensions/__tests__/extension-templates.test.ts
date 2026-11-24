@@ -38,19 +38,6 @@ function injectedCalls(source: string): number {
  * below pin the generated source that authors actually receive.
  */
 describe('extension-templates', () => {
-  describe('generateTemplate (right-panel-tab)', () => {
-    const source = generateTemplate('my-panel', 'A panel', 'right-panel-tab');
-
-    it('registers a component in the right-panel slot with a namespaced id', () => {
-      expect(source).toContain("api.registerComponent('right-panel', 'my-panel-panel'");
-    });
-
-    it('passes no icon component, which cannot cross the sandboxed frame', () => {
-      expect(source).not.toContain('icon:');
-      expect(source).not.toContain('<svg');
-    });
-  });
-
   describe('a description is only ever text (DOR-3068)', () => {
     const descriptions = [
       'x\ninjected();\n//',

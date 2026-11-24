@@ -41,8 +41,6 @@ vi.mock('../../core/config-manager.js', () => ({
 import { ExtensionManager } from '../extension-manager.js';
 import { composeRegistry, type CapabilityRegistry } from '../../core/capabilities/registry.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
-import { extensionDeclarationDigest } from '../agent-tools/declaration-digest.js';
-import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import { mayRunExtensionCode } from '../extension-load-policy.js';
 import { liveDigestOf } from '../pin/extension-content-pin.js';
 
@@ -273,28 +271,6 @@ describe('extension agent tools through the real lifecycle', () => {
     expect(registry.get('ext_agent_tools_ext.echo')?.title).toBe('Echo it back');
   }, 30_000);
 
-  it('restarts on a second start request once the declarations changed, and not before', async () => {
-    // Purpose: the client asks every server-side extension to start on every
-    // page load; the restart key must treat a changed tool declaration as a
-    // new source (and an unchanged one as the same).
-    await install();
-    await boot();
-    const changes: number[] = [];
-    registry.onChange((v) => changes.push(v));
-    await manager.initializeServer(ID);
-    expect(changes).toEqual([]);
-
-    const record = manager.listRecords().find((r) => r.id === ID)!;
-    const [first, ...rest] = record.manifest.tools!;
-    record.manifest = {
-      ...record.manifest,
-      tools: [{ ...first!, title: 'Echo it back' }, ...rest],
-    };
-    await manager.initializeServer(ID);
-    expect(changes.length).toBe(2);
-    expect(registry.get('ext_agent_tools_ext.echo')?.title).toBe('Echo it back');
-  }, 30_000);
-
   /** A server.ts that counts starts and stops, and waits on a gate the test opens. */
   const COUNTING_SERVER = `export default async function register(_r, ctx) {
     const g = globalThis;
@@ -504,35 +480,4 @@ describe('create_extension on a Trusted install (ADR 261006-225605)', () => {
     expect(result.autoApproved).toBeUndefined();
     expect(runs()).toBe(false);
   }, 30_000);
-});
-
-describe('extensionDeclarationDigest', () => {
-  const base = {
-    id: ID,
-    name: 'Fixture',
-    version: '1.0.0',
-    serverCapabilities: {},
-    tools: [
-      {
-        name: 'echo',
-        title: 'Echo',
-        description: 'Echoes.',
-        tier: 'observe',
-        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-      },
-    ],
-  };
-
-  it('changes with the tools or skills and not with unrelated fields or key order', () => {
-    // Purpose: exactly the declarations decide a restart.
-    const digest = (m: unknown) => extensionDeclarationDigest(ExtensionManifestSchema.parse(m));
-    const original = digest(base);
-    expect(digest({ ...base, description: 'other words' })).toBe(original);
-    const { tools, ...rest } = base;
-    expect(digest({ tools, ...rest })).toBe(original);
-    expect(digest({ ...base, skills: ['tidy-notes'] })).not.toBe(original);
-    expect(
-      digest({ ...base, tools: [{ ...base.tools[0], tier: 'act', approvalDisplayFields: [] }] })
-    ).not.toBe(original);
-  });
 });

@@ -13,7 +13,7 @@ import { type CommunityEntry, type CommunityRef } from '@dorkos/shared/community
 import { notifications } from '@dorkos/db';
 import type { RoomEvent } from '@dorkos/shared/room-schemas';
 
-import { it, vi } from 'vitest';
+import { vi } from 'vitest';
 
 import {
   agentLookupFor,

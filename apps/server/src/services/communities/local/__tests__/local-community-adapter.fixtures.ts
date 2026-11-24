@@ -2,7 +2,6 @@
  * Shared setup for the local-community-adapter suites: everything the original file declared or
  * registered outside its tests.
  */
-import { it } from 'vitest';
 import { RoomStore } from '../../../rooms/room-store.js';
 import {
   agentLookupFor,

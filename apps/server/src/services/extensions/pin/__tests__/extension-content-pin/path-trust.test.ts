@@ -1,6 +1,5 @@
 import { ISOLATED, IN_PROCESS, HOME, COPY_PATH, copy, agentApproval } from './harness.js';
 import { describe, expect, it } from 'vitest';
-import path from 'node:path';
 import { type ExtensionManifest } from '@dorkos/extension-api';
 import { grantsDigestOf, keepsPathTrust } from '../../extension-path-trust.js';
 import { mayRunExtensionCode, type ExtensionApprovals } from '../../../extension-load-policy.js';

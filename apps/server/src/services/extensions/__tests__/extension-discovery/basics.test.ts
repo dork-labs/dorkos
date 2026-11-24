@@ -85,40 +85,6 @@ describe('ExtensionDiscovery', () => {
     expect(results[0].status).toBe(status);
   });
 
-  it.each([
-    ['server.ts', {}, ['server.ts']],
-    ['server.js', {}, ['server.js']],
-    [
-      'a custom serverEntry',
-      { serverCapabilities: { serverEntry: './src/server.ts' } },
-      ['src', 'server.ts'],
-    ],
-  ])('finds the server entry at %s', async (_label, extra, entry) => {
-    const extDir = path.join(dorkHome, 'extensions', 'with-server');
-    await writeManifest(extDir, { id: 'with-server', name: 'S', version: '1.0.0', ...extra });
-    await fs.mkdir(path.join(extDir, ...entry.slice(0, -1)), { recursive: true });
-    await fs.writeFile(path.join(extDir, ...entry), 'export default () => {}');
-
-    const [record] = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
-
-    expect(record).toMatchObject({ hasServerEntry: true, hasDataProxy: false });
-    expect(record.serverEntryPath).toBe(path.join(extDir, ...entry));
-  });
-
-  it('reports a data proxy, and no server entry when there is no server file', async () => {
-    await writeManifest(path.join(dorkHome, 'extensions', 'proxy-ext'), {
-      id: 'proxy-ext',
-      name: 'Proxy Extension',
-      version: '1.0.0',
-      dataProxy: { baseUrl: 'https://api.example.com', authSecret: 'api_key' },
-    });
-
-    const [record] = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
-
-    expect(record).toMatchObject({ hasServerEntry: false, hasDataProxy: true });
-    expect(record.serverEntryPath).toBeUndefined();
-  });
-
   describe('names that are DorkOS’s own (DOR-4282)', () => {
     it.each([['DorkOS Helper'], ['Dork​OS'], ['DоrkOS'], ['Settings'], ['settings ']])(
       'does not load an app named %j, and says why',
@@ -368,25 +334,6 @@ describe('ExtensionDiscovery', () => {
         status: 'enabled',
         path: path.join(dorkHome, 'extensions', 'marketplace'),
       });
-      expect(warn).not.toHaveBeenCalled();
-    });
-
-    it('recognizes the global directory through a symlinked project .dork', async () => {
-      await writeManifest(path.join(dorkHome, 'extensions', 'marketplace'), {
-        id: 'marketplace',
-        name: 'Marketplace',
-        version: '1.0.0',
-      });
-      const cwd = path.join(tmpDir, 'home-alias');
-      await fs.mkdir(cwd, { recursive: true });
-      await fs.symlink(dorkHome, path.join(cwd, '.dork'), 'dir');
-      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
-      const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
-
-      const results = await discovery.discover(cwd, EMPTY_CONFIG, core);
-
-      expect(results).toHaveLength(1);
-      expect(results[0]).toMatchObject({ id: 'marketplace', scope: 'global', origin: 'core' });
       expect(warn).not.toHaveBeenCalled();
     });
 

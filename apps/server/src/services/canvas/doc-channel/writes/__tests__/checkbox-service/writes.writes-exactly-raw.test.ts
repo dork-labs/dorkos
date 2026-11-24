@@ -1,7 +1,6 @@
-import { readFile, rename, stat, chmod, writeFile } from 'node:fs/promises';
-import { once } from 'node:events';
-import { expect, it } from 'vitest';
-import { canvasDocChannels } from '@dorkos/db';
+import { readFile, stat, chmod, writeFile } from 'node:fs/promises';
+import { expect, it, vi } from 'vitest';
+import { canvasDocChannels, canvasDocWriteIntents } from '@dorkos/db';
 import { AuthorityRefused } from '../checkbox-fixture.js';
 import type { CheckboxRequest } from '../../checkbox-service.js';
 import type { DocCheckboxAuthority } from '../../authority.js';
@@ -283,3 +282,50 @@ it.each(['staged', 'verified'] as const)(
     expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
   }
 );
+
+it('raw fence reuse still decodes replaced evidence codecs and refuses malformed current JSON', async () => {
+  const h = await fixture();
+  h.failCompletion(true);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
+  const own = h.store.getWriteIntent(h.row().intentId)!;
+  expect(h.service.writeFence.readiness()).toEqual({ ready: true });
+  expect(h.service.writeFence.readiness()).toEqual({ ready: true });
+  const first: unknown = undefined;
+  const decoder = vi
+    .spyOn(canvasDocWriteIntents.evidence, 'mapFromDriverValue')
+    .mockImplementation(() => {
+      throw first;
+    });
+  try {
+    expect(h.service.writeFence.readiness()).toEqual({ ready: false, reason: 'corrupt' });
+    expect(decoder).toHaveBeenCalled();
+  } finally {
+    decoder.mockRestore();
+  }
+  expect(h.service.writeFence.readiness()).toEqual({ ready: true });
+  h.db.$client
+    .prepare("UPDATE canvas_doc_write_intents SET evidence='{' WHERE intent_id=?")
+    .run(own.intentId);
+  expect(h.service.writeFence.readiness()).toEqual({ ready: false, reason: 'corrupt' });
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
+
+it('keeps every observed and mutation lifecycle hash strict regardless of an opaque original expected version', async () => {
+  const h = await fixture();
+  h.failCompletion(true);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow('completion rollback');
+  const row = h.row();
+  for (const status of [
+    'prepared',
+    'replaced',
+    'in_doubt',
+    'committed',
+    'no_op',
+    'conflict',
+  ] as const) {
+    expect(() => h.service.validate({ ...row, status, beforeHash: 'opaque-version' })).toThrow();
+    expect(() => h.service.validate({ ...row, status, afterHash: 'opaque-version' })).toThrow();
+  }
+  expect(h.row()).toEqual(row);
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});

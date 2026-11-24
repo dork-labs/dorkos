@@ -2,7 +2,7 @@
  * Shared setup for the canvas-service suites: everything the original file declared or
  * registered outside its tests.
  */
-import { it, beforeEach } from 'vitest';
+import { beforeEach } from 'vitest';
 import type { RoomEntry, RoomEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { UiCommand } from '@dorkos/shared/schemas';
 import type { AuthorRegistry } from '../../rooms/author-registry.js';

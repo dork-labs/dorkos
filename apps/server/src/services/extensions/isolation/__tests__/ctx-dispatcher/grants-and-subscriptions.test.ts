@@ -1,7 +1,6 @@
 import { setup } from './fixtures.js';
 import { describe, expect, it } from 'vitest';
-import { AgentSendError } from '@dorkos/extension-api/server';
-import { AGENTS_REFUSAL, CtxDispatcher, MAX_CHILD_REGISTRATIONS } from '../../ctx-dispatcher.js';
+import { AGENTS_REFUSAL, MAX_CHILD_REGISTRATIONS } from '../../ctx-dispatcher.js';
 
 describe('CtxDispatcher errors', () => {
   // Purpose: an error crosses as name, redacted message, code and primitive

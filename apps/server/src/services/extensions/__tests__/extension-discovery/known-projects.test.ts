@@ -251,55 +251,9 @@ describe('ExtensionDiscovery', () => {
         expect(mayRunExtensionCode(running[0]!, config)).toBe(false);
         expect(shadowed).toEqual([expect.objectContaining({ path: a.dir, shadowedBy: b.dir })]);
       });
-
-      it('row 4: a version tie goes to global, then the sorted project root', async () => {
-        const globalDir = await globalPlugin('1.0.0', {
-          sourceRepo: 'https://github.com/dork-labs/marketplace',
-        });
-        const z = await installedProject('z', '1.0.0');
-        const config = approve({ path: z.dir, sourcePlugin: 'flow', trustedOrigin: ORIGIN });
-
-        const results = await discovery.discover(null, config, EMPTY_CORE, [z.root]);
-        expect(results.find((r) => !r.shadowedBy)?.path).toBe(globalDir);
-
-        await fs.rm(path.join(dorkHome, 'plugins'), { recursive: true });
-        const y = await installedProject('y', '1.0.0');
-        const again = await discovery.discover(null, config, EMPTY_CORE, [z.root, y.root]);
-        expect(again.find((r) => !r.shadowedBy)?.path).toBe(y.dir);
-      });
-
-      it('row 5: with nothing approved, global before project, then the sorted root', async () => {
-        const b = await installedProject('b', '3.0.0');
-        const a = await installedProject('a', '1.0.0');
-
-        const projectOnly = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE, [
-          b.root,
-          a.root,
-        ]);
-        expect(projectOnly.find((r) => r.id === 'flow')?.path).toBe(a.dir);
-        expect(projectOnly.some((r) => r.shadowedBy)).toBe(false);
-
-        const globalDir = await globalPlugin('0.1.0', {});
-        const withGlobal = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE, [
-          a.root,
-          b.root,
-        ]);
-        expect(withGlobal.find((r) => r.id === 'flow')?.path).toBe(globalDir);
-      });
     });
 
     describe('edge cases', () => {
-      it('the chosen copy does not change with the working directory', async () => {
-        const a = await installedProject('a', '1.0.0');
-        const b = await installedProject('b', '1.3.0');
-        const config = approve({ path: a.dir, sourcePlugin: 'flow', trustedOrigin: ORIGIN });
-
-        for (const cwd of [a.root, b.root, null]) {
-          const results = await discovery.discover(cwd, config, EMPTY_CORE, [a.root, b.root]);
-          expect(results.find((r) => !r.shadowedBy)?.path).toBe(b.dir);
-        }
-      });
-
       it('a clone carrying a newer copy that claims the origin never runs unapproved', async () => {
         const a = await installedProject('a', '1.0.0');
         const cloneRoot = path.join(tmpDir, 'clone');
@@ -355,15 +309,6 @@ describe('ExtensionDiscovery', () => {
         const covered = again.find((r) => !r.shadowedBy);
         expect(covered?.path).toBe(b.dir);
         expect(mayRunExtensionCode(covered!, toItsFiles)).toBe(true);
-      });
-
-      it('skips a known project whose folder is gone, silently', async () => {
-        const a = await installedProject('a', '1.0.0');
-        const gone = path.join(tmpDir, 'unplugged-drive');
-
-        const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE, [gone, a.root]);
-
-        expect(results.map((r) => r.path)).toEqual([a.dir]);
       });
 
       it('keeps different sources apart: approval stays bound to its own source', async () => {

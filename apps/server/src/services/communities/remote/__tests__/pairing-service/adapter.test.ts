@@ -1,6 +1,5 @@
 import {
   fake,
-  token,
   remoteCommunityId,
   remoteAgentId,
   remoteRoomId,

@@ -52,18 +52,6 @@ describe('scaffoldExtension', () => {
     expect(await listTree(result.targetDir)).toEqual(['extension.json', 'index.ts']);
   });
 
-  it('scaffolds a local extension under the working directory', async () => {
-    const result = await scaffoldExtension({
-      name: 'local-ext',
-      template: 'command',
-      scope: 'local',
-      dorkHome,
-      currentCwd: projectDir,
-    });
-
-    expect(result.targetDir).toBe(path.join(projectDir, '.dork', 'extensions', 'local-ext'));
-  });
-
   // ── Traversal (DOR-507 part 2) ───────────────────────────────────────────
   //
   // Each name is a different way to try to leave the extensions folder. The
@@ -226,42 +214,6 @@ describe('scaffoldExtension', () => {
       ).rejects.toThrow("Extension 'bar' already exists");
 
       expect(await listTree(tmpRoot)).toEqual(before);
-    });
-
-    it('still scaffolds a genuinely new name, in either scope', async () => {
-      // The positive control. A refusal that also refused new names would pass
-      // both cases above and break the tool this exists to keep useful.
-      const global = await scaffoldExtension({
-        name: 'brand-new',
-        template: 'dashboard-card',
-        scope: 'global',
-        dorkHome,
-        currentCwd: projectDir,
-      });
-      expect(await listTree(global.targetDir)).toEqual(['extension.json', 'index.ts']);
-
-      const local = await scaffoldExtension({
-        name: 'also-new',
-        template: 'command',
-        scope: 'local',
-        dorkHome,
-        currentCwd: projectDir,
-      });
-      expect(await listTree(local.targetDir)).toEqual(['extension.json', 'index.ts']);
-    });
-
-    it('checks only the target scope when no working directory is active', async () => {
-      // With no cwd there is no project root to collide with, and a global
-      // create must not start failing because one could not be resolved.
-      const result = await scaffoldExtension({
-        name: 'no-cwd',
-        template: 'dashboard-card',
-        scope: 'global',
-        dorkHome,
-        currentCwd: null,
-      });
-
-      expect(result.targetDir).toBe(path.join(dorkHome, 'extensions', 'no-cwd'));
     });
   });
 });

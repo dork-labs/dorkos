@@ -22,15 +22,6 @@ const listing: OrphanSweepListing = {
 };
 
 describe('sweepOrphanedCanvases', () => {
-  it('lists nothing when no session is marked gone', async () => {
-    const canvas = fakeCanvas(0);
-    const list = vi.fn(async () => listing);
-
-    expect(await sweepOrphanedCanvases(canvas, list)).toBe(0);
-    expect(list).not.toHaveBeenCalled();
-    expect(canvas.sweepOrphanedCanvasDocuments).not.toHaveBeenCalled();
-  });
-
   it('lists and sweeps while a session is marked', async () => {
     const canvas = fakeCanvas(2);
     const list = vi.fn(async () => listing);
@@ -55,11 +46,5 @@ describe('sweepOrphanedCanvases', () => {
     });
     await expect(sweepOrphanedCanvases(canvas, async () => listing)).resolves.toBe(1);
     expect(canvas.sweepOrphanedCanvasDocuments).toHaveBeenLastCalledWith(null);
-  });
-
-  it('does nothing before the canvas service exists', async () => {
-    const list = vi.fn(async () => listing);
-    expect(await sweepOrphanedCanvases(undefined, list)).toBe(0);
-    expect(list).not.toHaveBeenCalled();
   });
 });

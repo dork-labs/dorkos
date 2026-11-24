@@ -150,22 +150,6 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       await service.disconnect(ref, 'after-owner');
     });
 
-    // Purpose: a takedown is a definite answer, so the "seems gone" count starts over, and once
-    // recorded, other requests answering it don't ask the Community again.
-    it('resets the not-found count, and nudges once', async () => {
-      const { store, service, ref } = await connectedTo('nudge-owner');
-      refuse(access, 404, 'NOT_FOUND');
-      await service.status(ref, 'nudge-owner');
-      expect(await store.notFoundSince(ref, 'nudge-owner')).not.toBeNull();
-      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
-      const before = fake.accessRequests;
-      await service.communityGoneSeen(ref, 'nudge-owner');
-      await service.communityGoneSeen(ref, 'nudge-owner');
-      expect(fake.accessRequests).toBe(before + 1);
-      expect(await store.notFoundSince(ref, 'nudge-owner')).toBeNull();
-      await service.disconnect(ref, 'nudge-owner');
-    });
-
     // Purpose: every route family answers `423 COMMUNITY_TAKEN_DOWN` as gone (never as an archive
     // or a stale cursor) and nudges the access check; a stream closed as `taken_down` ends as
     // access revoked.

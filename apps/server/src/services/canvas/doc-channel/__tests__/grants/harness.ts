@@ -2,11 +2,11 @@
  * Shared setup for the grants suites: everything the original file declared or
  * registered outside its tests.
  */
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { approvals, createDb, runMigrations, type Db } from '@dorkos/db';
+import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { ApprovalService } from '../../../../core/approvals/approval-service.js';
 import { eventFanOut } from '../../../../core/event-fan-out.js';
 import { createServerPrincipal } from '../../../../connectors/principal/server-principal.js';

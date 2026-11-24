@@ -1,6 +1,5 @@
 import { stored, ISOLATED, IN_PROCESS, HOME, COPY_PATH, copy } from './harness.js';
 import { beforeEach, describe, expect, it } from 'vitest';
-import path from 'node:path';
 import { grantsDigestOf } from '../../extension-path-trust.js';
 import { mayRunExtensionCode } from '../../../extension-load-policy.js';
 import {

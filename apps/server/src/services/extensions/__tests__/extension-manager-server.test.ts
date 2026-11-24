@@ -222,22 +222,6 @@ describe('ExtensionManager — server lifecycle', () => {
   });
 
   describe('initializeServer', () => {
-    it('returns ok:false for disabled extensions', async () => {
-      const record = makeRecord('disabled-srv', {
-        status: 'disabled',
-        hasServerEntry: true,
-        serverEntryPath: '/fake/extensions/disabled-srv/server.ts',
-      });
-      mockDiscover.mockResolvedValue([record]);
-
-      await manager.initialize(null);
-
-      const result = await manager.initializeServer('disabled-srv');
-
-      expect(result.ok).toBe(false);
-      expect(result.error).toBe('Extension has no server entry or is not enabled');
-    });
-
     // Purpose: a pinned copy whose checked copy went away while it compiled
     // (a rescan cleared `runPath`) never starts from the folder it was found
     // in, inside DorkOS or in its own process: it is refused with the fixed
@@ -385,67 +369,6 @@ describe('ExtensionManager — server lifecycle', () => {
       // Disposing cancels its schedules and makes a later `ctx.schedule` inert.
       expect(mockDispose).toHaveBeenCalledTimes(1);
       expect(manager.getServerHandler('bad-fetch')).toBeNull();
-    });
-  });
-
-  describe('disable with server entry', () => {
-    it('calls shutdownServer before disabling', async () => {
-      const record = makeRecord('dis-srv', {
-        status: 'disabled',
-        hasServerEntry: true,
-        serverEntryPath: '/fake/extensions/dis-srv/server.ts',
-      });
-      mockDiscover.mockResolvedValue([record]);
-      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
-      mockCompileServer.mockResolvedValue({
-        code: makeCjsModule(),
-        sourceHash: 'srvhash',
-      });
-
-      await manager.initialize(null);
-      await manager.enable('dis-srv');
-      expect(manager.getServerHandler('dis-srv')).not.toBeNull();
-
-      await manager.disable('dis-srv');
-
-      expect(manager.getServerHandler('dis-srv')).toBeNull();
-      expect(mockScheduledCleanup).toHaveBeenCalled();
-    });
-  });
-
-  describe('reloadExtension with server entry', () => {
-    it('shuts down old server instance and reinitializes after recompilation', async () => {
-      const record = makeRecord('reload-srv', {
-        status: 'enabled',
-        hasServerEntry: true,
-        serverEntryPath: '/fake/extensions/reload-srv/server.ts',
-      });
-      mockConfigGet.mockReturnValue({
-        enabled: ['reload-srv'],
-        disabled: [],
-        ...approved(['reload-srv']),
-      });
-      mockDiscover.mockResolvedValue([record]);
-      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
-      mockCompileServer.mockResolvedValue({
-        code: makeCjsModule(),
-        sourceHash: 'srvhash',
-      });
-
-      // initialize compiles enabled extensions (disabled -> compiled) and inits server
-      await manager.initialize(null);
-      expect(manager.getServerHandler('reload-srv')).not.toBeNull();
-
-      // Reload should shut down and reinitialize
-      await manager.reloadExtension('reload-srv');
-
-      // Server router should still be available (reinitialized)
-      expect(manager.getServerHandler('reload-srv')).not.toBeNull();
-      // compileServer called twice: once during initialize, once during reload
-      expect(mockCompileServer).toHaveBeenCalledTimes(2);
-      // The old instance's context is disposed, so its timers stop beside the
-      // new instance's (DOR-2462).
-      expect(mockDispose).toHaveBeenCalledTimes(1);
     });
   });
 

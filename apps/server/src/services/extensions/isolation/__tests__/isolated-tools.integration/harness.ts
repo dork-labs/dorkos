@@ -5,7 +5,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { noopLogger } from '@dorkos/shared/logger';
 import type { ExtensionsConfig } from '../../../extension-enable-resolution.js';

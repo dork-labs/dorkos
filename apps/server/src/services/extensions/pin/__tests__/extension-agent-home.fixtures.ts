@@ -2,8 +2,7 @@
  * Shared setup for the extension-agent-home suites: everything the original file declared or
  * registered outside its tests.
  */
-import { it, vi } from 'vitest';
-import path from 'node:path';
+import { vi } from 'vitest';
 import type { ExtensionManifest, ExtensionRecord } from '@dorkos/extension-api';
 import { bundleDigestOf, grantsDigestOf } from '../extension-path-trust.js';
 import { type ExtensionApprovals } from '../../extension-load-policy.js';

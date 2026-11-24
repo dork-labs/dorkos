@@ -14,7 +14,6 @@ import {
 import { describe, expect, it } from 'vitest';
 import { canvasDocuments } from '@dorkos/db';
 import {
-  DocChannelStore,
   DocChannelCorruptionError,
   DocChannelClosedError,
   DocChannelStateConflictError,

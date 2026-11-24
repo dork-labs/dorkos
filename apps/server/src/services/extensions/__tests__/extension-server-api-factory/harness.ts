@@ -2,7 +2,7 @@
  * Shared setup for the extension-server-api-factory suites: everything the original file declared or
  * registered outside its tests.
  */
-import { it, beforeEach, afterEach, vi } from 'vitest';
+import { beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';

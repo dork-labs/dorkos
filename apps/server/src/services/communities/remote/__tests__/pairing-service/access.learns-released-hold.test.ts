@@ -7,7 +7,6 @@ import {
 } from '../../connection-store.js';
 import { RemoteCommunityPairingService } from '../../pairing-service.js';
 import { RemoteCommunityAdapter } from '../../remote-community-adapter.js';
-import { PinnedHttpError } from '../../pinned-origin.js';
 import {
   READ_ONLY_RECHECK_MS,
   RemoteRoomSubscriptionRuntime,

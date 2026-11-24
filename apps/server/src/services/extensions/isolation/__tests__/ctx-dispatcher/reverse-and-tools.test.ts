@@ -1,6 +1,5 @@
 import { setup } from './fixtures.js';
 import { describe, expect, it, vi } from 'vitest';
-import { CtxDispatcher } from '../../ctx-dispatcher.js';
 import type { RetMessage } from '../../ipc-protocol.js';
 import { createToolBinding } from '../../../agent-tools/tool-binding.js';
 import { MAX_CHILD_REGISTRATIONS } from '../../ctx-dispatcher.js';
