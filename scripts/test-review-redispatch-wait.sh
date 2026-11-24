@@ -82,11 +82,11 @@ check 'no file is usage' 2 "$?"
 
 # --- the wiring in review-redispatch.yml ---
 wf=$(cat "$repo_root/.github/workflows/review-redispatch.yml")
-check 'it wakes on claude-code-review completing' yes "$(grep -A2 '^  workflow_run:' <<<"$wf" | tr -d ' \n' | grep -qF 'workflows:[claude-code-review]types:[completed]' && echo yes || echo no)"
+check 'it wakes on claude-code-review completing' yes "$(grep -A2 '^  workflow_run:' <<<"$wf" | tr -d ' \n' | grep -F 'workflows:[claude-code-review]types:[completed]' >/dev/null && echo yes || echo no)"
 check 'the review workflow is named claude-code-review' yes "$(grep -qx 'name: claude-code-review' "$repo_root/.github/workflows/claude-code-review.yml" && echo yes || echo no)"
 check 'the wait job sleeps on this script' yes "$(has "$wf" 'bash scripts/review-redispatch-wait.sh')"
 check 'its sparse checkout carries the ladder it reads' yes "$(has "$wf" 'scripts/should-redispatch-review.sh')"
-check 'the scan keeps one concurrency group' yes "$(grep -A2 '^    concurrency:' <<<"$wf" | grep -qF 'group: review-redispatch' && echo yes || echo no)"
+check 'the scan keeps one concurrency group' yes "$(grep -A2 '^    concurrency:' <<<"$wf" | grep -F 'group: review-redispatch' >/dev/null && echo yes || echo no)"
 check 'the cron stays as a backstop' yes "$(has "$wf" "- cron: '*/10 * * * *'")"
 
 echo "review-redispatch-wait: $pass passed, $fail failed"

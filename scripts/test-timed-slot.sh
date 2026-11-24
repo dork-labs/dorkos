@@ -187,8 +187,8 @@ wired() {
   check "$wf: the cron is the slot" yes "$(has "$text" "- cron: '$min $hour * * *'")"
   check "$wf: the cron is off minute 0" yes "$([ "$min" != 0 ] && echo yes || echo no)"
   check "$wf: the due job asks about the same slot" yes "$(has "$text" "bash scripts/timed-slot.sh due $wf $slot")"
-  check "$wf: the backstop is CLI Smoke Test on main" yes "$(grep -A3 '^  workflow_run:' <<<"$text" | tr -d ' \n' | grep -qF 'workflows:[CLISmokeTest]types:[completed]branches:[main]' && echo yes || echo no)"
-  check "$wf: one concurrency group for the whole run" yes "$(grep -A1 '^concurrency:' <<<"$text" | grep -qE '^  group: [a-z-]+$' && echo yes || echo no)"
+  check "$wf: the backstop is CLI Smoke Test on main" yes "$(grep -A3 '^  workflow_run:' <<<"$text" | tr -d ' \n' | grep -F 'workflows:[CLISmokeTest]types:[completed]branches:[main]' >/dev/null && echo yes || echo no)"
+  check "$wf: one concurrency group for the whole run" yes "$(grep -A1 '^concurrency:' <<<"$text" | grep -E '^  group: [a-z-]+$' >/dev/null && echo yes || echo no)"
   # shellcheck disable=SC2016 # a literal workflow expression
   check "$wf: the marker is the name due printed" yes "$(has "$text" 'name: ${{ needs.due.outputs.marker }}')"
 }
@@ -196,8 +196,8 @@ wired daily-release.yml 7 15
 wired daily-sweep.yml 13 17
 smoke=$(cat "$repo_root/.github/workflows/cli-smoke-test.yml")
 check 'the backstop workflow is named CLI Smoke Test' yes "$(grep -qx 'name: CLI Smoke Test' <<<"$smoke" && echo yes || echo no)"
-check 'and runs on every push to main' yes "$(grep -A2 '^  push:' <<<"$smoke" | grep -qF 'branches: [main]' && echo yes || echo no)"
-check 'with no path filter' no "$(awk '/^on:/{p=1} /^[a-z]/ && !/^on:/{p=0} p' <<<"$smoke" | grep -qE 'paths(-ignore)?:' && echo yes || echo no)"
+check 'and runs on every push to main' yes "$(grep -A2 '^  push:' <<<"$smoke" | grep -F 'branches: [main]' >/dev/null && echo yes || echo no)"
+check 'with no path filter' no "$(awk '/^on:/{p=1} /^[a-z]/ && !/^on:/{p=0} p' <<<"$smoke" | grep -E 'paths(-ignore)?:' >/dev/null && echo yes || echo no)"
 
 echo "timed-slot: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
