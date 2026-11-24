@@ -1,12 +1,12 @@
 ---
-slug: accounts-l1b-launch
+slug: accounts-l1b-hardening
 number: 261119-021000
 created: 2026-11-19
 status: draft
 parent: everything-is-a-space
 ---
 
-# M4: L1b hardening and the rest of launch
+# M4: L1b hardening and the rest of the accounts work
 
 **Status:** Draft. Planning only; no code lands from this document.
 **Author:** Claude, for Dorian Collier
