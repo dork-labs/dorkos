@@ -67,7 +67,7 @@ A message POST returns `202` with an acceptance receipt. It does not carry the r
 | Community browser updates                      | SSE `/api/v1/communities/:communityId/channels/:id/events`, alongside HTTP commands                                                                                      |
 | Local server and Community                     | Approved-installation HTTP commands plus a qualified remote-room SSE stream, and an availability report                                                                  |
 | Your computer and your own DorkOS in the cloud | A signed WebSocket at `/api/relay/computer`, dialed by the computer: the chat stream, send, approvals and interrupt only. In the code, off by default; not available yet |
-| Other devices                                  | Your own tunnel, or the Wi-Fi listener on a Mac                                                                                                                          |
+| Other devices                                  | Your own tunnel, or the network listener on a Mac                                                                                                                        |
 | OpenCode runtime                               | Local SDK/HTTP sidecar calls plus a global SSE event subscription                                                                                                        |
 | External tools and agents                      | MCP Streamable HTTP at `/mcp`; A2A under `/a2a`                                                                                                                          |
 
@@ -105,7 +105,7 @@ The public `packages/cloud-api` package defines schemas, routes, fixtures and a 
 
 The contract's remote command stream uses SSE and has lease/acknowledgement semantics; managed remote access is not available yet, and the app describes remote access as it works today. The existing local tunnel manager separately uses the ngrok SDK. Remote browser traffic travels through the tunnel to the local server. The chat relay is a third path in the code: it carries chats to your own DorkOS in the cloud, not to Cloud's service. Credits inference is another optional path, selected through Runs on on a linked installation. The environment variable can disable credits; it cannot authorize spending. Local DorkOS and the space server both run without Cloud. The contract also carries the assignment of your own DorkOS in the cloud, agent computers, computer start and stop and the account directory; only the assignment and its viewer-open wake have app consumers today.
 
-[![Four routes from another device to your DorkOS: the Wi-Fi listener, your own tunnel, managed remote ingress, and the chat relay through your own DorkOS in the cloud](/diagrams/architecture/remote-access.svg)](/diagrams/architecture/remote-access.svg)
+[![Four routes from another device to your DorkOS: the network listener, your own tunnel, managed remote ingress, and the chat relay through your own DorkOS in the cloud](/diagrams/architecture/remote-access.svg)](/diagrams/architecture/remote-access.svg)
 
 Each of those routes is its own listener or dial, and DorkOS remembers which route each sign-in came through. A sign-in made on one route is refused on another.
 

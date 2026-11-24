@@ -13,7 +13,7 @@ describe('marked-turn copy (DOR-3858)', () => {
     }
     for (const line of [unmarkedTurnClause(false), markedTurnClause(false)]) {
       expect(line).not.toMatch(/Telegram|Slack|room/);
-      expect(line).toContain('over Wi-Fi');
+      expect(line).toContain('on your network');
     }
   });
 
@@ -30,7 +30,7 @@ describe('marked-turn copy (DOR-3858)', () => {
 
   it('pins the connected-app note with the flag off', () => {
     expect(outsideWordsNote(false)).toBe(
-      ' A message sent over Wi-Fi by anyone but the owner runs with limits, and a send through a ' +
+      ' A message sent from your network by anyone but the owner runs with limits, and a send through a ' +
         'connected app in that turn asks a person first or is refused. A read through a connected ' +
         "app, a web search or page, or another server's tool holds a later send in that turn the " +
         'same way. Other outside text, such as chat apps, files you read and commands you run, ' +

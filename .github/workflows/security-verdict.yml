@@ -18,8 +18,9 @@ name: security-verdict
 # ADVISORY. It is not a required check. For a comparison period the local
 # Security agent keeps reviewing, and the two verdicts are compared on the same
 # heads before this becomes required (org rule, DOR-5101). It holds no secret.
-# Its only write is the commit status. Findings are never posted: this
-# repository is public.
+# Its only write is the commit status. Findings are never posted in the clear:
+# this repository is public. A failing lens's details reach Security only as
+# age ciphertext (scripts/security-findings.sh), which this job never reads.
 
 on:
   workflow_run:

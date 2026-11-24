@@ -46,7 +46,11 @@
  */
 import { randomBytes } from 'node:crypto';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
-import { AGENT_CONTEXT_BLOCK_TAGS, defuseSystemTags } from '@dorkos/shared/untrusted-text';
+import {
+  AGENT_CONTEXT_BLOCK_TAGS,
+  defuseSystemTags,
+  stripHiddenCharacters,
+} from '@dorkos/shared/untrusted-text';
 
 /** Hex characters in a fence nonce. */
 export const NONCE_CHARS = 8;
@@ -104,6 +108,36 @@ export function mintFenceNonce(): string {
  */
 export function defuseUntrustedText(text: string): string {
   return defuseSystemTags(text, SYSTEM_TAGS);
+}
+
+/**
+ * The one runtime tag a file's text keeps defused when a tool hands it back:
+ * Claude Code writes `<system-reminder>` blocks into tool results itself, so a
+ * file carrying one could pass its words off as the runtime's own.
+ */
+const FILE_TEXT_TAGS = ['system-reminder'];
+
+/**
+ * A file's text as a tool hands it to a model: as written, apart from the
+ * characters that draw nothing, which are dropped, and a reminder tag, which is
+ * defused.
+ *
+ * NEL and the line and paragraph separators are dropped too, not turned into
+ * `\n` as in a message: inside a string literal a `\n` would end the string,
+ * where dropping the character leaves the code valid.
+ *
+ * Narrower than {@link defuseUntrustedText} on purpose. The full tag set
+ * escapes a `<` followed by `env`, which in code is a comparison
+ * (`i < env.MAX`) or a type (`Hono<Env>`), so it would change the code an agent
+ * reads. The rest of that set structures a system prompt, and in a tool result
+ * it can neither close nor open one of its blocks. The agent can also read the
+ * same file with its own file tools, so this is a courtesy to the reader, not a
+ * boundary.
+ *
+ * @param text - The file's text, as read from disk.
+ */
+export function defuseFileText(text: string): string {
+  return defuseSystemTags(stripHiddenCharacters(text, { lineBreaks: 'drop' }), FILE_TEXT_TAGS);
 }
 
 /** What a fence is called and what it says about itself. */

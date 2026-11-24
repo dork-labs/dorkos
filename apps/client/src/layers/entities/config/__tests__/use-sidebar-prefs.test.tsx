@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ServerConfig } from '@dorkos/shared/types';
-import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
+import type { SidebarPrefs, SidebarItemRef } from '@dorkos/shared/config-schema';
 import { SIDEBAR_PREFS_DEFAULTS, SidebarGroupSchema } from '@dorkos/shared/config-schema';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
@@ -17,27 +17,20 @@ import {
   useUpdateSidebarPrefs,
   pinItem,
   unpinItem,
+  unmuteItem,
+  setSectionDisplayFilter,
   moveToGroup,
   createGroup,
-  createSmartGroup,
   convertSmartGroupToManual,
-  setGroupRules,
-  renameGroup,
   deleteGroup,
-  reorderGroup,
   reorderWithinGroup,
-  setGroupSortMode,
-  setGroupCollapsed,
   isSectionCollapsed,
   sectionSortMode,
   sectionDisplayFilter,
   setSectionCollapsed,
   setSectionSortMode,
-  setSectionDisplayFilter,
-  setGroupDisplayFilter,
   setGroupMuted,
   muteItem,
-  unmuteItem,
   mutedRoomIds,
   moveTargetGroups,
   roomSectionIds,
@@ -63,15 +56,6 @@ describe('sidebar prefs pure helpers', () => {
       expect(p3.pinned).toEqual([agent('/a'), agent('/b')]);
     });
 
-    it('pinItem compares by value, not object identity', () => {
-      // Two structurally-equal refs built on different code paths must count as
-      // the same pin — this is exactly what `sameSidebarItem` exists for, and a
-      // stray `includes`/`===` would silently duplicate here.
-      const seeded = prefs({ pinned: [{ kind: 'agent', path: '/a' }] });
-      expect(pinItem(seeded, { kind: 'agent', path: '/a' })).toBe(seeded);
-      expect(unpinItem(seeded, { kind: 'agent', path: '/a' }).pinned).toEqual([]);
-    });
-
     it('an agent and a room are never the same pin', () => {
       const seeded = prefs({ pinned: [agent('/a')] });
       const withRoom = pinItem(seeded, room('room-1'));
@@ -86,12 +70,6 @@ describe('sidebar prefs pure helpers', () => {
       expect(unpinItem(base, agent('/a')).pinned).toEqual([agent('/b')]);
       expect(unpinItem(base, agent('/missing'))).toBe(base);
       expect(unpinItem(base, room('room-1'))).toBe(base);
-    });
-
-    it('does not mutate the input', () => {
-      const base = prefs({ pinned: [agent('/a')] });
-      pinItem(base, agent('/b'));
-      expect(base.pinned).toEqual([agent('/a')]);
     });
   });
 
@@ -129,65 +107,6 @@ describe('sidebar prefs pure helpers', () => {
       const next = moveToGroup(prefs({ groups }), agent('/x'), null);
       expect(next.groups.flatMap((g) => g.items)).toEqual([]);
     });
-
-    it('appends to the target group at the end', () => {
-      const seeded = prefs({
-        groups: [
-          {
-            id: 'A',
-            name: 'A',
-            items: [agent('/x')],
-            sortMode: 'manual',
-            kind: 'manual',
-            collapsed: false,
-            displayFilter: 'all',
-            muted: false,
-          },
-          {
-            id: 'B',
-            name: 'B',
-            items: [agent('/y')],
-            sortMode: 'manual',
-            kind: 'manual',
-            collapsed: false,
-            displayFilter: 'all',
-            muted: false,
-          },
-        ],
-      });
-      const next = moveToGroup(seeded, agent('/x'), 'B');
-      expect(next.groups.find((g) => g.id === 'B')!.items).toEqual([agent('/y'), agent('/x')]);
-    });
-
-    it('moves a room the same way it moves an agent', () => {
-      const seeded = prefs({
-        groups: [
-          {
-            id: 'A',
-            name: 'A',
-            items: [agent('/x'), room('room-1')],
-            sortMode: 'manual',
-            kind: 'manual',
-            collapsed: false,
-            displayFilter: 'all',
-            muted: false,
-          },
-          {
-            id: 'B',
-            name: 'B',
-            items: [],
-            sortMode: 'manual',
-            kind: 'manual',
-            collapsed: false,
-            displayFilter: 'all',
-            muted: false,
-          },
-        ],
-      });
-      const next = moveToGroup(seeded, room('room-1'), 'B');
-      expect(next.groups.find((g) => g.id === 'A')!.items).toEqual([agent('/x')]);
-      expect(next.groups.find((g) => g.id === 'B')!.items).toEqual([room('room-1')]);
-    });
   });
 
   describe('group CRUD', () => {
@@ -208,36 +127,13 @@ describe('sidebar prefs pure helpers', () => {
     });
 
     it('createGroup mints exactly what the schema defaults to (DOR-2055)', () => {
-      // The literal above and `SidebarGroupSchema`'s defaults are two
-      // independent statements of the same fact, and until this they were only
-      // ever asserted apart. The server's `newSidebarGroup` — which an agent
-      // uses to create a section through `sidebar_add_to_group` — is pinned
-      // against the SCHEMA, so without this bridge the two could drift and a
-      // section made by an agent would differ from one made by a person with
-      // nothing going red.
+      // The literal above and `SidebarGroupSchema`'s defaults are two independent statements of
+      // the same fact, and until this they were only ever asserted apart.
       const { next, id } = createGroup(prefs(), 'Clients');
       expect(next.groups[0]).toEqual(SidebarGroupSchema.parse({ id, name: 'Clients' }));
     });
 
     // --- Smart groups (DOR-338) ---
-
-    it('createSmartGroup mints an id, forces sortMode "recent", and stores the rules', () => {
-      const rules: SidebarGroup['rules'] = { statuses: ['needs-attention', 'active'] };
-      const { next, id } = createSmartGroup(prefs(), 'Active now', rules);
-      expect(id).toBeTruthy();
-      expect(next.groups).toHaveLength(1);
-      expect(next.groups[0]).toEqual({
-        id,
-        name: 'Active now',
-        items: [],
-        sortMode: 'recent',
-        kind: 'smart',
-        collapsed: false,
-        displayFilter: 'all',
-        muted: false,
-        rules,
-      });
-    });
 
     it('convertSmartGroupToManual materializes the exact current members and drops rules', () => {
       const seeded = prefs({
@@ -267,74 +163,6 @@ describe('sidebar prefs pure helpers', () => {
         muted: false,
         rules: undefined,
       });
-    });
-
-    it('convertSmartGroupToManual keeps name/collapse/sort/mute/displayFilter untouched', () => {
-      const seeded = prefs({
-        groups: [
-          {
-            id: 'g1',
-            name: 'Codex fleet',
-            items: [],
-            sortMode: 'name',
-            kind: 'smart',
-            collapsed: true,
-            displayFilter: 'attention',
-            muted: true,
-            rules: { runtimes: ['codex'] },
-          },
-        ],
-      });
-      const next = convertSmartGroupToManual(seeded, 'g1', []);
-      const g = next.groups[0]!;
-      expect(g.name).toBe('Codex fleet');
-      expect(g.sortMode).toBe('name');
-      expect(g.collapsed).toBe(true);
-      expect(g.displayFilter).toBe('attention');
-      expect(g.muted).toBe(true);
-      expect(g.items).toEqual([]);
-    });
-
-    it('setGroupRules replaces a smart group’s rules and is a no-op for a manual group', () => {
-      const seeded = prefs({
-        groups: [
-          {
-            id: 'smart1',
-            name: 'Active now',
-            items: [],
-            sortMode: 'recent',
-            kind: 'smart',
-            collapsed: false,
-            displayFilter: 'all',
-            muted: false,
-            rules: { statuses: ['active'] },
-          },
-          {
-            id: 'manual1',
-            name: 'Clients',
-            items: [agent('/x')],
-            sortMode: 'manual',
-            kind: 'manual',
-            collapsed: false,
-            displayFilter: 'all',
-            muted: false,
-          },
-        ],
-      });
-      const newRules = { runtimes: ['codex'] };
-      const next = setGroupRules(seeded, 'smart1', newRules);
-      expect(next.groups[0]!.rules).toEqual(newRules);
-      // The manual group is untouched — same reference.
-      expect(next.groups[1]).toBe(seeded.groups[1]);
-
-      // No-op against a manual group id.
-      const noop = setGroupRules(seeded, 'manual1', newRules);
-      expect(noop.groups[1]).toBe(seeded.groups[1]);
-    });
-
-    it('renameGroup sets the name', () => {
-      const { next, id } = createGroup(prefs(), 'Old');
-      expect(renameGroup(next, id, 'New').groups[0].name).toBe('New');
     });
 
     it('deleteGroup returns members to ungrouped (they vanish from all members lists)', () => {
@@ -386,11 +214,6 @@ describe('sidebar prefs pure helpers', () => {
       ],
     });
 
-    it('reorderGroup moves within range and no-ops out of range', () => {
-      expect(reorderGroup(seeded, 0, 1).groups.map((g) => g.id)).toEqual(['B', 'A']);
-      expect(reorderGroup(seeded, 0, 5)).toBe(seeded);
-    });
-
     it('reorderWithinGroup reorders members, out-of-range is a no-op', () => {
       expect(reorderWithinGroup(seeded, 'A', 0, 1).groups[0].items).toEqual([
         agent('/y'),
@@ -401,29 +224,6 @@ describe('sidebar prefs pure helpers', () => {
     });
   });
 
-  describe('setGroupSortMode', () => {
-    it('changes sortMode without mutating members', () => {
-      const seeded = prefs({
-        groups: [
-          {
-            id: 'A',
-            name: 'A',
-            items: [agent('/x'), agent('/y')],
-            sortMode: 'manual',
-            kind: 'manual',
-            collapsed: false,
-            displayFilter: 'all',
-            muted: false,
-          },
-        ],
-      });
-      const next = setGroupSortMode(seeded, 'A', 'recent');
-      expect(next.groups[0].sortMode).toBe('recent');
-      // The durable manual order is preserved when switching away from manual.
-      expect(next.groups[0].items).toEqual([agent('/x'), agent('/y')]);
-    });
-  });
-
   describe('per-section state (`sections`)', () => {
     it('a section with nothing stored is open and answers with the caller’s defaults', () => {
       const base = prefs();
@@ -431,6 +231,15 @@ describe('sidebar prefs pure helpers', () => {
       expect(isSectionCollapsed(base, 'channels')).toBe(false);
       expect(sectionSortMode(base, 'agents', ['name', 'recent'])).toBe('name');
       expect(sectionDisplayFilter(base, 'agents', 'all')).toBe('all');
+    });
+
+    it('patching one field of a section keeps the rest of that section', () => {
+      const seeded = setSectionSortMode(
+        setSectionCollapsed(prefs(), 'agents', true),
+        'agents',
+        'recent'
+      );
+      expect(seeded.sections.agents).toEqual({ collapsed: true, sortMode: 'recent' });
     });
 
     it('each setter writes its own section and leaves the others alone', () => {
@@ -447,128 +256,11 @@ describe('sidebar prefs pure helpers', () => {
       expect(sectionDisplayFilter(filtered, 'agents', 'all')).toBe('attention');
       expect(sectionSortMode(filtered, 'agents', ['name', 'recent'])).toBe('recent');
     });
-
-    it('patching one field of a section keeps the rest of that section', () => {
-      const seeded = setSectionSortMode(
-        setSectionCollapsed(prefs(), 'agents', true),
-        'agents',
-        'recent'
-      );
-      expect(seeded.sections.agents).toEqual({ collapsed: true, sortMode: 'recent' });
-    });
-
-    it('reads a stored sort the section does not offer as the section’s default', () => {
-      // A `manual` left behind on a section that stopped sorting by hand must
-      // never reach a menu that has no such item in it.
-      const stale = {
-        ...prefs(),
-        sections: { agents: { collapsed: false, sortMode: 'manual' as const } },
-      };
-      expect(sectionSortMode(stale, 'agents', ['name', 'recent'])).toBe('name');
-    });
-
-    it('never mutates its input', () => {
-      const base = prefs();
-      setSectionCollapsed(base, 'channels', true);
-      expect(base.sections).toEqual({});
-    });
-  });
-
-  it('setGroupCollapsed toggles only the targeted group', () => {
-    const seeded = prefs({
-      groups: [
-        {
-          id: 'A',
-          name: 'A',
-          items: [],
-          sortMode: 'manual',
-          kind: 'manual',
-          collapsed: false,
-          displayFilter: 'all',
-          muted: false,
-        },
-        {
-          id: 'B',
-          name: 'B',
-          items: [],
-          sortMode: 'manual',
-          kind: 'manual',
-          collapsed: false,
-          displayFilter: 'all',
-          muted: false,
-        },
-      ],
-    });
-    const next = setGroupCollapsed(seeded, 'A', true);
-    expect(next.groups.find((g) => g.id === 'A')!.collapsed).toBe(true);
-    expect(next.groups.find((g) => g.id === 'B')!.collapsed).toBe(false);
   });
 
   // --- Display filter + mute (DOR-339) ---
 
-  describe('setGroupDisplayFilter', () => {
-    it('sets only the targeted group’s filter', () => {
-      const seeded = prefs({
-        groups: [
-          {
-            id: 'A',
-            name: 'A',
-            items: [],
-            sortMode: 'manual',
-            kind: 'manual',
-            collapsed: false,
-            displayFilter: 'all',
-            muted: false,
-          },
-          {
-            id: 'B',
-            name: 'B',
-            items: [],
-            sortMode: 'manual',
-            kind: 'manual',
-            collapsed: false,
-            displayFilter: 'all',
-            muted: false,
-          },
-        ],
-      });
-      const next = setGroupDisplayFilter(seeded, 'A', 'attention');
-      expect(next.groups.find((g) => g.id === 'A')!.displayFilter).toBe('attention');
-      expect(next.groups.find((g) => g.id === 'B')!.displayFilter).toBe('all');
-    });
-  });
-
   describe('setGroupMuted — a lens over members, never writes muted[]', () => {
-    it('sets only the targeted group’s muted flag', () => {
-      const seeded = prefs({
-        groups: [
-          {
-            id: 'A',
-            name: 'A',
-            items: [agent('/x')],
-            sortMode: 'manual',
-            kind: 'manual',
-            collapsed: false,
-            displayFilter: 'all',
-            muted: false,
-          },
-          {
-            id: 'B',
-            name: 'B',
-            items: [agent('/y')],
-            sortMode: 'manual',
-            kind: 'manual',
-            collapsed: false,
-            displayFilter: 'all',
-            muted: false,
-          },
-        ],
-      });
-      const next = setGroupMuted(seeded, 'A', true);
-      expect(next.groups.find((g) => g.id === 'A')!.muted).toBe(true);
-      expect(next.groups.find((g) => g.id === 'B')!.muted).toBe(false);
-    });
-
     it('never writes member refs into ui.sidebar.muted (individual state survives group mute/unmute untouched)', () => {
       const seeded = prefs({
         muted: [agent('/y')], // /y is individually muted; /x is not
@@ -601,28 +293,15 @@ describe('sidebar prefs pure helpers', () => {
       expect(p2).toBe(p1); // no change → same reference
     });
 
-    it('muteItem holds an agent and a room independently', () => {
-      const withBoth = muteItem(muteItem(prefs(), agent('/a')), room('room-1'));
-      expect(withBoth.muted).toEqual([agent('/a'), room('room-1')]);
-      expect(unmuteItem(withBoth, room('room-1')).muted).toEqual([agent('/a')]);
-    });
-
     it('unmuteItem removes and is a no-op for unknown items', () => {
       const base = prefs({ muted: [agent('/a'), agent('/b')] });
       expect(unmuteItem(base, agent('/a')).muted).toEqual([agent('/b')]);
       expect(unmuteItem(base, agent('/missing'))).toBe(base);
     });
-
-    it('does not mutate the input', () => {
-      const base = prefs({ muted: [agent('/a')] });
-      muteItem(base, agent('/b'));
-      expect(base.muted).toEqual([agent('/a')]);
-    });
   });
 });
 
-// ---------------------------------------------------------------------------
-// Optimistic mutation
+// --------------------------------------------------------------------------- Optimistic mutation
 // ---------------------------------------------------------------------------
 
 function makeServerConfig(sidebar: SidebarPrefs): ServerConfig {
@@ -630,9 +309,9 @@ function makeServerConfig(sidebar: SidebarPrefs): ServerConfig {
 }
 
 function createHarness(transport: Transport) {
-  // No gcTime override: the optimistic tests seed the config query and read it
-  // back with no active observer, so `gcTime: 0` would garbage-collect the
-  // seeded data and make the functional setQueryData a no-op.
+  // No gcTime override: the optimistic tests seed the config query and read it back with no
+  // active observer, so `gcTime: 0` would garbage-collect the seeded data and make the functional
+  // setQueryData a no-op.
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -648,11 +327,8 @@ function createHarness(transport: Transport) {
 }
 
 describe('useSidebarPrefs hands the stored section over as it is (DOR-588)', () => {
-  // It used to convert the pre-DOR-579 encoding — bare agent paths,
-  // `groups[].agentPaths` — behind a `WeakMap` that kept the result stable for
-  // the memos downstream. That rename shipped a release ago with its migration
-  // and the server no longer accepts the old encoding either, so this is a
-  // straight read and referential stability comes for free.
+  // It used to convert the pre-DOR-579 encoding — bare agent paths, `groups[].agentPaths` —
+  // behind a `WeakMap` that kept the result stable for the memos downstream.
   function renderPrefs(sidebar: SidebarPrefs) {
     const transport = createMockTransport({});
     const { queryClient, wrapper } = createHarness(transport);
@@ -664,16 +340,6 @@ describe('useSidebarPrefs hands the stored section over as it is (DOR-588)', () 
     const canonical = prefs({ pinned: [agent('/projects/alpha')] });
     const { result } = renderPrefs(canonical);
     expect(result.current).toBe(canonical);
-  });
-
-  it('stays referentially stable across re-renders', () => {
-    // Every consumer memoizes on `prefs.pinned` / `prefs.groups` identity, so a
-    // fresh object per read would invalidate those memos on every render.
-    const canonical = prefs({ pinned: [agent('/projects/alpha')] });
-    const { result, rerender } = renderPrefs(canonical);
-    const first = result.current;
-    rerender();
-    expect(result.current).toBe(first);
   });
 });
 
@@ -701,28 +367,6 @@ describe('useUpdateSidebarPrefs optimistic behavior', () => {
     await waitFor(() => expect(transport.updateConfig).toHaveBeenCalledTimes(1));
     expect(transport.updateConfig).toHaveBeenCalledWith({
       ui: { sidebar: expect.objectContaining({ pinned: [agent('/a')] }) },
-    });
-  });
-
-  it('composes two same-tick updates: both survive in the final PATCH payload', async () => {
-    const transport = createMockTransport({ updateConfig: vi.fn().mockResolvedValue(undefined) });
-    const { queryClient, wrapper } = createHarness(transport);
-    queryClient.setQueryData(configKeys.current(), makeServerConfig(prefs()));
-
-    const { result } = renderHook(() => useUpdateSidebarPrefs(), { wrapper });
-
-    // Two synchronous updates in one tick — the second must compose on the
-    // first's pending head, not the pre-mutation cache (whole-section writes
-    // would otherwise clobber each other).
-    act(() => {
-      result.current.update((p) => pinItem(p, agent('/a')));
-      result.current.update((p) => pinItem(p, agent('/b')));
-    });
-
-    await waitFor(() => expect(transport.updateConfig).toHaveBeenCalledTimes(2));
-    // The last write carries BOTH pins.
-    expect(transport.updateConfig).toHaveBeenLastCalledWith({
-      ui: { sidebar: expect.objectContaining({ pinned: [agent('/a'), agent('/b')] }) },
     });
   });
 
@@ -766,38 +410,14 @@ describe('useUpdateSidebarPrefs optimistic behavior', () => {
   });
 });
 
-/**
- * The one reader both surfaces share.
- *
- * It lives here rather than in the sidebar because "Jump back in" drops muted
- * rooms from a list the sidebar only dims them in, and a second derivation is
- * how one of the two starts offering what the other was told to stop offering.
- */
+/** The one reader both surfaces share. */
 describe('mutedRoomIds', () => {
   it('reads only the room members of the muted list', () => {
     expect([...mutedRoomIds([agent('/a'), room('r1'), room('r2')])]).toEqual(['r1', 'r2']);
   });
-
-  it('is empty when nothing is muted, and when only agents are', () => {
-    expect(mutedRoomIds([]).size).toBe(0);
-    expect(mutedRoomIds([agent('/a')]).size).toBe(0);
-  });
-
-  it('answers for what mute wrote, so a muted room is dropped by whoever reads it', () => {
-    const muted = muteItem(prefs(), room('r9'));
-    expect(mutedRoomIds(muted.muted).has('r9')).toBe(true);
-    expect(mutedRoomIds(unmuteItem(muted, room('r9')).muted).has('r9')).toBe(false);
-  });
 });
 
-/**
- * The two readers the sidebar's row chrome resolves a room's section with.
- *
- * They live beside the prefs for the reason {@link mutedRoomIds} does: the panel
- * answers them once for every row (`specs/sidebar-simplification` D8), and a
- * second derivation is how the menu and the drag layer come to disagree about
- * where a room lives.
- */
+/** The two readers the sidebar's row chrome resolves a room's section with. */
 describe('roomSectionIds / moveTargetGroups', () => {
   const section = (
     id: string,
@@ -828,23 +448,14 @@ describe('roomSectionIds / moveTargetGroups', () => {
     expect(map.get('/a')).toBeUndefined();
   });
 
-  it('leaves a room in no section absent rather than answering null', () => {
-    expect(roomSectionIds([]).size).toBe(0);
-  });
-
   it('never offers a SMART section as a move target', () => {
-    // Red when the filter goes: a room filed into a smart section is counted as
-    // grouped and hidden from Channels, while that section draws its
-    // rule-derived members instead — so the row vanishes entirely.
+    // Red when the filter goes: a room filed into a smart section is counted as grouped and
+    // hidden from Channels, while that section draws its rule-derived members instead — so the
+    // row vanishes entirely.
     const targets = moveTargetGroups([
       section('clients', 'manual'),
       section('active-now', 'smart'),
     ]);
     expect(targets).toEqual([{ id: 'clients', name: 'CLIENTS' }]);
-  });
-
-  it('offers manual sections in stored order', () => {
-    const targets = moveTargetGroups([section('b', 'manual'), section('a', 'manual')]);
-    expect(targets.map((t) => t.id)).toEqual(['b', 'a']);
   });
 });

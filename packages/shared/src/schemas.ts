@@ -4589,7 +4589,7 @@ export const TunnelStatusSchema = z
 
 export type TunnelStatus = z.infer<typeof TunnelStatusSchema>;
 
-// === Wi-Fi Access (DOR-2930) ===
+// === Network Access (DOR-2930) ===
 
 /**
  * Whether other devices on the same network can open DorkOS, and the addresses
@@ -4916,7 +4916,7 @@ export const ServerConfigSchema = z
     }),
     onTrustedConnection: z.boolean().optional().openapi({
       description:
-        'Whether THIS request reached DorkOS at the machine it runs on or over an encrypted connection (the own tunnel or managed remote access; DorkOS`s own https listener counts only on a test home for now. Decided by the listener, never a header). Where it is true, the owner may change the front-door settings and the session relay, as at the desk. False over plain-`http` Wi-Fi and a bare network bind. Absent from an older server',
+        'Whether THIS request reached DorkOS at the machine it runs on or over an encrypted connection (the own tunnel or managed remote access; DorkOS`s own https listener counts only on a test home for now. Decided by the listener, never a header). Where it is true, the owner may change the front-door settings and the session relay, as at the desk. False over a plain-`http` network sign-in and a bare network bind. Absent from an older server',
     }),
     approvalAnswerContext: ApprovalAnswerContextSchema.optional(),
     callerRoute: z
@@ -4925,7 +4925,7 @@ export const ServerConfigSchema = z
       .optional()
       .openapi({
         description:
-          'The way THIS request reached DorkOS, as the server classified it: `local` at the computer DorkOS runs on, `wifi` over the Wi-Fi listener, and so on. Read only. A Wi-Fi request answers approvals with Allow once or Deny, never Always allow, so the app hides that choice there. Null for the relay; absent from an older server',
+          'The way THIS request reached DorkOS, as the server classified it: `local` at the computer DorkOS runs on, `wifi` over the network listener (any network this computer is on, wired or wireless, or a VPN such as Tailscale), and so on. Read only. A network request answers approvals with Allow once or Deny, never Always allow, so the app hides that choice there. Null for the relay; absent from an older server',
       }),
     capacity: z
       .object({
@@ -4956,7 +4956,7 @@ export const ServerConfigSchema = z
     port: z.number().int(),
     ownOrigins: z.array(z.string()).optional().openapi({
       description:
-        'This server`s own addresses beyond loopback, right now: its live tunnel origins, its Wi-Fi origins while Wi-Fi access is open, and a serving hub`s own address. The canvas browser reads them so a frame naming this server by one of them gets no same-origin powers. Absent from an older server',
+        'This server`s own addresses beyond loopback, right now: its live tunnel origins, its network origins while network access is open, and a serving hub`s own address. The canvas browser reads them so a frame naming this server by one of them gets no same-origin powers. Absent from an older server',
     }),
     uptime: z.number(),
     workingDirectory: z.string(),

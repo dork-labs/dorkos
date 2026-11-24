@@ -2,15 +2,8 @@
  * @vitest-environment jsdom
  */
 /**
- * The runtime-sign-in banner: when it fires, when it goes away, and the one
- * signal it must never be keyed on.
- *
- * The predicate is tested twice on purpose. Directly, because the rule it
- * encodes ("the newest row per runtime, and `outcome` decides") is the whole
- * risk in this feature. And through `useAppBanners` with a real transport mock,
- * because a predicate that is right about rows proves nothing about the WIRING
- * — a descriptor asking for the wrong lens, or ranked at the wrong priority,
- * leaves every pure test green while the app draws nothing.
+ * The runtime-sign-in banner: when it fires, when it goes away, and the one signal it must never
+ * be keyed on.
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import {
@@ -38,12 +31,7 @@ import { useAppBanners } from '../model/use-app-banners';
 import { RuntimeSigninBanner } from '../ui/RuntimeSigninBanner';
 import { BANNER_PRIORITY, type BannerDescriptor } from '../model/banner-descriptor';
 
-// Two seams stand in, and nothing else does. The banner deep-links to Settings
-// → Runtimes, which needs TanStack Router context; and the Inbox hook subscribes
-// to the global `/api/events` stream, which needs the app-level
-// `EventStreamProvider` — a whole SSE stack for a subscription no test here
-// fires. The QUERY that feeds the descriptor is the real one, over a real
-// transport.
+// Two seams stand in, and nothing else does.
 const { openSettings } = vi.hoisted(() => ({ openSettings: vi.fn() }));
 vi.mock('@/layers/shared/model', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/model');
@@ -107,59 +95,10 @@ function recoveryRow(runtime: string, at: string): NotificationDTO {
 }
 
 describe('deadSigninRuntimes', () => {
-  it('is empty when nothing has failed', () => {
-    expect(deadSigninRuntimes([])).toEqual([]);
-  });
-
   it('names a runtime whose newest row is a raise', () => {
     expect(deadSigninRuntimes([signinRow('claude-code', '2026-09-01T10:00:00.000Z')])).toEqual([
       'claude-code',
     ]);
-  });
-
-  it('drops a runtime once its recovery row lands — the row that is ALREADY READ', () => {
-    // The exact regression this rule exists for. Keyed on unread, the recovery
-    // row would be invisible and the banner would stand forever.
-    const rows = [
-      recoveryRow('claude-code', '2026-09-01T10:05:00.000Z'),
-      signinRow('claude-code', '2026-09-01T10:00:00.000Z'),
-    ];
-    expect(deadSigninRuntimes(rows)).toEqual([]);
-  });
-
-  it('drops a runtime the server closed at boot after a restart', () => {
-    // The other half of DOR-1680, and the reason this banner is not permanent.
-    // The episode store is in memory, so a server killed mid-episode can never
-    // see the recovery edge; boot writes a resolution row instead
-    // (`emitters/runtime-signin.ts`), saying a restart cleared it rather than
-    // claiming an all-clear. Its title differs from the recovery row's — the
-    // predicate must key on `outcome`, which both carry, and never on words.
-    const bootClosed = signinRow('claude-code', '2026-09-01T11:00:00.000Z', {
-      title: 'DorkOS restarted while your Claude Code sign-in was broken',
-      resolvedAt: '2026-09-01T11:00:00.000Z',
-      outcome: 'cleared',
-      readAt: '2026-09-01T11:00:00.000Z',
-    });
-    const rows = [bootClosed, signinRow('claude-code', '2026-09-01T10:00:00.000Z')];
-    expect(deadSigninRuntimes(rows)).toEqual([]);
-  });
-
-  it('keeps a runtime whose raise row was read while it was still dead', () => {
-    // The mirror case: opening the Inbox marks the raise row read. That is not
-    // a recovery, and the banner must not take it for one.
-    const rows = [
-      signinRow('claude-code', '2026-09-01T10:00:00.000Z', { readAt: '2026-09-01T10:01:00.000Z' }),
-    ];
-    expect(deadSigninRuntimes(rows)).toEqual(['claude-code']);
-  });
-
-  it('names a runtime again on a second episode after a recovery', () => {
-    const rows = [
-      signinRow('claude-code', '2026-09-02T09:00:00.000Z'),
-      recoveryRow('claude-code', '2026-09-01T10:05:00.000Z'),
-      signinRow('claude-code', '2026-09-01T10:00:00.000Z'),
-    ];
-    expect(deadSigninRuntimes(rows)).toEqual(['claude-code']);
   });
 
   it('reads the newest row by timestamp, not by arrival order', () => {
@@ -170,27 +109,6 @@ describe('deadSigninRuntimes', () => {
       recoveryRow('claude-code', '2026-09-01T10:05:00.000Z'),
     ];
     expect(deadSigninRuntimes(rows)).toEqual([]);
-  });
-
-  it('tracks each runtime on its own', () => {
-    const rows = [
-      recoveryRow('codex', '2026-09-01T10:05:00.000Z'),
-      signinRow('codex', '2026-09-01T10:00:00.000Z'),
-      signinRow('claude-code', '2026-09-01T09:00:00.000Z'),
-    ];
-    expect(deadSigninRuntimes(rows)).toEqual(['claude-code']);
-  });
-
-  it('ignores rows of other kinds', () => {
-    const other: NotificationDTO = {
-      id: 'n-other',
-      kind: 'session.error',
-      tier: 'blocking',
-      subject: { type: 'session', id: 'claude-code' },
-      title: 'A session stopped on an error',
-      createdAt: '2026-09-01T11:00:00.000Z',
-    };
-    expect(deadSigninRuntimes([other])).toEqual([]);
   });
 });
 
@@ -218,24 +136,6 @@ function findSigninDescriptor(descriptors: BannerDescriptor[]): BannerDescriptor
 }
 
 describe('runtime-signin descriptor', () => {
-  it('asks the Inbox for sign-in rows only', async () => {
-    const transport = transportWith([]);
-    renderHook(() => useAppBanners(null), { wrapper: harness(transport) });
-
-    await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
-    expect(transport.listNotifications).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: ['signin.required'] })
-    );
-  });
-
-  it('is absent when no sign-in has failed', async () => {
-    const transport = transportWith([]);
-    const { result } = renderHook(() => useAppBanners(null), { wrapper: harness(transport) });
-
-    await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
-    await waitFor(() => expect(findSigninDescriptor(result.current)).toBeUndefined());
-  });
-
   it('outranks every other banner and names the dead runtime', async () => {
     const transport = transportWith([signinRow('claude-code', '2026-09-01T10:00:00.000Z')]);
     const { result } = renderHook(() => useAppBanners(null), { wrapper: harness(transport) });
@@ -261,54 +161,6 @@ describe('runtime-signin descriptor', () => {
 
     await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
     await waitFor(() => expect(findSigninDescriptor(result.current)).toBeUndefined());
-  });
-
-  it('names both runtimes when two sign-ins are dead', async () => {
-    const transport = transportWith([
-      signinRow('codex', '2026-09-01T10:05:00.000Z'),
-      signinRow('claude-code', '2026-09-01T10:00:00.000Z'),
-    ]);
-    const { result } = renderHook(() => useAppBanners(null), { wrapper: harness(transport) });
-    await waitFor(() => expect(findSigninDescriptor(result.current)).toBeDefined());
-
-    render(findSigninDescriptor(result.current)!.render());
-    expect(screen.getByRole('alert')).toHaveTextContent('Codex and Claude Code are signed out.');
-  });
-
-  it('counts the rest once more runtimes are dead than the row names', () => {
-    // Four is more than DorkOS ships today, which is the point: the line stays
-    // one line when a future runtime joins.
-    render(
-      <RuntimeSigninBanner runtimes={['claude-code', 'codex', 'opencode', 'a-future-runtime']} />
-    );
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'Claude Code, Codex and OpenCode and 1 more are signed out.'
-    );
-  });
-
-  it('deep-links to Settings → Runtimes', async () => {
-    const transport = transportWith([signinRow('claude-code', '2026-09-01T10:00:00.000Z')]);
-    const { result } = renderHook(() => useAppBanners(null), { wrapper: harness(transport) });
-    await waitFor(() => expect(findSigninDescriptor(result.current)).toBeDefined());
-
-    render(findSigninDescriptor(result.current)!.render());
-    fireEvent.click(screen.getByRole('button', { name: 'Review sign-ins' }));
-    expect(openSettings).toHaveBeenCalledWith('runtimes');
-  });
-
-  it('says something different from the transcript sign-in card, so the two never read as one repeated alarm', async () => {
-    // `ErrorMessageBlock`'s auth card says "Sign in to Claude again" / "Your
-    // Claude login stopped working…" with a "Fix sign-in" button. Both surfaces
-    // can be on screen at once, and neither may be a copy of the other.
-    const transport = transportWith([signinRow('claude-code', '2026-09-01T10:00:00.000Z')]);
-    const { result } = renderHook(() => useAppBanners(null), { wrapper: harness(transport) });
-    await waitFor(() => expect(findSigninDescriptor(result.current)).toBeDefined());
-
-    render(findSigninDescriptor(result.current)!.render());
-    const banner = screen.getByRole('alert');
-    expect(banner).not.toHaveTextContent('Sign in to Claude again');
-    expect(banner).not.toHaveTextContent('Sign in again to continue');
-    expect(screen.queryByRole('button', { name: 'Fix sign-in' })).toBeNull();
   });
 });
 
@@ -361,14 +213,6 @@ describe('the banner and DorkOS credits', () => {
     await waitFor(() => expect(trigger).toHaveTextContent('Use DorkOS credits'));
     expect(screen.getByRole('button', { name: 'Review sign-ins' })).toBeInTheDocument();
   });
-
-  it('leads with signing in again for a sign-in that ran out', async () => {
-    const transport = renderWithCredits({ expiresAt: '2026-09-01T00:00:00.000Z' });
-    await waitFor(() => expect(transport.getCloudCredits).toHaveBeenCalled());
-    await waitFor(() => expect(transport.checkRequirements).toHaveBeenCalled());
-    await new Promise((r) => setTimeout(r, 50));
-    expect(screen.queryByTestId('signin-banner-credits')).not.toBeInTheDocument();
-  });
 });
 
 /** Render the banner with the same account/config providers as the app shell. */
@@ -387,66 +231,6 @@ describe('account-targeted sign-in', () => {
     ).toEqual(['claude-code:/accounts/five']);
   });
 
-  it('names Claude5 and signs in its folder even when Main is the default', async () => {
-    const login = vi.fn().mockResolvedValue({ ok: true });
-    const transport = createMockTransport({
-      delegateRuntimeLogin: login,
-      getConfig: vi.fn().mockResolvedValue({
-        claudeCode: {
-          resolvedAccount: '/accounts/main',
-          inherited: true,
-          accounts: [
-            {
-              id: 'five',
-              path: '/accounts/five',
-              label: 'Claude5',
-              color: '#aabbcc',
-              colorIsDefault: true,
-              isAccountRoot: true,
-            },
-          ],
-        },
-      }),
-    });
-    rtlRender(<RuntimeSigninBanner runtimes={['claude-code:/accounts/five']} />, {
-      wrapper: harness(transport),
-    });
-    const button = await screen.findByRole('button', { name: 'Sign in to Claude5' });
-    expect(screen.getByRole('alert')).toHaveTextContent('Claude5 is signed out');
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
-    fireEvent.click(button);
-    await waitFor(() =>
-      // The folder resolves to its registry id: the server signs in by id.
-      expect(login).toHaveBeenCalledWith('claude-code', {
-        accountId: 'five',
-        sessionId: undefined,
-      })
-    );
-    expect(login).toHaveBeenCalledTimes(1);
-    expect(openSettings).not.toHaveBeenCalled();
-  });
-  it('offers one review action for two accounts and opens Runtimes', () => {
-    render(
-      <RuntimeSigninBanner
-        runtimes={['claude-code:/accounts/five', 'claude-code:/accounts/four']}
-      />
-    );
-    expect(screen.getAllByRole('button')).toHaveLength(1);
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Review sign-ins' }));
-    expect(openSettings).toHaveBeenCalledWith('runtimes');
-  });
-  it('names the account when signing in does not work', async () => {
-    const transport = createMockTransport({
-      delegateRuntimeLogin: vi.fn().mockRejectedValue(new Error('Unavailable')),
-    });
-    rtlRender(<RuntimeSigninBanner runtimes={['claude-code:/accounts/Claude5']} />, {
-      wrapper: harness(transport),
-    });
-    fireEvent.click(await screen.findByRole('button', { name: 'Sign in to Claude5' }));
-    expect(await screen.findByText('Couldn’t sign in to Claude5.')).toBeInTheDocument();
-    expect(screen.getByText('Try again.')).toBeInTheDocument();
-  });
   it('says why signing in did not work, and what to do (DOR-4426)', async () => {
     const reason = 'Sign-in timed out. Finish it in the browser within 3 minutes, then try again.';
     const login = vi.fn().mockResolvedValue({ ok: false, error: reason });

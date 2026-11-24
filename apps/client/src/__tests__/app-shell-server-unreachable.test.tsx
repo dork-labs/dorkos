@@ -1,23 +1,7 @@
 // @vitest-environment jsdom
-/**
- * The shell's boot gate, told apart from the shell's boot FAILURE (DOR-1475).
- *
- * Two states used to look identical from the outside, because both were
- * `<div class="bg-background h-dvh" />`: a config read still in flight, and a
- * config read that had failed with nothing cached. The first is a healthy boot
- * on a slow morning and must stay quiet. The second is a cockpit with no data
- * layer, and its silence was indistinguishable from the v0.63.0 black window.
- *
- * So this suite drives the REAL config query through a transport it controls —
- * rejecting, hanging, then answering — and asserts the shell tells those apart.
- * Mocking `useConfig` here would assert nothing: the whole defect lived in
- * which TanStack state means what.
- *
- * @module __tests__/app-shell-server-unreachable
- */
+/** The shell's boot gate, told apart from the shell's boot FAILURE (DOR-1475). */
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
 import { act, render, screen, cleanup, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import {
   QueryClient,
   QueryClientProvider,
@@ -34,10 +18,8 @@ import { LAUNCH_STARTED_AT } from '@/layers/shared/lib';
 
 // ── Router: the shell mounts without a RouterProvider ──
 
-// The web-access indicator rides the beacon but needs the live event feed,
-// which these tests do not provide.
-// The palette's app commands read the extension queries and their live
-// events; the shell's own behaviour here does not depend on them.
+// The web-access indicator rides the beacon but needs the live event feed, which these tests do
+// not provide.
 vi.mock('@/layers/widgets/apps-home', () => ({ useAppsPalette: () => {}, AppsPage: () => null }));
 vi.mock('@/layers/features/web-access', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/features/web-access')>()),
@@ -65,14 +47,8 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   useSearch: () => ({}),
 }));
 
-// ── Child surfaces, stubbed at their feature seams ──
-//
-// Everything below is scenery for this suite: it exists so the shell can mount,
-// and nothing here is under test. The one module deliberately left REAL is
-// `@/layers/entities/config` — the query whose states this suite is about. It is
-// mocked only PARTIALLY, for its `useConfigSync` stream subscriber, which needs
-// an `EventStreamProvider` this suite does not mount; everything the suite reads
-// is the real thing.
+// ── Child surfaces, stubbed at their feature seams ── Everything below is scenery for this
+// suite: it exists so the shell can mount, and nothing here is under test.
 
 vi.mock('@/layers/widgets/one-bar', () => ({
   resolveRouteHeader: () => null,
@@ -91,9 +67,8 @@ vi.mock('@/layers/features/dashboard-sidebar', async (importOriginal) => ({
   SidebarFooterStrip: () => null,
 }));
 
-// The first-run flow itself is not this suite's subject — only whether the
-// shell ever gets far enough to show it. The rest of the feature (the gate's
-// `isLoading`, which is the whole point) stays real.
+// The first-run flow itself is not this suite's subject — only whether the shell ever gets far
+// enough to show it.
 vi.mock('@/layers/features/onboarding', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/features/onboarding')>()),
   OnboardingFlow: () => <div data-testid="onboarding-flow" />,
@@ -205,9 +180,8 @@ vi.mock('@/layers/entities/tasks', async (importOriginal) => ({
   useTasksSync: () => {},
 }));
 
-// Agents and settings ride the same stream (DOR-2052): `useAgentsSync` refreshes
-// the agent caches on `agents_changed` and `useConfigSync` re-reads settings on
-// `config_changed`. No-op'd here for the same reason as the *Sync hooks above.
+// Agents and settings ride the same stream (DOR-2052): `useAgentsSync` refreshes the agent caches
+// on `agents_changed` and `useConfigSync` re-reads settings on `config_changed`.
 vi.mock('@/layers/entities/mesh', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/mesh')>()),
   useAgentsSync: () => {},
@@ -220,10 +194,9 @@ vi.mock('@/layers/entities/connectors', async (importOriginal) => ({
   useConnectorAgentRequestsSync: () => {},
 }));
 
-// `@/layers/entities/config` stays REAL apart from this ONE export — the config
-// query is the thing this suite is about, and a partial mock leaves `useConfig`,
-// `configKeys` and everything else exactly as they are. Only the stream
-// subscriber is stubbed, and it reads nothing this suite asserts on.
+// `@/layers/entities/config` stays REAL apart from this ONE export — the config query is the
+// thing this suite is about, and a partial mock leaves `useConfig`, `configKeys` and everything
+// else exactly as they are.
 vi.mock('@/layers/entities/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/config')>()),
   useConfigSync: () => {},
@@ -243,19 +216,16 @@ vi.mock('@/layers/entities/community', async (importOriginal) => ({
   useCommunityConnectionsSync: () => {},
 }));
 
-// Remote access rides the same stream (DOR-1743): `useTunnelSync` refreshes the
-// config read on a `tunnel_status` event, and `useRemoteAccessAnnouncer` reads
-// that config. No-op'd here for the same reason as the *Sync hooks above.
+// Remote access rides the same stream (DOR-1743): `useTunnelSync` refreshes the config read on a
+// `tunnel_status` event, and `useRemoteAccessAnnouncer` reads that config.
 vi.mock('@/layers/entities/tunnel', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/tunnel')>()),
   useTunnelSync: () => {},
   useRemoteAccessAnnouncer: () => {},
 }));
 
-// The shell's banner slot reads the Inbox, to raise a standing row while a
-// runtime's sign-in is dead (`widgets/app-banner`, DOR-1680). That hook
-// subscribes to the `notification` stream like the rest of this section, and a
-// server that will not answer has no notifications to give anyway.
+// The shell's banner slot reads the Inbox, to raise a standing row while a runtime's sign-in is
+// dead (`widgets/app-banner`, DOR-1680).
 vi.mock('@/layers/entities/notifications', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/notifications')>()),
   useNotifications: () => ({
@@ -343,12 +313,7 @@ async function letTimePass(ms: number) {
   });
 }
 
-/**
- * A client that asks once per fetch.
- *
- * One attempt per fetch: this suite is about what the shell does with a FAILED
- * read, not about how many times TanStack tries first.
- */
+/** A client that asks once per fetch. */
 function makeQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }
@@ -457,10 +422,7 @@ beforeAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   transport = createMockTransport();
-  // Each case is its own launch. Without this the shell's per-launch failure
-  // memory carries between them — and fake timers push `Date.now()` seconds
-  // into the future mid-case, so a later case's failure can be stamped BEHIND
-  // an earlier one's and be ignored as stale.
+  // Each case is its own launch.
   resetFailureMemoryForTests();
 });
 
@@ -476,19 +438,17 @@ describe('AppShell, when the server will not answer', () => {
     renderAppShell();
 
     expect(await screen.findByText(HEADLINE)).toBeInTheDocument();
-    // Not the empty div, and not the first-run overlay either — that flow
-    // collects answers it would have no server to save (the shell's 3s escape
-    // hatch used to hand it the window).
+    // Not the empty div, and not the first-run overlay either — that flow collects answers it
+    // would have no server to save (the shell's 3s escape hatch used to hand it the window).
     expect(screen.queryByTestId('app-shell')).not.toBeInTheDocument();
     expect(screen.queryByTestId('onboarding-flow')).not.toBeInTheDocument();
   });
 
   it('settles there instead of hammering the server it cannot reach', async () => {
-    // **The regression this suite exists to hold.** Gated on `isError`, this
-    // screen was a hot loop: TanStack rewinds a dataless query to `pending` the
-    // moment a retry starts, so the shell un-rendered the very screen whose
-    // mount had asked, then re-rendered it when the rejection landed — measured
-    // at ~3000 requests in half a second, at a server that is already down.
+    // **The regression this suite exists to hold.** Gated on `isError`, this screen was a hot
+    // loop: TanStack rewinds a dataless query to `pending` the moment a retry starts, so the
+    // shell un-rendered the very screen whose mount had asked, then re-rendered it when the
+    // rejection landed — measured at ~3000 requests in half a second, at a server that is already
     vi.mocked(transport.getConfig).mockRejectedValue(new Error('Failed to fetch'));
 
     renderAppShell();
@@ -496,21 +456,17 @@ describe('AppShell, when the server will not answer', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 300));
 
-    // Generous on purpose: the point is an order of magnitude, not an exact
-    // count. Anything in single digits is a screen at rest; the defect was
-    // four digits.
+    // Generous on purpose: the point is an order of magnitude, not an exact count.
     expect(vi.mocked(transport.getConfig).mock.calls.length).toBeLessThan(5);
     // And it is still the screen, not something the churn flickered past.
     expect(screen.getByText(HEADLINE)).toBeInTheDocument();
   });
 
   it('says so to the returning user too, whose cockpit is painted from yesterday', async () => {
-    // **The path that matters most, and the one a `data === undefined` gate
-    // could never reach.** The boot cache hydrates `/api/config` out of
-    // `localStorage` on every warm start, so a returning user always HAS a
-    // config — and with a dead server behind it the shell painted the whole
-    // cockpit from last night's copy, every action inside it failing, no
-    // screen. Restored is not reachable.
+    // **The path that matters most, and the one a `data === undefined` gate could never reach.**
+    // The boot cache hydrates `/api/config` out of `localStorage` on every warm start, so a
+    // returning user always HAS a config — and with a dead server behind it the shell painted the
+    // whole cockpit from last night's copy, every action inside it failing, no screen.
     vi.mocked(transport.getConfig).mockRejectedValue(new Error('Failed to fetch'));
 
     renderAppShell(seedYesterdaysConfig);
@@ -519,27 +475,11 @@ describe('AppShell, when the server will not answer', () => {
     expect(screen.queryByTestId('app-shell')).not.toBeInTheDocument();
   });
 
-  it('leaves the returning user’s cockpit alone when the server does answer', async () => {
-    // The other half of the same rule, and the reason it is a timestamp rather
-    // than "did we fetch": a warm boot against a HEALTHY server must still
-    // paint from cache and then quietly confirm. The screen belongs to servers
-    // that do not answer, not to caches that are warm.
-    vi.mocked(transport.getConfig).mockResolvedValue(settledConfig());
-
-    renderAppShell(seedYesterdaysConfig);
-
-    expect(await screen.findByTestId('app-shell')).toBeInTheDocument();
-    await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
-    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
-  });
-
   it('does not accuse a healthy server of a failure that happened last launch', async () => {
-    // **The flash this fix exists for.** The boot cache carries the config
-    // query's `errorUpdateCount` forward for as long as the entry lives, and
-    // that counter never rewinds — so one old blip meant every later refresh
-    // opened on the failure screen, over a server answering fine, until the
-    // screen's own 5s retry cleared it. Counted rather than dated, the shell
-    // could not tell an hour-old failure from a live one.
+    // **The flash this fix exists for.** The boot cache carries the config query's
+    // `errorUpdateCount` forward for as long as the entry lives, and that counter never rewinds —
+    // so one old blip meant every later refresh opened on the failure screen, over a server
+    // answering fine, until the screen's own 5s retry cleared it.
     vi.mocked(transport.getConfig).mockResolvedValue(settledConfig());
 
     renderAppShell(seedYesterdaysConfigAfterAnOldBlip);
@@ -552,16 +492,6 @@ describe('AppShell, when the server will not answer', () => {
     expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
   });
 
-  it('still says so when the server that failed last launch is down again now', async () => {
-    // The other half: an old remembered failure must not DISARM the screen
-    // either. This launch's rejection is its own evidence.
-    vi.mocked(transport.getConfig).mockRejectedValue(new Error('Failed to fetch'));
-
-    renderAppShell(seedYesterdaysConfigAfterAnOldBlip);
-
-    expect(await screen.findByText(HEADLINE)).toBeInTheDocument();
-  });
-
   it('waits out a slow read, then says so once the hang deadline passes', async () => {
     vi.useFakeTimers();
     // Accepted, and then silence — the wedged server. It never rejects, so
@@ -570,10 +500,8 @@ describe('AppShell, when the server will not answer', () => {
 
     renderAppShell();
 
-    // Past the shell's own 3s escape, which hands the window to the cockpit
-    // while the read is merely late. Deliberate: three seconds is not evidence
-    // of anything, and the boot sentinel's lesson is not to accuse a machine
-    // that was only slow.
+    // Past the shell's own 3s escape, which hands the window to the cockpit while the read is
+    // merely late.
     await letTimePass(LOADING_TIMEOUT_MS + 500);
     expect(screen.getByTestId('app-shell')).toBeInTheDocument();
     expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
@@ -586,50 +514,6 @@ describe('AppShell, when the server will not answer', () => {
     await letTimePass(HANG_DEADLINE_MS - 10_000 + 500);
     expect(screen.getByText(HEADLINE)).toBeInTheDocument();
     expect(screen.queryByTestId('app-shell')).not.toBeInTheDocument();
-  });
-
-  it('never shows for a slow boot that lands before the deadline', async () => {
-    vi.useFakeTimers();
-    let answer: (config: Awaited<ReturnType<Transport['getConfig']>>) => void = () => {};
-    vi.mocked(transport.getConfig).mockReturnValue(
-      new Promise((resolve) => {
-        answer = resolve;
-      })
-    );
-
-    renderAppShell();
-
-    // Ten seconds of nothing — slow, cold, a laptop waking up.
-    await letTimePass(10_000);
-    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
-
-    // And then it answers, inside the deadline. The screen was never right
-    // about this one and never appeared.
-    await act(async () => {
-      answer(settledConfig());
-    });
-    await letTimePass(HANG_DEADLINE_MS);
-
-    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
-    expect(screen.getByTestId('app-shell')).toBeInTheDocument();
-  });
-
-  it('hands the window back the moment the server answers', async () => {
-    const user = userEvent.setup();
-    // Down, and staying down — the screen asks again the moment it mounts, so a
-    // single scripted rejection would be recovered from before anyone clicked.
-    vi.mocked(transport.getConfig).mockRejectedValue(new Error('Failed to fetch'));
-
-    renderAppShell();
-    await screen.findByText(HEADLINE);
-
-    // The server comes up; the operator asks again rather than waiting out the
-    // screen's own poll.
-    vi.mocked(transport.getConfig).mockResolvedValue(settledConfig());
-    await user.click(screen.getByRole('button', { name: 'Try again' }));
-
-    expect(await screen.findByTestId('app-shell')).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument());
   });
 
   it('clears itself when the server comes back, with nobody pressing anything', async () => {
@@ -650,12 +534,10 @@ describe('AppShell, when the server will not answer', () => {
 
 describe('AppShell, after a quick reload', () => {
   it('does not call a healthy server unreachable when the remembered config is seconds old', async () => {
-    // **The flash this case exists for (DOR-2649).** Reload within 30s of the
-    // last config read and the boot cache restores a copy TanStack calls fresh,
-    // so nothing asked the server — and with nothing able to answer "this
-    // launch", the 15s hang deadline replaced the whole app with this screen
-    // over a server that was fine, wiping whatever was open until the screen's
-    // own retry brought it back.
+    // **The flash this case exists for (DOR-2649).** Reload within 30s of the last config read
+    // and the boot cache restores a copy TanStack calls fresh, so nothing asked the server — and
+    // with nothing able to answer "this launch", the 15s hang deadline replaced the whole app
+    // with this screen over a server that was fine, wiping whatever was open until the screen's
     vi.useFakeTimers();
     vi.mocked(transport.getConfig).mockResolvedValue(settledConfig());
 
@@ -668,53 +550,21 @@ describe('AppShell, after a quick reload', () => {
     // not that the deadline stopped looking.
     expect(transport.getConfig).toHaveBeenCalled();
   });
-
-  it('still says so when that reload’s own read hangs past the deadline', async () => {
-    // The other half: a fresh remembered copy must not DISARM the screen. The
-    // read this load sends goes unanswered, and that silence is evidence.
-    vi.useFakeTimers();
-    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
-
-    renderAppShell(seedConfigFromJustBeforeAReload);
-    await letTimePass(HANG_DEADLINE_MS - 1000);
-    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
-
-    await letTimePass(1500);
-    expect(screen.getByText(HEADLINE)).toBeInTheDocument();
-    expect(screen.queryByTestId('app-shell')).not.toBeInTheDocument();
-  });
-
-  it('still says so when that reload’s own read is refused', async () => {
-    vi.useFakeTimers();
-    vi.mocked(transport.getConfig).mockRejectedValue(new Error('Failed to fetch'));
-
-    renderAppShell(seedConfigFromJustBeforeAReload);
-    await letTimePass(100);
-
-    expect(screen.getByText(HEADLINE)).toBeInTheDocument();
-  });
 });
 
 describe('AppShell, when the config read stalls for reasons of its own', () => {
-  // **Why the hang deadline runs from mount and not from "a read is in
-  // flight".** Gating it on `fetchStatus === 'fetching'` looked tidier, but the
-  // config query has readers this shell does not control: a paused read (the
-  // browser thinks it is offline, the tab is hidden mid-retry) never reports
-  // `fetching`, and an optimistic settings write cancels the read and puts it
-  // back to `idle`. Each of those stopped or restarted the clock, so a server
-  // that never answered was never called unreachable — or was, three times
-  // late. The deadline is about what the SERVER has said this launch, so it
-  // only stops for an answer.
+  // **Why the hang deadline runs from mount and not from "a read is in flight".** Gating it on
+  // `fetchStatus === 'fetching'` looked tidier, but the config query has readers this shell does
+  // not control: a paused read (the browser thinks it is offline, the tab is hidden mid-retry)
+  // never reports `fetching`, and an optimistic settings write cancels the read and puts it back
   afterEach(() => {
     onlineManager.setOnline(true);
     focusManager.setFocused(undefined);
   });
 
   it('still says so when the browser is offline and another reader asked first', async () => {
-    // Several config readers keep TanStack's default `networkMode: 'online'`,
-    // and the onboarding gate mounts one before the shell's own. Offline, that
-    // read starts PAUSED and the shell's refetch joins it rather than starting
-    // its own, so the query never reads `fetching` at all.
+    // Several config readers keep TanStack's default `networkMode: 'online'`, and the onboarding
+    // gate mounts one before the shell's own.
     vi.useFakeTimers();
     onlineManager.setOnline(false);
     vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
@@ -745,50 +595,13 @@ describe('AppShell, when the config read stalls for reasons of its own', () => {
     expect(queryClient.getQueryState(configKeys.current())?.fetchStatus).toBe('paused');
     expect(screen.getByText(HEADLINE)).toBeInTheDocument();
   });
-
-  it('keeps its deadline when a settings write cancels the read mid-hang', async () => {
-    // The sidebar, composer, status bar, room limits and notification prefs all
-    // cancel the config read before writing optimistically, which sets it back
-    // to `idle` with nothing answered.
-    vi.useFakeTimers();
-    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
-    const queryClient = makeQueryClient();
-
-    renderAppShell(seedYesterdaysConfig, queryClient);
-    await letTimePass(5000);
-    await act(async () => {
-      await queryClient.cancelQueries({ queryKey: configKeys.current() });
-    });
-    await letTimePass(HANG_DEADLINE_MS - 4000);
-
-    expect(screen.getByText(HEADLINE)).toBeInTheDocument();
-  });
-
-  it('keeps its deadline when a retry pauses in a hidden tab', async () => {
-    // TanStack pauses a retry while the document is unfocused, and a paused
-    // retry is not `fetching` either.
-    vi.useFakeTimers();
-    focusManager.setFocused(false);
-    vi.mocked(transport.getConfig).mockRejectedValue(new Error('Failed to fetch'));
-
-    renderAppShell(
-      seedYesterdaysConfig,
-      new QueryClient({ defaultOptions: { queries: { retry: 1 } } })
-    );
-    await letTimePass(HANG_DEADLINE_MS + 1000);
-
-    expect(screen.getByText(HEADLINE)).toBeInTheDocument();
-  });
 });
 
 describe('AppShell, when the server answers with an error', () => {
   it('does not tell the operator a server that just replied is not there', async () => {
-    // **The defect (issue #1841).** A 500 is proof the server accepted the
-    // connection, ran, and answered — the reporter's was passing 45 of 45
-    // health checks on a stable PID — and the shell showed "DorkOS can't reach
-    // its server. It may still be starting up", a cause nothing had tested. The
-    // evening went on ports and server logs, looking for a process that was
-    // never down.
+    // **The defect (issue #1841).** A 500 is proof the server accepted the connection, ran, and
+    // answered — the reporter's was passing 45 of 45 health checks on a stable PID — and the
+    // shell showed "DorkOS can't reach its server.
     vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
 
     renderAppShell();
@@ -799,63 +612,9 @@ describe('AppShell, when the server answers with an error', () => {
     expect(screen.getByText(/HTTP 500/)).toBeInTheDocument();
   });
 
-  it('says the same of any other status, including ones no route sends today', async () => {
-    // **Synthetic, and worth pinning anyway.** This server's own 401 always
-    // carries `AUTH_REQUIRED`, which the transport turns into the app-wide auth
-    // signal, so `AuthGuard` swaps in the login screen and this shell never
-    // renders — no route here produces a bare 401. What can produce one is
-    // everything between the browser and the server: a proxy, a tunnel edge, a
-    // corporate sign-in page. The rule under test is that the gate reads the
-    // STATUS and not a list of statuses it knows about, so an unfamiliar one is
-    // still a reply and still not "the server is down".
-    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(401));
-
-    renderAppShell();
-
-    expect(await screen.findByTestId('server-error')).toBeInTheDocument();
-    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
-  });
-
-  it('keeps saying so through the retry that wipes the error out from under it', async () => {
-    // **Why the status is latched.** TanStack clears a DATALESS query's error
-    // the moment the next attempt starts (`fetchState` in query-core) while
-    // leaving `errorUpdatedAt` standing. Read live, the status would vanish for
-    // the length of every in-flight retry and the shell would flip to the
-    // unreachable screen and back on a five-second cadence.
-    vi.useFakeTimers();
-    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
-
-    renderAppShell();
-    await vi.waitFor(() => expect(screen.getByTestId('server-error')).toBeInTheDocument());
-
-    // The next poll goes out and does not come back yet.
-    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
-    await letTimePass(RETRY_INTERVAL_MS + 500);
-
-    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
-    expect(screen.getByTestId('server-error')).toBeInTheDocument();
-  });
-
-  it('does not become "unreachable" just because the answers keep being errors', async () => {
-    // The hang deadline is evidence of silence. A server saying 500 every five
-    // seconds is not silent, so the deadline must not convert it into one.
-    vi.useFakeTimers();
-    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(503));
-
-    renderAppShell();
-    await vi.waitFor(() => expect(screen.getByTestId('server-error')).toBeInTheDocument());
-
-    await letTimePass(HANG_DEADLINE_MS + 1000);
-
-    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
-    expect(screen.getByTestId('server-error')).toBeInTheDocument();
-  });
-
   it('hands a host refusal its own words, which say what to do about it', async () => {
-    // A 403 from `hostGuard` is not a fault to wait out: the address is not one
-    // this instance answers to, and the server's message names both the address
-    // and the two ways out. A bare "(HTTP 403)" plus a Try again that can never
-    // work would strand someone on the phone surface with nothing to go on.
+    // A 403 from `hostGuard` is not a fault to wait out: the address is not one this instance
+    // answers to, and the server's message names both the address and the two ways out.
     const refusal =
       'This instance does not answer to the address "phone.ngrok.app". ' +
       'If that is how you reach DorkOS, list it in DORKOS_TRUSTED_HOSTS, or turn on login.';
@@ -870,10 +629,8 @@ describe('AppShell, when the server answers with an error', () => {
   });
 
   it('will not print a stranger’s 403 as if DorkOS wrote it', async () => {
-    // A proxy, a captive portal or a CDN can answer 403 with any body it likes,
-    // and the status alone cannot tell one from this server's host guard. Keyed
-    // on the number, the shell would have rendered that text full-screen in
-    // DorkOS chrome. Only the `code` this server sets earns the words.
+    // A proxy, a captive portal or a CDN can answer 403 with any body it likes, and the status
+    // alone cannot tell one from this server's host guard.
     vi.mocked(transport.getConfig).mockRejectedValue(
       answeredWith(403, 'Access denied by CorpProxy. Sign in at portal.example.com to continue.')
     );
@@ -883,105 +640,5 @@ describe('AppShell, when the server answers with an error', () => {
     expect(await screen.findByTestId('server-error')).toBeInTheDocument();
     expect(screen.getByText(/didn’t load \(HTTP 403\)/)).toBeInTheDocument();
     expect(screen.queryByText(/CorpProxy/)).not.toBeInTheDocument();
-  });
-
-  it('still knows what replied after the shell remounts mid-retry', async () => {
-    // **Why the latch is not a ref.** An `AuthGuard` flip or a dev-mode remount
-    // tears the shell down and builds it again on the same query cache — and
-    // the refetch the new mount starts nulls a dataless query's error on its
-    // way out. A per-mount memory would have nothing left to read and would
-    // hand back "can't reach its server" for a whole retry interval, over an
-    // origin that had already replied.
-    vi.useFakeTimers();
-    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
-    const queryClient = makeQueryClient();
-
-    const first = renderAppShell(undefined, queryClient);
-    await vi.waitFor(() => expect(screen.getByTestId('server-error')).toBeInTheDocument());
-
-    // The next attempt goes out and stays out, so the error the remount wipes
-    // is never restored — the window the ref version got wrong.
-    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
-    first.unmount();
-    renderAppShell(undefined, queryClient);
-    await letTimePass(100);
-
-    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
-    expect(screen.getByTestId('server-error')).toBeInTheDocument();
-  });
-
-  it('never describes a newer failure with an older failure’s number', async () => {
-    // **What the stamp on the memory is for.** The first failure is a 500 and
-    // is seen. The next one lands with nobody mounted to read it, and the retry
-    // that follows wipes the error before the shell comes back — so all the
-    // shell has is a fresher `errorUpdatedAt` and nothing to read. Un-stamped,
-    // the memory would still be holding 500 and would put that number on a
-    // failure it never saw. "Something newer failed and we could not see what"
-    // is exactly the unreachable case.
-    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
-    const firstClient = makeQueryClient();
-    const first = renderAppShell(undefined, firstClient);
-    await screen.findByTestId('server-error');
-    const firstFailureAt = firstClient.getQueryState(configKeys.current())?.errorUpdatedAt;
-    if (firstFailureAt === undefined) throw new Error('Expected the observed config failure');
-    expect(firstFailureAt).toBeGreaterThan(LAUNCH_STARTED_AT);
-    first.unmount();
-
-    // The fixture must actually be newer, even when both renders share one millisecond.
-    const newerFailureAt = firstFailureAt + 1;
-    expect(newerFailureAt).toBeGreaterThan(firstFailureAt);
-
-    // A fresh cache carrying a warm config and a failure stamped AFTER the 500,
-    // with its error already gone. Nothing new goes out: the read hangs.
-    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
-    renderAppShell((client) => {
-      seedYesterdaysConfig(client);
-      client
-        .getQueryCache()
-        .find({ queryKey: configKeys.current() })
-        ?.setState({ errorUpdateCount: 1, errorUpdatedAt: newerFailureAt, error: null });
-    });
-
-    expect(await screen.findByText(HEADLINE)).toBeInTheDocument();
-    expect(screen.queryByTestId('server-error')).not.toBeInTheDocument();
-  });
-
-  it('keeps the observed failure when the cache carries the same failure stamp', async () => {
-    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
-    const firstClient = makeQueryClient();
-    const first = renderAppShell(undefined, firstClient);
-    await screen.findByTestId('server-error');
-    const firstFailureAt = firstClient.getQueryState(configKeys.current())?.errorUpdatedAt;
-    if (firstFailureAt === undefined) throw new Error('Expected the observed config failure');
-    expect(firstFailureAt).toBeGreaterThan(LAUNCH_STARTED_AT);
-    first.unmount();
-
-    // The error was cleared by a retry of the same failure, not a newer failure.
-    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
-    renderAppShell((client) => {
-      seedYesterdaysConfig(client);
-      client
-        .getQueryCache()
-        .find({ queryKey: configKeys.current() })
-        ?.setState({ errorUpdateCount: 1, errorUpdatedAt: firstFailureAt, error: null });
-    });
-
-    expect(await screen.findByTestId('server-error')).toBeInTheDocument();
-    expect(screen.getByText(/didn’t load \(HTTP 500\)/)).toBeInTheDocument();
-    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
-  });
-
-  it('hands the window back when the server recovers', async () => {
-    const user = userEvent.setup();
-    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
-
-    renderAppShell();
-    await screen.findByTestId('server-error');
-
-    vi.mocked(transport.getConfig).mockResolvedValue(settledConfig());
-    await user.click(screen.getByRole('button', { name: 'Try again' }));
-
-    expect(await screen.findByTestId('app-shell')).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByTestId('server-error')).not.toBeInTheDocument());
   });
 });

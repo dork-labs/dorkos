@@ -114,7 +114,8 @@ pnpm test -- --run                     # full suite (via turbo)
 
 Before marking work complete:
 
-- [ ] Every new function/method has a test
+- [ ] Every new behaviour a person relies on has a test (not every function: a helper is covered through the behaviour that uses it)
+- [ ] Every test passes the four questions in `.claude/rules/testing.md`, "Is this test worth keeping?", and duplicates no existing test
 - [ ] Watched each test fail before implementing
 - [ ] Each test failed for the expected reason (feature missing, not typo)
 - [ ] Wrote minimal code to pass each test
@@ -136,6 +137,10 @@ Can't check all boxes? You skipped TDD. Start over.
 ## Debugging Integration
 
 Bug found? Write a failing test reproducing it, then follow the TDD cycle. The test proves the fix and prevents regression. Never fix bugs without a test.
+
+## Write the Fewest Tests That Would Catch It
+
+TDD decides *when* a test is written, not *how many*. Write the fewest tests that would catch the change's realistic failures: one path through the public surface, plus the edge cases that broke before or are easy to get wrong. Before adding a test, look for one that already covers the behaviour and extend it. If the package is over its test budget (`pnpm check:test-ratio`), delete a weaker test there first. The rubric is `.claude/rules/testing.md`, "Is this test worth keeping?".
 
 ## Testing Anti-Patterns
 

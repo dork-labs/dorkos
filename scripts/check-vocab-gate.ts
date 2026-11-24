@@ -877,8 +877,12 @@ export function scanMdx(filePath: string, text: string, terms: BannedTerm[]): Vi
  * the docs are where a person learns it. Identifiers that keep the word
  * (`sessionId`, `/api/sessions`, `session.started`) belong in inline code,
  * which {@link stripNonProse} blanks.
+ *
+ * Wave 8 ("Wi-Fi"/"wifi", DOR-5135) is scanned in docs too: the access switch
+ * reaches wired computers and VPNs such as Tailscale, so a docs page that
+ * says "Wi-Fi" for it gives a reader the same wrong advice the app used to.
  */
-const MDX_SCANNED_WAVES = new Set(['wave-4', 'wave-5', 'wave-7']);
+const MDX_SCANNED_WAVES = new Set(['wave-4', 'wave-5', 'wave-7', 'wave-8']);
 
 /**
  * Run the gate against a repo checkout: TypeScript/TSX source through

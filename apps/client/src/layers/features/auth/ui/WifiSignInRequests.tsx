@@ -6,7 +6,7 @@ import type { DeviceTrust } from '../model/use-device-trust';
 import { CodeGroups } from './CodeGroups';
 
 /**
- * Devices on Wi-Fi asking to sign in, at the computer DorkOS runs on
+ * Devices on the network asking to sign in, at the computer DorkOS runs on
  * (DOR-4744). Each card shows what the device says it is, its address, when it
  * asked and the code it shows, so the owner approves only the one in their
  * hand. Approving takes a fresh passkey check, then shows the code to type on
@@ -38,8 +38,7 @@ function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: De
             <p className="text-sm font-medium">Sign-in request</p>
           </div>
           <p className="text-muted-foreground text-xs [overflow-wrap:anywhere]">
-            {request.deviceName} · Wi-Fi {request.address} ·{' '}
-            {formatRelativeTime(request.requestedAt)}
+            {request.deviceName} · {request.address} · {formatRelativeTime(request.requestedAt)}
           </p>
         </div>
       </div>
@@ -68,7 +67,7 @@ function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: De
           )}
           {/* Part of this decision, so inside its card. */}
           <div className="text-muted-foreground space-y-0.5 text-xs">
-            <p>Anyone on this Wi-Fi can copy a sign-in made here.</p>
+            <p>Anyone on this network can copy a sign-in made here.</p>
             <p>Use it only on networks you trust.</p>
           </div>
           {inMacApp && (

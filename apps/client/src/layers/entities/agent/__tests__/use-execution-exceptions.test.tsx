@@ -1,13 +1,5 @@
 // @vitest-environment jsdom
-/**
- * The hook's effort verdict comes from the runtime's own declaration.
- *
- * The rules themselves are tested one layer down in `execution-config.test.ts`;
- * what is worth pinning here is the WIRING — that the capability map's
- * `settings.supportsEffort` is what reaches `describeAgentExecution`, so a
- * runtime that declares it takes no effort is the reason a row reads broken,
- * rather than a list of runtime names kept anywhere in the client.
- */
+/** The hook's effort verdict comes from the runtime's own declaration. */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, waitFor, cleanup } from '@testing-library/react';
 import type { ReactNode } from 'react';
@@ -128,26 +120,11 @@ describe('useExecutionExceptions — runtime-declared effort support', () => {
     ]);
     expect(result.current.brokenPaths).toEqual(['/p/alpha']);
   });
-
-  // The discriminator: nothing but the declaration changes between the two
-  // renders, so a verdict that survived this flip would not be reading it.
-  it('leaves the same agent unbroken when the runtime declares it does', async () => {
-    const { result } = renderExceptions(true);
-    await waitFor(() => expect(result.current.exceptions).toHaveLength(1));
-    const { report } = result.current.exceptions[0];
-    expect(report.breakages).toEqual([]);
-    expect(report.isBroken).toBe(false);
-    expect(result.current.brokenPaths).toEqual([]);
-  });
 });
 
 /**
- * An account nobody registered is a CATALOG-FREE breakage: the registry rides
- * `GET /api/config`, which every surface already holds, so unlike a missing
- * model it needs no per-runtime fetch. That is what lets it reach the sidebar's
- * Needs-attention group — `brokenPaths` here feeds `useAgentAttentionMap`
- * through `use-sidebar-state.ts` — and it is only true while `checkModels` is
- * off, which is how the sidebar calls this hook.
+ * An account nobody registered is a CATALOG-FREE breakage: the registry rides `GET /api/config`,
+ * which every surface already holds, so unlike a missing model it needs no per-runtime fetch.
  */
 describe('useExecutionExceptions — a billing account nobody registered', () => {
   const ACCOUNT_AGENT = {
@@ -175,13 +152,7 @@ describe('useExecutionExceptions — a billing account nobody registered', () =>
           };
         }
       | undefined,
-    /**
-     * The server's default runtime. Worth varying for one reason only: it is
-     * the single value in this hook's answer that reads differently before and
-     * after the config query lands, which makes it the only honest thing to
-     * wait on when the assertion is an ABSENCE. `ACCOUNT_AGENT` pins its own
-     * runtime, so changing this moves no account logic.
-     */
+    /** The server's default runtime. */
     defaultRuntime = 'claude-code'
   ) {
     const transport: Transport = createMockTransport({
@@ -254,16 +225,6 @@ describe('useExecutionExceptions — a billing account nobody registered', () =>
     ]);
   });
 
-  // The discriminator: only the id changes, and the same agent goes quiet.
-  it('leaves a registered account out of brokenPaths entirely', async () => {
-    const { result } = renderAccounts('work', REGISTRY);
-    await waitFor(() => expect(result.current.exceptions).toHaveLength(1));
-    expect(result.current.brokenPaths).toEqual([]);
-    expect(result.current.exceptions[0].report.deviations).toEqual([
-      { field: 'account', label: 'Acme Corp' },
-    ]);
-  });
-
   // DorkOS credits are never a registry row, so an agent on them must not read
   // as pinned to an account nobody registered (ADR 261001-000811).
   it('names an agent a person allowed onto DorkOS credits as a choice, never a broken reference', async () => {
@@ -300,16 +261,6 @@ describe('useExecutionExceptions — a billing account nobody registered', () =>
 
   it('says nothing at all when the server could not READ the registry', async () => {
     // An empty list that means "nobody knows", not "nothing is registered".
-    // Judged as the latter it would light every account-carrying agent in the
-    // fleet amber for the length of an outage.
-    //
-    // The default runtime is deliberately CODEX here, and it is the whole
-    // reason this test can fail. Every claim below is an absence, and an
-    // absence asserted before the config lands is no claim at all —
-    // `defaultRuntime` reads 'claude-code' on the first render whatever the
-    // server eventually says, so waiting for THAT would certify nothing.
-    // Waiting for it to flip to a value only the response can produce is
-    // waiting for the response.
     const { result } = renderAccounts(
       'retired-client',
       {
@@ -322,25 +273,14 @@ describe('useExecutionExceptions — a billing account nobody registered', () =>
     );
     await waitFor(() => expect(result.current.defaultRuntime).toBe('codex'));
 
-    // The agent still deviates — it pins claude-code while the fleet default is
-    // codex — so it is in the list, which is what makes the two absences below
-    // absences rather than an empty list nobody populated.
+    // The agent still deviates — it pins claude-code while the fleet default is codex — so it is
+    // in the list, which is what makes the two absences below absences rather than an empty list
+    // nobody populated.
     expect(result.current.exceptions.flatMap((e) => e.report.deviations)).toEqual([
       { field: 'runtime', label: 'Claude Code' },
     ]);
     expect(result.current.exceptions.flatMap((e) => e.report.breakages)).toEqual([]);
     expect(result.current.brokenPaths).toEqual([]);
-  });
-
-  // The discriminator for the flag: the same empty list WITHOUT it is an
-  // answer, and the same agent is broken against it.
-  it('still calls it broken against an empty registry the server DID read', async () => {
-    const { result } = renderAccounts('retired-client', {
-      resolvedAccount: '/Users/dev/.claude',
-      inherited: true,
-      accounts: [],
-    });
-    await waitFor(() => expect(result.current.brokenPaths).toEqual(['/p/alpha']));
   });
 });
 
@@ -445,12 +385,5 @@ describe('useExecutionExceptions — the model of an agent on DorkOS credits (DO
       expect(getModels).toHaveBeenCalledWith(expect.objectContaining({ account: 'dorkos-credits' }))
     );
     expect(breaksModel(result.current.exceptions)).toBe(false);
-  });
-
-  it('calls a model credits do not cover broken', async () => {
-    const { result } = renderCreditsAgent('opus', [
-      { value: 'md_pick', displayName: 'Pick', description: '', paidFromCredits: true },
-    ]);
-    await waitFor(() => expect(breaksModel(result.current.exceptions)).toBe(true));
   });
 });

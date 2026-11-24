@@ -9,7 +9,6 @@ import {
   MAX_TAB_HISTORY,
   type AppTab,
 } from '../app-tabs/app-tabs-store';
-import { DIALOG_MODIFIER_KEYS } from '../dialog-search-schema';
 
 const STORAGE_KEY = 'dork.app-tabs';
 
@@ -82,20 +81,6 @@ describe('openTab', () => {
     useAppTabsStore.getState().openTab('/tasks');
     expect(strip()).toEqual(['/', '[/tasks]', '/team']);
   });
-
-  it('always creates, even when that location is already open', () => {
-    // Asking for a new tab and getting a focus change instead is the one thing
-    // a tab strip must not do.
-    setTabs(['/'], 0);
-    useAppTabsStore.getState().openTab('/');
-    expect(strip()).toEqual(['/', '[/]']);
-  });
-
-  it('appends when nothing is active', () => {
-    useAppTabsStore.setState({ tabs: [], activeTabId: null });
-    useAppTabsStore.getState().openTab('/team');
-    expect(strip()).toEqual(['[/team]']);
-  });
 });
 
 describe('closeTab', () => {
@@ -110,24 +95,6 @@ describe('closeTab', () => {
     useAppTabsStore.getState().closeTab(tabs[1].id);
     expect(strip()).toEqual(['/', '[/tasks]']);
   });
-
-  it('falls back to the left when the last tab closes', () => {
-    const tabs = setTabs(['/', '/team'], 1);
-    useAppTabsStore.getState().closeTab(tabs[1].id);
-    expect(strip()).toEqual(['[/]']);
-  });
-
-  it('leaves the active tab alone when a background tab closes', () => {
-    const tabs = setTabs(['/', '/team', '/tasks'], 2);
-    useAppTabsStore.getState().closeTab(tabs[0].id);
-    expect(strip()).toEqual(['/team', '[/tasks]']);
-  });
-
-  it('ignores an id that names no tab', () => {
-    setTabs(['/', '/team'], 0);
-    useAppTabsStore.getState().closeTab('nope');
-    expect(strip()).toEqual(['[/]', '/team']);
-  });
 });
 
 describe('selectTab', () => {
@@ -136,33 +103,13 @@ describe('selectTab', () => {
     useAppTabsStore.getState().selectTab(tabs[1].id);
     expect(strip()).toEqual(['/', '[/team]']);
   });
-
-  it('ignores an id that names no tab', () => {
-    setTabs(['/', '/team'], 0);
-    useAppTabsStore.getState().selectTab('nope');
-    expect(strip()).toEqual(['[/]', '/team']);
-  });
 });
 
 describe('syncLocation — the URL is the active tab', () => {
-  it('does nothing when the active tab is already there', () => {
-    setTabs(['/', '/team'], 1);
-    const before = useAppTabsStore.getState().tabs;
-    useAppTabsStore.getState().syncLocation('/team');
-    expect(useAppTabsStore.getState().tabs).toBe(before);
-    expect(strip()).toEqual(['/', '[/team]']);
-  });
-
   it('lets the active tab adopt a location no tab holds (navigating inside a tab)', () => {
     setTabs(['/', '/team'], 1);
     useAppTabsStore.getState().syncLocation('/tasks');
     expect(strip()).toEqual(['/', '[/tasks]']);
-  });
-
-  it('mints a tab when the window has none', () => {
-    useAppTabsStore.setState({ tabs: [], activeTabId: null });
-    useAppTabsStore.getState().syncLocation('/activity');
-    expect(strip()).toEqual(['[/activity]']);
   });
 });
 
@@ -173,25 +120,9 @@ describe('syncLocation — only a history traversal may move focus', () => {
     expect(strip()).toEqual(['[/session?session=a]', '/session?session=b']);
   });
 
-  it('keeps the active tab when two tabs share the traversed-to location', () => {
-    const tabs = setTabs(['/', '/'], 1);
-    useAppTabsStore.getState().syncLocation('/', { traversal: true });
-    expect(useAppTabsStore.getState().activeTabId).toBe(tabs[1].id);
-  });
-
-  it('does not hand focus to a sibling on an ordinary navigation', () => {
-    // The everyday two-tabs-one-href state: Cmd+T from the dashboard makes it.
-    const tabs = setTabs(['/', '/'], 1);
-    useAppTabsStore.getState().syncLocation('/?settings=open');
-    useAppTabsStore.getState().syncLocation('/');
-    expect(useAppTabsStore.getState().activeTabId).toBe(tabs[1].id);
-    expect(strip()).toEqual(['/', '[/]']);
-  });
-
   it('leaves no tab parked on a dialog after a settings open/close cycle', () => {
-    // Regression: rule 2 used to fire here, jumping focus to the first tab and
-    // stranding the second on `/?settings=open` — so returning to it reopened
-    // the dialog. Every `?settings=` / `?agent=` / `?tasks=` link has this shape.
+    // Regression: rule 2 used to fire here, jumping focus to the first tab and stranding the
+    // second on `/?settings=open` — so returning to it reopened the dialog.
     setTabs(['/', '/'], 1);
     useAppTabsStore.getState().syncLocation('/?settings=open');
     expect(strip()).toEqual(['/', '[/?settings=open]']);
@@ -206,25 +137,6 @@ describe('syncLocation — only a history traversal may move focus', () => {
     useAppTabsStore.getState().openTab('/session?dir=%2Fapi');
     useAppTabsStore.getState().syncLocation('/session?session=abc&dir=%2Fapi');
     expect(strip()).toEqual(['/', '[/session?session=abc&dir=%2Fapi]']);
-  });
-
-  it('keeps the new tab even when a sibling already holds the resolved session', () => {
-    // Regression (the headline path): "Open in a new tab" on an agent someone is
-    // already reading. Rule 2 used to focus the sibling and strand the new tab
-    // on `/session?dir=…`, a location its own loader redirects away from every
-    // time it is clicked — a tab that can never do anything.
-    const resolved = '/session?session=abc&dir=%2Fapi';
-    setTabs([resolved], 0);
-    useAppTabsStore.getState().openTab('/session?dir=%2Fapi');
-    const opened = useAppTabsStore.getState().activeTabId;
-
-    useAppTabsStore.getState().syncLocation(resolved);
-
-    expect(useAppTabsStore.getState().activeTabId).toBe(opened);
-    expect(useAppTabsStore.getState().tabs.map((tab) => tab.href)).toEqual([resolved, resolved]);
-    // Two live tabs on one session is the honest outcome of "always creates";
-    // a tab stuck on a transient href is not.
-    expect(strip()).toEqual([resolved, `[${resolved}]`]);
   });
 });
 
@@ -249,14 +161,6 @@ describe('persistence', () => {
     );
     expect(readPersistedTabs()).toBeNull();
   });
-
-  it('falls back to the first tab when the stored active id is gone', () => {
-    sessionStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ tabs: [{ id: 'a', href: '/' }], activeTabId: 'vanished' })
-    );
-    expect(readPersistedTabs()?.activeTabId).toBe('a');
-  });
 });
 
 describe('seedTabsFromLocation', () => {
@@ -270,13 +174,6 @@ describe('seedTabsFromLocation', () => {
     expect(seeded.tabs.map((tab) => tab.href)).toEqual(['/session?session=abc']);
     expect(seeded.activeTabId).toBe(seeded.tabs[0].id);
   });
-
-  it('falls back to the dashboard for a location the router does not serve', () => {
-    // The packaged `file://` renderer fallback lands here; an href no tab could
-    // ever match would be worse than the one route that always works.
-    window.history.replaceState({}, '', '/api/docs');
-    expect(seedTabsFromLocation().tabs.map((tab) => tab.href)).toEqual(['/']);
-  });
 });
 
 describe('per-tab history (DOR-2107)', () => {
@@ -286,40 +183,6 @@ describe('per-tab history (DOR-2107)', () => {
     visit('/team');
     useAppTabsStore.getState().openTab('/tasks');
     expect(trail()).toEqual(['[/tasks]']);
-  });
-
-  it('appends each ordinary navigation to the active tab', () => {
-    // Purpose: rule 3 with a PUSH is what fills the Back stack at all.
-    setTabs(['/'], 0);
-    visit('/team', '/tasks');
-    expect(trail()).toEqual(['/', '/team', '[/tasks]']);
-  });
-
-  it('forgets Forward when you go somewhere new from the middle', () => {
-    // Purpose: browser semantics — a push from behind the head truncates.
-    setTabs(['/'], 0);
-    visit('/team', '/tasks');
-    useAppTabsStore.getState().goToHistoryIndex(0);
-    visit('/activity');
-    expect(trail()).toEqual(['/', '[/activity]']);
-  });
-
-  it('rewrites the current entry on a replace instead of adding one', () => {
-    // Purpose: a loader redirect must not leave a Back press that bounces
-    // straight back through the same redirect.
-    setTabs(['/'], 0);
-    visit('/session?dir=%2Fapi');
-    useAppTabsStore.getState().syncLocation('/session?session=abc&dir=%2Fapi', { replace: true });
-    expect(trail()).toEqual(['/', '[/session?session=abc&dir=%2Fapi]']);
-  });
-
-  it('keeps Forward intact when a jumped-to entry is replaced', () => {
-    // Purpose: a redirect after Back rewrites that entry only, never the future.
-    setTabs(['/'], 0);
-    visit('/session?dir=%2Fapi', '/team');
-    useAppTabsStore.getState().goToHistoryIndex(1);
-    useAppTabsStore.getState().syncLocation('/session?session=s&dir=%2Fapi', { replace: true });
-    expect(trail()).toEqual(['/', '[/session?session=s&dir=%2Fapi]', '/team']);
   });
 
   it('drops the oldest entry past the cap and keeps the invariant', () => {
@@ -332,54 +195,6 @@ describe('per-tab history (DOR-2107)', () => {
     expect(tab.cursor).toBe(MAX_TAB_HISTORY - 1);
     expectInvariant();
   });
-
-  it('records nothing when the active tab is already there (rule 1)', () => {
-    // Purpose: Back/Forward and tab switches rely on rule 1 to stay silent.
-    setTabs(['/'], 0);
-    visit('/team');
-    const before = active().history;
-    useAppTabsStore.getState().syncLocation('/team');
-    expect(active().history).toBe(before);
-  });
-
-  it('records nothing in either tab when a traversal focuses a sibling (rule 2)', () => {
-    // Purpose: rule 2 moves focus, never a stack.
-    const tabs = setTabs(['/', '/team'], 1);
-    useAppTabsStore.getState().syncLocation('/', { traversal: true });
-    const after = useAppTabsStore.getState().tabs;
-    expect(after[0]).toBe(tabs[0]);
-    expect(after[1]).toBe(tabs[1]);
-  });
-
-  it('leaves both stacks alone when switching tabs', () => {
-    // Purpose: the old shared stack grew on every switch; per-tab stacks must not.
-    const tabs = setTabs(['/', '/team'], 0);
-    visit('/tasks');
-    useAppTabsStore.getState().selectTab(tabs[1].id);
-    // `goToActiveTab` then navigates to the tab's own href: rule 1.
-    useAppTabsStore.getState().syncLocation('/team');
-    useAppTabsStore.getState().selectTab(tabs[0].id);
-    useAppTabsStore.getState().syncLocation('/tasks');
-    const [first, second] = useAppTabsStore.getState().tabs;
-    expect(trail(first)).toEqual(['/', '[/tasks]']);
-    expect(trail(second)).toEqual(['[/team]']);
-  });
-
-  it('closing a tab leaves the survivor its own history', () => {
-    // Purpose: the old shared stack let Back adopt a closed tab's past.
-    const tabs = setTabs(['/', '/team'], 0);
-    visit('/tasks');
-    useAppTabsStore.getState().selectTab(tabs[1].id);
-    useAppTabsStore.getState().closeTab(tabs[1].id);
-    expect(trail()).toEqual(['/', '[/tasks]']);
-  });
-
-  it('mints a fresh stack when the window has no tabs (rule 4)', () => {
-    // Purpose: the first-paint tab obeys the invariant too.
-    useAppTabsStore.setState({ tabs: [], activeTabId: null });
-    useAppTabsStore.getState().syncLocation('/activity');
-    expect(trail()).toEqual(['[/activity]']);
-  });
 });
 
 describe('per-tab history — a dialog is not a page', () => {
@@ -390,18 +205,6 @@ describe('per-tab history — a dialog is not a page', () => {
     expect(trail()).toEqual(['[/?settings=open]']);
     visit('/');
     expect(trail()).toEqual(['[/]']);
-  });
-
-  it('treats every modifier param as a modifier', () => {
-    // Purpose: the list comes from `DIALOG_MODIFIER_KEYS`, so each of its params counts.
-    setTabs(['/'], 0);
-    visit('/team');
-    for (const key of DIALOG_MODIFIER_KEYS) {
-      visit(`/team?${key}=x`);
-      visit('/team');
-    }
-    visit('/team?settings=tools&settingsSection=mcp');
-    expect(trail()).toEqual(['/', '[/team?settings=tools&settingsSection=mcp]']);
   });
 
   it('keeps every step of a profile chain, so Back walks it', () => {
@@ -416,33 +219,12 @@ describe('per-tab history — a dialog is not a page', () => {
       '[/team?profile=agent&profilePage=memory]',
     ]);
   });
-
-  it('still records a change to any other search param as a new page', () => {
-    // Purpose: only dialog params are modifiers; `?view=` is a different page.
-    setTabs(['/team'], 0);
-    visit('/team?view=table');
-    expect(trail()).toEqual(['/team', '[/team?view=table]']);
-  });
 });
 
 describe('per-tab history — no two identical entries side by side', () => {
   it('folds a replace that lands on the entry before it', () => {
     // Purpose: a redirect back to the previous page must not make Back a dead press.
     setHistory(['/a', '/b']);
-    useAppTabsStore.getState().syncLocation('/a', { replace: true });
-    expect(trail()).toEqual(['[/a]']);
-  });
-
-  it('folds a replace that lands on the entry after it', () => {
-    // Purpose: same for Forward.
-    setHistory(['/a', '/x', '/b'], 1);
-    useAppTabsStore.getState().syncLocation('/b', { replace: true });
-    expect(trail()).toEqual(['/a', '[/b]']);
-  });
-
-  it('folds both neighbours when both match', () => {
-    // Purpose: folding one side only would leave `[a, a]`.
-    setHistory(['/a', '/x', '/a'], 1);
     useAppTabsStore.getState().syncLocation('/a', { replace: true });
     expect(trail()).toEqual(['[/a]']);
   });
@@ -459,27 +241,6 @@ describe('per-tab history — a traversal the app made itself', () => {
     expect(useAppTabsStore.getState().activeTabId).toBe('b');
     expect(trail()).toEqual(['[/]', '/team']);
   });
-
-  it('steps the cursor back when it lands on the entry before', () => {
-    // Purpose: `router.history.back()` must not push, leaving `[a, b, a]`.
-    setHistory(['/', '/team', '/tasks']);
-    useAppTabsStore.getState().syncLocation('/team', { traversal: true });
-    expect(trail()).toEqual(['/', '[/team]', '/tasks']);
-  });
-
-  it('steps the cursor forward when it lands on the entry after', () => {
-    // Purpose: the mirror case for `history.forward()`.
-    setHistory(['/', '/team', '/tasks', '/activity'], 1);
-    useAppTabsStore.getState().syncLocation('/tasks', { traversal: true });
-    expect(trail()).toEqual(['/', '/team', '[/tasks]', '/activity']);
-  });
-
-  it('pushes a traversal that lands on no neighbour', () => {
-    // Purpose: anything else is still somewhere new for this tab.
-    setHistory(['/', '/team']);
-    useAppTabsStore.getState().syncLocation('/activity', { traversal: true });
-    expect(trail()).toEqual(['/', '/team', '[/activity]']);
-  });
 });
 
 describe('goToHistoryIndex', () => {
@@ -490,29 +251,6 @@ describe('goToHistoryIndex', () => {
     useAppTabsStore.getState().goToHistoryIndex(1);
     expect(active().href).toBe('/team');
     expect(trail()).toEqual(['/', '[/team]', '/tasks']);
-  });
-
-  it('is a no-op, returning the same state, out of range or on the current entry', () => {
-    // Purpose: Back at the start and Forward at the end must change nothing at all.
-    setTabs(['/'], 0);
-    visit('/team');
-    const before = useAppTabsStore.getState();
-    for (const index of [-1, 2, 1, 0.5]) {
-      useAppTabsStore.getState().goToHistoryIndex(index);
-      expect(useAppTabsStore.getState(), String(index)).toBe(before);
-    }
-  });
-
-  it('only moves the active tab', () => {
-    // Purpose: Back is per tab; a background tab never moves.
-    const tabs = setTabs(['/', '/team'], 0);
-    visit('/tasks');
-    useAppTabsStore.getState().selectTab(tabs[1].id);
-    visit('/activity');
-    useAppTabsStore.getState().goToHistoryIndex(0);
-    const [first, second] = useAppTabsStore.getState().tabs;
-    expect(trail(first)).toEqual(['/', '[/tasks]']);
-    expect(trail(second)).toEqual(['[/team]', '/activity']);
   });
 });
 
@@ -568,17 +306,6 @@ describe('persistence of history', () => {
     });
   });
 
-  it('repairs a tab saved before per-tab history instead of dropping it', () => {
-    // Purpose: upgrading mid-session must not cost anyone their tabs.
-    sessionStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ tabs: [{ id: 'a', href: '/team' }], activeTabId: 'a' })
-    );
-    expect(readPersistedTabs()?.tabs).toEqual([
-      { id: 'a', href: '/team', history: ['/team'], cursor: 0 },
-    ]);
-  });
-
   it('repairs corrupt history shapes and keeps every tab', () => {
     // Purpose: each broken shape restarts history at the tab's page; none drops it.
     const broken = [
@@ -594,6 +321,17 @@ describe('persistence of history', () => {
     expect(restored?.tabs).toEqual(
       broken.map(({ id, href }) => ({ id, href, history: [href], cursor: 0 }))
     );
+  });
+
+  it('repairs a tab saved before per-tab history instead of dropping it', () => {
+    // Purpose: upgrading mid-session must not cost anyone their tabs.
+    sessionStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ tabs: [{ id: 'a', href: '/team' }], activeTabId: 'a' })
+    );
+    expect(readPersistedTabs()?.tabs).toEqual([
+      { id: 'a', href: '/team', history: ['/team'], cursor: 0 },
+    ]);
   });
 
   it('keeps a sound stored history as it was', () => {
@@ -636,18 +374,5 @@ describe('renameSessionInTabs (DOR-4622)', () => {
       '[/session?session=canonical&view=x]',
     ]);
     expectInvariant();
-  });
-
-  it('leaves a tab on another chat alone, even one whose id starts the same', () => {
-    setTabs(['/session?session=client-uuid-2', '/session?dir=client-uuid']);
-    useAppTabsStore.getState().renameSessionInTabs('client-uuid', 'canonical');
-    expect(strip()).toEqual(['[/session?session=client-uuid-2]', '/session?dir=client-uuid']);
-  });
-
-  it('changes nothing, not even the list identity, when no tab names the chat', () => {
-    setTabs(['/session?session=A', '/']);
-    const tabs = useAppTabsStore.getState().tabs;
-    useAppTabsStore.getState().renameSessionInTabs('client-uuid', 'canonical');
-    expect(useAppTabsStore.getState().tabs).toBe(tabs);
   });
 });

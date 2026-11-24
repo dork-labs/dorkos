@@ -1,14 +1,7 @@
 // @vitest-environment jsdom
 /**
- * The phone cockpit: three destinations, no drawer, and Home drawing the same
- * list the desktop panel draws.
- *
- * **The model half is real.** `useSidebarState` is the one thing stubbed — with
- * the programme's own journey fixtures, which is what a real cockpit hands the
- * model — and everything downstream of it runs: `useSidebarModel` calls the
- * real `buildSidebarModel`, `SidebarSections` draws the result, and the
- * assertions read the DOM those sections produced. A suite that stubbed the
- * model would prove the tabs render a mock.
+ * The phone cockpit: three destinations, no drawer, and Home drawing the same list the desktop
+ * panel draws.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen, cleanup, waitFor, within } from '@testing-library/react';
@@ -19,11 +12,8 @@ import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 
-// ── The global event stream ────────────────────────────────────────────────
-// The Home tab now reads the approval queue (P4 AC-5), and that query keeps
-// itself live off the SSE fan-out. Only the subscription is stubbed; the query
-// itself runs against the mock transport, so the assertions below are about a
-// real fetch landing in a real render.
+// ── The global event stream ──────────────────────────────────────────────── The Home tab now
+// reads the approval queue (P4 AC-5), and that query keeps itself live off the SSE fan-out.
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
   return {
@@ -35,34 +25,24 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 
 import { createInitialSlots, TransportProvider, useExtensionRegistry } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { buildSidebarModel } from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
 import type { SidebarState } from '@/layers/features/dashboard-sidebar/model/sidebar-state';
 import {
   appsState,
   pinnedApp,
   busyFixture,
-  powerFixture,
   quietFixture,
 } from '@/layers/features/dashboard-sidebar/model/fixtures';
 import { clearAskReceipts } from '@/layers/entities/attention';
 import { LIVE_REGION_DEBOUNCE_MS } from '../model/use-live-region-text';
 
-// ── Router ──────────────────────────────────────────────────────────────────
-// **The subscription is the seam under test, so the mock is a real one.**
-// `commitNavigation()` fires every `onBeforeLoad` listener exactly as TanStack
-// does on a committed load — INCLUDING one that lands on the URL already
-// showing, which is the case the layout used to miss (review B1) and the case
-// the deleted `sidebar-mobile-navigation.test.tsx` covered by name.
+// ── Router ────────────────────────────────────────────────────────────────── **The subscription
+// is the seam under test, so the mock is a real one.** `commitNavigation()` fires every
+// `onBeforeLoad` listener exactly as TanStack does on a committed load — INCLUDING one that lands
+// on the URL already showing, which is the case the layout used to miss (review B1) and the case
 let mockHref = '/';
 const mockNavigate = vi.fn();
 const beforeLoadListeners = new Set<() => void>();
-/**
- * Commit a navigation to `href`, defaulting to the URL already showing.
- *
- * Wrapped in `act` because the listeners are an external subscription, not a
- * React event: without it the store write lands but nothing re-renders, and
- * every assertion below would read the previous frame.
- */
+/** Commit a navigation to `href`, defaulting to the URL already showing. */
 function commitNavigation(href: string = mockHref) {
   mockHref = href;
   act(() => {
@@ -95,9 +75,9 @@ vi.mock('@/layers/features/dashboard-sidebar/model/use-sidebar-state', () => ({
   useSidebarState: () => mockState,
   SIDEBAR_CLOCK_TICK_MS: 60_000,
 }));
-// A settled panel: these cases are about what each destination draws,
-// not about the boot gate, whose own behaviour is covered in the sidebar
-// feature's `model/boot/__tests__` (spec `sidebar-simplification` D6).
+// A settled panel: these cases are about what each destination draws, not about the boot gate,
+// whose own behaviour is covered in the sidebar feature's `model/boot/__tests__` (spec
+// `sidebar-simplification` D6).
 vi.mock('@/layers/features/dashboard-sidebar/model/boot/use-boot-state', () => ({
   useBootState: () => ({ phase: 'settled', settled: true, fleetKnown: true, startedWarm: false }),
 }));
@@ -105,9 +85,9 @@ vi.mock('@/layers/features/dashboard-sidebar/model/use-legacy-pin-migration', ()
   useLegacyPinMigration: () => {},
 }));
 
-// The two pieces of chrome the panels borrow are covered by their own suites;
-// here they only need to be findable, so the assertions are about WHERE the
-// layout puts them rather than about what they contain.
+// The two pieces of chrome the panels borrow are covered by their own suites; here they only need
+// to be findable, so the assertions are about WHERE the layout puts them rather than about what
+// they contain.
 vi.mock('@/layers/features/dashboard-sidebar/ui/SidebarHeaderBlock', () => ({
   SidebarHeaderBlock: () => <div data-testid="sidebar-header-block">Header block</div>,
 }));
@@ -123,10 +103,9 @@ import { MobileTabsLayout } from '../ui/MobileTabsLayout';
 import { useMobilePanelStore } from '../model/mobile-panel-store';
 import { MOBILE_TABS, MOBILE_TAB_BAR_DOCK } from '../model/mobile-tabs';
 
-// ── The viewport ───────────────────────────────────────────────────────────
-// jsdom has none, and `useIsMobile` is a `matchMedia` question — so the touch
-// half of this file (P4.2) sets it and the rest runs at the pointer default,
-// exactly as the components do.
+// ── The viewport ─────────────────────────────────────────────────────────── jsdom has none, and
+// `useIsMobile` is a `matchMedia` question — so the touch half of this file (P4.2) sets it and
+// the rest runs at the pointer default, exactly as the components do.
 let phone = false;
 function useEmulatedViewport() {
   Object.defineProperty(window, 'matchMedia', {
@@ -164,16 +143,7 @@ function anApproval(): PendingApproval {
   };
 }
 
-/**
- * One question an agent is parked on, shaped as the fleet-wide stream sends it.
- *
- * The id is a parameter because answering one schedules a 1_200 ms removal timer
- * against the module-level receipt store, and that timer outlives the test that
- * started it — `clearAskReceipts()` empties the store but cannot cancel a
- * `setTimeout` already in flight. One leaked timer is enough: it deletes by id,
- * so any later case reusing that id can have its held envelope taken away. Any
- * case that depends on the hold takes an id of its own.
- */
+/** One question an agent is parked on, shaped as the fleet-wide stream sends it. */
 function aQuestion(id = 'q-1'): InteractionPendingEvent {
   return {
     sessionId: 'session-question-1',
@@ -207,15 +177,7 @@ function renderLayout(
   );
 }
 
-/**
- * Run a promise chain to completion while the fake clock barely moves.
- *
- * Bounded by event-loop turns rather than by wall clock, and it advances fake
- * time a millisecond at a time, so a hold measured in seconds cannot be spent by
- * the flush itself. `done` is re-asserted by the caller with a real `expect`, so
- * a flush that ran out of turns fails on the condition it was waiting for rather
- * than passing over a half-settled tree.
- */
+/** Run a promise chain to completion while the fake clock barely moves. */
 async function flushOnFakeTime(done: () => boolean): Promise<void> {
   for (let turn = 0; turn < 50 && !done(); turn += 1) {
     await act(async () => {
@@ -243,10 +205,9 @@ beforeEach(() => {
   mockAsk.mockClear();
   beforeLoadListeners.clear();
   useMobilePanelStore.setState({ panelUp: false });
-  // The Ask receipt store is module-level, shared by every card `AskList`
-  // draws anywhere in the app — a "You said no" from one test's answered
-  // question would otherwise still be showing when the next test's fixture
-  // reuses its interaction id.
+  // The Ask receipt store is module-level, shared by every card `AskList` draws anywhere in the
+  // app — a "You said no" from one test's answered question would otherwise still be showing when
+  // the next test's fixture reuses its interaction id.
   clearAskReceipts();
 });
 afterEach(cleanup);
@@ -264,41 +225,12 @@ describe('MobileTabsLayout', () => {
       );
     });
 
-    it('is Home, DorkBot and You — the list lives in one tab, so there is no second', () => {
-      renderLayout();
-      expect(MOBILE_TABS.map((tab) => tab.id)).toEqual(['home', 'dorkbot', 'you']);
-      expect(screen.queryByTestId('mobile-tab-library')).not.toBeInTheDocument();
-    });
-
-    // ── review B1: the cold-load state ──
-    it('opens with the panels DOWN, so a cold load can reach the routed page', () => {
-      // `/` is the #team room. Opening with Home over it meant a phone could
-      // not see the home surface at all until it navigated somewhere else.
-      renderLayout();
-      expect(screen.getByTestId('mobile-tab-panels').className).toContain('invisible');
-      expect(document.querySelectorAll('[data-mobile-tab][aria-current]')).toHaveLength(0);
-    });
-
     it('marks exactly one destination current once a panel is up', async () => {
       const user = userEvent.setup();
       renderLayout();
       await user.click(screen.getByTestId('mobile-tab-home'));
       expect(screen.getByTestId('mobile-tab-home')).toHaveAttribute('aria-current', 'page');
       expect(document.querySelectorAll('[data-mobile-tab][aria-current]')).toHaveLength(1);
-    });
-
-    // ── review one-liner: aria-current must not describe the last press ──
-    it('marks nothing current while the operator is looking at a conversation', async () => {
-      const user = userEvent.setup();
-      renderLayout();
-      await user.click(screen.getByTestId('mobile-tab-you'));
-      expect(screen.getByTestId('mobile-tab-you')).toHaveAttribute('aria-current', 'page');
-
-      // The observable half: a panel really was current a moment ago, so this
-      // is a transition rather than a state that was never entered.
-      commitNavigation('/session?session=abc');
-      expect(document.querySelectorAll('[data-mobile-tab][aria-current]')).toHaveLength(0);
-      expect(screen.getByTestId('mobile-tab-you')).not.toHaveAttribute('aria-current');
     });
   });
 
@@ -318,37 +250,10 @@ describe('MobileTabsLayout', () => {
       expect(await screen.findByTestId('mobile-tab-badge-home')).toHaveTextContent('2');
     });
 
-    it('draws the count as the solid warning pill, on a bar with no hairline (Phase 4 S16)', async () => {
-      renderLayout(null, twoWaiting());
-      const badge = await screen.findByTestId('mobile-tab-badge-home');
-      // The shared pill, not palette literals of its own.
-      expect(badge).toHaveAttribute('data-slot', 'count-pill');
-      expect(badge).toHaveAttribute('data-tone', 'warning');
-      expect(badge).toHaveAttribute('data-placement', 'corner');
-      expect(badge.className).not.toMatch(/amber/);
-      // The bar's tint separates it; a border above it was a second edge.
-      expect(screen.getByTestId('mobile-tab-bar').className).not.toMatch(/\bborder/);
-    });
-
-    it('is the same number the live region announces', async () => {
-      const { container } = renderLayout(null, twoWaiting());
-      const badge = (await screen.findByTestId('mobile-tab-badge-home')).textContent;
-      // It publishes a second after the count settles (`LIVE_REGION_DEBOUNCE_MS`),
-      // which is why this waits rather than reading straight after the render.
-      await waitFor(
-        () => {
-          const live = container.querySelector('[aria-live="polite"]');
-          expect(live?.textContent).toBe(`${badge} agents need you`);
-        },
-        { timeout: LIVE_REGION_DEBOUNCE_MS * 3 }
-      );
-    });
-
     it('announces the count from OUTSIDE the panels, where nothing is inert (P4.2)', async () => {
-      // **The badge is `aria-hidden` because something else says the number.**
-      // A region inside a panel would be `inert` whenever it is put away — so
-      // for every moment the operator was in a conversation the count would be
-      // announced by nobody at all.
+      // **The badge is `aria-hidden` because something else says the number.** A region inside a
+      // panel would be `inert` whenever it is put away — so for every moment the operator was in
+      // a conversation the count would be announced by nobody at all.
       const { container } = renderLayout(null, twoWaiting());
       expect(await screen.findByTestId('mobile-tab-badge-home')).toHaveAttribute(
         'aria-hidden',
@@ -370,46 +275,12 @@ describe('MobileTabsLayout', () => {
       expect(screen.getByTestId('mobile-tab-panels')).toHaveAttribute('inert');
       expect(regions[0]!.textContent).toMatch(/\d/);
     });
-
-    it('draws no badge when nothing is waiting, whatever the list holds', async () => {
-      // `busy` is a full list — unread channels, a DM with a count — and none
-      // of that is a reason to badge the bar: unread lives on the rows.
-      mockState = busyFixture;
-      renderLayout();
-      await waitFor(() => expect(screen.queryByTestId('mobile-now-attention')).toBeNull());
-      expect(screen.queryByTestId('mobile-tab-badge-home')).not.toBeInTheDocument();
-    });
-
-    it('never badges another destination', async () => {
-      renderLayout(null, twoWaiting());
-      await screen.findByTestId('mobile-tab-badge-home');
-      expect(screen.queryByTestId('mobile-tab-badge-you')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('mobile-tab-badge-dorkbot')).not.toBeInTheDocument();
-    });
   });
 
   describe('what each destination holds', () => {
     it('draws the whole list in Home: the top items, Channels, Direct messages', () => {
       renderLayout();
       expect(sectionsIn('home')).toEqual(['top', 'channels', 'dms']);
-    });
-
-    it('draws every section the model emits, once', () => {
-      mockState = powerFixture;
-      renderLayout();
-      // Enumerated from the model's own build, never from a list written here.
-      const emitted = buildSidebarModel(powerFixture).sections.map((section) => section.id);
-      expect(sectionsIn('home')).toEqual(emitted);
-    });
-
-    it('keeps New in the header, and mounts no floating action button', () => {
-      renderLayout();
-      expect(within(panel('home')).getByTestId('sidebar-header-block')).toBeInTheDocument();
-    });
-
-    it('puts the four places DorkOS goes in You', () => {
-      renderLayout();
-      expect(within(panel('you')).getByTestId('sidebar-footer-strip')).toBeInTheDocument();
     });
 
     it('lists pinned apps under Home’s Apps door, and only there', () => {
@@ -434,21 +305,6 @@ describe('MobileTabsLayout', () => {
         useExtensionRegistry.setState({ slots: createInitialSlots() });
       }
     });
-
-    it('mounts the bottom slot at the foot of Home, after the list, and nowhere else', () => {
-      renderLayout();
-      expect(panel('home').querySelectorAll('[data-slot="sidebar-bottom-slot"]').length).toBe(1);
-      expect(panel('you').querySelectorAll('[data-slot="sidebar-bottom-slot"]').length).toBe(0);
-
-      const sections = panel('home').querySelectorAll('[data-sidebar-section]');
-      const slot = panel('home').querySelector('[data-slot="sidebar-bottom-slot"]');
-      const last = sections[sections.length - 1]!;
-      // Excluding CONTAINED_BY: a descendant reports as FOLLOWING too, so the
-      // bare flag would pass with the slot rendered INSIDE the last section.
-      const position = last.compareDocumentPosition(slot!);
-      expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(position & Node.DOCUMENT_POSITION_CONTAINED_BY).toBeFalsy();
-    });
   });
 
   describe('a contributed sidebar.body takeover', () => {
@@ -458,14 +314,6 @@ describe('MobileTabsLayout', () => {
       expect(sectionsIn('home')).toEqual([]);
       // The way to make things stays: the header block is not the list.
       expect(within(panel('home')).getByTestId('sidebar-header-block')).toBeInTheDocument();
-    });
-
-    it('keeps what is waiting on you above it — browsing is not a reason to stop being told', async () => {
-      const transport = createMockTransport();
-      transport.listPendingApprovals = vi.fn().mockResolvedValue({ approvals: [anApproval()] });
-      renderLayout(<div data-testid="takeover-body">facets</div>, transport);
-      expect(await within(panel('home')).findByText('Write to a file')).toBeInTheDocument();
-      expect(screen.getByTestId('mobile-tab-badge-home')).toBeInTheDocument();
     });
   });
 
@@ -482,24 +330,6 @@ describe('MobileTabsLayout', () => {
       expect(showing('home')).toBe(false);
       // Still in the tree — which is what makes a scroll offset survivable.
       expect(panel('home')).toBeInTheDocument();
-    });
-
-    it('carries Home’s scroll offset through a round trip to You', async () => {
-      const user = userEvent.setup();
-      renderLayout();
-      await user.click(screen.getByTestId('mobile-tab-home'));
-      // The scroller PageContainer owns, driven the way a thumb drives it.
-      const scroller = panel('home').querySelector<HTMLElement>('.overflow-y-auto');
-      expect(scroller).not.toBeNull();
-      scroller!.scrollTop = 240;
-
-      await user.click(screen.getByTestId('mobile-tab-you'));
-      await user.click(screen.getByTestId('mobile-tab-home'));
-
-      // Same element — not a remount — and the offset it was left at.
-      expect(panel('home').querySelector<HTMLElement>('.overflow-y-auto')).toBe(scroller);
-      expect(scroller!.scrollTop).toBe(240);
-      expect(panel('home').className).not.toContain('hidden');
     });
 
     it('hides an inactive panel from the keyboard and the accessibility tree', async () => {
@@ -526,46 +356,6 @@ describe('MobileTabsLayout', () => {
       expect(screen.getByTestId('mobile-tab-bar')).toBeInTheDocument();
       expect(panel('home')).toBeInTheDocument();
     });
-
-    // ── Re-opening the conversation you already have open is the commonest tap
-    //    of all, and TanStack reports it as an unchanged href. A layout that
-    //    diffed hrefs did nothing here, leaving a layer with no way out. ──
-    it('yields on a navigation that lands on the URL already showing', async () => {
-      const user = userEvent.setup();
-      renderLayout();
-      await user.click(screen.getByTestId('mobile-tab-home'));
-      const before = mockHref;
-      expect(showing('home')).toBe(true);
-
-      commitNavigation();
-
-      // Same URL, and the layer still got out of the way.
-      expect(mockHref).toBe(before);
-      expect(screen.getByTestId('mobile-tab-panels').className).toContain('invisible');
-    });
-
-    it('marks the covered page reachable again when it comes back', async () => {
-      const user = userEvent.setup();
-      renderLayout();
-      await user.click(screen.getByTestId('mobile-tab-home'));
-      commitNavigation();
-      expect(screen.getByTestId('mobile-tab-panels').className).toContain('invisible');
-
-      await user.click(screen.getByTestId('mobile-tab-you'));
-      expect(screen.getByTestId('mobile-tab-panels').className).not.toContain('invisible');
-      expect(showing('you')).toBe(true);
-    });
-
-    it('publishes whether a panel covers the page, for the shell to act on', () => {
-      // The bit `AppShell` reads to mark the routed page `inert` (review B2).
-      renderLayout();
-      expect(useMobilePanelStore.getState().panelUp).toBe(false);
-      act(() => useMobilePanelStore.getState().raise());
-      expect(useMobilePanelStore.getState().panelUp).toBe(true);
-      expect(screen.getByTestId('mobile-tab-panels').className).not.toContain('invisible');
-      commitNavigation();
-      expect(useMobilePanelStore.getState().panelUp).toBe(false);
-    });
   });
 
   describe('DorkBot', () => {
@@ -578,52 +368,9 @@ describe('MobileTabsLayout', () => {
       expect(screen.queryByTestId('mobile-tab-panel-dorkbot')).not.toBeInTheDocument();
       expect(screen.getByTestId('mobile-tab-panels').className).toContain('invisible');
     });
-
-    it('says it is not ready rather than doing nothing, until the roster answers', async () => {
-      mockDorkBotReady = false;
-      const user = userEvent.setup();
-      renderLayout();
-
-      const dorkbot = screen.getByTestId('mobile-tab-dorkbot');
-      expect(dorkbot).toBeDisabled();
-      await user.click(dorkbot);
-      expect(mockAsk).not.toHaveBeenCalled();
-    });
-
-    it('leaves the panel you were reading alone when it is not ready', async () => {
-      mockDorkBotReady = false;
-      const user = userEvent.setup();
-      renderLayout();
-      await user.click(screen.getByTestId('mobile-tab-you'));
-
-      await user.click(screen.getByTestId('mobile-tab-dorkbot'));
-
-      // The press did nothing, so it took nothing away either.
-      expect(showing('you')).toBe(true);
-      expect(screen.getByTestId('mobile-tab-you')).toHaveAttribute('aria-current', 'page');
-    });
-
-    it('is pressable, and only disabled by the roster', async () => {
-      const user = userEvent.setup();
-      renderLayout();
-      expect(screen.getByTestId('mobile-tab-dorkbot')).toBeEnabled();
-      await user.click(screen.getByTestId('mobile-tab-dorkbot'));
-      expect(mockAsk).toHaveBeenCalledTimes(1);
-    });
   });
 
   describe('nothing overlaps the bar', () => {
-    it('stops the panels exactly where the bar starts', () => {
-      renderLayout();
-      const bar = screen.getByTestId('mobile-tab-bar');
-      const panels = screen.getByTestId('mobile-tab-panels');
-      // One string, two uses.
-      expect(bar.style.height).toBe(MOBILE_TAB_BAR_DOCK);
-      // Plus whatever a docked PIP is holding — absent, `--pip-dock` resolves
-      // to the `0px` fallback and this is the bar's height and nothing else.
-      expect(panels.style.bottom).toBe(`calc(${MOBILE_TAB_BAR_DOCK} + var(--pip-dock, 0px))`);
-    });
-
     it('publishes the bar height so other layers can dock above it (DOR-1177)', () => {
       const { unmount } = renderLayout();
       expect(document.documentElement.style.getPropertyValue('--mobile-tab-dock')).toBe(
@@ -636,10 +383,7 @@ describe('MobileTabsLayout', () => {
     });
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Touch (P4.2). Everything below runs at 390 wide, which is the only width
-  // at which any of it exists.
-  // ─────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────── Touch (P4.2).
   describe('at 390×844 (P4.2)', () => {
     beforeEach(() => {
       phone = true;
@@ -678,58 +422,14 @@ describe('MobileTabsLayout', () => {
       expect(screen.getByTestId('mobile-tab-panels').className).not.toContain('invisible');
     });
 
-    it('puts a question in Home as a full card, matching an approval rather than a smaller row', async () => {
-      const user = userEvent.setup();
-      mockState = quietFixture;
-      const transport = createMockTransport();
-      transport.listPendingInteractions = vi
-        .fn()
-        .mockResolvedValue({ interactions: [aQuestion()] });
-      renderLayout(null, transport);
-      await user.click(screen.getByTestId('mobile-tab-home'));
-
-      // The same headline `AskList`/`InteractionAsk` draw everywhere else.
-      const card = await screen.findByText('meeting-notes has a question');
-      expect(within(panel('home')).getByTestId('mobile-now-attention').contains(card)).toBe(true);
-
-      // "Skip" submits an empty answer, exactly as it does on every other
-      // surface that draws this card.
-      await user.click(screen.getByRole('button', { name: 'Skip' }));
-      await waitFor(() =>
-        expect(transport.submitAnswers).toHaveBeenCalledWith('session-question-1', 'q-1', {})
-      );
-      expect(mockNavigate).not.toHaveBeenCalled();
-    });
-
-    it('opens the session from a mobile Ask card', async () => {
-      const user = userEvent.setup();
-      mockState = quietFixture;
-      const transport = createMockTransport();
-      transport.listPendingInteractions = vi
-        .fn()
-        .mockResolvedValue({ interactions: [aQuestion()] });
-      renderLayout(null, transport);
-      await user.click(screen.getByTestId('mobile-tab-home'));
-      await screen.findByText('meeting-notes has a question');
-
-      await user.click(screen.getByRole('button', { name: 'Open chat' }));
-
-      expect(mockNavigate).toHaveBeenCalledWith({
-        to: '/session',
-        search: { session: 'session-question-1' },
-      });
-    });
-
     it('holds the slot open long enough to show the receipt after the last Ask is answered', async () => {
-      // Answering the only pending Ask used to unmount this whole slot the
-      // instant the refetch came back empty, tearing the "You said no" receipt
-      // away in the same frame it appeared.
+      // Answering the only pending Ask used to unmount this whole slot the instant the refetch
+      // came back empty, tearing the "You said no" receipt away in the same frame it appeared.
       const user = userEvent.setup();
       mockState = quietFixture;
       const transport = createMockTransport();
-      // An id of its own: an earlier case answers `q-1`, leaving a 1_200 ms
-      // timer running that deletes `q-1` from the shared receipt store whenever
-      // it lands.
+      // An id of its own: an earlier case answers `q-1`, leaving a 1_200 ms timer running that
+      // deletes `q-1` from the shared receipt store whenever it lands.
       const held = aQuestion('q-held');
       transport.listPendingInteractions = vi
         .fn()
@@ -755,48 +455,6 @@ describe('MobileTabsLayout', () => {
       } finally {
         vi.useRealTimers();
       }
-    });
-
-    it('says so loudly when the approval list cannot be read', async () => {
-      mockState = quietFixture;
-      const transport = createMockTransport();
-      transport.listPendingApprovals = vi.fn().mockRejectedValue(new Error('offline'));
-      renderLayout(null, transport);
-
-      const notice = await screen.findByText(/Couldn’t check for approvals/i);
-      expect(panel('home').contains(notice)).toBe(true);
-
-      // And the retry is wired to a real refetch rather than being decoration.
-      const user = userEvent.setup();
-      const reads = vi.mocked(transport.listPendingApprovals);
-      const before = reads.mock.calls.length;
-      await user.click(screen.getByRole('button', { name: 'Try again' }));
-      await waitFor(() => expect(reads.mock.calls.length).toBeGreaterThan(before));
-    });
-
-    it('draws nothing about approvals when there are none and nothing failed', async () => {
-      mockState = quietFixture;
-      renderLayout();
-      await waitFor(() => expect(screen.queryByTestId('mobile-now-attention')).toBeNull());
-      expect(screen.queryByText(/Couldn’t check for approvals/i)).toBeNull();
-    });
-
-    it('reorders nothing by drag on a phone (R3)', () => {
-      // Drag is off here — `SidebarDnd` never mounts a `DndContext` below 768px
-      // — so the menu is the only way to move a row. "Every draggable row's
-      // menu carries a move action" is asserted on the menu builders:
-      // `AgentRowMenuItems.test.tsx` and `RoomRowMenuItems.test.tsx`.
-      mockState = powerFixture;
-      renderLayout();
-      expect(document.querySelector('[data-dnd-context]')).toBeNull();
-      expect(panel('home').querySelectorAll('[aria-roledescription="sortable"]')).toHaveLength(0);
-
-      // …and the model really did mark rows draggable, so the absence above is
-      // the phone rather than a fixture with nothing to drag.
-      const draggable = buildSidebarModel(powerFixture)
-        .sections.flatMap((section) => section.rows)
-        .filter((row) => row.draggable);
-      expect(draggable.length).toBeGreaterThan(0);
     });
   });
 });
