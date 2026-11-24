@@ -273,6 +273,16 @@ gates:
   - id: wf.auto-revert.revert
     source: .github/workflows/auto-revert.yml
     purpose: Never gates a merge. Opens a revert PR with auto-merge for a merge that broke main, only while the AUTO_REVERT repo variable is on (DOR-5122).
+  # --- rolling-bisect.yml ---
+  - id: wf.rolling-bisect.next
+    source: .github/workflows/rolling-bisect.yml
+    purpose: Never gates a merge. When a rolling main run (browser-test) still fails after its re-run, binary-searches the merges since the last green run by dispatching the workflow on each midpoint, at most ceil(log2 N) runs for N <= 16 merges (DOR-5122).
+  - id: wf.rolling-bisect.report
+    source: .github/workflows/rolling-bisect.yml
+    purpose: Never gates a merge. Names the bisected merge on its PR and the failure-group issues, or says once why the bisect stopped without one (DOR-5122).
+  - id: wf.rolling-bisect.revert
+    source: .github/workflows/rolling-bisect.yml
+    purpose: Never gates a merge. Opens a revert PR for the bisected merge through auto-revert.sh's revert path, only while the AUTO_REVERT repo variable is on (DOR-5122).
 
   # --- daily-sweep.yml ---
   - id: wf.daily-sweep.sweep

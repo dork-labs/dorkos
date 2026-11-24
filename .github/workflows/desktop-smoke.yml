@@ -50,11 +50,10 @@ name: Desktop Smoke
 # installer (desktop-release.yml's "Verify the Windows installer" step owns that).
 
 on:
-  pull_request:
-    paths:
-      - 'apps/desktop/**'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/desktop-smoke.yml'
+  # Not on pull requests since DOR-5130 (Dorian, Nov 24): on PRs this leg
+  # failed 29 of 108 runs (week of Nov 16-22) and caught nothing the push run would not, so it runs only
+  # after merge, and after-merge-alert.yml tells the author of a merge that
+  # breaks it.
   push:
     branches: [main]
     paths:

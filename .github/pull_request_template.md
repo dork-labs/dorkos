@@ -8,4 +8,3 @@
 - [ ] Security fix: the public title, body, commits and test names say what's fixed, never what's still open. Residuals go to Security privately.
 - [ ] User-facing change: a fragment in `changelog/unreleased/`. Otherwise: the `skip-changelog` label.
 - [ ] Touches auth, permissions, connectors, mini apps, relay or Cloud auth: opened with `hold` for a security review.
-- [ ] `pnpm verify` passes locally.

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Fixture suite for scripts/auto-revert.sh (DOR-5122). `decide` is pure; `facts`
 # runs against a stubbed `gh` (GH=...) that answers from fixture files and logs
-# every call. Needs bash and jq.
+# every call; `revert` runs in a throwaway git repo with a bare origin. Needs
+# bash, git and jq.
 #
 #   bash scripts/test-auto-revert.sh
 set -uo pipefail
@@ -110,6 +111,75 @@ check 'facts makes no write call' no "$(grep -qE -- '--method|-X ' "$GH_LOG" && 
 rm "$tmp/fx/main"
 "$SCRIPT" facts 77 >/dev/null 2>&1
 check 'an unreadable main is exit 2' 2 "$?"
+
+# --- revert, in a real git repo with a bare origin and a stubbed gh ---
+cat >"$tmp/gh2" <<'EOF2'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$GH_LOG"
+case "$*" in
+  "pr create"*) echo "https://example.invalid/pull/900" ;;
+  "pr merge"*) ;;
+  *"/pulls/"*) echo dev1 ;;
+  *"--method POST"*) ;;
+  *) echo "stub gh: unexpected $*" >&2; exit 1 ;;
+esac
+EOF2
+chmod +x "$tmp/gh2"
+gitrepo() {
+  rm -rf "$tmp/origin.git" "$tmp/wc"
+  git init -q --bare -b main "$tmp/origin.git"
+  git init -q -b main "$tmp/wc"
+  (
+    cd "$tmp/wc" || exit 1
+    git config user.name t && git config user.email t@t.invalid && git config commit.gpgsign false
+    echo a >a && git add a && git commit -qm 'feat: base (#1)'
+    echo b >b && git add b && git commit -qm 'feat: the culprit (#12)'
+    echo c >c && git add c && git commit -qm 'chore(release): v1.0.0 (#13)'
+    echo d >d && git add d && git commit -qm 'feat: later (#14)'
+    git remote add origin "$tmp/origin.git" && git push -q origin main
+  )
+}
+rv() { # sha [ANYWHERE]
+  : >"$GH_LOG"
+  out=$(cd "$tmp/wc" && GH="$tmp/gh2" ANYWHERE=${2:-} "$SCRIPT" revert "$1" 12 browser-test https://example.invalid/run/77 2>&1)
+  rc=$?
+}
+sha_of() { git -C "$tmp/wc" log --format=%H --grep="$1" -1; }
+gitrepo
+CUL=$(sha_of culprit)
+rv "$CUL"
+check 'main moved past it, not ANYWHERE: no revert' 0 "$rc"
+check 'and nothing opened' 0 "$(grep -c 'pr create' "$GH_LOG")"
+rv "$CUL" 1
+check 'ANYWHERE: a merge main moved past is reverted' 0 "$rc"
+check 'the revert branch is pushed' yes "$(git -C "$tmp/origin.git" rev-parse -q --verify "refs/heads/auto-revert/${CUL:0:12}" >/dev/null && echo yes || echo no)"
+subj=$(git -C "$tmp/origin.git" log -1 --format=%s "auto-revert/${CUL:0:12}")
+check 'the branch holds a revert of it' yes "$(grep -q '^Revert "feat: the culprit' <<<"$subj" && echo yes || echo no)"
+check 'a PR is opened with auto-merge' 1 "$(grep -c 'pr merge https://example.invalid/pull/900 --repo made-up/repo --auto' "$GH_LOG")"
+check 'the bisect wording' yes "$(grep -q 'a bisect found #12' "$GH_LOG" && echo yes || echo no)"
+check 'the author is told' 1 "$(grep -c 'issues/12/comments' "$GH_LOG")"
+git -C "$tmp/wc" switch -q main
+rv "$CUL" 1
+check 'a revert branch already there: not twice' 0 "$(grep -c 'pr create' "$GH_LOG")"
+gitrepo
+rv "$(sha_of 'release')" 1
+check 'never the release commit' 0 "$(grep -c 'pr create' "$GH_LOG")"
+check 'and says so' yes "$(grep -q 'release commit' <<<"$out" && echo yes || echo no)"
+gitrepo
+LATER=$(sha_of later)
+rv "$LATER"
+check 'at main head: the old path still reverts' 0 "$rc"
+check 'with the old wording' yes "$(grep -q 'failed twice on main after #12' "$GH_LOG" && echo yes || echo no)"
+gitrepo
+rv cccccccccccccccccccccccccccccccccccccccc 1
+check 'a sha not in the checkout: exit 1' 1 "$rc"
+gitrepo
+(cd "$tmp/wc" && echo b2 >b && git commit -qam 'feat: touches b (#15)' && git push -q origin main)
+rv "$CUL" 1
+check 'a revert that does not apply cleanly: exit 1' 1 "$rc"
+check 'and nothing pushed' no "$(git -C "$tmp/origin.git" rev-parse -q --verify "refs/heads/auto-revert/${CUL:0:12}" >/dev/null && echo yes || echo no)"
+"$SCRIPT" revert abc 12 wf url >/dev/null 2>&1
+check 'a bad sha is a usage error' 2 "$?"
 
 "$SCRIPT" >/dev/null 2>&1
 check 'no arguments is a usage error' 2 "$?"

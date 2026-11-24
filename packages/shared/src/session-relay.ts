@@ -94,6 +94,8 @@ import {
   type StepUpStatementV1,
 } from '@dork-labs/cloud-api';
 import { z } from 'zod';
+import { AGENT_ID_PATTERN } from './dork-ref.js';
+import { INVISIBLE_CHARACTER } from './untrusted-text.js';
 import type { AgentComputerFrame, AgentComputerWebFrame } from './session-relay-agent-computer.js';
 import {
   DENY_REASON_MAX_LENGTH,
@@ -221,7 +223,7 @@ export const RelaySessionIdSchema = z
   .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
 /** A registered agent on the computer, by its Mesh id (a ULID). Never a directory. */
-export const RelayAgentIdSchema = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+export const RelayAgentIdSchema = z.string().regex(AGENT_ID_PATTERN);
 
 /** A tool call a chat is waiting on, as its runtime named it. */
 const ToolCallIdSchema = z
@@ -240,22 +242,17 @@ const ResumeCursorSchema = z
   .max(256)
   .regex(/^[0-9a-f-]+-\d+-g\d+-\d+$/);
 
-/** No control characters, so a value can never split a line it is written into. */
+/** No C0 control or DEL, so a value can never split a line it is written into. */
 // eslint-disable-next-line no-control-regex -- matching control characters is the point
 const NO_CONTROL = /^[^\u0000-\u001f\u007f]*$/;
 
 /**
- * Invisible format characters (`\p{Cf}`, direction marks among them) and the
- * Unicode line and paragraph separators: a name carrying one could read as
- * another name, or break a line where a transcript does not.
- */
-const INVISIBLE = /[\p{Cf}\u2028\u2029]/u;
-
-/**
  * A name a person reads: a computer's name on its hub, a browser's label on
- * its computer. At most 64 characters, no control or invisible characters,
- * and never trimmed, since a signed name is signed exactly: leading or
- * trailing whitespace is refused instead.
+ * its computer. At most 64 characters, no C0 control or DEL, no invisible
+ * character ({@link INVISIBLE_CHARACTER}), and never trimmed, since a signed
+ * name is signed exactly: leading or trailing whitespace is refused instead.
+ * C1 controls pass, as the Cloud contract's mirror of this rule
+ * (`displayText` in `@dork-labs/cloud-api`'s `step-up.ts`) says they do.
  */
 export const RelayDisplayNameSchema = z
   .string()
@@ -263,7 +260,7 @@ export const RelayDisplayNameSchema = z
   .max(64)
   .regex(NO_CONTROL)
   .refine((name) => name.trim() === name, 'no leading or trailing whitespace')
-  .refine((name) => !INVISIBLE.test(name), 'no invisible characters');
+  .refine((name) => !INVISIBLE_CHARACTER.test(name), 'no invisible characters');
 
 /**
  * The browser a request came from, as the hub knows it: an opaque id that
