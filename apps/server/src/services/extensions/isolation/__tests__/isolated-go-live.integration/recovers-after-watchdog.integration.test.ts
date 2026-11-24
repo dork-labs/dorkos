@@ -220,7 +220,8 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       await st.manager.shutdownServer(ID);
       expect(alive(pid)).toBe(false);
       expect(st.manager.getServerHandler(ID)).toBeNull();
-      await new Promise((r) => setTimeout(r, 600));
+      // An absence check: well past the harness's longest restart backoff (40 ms).
+      await new Promise((r) => setTimeout(r, 200));
       expect(st.manager.getServerHandler(ID)).toBeNull();
     },
     TEST_MS
@@ -295,7 +296,8 @@ describe('an isolated extension goes live through the real lifecycle', () => {
         body: 'It stopped 3 times in 10 minutes, so DorkOS left it off.',
         actions: [{ id: 'restart-extension', label: 'Restart', style: 'primary' }],
       });
-      await new Promise((r) => setTimeout(r, 700));
+      // An absence check: well past the harness's longest restart backoff (40 ms).
+      await new Promise((r) => setTimeout(r, 200));
       expect(st.manager.getServerHandler(ID)).toBeNull();
       expect((await get(`/api/ext/${ID}/ping`)).status).toBe(404);
 
