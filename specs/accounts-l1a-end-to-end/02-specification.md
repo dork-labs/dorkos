@@ -14,6 +14,9 @@ parent: everything-is-a-space
 **Linear:** project "Your DorkOS account, devices and private space (Feb launch)", milestones **M3a "L1a private-space path"** (January 15, 2027) and **M3b "L1a team-space leg"** (January 22, 2027; C5 and C10, after Cloud's team-spaces deploy); launch-gate ticket DOR-2962. The PM split L1a this way on 2026-11-19; steps below are unchanged, and step 9 (C5) plus the team-space browser test belong to M3b.
 **Builds on:** [`everything-is-a-space/02-specification.md`](../everything-is-a-space/02-specification.md) (the build plan, "the parent spec"), its [01-ideation.md](../everything-is-a-space/01-ideation.md) and [design-agent-computers.md](../everything-is-a-space/design-agent-computers.md) ("the A7/A8 note"); ADRs `261015-042933` (the design) and `261015-125850` (this computer and other devices); plan `plans/2026-10-accounts-and-devices.md`.
 
+> **Changed 2026-11-24 by ADR `261124-150515` (sequence, not dates).** The dates, the launch and the "before launch / after launch" split in this document are retired, milestone due dates included. What it decided to build, and the order where one step needs another, stand. The live order is `meta/ROADMAP.md`.
+> ADR `261124-150516` changes steps 2 and 3 (A7, A8): the agent computer runs the computer side only, not the whole server in a sealed role. The contract they carry stands, and a Mac will use it too.
+
 This spec does not restate decisions. Where it says "as decided", the parent spec, the ADRs or the A7/A8 note hold the decision. "Hub" is the code's word; no app copy says it (VOICE).
 
 ## Overview

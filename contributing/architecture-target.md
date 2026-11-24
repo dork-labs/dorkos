@@ -1,5 +1,23 @@
 # DorkOS target architecture
 
+## Words used on this page
+
+| Word            | Meaning                                                                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Space side      | The part of the server that holds a space's data and decides what an agent may do.                                                               |
+| Computer side   | The part that runs turns: runtimes, workspaces, terminals, the agent's browser.                                                                  |
+| The contract    | The one set of operations between the two sides: start, stream and stop a turn, answer an ask, call a DorkOS tool, sync an agent, report status. |
+| Entry           | A way to start the program with one side, or both, switched on.                                                                                  |
+| Role            | Today's word for which kind of server this is (a person's computer, a hub, an agent computer). It becomes "which entries are on".                |
+| Headless DorkOS | The computer side run alone, with no screen and no space data: what an agent computer runs.                                                      |
+| Turn port       | The one door every space-side caller uses to start and watch a turn (DOR-5157). Not built.                                                       |
+| Run record      | A small record DorkOS keeps per turn: status, attempt, the runtime chat it maps to (DOR-5159). Not built.                                        |
+| Outbox          | Follow-up work saved in the same write as the turn, then carried out by a worker (DOR-5160). Not built.                                          |
+| Wake            | The one durable way to wake a chat or an agent when something outside happens (epic DOR-5154). Not built.                                        |
+| Playbook        | A setting of a space that says how its agents work together (epic DOR-5156). Not built.                                                          |
+| Kernel          | One of four small groups of server code that features build on and that import no feature.                                                       |
+| Hub             | The code's word for a person's own DorkOS in the cloud. The app says "Private".                                                                  |
+
 ## How to read this
 
 - This page is the **target**: the shape DorkOS is being built toward, layer by layer, and the order to get there.
@@ -174,7 +192,7 @@ Beside the order: the gates G1 to G4 (one wire schema, table placement, conforma
 
 **How we get there.**
 
-1. A computer entry that boots alone, held by a lint wall and a test that it imports nothing from the space side (no issue yet).
+1. A computer entry that boots alone, held by a lint wall and a test that it imports nothing from the space side (DOR-5158).
 2. The spike: can the computer side run as its own long-lived process on a Mac, runtime by runtime? OpenCode (a sidecar) and Codex (one app-server) look easy; Claude Code depends on owning its child process; Doe runs in-process.
 3. The agent computer becomes the computer entry, with an image target (DOR-2935, DOR-2939, DOR-2940).
 4. The computer record and "add a machine"; then the account directory, one sidebar grouped by computer, linking a Mac, and the self-hosted wake channel (DOR-2949, DOR-2950, DOR-2951, DOR-2961). Today each of those assumes a cloud home; under the target a Mac can be the home.
@@ -198,7 +216,7 @@ Beside the order: the gates G1 to G4 (one wire schema, table placement, conforma
 - **Recovery with caps.** Work tied to a dead process is dropped, never replayed. A turn continues only where its runtime can resume, at most three times in a row. A turn a person stopped, or one waiting on a person, never continues. The agent is told what background work died.
 - **The own-process test.** The spike in [the computer side](#4-the-computer-side) may make restarts rarer. It never removes them, so everything above ships either way.
 
-**How we get there.** The turn port first, one caller at a time, with the run record and the outbox behind it; then the recovery rule; then the spike. Each lands behind the existing turn path (no issues filed yet). A transport-independent session lock (DOR-2346) serves the one-writer rule.
+**How we get there.** The turn port first, one caller at a time, with the run record and the outbox behind it; then the recovery rule; then the spike. Each lands behind the existing turn path (epic DOR-5153: the turn port DOR-5157, the run record DOR-5159, the outbox DOR-5160, recovery DOR-5161, the spike DOR-5162). A transport-independent session lock (DOR-2346) serves the one-writer rule.
 
 **Open:** the cap values (three tries, what counts as safe) are judgment calls to tune from real use; the turns owner adjusts them.
 
@@ -252,7 +270,7 @@ Beside the order: the gates G1 to G4 (one wire schema, table placement, conforma
 2. Only the core can see what it needs.
 3. A mini app cannot do it correctly, even with care.
 
-If all three are false, it is a mini app, or a schedule with a skill. Watchers (a pull request watcher, a pipeline watcher, a steward) are first-party mini apps on the same author API everyone else gets. The core owns **one wake**: "wake this chat or this agent when X happens", stored, safe across a restart, delivered through the normal turn path, marked as outside words unless its owner said otherwise. Nothing else may start a turn from an outside event.
+If all three are false, it is a mini app, or a schedule with a skill. Watchers (a pull request watcher, a pipeline watcher, a steward) are first-party mini apps on the same author API everyone else gets. The core owns **one wake**: "wake this chat or this agent when X happens", stored, safe across a restart, delivered through the normal turn path, marked as outside words unless its owner said otherwise. Nothing else may start a turn from an outside event. How to start one: [`extension-authoring.md`](extension-authoring.md).
 
 **How we get there.** The author API's gaps close first, smallest first:
 
@@ -335,12 +353,12 @@ One ordered list, by what each step needs and unlocks. No dates. Steps 1 to 18 a
 
 **Next, in this order.**
 
-5. **Turns survive restarts** ([Turns](#5-turns)): the turn port, the run record, follow-up work saved with the turn, recovery with caps (no issue yet). Needs 1 and 2. Unlocks updates at any time; hand-offs, reports and wakes that cannot be lost; honest status on every device.
-6. **A computer side that starts alone**: the DorkOS tool server leaves the Claude Code runtime (DOR-4926), and a computer entry boots with a lint wall (no issue yet). Needs 5, because the turn port is the seam.
+5. **Turns survive restarts** ([Turns](#5-turns)): the turn port, the run record, follow-up work saved with the turn, recovery with caps (epic DOR-5153; the turn port is DOR-5157). Needs 1 and 2. Unlocks updates at any time; hand-offs, reports and wakes that cannot be lost; honest status on every device.
+6. **A computer side that starts alone**: the DorkOS tool server leaves the Claude Code runtime (DOR-4926), and a computer entry boots with a lint wall (DOR-5158; epic DOR-5152). Needs 5, because the turn port is the seam.
 7. **The own-process test**, runtime by runtime. Needs 6. If it holds, updating the rest of DorkOS stops ending turns.
 8. **The contract over the wire**: the permission-gate design note, then the wire operations, the computer record and adding a machine; `computer-local` converges (DOR-2935, DOR-2939, DOR-2940, DOR-4902). Needs 6. Unlocks 13 and 14.
 9. **One wake, and watchers as mini apps**: the author-API gaps, the wake (DOR-3563), then a first-party pull request watcher. Needs 5. Beside 6 to 8.
-10. **Send to an agent**: one capability and its projections (no issue yet; spec first). Needs 1 and 2. Beside 6 to 9.
+10. **Send to an agent**: one capability and its projections (epic DOR-5155; spec first). Needs 1 and 2. Beside 6 to 9.
 11. **The Community Space opens**, when its checks pass. Its own track, beside 5 to 10. Opening it ends the freeze on the space code.
 12. **Member checks replace the Mac's owner checks** (DOR-5150). Needs nothing above. Unlocks 13, 15 and 16.
 13. **Your DorkOS on the web**: your devices, your private space in the cloud, one sidebar grouped by computer (DOR-2949, DOR-2950, DOR-2951, DOR-2961). Needs 8 and DorkOS Cloud's half, contracts first.
@@ -348,7 +366,7 @@ One ordered list, by what each step needs and unlocks. No dates. Steps 1 to 18 a
 15. **Team spaces on DorkOS Cloud.** Needs 12 and 13.
 16. **The private space becomes a tenant** ([the space side](#3-the-space-side), steps 3 to 5). Needs 12. `work_links` moves with it (DOR-5139).
 17. **One message system** ([Conversations](#6-conversations-and-delivery)). Needs 5, for delivery records.
-18. **Playbooks** ([Conversations](#6-conversations-and-delivery)): a person picks how a team of agents works, and DorkOS holds the rules (no issue yet; spec first). Needs 4 and 6 (every act of working together is a capability on every runtime, behind one gate), 5 (the turn port and the run record) and 17 (every chat is a conversation, so work can move). The first three playbooks are DorkOS's own.
+18. **Playbooks** ([Conversations](#6-conversations-and-delivery)): a person picks how a team of agents works, and DorkOS holds the rules (epic DOR-5156; the spec is DOR-5181). Needs 4 and 6 (every act of working together is a capability on every runtime, behind one gate), 5 (the turn port and the run record) and 17 (every chat is a conversation, so work can move). The first three playbooks are DorkOS's own.
 
 **Engineering tracks around the list.**
 

@@ -350,7 +350,7 @@ controller); `defaultRole` stays `user`, so self-registrations are never admin.
 mechanisms bootstrap it:
 
 - `ADMIN_USER_IDS` (env, comma-separated user ids) grants full admin regardless of
-  `role` — the zero-state seed; set the founder's `user.id` at launch.
+  `role` — the zero-state seed; set the founder's `user.id` on first deploy.
 - A durable one-time promotion is a break-glass `UPDATE "user" SET role='admin'
 WHERE id='…'` via the **Neon SQL editor** (the only sanctioned raw-SQL touch).
 

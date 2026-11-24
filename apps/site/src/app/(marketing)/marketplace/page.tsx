@@ -39,7 +39,7 @@ export const metadata: Metadata = {
  * Fetches the dorkos-community registry and install counts, applies query-string
  * filters, and renders the featured rail plus the full grid. Telemetry failures
  * degrade gracefully to an empty install-count map. Registry failures degrade to
- * a "launching soon" empty state — the dorkos-community repo may not exist yet
+ * a "coming soon" empty state — the dorkos-community repo may not exist yet
  * (it's bootstrapped as a separate deploy step), so the page must keep rendering.
  */
 export default async function MarketplacePage(props: {
@@ -63,7 +63,7 @@ export default async function MarketplacePage(props: {
         <MarketplaceBrowseTracker type={type} category={category} q={q} resultCount={null} />
         <MarketplaceHeader />
         <section className="border-warm-gray-light/30 bg-cream-secondary/50 mt-12 rounded-lg border p-12 text-center">
-          <h2 className="text-charcoal font-mono text-2xl font-semibold">Launching soon</h2>
+          <h2 className="text-charcoal font-mono text-2xl font-semibold">Coming soon</h2>
           <p className="text-warm-gray mx-auto mt-4 max-w-xl text-base leading-relaxed">
             The DorkOS community marketplace is being bootstrapped. Once the registry is live,
             you’ll be able to browse pre-built agents, plugins, and skill packs from the community

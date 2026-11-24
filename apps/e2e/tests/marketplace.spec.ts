@@ -14,7 +14,7 @@ import { test } from '../fixtures/base';
 // filter strip, card → detail navigation, install command — and never names a
 // specific package, so it does not break when the registry's contents change.
 // If the registry fetch fails or comes back empty, the browse page does NOT
-// hard-error — it deliberately catches and renders a "Launching soon" empty
+// hard-error — it deliberately catches and renders a "Coming soon" empty
 // state (marketplace/page.tsx: "the page must keep rendering"). These tests
 // then fail as a "no card visible" timeout on CARD_SELECTOR, not as a page
 // error. So when this spec reds and nothing in this repo changed, check the
