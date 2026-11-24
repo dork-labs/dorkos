@@ -16,10 +16,9 @@ interface ConversationFooterProps {
   /**
    * Render as the child element rather than wrapping it.
    *
-   * Load-bearing here rather than decorative: the composer card's markup is
-   * pinned by a serialized-DOM baseline (`test-helpers/dom-parity.ts`), and the
-   * session's footer content is already a direct child of the card. A wrapper
-   * would be a node the baseline does not have, for no reader's benefit.
+   * Load-bearing here rather than decorative: the session's footer content is
+   * already a direct child of the composer card, so a wrapper would add a node
+   * to the card's markup for no reader's benefit.
    */
   asChild?: boolean;
   /** What the footer says. */

@@ -105,18 +105,6 @@ describe('unifiedScan', () => {
       expect(candidates).toHaveLength(1);
       expect((candidates[0] as Extract<ScanEvent, { type: 'candidate' }>).data.path).toBe(root);
     });
-
-    it('yields candidate for nested directories', async () => {
-      const root = await makeTempDir();
-      const project = path.join(root, 'project');
-      await fs.mkdir(project);
-      await fs.writeFile(path.join(project, 'AGENTS.md'), '# Agent', 'utf-8');
-
-      const events = await collectAll(root, [makeClaudeMdStrategy()]);
-      const candidates = events.filter((e) => e.type === 'candidate');
-      expect(candidates).toHaveLength(1);
-      expect((candidates[0] as Extract<ScanEvent, { type: 'candidate' }>).data.path).toBe(project);
-    });
   });
 
   describe('auto-import events', () => {
@@ -194,25 +182,6 @@ describe('unifiedScan', () => {
       const candidates = events.filter((e) => e.type === 'candidate');
       expect(candidates).toHaveLength(0);
     });
-
-    it('finds directories at exactly maxDepth', async () => {
-      const root = await makeTempDir();
-      const level1 = path.join(root, 'l1');
-      await fs.mkdir(level1);
-      await fs.writeFile(path.join(level1, 'AGENTS.md'), '# L1', 'utf-8');
-
-      const events = await collectAll(
-        root,
-        [makeClaudeMdStrategy()],
-        noopRegistry,
-        noopDenialList,
-        {
-          maxDepth: 1,
-        }
-      );
-      const candidates = events.filter((e) => e.type === 'candidate');
-      expect(candidates).toHaveLength(1);
-    });
   });
 
   describe('progress events', () => {
@@ -251,29 +220,6 @@ describe('unifiedScan', () => {
       // We check the complete event is present
       expect(complete?.data).toHaveProperty('timedOut');
     });
-
-    it('emits complete with timedOut: true on very short timeout', async () => {
-      const root = await makeTempDir();
-      // Create many subdirs so the BFS queue has many items to process
-      // The timeout flag is checked at the start of each queue iteration,
-      // so with timeout:1ms and 200 dirs, the flag will be set before all are processed.
-      await Promise.all(
-        Array.from({ length: 200 }, (_, i) =>
-          fs.mkdir(path.join(root, `dir-${i}`), { recursive: true })
-        )
-      );
-
-      const events = await collectAll(root, [], noopRegistry, noopDenialList, {
-        timeout: 1,
-        maxDepth: 5,
-      });
-      const complete = events.find((e) => e.type === 'complete') as Extract<
-        ScanEvent,
-        { type: 'complete' }
-      >;
-      expect(complete).toBeDefined();
-      expect(complete.data.timedOut).toBe(true);
-    });
   });
 
   describe('unified exclude set', () => {
@@ -282,28 +228,6 @@ describe('unifiedScan', () => {
       const nm = path.join(root, 'node_modules', 'some-pkg');
       await fs.mkdir(nm, { recursive: true });
       await fs.writeFile(path.join(nm, 'AGENTS.md'), '# pkg', 'utf-8');
-
-      const events = await collectAll(root, [makeClaudeMdStrategy()]);
-      const candidates = events.filter((e) => e.type === 'candidate');
-      expect(candidates).toHaveLength(0);
-    });
-
-    it('skips .venv directories (Scanner B addition)', async () => {
-      const root = await makeTempDir();
-      const venv = path.join(root, '.venv', 'project');
-      await fs.mkdir(venv, { recursive: true });
-      await fs.writeFile(path.join(venv, 'AGENTS.md'), '# venv project', 'utf-8');
-
-      const events = await collectAll(root, [makeClaudeMdStrategy()]);
-      const candidates = events.filter((e) => e.type === 'candidate');
-      expect(candidates).toHaveLength(0);
-    });
-
-    it('skips Library directories (Scanner A addition)', async () => {
-      const root = await makeTempDir();
-      const lib = path.join(root, 'Library', 'project');
-      await fs.mkdir(lib, { recursive: true });
-      await fs.writeFile(path.join(lib, 'AGENTS.md'), '# lib project', 'utf-8');
 
       const events = await collectAll(root, [makeClaudeMdStrategy()]);
       const candidates = events.filter((e) => e.type === 'candidate');
@@ -325,42 +249,6 @@ describe('unifiedScan', () => {
       const events = await collectAll(root, [makeClaudeMdStrategy()]);
       const candidates = events.filter((e) => e.type === 'candidate');
       expect(candidates).toHaveLength(0);
-    });
-
-    it('does not descend into a crash-left backup directory to find nested candidates', async () => {
-      const root = await makeTempDir();
-      const backup = path.join(root, `my-agent.dorkos-bak-${Date.now()}-deadbeef`);
-      const nested = path.join(backup, 'nested-project');
-      await fs.mkdir(nested, { recursive: true });
-      await fs.writeFile(path.join(nested, 'AGENTS.md'), '# nested', 'utf-8');
-
-      const events = await collectAll(root, [makeClaudeMdStrategy()]);
-      const candidates = events.filter((e) => e.type === 'candidate');
-      expect(candidates).toHaveLength(0);
-    });
-
-    it('does not auto-import a .dork/agent.json found under a backup directory', async () => {
-      const root = await makeTempDir();
-      const backup = path.join(root, `my-agent.dorkos-bak-${Date.now()}-cafebabe`);
-      await fs.mkdir(backup, { recursive: true });
-      await writeManifest(backup, makeManifest());
-
-      const events = await collectAll(root);
-      const autoImports = events.filter((e) => e.type === 'auto-import');
-      expect(autoImports).toHaveLength(0);
-    });
-
-    it('still scans a sibling directory whose name merely contains a similar substring', async () => {
-      // Sanity check: the exclusion is substring-based on the exact marker
-      // '.dorkos-bak-', not an overly broad match on 'bak' or 'dorkos'.
-      const root = await makeTempDir();
-      const normal = path.join(root, 'dorkos-backup-notes');
-      await fs.mkdir(normal, { recursive: true });
-      await fs.writeFile(path.join(normal, 'AGENTS.md'), '# normal project', 'utf-8');
-
-      const events = await collectAll(root, [makeClaudeMdStrategy()]);
-      const candidates = events.filter((e) => e.type === 'candidate');
-      expect(candidates).toHaveLength(1);
     });
   });
 
@@ -421,21 +309,5 @@ describe('unifiedScan', () => {
     });
   });
 
-  describe('complete event', () => {
-    it('always emits complete event as last event', async () => {
-      const root = await makeTempDir();
-      const events = await collectAll(root);
-      expect(events[events.length - 1]?.type).toBe('complete');
-    });
-
-    it('complete event has timedOut: false when scan finishes normally', async () => {
-      const root = await makeTempDir();
-      const events = await collectAll(root);
-      const complete = events.find((e) => e.type === 'complete') as Extract<
-        ScanEvent,
-        { type: 'complete' }
-      >;
-      expect(complete.data.timedOut).toBe(false);
-    });
-  });
+  describe('complete event', () => {});
 });

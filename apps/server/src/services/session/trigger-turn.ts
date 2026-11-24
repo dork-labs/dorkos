@@ -112,6 +112,7 @@ import { createCanonicalRekey } from './turn-identity/canonical-rekey.js';
 import { assembleAdditionalContext, appendDocEventsContext } from './context-assembler.js';
 import { takeContextWarningForTurn } from './agent-compaction/context-warning-for-turn.js';
 import { takeTurnCutoff } from './turn-cutoff/turn-cutoff.js';
+import { takeTimersStoppedForTurn } from './turn-cutoff/timers-stopped.js';
 import { agentPathOfTurn } from './agent-compaction/compaction-permission.js';
 import { turnAgentOf } from '../core/agent-identity/index.js';
 import { uiTurnFacts } from './browser-seat/ui-turn-facts.js';
@@ -921,6 +922,9 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         data: dispatchContext.owedCutoff,
       });
     }
+    // The note that DorkOS ended the process this session's timers lived in
+    // (DOR-3755). Its own slot, so a cutoff owed beside it still rides too.
+    dispatchContext.owedTimers = takeTimersStoppedForTurn(additionalContext, turnKey);
     dispatchContext.settleNewSince = await takeNewSinceForTurn(additionalContext, cwd, opts);
     // **What the `ui` verbs need to know about this turn, bound runtime-neutrally**
     // (spec `canvas-agent-seat` §5). `control_ui` and `get_ui_state` answer about

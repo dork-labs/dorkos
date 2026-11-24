@@ -6,6 +6,7 @@
  * @module services/rooms/turn-guards/paused-turn
  */
 import { AGENT_PAUSED_CODE } from '@dorkos/shared/mesh-schemas';
+import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { AgentPausedError, agentPause } from '../../mesh/pause/agent-pause.js';
 import { RoomTurnRuntimeGoneError, type RoomTurnRequest } from '../room-turn-port.js';
 import type { SilenceContext } from '../notices/notice-log.js';
@@ -61,4 +62,32 @@ export function turnRefusalOf(
     return { reason: 'runtime-gone', runtime: err.runtime };
   const paused = pausedRefusalOf(err);
   return paused ? { reason: 'paused', ...paused } : null;
+}
+
+/**
+ * The pause behind a turn that ended without an answer, or `null` when the
+ * agent is not paused. A pause that lands MID-turn stops the runtime, and the
+ * turn ends the way any interrupted turn does: unanswered, or thrown with
+ * whatever the runtime said. Read as a failure, that is "ran into a problem",
+ * which reports the person's own choice back to them as a crash (DOR-3178).
+ * Asked of the agent's folder, as {@link refusePausedRoomTurn} asks it. The
+ * line names the person who paused it, or nobody when no person did.
+ *
+ * @param agentPath - The agent's folder.
+ * @returns The refusal the room's `paused` line is written from, or `null`.
+ */
+export function pausedDuringTurnOf(
+  agentPath: string
+): ({ reason: 'paused' } & SilenceContext) | null {
+  const pauses = agentPause();
+  const paused = pauses?.pausedAgentOfTurn({ forAgent: agentPath });
+  if (!paused) return null;
+  // Named in the line only when a person paused it, as the rename and move lines are.
+  const pausedBy = pauses?.isPaused(paused.id)?.pausedBy;
+  const by = pausedBy?.kind === 'person' ? sanitizeIdentity(pausedBy.name) || null : null;
+  return {
+    reason: 'paused',
+    ...(paused.pausedAt ? { pausedAt: paused.pausedAt } : {}),
+    pausedMidTurn: { by },
+  };
 }

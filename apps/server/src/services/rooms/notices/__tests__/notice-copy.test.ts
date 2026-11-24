@@ -170,6 +170,10 @@ const NOTICES: Record<NoticeBuilder, () => RoomEntryBody[]> = {
   buildAgentUnavailableNotice: () => [copy.buildAgentUnavailableNotice('Ana', 'author-ana')],
   buildAgentLeftNotice: () => [copy.buildAgentLeftNotice('Ana', 'author-ana')],
   buildAgentPausedNotice: () => [copy.buildAgentPausedNotice('Ana', 'author-ana')],
+  buildPausedMidTurnNotice: () => [
+    copy.buildPausedMidTurnNotice('Ana', 'author-ana', 'dana'),
+    copy.buildPausedMidTurnNotice('Ana', 'author-ana', null),
+  ],
   buildAgentDeclinedNotice: () => [copy.buildAgentDeclinedNotice('Ana', 'author-ana')],
   buildBridgeSecondAgentRefusedNotice: () => [copy.buildBridgeSecondAgentRefusedNotice('Ana')],
   buildBridgeRateLimitedNotice: () => [copy.buildBridgeRateLimitedNotice()],

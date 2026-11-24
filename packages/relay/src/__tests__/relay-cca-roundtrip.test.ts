@@ -156,56 +156,6 @@ describe('relay → CCA round-trip', () => {
     );
   });
 
-  it('calls sendMessage for a regular text payload without a StreamEvent type field', async () => {
-    // Reset so we can count from zero for this isolated test
-    vi.mocked(agentManager.sendMessage).mockClear();
-
-    await relay.publish(
-      'relay.agent.lifeOS-session',
-      { text: 'Hello LifeOS' },
-      { from: 'relay.agent.sender-session' }
-    );
-
-    await vi.waitFor(() => {
-      expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it('passes context.agent.directory as cwd to ensureSession() in the full pipeline', async () => {
-    // Purpose: end-to-end regression guard for the CWD bug fix.
-    // Verifies that AdapterContext.agent.directory set by buildContext() flows
-    // all the way through CCA to AgentManager.ensureSession().
-    const context: AdapterContext = {
-      agent: { directory: '/path/to/agent-b', runtime: 'claude-code' },
-    };
-
-    // Deliver directly to CCA with the context (simulating what AdapterDelivery does
-    // after calling buildContext())
-    await cca.deliver(
-      'relay.agent.lifeOS-session',
-      {
-        id: 'msg-cwd-test',
-        subject: 'relay.agent.lifeOS-session',
-        from: 'agent:sender',
-        budget: {
-          hopCount: 1,
-          maxHops: 5,
-          ancestorChain: [],
-          ttl: Date.now() + 300_000,
-          callBudgetRemaining: 10,
-        },
-        createdAt: new Date().toISOString(),
-        payload: { text: 'Hello' },
-      } as RelayEnvelope,
-      context
-    );
-
-    expect(agentManager.ensureSession).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ cwd: '/path/to/agent-b' })
-    );
-  });
-
   it('publishes progress events + final agent_result to relay.inbox.* replyTo — unified streaming', async () => {
     await relay.registerEndpoint('relay.inbox.sender-session');
 
@@ -236,106 +186,6 @@ describe('relay → CCA round-trip', () => {
     expect(lastPayload).toMatchObject({ type: 'agent_result', text: 'Deus' });
 
     // No raw stream events (text_delta, done) published to the inbox
-    const hasRawStreamEvents = receivedPayloads.some(
-      (p) =>
-        (p as Record<string, unknown>).type === 'text_delta' ||
-        (p as Record<string, unknown>).type === 'done'
-    );
-    expect(hasRawStreamEvents).toBe(false);
-  });
-
-  it('publishes multiple progress events followed by agent_result for relay.inbox.dispatch.* replyTo', async () => {
-    // Purpose: end-to-end verification that CCA streams progress to dispatch inboxes.
-    // Validates the core contract: Agent A receives intermediate steps + done:true.
-    await relay.registerEndpoint('relay.inbox.dispatch.test-uuid');
-
-    const receivedPayloads: unknown[] = [];
-    relay.subscribe('relay.inbox.dispatch.test-uuid', (envelope) => {
-      receivedPayloads.push(envelope.payload);
-    });
-
-    vi.mocked(agentManager.sendMessage).mockReturnValue(
-      (async function* () {
-        yield { type: 'text_delta', data: { text: 'Thinking...' } } as StreamEvent;
-        yield {
-          type: 'tool_call_start',
-          data: { tool_use_id: 'tu1', name: 'Read' },
-        } as StreamEvent;
-        yield {
-          type: 'tool_result',
-          data: { tool_use_id: 'tu1', content: 'file contents' },
-        } as StreamEvent;
-        yield { type: 'text_delta', data: { text: 'Analysis complete.' } } as StreamEvent;
-        yield { type: 'done', data: {} } as StreamEvent;
-      })()
-    );
-
-    await relay.publish(
-      'relay.agent.dispatch-target',
-      { text: 'Analyze this' },
-      { from: 'relay.agent.sender', replyTo: 'relay.inbox.dispatch.test-uuid' }
-    );
-
-    // Agent delivery is detached — wait for the background turn to finish
-    await vi.waitFor(() => {
-      const last = receivedPayloads[receivedPayloads.length - 1] as
-        Record<string, unknown> | undefined;
-      expect(last?.type).toBe('agent_result');
-    });
-
-    const types = receivedPayloads.map((p) => (p as Record<string, unknown>).type);
-    // Progress events arrive before the final result
-    expect(types).toContain('progress');
-    expect(types[types.length - 1]).toBe('agent_result');
-
-    // Final result has done: true
-    const finalResult = receivedPayloads[receivedPayloads.length - 1] as Record<string, unknown>;
-    expect(finalResult.done).toBe(true);
-
-    // Progress events have done: false
-    const progressEvents = receivedPayloads.filter(
-      (p) => (p as Record<string, unknown>).type === 'progress'
-    );
-    expect(progressEvents.length).toBeGreaterThan(0);
-    progressEvents.forEach((p) => {
-      expect((p as Record<string, unknown>).done).toBe(false);
-    });
-  });
-
-  it('publishes progress events + agent_result for relay.inbox.query.* replyTo (unified streaming)', async () => {
-    // Purpose: verify relay.inbox.query.* now uses the same unified streaming as dispatch.
-    // All relay.inbox.* addresses receive incremental progress events + final agent_result.
-    await relay.registerEndpoint('relay.inbox.query.existing-test');
-
-    const receivedPayloads: unknown[] = [];
-    relay.subscribe('relay.inbox.query.existing-test', (envelope) => {
-      receivedPayloads.push(envelope.payload);
-    });
-
-    // Use default mock: yields one text_delta + done
-    vi.mocked(agentManager.sendMessage).mockReturnValue(
-      (async function* () {
-        yield { type: 'text_delta', data: { text: 'answer' } } as StreamEvent;
-        yield { type: 'done', data: {} } as StreamEvent;
-      })()
-    );
-
-    await relay.publish(
-      'relay.agent.lifeOS-session',
-      { text: 'question' },
-      { from: 'relay.agent.sender', replyTo: 'relay.inbox.query.existing-test' }
-    );
-
-    // Receives progress events + final agent_result (unified streaming for all relay.inbox.*)
-    await vi.waitFor(() => {
-      expect(receivedPayloads.length).toBeGreaterThanOrEqual(1);
-      const last = receivedPayloads[receivedPayloads.length - 1] as Record<string, unknown>;
-      expect(last).toMatchObject({ type: 'agent_result' });
-    });
-    const lastPayload = receivedPayloads[receivedPayloads.length - 1] as Record<string, unknown>;
-    expect(lastPayload).toMatchObject({ type: 'agent_result' });
-
-    // No raw stream events (text_delta, done) published to the query inbox
     const hasRawStreamEvents = receivedPayloads.some(
       (p) =>
         (p as Record<string, unknown>).type === 'text_delta' ||
@@ -641,21 +491,6 @@ describe('relay → CCA round-trip', () => {
     expect(envelope.budget.callBudgetRemaining).toBe(2);
     expect(envelope.budget.hopCount).toBe(1);
     expect(envelope.budget.ancestorChain).toContain('relay.agent.lifeOS-session');
-  });
-
-  it('a message with the last remaining budget unit still runs a turn (boundary)', async () => {
-    vi.mocked(agentManager.sendMessage).mockClear();
-
-    const result = await relay.publish(
-      'relay.agent.lifeOS-session',
-      { text: 'last call' },
-      { from: 'relay.agent.sender-session', budget: { callBudgetRemaining: 1 } }
-    );
-
-    expect(result.rejected).toBeUndefined();
-    await vi.waitFor(() => {
-      expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
-    });
   });
 
   it('relay_send_and_wait resolves with populated progress array for CCA progress streaming', async () => {

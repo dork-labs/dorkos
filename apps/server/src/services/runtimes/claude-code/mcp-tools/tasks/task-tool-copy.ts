@@ -221,7 +221,20 @@ export const EFFORT_DESCRIPTION =
 export const ACCOUNT_DESCRIPTION =
   'Which Claude account the scheduled task runs on, by its id in DorkOS. Leave it out to use ' +
   "the agent's own account, then the default. Only Claude Code runs use it. A schedule that " +
-  'keeps one conversation stays on the account its conversation started on.';
+  'keeps one conversation stays on the account its conversation started on. Changing only the ' +
+  'account keeps an approved task approved, unless the new account is DorkOS credits, the main ' +
+  'sign-in or one the person kept out of automatic moves; the person is told, with an Undo.';
+
+/** What `tasks_update` adds when only the account changed and the task stayed approved (DOR-5097). */
+export const ACCOUNT_MOVE_NOTE =
+  'Only the account changed, so the task stays approved and keeps running. The person was ' +
+  'told, with an Undo. Say which account it runs on now.';
+
+/** The description `tasks_update` gives `accountPinned` (DOR-5097). */
+export const ACCOUNT_PINNED_DESCRIPTION =
+  'true: runs stay on this task’s account, and a run fails plainly when it is out of usage or ' +
+  'signed out. false (the default): such a run starts on another signed-in account with room, ' +
+  'and its run history says which and why.';
 
 /** The description `tasks_create` gives the `reason` argument. */
 export const REASON_DESCRIPTION =

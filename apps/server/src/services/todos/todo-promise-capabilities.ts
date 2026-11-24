@@ -26,7 +26,7 @@
  *
  * ## Strangers
  *
- * `todo_promise_add` refuses on a turn that read such words, a Wi-Fi sign-in's
+ * `todo_promise_add` refuses on a turn that read such words, a network sign-in's
  * included (DOR-3037): the promise's due beat would run at the agent's own
  * level on words the turn was held back from acting on. Not in a chat set to
  * Full autonomy (DOR-3412): nothing held that turn back, so the promise is made,
@@ -135,7 +135,7 @@ const OUTSIDER_PROMISE: Refusal = {
   ok: false,
   code: 'OUTSIDER_TURN',
   error:
-    "This turn read words DorkOS can't vouch for, such as a Wi-Fi sign-in's, so it can't " +
+    "This turn read words DorkOS can't vouch for, such as those from a sign-in on your network, so it can't " +
     'make a promise. Tell the person instead; they can record it at the computer.',
 };
 

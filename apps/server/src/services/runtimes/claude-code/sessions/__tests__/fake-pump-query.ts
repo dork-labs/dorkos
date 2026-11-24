@@ -244,24 +244,79 @@ export function backgroundTasksMessage(
   } as unknown as SDKMessage;
 }
 
+/** The optional wire fields a task's lifecycle frames can carry (SDK 0.3.304). */
+export interface TaskFrameExtras {
+  /** The id of this run of the task; a resumed task keeps its id and gets a new run. */
+  runId?: string;
+  /** The CLI keeps the task out of the transcript, so nothing is delivered for it. */
+  skipTranscript?: boolean;
+}
+
 /**
- * The lifecycle frame saying a background task has settled, so its delivery is
- * now owed.
+ * The lifecycle frame saying a task has settled. For a background task its
+ * delivery is now owed.
  *
  * @param taskId - The task that finished
  * @param status - How it finished
+ * @param extras - The run id and transcript flag, when a test needs them
  */
 export function taskNotificationMessage(
   taskId: string,
-  status: 'completed' | 'failed' | 'stopped' = 'completed'
+  status: 'completed' | 'failed' | 'stopped' = 'completed',
+  extras: TaskFrameExtras = {}
 ): SDKMessage {
   return {
     type: 'system',
     subtype: 'task_notification',
     task_id: taskId,
     status,
+    ...(extras.runId !== undefined ? { run_id: extras.runId } : {}),
+    ...(extras.skipTranscript !== undefined ? { skip_transcript: extras.skipTranscript } : {}),
     uuid: `notify-${taskId}`,
     session_id: `subagent-${taskId}`,
+  } as unknown as SDKMessage;
+}
+
+/**
+ * The lifecycle frame saying a task has started: in the background, or in the
+ * foreground with the tool call that spawned it waiting on it.
+ *
+ * @param taskId - The task that started
+ * @param backgrounded - The frame's `is_backgrounded`
+ * @param extras - The run id, when a test needs one
+ */
+export function taskStartedMessage(
+  taskId: string,
+  backgrounded: boolean,
+  extras: Pick<TaskFrameExtras, 'runId'> = {}
+): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'task_started',
+    task_id: taskId,
+    ...(extras.runId !== undefined ? { run_id: extras.runId } : {}),
+    task_type: 'local_agent',
+    description: `task ${taskId}`,
+    is_backgrounded: backgrounded,
+    uuid: `start-${taskId}`,
+    session_id: 'sess-1',
+  } as unknown as SDKMessage;
+}
+
+/**
+ * The lifecycle frame saying a running foreground task was moved to the
+ * background, as the CLI's Ctrl+B does.
+ *
+ * @param taskId - The task that moved
+ */
+export function taskBackgroundedMessage(taskId: string): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'task_updated',
+    task_id: taskId,
+    patch: { is_backgrounded: true },
+    uuid: `update-${taskId}`,
+    session_id: 'sess-1',
   } as unknown as SDKMessage;
 }
 

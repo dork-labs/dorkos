@@ -25,7 +25,9 @@ import {
   FakeQuery,
   initMessage,
   resultMessage,
+  taskBackgroundedMessage,
   taskNotificationMessage,
+  taskStartedMessage,
   type BackgroundTaskType,
 } from './fake-pump-query.js';
 
@@ -564,5 +566,56 @@ describe('the owed-delivery clock', () => {
       '[SessionPump] a delivery arrived after its clock expired',
       expect.objectContaining({ lateByMs: 5_000 })
     );
+  });
+});
+
+// DOR-3755 item 3. The CLI emits `task_notification` for EVERY task it
+// registers, the ones nothing will ever be delivered for included: a foreground
+// helper or shell, whose result already went back inline as its tool result,
+// and a task it keeps out of the transcript (`skip_transcript`). Each of those
+// used to open a debt no delivery segment would ever clear, so the next message
+// into the chat waited out the whole owed-delivery clock.
+describe('a settle nothing will be delivered for (DOR-3755)', () => {
+  it('a foreground task owes nothing, so the next message is not held for thirty seconds', async () => {
+    const harness = await warmPump();
+    await harness.emit(taskStartedMessage('fg-1', false));
+    await harness.emit(taskNotificationMessage('fg-1'));
+    await harness.emit(resultMessage());
+
+    expect(harness.pump.quietness()).toMatchObject({ quiet: true });
+    vi.advanceTimersByTime(OWED_DELIVERY_TIMEOUT_MS);
+    // No clock was armed, so none gave up on anything.
+    expect(harness.gateChanges).toHaveLength(0);
+    expect(logger.info).not.toHaveBeenCalledWith(
+      '[SessionPump] an owed delivery never arrived; releasing the queue',
+      expect.anything()
+    );
+  });
+
+  it('a task kept out of the transcript owes nothing either', async () => {
+    const harness = await warmPump();
+    await harness.emit(taskNotificationMessage('dream-1', 'completed', { skipTranscript: true }));
+    await harness.emit(resultMessage());
+
+    expect(harness.pump.quietness()).toMatchObject({ quiet: true });
+  });
+
+  it('a foreground task moved to the background owes its delivery again', async () => {
+    const harness = await warmPump();
+    await harness.emit(taskStartedMessage('fg-1', false));
+    await harness.emit(taskBackgroundedMessage('fg-1'));
+    await harness.emit(taskNotificationMessage('fg-1'));
+    await harness.emit(resultMessage());
+
+    expect(harness.pump.quietness()).toMatchObject({ because: 'delivery-owed' });
+  });
+
+  it('a background task still owes its delivery', async () => {
+    const harness = await warmPump();
+    await harness.emit(taskStartedMessage('bg-1', true));
+    await harness.emit(taskNotificationMessage('bg-1'));
+    await harness.emit(resultMessage());
+
+    expect(harness.pump.quietness()).toMatchObject({ because: 'delivery-owed' });
   });
 });

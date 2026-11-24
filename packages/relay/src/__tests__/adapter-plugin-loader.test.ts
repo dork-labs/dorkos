@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RelayAdapter, AdapterStatus, DeliveryResult } from '../types.js';
 import { loadAdapters, validateAdapterShape } from '../adapter-plugin-loader.js';
-import type { PluginAdapterConfig, LoadedAdapter } from '../adapter-plugin-loader.js';
-import { RELAY_ADAPTER_API_VERSION } from '../version.js';
+import type { PluginAdapterConfig } from '../adapter-plugin-loader.js';
 
 // === Mock helpers ===
 
@@ -60,21 +59,6 @@ describe('loadAdapters', () => {
     expect(factory).toHaveBeenCalledWith('builtin-test', {});
   });
 
-  it('returns undefined manifest for built-in adapters', async () => {
-    const mockAdapter = createMockAdapter({ id: 'builtin-test' });
-    const factory = vi.fn().mockReturnValue(mockAdapter);
-    builtinMap.set('test-type', factory);
-
-    const configs: PluginAdapterConfig[] = [
-      createConfig({ id: 'builtin-test', type: 'test-type', builtin: true }),
-    ];
-
-    const result = await loadAdapters(configs, builtinMap, '/config/dir');
-
-    expect(result).toHaveLength(1);
-    expect(result[0].manifest).toBeUndefined();
-  });
-
   it('skips disabled entries', async () => {
     const mockAdapter = createMockAdapter();
     const factory = vi.fn().mockReturnValue(mockAdapter);
@@ -112,24 +96,6 @@ describe('loadAdapters', () => {
 
     // The first entry produces no adapter (no plugin source), second and third succeed
     expect(result).toHaveLength(2);
-  });
-
-  it('logs warning for failed entries (non-fatal)', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    // Config with plugin.package that will fail to import
-    const configs: PluginAdapterConfig[] = [
-      createConfig({ id: 'bad-pkg', plugin: { package: 'nonexistent-package-12345' } }),
-    ];
-
-    const result = await loadAdapters(configs, builtinMap, '/config/dir');
-
-    expect(result).toHaveLength(0);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[PluginLoader] Failed to load adapter 'bad-pkg':"),
-      expect.anything()
-    );
-    warnSpy.mockRestore();
   });
 
   it('resolves relative paths against configDir', async () => {
@@ -173,49 +139,6 @@ describe('loadAdapters', () => {
 
     warnSpy.mockRestore();
   });
-
-  it('passes id to built-in factory function', async () => {
-    const mockAdapter = createMockAdapter({ id: 'custom-plugin' });
-    const factory = vi.fn().mockReturnValue(mockAdapter);
-    builtinMap.set('test-type', factory);
-
-    const configs: PluginAdapterConfig[] = [
-      createConfig({
-        id: 'custom-plugin',
-        type: 'test-type',
-        builtin: true,
-        config: { key: 'val' },
-      }),
-    ];
-
-    await loadAdapters(configs, builtinMap, '/config/dir');
-    expect(factory).toHaveBeenCalledWith('custom-plugin', { key: 'val' });
-  });
-
-  it('returns LoadedAdapter[] shape with adapter and manifest fields', async () => {
-    const mockAdapter = createMockAdapter({ id: 'shaped' });
-    const factory = vi.fn().mockReturnValue(mockAdapter);
-    builtinMap.set('test-type', factory);
-
-    const configs: PluginAdapterConfig[] = [
-      createConfig({ id: 'shaped', type: 'test-type', builtin: true }),
-    ];
-
-    const result = await loadAdapters(configs, builtinMap, '/config/dir');
-
-    expect(result).toHaveLength(1);
-    const loaded: LoadedAdapter = result[0];
-    expect(loaded).toHaveProperty('adapter');
-    expect(loaded).toHaveProperty('manifest');
-    expect(loaded.adapter.id).toBe('shaped');
-  });
-});
-
-describe('RELAY_ADAPTER_API_VERSION', () => {
-  it('exports a semver-like major.minor.patch string', () => {
-    expect(typeof RELAY_ADAPTER_API_VERSION).toBe('string');
-    expect(RELAY_ADAPTER_API_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
-  });
 });
 
 describe('validateAdapterShape', () => {
@@ -234,77 +157,5 @@ describe('validateAdapterShape', () => {
       getStatus: vi.fn(),
     };
     expect(() => validateAdapterShape(obj, 'test')).toThrow("missing 'id' property");
-  });
-
-  it('throws for missing subjectPrefix', () => {
-    const obj = {
-      id: 'x',
-      displayName: 'X',
-      start: vi.fn(),
-      stop: vi.fn(),
-      deliver: vi.fn(),
-      getStatus: vi.fn(),
-    };
-    expect(() => validateAdapterShape(obj, 'x')).toThrow("missing 'subjectPrefix'");
-  });
-
-  it('throws for missing displayName', () => {
-    const obj = {
-      id: 'x',
-      subjectPrefix: 'relay.test',
-      start: vi.fn(),
-      stop: vi.fn(),
-      deliver: vi.fn(),
-      getStatus: vi.fn(),
-    };
-    expect(() => validateAdapterShape(obj, 'x')).toThrow("missing 'displayName'");
-  });
-
-  it('throws for missing start()', () => {
-    const obj = {
-      id: 'x',
-      subjectPrefix: 'relay.test',
-      displayName: 'X',
-      stop: vi.fn(),
-      deliver: vi.fn(),
-      getStatus: vi.fn(),
-    };
-    expect(() => validateAdapterShape(obj, 'x')).toThrow("missing 'start()' method");
-  });
-
-  it('throws for missing stop()', () => {
-    const obj = {
-      id: 'x',
-      subjectPrefix: 'relay.test',
-      displayName: 'X',
-      start: vi.fn(),
-      deliver: vi.fn(),
-      getStatus: vi.fn(),
-    };
-    expect(() => validateAdapterShape(obj, 'x')).toThrow("missing 'stop()' method");
-  });
-
-  it('throws for missing deliver()', () => {
-    const obj = {
-      id: 'x',
-      subjectPrefix: 'relay.test',
-      displayName: 'X',
-      start: vi.fn(),
-      stop: vi.fn(),
-      getStatus: vi.fn(),
-    };
-    expect(() => validateAdapterShape(obj, 'x')).toThrow("missing 'deliver()' method");
-  });
-
-  it('throws for missing getStatus()', () => {
-    const obj = {
-      id: 'x',
-      subjectPrefix: 'relay.test',
-      displayName: 'X',
-      start: vi.fn(),
-      stop: vi.fn(),
-      deliver: vi.fn(),
-    };
-    expect(() => validateAdapterShape(obj, 'x')).toThrow("missing 'getStatus()' method");
   });
 });

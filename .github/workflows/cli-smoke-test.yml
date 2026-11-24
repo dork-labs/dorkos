@@ -3,46 +3,10 @@ name: CLI Smoke Test
 on:
   push:
     branches: [main]
-  pull_request:
-    # The tarball under test bundles apps/server and apps/client (esbuild), and
-    # with them every workspace package they depend on at runtime, so all of
-    # those gate PRs alongside the CLI package itself. This list is the
-    # workspace closure of packages/cli: its own workspace deps (they sit in
-    # devDependencies because esbuild inlines them), then each one's
-    # `dependencies`, recursively. Add a package here when it joins that
-    # closure; #3812 changed packages/db and got no tarball because db was missing.
-    paths:
-      - 'packages/cli/**'
-      - 'apps/server/**'
-      - 'apps/client/**'
-      - 'packages/a2a-gateway/**'
-      - 'packages/browser/**'
-      - 'packages/cloud-api/**'
-      - 'packages/connector-providers/**'
-      - 'packages/db/**'
-      - 'packages/decisions/**'
-      - 'packages/doe/**'
-      - 'packages/extension-api/**'
-      - 'packages/harness/**'
-      - 'packages/icons/**'
-      - 'packages/keep-awake/**'
-      - 'packages/marketplace/**'
-      - 'packages/memory/**'
-      - 'packages/mesh/**'
-      - 'packages/operating-skills/**'
-      - 'packages/relay/**'
-      - 'packages/shared/**'
-      - 'packages/skills/**'
-      - 'packages/ui/**'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - 'scripts/smoke-test.sh'
-      - 'scripts/hub-smoke/**'
-      - 'scripts/hub-entrypoint.sh'
-      - 'docker/seccomp/**'
-      - 'scripts/codex-docker-sandbox-check.sh'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/cli-smoke-test.yml'
+  # Not on pull requests since DOR-5130 (Dorian, Nov 24): on PRs these five jobs
+  # caught nothing in ~550 runs a week (~5,000 runner-minutes), so they run only
+  # after merge, and after-merge-alert.yml tells the author of a merge that
+  # breaks them.
   workflow_dispatch:
 
 # Cancel superseded runs on the same ref for PRs only. For push events, group

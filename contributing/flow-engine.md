@@ -191,12 +191,13 @@ branch, or Security's label is missing or older than the head.
 [ADR-0276](../decisions/0276-auto-merge-on-approval-recovery-ladder.md)'s
 recovery ladder (`gates.ts`, `recovery.ts`) handles what happens after an arm.
 
-In this repo, an agent outside the plugin's own approve path still arms only
-through `arm.sh`, which runs this repo's gates (Security's review files, waivers,
-freezes, the verify proof) that the plugin cannot see, and the merge queue lands
-it. The queue's door (`arm-door.yml`) holds a plugin-armed PR to the same Security,
-proof, QA and design gates. `merge-tail.yml` is off. See
-[CI Pipeline Guide → Arming](ci.md#arming-armsh-the-doors-and-merge-tail-off).
+In this repo, outside the plugin's own approve path, nobody arms a PR:
+`scripts/open-pr.sh` turns on auto-merge when it opens one, and the required
+`pr-gates` check holds the merge until Security signs off (a passing
+`security-verdict` or the `security-reviewed` label), whoever armed it. QA's and
+the designer's labels are notes, not gates. `arm.sh`, `arm-door.yml` and
+merge-tail's arming are retired (DOR-5124). See
+[CI Pipeline Guide → Merging](ci.md#merging-auto-merge-at-open-the-pr-side-gates-and-the-door).
 
 ## The backlog groom (`/flow:groom`)
 

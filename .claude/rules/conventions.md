@@ -40,6 +40,8 @@ Closure spelling and still passes, but `@typeParam` is what new code should use.
 
 Inline comments: only where code can't speak for itself — magic numbers, ordering dependencies, workarounds (link the issue/PR), why-not-what. Never restate the next line.
 
+Agents write most of this code and agents read it next, so a comment is context the next agent takes as true. Write the ones that carry what the code can't: why, an invariant, a hidden constraint, a link to the incident. Skip the ones that narrate. A stale comment misleads more than a missing one, so when you change behaviour, fix or delete every comment that described the old behaviour. Match the comment density of the surrounding code; Anthropic's own Claude Code guidance moved to that rule in 2026.
+
 ## File Size
 
 | Lines   | Action                                                |

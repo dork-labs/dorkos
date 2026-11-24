@@ -54,6 +54,13 @@ import {
 } from '../services/tasks/schedule-permission-clamp.js';
 import { changesApprovedWork } from '../services/tasks/task-file-update.js';
 import { auditScheduleUpdate, scheduleEdit } from '../services/tasks/approvals/schedule-owner.js';
+import {
+  accountMovePolicy,
+  announceAccountMove,
+  priorAccountOf,
+  settleAccountUnpin,
+} from '../services/tasks/approvals/account-move.js';
+import type { WorkChangeSettlement } from '../services/tasks/approvals/task-approvals.js';
 import { refuseStickyAccountChange } from '../services/tasks/session/sticky-session.js';
 import {
   scheduleAccountRefusal,
@@ -118,7 +125,8 @@ export async function updateTaskHttp(
   if (wifiRefusal) return c.json(wifiRefusal, 403);
   // An agent changes only its own schedule, or a global one no other agent
   // made: a schedule runs as the agent it is filed under (DOR-3640 R1).
-  const edit = scheduleEdit(existing, scheduleEditorOf(caller, trusted), meshCore, data);
+  const editor = scheduleEditorOf(caller, trusted);
+  const edit = scheduleEdit(existing, editor, meshCore, data);
   if (edit.refusal) return c.json(edit.refusal, 403);
   const modeRefusal = await taskModeRefusal(existing, data, meshCore);
   if (modeRefusal) return c.json(modeRefusal, 400);
@@ -374,19 +382,29 @@ export async function updateTaskHttp(
   // Trusted install can keep other edits live, but prompt/runtime substitutions
   // always park for a person (DOR-3651). The park is then picked up by the
   // "entered `pending_approval`" edge below like any other.
+  let settled: WorkChangeSettlement = 'unchanged';
+  // The turn's marks, read once: a marked edit parks below, and keeps no account move.
+  const marks = caller.agentIdentity ? marksOf(undefined, caller.agentIdentity.agentPath) : {};
+  // A move to another account a person left open keeps the approval: an
+  // identified agent, an unmarked turn, not on Careful, never off credits (DOR-5097).
+  const agentHome = existing.agentId ? meshCore?.getProjectPath(existing.agentId) : undefined;
+  const moveRule = accountMovePolicy(
+    editor.kind === 'agent' && !marksHold(marks),
+    await priorAccountOf(existing, agentHome)
+  );
   if (!rearms || !changesFile) {
-    store.approvals.settleApprovedWorkChange(updated.id, before, {
+    settled = store.approvals.settleApprovedWorkChange(updated.id, before, {
       trusted: rearms,
       approval,
       // Only an agent's own schedule stays live through its edit (DOR-3640 R1),
       // and not one an agent approved or a person set looser than Don't ask (DOR-3703).
       armsAgentWork: !trusted && edit.armsAgentWork && agentEditMayStayLive(existing, store),
+      accountMayMoveTo: moveRule,
     });
     updated = store.getTask(updated.id) ?? updated;
   }
   // An agent's edit from a marked turn parks the schedule for a person and keeps the marks for
   // its card, whatever it changed (DOR-3036). Picked up by the park edge below like any other.
-  const marks = caller.agentIdentity ? marksOf(undefined, caller.agentIdentity.agentPath) : {};
   if (!trusted && marksHold(marks) && store.approvals.markOrigin(updated.id, marks)) {
     updated = store.getTask(updated.id) ?? updated;
   }
@@ -397,6 +415,18 @@ export async function updateTaskHttp(
     data: { ...data, ...(approvedPromptHash !== undefined && { approvedPromptHash }) },
     updated,
   });
+
+  // A kept account move that still runs stands only once the person is told,
+  // with an Undo; an agent unpinning a task is told, or parks it on Careful (DOR-5097).
+  const accountEdit = {
+    before: existing,
+    after: updated,
+    agentPath: caller.agentIdentity?.agentPath,
+  };
+  const keptMove = settled === 'account-moved' && updated.status === 'active';
+  const untold = keptMove && !(await announceAccountMove(store, accountEdit));
+  const unpinParked = !trusted && (await settleAccountUnpin(store, accountEdit)) === 'parked';
+  if (untold || unpinParked) updated = store.getTask(updated.id) ?? updated;
 
   // Re-register or unregister the cron job to match the new state, through the
   // shared seam — see the note on the create path above.

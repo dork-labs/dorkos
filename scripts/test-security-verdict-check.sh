@@ -87,6 +87,22 @@ check 'prose that is not the marker does not count' 1 "$rc"
 FAKE_COMMENTS="[$(c Bot 2026-11-23T10:00:00Z "$(mark $H maybe 0 -)")]" run 12 $H
 check 'a marker with an unknown verdict does not count' 1 "$rc"
 
+# The encrypted details block (scripts/security-findings.sh) sits in comments
+# this script reads. It must change nothing: only the verdict marker counts.
+findings() { # head
+  printf '<!-- dorkos-security-findings v1 pr=12 head=%s\\n-----BEGIN AGE ENCRYPTED FILE-----\\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCg==\\n-----END AGE ENCRYPTED FILE-----\\n-->' "$1"
+}
+FAKE_COMMENTS="[$(c Bot 2026-11-23T10:00:00Z "$(mark $H pass 0 -)\\n$(findings $H)")]" run 12 $H
+check 'a findings block in the same comment leaves a pass a pass' 0 "$rc"
+FAKE_COMMENTS="[$(c Bot 2026-11-23T10:00:00Z "$(findings $H)\\n$(mark $H fail 2 auth,ci)")]" run 12 $H
+check 'a findings block in the same comment leaves a fail a fail' 1 "$rc"
+check 'with the same count and categories' yes "$(has "$out" '2 Must(s) on #12 at aaaaaaa (categories: auth,ci)')"
+FAKE_COMMENTS="[$(c Bot 2026-11-23T10:00:00Z "$(mark $H pass 0 -)"),$(c Bot 2026-11-23T11:00:00Z "$(findings $H)")]" run 12 $H
+check 'a newer findings block alone does not displace the verdict' 0 "$rc"
+FAKE_COMMENTS="[$(c Bot 2026-11-23T10:00:00Z "$(findings $H)")]" run 12 $H
+check 'a findings block with no verdict marker is no verdict' 1 "$rc"
+check 'and says this head was not judged' yes "$(has "$out" 'has not judged this head')"
+
 FAKE_FAIL=1 run 12 $H
 check 'an unreadable comment list is exit 2' 2 "$rc"
 run 12

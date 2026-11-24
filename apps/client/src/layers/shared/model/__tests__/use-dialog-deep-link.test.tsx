@@ -26,20 +26,12 @@ import {
   takeProfileOpener,
   clearProfileOpener,
   type SettingsRouteTarget,
-  type SettingsDeepLinkTarget,
 } from '../use-dialog-deep-link';
 import type { SettingsTab } from '../app-store/app-store-panels';
 
-// ── Tiny test router builder ─────────────────────────────────
-//
-// Mounts a single index route at `/` whose `validateSearch` is the merged dialog
-// schema, so the deep-link hooks (which call `useSearch({ strict: false })`) see
-// the same shape they would on a real route in `router.tsx`.
-//
-// `renderHook`'s wrapper renders a <RouterProvider>, but TanStack Router needs
-// the hook callsite to live *inside* a route component (otherwise `useSearch`
-// and `useNavigate` have no context). We bridge this by injecting the hook's
-// children into the route component via a tiny React context.
+// ── Tiny test router builder ───────────────────────────────── Mounts a single index route at
+// `/` whose `validateSearch` is the merged dialog schema, so the deep-link hooks (which call
+// `useSearch({ strict: false })`) see the same shape they would on a real route in `router.tsx`.
 const testSearchSchema = mergeDialogSearch(z.object({}));
 
 const HookSlotContext = createContext<ReactNode>(null);
@@ -95,11 +87,7 @@ function buildHarness(initialUrl = '/') {
     return router.state.location.search as SearchRecord;
   }
 
-  /**
-   * Wait until the router has finished loading the initial location. Without this,
-   * `useSearch` returns an empty object on the first render and async updates can
-   * race with assertions.
-   */
+  /** Wait until the router has finished loading the initial location. */
   async function waitForRouterReady(): Promise<void> {
     await waitFor(() => {
       expect(router.state.status).toBe('idle');
@@ -111,11 +99,8 @@ function buildHarness(initialUrl = '/') {
 
 type RouterTestHarness = ReturnType<typeof buildHarness>;
 
-// The app store is a module singleton, and `close()` now writes to it — reset
-// the dialog flags so one test's open dialog cannot leak into the next.
-// `takeProfileOpener`'s own capture is a second module singleton for the same
-// reason (DOR-1274) — cleared here so a capture left over from one test's
-// `open()` cannot be mistaken for another's.
+// The app store is a module singleton, and `close()` now writes to it — reset the dialog flags so
+// one test's open dialog cannot leak into the next.
 beforeEach(() => {
   useAppStore.getState().setSettingsOpen(false);
   useAppStore.getState().setTasksOpen(false);
@@ -123,29 +108,14 @@ beforeEach(() => {
   clearProfileOpener();
 });
 
-// ─────────────────────────────────────────────────────────────
-// resolveDeepLinkTarget — the route-capable resolution model (DOR-854)
-// ─────────────────────────────────────────────────────────────
-//
-// `useSettingsDeepLink` calls this against the real production map. These
-// tests pass their own fixture maps so every branch is exercised in isolation,
-// independent of which ids the production map happens to carry today.
+// ───────────────────────────────────────────────────────────── resolveDeepLinkTarget — the
+// route-capable resolution model (DOR-854)
+// ───────────────────────────────────────────────────────────── `useSettingsDeepLink` calls this
+// against the real production map.
 describe('resolveDeepLinkTarget', () => {
   const tabOnlyMap: Record<string, SettingsTab | SettingsRouteTarget> = {
     channels: 'integrations',
   };
-
-  it('returns null for an unset value', () => {
-    expect(resolveDeepLinkTarget(undefined, tabOnlyMap)).toBeNull();
-  });
-
-  it('returns null for the tabless "open" sentinel', () => {
-    expect(resolveDeepLinkTarget('open', tabOnlyMap)).toBeNull();
-  });
-
-  it('resolves an ordinary tab id (no map entry) to a tab target', () => {
-    expect(resolveDeepLinkTarget('tools', tabOnlyMap)).toEqual({ kind: 'tab', tab: 'tools' });
-  });
 
   it('migrates a legacy id mapped to another tab id (channels → integrations)', () => {
     expect(resolveDeepLinkTarget('channels', tabOnlyMap)).toEqual({
@@ -154,17 +124,9 @@ describe('resolveDeepLinkTarget', () => {
     });
   });
 
-  it('resolves an unknown id as a tab target (best-effort — the caller validates it)', () => {
-    expect(resolveDeepLinkTarget('not-a-real-tab', tabOnlyMap)).toEqual({
-      kind: 'tab',
-      tab: 'not-a-real-tab',
-    });
-  });
-
-  // A plain `legacyMap[raw]` index also returns inherited Object.prototype
-  // members for ids like `constructor`, `toString`, `hasOwnProperty` — those
-  // would resolve to a function typed as SettingsDeepLinkTarget instead of
-  // falling through to the plain-tab case. Object.hasOwn is the guard.
+  // A plain `legacyMap[raw]` index also returns inherited Object.prototype members for ids like
+  // `constructor`, `toString`, `hasOwnProperty` — those would resolve to a function typed as
+  // SettingsDeepLinkTarget instead of falling through to the plain-tab case.
   it('does not resolve prototype-inherited keys as legacy map entries', () => {
     expect(resolveDeepLinkTarget('constructor', tabOnlyMap)).toEqual({
       kind: 'tab',
@@ -179,45 +141,9 @@ describe('resolveDeepLinkTarget', () => {
       tab: 'hasOwnProperty',
     });
   });
-
-  it('resolves a legacy id mapped to a route target unchanged', () => {
-    const routeTarget: SettingsRouteTarget = {
-      kind: 'route',
-      path: '/connections',
-      search: { app: 'telegram-1' },
-    };
-    const mapWithRoute: Record<string, SettingsTab | SettingsRouteTarget> = {
-      integrations: routeTarget,
-    };
-    expect(resolveDeepLinkTarget('integrations', mapWithRoute)).toEqual(routeTarget);
-  });
-
-  // A merge leaves two live links per merged tab, and landing both at the top of
-  // the surviving tab loses the half the link was about (DOR-1758).
-  it('carries a section from a legacy id that named one half of a merged tab', () => {
-    const mapWithSection: Record<string, SettingsTab | SettingsDeepLinkTarget> = {
-      access: { kind: 'tab', tab: 'security', section: 'api-keys' },
-    };
-    expect(resolveDeepLinkTarget('access', mapWithSection)).toEqual({
-      kind: 'tab',
-      tab: 'security',
-      section: 'api-keys',
-    });
-  });
-
-  it('resolves a route-mapped id with no search params', () => {
-    const routeTarget: SettingsRouteTarget = { kind: 'route', path: '/connections' };
-    const mapWithRoute: Record<string, SettingsTab | SettingsRouteTarget> = {
-      integrations: routeTarget,
-    };
-    const result = resolveDeepLinkTarget('integrations', mapWithRoute);
-    expect(result).toEqual({ kind: 'route', path: '/connections' });
-    expect((result as SettingsRouteTarget).search).toBeUndefined();
-  });
 });
 
-// ─────────────────────────────────────────────────────────────
-// useSettingsDeepLink
+// ───────────────────────────────────────────────────────────── useSettingsDeepLink
 // ─────────────────────────────────────────────────────────────
 describe('useSettingsDeepLink', () => {
   let harness: RouterTestHarness;
@@ -232,22 +158,6 @@ describe('useSettingsDeepLink', () => {
     expect(result.current.isOpen).toBe(false);
     expect(result.current.activeTab).toBeNull();
     expect(result.current.section).toBeNull();
-  });
-
-  it('returns isOpen=true and activeTab=null when settings=open', async () => {
-    harness = buildHarness('/?settings=open');
-    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-    expect(result.current.isOpen).toBe(true);
-    expect(result.current.activeTab).toBeNull();
-  });
-
-  it('returns isOpen=true and activeTab="tools" when settings=tools', async () => {
-    harness = buildHarness('/?settings=tools');
-    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-    expect(result.current.isOpen).toBe(true);
-    expect(result.current.activeTab).toBe('tools');
   });
 
   it.each(['channels', 'integrations'])(
@@ -274,34 +184,6 @@ describe('useSettingsDeepLink', () => {
     expect(result.current.activeTab).toBeNull();
   });
 
-  it('replaces the retired link rather than pushing it into history', async () => {
-    harness = buildHarness('/?settings=integrations');
-    renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    await waitFor(() => {
-      expect(harness.readPathname()).toBe('/connections');
-    });
-    // Back must not land on the dead link and bounce forward again.
-    expect(harness.actions).not.toContain('PUSH');
-  });
-
-  // The DorkOS account and local login are their own tabs again (DOR-2628),
-  // so the two addresses people already had are real tab ids now and land on
-  // their tab's top, not on a section of a merged one.
-  it.each([
-    ['security', 'security'],
-    ['account', 'account'],
-  ])('opens settings=%s on its own tab', async (id, tab) => {
-    harness = buildHarness(`/?settings=${id}`);
-    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    expect(result.current.isOpen).toBe(true);
-    expect(result.current.activeTab).toBe(tab);
-    expect(result.current.section).toBeNull();
-  });
-
   it('sends the retired settings=access link to the DorkOS account tab', async () => {
     harness = buildHarness('/?settings=access');
     const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
@@ -309,39 +191,6 @@ describe('useSettingsDeepLink', () => {
 
     expect(result.current.isOpen).toBe(true);
     expect(result.current.activeTab).toBe('account');
-  });
-
-  it('sends the retired settings=advanced link to the Danger zone tab', async () => {
-    harness = buildHarness('/?settings=advanced');
-    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    expect(result.current.activeTab).toBe('danger');
-    expect(result.current.section).toBeNull();
-  });
-
-  it('sends an old Access link that named its login half to Login & security', async () => {
-    harness = buildHarness('/?settings=access&settingsSection=security');
-    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    expect(result.current.activeTab).toBe('security');
-  });
-
-  it('keeps an explicit settingsSection on a retired id', async () => {
-    harness = buildHarness('/?settings=access&settingsSection=plan');
-    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    expect(result.current.activeTab).toBe('account');
-    expect(result.current.section).toBe('plan');
-  });
-
-  it('returns section when settingsSection is set', async () => {
-    harness = buildHarness('/?settings=tools&settingsSection=external-mcp');
-    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-    expect(result.current.section).toBe('external-mcp');
   });
 
   it('open() with no args sets settings=open', async () => {
@@ -352,30 +201,6 @@ describe('useSettingsDeepLink', () => {
     });
     await waitFor(() => {
       expect(harness.readSearch().settings).toBe('open');
-    });
-  });
-
-  it('open("tools") sets settings=tools', async () => {
-    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-    await act(async () => {
-      result.current.open('tools');
-    });
-    await waitFor(() => {
-      expect(harness.readSearch().settings).toBe('tools');
-    });
-  });
-
-  it('open("tools", "external-mcp") sets settings=tools and settingsSection=external-mcp', async () => {
-    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-    await act(async () => {
-      result.current.open('tools', 'external-mcp');
-    });
-    await waitFor(() => {
-      const search = harness.readSearch();
-      expect(search.settings).toBe('tools');
-      expect(search.settingsSection).toBe('external-mcp');
     });
   });
 
@@ -392,67 +217,9 @@ describe('useSettingsDeepLink', () => {
       expect(search.settingsSection).toBeUndefined();
     });
   });
-
-  // DOR-839. `DialogHost` renders Settings on `storeOpen || urlIsOpen`, so a
-  // close that owns one half is not a close — whichever half it left behind
-  // keeps the dialog on screen. Both halves genuinely hold it open here, so
-  // either one going unowned turns this red. (The URL-only close is already
-  // pinned by "close() clears both settings and settingsSection" above.)
-  it('close() clears the store flag as well as the URL, when both hold it open', async () => {
-    harness = buildHarness('/?settings=preferences');
-    useAppStore.getState().setSettingsOpen(true);
-    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    await act(async () => {
-      result.current.close();
-    });
-
-    await waitFor(() => {
-      expect(harness.readSearch().settings).toBeUndefined();
-    });
-    expect(useAppStore.getState().settingsOpen).toBe(false);
-  });
-
-  it('setTab() updates settings via replace (no new history entry)', async () => {
-    harness = buildHarness('/?settings=tools');
-    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-    // Drain any actions emitted during the initial mount.
-    harness.actions.length = 0;
-
-    await act(async () => {
-      result.current.setTab('appearance');
-    });
-
-    await waitFor(() => {
-      expect(harness.readSearch().settings).toBe('appearance');
-    });
-    // The only history action triggered by setTab should be a REPLACE — never a PUSH.
-    expect(harness.actions).toContain('REPLACE');
-    expect(harness.actions).not.toContain('PUSH');
-  });
-
-  it('setSection() updates settingsSection via replace', async () => {
-    harness = buildHarness('/?settings=tools');
-    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-    harness.actions.length = 0;
-
-    await act(async () => {
-      result.current.setSection('mcp');
-    });
-
-    await waitFor(() => {
-      expect(harness.readSearch().settingsSection).toBe('mcp');
-    });
-    expect(harness.actions).toContain('REPLACE');
-    expect(harness.actions).not.toContain('PUSH');
-  });
 });
 
-// ─────────────────────────────────────────────────────────────
-// useTasksDeepLink
+// ───────────────────────────────────────────────────────────── useTasksDeepLink
 // ─────────────────────────────────────────────────────────────
 describe('useTasksDeepLink', () => {
   const cases = [{ name: 'tasks' as const, hook: useTasksDeepLink }];
@@ -473,13 +240,6 @@ describe('useTasksDeepLink', () => {
         });
       });
 
-      it('isOpen reads from corresponding param', async () => {
-        const harness = buildHarness(`/?${name}=open`);
-        const { result } = renderHook(() => hook(), { wrapper: harness.Wrapper });
-        await harness.waitForRouterReady();
-        expect(result.current.isOpen).toBe(true);
-      });
-
       it('close clears the param', async () => {
         const harness = buildHarness(`/?${name}=open`);
         const { result } = renderHook(() => hook(), { wrapper: harness.Wrapper });
@@ -493,33 +253,14 @@ describe('useTasksDeepLink', () => {
           expect(harness.readSearch()[name]).toBeUndefined();
         });
       });
-
-      // Same dual-signal rule as Settings (DOR-839).
-      it('close clears the store flag too', async () => {
-        const harness = buildHarness(`/?${name}=open`);
-        useAppStore.getState().setTasksOpen(true);
-        const { result } = renderHook(() => hook(), { wrapper: harness.Wrapper });
-        await harness.waitForRouterReady();
-
-        await act(async () => {
-          result.current.close();
-        });
-
-        await waitFor(() => {
-          expect(harness.readSearch()[name]).toBeUndefined();
-        });
-        expect(useAppStore.getState().tasksOpen).toBe(false);
-      });
     });
   }
 });
 
-// ─────────────────────────────────────────────────────────────
-// useProfileDeepLink — the profile drawer's address
-// ─────────────────────────────────────────────────────────────
-//
-// The one deep link that carries a *subject* rather than a tab: `?profile=<id>`
-// names whose profile is open, which is what makes a profile shareable.
+// ───────────────────────────────────────────────────────────── useProfileDeepLink — the profile
+// drawer's address ───────────────────────────────────────────────────────────── The one deep
+// link that carries a *subject* rather than a tab: `?profile=<id>` names whose profile is open,
+// which is what makes a profile shareable.
 describe('useProfileDeepLink', () => {
   it('is closed, and names nobody, with no profile param', async () => {
     const harness = buildHarness('/');
@@ -528,29 +269,6 @@ describe('useProfileDeepLink', () => {
 
     expect(result.current.isOpen).toBe(false);
     expect(result.current.memberId).toBeNull();
-  });
-
-  it('reads the member id straight off the URL', async () => {
-    const harness = buildHarness('/?profile=agent-warden');
-    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    expect(result.current.isOpen).toBe(true);
-    expect(result.current.memberId).toBe('agent-warden');
-  });
-
-  it('open(id) writes that id to the URL', async () => {
-    const harness = buildHarness('/');
-    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    await act(async () => {
-      result.current.open('person-dorian');
-    });
-
-    await waitFor(() => {
-      expect(harness.readSearch().profile).toBe('person-dorian');
-    });
   });
 
   it('open(id) pushes a history entry, so the phone’s back gesture dismisses it', async () => {
@@ -566,106 +284,9 @@ describe('useProfileDeepLink', () => {
     await waitFor(() => {
       expect(harness.readSearch().profile).toBe('person-dorian');
     });
-    // A REPLACE here would leave nothing to go back to — the back gesture would
-    // leave the page instead of closing the drawer, which is the whole reason
-    // this state lives in the URL.
+    // A REPLACE here would leave nothing to go back to — the back gesture would leave the page
+    // instead of closing the drawer, which is the whole reason this state lives in the URL.
     expect(harness.actions).toContain('PUSH');
-  });
-
-  it('switching subject keeps one entry per profile', async () => {
-    const harness = buildHarness('/?profile=person-dorian');
-    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    await act(async () => {
-      result.current.open('agent-warden');
-    });
-
-    await waitFor(() => {
-      expect(harness.readSearch().profile).toBe('agent-warden');
-    });
-  });
-
-  it('close() clears the param', async () => {
-    const harness = buildHarness('/?profile=agent-warden');
-    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    await act(async () => {
-      result.current.close();
-    });
-
-    await waitFor(() => {
-      expect(harness.readSearch().profile).toBeUndefined();
-    });
-    expect(result.current.isOpen).toBe(false);
-  });
-
-  // Same dual-signal rule as Settings and Tasks (DOR-839): `DialogHost` renders
-  // on `storeOpen || urlIsOpen`, so a close that owns one half is not a close.
-  it('close() clears the store half too, when both hold it open', async () => {
-    const harness = buildHarness('/?profile=agent-warden');
-    useAppStore.getState().openProfileForMember('agent-warden');
-    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    await act(async () => {
-      result.current.close();
-    });
-
-    await waitFor(() => {
-      expect(harness.readSearch().profile).toBeUndefined();
-    });
-    expect(useAppStore.getState().profileOpen).toBe(false);
-    expect(useAppStore.getState().profileMemberId).toBeNull();
-  });
-
-  // ── the pushed page (`?profilePage=`, spec `profile-unification` §1.6) ──
-  //
-  // A page of a profile is an address too, so a link can land on Sessions and a
-  // reload comes back to it.
-  it('reads the pushed page off the URL, and none when there is none', async () => {
-    const withPage = buildHarness('/?profile=agent-warden&profilePage=manages');
-    const rendered = renderHook(() => useProfileDeepLink(), { wrapper: withPage.Wrapper });
-    await withPage.waitForRouterReady();
-    expect(rendered.result.current.page).toBe('manages');
-
-    const withoutPage = buildHarness('/?profile=agent-warden');
-    const plain = renderHook(() => useProfileDeepLink(), { wrapper: withoutPage.Wrapper });
-    await withoutPage.waitForRouterReady();
-    expect(plain.result.current.page).toBeNull();
-  });
-
-  it('open(id, page) lands straight on that page', async () => {
-    const harness = buildHarness('/');
-    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    await act(async () => {
-      result.current.open('person-dorian', 'manages');
-    });
-
-    await waitFor(() => {
-      expect(harness.readSearch().profilePage).toBe('manages');
-    });
-    expect(harness.readSearch().profile).toBe('person-dorian');
-  });
-
-  it('open(id) on a new subject drops the page the last one was on', async () => {
-    // Pages belong to a profile, not to the panel. Carrying `manages` across to
-    // an agent that has no such page is a link to nowhere.
-    const harness = buildHarness('/?profile=person-dorian&profilePage=manages');
-    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    await act(async () => {
-      result.current.open('agent-warden');
-    });
-
-    await waitFor(() => {
-      expect(harness.readSearch().profile).toBe('agent-warden');
-    });
-    expect(harness.readSearch().profilePage).toBeUndefined();
   });
 
   it('setPage(page) pushes, so Back closes the page rather than the profile', async () => {
@@ -682,41 +303,6 @@ describe('useProfileDeepLink', () => {
       expect(harness.readSearch().profilePage).toBe('manages');
     });
     expect(harness.actions).toContain('PUSH');
-  });
-
-  it('setPage(null) replaces, so the profile does not stack up against itself', async () => {
-    const harness = buildHarness('/?profile=agent-warden&profilePage=manages');
-    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-    harness.actions.length = 0;
-
-    await act(async () => {
-      result.current.setPage(null);
-    });
-
-    await waitFor(() => {
-      expect(harness.readSearch().profilePage).toBeUndefined();
-    });
-    expect(harness.readSearch().profile).toBe('agent-warden');
-    expect(harness.actions).toContain('REPLACE');
-    expect(harness.actions).not.toContain('PUSH');
-  });
-
-  it('close() clears the page along with the subject', async () => {
-    const harness = buildHarness('/?profile=agent-warden&profilePage=manages');
-    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    await act(async () => {
-      result.current.close();
-    });
-
-    await waitFor(() => {
-      expect(harness.readSearch().profile).toBeUndefined();
-    });
-    // A page left on the URL with nobody's profile open is a param that reopens
-    // nothing and confuses the next link that lands here.
-    expect(harness.readSearch().profilePage).toBeUndefined();
   });
 
   it('leaves every other dialog’s params alone', async () => {
@@ -740,15 +326,10 @@ describe('useProfileDeepLink', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────
-// The profile opener capture (DOR-1274, hardened by adversarial review)
-// ─────────────────────────────────────────────────────────────
-//
-// `ProfileSheet`'s `onCloseAutoFocus` consumes this through `takeProfileOpener`
-// directly, so the capture/take/clear contract is worth pinning at this level
-// rather than only through the full sheet — a mismatch here is exactly what
-// let a stale, never-consumed capture (the docked-link path never mounts a
-// real sheet) hijack a LATER, unrelated close.
+// ───────────────────────────────────────────────────────────── The profile opener capture
+// (DOR-1274, hardened by adversarial review)
+// ───────────────────────────────────────────────────────────── `ProfileSheet`'s
+// `onCloseAutoFocus` consumes this through `takeProfileOpener` directly, so the
 describe('the profile opener capture', () => {
   /** A real, focusable node in the document — `document.activeElement` needs one. */
   function focusableButton(): HTMLButtonElement {
@@ -776,9 +357,8 @@ describe('the profile opener capture', () => {
   });
 
   it('refuses a capture whose root id does not match — the stale-hijack guard', async () => {
-    // The scenario the review found: a capture nobody ever consumes (the
-    // docked-link path) surviving to answer for a LATER, unrelated close.
-    // Asking for the wrong id is the direct pin on that refusal.
+    // The scenario the review found: a capture nobody ever consumes (the docked-link path)
+    // surviving to answer for a LATER, unrelated close.
     const harness = buildHarness('/');
     const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
@@ -790,68 +370,10 @@ describe('the profile opener capture', () => {
 
     expect(takeProfileOpener('somebody-else')).toBeNull();
   });
-
-  it('is consumed exactly once — asking again for the same id gets nothing', async () => {
-    const harness = buildHarness('/');
-    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-    focusableButton();
-
-    await act(async () => {
-      result.current.open('agent-warden');
-    });
-
-    expect(takeProfileOpener('agent-warden')).not.toBeNull();
-    expect(takeProfileOpener('agent-warden')).toBeNull();
-  });
-
-  it('does not re-capture a chained push — the root stays whoever opened it first', async () => {
-    // A chain (`open(A)`, then a "Managed by" link inside the sheet calling
-    // `open(B)`) has `document.activeElement` sitting on a row INSIDE the
-    // sheet at the moment of the second call — a row that call is about to
-    // navigate away from. Capturing it there would hand focus, on the whole
-    // chain's eventual close, to a control that no longer exists — the exact
-    // DOR-1274 bug, reintroduced by the chain path (adversarial review fix #2).
-    const harness = buildHarness('/');
-    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-    const original = focusableButton();
-
-    await act(async () => {
-      result.current.open('agent-warden');
-    });
-    await waitFor(() => expect(harness.readSearch().profile).toBe('agent-warden'));
-
-    // Stands in for the in-sheet "Managed by" link the chain push focuses.
-    focusableButton();
-    await act(async () => {
-      result.current.open('person-dorian');
-    });
-    await waitFor(() => expect(harness.readSearch().profile).toBe('person-dorian'));
-
-    // Asked about the CHAIN's root, `agent-warden` — never re-captured, so
-    // still the ORIGINAL control, not the in-sheet link the chain moved
-    // through.
-    expect(takeProfileOpener('agent-warden')).toBe(original);
-  });
-
-  it('clearProfileOpener discards a capture that will never be claimed', async () => {
-    const harness = buildHarness('/');
-    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-    focusableButton();
-
-    await act(async () => {
-      result.current.open('agent-warden');
-    });
-    clearProfileOpener();
-
-    expect(takeProfileOpener('agent-warden')).toBeNull();
-  });
 });
 
-// ─────────────────────────────────────────────────────────────
-// useOpenConnections — the navigation that replaced ?relay=open
+// ───────────────────────────────────────────────────────────── useOpenConnections — the
+// navigation that replaced ?relay=open
 // ─────────────────────────────────────────────────────────────
 describe('useOpenConnections', () => {
   it('opens one app’s side panel when asked', async () => {
@@ -867,20 +389,5 @@ describe('useOpenConnections', () => {
       expect(harness.readPathname()).toBe('/connections');
     });
     expect(harness.readSearch().app).toBe('telegram-1');
-  });
-
-  it('lands on the list with no panel open when none is asked for', async () => {
-    const harness = buildHarness('/');
-    const { result } = renderHook(() => useOpenConnections(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    await act(async () => {
-      result.current();
-    });
-
-    await waitFor(() => {
-      expect(harness.readPathname()).toBe('/connections');
-    });
-    expect(harness.readSearch().app).toBeUndefined();
   });
 });

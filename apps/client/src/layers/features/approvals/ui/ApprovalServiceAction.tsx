@@ -17,11 +17,11 @@ const DEPTH_INDENT = ['pl-0', 'pl-3', 'pl-6', 'pl-9', 'pl-12', 'pl-15', 'pl-18',
 
 /**
  * Why a card appears where the agent would otherwise have waited out the
- * 60-second cancel window: Wi-Fi access is on (DOR-3242). Without it, the extra
+ * 60-second cancel window: devices on the network are let in (DOR-3242). Without it, the extra
  * card at the desk reads as a bug.
  */
 export const WIFI_KEPT_CARD_LINE =
-  'Asks instead of waiting 60 seconds, because Wi-Fi access is on.';
+  'Asks instead of waiting 60 seconds, because devices on your network are let in.';
 
 /** Why a card asks when the turn read words from outside the team (DOR-3969). */
 export const OUTSIDE_WORDS_KEPT_CARD_LINE =

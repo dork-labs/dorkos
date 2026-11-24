@@ -23,7 +23,7 @@ fail=0
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=Fixture GIT_AUTHOR_EMAIL=fixture@example.invalid
 export GIT_COMMITTER_NAME=Fixture GIT_COMMITTER_EMAIL=fixture@example.invalid
-unset CLAUDECODE CLAUDE_SESSION_ID DORKOS_HARNESS OPEN_PR_CAP OPEN_PR_BASE OPEN_PR_REMOTE
+unset CLAUDECODE CLAUDE_CODE_SESSION_ID CLAUDE_SESSION_ID DORKOS_HARNESS OPEN_PR_CAP OPEN_PR_BASE OPEN_PR_REMOTE
 export CLAUDE_CONFIG_DIR=/nowhere/claude
 
 # --- the stub gh -------------------------------------------------------------
@@ -270,6 +270,14 @@ check '--draft reaches gh' yes "$(has "$(cat "$GH_LOG")" '--draft')"
 check 'the URL is printed' yes "$(has "$out" 'url: https://github.com/made-up/repo/pull/42')"
 check 'the head SHA is printed' yes "$(has "$out" "head: $(git -C "$work" rev-parse HEAD)")"
 check 'the labels are printed' yes "$(has "$out" 'labels: review:light')"
+CLAUDECODE=1 CLAUDE_CONFIG_DIR=/x/.claude3 CLAUDE_CODE_SESSION_ID=0123456789abcdef open
+check 'CLAUDE_CODE_SESSION_ID (what Claude Code sets) gives the sessionId' yes \
+  "$(has "$(cat "$GH_STATE.body")" '<!-- agent:provenance {"v":1,"harness":"claude-code","sessionId":"01234567","account":"claude3","surface":"github"} -->')"
+CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=0123456789abcdef CLAUDE_SESSION_ID=abcdef1234567890 open
+check 'CLAUDE_CODE_SESSION_ID wins over CLAUDE_SESSION_ID' yes "$(has "$(cat "$GH_STATE.body")" '"sessionId":"01234567"')"
+CLAUDECODE=1 open
+check 'no session id, no sessionId key' yes \
+  "$(has "$(cat "$GH_STATE.body")" '<!-- agent:provenance {"v":1,"harness":"claude-code","account":"claude","surface":"github"} -->')"
 CLAUDECODE=1 CLAUDE_CONFIG_DIR=/x/me@example.com open
 check 'an account with @ is left out' no "$(has "$(cat "$GH_STATE.body")" 'example.com')"
 open
@@ -350,7 +358,7 @@ check 'a branch that drops the gates from its own copy still gets main'\''s answ
 
 FAKE_FAIL=merge open
 check 'a failed auto-merge is exit 3' 3 "$rc"
-check 'and it says how to turn it on' yes "$(has "$out" 'gh pr merge --auto')"
+check 'and it says who turns it on' yes "$(has "$out" 'Ask a maintainer to turn it on')"
 
 echo "open-pr fixtures: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

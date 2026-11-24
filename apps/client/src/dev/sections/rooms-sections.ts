@@ -15,7 +15,7 @@ import type { PlaygroundSection } from '../playground-registry';
  * FileExplorerShowcases — Room Files.
  * RoomThreadShowcases — ThreadReplyRow, RoomThreadPanel, Thread arrival
  * animations. RoomDeliveryShowcases — Room moments, Room notices, PendingRow,
- * Message.Attachments. CommunityGoneShowcases — CommunityGonePanel.
+ * NoAgentHint — retired DM, Message.Attachments. CommunityGoneShowcases — CommunityGonePanel.
  * CommunityOwnerNoticeShowcases — CommunityOwnerNoticeBanner.
  */
 export const ROOMS_SECTIONS: PlaygroundSection[] = [
@@ -242,6 +242,21 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     page: 'rooms',
     category: 'Delivery',
     keywords: ['pending', 'sending', 'failed', 'retry', 'discard', 'optimistic', 'offline', 'send'],
+  },
+  {
+    id: 'noagenthint-retired-dm',
+    title: 'NoAgentHint — retired DM',
+    page: 'rooms',
+    category: 'Delivery',
+    keywords: [
+      'retired',
+      'unregistered',
+      'left the team',
+      'dm',
+      'direct message',
+      'no agent',
+      'hint',
+    ],
   },
   {
     id: 'message-attachments',

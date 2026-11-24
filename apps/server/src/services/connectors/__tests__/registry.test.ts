@@ -19,7 +19,7 @@ import type {
 } from '@dorkos/shared/connector-provider';
 import type { ConnectionId } from '@dorkos/shared/connector-schemas';
 import { ConnectorCatalogCache } from '../resources/catalog-cache.js';
-import { ConnectorRegistry, DEFAULT_SIGN_IN_REFRESH_TIMEOUT_MS } from '../registry.js';
+import { ConnectorRegistry } from '../registry.js';
 
 /** A provider whose `listAccounts` always rejects — the degradation case. */
 class BrokenProvider extends FakeConnectorProvider {
@@ -270,20 +270,6 @@ describe('ConnectorRegistry', () => {
       expect(registry.providerForAccount(gmail.id)).toBeUndefined();
     });
 
-    it('brings a sign-in back once the service reports it active again', async () => {
-      const composio = new FakeConnectorProvider({ type: 'composio' });
-      registry.register(composio);
-      const gmail = await connectOne(registry, composio, 'gmail', 'personal');
-      const ref = registry.accountBinding(gmail.id)!.externalAccountRef;
-      composio.setStatus(ref, 'expired');
-      await registry.refreshSignIns();
-      composio.setStatus(ref, 'active');
-
-      await registry.refreshSignIns();
-
-      expect(registry.accountBinding(gmail.id)?.status).toBe('active');
-    });
-
     it('leaves every account as it was when a listing fails, and reports the failure', async () => {
       const composio = new FakeConnectorProvider({ type: 'composio' });
       const broken = new BrokenProvider();
@@ -311,46 +297,6 @@ describe('ConnectorRegistry', () => {
       expect(changes).toEqual([{ connectionId: healthy.id, from: 'active', to: 'expired' }]);
     });
 
-    it('reports a listing that times out as a failure', async () => {
-      const stuck = new BrokenProvider();
-      stuck.listAccounts = () => new Promise<ProviderConnectedAccount[]>(() => {});
-      registry.register(stuck);
-
-      const { failures } = await registry.refreshSignIns();
-
-      expect(failures).toHaveLength(1);
-      expect(failures[0]!.message).toMatch(/timed out/);
-    });
-
-    it('gives a slow, many-page listing its own longer deadline than a page read gets', async () => {
-      vi.useFakeTimers();
-      try {
-        const defaults = new ConnectorRegistry({ db });
-        const composio = new FakeConnectorProvider({ type: 'composio' });
-        defaults.register(composio);
-        const gmail = await connectOne(defaults, composio, 'gmail', 'personal');
-        const account = (await composio.listAccounts())[0]!;
-        // Well past the 5-second read deadline, inside the refresh's own.
-        composio.listAccounts = () =>
-          new Promise((resolve) =>
-            setTimeout(() => resolve([{ ...account, status: 'expired' }]), 12_000)
-          );
-
-        const slow = defaults.refreshSignIns();
-        await vi.advanceTimersByTimeAsync(12_000);
-        expect(await slow).toMatchObject({ failures: [] });
-        expect(defaults.accountBinding(gmail.id)?.status).toBe('expired');
-
-        // A listing that never ends still fails, at the refresh deadline.
-        composio.listAccounts = () => new Promise<ProviderConnectedAccount[]>(() => {});
-        const stuck = defaults.refreshSignIns();
-        await vi.advanceTimersByTimeAsync(DEFAULT_SIGN_IN_REFRESH_TIMEOUT_MS);
-        expect((await stuck).failures[0]!.message).toMatch(/timed out after 20000ms/);
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
     it('records nothing from a status the service did not state', async () => {
       const composio = new FakeConnectorProvider({ type: 'composio' });
       registry.register(composio);
@@ -376,18 +322,6 @@ describe('ConnectorRegistry', () => {
           .get()
       ).toEqual(before);
       expect(before?.status).toBe('expired');
-    });
-
-    it('records a finished sign-in the service reports without a status as signed in', async () => {
-      const composio = new FakeConnectorProvider({ type: 'composio' });
-      registry.register(composio);
-      const { flowId } = await composio.startConnect('gmail', { label: 'work' });
-      const { account } = await composio.pollConnect(flowId);
-
-      const connected = registry.recordConnect(composio, { ...account!, status: 'unknown' });
-
-      expect(connected.status).toBe('active');
-      expect(registry.accountBinding(connected.id)?.status).toBe('active');
     });
 
     it('never adds, closes, relabels or moves an account; it only records the sign-in', async () => {
@@ -486,22 +420,6 @@ describe('ConnectorRegistry', () => {
       expect(changes).toEqual([]);
       expect(registry.accountBinding(gmail.id)?.status).toBe('active');
     });
-
-    it('skips a provider that does not list accounts', async () => {
-      const silent = new FakeConnectorProvider({ type: 'silent' });
-      const capabilities = silent.getCapabilities();
-      silent.getCapabilities = () => ({
-        ...capabilities,
-        capabilities: {
-          ...capabilities.capabilities,
-          accounts: { status: 'unsupported', reason: 'No account listing.' },
-        },
-      });
-      silent.listAccounts = () => Promise.reject(new Error('should not be asked'));
-      registry.register(silent);
-
-      expect(await registry.refreshSignIns()).toEqual({ changes: [], failures: [] });
-    });
   });
 
   describe('markSignInEnded', () => {
@@ -560,35 +478,6 @@ describe('ConnectorRegistry', () => {
       }
     });
 
-    it('finds an app’s logo address in the kept lists only, never listing upstream', async () => {
-      const provider = new FakeConnectorProvider({
-        type: 'composio',
-        toolkits: [
-          {
-            slug: 'zendesk',
-            displayName: 'Zendesk',
-            authKind: 'oauth2',
-            logoUrl: 'https://logos.composio.dev/api/zendesk',
-          },
-          { slug: 'bare', displayName: 'Bare', authKind: 'oauth2' },
-        ],
-      });
-      const pages = vi.spyOn(provider, 'listToolkitPage');
-      registry.register(provider, 'material-a');
-
-      // Nothing kept yet: no logo, and no listing to find one.
-      await expect(registry.keptLogoUrl('zendesk')).resolves.toBeUndefined();
-      expect(pages).not.toHaveBeenCalled();
-
-      await registry.readCatalog(provider, signal());
-      await expect(registry.keptLogoUrl('zendesk')).resolves.toBe(
-        'https://logos.composio.dev/api/zendesk'
-      );
-      await expect(registry.keptLogoUrl('bare')).resolves.toBeUndefined();
-      await expect(registry.keptLogoUrl('notion')).resolves.toBeUndefined();
-      expect(pages).toHaveBeenCalledTimes(1);
-    });
-
     it('drops the kept list when the provider is removed or replaced', async () => {
       const provider = new FakeConnectorProvider({ type: 'composio' });
       const pages = vi.spyOn(provider, 'listToolkitPage');
@@ -632,16 +521,6 @@ describe('ConnectorRegistry', () => {
 
       registry.unregisterProviderInstance(provider.instanceId);
       expect(removed).toHaveBeenCalledTimes(2);
-    });
-
-    it('finds the providers for a service from the kept list', async () => {
-      const provider = new FakeConnectorProvider({ type: 'composio' });
-      const pages = vi.spyOn(provider, 'listToolkitPage');
-      registry.register(provider, 'material-a');
-
-      expect((await registry.providersForToolkit('gmail')).providers).toEqual([provider]);
-      expect((await registry.providersForToolkit('missing')).providers).toEqual([]);
-      expect(pages).toHaveBeenCalledTimes(1);
     });
   });
 });

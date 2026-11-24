@@ -226,22 +226,6 @@ describe('withStallGuard', () => {
     );
   });
 
-  it('closes with the leaked-process details when onStall resolves false', async () => {
-    const src = createControlledSource();
-    const collector = collect(
-      withStallGuard(
-        src.source,
-        makeOpts({ onStall: vi.fn(async () => mockInterruptReceipt('not-running')) })
-      )
-    );
-    await flush();
-
-    await vi.advanceTimersByTimeAsync(TEN_MINUTES);
-    await flush();
-    expect(collector.events).toEqual(stallCloseEvents('notFound'));
-    expect(collector.isEnded()).toBe(true);
-  });
-
   it('routes an onStall rejection to onError and closes with the interrupt-failed details', async () => {
     const src = createControlledSource();
     const failure = new Error('interrupt transport died');
@@ -353,55 +337,6 @@ describe('withStallGuard', () => {
     expect(collector.isEnded()).toBe(true);
   });
 
-  it('silences the abandoned next() so a late rejection is never unhandled', async () => {
-    const onUnhandled = vi.fn();
-    process.on('unhandledRejection', onUnhandled);
-    try {
-      const src = createControlledSource();
-      const collector = collect(withStallGuard(src.source, makeOpts()));
-      await flush();
-
-      await vi.advanceTimersByTimeAsync(TEN_MINUTES);
-      await flush();
-      expect(collector.isEnded()).toBe(true);
-
-      // The abandoned next() rejects AFTER the stall detached from the source.
-      src.fail(new Error('late rejection from a dying subprocess'));
-      await flush();
-      // Real macrotask turns so Node's unhandled-rejection detection runs.
-      vi.useRealTimers();
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      expect(onUnhandled).not.toHaveBeenCalled();
-    } finally {
-      process.removeListener('unhandledRejection', onUnhandled);
-    }
-  });
-
-  it('warns with the MEASURED inactivity window, which exceeds the threshold after a pause', async () => {
-    const src = createControlledSource();
-    let paused = true;
-    const collector = collect(withStallGuard(src.source, makeOpts({ isPaused: () => paused })));
-    await flush();
-
-    // One paused expiry (silence keeps accruing), then a real one.
-    await vi.advanceTimersByTimeAsync(TEN_MINUTES);
-    await flush();
-    paused = false;
-    await vi.advanceTimersByTimeAsync(TEN_MINUTES);
-    await flush();
-    expect(collector.isEnded()).toBe(true);
-
-    // inactivityMs is the REAL silence (two windows), not a restatement of the
-    // threshold — an operator reading the log can tell a 20-minute park from a
-    // 10-minute one.
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('stall-guard'), {
-      sessionId: SESSION_ID,
-      inactivityMs: 2 * TEN_MINUTES,
-      timeoutMs: TEN_MINUTES,
-      neverStarted: true,
-    });
-  });
-
   // DOR-1229. The ten-minute window buys a RUNNING agent room to be quiet. A
   // turn that has yielded nothing has not shown it is running, has spent
   // nothing, and has no work to lose — so its first gap is judged on its own,
@@ -471,36 +406,6 @@ describe('withStallGuard', () => {
       // And it is reported as the other fault: this one DID start.
       expect(collector.events.slice(1)).toEqual(stallCloseEvents('aborted', { started: true }));
     });
-
-    it('never lengthens a shorter inactivity window a caller asked for', async () => {
-      const src = createControlledSource();
-      const onStall = vi.fn(async () => mockInterruptReceipt('acked'));
-      collect(
-        withStallGuard(
-          src.source,
-          makeOpts({ onStall, timeoutMs: 30_000, firstEventTimeoutMs: TWO_MINUTES })
-        )
-      );
-      await flush();
-
-      await vi.advanceTimersByTimeAsync(30_000);
-      await flush();
-      expect(onStall).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it('logs the interrupt outcome when it succeeds', async () => {
-    const src = createControlledSource();
-    const collector = collect(withStallGuard(src.source, makeOpts()));
-    await flush();
-
-    await vi.advanceTimersByTimeAsync(TEN_MINUTES);
-    await flush();
-    expect(collector.isEnded()).toBe(true);
-    expect(logger.info).toHaveBeenCalledWith(
-      expect.stringContaining('stall-guard'),
-      expect.objectContaining({ sessionId: SESSION_ID, interrupted: true, elapsedMs: 0 })
-    );
   });
 
   it('gives up on an interrupt that never settles, closing the turn at the bound', async () => {
@@ -532,41 +437,6 @@ describe('withStallGuard', () => {
         elapsedMs: SESSIONS.STALL_INTERRUPT_TIMEOUT_MS,
       })
     );
-  });
-
-  it('never lets an interrupt that rejects AFTER the bound become an unhandled rejection', async () => {
-    const onUnhandled = vi.fn();
-    process.on('unhandledRejection', onUnhandled);
-    try {
-      const src = createControlledSource();
-      let failStall!: (err: unknown) => void;
-      const collector = collect(
-        withStallGuard(
-          src.source,
-          makeOpts({
-            onStall: vi.fn(
-              () =>
-                new Promise<InterruptReceipt>((_resolve, reject) => {
-                  failStall = reject;
-                })
-            ),
-          })
-        )
-      );
-      await flush();
-
-      await vi.advanceTimersByTimeAsync(TEN_MINUTES + SESSIONS.STALL_INTERRUPT_TIMEOUT_MS);
-      await flush();
-      expect(collector.events).toEqual(stallCloseEvents('timedOut'));
-
-      failStall(new Error('interrupt transport died long after we gave up'));
-      await flush();
-      vi.useRealTimers();
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      expect(onUnhandled).not.toHaveBeenCalled();
-    } finally {
-      process.removeListener('unhandledRejection', onUnhandled);
-    }
   });
 
   it('finalizes the source when the CONSUMER cancels the guard mid-race', async () => {

@@ -40,6 +40,7 @@ import {
   type Verdict,
 } from './data.ts';
 import type { HandFiles } from './load.ts';
+import { MERGE_LOOKBACK_DAYS, mergedToReleased } from './release-lead.ts';
 import { computeSlos, deadlineMinutes } from './slo.ts';
 import type { LedgerFrontmatter } from './schemas.ts';
 import { addDays, dayOf, dayRange, daysBetween, minutesBetween, quantile, round } from './time.ts';
@@ -325,6 +326,17 @@ function readMetric(id: string, files: HandFiles, series: Series, w: Window): Me
   if (id === 'tracked.repeat-ejections') return repeatEjectionRate(wholeSnaps);
   if (id === 'tracked.desktop-release-wall-clock')
     return desktopReleaseWallClock(series, touched, w);
+  if (id === 'tracked.merged-to-released') {
+    // Samples sit at each release's publication; the merges they ship and any
+    // earlier release of the same commit are read from before the window.
+    if (touched.length === 0) return { n: 0, value: null };
+    const r = mergedToReleased(
+      series.snapshots(addDays(touched[0]!, -MERGE_LOOKBACK_DAYS), touched.at(-1)!),
+      Date.parse(w.from),
+      Date.parse(w.to)
+    );
+    return { n: r.n, value: r.p50 };
+  }
   if (id === 'tracked.job-minutes-per-merged-pr' || id === 'tracked.review-runs-per-merged-pr') {
     const merged = sum(wholeSnaps.map((s) => s.counts.merged_prs));
     const top = sum(

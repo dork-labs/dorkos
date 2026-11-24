@@ -6,3 +6,4 @@
 #
 # While this file has no key line, no signed review counts, and only the cloud
 # security-verdict can pass pr-gates. A change here goes through Security.
+security@dorkos namespaces="dorkos-security-review" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIARymbGuBOPZLJQ0SH/GxBU0PboCwjD5X6vW6n+8uccx

@@ -805,6 +805,38 @@
           "pendingApproval"
         ]
       },
+      "StepUpRequired": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "step_up_required"
+            ]
+          },
+          "heldActionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "requestCode": {
+            "type": "string",
+            "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
+          }
+        },
+        "required": [
+          "error",
+          "code",
+          "heldActionId",
+          "expiresAt"
+        ]
+      },
       "ContinueOptionsResponse": {
         "type": "object",
         "properties": {
@@ -4147,6 +4179,18 @@
             ],
             "additionalProperties": false
           }
+        ]
+      },
+      "PasskeyCheckRequired": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "options": {}
+        },
+        "required": [
+          "code"
         ]
       },
       "HealthResponse": {
@@ -12130,6 +12174,9 @@
             ],
             "default": null
           },
+          "accountPinned": {
+            "type": "boolean"
+          },
           "runOnce": {
             "type": "boolean"
           },
@@ -12917,6 +12964,9 @@
             ],
             "minLength": 1
           },
+          "accountPinned": {
+            "type": "boolean"
+          },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
           },
@@ -13122,6 +13172,9 @@
             ],
             "default": null
           },
+          "accountMove": {
+            "$ref": "#/components/schemas/TaskRunAccountMove"
+          },
           "createdAt": {
             "type": "string"
           }
@@ -13170,6 +13223,59 @@
           null
         ],
         "default": null
+      },
+      "TaskRunAccountMove": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "label"
+            ]
+          },
+          "to": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "label"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "limited",
+              "signed-out"
+            ]
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "reason"
+        ]
       },
       "CancelTaskRunResponse": {
         "type": "object",
@@ -23912,36 +24018,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -24141,36 +24218,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -24492,36 +24540,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -24694,36 +24713,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -25681,36 +25671,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -25895,36 +25856,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -26028,36 +25960,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -27195,36 +27098,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -32624,36 +32498,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -34074,36 +33919,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -34308,36 +34124,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -34505,36 +34292,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -38383,36 +38141,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -43378,36 +43107,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -43765,36 +43465,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -44111,36 +43782,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -44628,36 +44270,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -45627,7 +45240,7 @@
           "Devices"
         ],
         "summary": "Sign out one device",
-        "description": "Ends one sign-in, closes every stream, socket and terminal it had open, and stops the chats it started. Your own current sign-in from anywhere; any other only from the owner at the computer DorkOS runs on or signed in over https, never plain-http Wi-Fi.",
+        "description": "Ends one sign-in, closes every stream, socket and terminal it had open, and stops the chats it started. Your own current sign-in from anywhere; any other only from the owner at the computer DorkOS runs on or signed in over https, never from a plain-http network sign-in.",
         "parameters": [
           {
             "schema": {
@@ -45724,36 +45337,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -45768,7 +45352,7 @@
           "Devices"
         ],
         "summary": "Sign out everywhere else",
-        "description": "Ends every sign-in but the asking one (all of them when the asker has none) and closes what each had open. Only from the owner at the computer DorkOS runs on or signed in over https, never plain-http Wi-Fi.",
+        "description": "Ends every sign-in but the asking one (all of them when the asker has none) and closes what each had open. Only from the owner at the computer DorkOS runs on or signed in over https, never from a plain-http network sign-in.",
         "responses": {
           "200": {
             "description": "How many sign-ins ended",
@@ -45849,36 +45433,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -45892,8 +45447,8 @@
         "tags": [
           "Devices"
         ],
-        "summary": "Let a Wi-Fi device run agents",
-        "description": "Lets one Wi-Fi sign-in start turns at the agent’s own level, or stops it. Every sign-in starts with this off. Only the owner at the computer DorkOS runs on may change it, from the app’s own page. Turning it on needs a fresh passkey check, as approving a sign-in does: the first call answers `428` (`PASSKEY_CHECK_REQUIRED`), the second sends `{ on, passkey }`. It ends when the device signs out or sits unused for 12 hours.",
+        "summary": "Let a device on the network run agents",
+        "description": "Lets one network sign-in start turns at the agent’s own level, or stops it. Every sign-in starts with this off. Only the owner at the computer DorkOS runs on may change it, from the app’s own page. Turning it on needs a fresh passkey check, as approving a sign-in does: the first call answers `428` (`PASSKEY_CHECK_REQUIRED`), the second sends `{ on, passkey }`. It ends when the device signs out or sits unused for 12 hours.",
         "parameters": [
           {
             "schema": {
@@ -45971,7 +45526,7 @@
             }
           },
           "404": {
-            "description": "No live Wi-Fi sign-in of yours has that id",
+            "description": "No live network sign-in of yours has that id",
             "content": {
               "application/json": {
                 "schema": {
@@ -46019,16 +45574,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string"
-                    },
-                    "options": {}
-                  },
-                  "required": [
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/PasskeyCheckRequired"
                 }
               }
             }
@@ -46042,8 +45588,8 @@
         "tags": [
           "Devices"
         ],
-        "summary": "Devices asking to sign in over Wi-Fi",
-        "description": "Devices on Wi-Fi waiting for the owner to approve their sign-in: what each says it is, its address and when it asked. Only for the owner at the computer DorkOS runs on.",
+        "summary": "Devices asking to sign in over the network",
+        "description": "Devices on the network waiting for the owner to approve their sign-in: what each says it is, its address and when it asked. Only for the owner at the computer DorkOS runs on.",
         "responses": {
           "200": {
             "description": "The waiting requests, newest first",
@@ -46151,7 +45697,7 @@
         "tags": [
           "Devices"
         ],
-        "summary": "Approve a Wi-Fi sign-in",
+        "summary": "Approve a network sign-in",
         "description": "Approves one waiting device and answers a one-time code to type on it. The first call answers `428` with a passkey check (`PASSKEY_CHECK_REQUIRED`); the second sends `{ passkey }`, the browser’s response to it. Each check approves one request once. With no passkey on this computer it answers `409` (`PASSKEY_NEEDED`). Only for the owner at the computer DorkOS runs on, from the app’s own page.",
         "parameters": [
           {
@@ -46291,16 +45837,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string"
-                    },
-                    "options": {}
-                  },
-                  "required": [
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/PasskeyCheckRequired"
                 }
               }
             }
@@ -46314,7 +45851,7 @@
         "tags": [
           "Devices"
         ],
-        "summary": "Decline a Wi-Fi sign-in",
+        "summary": "Decline a network sign-in",
         "description": "Turns one waiting device away. Only for the owner at the computer DorkOS runs on.",
         "parameters": [
           {
@@ -46542,36 +46079,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -46753,36 +46261,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -46984,36 +46463,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -51134,7 +50584,7 @@
             }
           },
           "403": {
-            "description": "Only a person may answer; standing yeses are refused from Wi-Fi",
+            "description": "Only a person may answer; standing yeses are refused from the network",
             "content": {
               "application/json": {
                 "schema": {
@@ -51168,36 +50618,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -51302,36 +50723,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -52610,36 +52002,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -52710,36 +52073,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -52938,36 +52272,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -53080,36 +52385,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -54456,36 +53732,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -55083,36 +54330,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -59126,36 +58344,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -59644,36 +58833,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -61804,36 +60964,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -62553,36 +61684,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -62925,36 +62027,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -63618,36 +62691,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -64145,36 +63189,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -64227,36 +63242,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -64309,36 +63295,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -64467,36 +63424,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -64922,36 +63850,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -66670,36 +65569,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -68981,36 +67851,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -69323,36 +68164,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -94867,36 +93679,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -95478,36 +94261,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -96621,36 +95375,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -96780,36 +95505,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -97037,36 +95733,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -97699,36 +96366,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -97917,36 +96555,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -98044,36 +96653,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -98968,36 +97548,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -99155,36 +97706,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -100349,7 +98871,7 @@
             }
           },
           "403": {
-            "description": "An agent caller tried to change a handle (`OPERATOR_ONLY`), or a person on plain-http Wi-Fi tried to change an agent's (`NOT_FROM_WIFI`)",
+            "description": "An agent caller tried to change a handle (`OPERATOR_ONLY`), or a person on a plain-http network sign-in tried to change an agent's (`NOT_FROM_WIFI`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -107637,7 +106159,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -107735,7 +106257,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -107962,7 +106484,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -108073,7 +106595,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -108304,7 +106826,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -108413,7 +106935,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -108524,7 +107046,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -108635,7 +107157,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -108764,7 +107286,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -108908,7 +107430,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -109010,7 +107532,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -109127,7 +107649,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -109239,7 +107761,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -109406,7 +107928,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -109501,7 +108023,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -109659,7 +108181,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -109976,7 +108498,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -110087,7 +108609,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -110198,7 +108720,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -110280,7 +108802,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -110724,7 +109246,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -110838,7 +109360,7 @@
             }
           },
           "403": {
-            "description": "Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the capability refused this caller",
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -111007,36 +109529,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -111149,36 +109642,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -111313,36 +109777,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -112806,36 +111241,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -112894,36 +111300,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -112989,36 +111366,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -113077,36 +111425,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -113165,36 +111484,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -113253,36 +111543,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -113348,36 +111609,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -113431,36 +111663,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -113521,36 +111724,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -113604,36 +111778,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -113687,36 +111832,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -113770,36 +111886,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -113887,36 +111974,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -113982,36 +112040,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -114085,36 +112114,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -114201,36 +112201,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -114294,36 +112265,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -114387,36 +112329,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -114492,36 +112405,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -114585,36 +112469,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -114678,36 +112533,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -114782,36 +112608,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -114875,36 +112672,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -114968,36 +112736,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -115051,36 +112790,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -115134,36 +112844,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -115227,36 +112908,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -115310,36 +112962,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -115393,36 +113016,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -115476,36 +113070,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -115569,36 +113134,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -115652,36 +113188,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -115745,36 +113252,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -115838,36 +113316,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -115939,36 +113388,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -116022,36 +113442,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -116115,36 +113506,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -116198,36 +113560,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -116281,36 +113614,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -116374,36 +113678,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -116467,36 +113742,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }

@@ -207,7 +207,7 @@ import { RoomError } from './room-errors.js';
 import { POST_TO_ROOM_DESCRIPTION } from './handoff/room-post-description.js';
 import { registerRoomPreGateChecks } from './attachments/protected-file-checks.js';
 import { callerAuthor, requireAgentCwd, toolCallerOf } from './service/room-caller-author.js';
-import { defuseUntrusted, UNTRUSTED_NOTE } from './service/room-entry-projection.js';
+import { defuseFile, defuseUntrusted, UNTRUSTED_NOTE } from './service/room-entry-projection.js';
 import {
   projectMemberMatches,
   projectMemberRoomList,
@@ -1445,7 +1445,7 @@ async function readRoomCanvas(
   // the file route uses, so nothing here widens what a caller can reach.
   const filePath = canvasSourcePath(document.content);
   if (filePath !== null) {
-    return { ...metadata, ...defuseUntrusted(await readFileBacked(rooms, document, filePath)) };
+    return { ...metadata, ...defuseFile(await readFileBacked(rooms, document, filePath)) };
   }
   return { ...metadata, content: defuseUntrusted(document.content) };
 }

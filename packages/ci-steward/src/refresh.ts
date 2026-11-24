@@ -8,6 +8,7 @@ import { readData, snapshotDays, snapshotPath, SnapshotSchema, writeData } from 
 import { BudgetExhausted, type Gh } from './gh.ts';
 import { fetchMergedPrs } from './prs.ts';
 import type { Config } from './schemas.ts';
+import { mergesOf, releaseContents, type PublishedRelease } from './release-lead.ts';
 import { mainCommits, trimRun } from './series.ts';
 import { addDays, dayOf } from './time.ts';
 
@@ -39,34 +40,55 @@ function fetchMainPushRuns(gh: Gh, config: Config, day: string): Run[] | null {
 /**
  * Bring an already-collected day up to what this engine derives, without
  * collecting it again: its `main` commits get their per-workflow results
- * (`mainEpisodes`) and its counts get `repeat_ejections`. A complete day is
- * never re-collected, so without this every day before the change would keep
- * reading under the old ruler for as long as it stays in a 28-day window.
+ * (`mainEpisodes`), its counts get `repeat_ejections`, and it gets the
+ * `merges` and `release_contents` that `tracked.merged-to-released` joins. A
+ * complete day is never re-collected, so without this every day before the
+ * change would keep reading under the old ruler for as long as it stays in a
+ * 28-day window.
  *
- * About three requests a day (one push-run listing, one merged-PR search, and
- * a timeline page for any PR with more than 100 events) against the 150 to 400
- * a full collection costs, and only for days Actions still keeps.
- * A day whose listing or search comes back short is left exactly as it was.
+ * About three requests a day (one push-run listing, one merged-PR search, a
+ * timeline page for any PR with more than 100 events, and one compare per
+ * release published that day), each part only when the day lacks what it
+ * gives, against the 150 to 400 a full collection costs, and only for days
+ * Actions still keeps. A day whose listing, search or compare comes back short
+ * is left exactly as it was.
  *
  * @param opts - The run's inputs.
  * @param day - A day already on disk.
+ * @param releases - Every published release the run read, so a day's release finds its predecessor.
  * @returns Whether the day was rewritten.
  */
-function refreshDay(opts: CollectOptions, day: string): boolean {
+function refreshDay(
+  opts: CollectOptions,
+  day: string,
+  releases: readonly PublishedRelease[]
+): boolean {
   const { gh, files, dataDir } = opts;
   const snap = readData(dataDir, snapshotPath(day), SnapshotSchema);
-  if (!snap || !snap.complete || snap.partial_day || snap.counts.repeat_ejections !== undefined)
-    return false;
-  const runs = fetchMainPushRuns(gh, files.config, day);
+  if (!snap || !snap.complete || snap.partial_day) return false;
+  const needsRepeats = snap.counts.repeat_ejections === undefined;
+  const needsShipped = snap.merges === undefined || snap.release_contents === undefined;
+  if (!needsRepeats && !needsShipped) return false;
+  const runs = needsRepeats ? fetchMainPushRuns(gh, files.config, day) : [];
   if (!runs) return false;
   const failures: string[] = [];
   const prs = fetchMergedPrs(gh, files.config.github_repo, day, undefined, failures);
   if (failures.length) return false;
-  snap.main = mainCommits(runs, files.config.default_branch);
-  snap.counts.repeat_ejections = repeatEjections(
-    prs,
-    priorQueueBuilds(dataDir, day, snap.queue_builds)
-  );
+  const shipped = needsShipped
+    ? releaseContents(gh, files.config.github_repo, snap.releases, releases)
+    : null;
+  if (shipped?.short.length) return false;
+  if (needsRepeats) {
+    snap.main = mainCommits(runs, files.config.default_branch);
+    snap.counts.repeat_ejections = repeatEjections(
+      prs,
+      priorQueueBuilds(dataDir, day, snap.queue_builds)
+    );
+  }
+  if (shipped) {
+    snap.merges = mergesOf(prs);
+    snap.release_contents = shipped.contents;
+  }
   writeData(dataDir, snapshotPath(day), snap);
   return true;
 }
@@ -77,9 +99,13 @@ function refreshDay(opts: CollectOptions, day: string): boolean {
  * until the budget is down to its last ten requests.
  *
  * @param opts - The run's inputs.
+ * @param releases - Every published release the run read.
  * @returns The days rewritten, oldest first.
  */
-export function refreshOlderDays(opts: CollectOptions): string[] {
+export function refreshOlderDays(
+  opts: CollectOptions,
+  releases: readonly PublishedRelease[] = []
+): string[] {
   const { dataDir, now, gh } = opts;
   const oldest = addDays(dayOf(now), -89);
   const days = snapshotDays(dataDir)
@@ -89,7 +115,7 @@ export function refreshOlderDays(opts: CollectOptions): string[] {
   for (const day of days) {
     if (gh.budget - gh.calls < 10) break;
     try {
-      if (refreshDay(opts, day)) refreshed.push(day);
+      if (refreshDay(opts, day, releases)) refreshed.push(day);
     } catch (e) {
       if (e instanceof BudgetExhausted) break;
       throw e;

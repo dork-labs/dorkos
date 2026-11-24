@@ -140,7 +140,13 @@ Apply the areas the diff touches. Each item names the attack it stops.
   Categories come from a fixed list: `auth`, `injection`, `permissions`,
   `connectors`, `extensions`, `secrets`, `ci`, `supply-chain`, `other`.
 - **Never describe a Must, an attack or an exploit path in any public comment.**
-  The verdict line carries only the count and the categories. The author gets the
-  details from Security.
+  The verdict line carries only the count and the categories.
+- **On a fail, save the details for Security first**, through the same helper:
+  `security-findings '<details>'`. For each Must give the file and line, who the
+  attacker is, the attack, and the smallest fix. The helper posts nothing: the
+  details are encrypted so only Security can read them, and the plaintext is
+  deleted. A `fail` verdict is refused until the details are saved. Security
+  reads them with `scripts/security-findings.sh decrypt <pr> <identity>` and
+  takes them to the author.
 - Shoulds and hardening ideas that don't meet the bar are not Musts. Leave them
   out of the security verdict.

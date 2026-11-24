@@ -15,7 +15,11 @@
  *
  * @module services/rooms/reseat/reseat-accounts
  */
-import { CREDITS_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-usage';
+import {
+  CREDITS_ACCOUNT_ID,
+  IMPLICIT_ACCOUNT_ID,
+  type AccountUsage,
+} from '@dorkos/shared/account-usage';
 import { mayAutoPick, type RankedAccount } from '../../core/usage/account-ranking.js';
 import { mayAutoPickClaudeRoot } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
 
@@ -93,6 +97,17 @@ export function reseatCandidates(
       !row.notAllowed &&
       (opts.keptOut === true || !row.noAutoMove)
   );
+}
+
+/**
+ * Whether an account is the runtime's main one, which no automatic pick for
+ * agent work lands on: an agent's own seat move (DOR-3145) or a scheduled run
+ * moving off a spent account (DOR-5097).
+ *
+ * @param row - The ranked account.
+ */
+export function isMainAccount(row: Pick<RankedAccount, 'id' | 'isDefault'>): boolean {
+  return row.isDefault === true || row.id === IMPLICIT_ACCOUNT_ID;
 }
 
 /**
