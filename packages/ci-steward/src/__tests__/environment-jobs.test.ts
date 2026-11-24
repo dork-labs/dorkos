@@ -127,7 +127,7 @@ describe('checkEnvironmentJobs on the real workflows', () => {
   it('fails on the App-token action back on its moving v3 tag (there is no exception list)', () => {
     expect(
       run({
-        file: 'arm-door.yml',
+        file: 'queue-repeat-guard.yml',
         change: (t) =>
           t.replace(
             `actions/create-github-app-token@${APP_TOKEN_SHA} # v3.4.0`,
@@ -137,7 +137,7 @@ describe('checkEnvironmentJobs on the real workflows', () => {
     ).toEqual([
       [
         'environment-pins/unpinned',
-        '.github/workflows/arm-door.yml',
+        '.github/workflows/queue-repeat-guard.yml',
         'door: actions/create-github-app-token@v3',
       ],
     ]);
@@ -152,10 +152,10 @@ describe('checkEnvironmentJobs on the real workflows', () => {
         [...readFileSync(path.join(dir, n), 'utf8').matchAll(USES)].map((m) => [n, m[1]])
       );
     expect(uses.map(([n]) => n).sort()).toEqual([
-      'arm-door.yml',
+      'auto-revert.yml',
       'dependabot-lockfile-repair.yml',
-      'merge-tail.yml',
       'queue-repeat-guard.yml',
+      'review-redispatch.yml',
     ]);
     expect(new Set(uses.map(([, ref]) => ref))).toEqual(new Set([APP_TOKEN_SHA]));
   });
@@ -177,13 +177,13 @@ describe('checkEnvironmentJobs on the real workflows', () => {
 
   it('fails when a job names the wrong environment for the secret it reads', () => {
     const findings = run({
-      file: 'merge-tail.yml',
+      file: 'review-redispatch.yml',
       change: (t) => t.replace('    environment: automation\n', '    environment: release\n'),
     });
     expect(findings).toContainEqual([
       'environment-secrets/outside-environment',
-      '.github/workflows/merge-tail.yml',
-      'arm',
+      '.github/workflows/review-redispatch.yml',
+      'redispatch',
     ]);
   });
 });
