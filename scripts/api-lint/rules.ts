@@ -137,8 +137,12 @@ export const ALLOWED_VERBS: readonly string[] = [
  */
 export const ALLOWED_VERB_PATHS: readonly string[] = ['/api/capabilities/{id}/invoke'];
 
-/** Error schemas a 4xx or 5xx body may reference. DOR-4979 adds `Problem`. */
-export const SHARED_ERROR_SCHEMAS: readonly string[] = ['ErrorResponse'];
+/**
+ * Error schemas a 4xx or 5xx body may reference: the RFC 9457 `Problem` every
+ * switched route answers with (DOR-4979), and the older `ErrorResponse` the
+ * routes not yet switched still send.
+ */
+export const SHARED_ERROR_SCHEMAS: readonly string[] = ['Problem', 'ErrorResponse'];
 
 /** The paths whose `registerPath(` calls count as hand registrations. */
 const HAND_REGISTRY_FILE =
@@ -280,12 +284,15 @@ export function errorMissingItems(doc: OpenApiDocument): Items {
 }
 
 function isSharedErrorRef(schema: SchemaNode | undefined): boolean {
-  return SHARED_ERROR_SCHEMAS.some((name) => schema?.$ref === `#/components/schemas/${name}`);
+  const isShared = (node: SchemaNode | undefined) =>
+    SHARED_ERROR_SCHEMAS.some((name) => node?.$ref === `#/components/schemas/${name}`);
+  // A problem with extension members is the shared schema plus its own fields.
+  return isShared(schema) || (schema?.allOf ?? []).some(isShared);
 }
 
 /**
- * 4xx and 5xx responses whose JSON body is not a `$ref` to a shared error
- * schema, or that have no body at all.
+ * 4xx and 5xx responses whose body (a problem document, else JSON) is not a
+ * `$ref` to a shared error schema, or that have no body at all.
  *
  * @param doc - The OpenAPI document.
  */
@@ -295,7 +302,10 @@ export function errorShapeItems(doc: OpenApiDocument): Items {
     for (const status of errorStatuses(operation.op)) {
       const response = operation.op.responses?.[status];
       const resolved = response ? resolveResponse(doc, response) : {};
-      if (!isSharedErrorRef(resolved.content?.['application/json']?.schema)) {
+      const body =
+        resolved.content?.['application/problem+json']?.schema ??
+        resolved.content?.['application/json']?.schema;
+      if (!isSharedErrorRef(body)) {
         add(items, groupOf(operation.path), `${label(operation)} ${status}`);
       }
     }

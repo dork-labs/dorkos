@@ -197,6 +197,23 @@ describe('error-shape', () => {
     expect(errorShapeItems(doc({ '/api/x': { get: op() } }))).toEqual({});
     expect(errorShapeItems(viaResponse)).toEqual({});
   });
+
+  it('passes a problem document, plain or with extension members (DOR-4979)', () => {
+    const problem = { $ref: '#/components/schemas/Problem' };
+    const plain = { content: { 'application/problem+json': { schema: problem } } };
+    const extended = {
+      content: {
+        'application/problem+json': {
+          schema: { allOf: [problem, { type: 'object', properties: { conflicts: {} } }] },
+        },
+      },
+    };
+    const inline = { content: { 'application/problem+json': { schema: { type: 'object' } } } };
+    const d = doc({
+      '/api/x': { get: op({ responses: { '409': plain, '412': extended, '500': inline } }) },
+    });
+    expect(errorShapeItems(d)).toEqual({ x: ['GET /api/x 500'] });
+  });
 });
 
 describe('list-paging', () => {
