@@ -175,6 +175,8 @@ const FAMILY_RULES: ReadonlyArray<readonly [RegExp, keyof typeof FAMILY_DETAIL]>
   [/_CHANGED$|_CHANGED_SINCE$|_MISMATCH$|^STALE_|_STALE$/, 'precondition_failed'],
   [/(^|_)RATE_LIMIT(ED)?$/, 'rate_limited'],
   [/(^|_)EXPIRED$/, 'expired'],
+  // The caller's input, before `_ERROR$` reads it as the server's fault.
+  [/^VALIDATION(_ERROR)?$|^INVALID_/, 'invalid_request'],
   [/_FAILED$|_FAILURE$|_ERROR$|^EXCEPTION$|_UNREADABLE$|_OUTCOME_UNKNOWN$/, 'internal_error'],
   [/^E(ACCES|BADF|CONNRESET|IO|MFILE|NOENT|NOSPC|PERM)$/, 'internal_error'],
   [
@@ -182,6 +184,8 @@ const FAMILY_RULES: ReadonlyArray<readonly [RegExp, keyof typeof FAMILY_DETAIL]>
     'temporarily_unavailable',
   ],
   [/^UNIDENTIFIED(_|$)|_UNVERIFIED$/, 'agent_identity_unverified'],
+  // A person this action can't reach yet is not a "person only" refusal.
+  [/(^|_)UNREACHABLE$/, 'not_supported'],
   [/PERSON|PEOPLE_ONLY/, 'person_only'],
   [/^OWNER_ONLY$/, 'owner_only'],
   [/(^|_)APPROVAL_REQUIRED$|_PREFLIGHT_REQUIRED$|_NEEDS_YES$/, 'needs_approval'],

@@ -3,6 +3,7 @@ covers:
   - 'feat(api): every capability door answers a refusal as a problem document (DOR-4979)'
   - "refactor(api): debug's chat reads answer problems, and the old session-not-found body is gone (DOR-4979)"
   - 'fix(api): review round 1 on the capability refusals (DOR-4979)'
+  - 'fix(api): review round 2 on the capability refusals (DOR-4979)'
 ---
 
 ### Changed
