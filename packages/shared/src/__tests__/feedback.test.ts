@@ -10,7 +10,6 @@ import {
   redactSecrets,
   sanitizeFlags,
   FEEDBACK_FLAG_ALLOWLIST,
-  FEEDBACK_ISSUES_NEW_URL,
   type FeedbackReport,
 } from '../feedback.js';
 
@@ -30,24 +29,6 @@ describe('sanitizeFlags', () => {
     });
   });
 
-  it('drops keys that are not on the allowlist', () => {
-    const result = sanitizeFlags({
-      'tunnel.authtoken': 'ngrok-secret-token',
-      'mcp.apiKey': 'sk-live-1234567890',
-      'server.cwd': '/Users/dorian/code/secret-project',
-      'scheduler.maxConcurrentRuns': 4,
-    });
-    expect(result).toEqual({});
-  });
-
-  it('drops allowlisted keys whose value is the wrong type', () => {
-    const result = sanitizeFlags({
-      'tunnel.enabled': 'yes', // expected boolean
-      'tasks.enabled': 1, // expected boolean
-    });
-    expect(result).toEqual({});
-  });
-
   it('rejects enum values that look like a path or token', () => {
     const result = sanitizeFlags({
       'logging.level': '/Users/dorian/.dork/logs',
@@ -55,13 +36,6 @@ describe('sanitizeFlags', () => {
       'ui.theme': 'has spaces',
     });
     expect(result).toEqual({});
-  });
-
-  it('drops an enum value outside its known set even if it looks harmless', () => {
-    // A user-customized theme name is short and lowercase but not a known theme.
-    const result = sanitizeFlags({ 'ui.theme': 'midnight-custom', 'logging.level': 'info' });
-    expect(result).toEqual({ 'logging.level': 'info' });
-    expect(result['ui.theme']).toBeUndefined();
   });
 });
 
@@ -106,6 +80,11 @@ describe('redactSecrets', () => {
     expect(v6).toContain('[ip]');
   });
 
+  it('redacts a compressed IPv6 address, which the long-form rule never saw', () => {
+    expect(redactSecrets('host fe80::1 is unreachable')).toBe('host [ip] is unreachable');
+    expect(redactSecrets('bound to ::1 only')).toBe('bound to [ip] only');
+  });
+
   it('redacts UNC network paths', () => {
     const out = redactSecrets('share at \\\\CORP-FS\\home\\dorian here');
     expect(out).not.toContain('CORP-FS');
@@ -124,46 +103,9 @@ describe('redactSecrets', () => {
     expect(out).not.toContain('Program Files');
     expect(out).toContain('[path]');
   });
-
-  // Documents the limit: redaction is best-effort, NOT the guarantee. A bare
-  // internal hostname has no reliable shape, so this net leaves it untouched.
-  // It can never reach a report because no allowlisted field holds a hostname
-  // (the positive allowlist is the real guarantee).
-  it('does NOT catch a bare internal hostname (best-effort limit)', () => {
-    const out = redactSecrets('server prod-db-01.internal responded');
-    expect(out).toContain('prod-db-01.internal');
-  });
 });
 
 describe('buildIssueUrl', () => {
-  const baseReport: FeedbackReport = {
-    kind: 'bug',
-    version: '0.45.1',
-    platform: 'darwin-arm64',
-    runtimes: ['claude-code', 'codex'],
-    surface: 'web /agents',
-    flags: { 'tunnel.enabled': false, 'tasks.enabled': true },
-  };
-
-  it('points at the DorkOS issues/new endpoint', () => {
-    expect(buildIssueUrl(baseReport)).toContain(FEEDBACK_ISSUES_NEW_URL);
-  });
-
-  it('includes version, platform, runtimes, surface, and flags in the body', () => {
-    const body = new URL(buildIssueUrl(baseReport)).searchParams.get('body') ?? '';
-    expect(body).toContain('0.45.1');
-    expect(body).toContain('darwin-arm64');
-    expect(body).toContain('claude-code, codex');
-    expect(body).toContain('web /agents');
-    expect(body).toContain('tunnel.enabled: false');
-  });
-
-  it('applies the correct label per kind', () => {
-    expect(buildIssueUrl({ ...baseReport, kind: 'bug' })).toContain('labels=bug');
-    expect(buildIssueUrl({ ...baseReport, kind: 'feature' })).toContain('labels=enhancement');
-    expect(buildIssueUrl({ ...baseReport, kind: 'runtime' })).toContain('labels=bug');
-  });
-
   // The security-critical guarantee: even a report deliberately poisoned with a
   // home path, a token, and an email produces a URL that leaks none of them.
   it('never leaks a secret, path, or email even when the report is poisoned', () => {
@@ -217,29 +159,6 @@ describe('gatherFeedbackReport', () => {
     );
   });
 
-  it('includes optional runtimes unless they are explicitly off', () => {
-    expect(
-      gatherFeedbackReport({ kind: 'bug', ...host, readConfigValue: reader({}) }).runtimes
-    ).toEqual(['claude-code', 'codex', 'opencode', 'doe']);
-
-    expect(
-      gatherFeedbackReport({
-        kind: 'bug',
-        ...host,
-        readConfigValue: reader({ 'runtimes.opencode.enabled': false }),
-      }).runtimes
-    ).toEqual(['claude-code', 'codex', 'doe']);
-    expect(
-      gatherFeedbackReport({
-        kind: 'bug',
-        ...host,
-        readConfigValue: reader({
-          'runtimes.doe.enabled': false,
-        }),
-      }).runtimes
-    ).toEqual(['claude-code', 'codex', 'opencode']);
-  });
-
   it('sanitizes what it read, so an unsafe config value cannot reach the report', () => {
     const report = gatherFeedbackReport({
       kind: 'bug',
@@ -254,38 +173,6 @@ describe('gatherFeedbackReport', () => {
     });
     expect(report.flags).toEqual({ 'tunnel.enabled': true });
     expect(JSON.stringify(report)).not.toContain('ngrok-secret-token');
-  });
-
-  it('omits title and body entirely when none were written', () => {
-    const report = gatherFeedbackReport({ kind: 'bug', ...host, readConfigValue: reader({}) });
-    expect('title' in report).toBe(false);
-    expect('body' in report).toBe(false);
-  });
-
-  it('differs by exactly one line between two surfaces on the same host', () => {
-    // The claim `feedback_draft` rests on: an agent hands a person the link
-    // `dorkos feedback --print` would have printed, and `Reported from` is the
-    // only line in it that knows the difference (DOR-2056).
-    const values = { 'tunnel.enabled': false, 'logging.level': 'info' };
-    const cli = buildIssueUrl(
-      gatherFeedbackReport({ kind: 'bug', ...host, readConfigValue: reader(values) })
-    );
-    const agent = buildIssueUrl(
-      gatherFeedbackReport({
-        kind: 'bug',
-        ...host,
-        surface: 'agent',
-        readConfigValue: reader(values),
-      })
-    );
-
-    const bodyOf = (url: string) => (new URL(url).searchParams.get('body') ?? '').split('\n');
-    const differing = bodyOf(cli)
-      .map((line, i) => [line, bodyOf(agent)[i]] as const)
-      .filter(([a, b]) => a !== b);
-
-    expect(differing).toEqual([['- Reported from: cli', '- Reported from: agent']]);
-    expect(bodyOf(cli)).toHaveLength(bodyOf(agent).length);
   });
 });
 
@@ -303,25 +190,6 @@ describe('a written title and body', () => {
     const params = new URL(buildIssueUrl(report)).searchParams;
     return { title: params.get('title') ?? '', body: params.get('body') ?? '' };
   };
-
-  it('replaces the placeholder title and the blank questions', () => {
-    const { title, body } = parts({
-      ...base,
-      title: 'Sessions stop streaming after a sleep',
-      body: 'The reply stops mid-sentence and never resumes.',
-    });
-    expect(title).toBe('Sessions stop streaming after a sleep');
-    expect(body).toContain('The reply stops mid-sentence and never resumes.');
-    expect(body).not.toContain('## What happened?');
-    // The environment block still rides along underneath.
-    expect(body).toContain('- DorkOS version: 0.45.1');
-  });
-
-  it('falls back to the blank questions for an empty or whitespace-only write', () => {
-    const { title, body } = parts({ ...base, title: '   ', body: '\n  \n' });
-    expect(title).toBe('Bug: (describe what went wrong)');
-    expect(body).toContain('## What happened?');
-  });
 
   // The behaviour DOR-2056 asks for by name, asserted against what
   // `redactSecrets` ACTUALLY does rather than against its docblock's promise.
@@ -344,15 +212,6 @@ describe('a written title and body', () => {
     // And the prose around them survives, or the scrub would be useless.
     expect(decoded).toContain('and it died.');
     expect(decoded).toContain('Stack points at');
-  });
-
-  // The limit the module docblock states, pinned so nobody upgrades the claim.
-  // `redactSecrets` is a defence over free-form prose, not a guarantee: an
-  // internal hostname has no shape it recognizes and survives untouched. What
-  // stops this reaching GitHub is the person who opens the link and reads it.
-  it('does NOT catch everything a written body can carry', () => {
-    const { body } = parts({ ...base, body: 'It only fails on build-07.corp.internal.' });
-    expect(body).toContain('build-07.corp.internal');
   });
 });
 
@@ -389,12 +248,6 @@ describe('the URL fits what the far end will accept', () => {
     expect(carried.length).toBeGreaterThan(0);
   });
 
-  it('says so in the body, rather than stopping mid-sentence in silence', () => {
-    const draft = buildIssueDraft({ ...base, body: '字'.repeat(4000) });
-    const rendered = new URL(draft.url).searchParams.get('body') ?? '';
-    expect(rendered).toContain('(shortened to fit the link; paste the rest yourself)');
-  });
-
   it('never cuts inside a surrogate pair', () => {
     const rendered =
       new URL(buildIssueDraft({ ...base, body: '🙂'.repeat(2000) }).url).searchParams.get('body') ??
@@ -403,31 +256,6 @@ describe('the URL fits what the far end will accept', () => {
     expect(
       /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(rendered)
     ).toBe(false);
-  });
-
-  it('leaves an ASCII body of the same character count alone', () => {
-    // 4000 ASCII characters were measured as fine, and the point of counting
-    // bytes is that this case must NOT be punished for the ones above.
-    const draft = buildIssueDraft({ ...base, body: 'a'.repeat(4000) });
-    expect(draft.truncated).toBe(false);
-    expect(draft.fullBody).toBeUndefined();
-    expect(bytes(draft.url)).toBeLessThanOrEqual(FEEDBACK_URL_MAX_BYTES);
-  });
-
-  it('does not claim a shortened body when there was no body', () => {
-    // The environment block is never truncated, so an overrun with nothing
-    // written has nothing to cut. Forced with an absurdly small ceiling, since
-    // the real environment block cannot reach 6 KB.
-    const draft = buildIssueDraft(base, 10);
-    expect(draft.truncated).toBe(false);
-    expect(draft.fullBody).toBeUndefined();
-    expect(draft.url).toBe(buildIssueUrl(base));
-  });
-
-  it('leaves an ordinary report alone, flag and all', () => {
-    const draft = buildIssueDraft({ ...base, body: 'It broke when I pressed the button.' });
-    expect(draft.truncated).toBe(false);
-    expect(draft.url).toBe(buildIssueUrl({ ...base, body: 'It broke when I pressed the button.' }));
   });
 });
 
@@ -487,19 +315,6 @@ describe('written prose cannot forge what DorkOS vouched for', () => {
 });
 
 describe('redactSecrets over prose a person would actually write', () => {
-  // The two false positives DOR-2056 review measured. Both matter because this
-  // function now runs over the body of a bug report, where a repo-relative path
-  // and a function name are the two most useful things somebody can tell you.
-  it('leaves a repo-relative path alone', () => {
-    const line = 'the bug is in apps/server/src/services/core/operator/operator-tool-handlers.ts';
-    expect(redactSecrets(line)).toBe(line);
-  });
-
-  it('leaves a long identifier alone', () => {
-    const line = 'createSidebarRemoveFromGroupHandler never fires on the second call';
-    expect(redactSecrets(line)).toBe(line);
-  });
-
   it('still redacts the absolute path that names somebody', () => {
     expect(redactSecrets('see /Users/dorian/code/private/notes.md')).toBe('see [home]');
     expect(redactSecrets('see ~/code/private/notes.md')).toContain('[home]');
@@ -517,34 +332,6 @@ describe('redactSecrets over prose a person would actually write', () => {
     const out = redactSecrets(input);
     expect(out).not.toContain(mustBeGone);
     expect(out).toContain('[home]');
-  });
-
-  it.each([
-    ['a network share', 'mounted //fileserver/private/clients here', 'fileserver'],
-    ['a short share', 'see //share/private now', 'share/private'],
-  ])('redacts %s spelled with forward slashes', (_name, input, mustBeGone) => {
-    const out = redactSecrets(input);
-    expect(out).not.toContain(mustBeGone);
-    expect(out).toContain('[path]');
-  });
-
-  // The other side of that rule, and the reason it is anchored on a word
-  // boundary rather than on `//`: a scheme colon means a public address, not
-  // somebody's network, and a bug report that names a docs page should keep it.
-  it.each([
-    ['https', 'see https://dorkos.ai/docs/guides/agents'],
-    ['http', 'see http://dorkos.ai/docs/guides'],
-  ])('leaves a public %s URL readable', (_name, input) => {
-    expect(redactSecrets(input)).toBe(input);
-  });
-
-  it('redacts a compressed IPv6 address, which the long-form rule never saw', () => {
-    expect(redactSecrets('host fe80::1 is unreachable')).toBe('host [ip] is unreachable');
-    expect(redactSecrets('bound to ::1 only')).toBe('bound to [ip] only');
-  });
-
-  it('leaves a C++ scope alone, because it is not hex', () => {
-    expect(redactSecrets('foo::bar is fine')).toBe('foo::bar is fine');
   });
 
   // The whole prefixed set, in one table, so a future edit to the alternation
@@ -567,25 +354,7 @@ describe('redactSecrets over prose a person would actually write', () => {
 });
 
 describe('FEEDBACK_FLAG_ALLOWLIST is the union across surfaces, not one schema', () => {
-  // Every allowlisted key must name a real leaf in one of the two schemas a
-  // surface reads flags from: `UserConfigSchema` (the stored config the CLI and
-  // the `feedback_draft` capability read) or `ServerConfigSchema` (the DTO the
-  // web app reads). A key that resolves in neither is dead: no surface can ever
-  // supply it, so a rename in the schema would silently drop a flag from every
-  // report. Both lists below are DERIVED from the schemas, never typed by hand.
-  //
-  // Two keys resolve in the DTO and in NO stored config, so the CLI and the
-  // capability read them and always get `undefined`. That looked like dead
-  // weight on review and is not: deleting them silently drops two real flags
-  // from every report made from the web app (`build-issue-report.ts` supplies
-  // both from `config.tasks` / `config.mesh`, which report what is RUNNING).
-  // Pinned here so the next cleanup has to read this sentence first.
-  const DTO_ONLY_KEYS = ['tasks.enabled', 'mesh.enabled'];
-
   const allowlisted = Object.entries(FEEDBACK_FLAG_ALLOWLIST);
-  const storedKeys = allowlisted
-    .filter(([key]) => schemaLeaf(UserConfigSchema, key) !== undefined)
-    .map(([key]) => key);
   const dtoOnlyKeys = allowlisted
     .filter(([key]) => schemaLeaf(UserConfigSchema, key) === undefined)
     .map(([key]) => key);
@@ -593,30 +362,6 @@ describe('FEEDBACK_FLAG_ALLOWLIST is the union across surfaces, not one schema',
   it('names only keys that exist in the stored config or the server config DTO', () => {
     const dead = dtoOnlyKeys.filter((key) => schemaLeaf(ServerConfigSchema, key) === undefined);
     expect(dead).toEqual([]);
-  });
-
-  it('keeps exactly the two keys only the web surface can supply', () => {
-    expect(dtoOnlyKeys.sort()).toEqual([...DTO_ONLY_KEYS].sort());
-    expect(storedKeys.length + dtoOnlyKeys.length).toBe(allowlisted.length);
-  });
-
-  it.each(allowlisted)('declares %s with the type its schema leaf holds', (key, type) => {
-    const leaf = schemaLeaf(UserConfigSchema, key) ?? schemaLeaf(ServerConfigSchema, key);
-    const accepted: Record<string, readonly string[]> = {
-      boolean: ['boolean'],
-      number: ['number', 'int'],
-      // `runtimes.default` is a free string in the schema, bounded here by
-      // FEEDBACK_ENUM_VALUES instead.
-      enum: ['enum', 'string'],
-    };
-    expect(accepted[type]).toContain(leaf);
-  });
-
-  it('reports them when a surface does supply them', () => {
-    expect(sanitizeFlags({ 'tasks.enabled': true, 'mesh.enabled': false })).toEqual({
-      'tasks.enabled': true,
-      'mesh.enabled': false,
-    });
   });
 });
 

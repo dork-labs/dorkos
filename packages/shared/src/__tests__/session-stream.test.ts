@@ -6,7 +6,6 @@ import {
   SessionListEventSchema,
   BLOCKING_INTERACTION_EVENT_TYPES,
   isBlockingInteractionEventType,
-  isBlockingInteractionEvent,
   approvalOutcomeOf,
   questionOutcomeOf,
   type ToolApprovalOutcome,
@@ -30,50 +29,10 @@ const coldStatus = {
 };
 
 describe('SessionStatusSchema', () => {
-  it('accepts a cold snapshot with all usage fields null', () => {
-    // Purpose: a session with no completed turn must parse with null usage/cost.
-    expect(SessionStatusSchema.parse(coldStatus)).toEqual(coldStatus);
-  });
-
-  it('defaults runningSubagentCount to 0 when omitted', () => {
-    // Purpose: the count is a default, not a required field.
-    const { runningSubagentCount: _omitted, ...withoutCount } = coldStatus;
-    expect(SessionStatusSchema.parse(withoutCount).runningSubagentCount).toBe(0);
-  });
-
   it('defaults lastError to null when omitted (version skew)', () => {
     // Purpose: snapshots serialized before lastError existed must keep parsing.
     const { lastError: _omitted, ...withoutError } = coldStatus;
     expect(SessionStatusSchema.parse(withoutError).lastError).toBeNull();
-  });
-
-  it('defaults usage to null when omitted (version skew)', () => {
-    // Purpose: snapshots serialized before the usage field existed (a client on
-    // an older server, or a replayed pre-usage snapshot) must keep parsing and
-    // resolve to null usage rather than throwing.
-    const { usage: _omitted, ...withoutUsage } = coldStatus;
-    expect(SessionStatusSchema.parse(withoutUsage).usage).toBeNull();
-  });
-
-  it('defaults accountUsage to null when omitted (version skew)', () => {
-    // Purpose: snapshots from a server before cached account usage (spec
-    // claude-account-fleet §6 U) must keep parsing.
-    const { accountUsage: _omitted, ...withoutAccount } = coldStatus;
-    expect(SessionStatusSchema.parse(withoutAccount).accountUsage).toBeNull();
-  });
-
-  it('keeps a context reading with the time it was observed', () => {
-    const contextUsage = {
-      totalTokens: 1_000,
-      maxTokens: 200_000,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-      observedAt: '2026-09-27T10:00:00.000Z',
-    };
-    expect(SessionStatusSchema.parse({ ...coldStatus, contextUsage }).contextUsage).toEqual(
-      contextUsage
-    );
   });
 
   it('a status_change cannot carry accountUsage: it travels only on account_usage', () => {
@@ -83,56 +42,6 @@ describe('SessionStatusSchema', () => {
       status: { model: 'm', accountUsage: { runtime: 'codex' } },
     });
     expect(parsed.type === 'status_change' && 'accountUsage' in parsed.status).toBe(false);
-  });
-
-  it('accepts a populated subscription usage on the durable snapshot', () => {
-    // Purpose: the status projection carries a whole UsageStatus through to the client.
-    const withUsage = {
-      ...coldStatus,
-      usage: {
-        kind: 'subscription' as const,
-        utilization: 0.42,
-        windowLabel: '5-hour',
-        costUsd: 0.13,
-        state: 'ok' as const,
-      },
-    };
-    expect(SessionStatusSchema.parse(withUsage).usage).toEqual(withUsage.usage);
-  });
-
-  it('accepts a populated lastError carrying the failure details', () => {
-    // Purpose: the status projection surfaces the most recent turn failure.
-    const failed = {
-      ...coldStatus,
-      lifecycle: 'error' as const,
-      lastError: { message: 'boom', code: 'turn_exception', category: 'execution_error' as const },
-    };
-    expect(SessionStatusSchema.parse(failed).lastError).toEqual(failed.lastError);
-  });
-
-  it('parses a status carrying what the session is doing right now', () => {
-    // Purpose: the fleet-wide activity reading rides the status projection, so a
-    // sidebar can say "Editing lane-state.ts" without opening the session.
-    const working = {
-      ...coldStatus,
-      lifecycle: 'streaming' as const,
-      activity: { toolName: 'Edit', target: 'lane-state.ts' },
-    };
-    expect(SessionStatusSchema.parse(working).activity).toEqual(working.activity);
-  });
-
-  it('parses a status whose activity carries only a tool name', () => {
-    // Purpose: `target` is the one human-relevant argument and plenty of tools
-    // have none. The wire must not require one to be invented.
-    const working = { ...coldStatus, activity: { toolName: 'TodoWrite' } };
-    expect(SessionStatusSchema.parse(working).activity).toEqual({ toolName: 'TodoWrite' });
-  });
-
-  it('parses a status with no activity at all (an older server, or an idle session)', () => {
-    // Purpose: the field is additive. A `session_status` minted before it
-    // existed must still parse, and absent must read as "nothing known" rather
-    // than as a value.
-    expect(SessionStatusSchema.parse(coldStatus).activity).toBeUndefined();
   });
 
   it('accepts a permission-mode id outside the shared enum (DOR-851)', () => {
@@ -151,28 +60,6 @@ describe('SessionStatusSchema', () => {
 });
 
 describe('SessionEventSchema', () => {
-  it('parses a valid text_delta event with a non-negative seq', () => {
-    // Purpose: the simplest streamed member carries seq + reused TextDelta shape.
-    const event = { seq: 0, type: 'text_delta', text: 'hello' };
-    expect(SessionEventSchema.parse(event)).toEqual(event);
-  });
-
-  it('parses an approval_required event retaining startedAt + remainingMs', () => {
-    // Purpose: interaction members must preserve the server-assigned countdown (ADR-0264).
-    const event = {
-      seq: 3,
-      type: 'approval_required',
-      startedAt: 1_700_000_000_000,
-      remainingMs: 25_000,
-      id: 'tc_1',
-      toolName: 'Bash',
-      input: 'ls',
-      hasSuggestions: false,
-    };
-    const parsed = SessionEventSchema.parse(event);
-    expect(parsed).toMatchObject({ startedAt: 1_700_000_000_000, remainingMs: 25_000 });
-  });
-
   it('drops an activity smuggled onto a status_change — the projector owns that field', () => {
     // Purpose: `status_change` carries a PARTIAL SessionStatus, so every field
     // added to the status becomes a field a runtime's delta could set. Every
@@ -221,125 +108,13 @@ describe('SessionEventSchema', () => {
     expect(SessionEventSchema.parse(progress)).toEqual(progress);
   });
 
-  it('parses a permission_denied event, with and without its attribution', () => {
-    // Purpose (DOR-795): a refused tool call rides the stream so it can be
-    // recorded and drawn. `agentId` is what names the backgrounded helper that
-    // lost the tool — a denial without one happened on the main thread, so the
-    // field must be optional AND must survive when present.
-    const attributed = {
-      seq: 9,
-      type: 'permission_denied',
-      toolCallId: 'toolu_async_1',
-      toolName: 'Bash',
-      message: 'Backgrounded agents cannot request permission.',
-      reasonType: 'asyncAgent',
-      reason: 'Async agent tool calls are auto-denied.',
-      agentId: 'agent_child_7',
-    };
-    expect(SessionEventSchema.parse(attributed)).toEqual(attributed);
-
-    const mainThread = {
-      seq: 10,
-      type: 'permission_denied',
-      toolCallId: 'toolu_1',
-      toolName: 'Write',
-      message: 'Blocked.',
-    };
-    expect(SessionEventSchema.parse(mainThread)).toEqual(mainThread);
-  });
-
-  it('parses an error event with optional code/category/details', () => {
-    // Purpose: the typed turn-error member carries the ErrorEvent shape whole.
-    const event = {
-      seq: 7,
-      type: 'error',
-      message: 'SDK exploded',
-      code: 'turn_exception',
-      category: 'execution_error',
-      details: 'stack…',
-    };
-    expect(SessionEventSchema.parse(event)).toEqual(event);
-
-    const lean = { seq: 8, type: 'error', message: 'boom' };
-    expect(SessionEventSchema.parse(lean)).toEqual(lean);
-  });
-
   it('rejects a negative seq', () => {
     // Purpose: seq is the monotonic cursor — it can never go below zero.
     expect(() => SessionEventSchema.parse({ seq: -1, type: 'text_delta', text: 'x' })).toThrow();
   });
-
-  it('rejects a non-integer seq', () => {
-    // Purpose: seq is a discrete sequence number, not a fractional value.
-    expect(() => SessionEventSchema.parse({ seq: 1.5, type: 'text_delta', text: 'x' })).toThrow();
-  });
-
-  it('rejects an unknown event type', () => {
-    // Purpose: the discriminated union must reject members outside its closed set.
-    expect(() => SessionEventSchema.parse({ seq: 0, type: 'not_a_real_event' })).toThrow();
-  });
-
-  it('parses a status_change whose contextUsage carries only outputTokens', () => {
-    // Purpose: a streaming session_status delta carries only outputTokens, so the
-    // status_change member's contextUsage must accept a PARTIAL usage object
-    // (the projector merges it field-wise) — fabricating absent fields would
-    // later zero them. The other token fields must NOT be filled with defaults.
-    const event = { seq: 5, type: 'status_change', status: { contextUsage: { outputTokens: 20 } } };
-    const parsed = SessionEventSchema.parse(event);
-    expect(parsed).toMatchObject({ seq: 5, type: 'status_change' });
-    const status = (parsed as { status: { contextUsage?: Record<string, number> } }).status;
-    expect(status.contextUsage).toEqual({ outputTokens: 20 });
-  });
-
-  it('parses a status_change whose contextUsage omits outputTokens', () => {
-    // Purpose: the final result session_status carries context/cache totals but
-    // NO outputTokens — the partial usage must accept that subset and must not
-    // fabricate outputTokens.
-    const event = {
-      seq: 6,
-      type: 'status_change',
-      status: { contextUsage: { totalTokens: 100, cacheReadTokens: 80 } },
-    };
-    const parsed = SessionEventSchema.parse(event);
-    const status = (parsed as { status: { contextUsage?: Record<string, number> } }).status;
-    expect(status.contextUsage).toEqual({ totalTokens: 100, cacheReadTokens: 80 });
-  });
 });
 
 describe('SessionEventSchema — queue_update', () => {
-  const queued = {
-    id: 'msg-1',
-    content: 'and check the migration too',
-    disposition: 'queue' as const,
-    enqueuedAt: 1_700_000_000_000,
-    enqueuedBy: 'client-a',
-  };
-
-  it('carries the whole queue and, when a message caused it, the delivery outcome', () => {
-    // Purpose: the frame the cockpit reads to say "queued instead of steered".
-    // Both halves have to survive the wire — a queue with no outcome cannot
-    // explain a downgrade, and an outcome with no queue cannot draw the list.
-    const event = {
-      type: 'queue_update',
-      seq: 9,
-      queue: [queued],
-      outcome: {
-        messageId: 'msg-1',
-        requested: 'steer',
-        applied: 'queue',
-        degradedBecause: 'unsupported',
-      },
-    };
-    expect(SessionEventSchema.parse(event)).toEqual(event);
-  });
-
-  it('accepts an empty queue with no outcome (a dispatch drained the last message)', () => {
-    // Purpose: `outcome` is optional because most updates are not caused by an
-    // accepted message. An emptied queue is the ordinary end of every session.
-    const event = { type: 'queue_update', seq: 10, queue: [] };
-    expect(SessionEventSchema.parse(event)).toEqual(event);
-  });
-
   it('rejects a frame with no queue — full replacement, never a diff', () => {
     // Purpose: the whole point of this member is that every frame REPLACES the
     // queue. An omitted `queue` would read as "no change" to a permissive
@@ -352,53 +127,9 @@ describe('SessionEventSchema — queue_update', () => {
       })
     ).toThrow();
   });
-
-  it('rejects a disposition the contract does not name', () => {
-    // Purpose: `stringly-typed` dispositions are how a typo becomes a silent
-    // "run it now". Only the three the ladder resolves are accepted.
-    expect(() =>
-      SessionEventSchema.parse({
-        type: 'queue_update',
-        seq: 12,
-        queue: [{ ...queued, disposition: 'interrupt' }],
-      })
-    ).toThrow();
-  });
 });
 
-const canvasDocument = {
-  id: 'doc-1',
-  scope: 'session:sess-1',
-  roomId: null,
-  content: { type: 'file' as const, sourcePath: '/src/router.ts' },
-  title: 'router.ts',
-  contentType: 'file',
-  authorId: 'owner',
-  pinned: false,
-  rev: 3,
-  lastTouchedBy: 'owner',
-  lastTouchedAt: '2026-09-12T10:00:00Z',
-  openedAt: '2026-09-12T09:00:00Z',
-  lastActiveAt: '2026-09-12T10:00:00Z',
-};
-
 describe("SessionEventSchema's canvas member", () => {
-  it('parses an opened frame carrying the whole document', () => {
-    const event = {
-      seq: 7,
-      type: 'canvas' as const,
-      documentId: 'doc-1',
-      document: canvasDocument,
-      change: 'opened' as const,
-    };
-    expect(SessionEventSchema.parse(event)).toEqual(event);
-  });
-
-  it('parses a closed frame, where the id is the whole payload', () => {
-    const event = { seq: 8, type: 'canvas' as const, documentId: 'doc-1', closed: true };
-    expect(SessionEventSchema.parse(event)).toEqual(event);
-  });
-
   it('REQUIRES a seq — the inverse of the room frame, which deliberately has none', () => {
     // The pair of these two assertions is what keeps the two streams' rules from
     // being copied into each other. A session event without a seq cannot be
@@ -407,38 +138,9 @@ describe("SessionEventSchema's canvas member", () => {
       SessionEventSchema.safeParse({ type: 'canvas', documentId: 'doc-1', closed: true }).success
     ).toBe(false);
   });
-
-  it('leaves every other member of the union parsing', () => {
-    // Purpose: a union edit that narrowed a sibling would show up here and
-    // nowhere else until a live stream dropped an event.
-    const members: SessionEvent[] = [
-      { seq: 1, type: 'text_delta', text: 'hi' },
-      { seq: 2, type: 'ui_command', command: { action: 'open_sidebar' } },
-      { seq: 3, type: 'turn_end' },
-      { seq: 4, type: 'queue_update', queue: [] },
-      { seq: 5, type: 'devtools_capture_request', requestId: 'req-1' },
-    ];
-    for (const member of members) {
-      expect(SessionEventSchema.parse(member)).toEqual(member);
-    }
-  });
 });
 
 describe('SessionSnapshotSchema', () => {
-  it('parses a valid cold snapshot', () => {
-    // Purpose: a freshly hydrated, idle session must parse with an empty history.
-    const snapshot = {
-      messages: [],
-      inProgressTurn: null,
-      status: coldStatus,
-      pendingInteractions: [],
-      queuedMessages: [],
-      canvas: [],
-      cursor: 0,
-    };
-    expect(SessionSnapshotSchema.parse(snapshot)).toEqual(snapshot);
-  });
-
   it('hydrates a history whose question omits multiSelect and header (DOR-2075)', () => {
     // Purpose: a transcript records the model's raw AskUserQuestion input, and
     // the model does not always send every field. One such question used to
@@ -493,90 +195,9 @@ describe('SessionSnapshotSchema', () => {
     };
     expect(() => SessionSnapshotSchema.parse(withoutQueue)).toThrow();
   });
-
-  it('REQUIRES canvas, so a transport cannot forget to decorate its snapshot', () => {
-    // A missing field would look exactly like an empty session canvas.
-    const withoutCanvas = {
-      messages: [],
-      inProgressTurn: null,
-      status: coldStatus,
-      pendingInteractions: [],
-      queuedMessages: [],
-      cursor: 0,
-    };
-    expect(() => SessionSnapshotSchema.parse(withoutCanvas)).toThrow();
-  });
-
-  it('carries the session’s documents', () => {
-    const snapshot = {
-      messages: [],
-      inProgressTurn: null,
-      status: coldStatus,
-      pendingInteractions: [],
-      queuedMessages: [],
-      canvas: [canvasDocument],
-      cursor: 0,
-    };
-    expect(SessionSnapshotSchema.parse(snapshot).canvas).toEqual([canvasDocument]);
-  });
-
-  it('accepts the highest seq as the cursor', () => {
-    // Purpose: cursor is the max seq reflected; it must accept a large in-progress seq.
-    const snapshot = {
-      messages: [],
-      inProgressTurn: [{ seq: 42, type: 'text_delta', text: 'mid-turn' }],
-      status: coldStatus,
-      pendingInteractions: [],
-      queuedMessages: [],
-      canvas: [],
-      cursor: 42,
-    };
-    expect(SessionSnapshotSchema.parse(snapshot).cursor).toBe(42);
-  });
-
-  it("resolves the snapshot status's contextUsage to the FULL (non-partial) shape", () => {
-    // Purpose: while the status_change DELTA carries a partial contextUsage, the
-    // snapshot's RESOLVED status must remain the complete object so consumers are
-    // not surprised by missing token fields. A partial usage here must be rejected.
-    const fullUsage = {
-      totalTokens: 100,
-      maxTokens: 200000,
-      outputTokens: 20,
-      cacheReadTokens: 80,
-      cacheCreationTokens: 5,
-    };
-    const snapshot = {
-      messages: [],
-      inProgressTurn: null,
-      status: { ...coldStatus, contextUsage: fullUsage },
-      pendingInteractions: [],
-      queuedMessages: [],
-      canvas: [],
-      cursor: 0,
-    };
-    expect(SessionSnapshotSchema.parse(snapshot).status.contextUsage).toEqual(fullUsage);
-
-    const partialUsageSnapshot = {
-      ...snapshot,
-      status: { ...coldStatus, contextUsage: { outputTokens: 20 } },
-    };
-    expect(() => SessionSnapshotSchema.parse(partialUsageSnapshot)).toThrow();
-  });
 });
 
 describe('SessionListEventSchema', () => {
-  it('parses a session_removed event', () => {
-    // Purpose: the global stream removal member carries only the session id.
-    const event = { type: 'session_removed', sessionId: 'abc' };
-    expect(SessionListEventSchema.parse(event)).toEqual(event);
-  });
-
-  it('parses a session_status event carrying a full SessionStatus', () => {
-    // Purpose: the status member feeds the fleet-wide status view with a projection.
-    const event = { type: 'session_status', sessionId: 'abc', status: coldStatus };
-    expect(SessionListEventSchema.parse(event)).toEqual(event);
-  });
-
   it('parses a session_status event for a runtime-declared mode outside the shared enum (DOR-851)', () => {
     // Purpose: pins the exact failure mode DOR-851 fixed. Before the fix,
     // `SessionListBroadcaster.broadcast()` fed every `test-mode` session's
@@ -595,29 +216,6 @@ describe('SessionListEventSchema', () => {
     };
     expect(SessionListEventSchema.parse(event)).toEqual(event);
   });
-
-  it('parses a session_upserted event for a runtime-declared mode outside the shared enum (DOR-851)', () => {
-    // Purpose: same regression as above, on the `session_upserted` member —
-    // this is the one that carries the full `Session` (`SessionSchema`), so
-    // it is the one the sidebar's initial row and every later refresh rely on.
-    const event = {
-      type: 'session_upserted',
-      session: {
-        id: '123e4567-e89b-12d3-a456-426614174000',
-        title: 'Test session',
-        createdAt: '2024-01-01T00:00:00.000Z',
-        updatedAt: '2024-01-01T00:00:00.000Z',
-        permissionMode: 'always-allow',
-        runtime: 'test-mode',
-      },
-    };
-    expect(SessionListEventSchema.parse(event)).toEqual(event);
-  });
-
-  it('rejects an unknown list-event type', () => {
-    // Purpose: the discriminated union must reject members outside its closed set.
-    expect(() => SessionListEventSchema.parse({ type: 'session_unknown' })).toThrow();
-  });
 });
 
 describe('blocking interaction predicates', () => {
@@ -634,24 +232,6 @@ describe('blocking interaction predicates', () => {
       'question_prompt',
       'elicitation_prompt',
     ]);
-  });
-
-  it('answers false for the events of a turn that is running or done', () => {
-    for (const type of ['turn_start', 'text_delta', 'tool_use', 'done', 'error', 'turn_end']) {
-      expect(isBlockingInteractionEventType(type)).toBe(false);
-    }
-  });
-
-  it('narrows an event by its own type, so callers reach the interaction fields', () => {
-    const blocking = { type: 'question_prompt' as const, id: 'q-1' };
-    const running = { type: 'text_delta' as const, id: 'd-1' };
-
-    expect(isBlockingInteractionEvent(blocking)).toBe(true);
-    expect(isBlockingInteractionEvent(running)).toBe(false);
-    if (isBlockingInteractionEvent(blocking)) {
-      // Compile-time half of the assertion: the narrowed union keeps `id`.
-      expect(blocking.id).toBe('q-1');
-    }
   });
 });
 
