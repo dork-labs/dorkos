@@ -2,10 +2,15 @@
 import type { AgentSession } from '../agent-types.js';
 import { currentDispatch } from '../../../../lib/dispatch-context.js';
 import { isCreditsClaudeRoot } from '../credits-root.js';
+import { recordFailedSeatTurn } from '../../../rooms/reseat/failed-seat-record.js';
 
-/** Fold only a structured server-error wrapper and positively observed previous-turn billing. */
+/**
+ * Fold only a structured server-error wrapper and positively observed previous-turn billing.
+ * The same facts are kept durably, so one recovery can still run after a restart (DOR-4626).
+ */
 export function serverFailureWitness(
   session: AgentSession,
+  sessionId: string,
   input: {
     subtype?: string;
     terminalReason?: string;
@@ -48,6 +53,7 @@ export function serverFailureWitness(
       billing: billing.perToken ? 'per-token' : 'subscription',
       inference: isCreditsClaudeRoot(billing.root) ? 'credits' : 'own-account',
     };
+    recordFailedSeatTurn(sessionId, session.cwd, session.priorServerFailure);
   }
   return {
     reason: 'claude-server-error-terminal',
