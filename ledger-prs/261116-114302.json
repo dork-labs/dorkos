@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261116-114302",
+ "file": "ci/ledger/261116-114302-heavy-slot-out-of-root.md",
+ "pr": 3850,
+ "merged_at": "2026-11-16T15:40:57Z",
+ "sha": "c92dac2914bf929320044b23ffea2f71e2e9017f",
+ "resolved_at": "2026-11-24T15:47:21.180Z"
+}

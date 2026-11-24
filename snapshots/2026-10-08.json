@@ -8614,5 +8614,134 @@
   "wf.test.test": 10,
   "wf.typecheck.typecheck": 20,
   "wf.update-homebrew.update-formula": 92
- }
+ },
+ "merges": [
+  {
+   "pr": 2692,
+   "sha": "b05cc6065d82",
+   "at": "2026-10-08T22:42:44Z"
+  },
+  {
+   "pr": 2691,
+   "sha": "56bc862c2749",
+   "at": "2026-10-08T21:03:40Z"
+  },
+  {
+   "pr": 2690,
+   "sha": "5d1675e0522b",
+   "at": "2026-10-08T20:22:42Z"
+  },
+  {
+   "pr": 2689,
+   "sha": "e402dbf3005c",
+   "at": "2026-10-08T17:33:01Z"
+  },
+  {
+   "pr": 2687,
+   "sha": "f3a2dabac6e8",
+   "at": "2026-10-08T10:22:58Z"
+  },
+  {
+   "pr": 2685,
+   "sha": "760ff109c5a8",
+   "at": "2026-10-08T11:58:45Z"
+  },
+  {
+   "pr": 2683,
+   "sha": "d60ff0c6fbb0",
+   "at": "2026-10-08T05:10:16Z"
+  },
+  {
+   "pr": 2682,
+   "sha": "08d7ec9c43d9",
+   "at": "2026-10-08T06:13:38Z"
+  }
+ ],
+ "release_contents": [
+  {
+   "tag": "v0.101.0",
+   "published_at": "2026-10-08T17:57:03Z",
+   "base": "v0.98.0",
+   "shas": [
+    "08d7ec9c43d9",
+    "0e0cc4593dc4",
+    "0e8401ca2723",
+    "159989bd4bbe",
+    "1a7d4c1af3b1",
+    "1cb270d3e574",
+    "1dbebb60510c",
+    "2325e0ca0c55",
+    "2627d8e2a06f",
+    "2704cddab02f",
+    "28b48c439841",
+    "3396a0ff29c0",
+    "35eaecc8ee72",
+    "38809285b668",
+    "3bb3b7ff7ccd",
+    "49bb51842ece",
+    "4b56ded5fd96",
+    "4d9d3fbcc9a1",
+    "54279137ce85",
+    "5ce0668fb49f",
+    "5deceec10fab",
+    "5fd3c7f4b7cd",
+    "61bcb606d96e",
+    "64ebfc5f4435",
+    "68e04edc9dd3",
+    "6c4703974aaa",
+    "6d09d901b195",
+    "716797f342e0",
+    "74162d2a77f3",
+    "760ff109c5a8",
+    "7a5dcdf575cb",
+    "7cfcf0e47c73",
+    "7d4d885f23d6",
+    "8123c46414d9",
+    "84d786ecfdee",
+    "87a7e5fb3a3f",
+    "8b5b7b51bee2",
+    "8d26b201a667",
+    "8e0881afa0f1",
+    "8ebc3045fef9",
+    "92b8fbbbb175",
+    "993235b4d675",
+    "9c6dbfde6689",
+    "a10d3caedc29",
+    "a2d40d7a3b65",
+    "a2dfcdf316f0",
+    "a57ed1e6a53c",
+    "a61f1560cdc9",
+    "a86fe90a008e",
+    "a90366a663c4",
+    "aaae7418bf70",
+    "ae825441fcdc",
+    "b4d6a43f0d39",
+    "b5472fcaf06c",
+    "b572cb18fa70",
+    "b92e775b8e17",
+    "baeb876425d6",
+    "bbd47441d87f",
+    "c01610c9c93d",
+    "c07dd59c9c20",
+    "c6a0bd0a6ff1",
+    "c78b034405a1",
+    "cabc44bbf0a0",
+    "d60ff0c6fbb0",
+    "da95ac53abbb",
+    "dbb04a01f839",
+    "e30d5e766216",
+    "e8fb4c8042a5",
+    "ea64f077e76d",
+    "eb944325b1bf",
+    "ecb15c4a7119",
+    "f2ebbcf3955b",
+    "f3a2dabac6e8",
+    "f48dbb9e0a30",
+    "f9e6816a2b8e",
+    "fc4bc6752375",
+    "fd22fcb6df19",
+    "fdfe991106c6"
+   ]
+  }
+ ]
 }

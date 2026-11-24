@@ -1,0 +1,33 @@
+{
+ "schema": 1,
+ "id": "261115-180313",
+ "verdict": "partial",
+ "reason": "gate.wf.security-gate.security-gate.failure_rate moved from 0.4541 to 0.078, 93% of the way to the target of 0.05, but did not reach it.",
+ "computed_at": "2026-11-24T15:47:21.180Z",
+ "hypothesis_hash": "94820737084a6f78",
+ "metric": "gate.wf.security-gate.security-gate.failure_rate",
+ "anchor": "2026-11-15T19:21:48Z",
+ "prs": [
+  3802
+ ],
+ "baseline": {
+  "value": 0.4541,
+  "source": "before-window"
+ },
+ "target": 0.05,
+ "min_n": 10,
+ "before": {
+  "from": "2026-11-08T19:21:48Z",
+  "to": "2026-11-15T19:21:48Z",
+  "n": 1132,
+  "value": 0.4541
+ },
+ "after": {
+  "from": "2026-11-15T19:21:48Z",
+  "to": "2026-11-22T19:21:48Z",
+  "n": 1999,
+  "value": 0.078
+ },
+ "confounders": [],
+ "slo": null
+}

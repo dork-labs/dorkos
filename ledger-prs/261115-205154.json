@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261115-205154",
+ "file": "ci/ledger/261115-205154-docs-only-pr-skips-test-shards.md",
+ "pr": 3848,
+ "merged_at": "2026-11-16T11:03:24Z",
+ "sha": "3d720004cf21548535123e5c1c4c304abb826718",
+ "resolved_at": "2026-11-24T15:47:21.180Z"
+}

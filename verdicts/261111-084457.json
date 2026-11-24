@@ -3,7 +3,7 @@
  "id": "261111-084457",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-12-09T09:53:04Z; the verdict is computed on 2026-12-10.",
- "computed_at": "2026-11-23T15:49:44.163Z",
+ "computed_at": "2026-11-24T15:47:21.180Z",
  "hypothesis_hash": "e8116b6b79cef2a6",
  "metric": "gate.wf.publish-docker.build-and-push.failure_rate",
  "anchor": "2026-11-11T09:53:04Z",
@@ -25,11 +25,12 @@
  "after": {
   "from": "2026-11-11T09:53:04Z",
   "to": "2026-12-09T09:53:04Z",
-  "n": 15,
-  "value": 0.0667
+  "n": 16,
+  "value": 0.0625
  },
  "confounders": [
-  "261111-085826"
+  "261111-085826",
+  "261117-175500"
  ],
  "slo": null
 }

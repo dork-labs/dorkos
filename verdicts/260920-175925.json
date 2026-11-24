@@ -1,10 +1,10 @@
 {
  "schema": 1,
  "id": "260920-175925",
- "verdict": "inconclusive",
- "reason": "Confounded: 260923-095512, 260923-165836 changed the same gate inside the after-window (2026-09-20T21:24:47Z to 2026-10-04T21:24:47Z), so the movement cannot be attributed to this change alone.",
- "computed_at": "2026-11-21T13:20:33.416Z",
- "hypothesis_hash": "cd1bc3fc261b2146",
+ "verdict": "verified",
+ "reason": "review-completes reached 0.9701 against a target of 0.96 (baseline 0.9059).",
+ "computed_at": "2026-11-24T15:47:21.180Z",
+ "hypothesis_hash": "feb3a089393c3b95",
  "metric": "review-completes",
  "anchor": "2026-09-20T21:24:47Z",
  "prs": [
@@ -28,10 +28,7 @@
   "n": 602,
   "value": 0.9701
  },
- "confounders": [
-  "260923-095512",
-  "260923-165836"
- ],
+ "confounders": [],
  "slo": {
   "id": "review-completes",
   "stat": "share",

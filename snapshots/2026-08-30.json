@@ -975,5 +975,13 @@
   "bytes": 10462968076,
   "count": 21
  },
- "timeouts": {}
+ "timeouts": {},
+ "merges": [
+  {
+   "pr": 1391,
+   "sha": "a88c079bb420",
+   "at": "2026-08-30T21:36:16Z"
+  }
+ ],
+ "release_contents": []
 }

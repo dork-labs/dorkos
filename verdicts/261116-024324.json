@@ -1,0 +1,39 @@
+{
+ "schema": 1,
+ "id": "261116-024324",
+ "verdict": "pending",
+ "reason": "The after-window runs to 2026-11-30T07:43:32Z; the verdict is computed on 2026-12-01.",
+ "computed_at": "2026-11-24T15:47:21.180Z",
+ "hypothesis_hash": "c91a0097ad0f8ea3",
+ "metric": "local-commit",
+ "anchor": "2026-11-16T07:43:32Z",
+ "prs": [
+  3841
+ ],
+ "baseline": {
+  "value": 134,
+  "source": "before-window"
+ },
+ "target": 95,
+ "min_n": 20,
+ "before": {
+  "from": "2026-11-09T07:43:32Z",
+  "to": "2026-11-16T07:43:32Z",
+  "n": 2210,
+  "value": 134
+ },
+ "after": {
+  "from": "2026-11-16T07:43:32Z",
+  "to": "2026-11-30T07:43:32Z",
+  "n": 0,
+  "value": null
+ },
+ "confounders": [],
+ "slo": {
+  "id": "local-commit",
+  "stat": "p90",
+  "before": 134,
+  "after": null,
+  "movement": "unknown"
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261116-024325",
+ "file": "ci/ledger/261116-024325-verify-skip-binary.md",
+ "pr": 3839,
+ "merged_at": "2026-11-16T15:44:33Z",
+ "sha": "885b00fa627fad4bcefa918a93105d427f1a0f7c",
+ "resolved_at": "2026-11-24T15:47:21.180Z"
+}

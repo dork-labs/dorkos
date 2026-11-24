@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261115-180313",
+ "file": "ci/ledger/261115-180313-security-gate-pending.md",
+ "pr": 3802,
+ "merged_at": "2026-11-15T19:21:48Z",
+ "sha": "a23056f0a528393a9f3eea312c516ed8660f77b6",
+ "resolved_at": "2026-11-24T15:47:21.180Z"
+}

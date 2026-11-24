@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "id": "261116-091832",
- "verdict": "pending",
- "reason": "The after-window runs to 2026-11-23T11:03:24Z; the verdict is computed on 2026-11-24.",
- "computed_at": "2026-11-23T15:49:44.163Z",
+ "verdict": "inconclusive",
+ "reason": "Confounded: 261115-201939, 261115-205154, 261116-114104, 261116-114302, 261116-214202, 261117-142230, 261117-173045 changed the same gate inside the after-window (2026-11-16T11:03:24Z to 2026-11-23T11:03:24Z), so the movement cannot be attributed to this change alone.",
+ "computed_at": "2026-11-24T15:47:21.180Z",
  "hypothesis_hash": "a3f91f8a842143ab",
  "metric": "gate.wf.test.test-shard.duration_p50@merge_group",
  "anchor": "2026-11-16T11:03:24Z",
@@ -25,12 +25,17 @@
  "after": {
   "from": "2026-11-16T11:03:24Z",
   "to": "2026-11-23T11:03:24Z",
-  "n": 2496,
+  "n": 2556,
   "value": 21.4
  },
  "confounders": [
   "261115-201939",
-  "261116-114104"
+  "261115-205154",
+  "261116-114104",
+  "261116-114302",
+  "261116-214202",
+  "261117-142230",
+  "261117-173045"
  ],
  "slo": {
   "id": "queue-build",

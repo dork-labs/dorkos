@@ -3869,5 +3869,23 @@
   "wf.ui-smoke.ui-smoke-shard": 45,
   "wf.ui-smoke.ui-smoke": 5,
   "wf.update-homebrew.update-formula": 92
- }
+ },
+ "merges": [
+  {
+   "pr": 3521,
+   "sha": "438c5ff9b5eb",
+   "at": "2026-11-06T18:41:09Z"
+  },
+  {
+   "pr": 3497,
+   "sha": "2ee81b44420e",
+   "at": "2026-11-06T18:11:51Z"
+  },
+  {
+   "pr": 3480,
+   "sha": "0860f4e86cf5",
+   "at": "2026-11-06T20:17:03Z"
+  }
+ ],
+ "release_contents": []
 }

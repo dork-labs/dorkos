@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261117-174608",
+ "file": "ci/ledger/261117-174608-merge-tail-resolve-unknown.md",
+ "pr": 3937,
+ "merged_at": "2026-11-18T14:18:12Z",
+ "sha": "a255bee5f29cd7788f3ece3849f35f0a0d689644",
+ "resolved_at": "2026-11-24T15:47:21.180Z"
+}

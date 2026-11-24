@@ -4636,5 +4636,28 @@
   "wf.test.test": 10,
   "wf.typecheck.typecheck": 20,
   "wf.update-homebrew.update-formula": 92
- }
+ },
+ "merges": [
+  {
+   "pr": 3238,
+   "sha": "bbf73bac464b",
+   "at": "2026-10-28T23:51:18Z"
+  },
+  {
+   "pr": 3237,
+   "sha": "f5ab27d8de0c",
+   "at": "2026-10-28T23:48:32Z"
+  },
+  {
+   "pr": 3236,
+   "sha": "0cf71a2046f5",
+   "at": "2026-10-28T22:45:05Z"
+  },
+  {
+   "pr": 3235,
+   "sha": "678d57b50624",
+   "at": "2026-10-28T22:40:33Z"
+  }
+ ],
+ "release_contents": []
 }

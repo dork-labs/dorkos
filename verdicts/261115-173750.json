@@ -1,0 +1,33 @@
+{
+ "schema": 1,
+ "id": "261115-173750",
+ "verdict": "failed",
+ "reason": "tracked.job-minutes-per-merged-pr is 1062.2 against a target of 25, less than halfway from the baseline of 1105.7.",
+ "computed_at": "2026-11-24T15:47:21.180Z",
+ "hypothesis_hash": "4696ded5e11a6895",
+ "metric": "tracked.job-minutes-per-merged-pr",
+ "anchor": "2026-11-15T19:07:39Z",
+ "prs": [
+  3796
+ ],
+ "baseline": {
+  "value": 1105.7,
+  "source": "before-window"
+ },
+ "target": 25,
+ "min_n": 10,
+ "before": {
+  "from": "2026-11-08T19:07:39Z",
+  "to": "2026-11-15T19:07:39Z",
+  "n": 167,
+  "value": 1105.7
+ },
+ "after": {
+  "from": "2026-11-15T19:07:39Z",
+  "to": "2026-11-22T19:07:39Z",
+  "n": 280,
+  "value": 1062.2
+ },
+ "confounders": [],
+ "slo": null
+}

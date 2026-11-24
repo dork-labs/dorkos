@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261118-065705",
+ "file": "ci/ledger/261118-065705-assert-browser-sigpipe.md",
+ "pr": 3928,
+ "merged_at": "2026-11-18T08:31:50Z",
+ "sha": "7b0297e70f385a973edfcac5cdd41fad53712b32",
+ "resolved_at": "2026-11-24T15:47:21.180Z"
+}

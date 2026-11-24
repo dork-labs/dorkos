@@ -2606,5 +2606,7 @@
   "wf.test.test": 10,
   "wf.typecheck.typecheck": 20,
   "wf.update-homebrew.update-formula": 92
- }
+ },
+ "merges": [],
+ "release_contents": []
 }

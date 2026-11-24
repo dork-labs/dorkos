@@ -3,7 +3,7 @@
  "id": "261109-060757",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-12-07T07:16:48Z; the verdict is computed on 2026-12-08.",
- "computed_at": "2026-11-23T15:49:44.163Z",
+ "computed_at": "2026-11-24T15:47:21.180Z",
  "hypothesis_hash": "544e812e9f14f9e8",
  "metric": "gate.wf.desktop-release.build-macos.failure_rate",
  "anchor": "2026-11-09T07:16:48Z",
@@ -25,10 +25,11 @@
  "after": {
   "from": "2026-11-09T07:16:48Z",
   "to": "2026-12-07T07:16:48Z",
-  "n": 20,
-  "value": 0.05
+  "n": 21,
+  "value": 0.0476
  },
  "confounders": [
+  "261113-194550",
   "261118-130500"
  ],
  "slo": null
