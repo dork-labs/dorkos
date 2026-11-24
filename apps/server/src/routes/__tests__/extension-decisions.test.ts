@@ -216,7 +216,11 @@ describe('POST /api/extension-decisions/:id/action', () => {
       .set('x-dorkos-agent', 'agent-token-abc')
       .send({ action: 'approve' });
     expect(res.status).toBe(403);
-    expect(res.body.error).toBe('Only a person can answer this.');
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body).toMatchObject({
+      code: 'person_only',
+      detail: 'DorkOS changed nothing. Only a person can answer this, in DorkOS.',
+    });
     expect(handler).not.toHaveBeenCalled();
     expect(fx.inbox.listOpen()).toHaveLength(1);
   });
@@ -264,7 +268,8 @@ describe('POST /api/extension-decisions/:id/action', () => {
       .post(`/api/extension-decisions/${id}/action`)
       .send({ action: 'approve' });
     expect(second.status).toBe(409);
-    expect(second.body.code).toBe('already_resolved');
+    expect(second.headers['content-type']).toBe('application/problem+json');
+    expect(second.body).toMatchObject({ code: 'already_resolved' });
     expect(fx.history()).toHaveLength(1);
   });
 
@@ -274,7 +279,10 @@ describe('POST /api/extension-decisions/:id/action', () => {
       .post(`/api/extension-decisions/${id}/action`)
       .send({ action: 'approve' });
     expect(res.status).toBe(409);
-    expect(res.body).toMatchObject({ code: 'not_running', error: "Flow isn't running right now." });
+    expect(res.body).toMatchObject({
+      code: 'not_running',
+      detail: 'That extension isn’t running right now.',
+    });
   });
 
   it('refuses a note over 2000 characters and an unknown id', async () => {
@@ -321,7 +329,7 @@ describe('POST /api/extension-decisions/:id/offer', () => {
       .post(`/api/extension-decisions/${id}/offer`)
       .send({ accept: true });
     expect(again.status).toBe(409);
-    expect(again.body.code).toBe('offer_gone');
+    expect(again.body).toMatchObject({ code: 'already_resolved' });
   });
 
   it('refuses an agent', async () => {
@@ -441,9 +449,10 @@ describe('ctx.requirePerson through /api/ext/:id/*', () => {
       .set('x-dorkos-agent', 'a')
       .send({});
     expect(res.status).toBe(403);
+    expect(res.headers['content-type']).toContain('application/problem+json');
     expect(res.body).toMatchObject({
-      error: "Only a person can change Flow's settings.",
-      code: 'extension_person_required',
+      code: 'person_only',
+      detail: "DorkOS changed nothing. Only a person can change Flow's settings.",
     });
   });
 
@@ -589,8 +598,8 @@ describe('remote extension confirmation', () => {
     const refused = await yes(id);
     expect(refused.status).toBe(403);
     expect(refused.body).toMatchObject({
-      code: 'NOT_FROM_WIFI',
-      error: 'Answer at your computer or over Remote Access.',
+      code: 'not_from_wifi',
+      detail: 'Answer at your computer or over Remote Access.',
     });
     expect(refused.body.heldActionId).toBeUndefined();
     expect(handler).not.toHaveBeenCalled();

@@ -9,8 +9,8 @@
  * @module features/chat-list/ui/ChatListRow
  */
 import type { Ref } from 'react';
-import { ChevronRight, GitFork, Pencil } from 'lucide-react';
-import { cn, formatCompactAge } from '@/layers/shared/lib';
+import { ChevronRight, GitFork, Link, Pencil } from 'lucide-react';
+import { cn, dorkShareUrl, formatCompactAge } from '@/layers/shared/lib';
 import { SIDEBAR_SECTION_ACTION_ATTRIBUTE } from '@/layers/shared/model';
 import {
   SidebarMenu,
@@ -61,6 +61,8 @@ export interface ChatListRowProps {
   onFork: (sessionId: string) => void;
   /** Give a chat a new title. */
   onRename: (sessionId: string, title: string) => void;
+  /** Put a chat's full `/r/` link on the clipboard (DOR-5046). */
+  onCopyLink: (link: string) => void;
   /** Hands the list each row button, so a modified `↵` knows which chat it is on. */
   registerRow: (sessionId: string) => Ref<HTMLButtonElement>;
   /** The current search text: a fold holding a match opens for it. */
@@ -68,7 +70,7 @@ export interface ChatListRowProps {
 }
 
 /**
- * One chat, with its rename and fork menu and its folded spin-offs.
+ * One chat, with its rename, fork and copy-link menu and its folded spin-offs.
  *
  * @param props - The row model and what its actions do.
  */
@@ -79,6 +81,7 @@ export function ChatListRow({
   onOpen,
   onFork,
   onRename,
+  onCopyLink,
   registerRow,
   search,
 }: ChatListRowProps) {
@@ -109,6 +112,16 @@ export function ChatListRow({
     },
     { kind: 'action', id: 'fork', label: 'Fork', icon: GitFork, run: () => onFork(session.id) },
   ];
+  const link = dorkShareUrl('chat', session.id);
+  if (link !== null) {
+    menuNodes.push({
+      kind: 'action',
+      id: 'copy-link',
+      label: 'Copy link',
+      icon: Link,
+      run: () => onCopyLink(link),
+    });
+  }
 
   return (
     <SidebarRow

@@ -1,7 +1,7 @@
 ---
 number: 51
 title: Inject Agent Persona via Context Builder System Prompt
-status: proposed
+status: archived
 created: 2026-02-26
 spec: agents-first-class-entity
 superseded-by: null

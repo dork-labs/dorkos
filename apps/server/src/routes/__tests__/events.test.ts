@@ -176,8 +176,8 @@ describe('GET /api/events (unified SSE stream)', () => {
     });
 
     expect(status).toBe(503);
-    expect(headers['content-type']).toContain('application/json');
-    expect(JSON.parse(body)).toEqual({ error: 'Too many SSE clients' });
+    expect(headers['content-type']).toContain('application/problem+json');
+    expect(JSON.parse(body)).toMatchObject({ status: 503, code: 'temporarily_unavailable' });
     expect(eventFanOut.addClient).not.toHaveBeenCalled();
   });
 });

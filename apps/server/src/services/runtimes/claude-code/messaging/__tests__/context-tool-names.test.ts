@@ -532,7 +532,8 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // so it stays deferred.
     // 154 -> 157 for `todo_add`, `todo_update` and `todos_list`, on by default since DOR-5071:
     // no prompt block names them, so they stay deferred.
-    expect(advertised.size).toBe(157);
+    // 157 -> 158 for `resolve_link` (DOR-5046): no prompt block names it, so it stays deferred.
+    expect(advertised.size).toBe(158);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

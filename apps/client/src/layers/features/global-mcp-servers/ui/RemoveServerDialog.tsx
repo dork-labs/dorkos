@@ -15,6 +15,11 @@ import { changeError, savedSecretCount } from '../lib/server-lines';
 /** The code a remove answers when the server is gone but a saved secret stayed. */
 const SECRET_LEFT_CODE = 'secret_left';
 
+/** The refusal's problem code, when it gave one. */
+function codeOf(error: unknown): unknown {
+  return (error as { code?: unknown } | null)?.code;
+}
+
 interface RemoveServerDialogProps {
   /** The server to remove. */
   server: GlobalMcpServerView;
@@ -43,7 +48,7 @@ export function RemoveServerDialog({
     remove.mutate(server.name, {
       onSuccess: () => onRemoved({ keysLeft: false }),
       onError: (error) => {
-        if ((error as { code?: unknown }).code === SECRET_LEFT_CODE) {
+        if (codeOf(error) === SECRET_LEFT_CODE) {
           onRemoved({ keysLeft: true });
         }
       },
@@ -74,7 +79,7 @@ export function RemoveServerDialog({
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {remove.isError && (remove.error as { code?: unknown }).code !== SECRET_LEFT_CODE && (
+        {remove.isError && codeOf(remove.error) !== SECRET_LEFT_CODE && (
           <p role="alert" className="text-destructive text-sm">
             {changeError(remove.error)}
           </p>

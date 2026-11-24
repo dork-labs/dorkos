@@ -1,5 +1,6 @@
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
+import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
 import { readManifest } from '@dorkos/shared/manifest';
 import { AgentRuntimeSchema } from '@dorkos/shared/mesh-schemas';
 import {
@@ -17,15 +18,18 @@ import { jsonContent, structuredJsonContent } from './types.js';
 import { installedFromOutside } from '../../../marketplace/installed-metadata.js';
 
 /**
- * An agent with `fromPackage` set when it was installed from a third-party marketplace package, so
- * its manifest is text someone outside the team wrote (DOR-3969).
+ * An agent as `mesh_list` and `mesh_inspect` return it: with its `dork:agent:` reference as `ref`,
+ * the target of a `[Name](/r/<ref>)` link (DOR-5046), and with `fromPackage` set when it was
+ * installed from a third-party marketplace package, so its manifest is text someone outside the
+ * team wrote (DOR-3969).
  */
-async function withPackageOrigin<T extends { id: string }>(
+async function asListedAgent<T extends { id: string }>(
   mesh: NonNullable<McpToolDeps['meshCore']>,
   agent: T
-): Promise<T & { fromPackage?: true }> {
+): Promise<T & { ref: string | null; fromPackage?: true }> {
   const home = mesh.getProjectPath(agent.id);
-  return home && (await installedFromOutside(home)) ? { ...agent, fromPackage: true } : agent;
+  const named = { ...agent, ref: dorkReferenceOrNull('agent', agent.id) };
+  return home && (await installedFromOutside(home)) ? { ...named, fromPackage: true } : named;
 }
 
 /** Guard that returns an error response when Mesh is disabled. */
@@ -269,7 +273,7 @@ export function createMeshListHandler(deps: McpToolDeps) {
         const relaySubject = mesh.getSubject(agent.id);
         return { ...agent, ...(relaySubject ? { relaySubject } : {}) };
       });
-    const listed = await Promise.all(agents.map((agent) => withPackageOrigin(mesh, agent)));
+    const listed = await Promise.all(agents.map((agent) => asListedAgent(mesh, agent)));
     return structuredJsonContent({ agents: listed, count: listed.length });
   };
 }
@@ -344,7 +348,7 @@ export function createMeshInspectHandler(deps: McpToolDeps) {
     }
     return structuredJsonContent({
       ...result,
-      agent: await withPackageOrigin(deps.meshCore!, result.agent),
+      agent: await asListedAgent(deps.meshCore!, result.agent),
     });
   };
 }

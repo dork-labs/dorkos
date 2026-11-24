@@ -142,7 +142,7 @@ interface UseMessageQueueReturn {
  * corrected what is on screen.
  */
 function isGone(err: unknown): boolean {
-  return (err as { code?: string })?.code === 'QUEUED_MESSAGE_NOT_FOUND';
+  return (err as { code?: string })?.code === 'queued_message_not_found';
 }
 
 /**

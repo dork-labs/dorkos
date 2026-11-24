@@ -257,7 +257,7 @@ describe('AppActions before an app is connected', () => {
   });
 
   it('treats a way that is no longer set up as the same quiet state', async () => {
-    const gone = Object.assign(new Error('Not set up.'), { code: 'provider_not_found' });
+    const gone = Object.assign(new Error('Not set up.'), { code: 'app_not_set_up' });
     renderActions(transportWith(gone));
 
     expect(await screen.findByText('Shows once DorkOS can reach Gmail.')).toBeInTheDocument();
@@ -276,11 +276,10 @@ describe('AppActions before an app is connected', () => {
 describe('AppActions when a DorkOS account problem stops the list', () => {
   it('names the problem and offers to link again, one click from the list', async () => {
     const user = userEvent.setup();
-    const refusal = Object.assign(new Error('x'), { code: 'cloud_link_needs_update' });
+    const refusal = Object.assign(new Error('x'), { code: 'cloud_link_required' });
     renderActions(transportWith(refusal));
 
-    expect(await screen.findByText(/This computer’s link needs updating\./)).toBeInTheDocument();
-    expect(screen.getByText(/again to update it/)).toBeInTheDocument();
+    expect(await screen.findByText(/This computer isn’t linked to DorkOS\./)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Link my DorkOS account again' }));
     expect(openSettings).toHaveBeenCalledWith('account', SETTINGS_RELINK_SECTION);
   });

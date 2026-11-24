@@ -36,7 +36,7 @@ async function failWith(error: Error) {
 describe('useCreateAgent failures', () => {
   it('raises no toast for a template the dialog is asking about', async () => {
     toastError.mockClear();
-    await failWith(Object.assign(new Error('review'), { body: { code: 'template_needs_review' } }));
+    await failWith(Object.assign(new Error('review'), { body: { code: 'needs_review' } }));
     expect(toastError).not.toHaveBeenCalled();
   });
 

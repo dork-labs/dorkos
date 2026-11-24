@@ -1,7 +1,7 @@
 ---
 number: 80
 title: Use Periodic Sweeper for Dispatch Inbox TTL Management
-status: draft
+status: archived
 created: 2026-03-05
 spec: relay-inbox-lifecycle
 superseded-by: null

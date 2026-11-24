@@ -1,7 +1,7 @@
 ---
 number: 49
 title: Extract Agent Manifest I/O to Shared Package
-status: draft
+status: archived
 created: 2026-02-26
 spec: agents-first-class-entity
 superseded-by: null

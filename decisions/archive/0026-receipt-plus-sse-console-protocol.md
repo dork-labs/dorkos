@@ -1,7 +1,7 @@
 ---
 number: 26
 title: Use Receipt+SSE Protocol for Console-via-Relay
-status: proposed
+status: archived
 created: 2026-02-25
 spec: relay-convergence
 superseded-by: null

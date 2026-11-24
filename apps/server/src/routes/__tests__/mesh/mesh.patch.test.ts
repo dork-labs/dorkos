@@ -195,7 +195,7 @@ describe('PATCH /api/mesh/agents/:id', () => {
     const res = await patch({ reportsTo: 'agent-2' });
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('REPORTS_TO_CYCLE');
+    expect(res.body.code).toBe('reports_to_cycle');
     expect(meshCore.update).not.toHaveBeenCalled();
   });
 
@@ -205,7 +205,7 @@ describe('PATCH /api/mesh/agents/:id', () => {
     );
     const unknown = await patch({ reportsTo: 'nobody' });
     expect(unknown.status).toBe(400);
-    expect(unknown.body.code).toBe('VALIDATION');
+    expect(unknown.body.code).toBe('invalid_request');
 
     meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, reportsTo: 'agent-3' });
     const ok = await patch({ reportsTo: 'agent-3' });
@@ -241,10 +241,11 @@ describe('PATCH /api/mesh/agents/:id', () => {
     const res = await patch({ displayName: 'Ana' });
 
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('MANIFEST_UNREADABLE');
-    // The sentence is for a person who has to go fix the file.
-    expect(res.body.error).toContain('/agents/ana');
-    expect(res.body.error).toContain('Fix or remove the file');
+    expect(res.type).toBe('application/problem+json');
+    expect(res.body.code).toBe('conflict');
+    // The sentence is for a person who has to go fix the file; it names no path.
+    expect(res.body.detail).toContain('Fix or remove it');
+    expect(res.body.detail).not.toContain('/agents/ana');
   });
 
   it('does NOT dress any other failure up as an unreadable manifest', async () => {
@@ -256,14 +257,14 @@ describe('PATCH /api/mesh/agents/:id', () => {
     // The claim is only that the route did not invent a 409 with a story
     // about a corrupt file; what the error handler says is its own decision.
     expect(res.status).not.toBe(409);
-    expect(res.body.code).not.toBe('MANIFEST_UNREADABLE');
-    expect(JSON.stringify(res.body)).not.toContain('Fix or remove the file');
+    expect(res.body.code).not.toBe('conflict');
+    expect(JSON.stringify(res.body)).not.toContain('Fix or remove');
   });
 
   it.each([
     // Spec `agent-permissions` D10: any local program can reach this route, so
     // it must never write what an agent may do.
-    [{ permissions: { areas: { rooms: 'allowed' } } }, 'USE_PERMISSIONS_API', undefined],
+    [{ permissions: { areas: { rooms: 'allowed' } } }, 'invalid_request', undefined],
     // Retired fields are refused, not silently dropped (spec `agent-permissions` D13).
     [{ enabledToolGroups: { tasks: false, roomsManage: true } }, undefined, ['enabledToolGroups']],
     [{ tierCeiling: 'act' }, undefined, ['tierCeiling']],
@@ -352,7 +353,7 @@ describe('PATCH /api/mesh/agents/:id', () => {
       asThePerson();
       const refused = await patch({ model: 'sonnet' });
       expect(refused.status).toBe(400);
-      expect(refused.body).toMatchObject({ code: 'UNSUPPORTED_MODEL' });
+      expect(refused.body).toMatchObject({ code: 'invalid_request' });
       expect(meshCore.update).not.toHaveBeenCalled();
 
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'md_served' });
@@ -475,8 +476,9 @@ describe('PATCH /api/mesh/agents/:id', () => {
       const res = await patch(body);
 
       expect(res.status).toBe(403);
-      for (const field of named) expect(res.body.error).toContain(field);
-      expect(res.body.error).toContain('ystem agents');
+      expect(res.body.code).toBe('forbidden');
+      for (const field of named) expect(res.body.detail).toContain(field);
+      expect(res.body.detail).toContain('system agent');
       expect(meshCore.update).not.toHaveBeenCalled();
     });
 

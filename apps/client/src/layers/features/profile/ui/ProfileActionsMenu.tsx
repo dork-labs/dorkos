@@ -21,7 +21,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MoreHorizontal } from 'lucide-react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { sameSidebarItem, type SidebarItemRef } from '@dorkos/shared/config-schema';
-import { useCopyFeedback } from '@/layers/shared/lib';
+import { dorkShareUrl, useCopyFeedback } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import {
   Button,
@@ -59,12 +59,16 @@ export interface ProfileActionsMenuProps {
  * Whether this identity has a kebab at all.
  *
  * With one item and nothing to put in it, the kebab is a button that opens a
- * menu saying nothing — so an identity with no handle and no other action
- * simply has no kebab (§1.2).
+ * menu saying nothing — so an identity with no handle, no link and no other
+ * action simply has no kebab (§1.2).
  */
-function hasProfileActions(member: TeamMember, relationship: ProfileRelationship): boolean {
+function hasProfileActions(
+  member: TeamMember,
+  relationship: ProfileRelationship,
+  agentLink: string | null
+): boolean {
   if (relationship === 'managed' || relationship === 'system') return true;
-  return member.handle !== null;
+  return member.handle !== null || agentLink !== null;
 }
 
 /**
@@ -118,7 +122,10 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
     meta: { errorLabel: 'Couldn’t set that as the default agent' },
   });
 
-  if (!hasProfileActions(member, relationship)) return null;
+  // An agent registered here with a mesh ULID id gets a `/r/` link that opens its
+  // profile (DOR-5046); an id no link opens gets no item rather than a dead link.
+  const agentLink = member.agent ? dorkShareUrl('agent', member.agent.manifestId) : null;
+  if (!hasProfileActions(member, relationship, agentLink)) return null;
 
   const slug = agent?.name ?? null;
   // The roster already answers this — `isDefault` is `config.agents.defaultAgent`
@@ -167,6 +174,12 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
           {member.handle !== null && (
             <ResponsiveDropdownMenuItem onSelect={() => void copy(`@${member.handle}`)}>
               Copy @handle
+            </ResponsiveDropdownMenuItem>
+          )}
+
+          {agentLink !== null && (
+            <ResponsiveDropdownMenuItem onSelect={() => void copy(agentLink)}>
+              Copy link
             </ResponsiveDropdownMenuItem>
           )}
 

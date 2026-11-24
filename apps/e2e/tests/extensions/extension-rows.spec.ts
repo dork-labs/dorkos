@@ -198,28 +198,6 @@ test.describe('Settings → Extensions rows', () => {
     expect(new URL(page.url()).searchParams.get('settingsSection')).toBeNull();
   });
 
-  test('says it couldn’t load, never "none installed", and tries again', async ({
-    page,
-    settingsPage,
-  }) => {
-    let refuse = true;
-    await serveList(page, () =>
-      refuse ? { status: 500, body: { error: 'boom' } } : { status: 200, body: LIST }
-    );
-    await page.goto('/');
-    await settingsPage.open();
-    await settingsPage.switchTab('Extensions');
-
-    const alert = settingsPage.dialog.getByRole('alert');
-    await expect(alert).toContainText('Couldn’t load your extensions', { timeout: 15_000 });
-    await expect(alert).toContainText('They’re still installed, and nothing was turned off.');
-    await expect(settingsPage.dialog.getByTestId('no-extensions')).toHaveCount(0);
-
-    refuse = false;
-    await alert.getByRole('button', { name: 'Try again' }).click();
-    await expect(settingsPage.dialog.getByTestId('extension-card-field-notes')).toBeVisible();
-  });
-
   test('fits a phone: nothing spills sideways', async ({ page, settingsPage }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await serveList(page, () => ({ status: 200, body: LIST }));

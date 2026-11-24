@@ -57,18 +57,19 @@ describe('Git Routes', () => {
       const res = await request(testServer).get('/api/git/status').query({ dir: '/etc/shadow' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.type).toBe('application/problem+json');
+      expect(res.body.code).toBe('outside_boundary');
     });
 
-    it('GET /api/git/status rejects null byte paths with 403', async () => {
+    it('GET /api/git/status rejects null byte paths with 400', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
         new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
       );
 
       const res = await request(testServer).get('/api/git/status').query({ dir: '/tmp\0evil' });
 
-      expect(res.status).toBe(403);
-      expect(res.body.code).toBe('NULL_BYTE');
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('invalid_request');
     });
   });
 });

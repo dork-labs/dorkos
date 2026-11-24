@@ -1,7 +1,7 @@
 ---
 number: 223
 title: Defer @electron/rebuild v4 Upgrade Due to electron-builder Compatibility
-status: draft
+status: archived
 created: 2026-04-01
 spec: upgrade-electron-vite
 superseded-by: null

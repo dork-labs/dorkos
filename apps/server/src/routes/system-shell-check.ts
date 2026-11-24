@@ -28,8 +28,7 @@ import {
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 const COPY: PersonBarCopy = {
-  error: 'Only you can turn this check off.',
-  code: 'person_required',
+  code: 'person_only',
   subject: 'this check',
   crossSite: (origin) => `A page from ${origin} tried to turn this check off. Nothing changed.`,
   agent: 'An agent can’t turn this check off. Ask a person to do it in the DorkOS app.',

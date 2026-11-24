@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
-import { PROBLEM_CONTENT_TYPE, isProblem } from '@dorkos/shared/problem';
+import { PROBLEM_CODES, PROBLEM_CONTENT_TYPE, isProblem } from '@dorkos/shared/problem';
 import {
   problem,
   problemBody,
@@ -28,6 +28,30 @@ describe('problemBody', () => {
 });
 
 describe('problemBody options', () => {
+  it('carries extension members, and never lets one replace a standard member', () => {
+    const body = problemBody('conflict', {
+      detail: 'Reload it.',
+      extensions: {
+        heldActionId: 'held-1',
+        code: 'other',
+        title: 'other',
+        detail: 'other',
+        status: 200,
+      },
+    });
+    expect(body).toMatchObject({
+      code: 'conflict',
+      status: 409,
+      detail: 'Reload it.',
+      heldActionId: 'held-1',
+    });
+    expect(body.title).toBe(PROBLEM_CODES.conflict.title);
+    expect(problemBody('conflict', { extensions: { detail: 'x' } })).not.toHaveProperty('detail');
+    // A refusal is named once, by its code: a `reason` beside it does not compile.
+    // @ts-expect-error `reason` is not an extension member
+    expect(problemBody('conflict', { extensions: { reason: 'stale' } }).code).toBe('conflict');
+  });
+
   it('accepts only error statuses', () => {
     // @ts-expect-error a problem never carries a success status
     expect(() => problemBody('not_found', { status: 200 })).not.toThrow();

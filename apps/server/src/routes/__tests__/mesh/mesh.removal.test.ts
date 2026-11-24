@@ -106,7 +106,7 @@ describe('DELETE /api/mesh/agents/:id/data', () => {
     const res = await deleteData();
 
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe('Agent not found');
+    expect(res.body.code).toBe('not_found');
     expectNothingRemoved();
   });
 
@@ -116,7 +116,8 @@ describe('DELETE /api/mesh/agents/:id/data', () => {
     const res = await deleteData();
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain('System agents');
+    expect(res.body.code).toBe('forbidden');
+    expect(res.body.detail).toContain('system agent');
     expectNothingRemoved();
   });
 
@@ -128,7 +129,7 @@ describe('DELETE /api/mesh/agents/:id/data', () => {
     const res = await deleteData();
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain('Path outside boundary');
+    expect(res.body.code).toBe('outside_boundary');
     expectNothingRemoved();
   });
 
@@ -138,7 +139,7 @@ describe('DELETE /api/mesh/agents/:id/data', () => {
     const res = await deleteData();
 
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe('Agent project path not found');
+    expect(res.body.code).toBe('not_found');
     expectNothingRemoved();
   });
 
@@ -161,8 +162,8 @@ describe('DELETE /api/mesh/agents/:id/data', () => {
     const res = await deleteData();
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toContain('agent.json');
-    expect(res.body.error).toContain('tracked by git');
+    expect(res.body.code).toBe('conflict');
+    expect(res.body.detail).toContain('Git tracks');
     expectNothingRemoved();
     expect(await fs.readFile(path.join(repo, '.dork', 'agent.json'), 'utf-8')).toBe('{}');
   });
@@ -204,7 +205,7 @@ describe('POST /api/mesh/deny', () => {
       .send({ path: '/home/user/bad-project' });
 
     expect(res.status).toBe(422);
-    expect(res.body.error).toBe('Already denied');
+    expect(res.body.detail).toBe('This folder couldn’t be hidden from discovery.');
   });
 });
 

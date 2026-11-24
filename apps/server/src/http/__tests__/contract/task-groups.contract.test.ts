@@ -99,8 +99,11 @@ const JSON_TYPE = { 'content-type': /^application\/json\b/ };
 const NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
 });
-const TASK_NOT_FOUND = { error: 'Scheduled task not found' };
-const RUN_NOT_FOUND = { error: 'Run not found' };
+const TASK_NOT_FOUND = problemBody('not_found', { detail: 'No scheduled task has that id.' });
+const RUN_NOT_FOUND = problemBody('not_found', { detail: 'No run has that id.' });
+/** A task refusal: its problem code and a sentence. */
+const TASK_PROBLEM = (code: string) =>
+  z.object({ code: z.literal(code), detail: z.string() }).loose();
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 /** A caller holding an approval token is the requester, never the person. */
@@ -115,26 +118,39 @@ const TASK_LIST = z.array(TASK);
 const OPERATOR_ONLY_TASK = (fields: string[]) =>
   z
     .object({
-      error: z.literal('Only a person can decide how a scheduled task runs'),
-      code: z.literal('operator_only_task_field'),
+      type: z.literal('urn:dorkos:problem:person_only'),
+      title: z.string(),
+      status: z.literal(403),
+      detail: z.literal('Only a person can decide how a scheduled task runs'),
+      code: z.literal('person_only'),
       fields: z.array(z.string()).refine((have) => have.join() === fields.join()),
       message: z.string(),
     })
     .strict();
-const ACCOUNT_RULES_AGENT = {
-  error: 'Only a person can change where an account may be used.',
-  code: 'operator_only_config',
-  message:
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json$/ };
+/** A request that failed its schema, with the route's own sentence. */
+const INVALID = (detail: string) =>
+  z.object({ code: z.literal('invalid_request'), detail: z.literal(detail) }).loose();
+const ACCOUNT_RULES_AGENT = problemBody('person_only', {
+  detail:
     'DorkOS changed nothing. Which projects a Claude account may work in is a decision ' +
     'only a person makes. Ask them to change it in Settings → Runtimes.',
-};
-const CONNECT_LOCAL_ONLY = { error: 'Runtime connect actions are only available locally' };
-const PROVISION_LOCAL_ONLY = { error: 'Runtime provisioning is only available locally' };
-const DOE_LOCAL_ONLY = { error: 'Model setup is only available on this computer.' };
-const DOE_NOT_A_PERSON = {
-  error: 'Only the owner can change model settings.',
-  code: 'not-a-person',
-};
+});
+const CONNECT_LOCAL_ONLY = problemBody('operator_only', {
+  detail: 'Runtime connect actions are only available on this computer.',
+});
+const PROVISION_LOCAL_ONLY = problemBody('operator_only', {
+  detail: 'Runtime provisioning is only available on this computer.',
+});
+const DOE_LOCAL_ONLY = problemBody('operator_only', {
+  detail: 'Model setup is only available on this computer.',
+});
+const DOE_NOT_A_PERSON = problemBody('person_only', {
+  detail: 'Only the owner can change model settings.',
+});
+const OUTSIDE_BOUNDARY = problemBody('outside_boundary', {
+  detail: 'That folder is outside the folders DorkOS may open.',
+});
 const EVENT_STREAM = {
   'content-type': 'text/event-stream',
   'cache-control': 'no-cache',
@@ -200,7 +216,7 @@ contractSuite(
     {
       name: 'GET /api/tasks/runs/:id answers 404 for an unknown run',
       path: `/api/tasks/runs/${UNKNOWN_ID}`,
-      expect: { status: 404, headers: JSON_TYPE, body: RUN_NOT_FOUND },
+      expect: { status: 404, headers: PROBLEM_TYPE, body: RUN_NOT_FOUND },
     },
     {
       name: 'HEAD /api/tasks/runs/:id answers 404 with no body',
@@ -224,16 +240,14 @@ contractSuite(
       name: 'POST /api/tasks refuses an empty body',
       method: 'POST',
       path: '/api/tasks',
-      // The task service's own refusal, still the older shape until the tasks
-      // folder moves (DOR-4979).
-      expect: { status: 400, schema: z.object({ error: z.literal('Validation failed') }).loose() },
+      expect: { status: 400, headers: PROBLEM_TYPE, schema: VALIDATION_FAILED },
     },
     {
       name: 'POST /api/tasks refuses a schedule croner cannot read',
       method: 'POST',
       path: '/api/tasks',
       body: scheduleBody({ cron: 'every so often' }),
-      expect: { status: 400, schema: z.object({ error: z.string() }).strict() },
+      expect: { status: 400, schema: TASK_PROBLEM('invalid_request') },
     },
     {
       name: 'POST /api/tasks refuses an agent naming its own permission level',
@@ -249,7 +263,15 @@ contractSuite(
       path: '/api/tasks',
       headers: AGENT,
       body: scheduleBody(),
-      expect: { status: 400, schema: z.object({ error: z.string().includes('needs a reason') }) },
+      expect: {
+        status: 400,
+        schema: z
+          .object({
+            code: z.literal('invalid_request'),
+            detail: z.string().includes('needs a reason'),
+          })
+          .loose(),
+      },
     },
     {
       name: 'POST /api/tasks refuses an approval-token holder naming the status',
@@ -356,7 +378,11 @@ contractSuite(
     {
       name: 'GET /api/runtimes/:runtime/accounts/usage refuses a runtime with no ledger',
       path: '/api/runtimes/not-a-runtime/accounts/usage',
-      expect: { status: 400, body: { error: 'Unknown runtime "not-a-runtime".' } },
+      expect: {
+        status: 400,
+        headers: PROBLEM_TYPE,
+        body: problemBody('invalid_request', { detail: 'Unknown runtime "not-a-runtime".' }),
+      },
     },
     {
       name: 'GET /api/runtimes/claude-code/accounts/usage lists the accounts',
@@ -420,7 +446,10 @@ contractSuite(
       name: 'POST /api/runtimes/:type/login refuses a runtime with no sign-in',
       method: 'POST',
       path: '/api/runtimes/opencode/login',
-      expect: { status: 400, body: { ok: false, error: 'This app does not support sign-in.' } },
+      expect: {
+        status: 400,
+        body: problemBody('invalid_request', { detail: 'This app does not support sign-in.' }),
+      },
     },
     {
       name: 'POST /api/runtimes/:type/login refuses an empty account root',
@@ -429,7 +458,7 @@ contractSuite(
       body: { accountRoot: '' },
       expect: {
         status: 400,
-        body: { ok: false, error: 'Choose an account from Runtimes.' },
+        schema: INVALID('Choose an account from Runtimes.'),
       },
     },
     {
@@ -437,34 +466,34 @@ contractSuite(
       method: 'POST',
       path: '/api/runtimes/claude-code/credential',
       body: { secret: '' },
-      expect: { status: 400, body: { error: 'An API key is required.' } },
+      expect: { status: 400, schema: INVALID('An API key is required.') },
     },
     {
       name: 'POST /api/runtimes/:type/credential/check refuses a key that is not a string',
       method: 'POST',
       path: '/api/runtimes/claude-code/credential/check',
       body: { secret: 42 },
-      expect: { status: 400, body: { error: 'An API key must be a string.' } },
+      expect: { status: 400, schema: INVALID('An API key must be a string.') },
     },
     {
       name: 'POST /api/runtimes/opencode/provider/credential refuses a missing provider',
       method: 'POST',
       path: '/api/runtimes/opencode/provider/credential',
       body: { secret: 'x' },
-      expect: { status: 400, body: { error: 'A provider id and API key are required.' } },
+      expect: { status: 400, schema: INVALID('Send the service name and its API key.') },
     },
     {
       name: 'POST /api/runtimes/opencode/provider/credential/check refuses a missing provider',
       method: 'POST',
       path: '/api/runtimes/opencode/provider/credential/check',
-      expect: { status: 400, body: { error: 'A provider id is required.' } },
+      expect: { status: 400, schema: INVALID('Name the service the key is for.') },
     },
     {
       name: 'POST /api/runtimes/opencode/openrouter/key refuses an empty key',
       method: 'POST',
       path: '/api/runtimes/opencode/openrouter/key',
       body: {},
-      expect: { status: 400, body: { ok: false, error: 'An OpenRouter key is required.' } },
+      expect: { status: 400, schema: INVALID('An OpenRouter key is required.') },
     },
     {
       name: 'POST /api/runtimes/opencode/openrouter/oauth/start names the callback by the forwarded scheme',
@@ -493,7 +522,7 @@ contractSuite(
       method: 'POST',
       path: '/api/runtimes/opencode/ollama/pull',
       body: { model: 'not a model!' },
-      expect: { status: 400, body: { error: 'That is not a valid Ollama model name.' } },
+      expect: { status: 400, schema: INVALID('That is not a valid Ollama model name.') },
     },
     {
       name: 'POST /api/runtimes/claude-code/accounts/:id/probe refuses an agent',
@@ -502,18 +531,22 @@ contractSuite(
       headers: AGENT,
       expect: {
         status: 403,
-        body: {
-          error:
+        body: problemBody('person_only', {
+          detail:
             'Only a person can start an account check here. Agents use the accounts_probe tool.',
-          code: 'PERSON_ONLY',
-        },
+        }),
       },
     },
     {
       name: 'POST /api/runtimes/claude-code/accounts/:id/probe answers 404 for an unknown account',
       method: 'POST',
       path: '/api/runtimes/claude-code/accounts/no-such-account/probe',
-      expect: { status: 404, schema: z.object({ error: z.string(), code: z.string() }).strict() },
+      expect: {
+        status: 404,
+        body: problemBody('not_found', {
+          detail: 'No Claude Code account is called "no-such-account".',
+        }),
+      },
     },
     {
       name: 'POST /api/runtimes/claude-code/accounts/found/dismiss refuses an agent',
@@ -523,19 +556,14 @@ contractSuite(
       body: { path: '/nowhere' },
       expect: {
         status: 403,
-        schema: z
-          .object({
-            code: z.string(),
-            message: z.literal('Only a person can hide an account folder.'),
-          })
-          .loose(),
+        body: problemBody('person_only', { detail: 'Only a person can hide an account folder.' }),
       },
     },
     {
       name: 'POST /api/runtimes/claude-code/accounts/found/dismiss refuses an empty body',
       method: 'POST',
       path: '/api/runtimes/claude-code/accounts/found/dismiss',
-      expect: { status: 400, body: { error: 'Send the folder to hide as `path`.' } },
+      expect: { status: 400, schema: INVALID('Send the folder to hide as `path`.') },
     },
     {
       name: 'POST /api/runtimes/claude-code/accounts/found/dismiss refuses a folder it did not offer',
@@ -544,7 +572,9 @@ contractSuite(
       body: { path: '/nowhere/at/all' },
       expect: {
         status: 400,
-        body: { error: 'That folder is not one of the account folders found on this computer.' },
+        body: problemBody('invalid_request', {
+          detail: 'That folder is not one of the account folders found on this computer.',
+        }),
       },
     },
 
@@ -563,10 +593,7 @@ contractSuite(
       path: '/api/runtimes/claude-code/account-eligibility?project=%2F',
       expect: {
         status: 403,
-        body: {
-          error: 'That folder is outside the folders DorkOS may open.',
-          code: 'OUTSIDE_BOUNDARY',
-        },
+        body: OUTSIDE_BOUNDARY,
       },
     },
     {
@@ -617,7 +644,9 @@ contractSuite(
       body: { project: PROJECT, allow: ['nobody'] },
       expect: {
         status: 400,
-        body: { error: 'There is no Claude account named "nobody".', code: 'unknown_account' },
+        body: problemBody('invalid_request', {
+          detail: 'There is no Claude account named "nobody".',
+        }),
       },
     },
     {
@@ -627,10 +656,7 @@ contractSuite(
       body: { project: '/', allow: null },
       expect: {
         status: 403,
-        body: {
-          error: 'That folder is outside the folders DorkOS may open.',
-          code: 'OUTSIDE_BOUNDARY',
-        },
+        body: OUTSIDE_BOUNDARY,
       },
     },
     {
@@ -640,7 +666,7 @@ contractSuite(
       body: { projects: null },
       expect: {
         status: 404,
-        body: { error: 'There is no Claude account named "nobody".', code: 'unknown_account' },
+        body: problemBody('not_found', { detail: 'There is no Claude account named "nobody".' }),
       },
     },
     {
@@ -674,7 +700,7 @@ contractSuite(
     {
       name: 'GET /api/runtimes/doe/credits-models refuses a protocol it does not know',
       path: '/api/runtimes/doe/credits-models?protocol=carrier-pigeon',
-      expect: { status: 400, body: { error: 'Choose a model protocol.' } },
+      expect: { status: 400, schema: INVALID('Choose a model protocol.') },
     },
     {
       name: 'PUT /api/runtimes/doe/inference refuses an agent',
@@ -705,14 +731,14 @@ contractSuite(
       method: 'PUT',
       path: '/api/runtimes/doe/inference',
       body: { ...LOCAL_INFERENCE, credentialRef: 'secret:nothing' },
-      expect: { status: 400, body: { error: 'Check the model, endpoint, and token limits.' } },
+      expect: { status: 400, schema: INVALID('Check the model, endpoint, and token limits.') },
     },
     {
       name: 'POST /api/runtimes/doe/credential refuses a body with no key',
       method: 'POST',
       path: '/api/runtimes/doe/credential',
       body: { inference: LOCAL_INFERENCE },
-      expect: { status: 400, body: { error: 'Enter an API key and model settings.' } },
+      expect: { status: 400, schema: INVALID('Enter an API key and model settings.') },
     },
     {
       name: 'GET /api/runtimes/doe is the /api 404',
@@ -779,7 +805,7 @@ describe('contract: tasks, account rules and model setup, driven by hand (login 
       method: 'POST',
       path: '/api/tasks',
       body: { ...body },
-      expect: { status: 409, schema: z.object({ error: z.string() }).strict() },
+      expect: { status: 409, schema: TASK_PROBLEM('conflict') },
     });
     await check(server, {
       path: '/api/tasks',
@@ -798,13 +824,13 @@ describe('contract: tasks, account rules and model setup, driven by hand (login 
       method: 'PATCH',
       path: `/api/tasks/${id}`,
       body: { cron: 'whenever' },
-      expect: { status: 400, schema: z.object({ error: z.string() }).strict() },
+      expect: { status: 400, schema: TASK_PROBLEM('invalid_request') },
     });
     await check(server, {
       method: 'PATCH',
       path: `/api/tasks/${id}`,
       body: { cron: '0 4 * * *', defaultCron: true },
-      expect: { status: 400, schema: z.object({ error: z.string() }).loose() },
+      expect: { status: 400, schema: TASK_PROBLEM('invalid_request') },
     });
     await check(server, {
       method: 'PATCH',
@@ -1086,7 +1112,7 @@ describe('contract: the loopback-only routes, reached by a name that is not this
         path: url,
         headers: remote(),
         body: method === 'GET' ? undefined : {},
-        expect: { status: 403, headers: JSON_TYPE, body: expected },
+        expect: { status: 403, headers: PROBLEM_TYPE, body: expected },
       });
     }
   });
@@ -1166,7 +1192,7 @@ describe('contract: the same groups with login on', () => {
   }, 30_000);
 
   const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
-  const COOKIE_REQUIRED = z.object({ code: z.literal('operator_cookie_required') }).loose();
+  const PERSON_ONLY_HERE = z.object({ code: z.literal('person_only') }).loose();
 
   it('refuses a caller with no credential at the session gate', async () => {
     for (const [method, url] of [
@@ -1212,10 +1238,9 @@ describe('contract: the same groups with login on', () => {
       headers: apiKey,
       expect: {
         status: 403,
-        body: {
-          error: 'Only a person signed in to DorkOS can delete a scheduled task',
-          code: 'operator_cookie_required',
-        },
+        body: problemBody('person_only', {
+          detail: 'Only a person signed in to DorkOS can delete a scheduled task.',
+        }),
       },
     });
     await check(server, {
@@ -1224,10 +1249,9 @@ describe('contract: the same groups with login on', () => {
       headers: apiKey,
       expect: {
         status: 403,
-        body: {
-          error: 'Only a person signed in to DorkOS can cancel a scheduled run',
-          code: 'operator_cookie_required',
-        },
+        body: problemBody('person_only', {
+          detail: 'Only a person signed in to DorkOS can cancel a scheduled run.',
+        }),
       },
     });
     // Arming it above Default waits for the owner's password (DOR-4355).
@@ -1294,20 +1318,20 @@ describe('contract: the same groups with login on', () => {
       path: '/api/runtimes/claude-code/project-accounts',
       headers: apiKey,
       body: { project: PROJECT, allow: null },
-      expect: { status: 403, schema: COOKIE_REQUIRED },
+      expect: { status: 403, schema: PERSON_ONLY_HERE },
     });
     await check(server, {
       method: 'POST',
       path: '/api/runtimes/claude-code/accounts/found/dismiss',
       headers: apiKey,
       body: { path: '/nowhere' },
-      expect: { status: 403, schema: COOKIE_REQUIRED },
+      expect: { status: 403, schema: PERSON_ONLY_HERE },
     });
     await check(server, {
       method: 'POST',
       path: '/api/runtimes/claude-code/accounts/default/probe',
       headers: apiKey,
-      expect: { status: 403, schema: COOKIE_REQUIRED },
+      expect: { status: 403, schema: PERSON_ONLY_HERE },
     });
   });
 });

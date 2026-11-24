@@ -1,7 +1,7 @@
 ---
 number: 129
 title: Use npm Install Mode for Published Docker Image
-status: draft
+status: archived
 created: 2026-03-14
 spec: docker-image-publishing
 superseded-by: null

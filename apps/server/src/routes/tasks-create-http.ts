@@ -36,6 +36,7 @@ import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { errorRefusalUnlessOwner, runAccountWrite } from './cloud-owner-bar.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '@dorkos/http-kit';
+import { taskProblem } from './task-problem.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { operatorOnlyTaskRefusal, namesCredits } from './task-route-answers.js';
 import { marksOf } from '../services/core/turn-power/turn-levels.js';
@@ -54,14 +55,14 @@ export async function createTaskHttp(
   const body = readJsonBody(c);
   const trusted = clearsTheAgentBar(caller);
   const operatorOnly = operatorOnlyTaskRefusal(body, trusted);
-  if (operatorOnly) return c.json(operatorOnly, 403);
+  if (operatorOnly) return taskProblem(c, operatorOnly, 403);
   // From Wi-Fi a schedule runs at Default at most (DOR-3037).
   const wifiRefusal = wifiScheduleRefusal(caller, body);
-  if (wifiRefusal) return c.json(wifiRefusal, 403);
+  if (wifiRefusal) return taskProblem(c, wifiRefusal, 403);
   const creditsRefusal = namesCredits(body)
     ? errorRefusalUnlessOwner(caller, TASK_ON_CREDITS)
     : undefined;
-  if (creditsRefusal) return c.json(creditsRefusal, 403);
+  if (creditsRefusal) return taskProblem(c, creditsRefusal, 403);
   if (namesCredits(body) && !confirming) {
     return runAccountWrite(c, {
       kind: 'cloud.credits',
@@ -116,12 +117,13 @@ export async function createTaskHttp(
   );
 
   if (!outcome.ok) {
-    return c.json(
+    return taskProblem(
+      c,
       {
         error: outcome.error,
-        ...(outcome.code !== undefined && { code: outcome.code }),
-        ...(outcome.ownedBy !== undefined && { ownedBy: outcome.ownedBy }),
-        ...(outcome.details !== undefined && { details: outcome.details }),
+        code: outcome.code,
+        ownedBy: outcome.ownedBy,
+        details: outcome.details,
       },
       outcome.status
     );

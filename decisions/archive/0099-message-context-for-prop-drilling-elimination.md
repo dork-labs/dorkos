@@ -1,7 +1,7 @@
 ---
 number: 99
 title: MessageContext for Prop Drilling Elimination
-status: draft
+status: archived
 created: 2026-03-09
 spec: chat-message-theming
 superseded-by: null

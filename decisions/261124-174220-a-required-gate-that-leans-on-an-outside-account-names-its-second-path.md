@@ -1,7 +1,7 @@
 ---
 id: 261124-174220
 title: A required gate that leans on one outside account names its second path
-status: proposed
+status: accepted
 created: 2026-11-24
 spec: null
 superseded-by: null
@@ -12,7 +12,9 @@ amends: null
 
 ## Status
 
-Proposed by the architect (2026-11-24), from the review of the problems of 2026-11-23 (`research/20261124_architecture-direction-review.md` and Linear DOR-5189 and DOR-5190). The CI owner (ci-steward) agreed on 2026-11-24, with four changes that are in this text. Becomes Accepted when the operator rules on it. Whether a second sign-in fits the reviewing service's terms is his call; this record names the question and does not answer it.
+Accepted (2026-11-24): the CI owner (ci-steward) agreed, with four changes that are in this text, and the operator agreed to the rule in principle. Two things are still his alone: adding the second sign-in, which is a secret only he can add, and whether a second sign-in fits the reviewing service's terms.
+
+Proposed by the architect (2026-11-24), from the review of the problems of 2026-11-23 (`research/20261124_architecture-direction-review.md` and Linear DOR-5189 and DOR-5190). The CI owner (ci-steward) agreed on 2026-11-24, with four changes that are in this text. Whether a second sign-in fits the reviewing service's terms is the operator's call; this record names the question and does not answer it.
 
 **Builds on** [260919-174348](260919-174348-merges-are-fully-autonomous-machine-gates-are-the-only-gates.md), which stays Accepted, and settles this Negative bullet in it:
 

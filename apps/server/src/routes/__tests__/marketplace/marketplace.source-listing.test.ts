@@ -197,6 +197,8 @@ describe('add and refresh with the real fetcher (DOR-2304)', () => {
     const res = await h.post('/sources/gone/refresh');
 
     expect(res.status).toBe(502);
-    expect(res.body.error).toBe("there's no marketplace listing at that address");
+    expect(res.body.detail).toBe(
+      "Couldn't fetch that source's listing, and none is saved. Try again."
+    );
   });
 });

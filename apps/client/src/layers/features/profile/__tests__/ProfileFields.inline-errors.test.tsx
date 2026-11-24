@@ -73,7 +73,7 @@ describe('Settings › Profile refusals: inline while shown, toast once gone', (
   it('a refused handle is drawn under the field and not toasted', async () => {
     mount('handle');
     vi.mocked(mockTransport.setAuthorHandle).mockRejectedValueOnce(
-      Object.assign(new Error('taken'), { code: 'HANDLE_TAKEN' })
+      Object.assign(new Error('taken'), { code: 'handle_taken' })
     );
     submit('handle', 'ana');
 
@@ -84,7 +84,7 @@ describe('Settings › Profile refusals: inline while shown, toast once gone', (
   it('a refused name is drawn under the field and not toasted', async () => {
     mount('name');
     vi.mocked(mockTransport.updateProfile).mockRejectedValueOnce(
-      Object.assign(new Error('nope'), { code: 'OPERATOR_ONLY' })
+      Object.assign(new Error('nope'), { code: 'operator_only' })
     );
     submit('name', 'Ana');
 

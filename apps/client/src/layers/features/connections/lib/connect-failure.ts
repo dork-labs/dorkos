@@ -65,7 +65,7 @@ export function connectRefusalCopy(
 }
 
 /** Server codes for a start refused before any service was asked. Trying again won't help. */
-const WAY_NOT_WORKING = new Set(['provider_not_found', 'authentication_unavailable']);
+const WAY_NOT_WORKING = new Set(['app_not_set_up']);
 
 /**
  * Copy for a start request that itself failed (the mutation's error).

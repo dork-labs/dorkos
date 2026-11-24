@@ -242,7 +242,7 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
   // BROADCAST_NOT_BRIDGEABLE. This fires through the REAL derivation
   // (bridgeChatTypeForBinding reading the persisted field), NOT a mock throw, so
   // it fails if the broadcast branch is ever made unreachable.
-  it('refuses a real broadcast binding (platformChatType: channel) with BROADCAST_NOT_BRIDGEABLE', async () => {
+  it('refuses a real broadcast binding (platformChatType: channel) with broadcast_not_bridgeable', async () => {
     store = createStore({ platformChatType: 'channel', channelType: 'group' });
     lifecycle = createLifecycle(store);
     const app = createApp(store, {
@@ -254,8 +254,9 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       .send({ bridge: 'room' })
       .expect(400);
 
-    expect(res.body.code).toBe('BROADCAST_NOT_BRIDGEABLE');
-    expect(res.body.error).toMatch(/broadcast/i);
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body.code).toBe('broadcast_not_bridgeable');
+    expect(res.body.detail).toMatch(/broadcast/i);
     expect(lifecycle.bridge).not.toHaveBeenCalled();
     expect(store.map.get('b-1')!.bridge).toBe('off');
   });
@@ -263,7 +264,7 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
   // Back-compat: an OLD binding (no persisted platform type) that is a group by
   // its subject channel type takes the CONSERVATIVE refusal — we never bridge a
   // non-DM we cannot prove is a group, because it might be a folded broadcast.
-  it('refuses an old group binding with no persisted platform type (conservative BRIDGE_NOT_A_DM)', async () => {
+  it('refuses an old group binding with no persisted platform type (conservative chat_type_unknown)', async () => {
     store = createStore({ channelType: 'group' }); // no platformChatType
     lifecycle = createLifecycle(store);
     const app = createApp(store, {
@@ -275,8 +276,8 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       .send({ bridge: 'room' })
       .expect(400);
 
-    expect(res.body.code).toBe('BRIDGE_NOT_A_DM');
-    expect(res.body.error).toMatch(/broadcast/i);
+    expect(res.body.code).toBe('chat_type_unknown');
+    expect(res.body.detail).toBe('Connect this chat again from a new message, then try again.');
     expect(lifecycle.bridge).not.toHaveBeenCalled();
     expect(store.map.get('b-1')!.bridge).toBe('off');
   });
@@ -313,7 +314,10 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       .send({ bridge: 'room' })
       .expect(400);
 
-    expect(JSON.stringify(res.body)).toContain('one room cannot honestly be the channel');
+    expect(res.body).toMatchObject({
+      code: 'invalid_request',
+      detail: 'Pick one chat before turning this route into a channel.',
+    });
     expect(lifecycle.bridge).not.toHaveBeenCalled();
     expect(store.map.get('b-1')!.bridge).toBe('off');
   });
@@ -331,7 +335,7 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       .send({ bridge: 'room' })
       .expect(403);
 
-    expect(res.body.code).toBe('OPERATOR_ONLY');
+    expect(res.body.code).toBe('operator_only');
     expect(store.map.get('b-1')!.bridge).toBe('off');
   });
 
@@ -346,7 +350,10 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       .send({ bridge: 'room' })
       .expect(400);
 
-    expect(res.body.error).toContain('agent-1');
+    expect(res.body).toMatchObject({
+      code: 'invalid_request',
+      detail: 'That agent isn’t registered here.',
+    });
     expect(lifecycle.bridge).not.toHaveBeenCalled();
   });
 

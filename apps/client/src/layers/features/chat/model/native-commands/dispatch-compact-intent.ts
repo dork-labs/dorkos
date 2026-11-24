@@ -41,7 +41,7 @@ export async function dispatchCompactIntent(
     await transport.runCommandIntent(sessionId, 'compact', instructions);
     return true;
   } catch (err) {
-    const locked = (err as { code?: string }).code === 'SESSION_LOCKED';
+    const locked = (err as { code?: string }).code === 'session_locked';
     toast.error(
       locked ? 'Your agent is busy. Try again in a moment.' : 'Couldn’t compact the chat.'
     );

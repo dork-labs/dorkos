@@ -23,4 +23,4 @@ export function errorCodeOf(err: unknown): string | undefined {
 }
 
 /** The room's answer to "show me your files" when it has none of its own. */
-export const ROOM_HAS_NO_REPO_CODE = 'ROOM_HAS_NO_REPO';
+export const ROOM_HAS_NO_REPO_CODE = 'room_has_no_repo';

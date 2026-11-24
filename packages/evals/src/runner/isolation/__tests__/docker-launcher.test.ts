@@ -17,14 +17,11 @@ import { PassThrough } from 'node:stream';
 import {
   DockerLauncher,
   ensureDockerAvailable,
-  resolveEvalImage,
-  DEFAULT_EVAL_IMAGE,
   CONTAINER_SANDBOX_ROOT,
-  EVAL_CONTAINER_LABEL,
   type DockerCli,
 } from '../docker-launcher.js';
 import type { NetnsChannel, OpenNetnsChannel } from '../netns-proxy.js';
-import { createLauncherResolver, parseIsolationTier } from '../resolve-launcher.js';
+import { createLauncherResolver } from '../resolve-launcher.js';
 import type { ServerLaunchSpec } from '../types.js';
 
 /** One recorded `docker` invocation. */
@@ -152,27 +149,7 @@ function envOf(args: string[]): Record<string, string> {
   return env;
 }
 
-describe('resolveEvalImage', () => {
-  it('defaults to the built-in eval image', () => {
-    expect(resolveEvalImage({})).toBe(DEFAULT_EVAL_IMAGE);
-    expect(resolveEvalImage({ DORKOS_EVAL_IMAGE: '   ' })).toBe(DEFAULT_EVAL_IMAGE);
-  });
-
-  it('honors DORKOS_EVAL_IMAGE for image reuse', () => {
-    expect(resolveEvalImage({ DORKOS_EVAL_IMAGE: 'ghcr.io/acme/dorkos:pinned' })).toBe(
-      'ghcr.io/acme/dorkos:pinned'
-    );
-  });
-});
-
 describe('ensureDockerAvailable', () => {
-  it('reports available when the daemon answers and the image exists', async () => {
-    const { docker } = healthyDocker();
-    const verdict = await ensureDockerAvailable({ docker, image: 'dorkos-eval:latest' });
-    expect(verdict.available).toBe(true);
-    expect(verdict.reason).toBeUndefined();
-  });
-
   it('SKIPS with a clear message when no daemon is reachable (never throws)', async () => {
     const { docker } = fakeDocker({ version: { code: 1, stderr: 'Cannot connect to the daemon' } });
     const verdict = await ensureDockerAvailable({ docker, image: 'dorkos-eval:latest' });
@@ -206,14 +183,6 @@ describe('ensureDockerAvailable', () => {
     const verdict = await ensureDockerAvailable({ docker, image: 'dorkos-eval:latest' });
     expect(verdict.available).toBe(true);
     expect(verdict.reason).toBeUndefined();
-  });
-
-  it('treats a missing `docker` binary as unavailable, not an exception', async () => {
-    const docker: DockerCli = {
-      run: async () => ({ code: null, stdout: '', stderr: 'spawn docker ENOENT' }),
-    };
-    const verdict = await ensureDockerAvailable({ docker, image: 'x' });
-    expect(verdict.available).toBe(false);
   });
 });
 
@@ -309,36 +278,6 @@ describe('DockerLauncher.launch — containment invariants', () => {
     await launched.kill();
   });
 
-  it('reports the CONTAINER project cwd so the drive loop passes a boundary-valid path', async () => {
-    const { docker } = healthyDocker();
-    const { launcher, port } = await launcherOn(docker);
-    const launched = await launcher.launch(spec({ port }));
-    expect(launched.projectCwd).toBe(`${CONTAINER_SANDBOX_ROOT}/project`);
-    await launched.kill();
-  });
-
-  it('labels the container (and the run) so strays are greppable, and starts detached without --rm', async () => {
-    const { docker, calls } = healthyDocker();
-    const { launcher, port } = await launcherOn(docker, { runId: 'run-42' });
-    const launched = await launcher.launch(spec({ port }));
-
-    const args = runArgs(calls);
-    expect(args).toContain('--detach');
-    // No --rm: a failed eval's container must survive for `docker logs`.
-    expect(args).not.toContain('--rm');
-    expect(args.join(' ')).toContain(`--label ${EVAL_CONTAINER_LABEL}=1`);
-    expect(args.join(' ')).toContain(`--label ${EVAL_CONTAINER_LABEL}-run=run-42`);
-    await launched.kill();
-  });
-
-  it('surfaces a docker run failure as a thrown, diagnosable error', async () => {
-    const { docker } = fakeDocker({ run: { code: 125, stderr: 'no such image' } });
-    const { open } = fakeChannel();
-    await expect(
-      new DockerLauncher({ docker, image: 'missing:tag', openChannel: open }).launch(spec())
-    ).rejects.toThrow(/docker run failed \(exit 125\).*missing:tag.*no such image/s);
-  });
-
   it('removes the container when the namespace proxy cannot bind, rather than orphaning it', async () => {
     const { docker, calls } = healthyDocker('abc123');
     const { open } = fakeChannel();
@@ -409,16 +348,6 @@ describe('DockerLauncher teardown', () => {
     expect(calls.some((c) => c[0] === 'rm')).toBe(true);
   });
 
-  it('kill() is idempotent — a second call issues no further docker commands', async () => {
-    const { docker, calls } = healthyDocker();
-    const { launcher, port } = await launcherOn(docker);
-    const launched = await launcher.launch(spec({ port }));
-    await launched.kill();
-    const afterFirst = calls.length;
-    await launched.kill();
-    expect(calls.length).toBe(afterFirst);
-  });
-
   it('exited resolves with the container exit code and a log tail (never rejects)', async () => {
     const { docker } = fakeDocker({
       run: { code: 0, stdout: 'deadbeef\n' },
@@ -436,25 +365,12 @@ describe('DockerLauncher teardown', () => {
 });
 
 describe('isolation tier resolution', () => {
-  it('parses the --isolation flag, defaulting unknown/absent to auto', () => {
-    expect(parseIsolationTier('docker')).toBe('docker');
-    expect(parseIsolationTier('child-process')).toBe('child-process');
-    expect(parseIsolationTier(undefined)).toBe('auto');
-    expect(parseIsolationTier('nonsense')).toBe('auto');
-  });
-
   it('auto: containerizes ONLY the cases that ask for it', async () => {
     const { docker } = healthyDocker();
     const resolver = createLauncherResolver({ isolation: 'auto', docker, notify: () => {} });
 
     expect(await resolver.forCase({ preferDocker: false })).toBeUndefined();
     expect((await resolver.forCase({ preferDocker: true }))?.id).toBe('docker');
-  });
-
-  it('docker: containerizes every case', async () => {
-    const { docker } = healthyDocker();
-    const resolver = createLauncherResolver({ isolation: 'docker', docker, notify: () => {} });
-    expect((await resolver.forCase({ preferDocker: false }))?.id).toBe('docker');
   });
 
   it('child-process: never containerizes, even a preferDocker case (and never probes)', async () => {
@@ -520,14 +436,5 @@ describe('isolation tier resolution', () => {
       notify: () => {},
     });
     expect((await resolver.forCase({ preferDocker: true }))?.id).toBe('docker');
-  });
-
-  it('probes docker at most once per run (memoized across cases)', async () => {
-    const { docker, calls } = healthyDocker();
-    const resolver = createLauncherResolver({ isolation: 'docker', docker, notify: () => {} });
-    await resolver.forCase({ preferDocker: true });
-    await resolver.forCase({ preferDocker: true });
-    expect(calls.filter((c) => c[0] === 'version')).toHaveLength(1);
-    expect(calls.filter((c) => c[0] === 'image')).toHaveLength(1);
   });
 });

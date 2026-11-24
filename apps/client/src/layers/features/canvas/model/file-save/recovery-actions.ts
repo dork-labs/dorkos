@@ -1,11 +1,10 @@
 /** Proof orchestration preserves the effect tail without retaining obsolete file reads. */
 import {
-  DocSaveRefusalReasonSchema,
   FileSaveDiscoverySchema,
   FileSaveRecoverResultSchema,
-  type DocSaveRefusalReason,
   type FileSaveDiscovery,
 } from '@dorkos/shared/file-save/recovery';
+import { serverSentence } from '@/layers/shared/lib';
 import { sameCanvasDocIncarnation } from '@dorkos/shared/canvas-doc-frame-wire';
 import type { Transport } from '@dorkos/shared/transport';
 import type { FileSaveBinding } from './receipt-operation';
@@ -32,12 +31,9 @@ function refusedByServer(error: unknown): boolean {
     typeof error === 'object' && error !== null && (error as { status?: unknown }).status === 404
   );
 }
-/** Which check refused, when the 404's body names one the client knows (DOR-4442). */
-function refusalReason(error: unknown): DocSaveRefusalReason | undefined {
-  const parsed = DocSaveRefusalReasonSchema.safeParse(
-    (error as { body?: { reason?: unknown } }).body?.reason
-  );
-  return parsed.success ? parsed.data : undefined;
+/** The 404's own sentence: which check refused, when the owner may know (DOR-4442). */
+function refusalSentence(error: unknown): string | undefined {
+  return serverSentence(error) ?? undefined;
 }
 /** Build serialized proof-only actions for one committed file-save owner. */
 export function createFileSaveRecoveryActions<Owner extends object>({
@@ -117,7 +113,7 @@ export function createFileSaveRecoveryActions<Owner extends object>({
           record.recoveryGate = 'unavailable';
           // Saves stay blocked either way; a 404 only changes what the person is told.
           if (!refusable || !refusedByServer(error)) return { status: 'unavailable' };
-          const reason = refusalReason(error);
+          const reason = refusalSentence(error);
           return { status: 'refused', ...(reason ? { reason } : {}) };
         } finally {
           // An old observed cache cannot satisfy a recheck after work lost currentness.

@@ -275,7 +275,8 @@ describe('Mesh topology routes', () => {
       });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('nope');
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.detail).toBe('That access rule isn’t allowed.');
     });
   });
 
@@ -300,7 +301,7 @@ describe('Mesh topology routes', () => {
       const res = await request(app).get('/api/mesh/agents/nonexistent/access');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Agent not found');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('returns empty array when agent has no reachable peers', async () => {

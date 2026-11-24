@@ -20,7 +20,7 @@ const basePart: BackgroundTaskPart = {
 describe('SubagentBlock', () => {
   it('renders the subagent description', () => {
     render(<SubagentBlock part={basePart} />);
-    expect(screen.getByText('Run code analysis')).toBeDefined();
+    expect(screen.getByText('Run code analysis')).toBeInTheDocument();
   });
 
   it('renders with data-testid and data attributes', () => {
@@ -47,32 +47,32 @@ describe('SubagentBlock', () => {
 
   it('shows tool summary when toolUses is provided', () => {
     render(<SubagentBlock part={{ ...basePart, toolUses: 3 }} />);
-    expect(screen.getByText('3 tool calls')).toBeDefined();
+    expect(screen.getByText('3 tool calls')).toBeInTheDocument();
   });
 
   it('shows singular "tool call" for toolUses of 1', () => {
     render(<SubagentBlock part={{ ...basePart, toolUses: 1 }} />);
-    expect(screen.getByText('1 tool call')).toBeDefined();
+    expect(screen.getByText('1 tool call')).toBeInTheDocument();
   });
 
   it('shows duration in seconds when durationMs is provided', () => {
     render(<SubagentBlock part={{ ...basePart, durationMs: 5000 }} />);
-    expect(screen.getByText('5s')).toBeDefined();
+    expect(screen.getByText('5s')).toBeInTheDocument();
   });
 
   it('shows "<1s" for sub-second duration', () => {
     render(<SubagentBlock part={{ ...basePart, durationMs: 500 }} />);
-    expect(screen.getByText('<1s')).toBeDefined();
+    expect(screen.getByText('<1s')).toBeInTheDocument();
   });
 
   it('shows duration in minutes and seconds for longer durations', () => {
     render(<SubagentBlock part={{ ...basePart, durationMs: 90000 }} />);
-    expect(screen.getByText('1m 30s')).toBeDefined();
+    expect(screen.getByText('1m 30s')).toBeInTheDocument();
   });
 
   it('shows combined tool calls and duration in summary', () => {
     render(<SubagentBlock part={{ ...basePart, toolUses: 2, durationMs: 3000 }} />);
-    expect(screen.getByText('2 tool calls · 3s')).toBeDefined();
+    expect(screen.getByText('2 tool calls · 3s')).toBeInTheDocument();
   });
 
   it('shows chevron and sets aria-expanded when expandable content exists', () => {
@@ -112,7 +112,7 @@ describe('SubagentBlock', () => {
     );
     const button = screen.getByRole('button');
     fireEvent.click(button);
-    expect(screen.getByText('Bash')).toBeDefined();
+    expect(screen.getByText('Bash')).toBeInTheDocument();
   });
 
   it('does not show lastToolName when status is complete', () => {
@@ -139,7 +139,7 @@ describe('SubagentBlock', () => {
     );
     const button = screen.getByRole('button');
     fireEvent.click(button);
-    expect(screen.getByText('Task finished successfully.')).toBeDefined();
+    expect(screen.getByText('Task finished successfully.')).toBeInTheDocument();
   });
 
   it('renders complete status with data-status attribute', () => {
@@ -203,6 +203,6 @@ describe('SubagentBlock', () => {
     render(<SubagentBlock part={{ ...basePart, subagentText: 'Exploring the auth module' }} />);
     fireEvent.click(screen.getByRole('button'));
     expect(screen.getByTestId('subagent-text').textContent).toBe('Exploring the auth module');
-    expect(screen.getByText('Helper output')).toBeDefined();
+    expect(screen.getByText('Helper output')).toBeInTheDocument();
   });
 });

@@ -15,8 +15,8 @@ import {
 } from '../../services/marketplace/consent/ask-withheld-global-plugins.js';
 import { trustedCaller } from '../../services/core/capabilities/index.js';
 import { resolveDecisionAuthority } from '../../services/core/approvals/index.js';
-import { OPERATOR_COOKIE_REQUIRED_CODE, readCallerAuthority } from '../../lib/caller-authority.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readCallerAuthority } from '../../lib/caller-authority.js';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../../http/request-facts.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceContext, MarketplaceRouteContext } from './context.js';
@@ -55,7 +55,9 @@ export function mountHeldBackRoutes(
       return c.json({ packages: await listHeldBackPackages(dorkHome) });
     } catch (err) {
       logger.error('[Marketplace] Failed to list held-back packages', err);
-      return c.json({ error: 'Failed to list held-back packages' }, 500);
+      return problem(c, 'internal_error', {
+        detail: "Couldn't list held-back packages. Try again.",
+      });
     }
   });
 
@@ -69,10 +71,15 @@ export function mountHeldBackRoutes(
       return c.json({ status: 'asked' }, 202);
     } catch (err) {
       if (err instanceof HeldBackReviewError) {
-        return c.json({ error: err.message, code: 'not_reviewable' }, 409);
+        logger.info(`[Marketplace] No card raised for ${name}`, { error: err.message });
+        return problem(c, 'conflict', {
+          detail: 'This package has nothing to review right now.',
+        });
       }
       logger.error(`[Marketplace] Failed to raise a card for ${name}`, err);
-      return c.json({ error: 'Failed to raise the approval card' }, 500);
+      return problem(c, 'internal_error', {
+        detail: "Couldn't raise the approval card. Try again.",
+      });
     }
   });
 
@@ -87,23 +94,14 @@ export function mountHeldBackRoutes(
     const authority = readCallerAuthority(honoRequestFacts(c));
     if (!trustedCaller(authority)) {
       if (!resolveDecisionAuthority(authority).allowed) {
-        return c.json(
-          {
-            error: 'Only you can decide whether a held-back package runs, not an agent.',
-            code: 'operator_only',
-          },
-          403
-        );
+        return problem(c, 'operator_only', {
+          detail: 'Only you can decide whether a held-back package runs, not an agent.',
+        });
       }
-      return c.json(
-        {
-          error:
-            'DorkOS requires sign-in, so this has to be decided by a person signed in to the app. ' +
-            'Open DorkOS, go to Marketplace, then Installed, and press Review on the package.',
-          code: OPERATOR_COOKIE_REQUIRED_CODE,
-        },
-        403
-      );
+      return problem(c, 'person_only', {
+        detail:
+          'DorkOS requires sign-in. In the app, open Marketplace, Installed, and press Review.',
+      });
     }
     const parsed = HeldBackDecisionBodySchema.safeParse(readJsonBody(c));
     if (!parsed.success) return validationFailed(c, parsed.error);
@@ -141,11 +139,14 @@ export function mountHeldBackRoutes(
   });
 }
 
-/** Answer a decision that was not recorded: 409 when it cannot be decided as shown, else 500. */
+/** Answer a decision that was not recorded: 412 `precondition_failed` when it is not as shown, else 500. */
 function decisionFailed(c: MarketplaceContext, name: string, err: unknown): Response {
   if (err instanceof HeldBackDecisionError) {
-    return c.json({ error: err.message, code: 'not_decidable' }, 409);
+    logger.info(`[Marketplace] Decision for ${name} not recorded`, { error: err.message });
+    return problem(c, 'precondition_failed', {
+      detail: "That package isn't held back as shown. Check again, then decide.",
+    });
   }
   logger.error(`[Marketplace] Failed to record a decision for ${name}`, err);
-  return c.json({ error: 'Failed to record the decision' }, 500);
+  return problem(c, 'internal_error', { detail: "Couldn't record the decision. Try again." });
 }

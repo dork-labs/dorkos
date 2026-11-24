@@ -97,7 +97,7 @@ Transport
 
 ### Key Design Decision: Trigger + Durable Stream
 
-There is no separate `Transport.createSession`: the first message creates a session, and says so with `create: true` (an id the server does not know is otherwise a `404 SESSION_NOT_FOUND`, so a stale id never starts a stranger session, DOR-2712). A new Claude Code session is launched under the id the client chose, so that id addresses it for its whole life. `postMessage` is trigger-only: it starts the turn and resolves to the canonical session id (ADR-0264). Delivery happens on the durable session event stream — `getSessionSnapshot` hydrates, `subscribeSession(sessionId, sinceCursor)` yields `SessionEvent`s with monotonic `seq` for gap-free resume. An optional `options` bag supports `clientMessageId` for server-echo ID reconciliation and `uiState` for passing a client UI state snapshot to the agent (see [Agent UI Control](#agent-ui-control)). The HTTP implementation maps this contract to the server:
+There is no separate `Transport.createSession`: the first message creates a session, and says so with `create: true` (an id the server does not know is otherwise a `404 session_not_found`, so a stale id never starts a stranger session, DOR-2712). A new Claude Code session is launched under the id the client chose, so that id addresses it for its whole life. `postMessage` is trigger-only: it starts the turn and resolves to the canonical session id (ADR-0264). Delivery happens on the durable session event stream — `getSessionSnapshot` hydrates, `subscribeSession(sessionId, sinceCursor)` yields `SessionEvent`s with monotonic `seq` for gap-free resume. An optional `options` bag supports `clientMessageId` for server-echo ID reconciliation and `uiState` for passing a client UI state snapshot to the agent (see [Agent UI Control](#agent-ui-control)). The HTTP implementation maps this contract to the server:
 
 - **HttpTransport** maps the streams to `GET /api/sessions/:id/events` and `GET /api/events` (WebSocket; the same paths also serve SSE for integrations — ADR 260805-041016)
 
@@ -1058,7 +1058,7 @@ Being scheduled is a property of a FILE, not of a directory (ADR `260823-200724`
 
 The old task directories (`~/.dork/tasks/`, `<projectPath>/.dork/tasks/`) are **not scanned or watched** as of DOR-1486. `services/tasks/legacy-migration.ts` rewrites and moves what is in them on the first boot that finds them, re-keying each row (and its approval) in one transaction. A `SKILL.md` appearing in either directory afterwards is not discovered while the server runs — though the next start's migration does move it, since detection is by location and unconditional. Neither directory is a live import path. `~/.dork/tasks/` itself stays, holding the two system files that were never schedules: `scheduler.lock` and `presets.json`. The template gallery moved to `~/.dork/skills/templates/`, which is the one reserved directory name in the global root.
 
-That module carries its own removal date (2027-02 or v1.0, whichever comes first; DOR-1491) and is the only place in the codebase that still knows the pre-block frontmatter shape.
+That module is the only place in the codebase that still knows the pre-block frontmatter shape. It is meant to go once no supported upgrade can still need it. It shipped in v0.65.0, which is now older than the 20 minor versions DorkOS supports upgrading from, so it can be removed. Its removal ticket, DOR-1491, was canceled in a backlog reset, so nothing tracks the removal now.
 
 ### Key Components
 

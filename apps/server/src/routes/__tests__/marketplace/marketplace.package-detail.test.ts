@@ -124,7 +124,9 @@ describe('GET /packages/:name', () => {
     const res = await detail();
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/isn't one DorkOS can fetch a marketplace from/);
+    expect(res.body.detail).toBe(
+      "DorkOS can't fetch from that address. Use an https:// or file:// address."
+    );
     // The hostile address is never echoed back to the caller.
     expect(JSON.stringify(res.body)).not.toContain('ext::');
   });
@@ -161,7 +163,10 @@ describe('POST /packages/:name/preview', () => {
     h.installer.preview.mockRejectedValue(new ShipsRuntimeStateError('.dork/secrets.json'));
     const res = await preview();
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain('.dork/secrets.json');
+    expect(res.body.detail).toBe(
+      "This package ships files DorkOS can't install. Nothing was written."
+    );
+    expect(JSON.stringify(res.body)).not.toContain('.dork/secrets.json');
   });
 
   it('refuses an escaped path without telling the caller where the cache lives', async () => {
@@ -182,7 +187,7 @@ describe('POST /packages/:name/preview', () => {
     h.installer.preview.mockRejectedValue(new InvalidPackageNameError('Bad Name', 'must be kebab'));
     const res = await preview();
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain('Bad Name');
+    expect(res.body.detail).toBe("That package or marketplace name can't be used. Pick another.");
   });
 
   it('returns 403 and never previews when projectPath is outside the boundary', async () => {

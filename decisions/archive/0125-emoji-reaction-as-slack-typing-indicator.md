@@ -1,7 +1,7 @@
 ---
 number: 125
 title: Use Emoji Reaction as Slack Typing Indicator
-status: draft
+status: archived
 created: 2026-03-14
 spec: relay-adapter-streaming-fixes
 superseded-by: null

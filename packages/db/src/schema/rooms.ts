@@ -750,6 +750,14 @@ export const roomEntries = sqliteTable(
       .on(table.roomId, table.timelineBand, table.timelinePos)
       .where(sql`"timeline_band" IS NOT NULL`),
     uniqueIndex('room_entries_room_id_entry_id_unique').on(table.roomId, table.id),
+    // "Which room holds this message?" from its id alone, the one entry read that names no
+    // room: a `dork:entry:<id>` link carries only the id (DOR-5046, DOR-5196). The unique
+    // index above leads with `room_id`, so without this one the planner (no statistics,
+    // since DorkOS never runs `ANALYZE`) scans every message of every room per lookup.
+    // NOT unique: a room mirrored from another space can hold the same message, so one id
+    // may sit in more than one room. The cost is one more b-tree write per message insert,
+    // accepted because the read is reachable by anyone holding a link.
+    index('idx_room_entries_id').on(table.id),
     index('idx_room_entries_cascade_root').on(table.roomId, table.cascadeRoot),
     // PARTIAL, like `rooms_channel_slug_unique` above and for the same reason:
     // the predicate is the query. Every thread read asks for a NON-NULL root

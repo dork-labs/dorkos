@@ -309,10 +309,6 @@ export function isWithinApprovedPermissions(
  */
 export const EXTENSION_NOT_APPROVED_CODE = 'extension_not_approved_to_run';
 
-/** The short `error` field every refusal to run unapproved extension code carries. */
-export const EXTENSION_NOT_APPROVED_ERROR =
-  'Only a person can approve an extension to run inside DorkOS';
-
 /**
  * The source an approval of this copy records: its directory, and the plugin
  * that carries it when it came inside one.

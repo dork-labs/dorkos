@@ -1,4 +1,5 @@
 import { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
+import { problemBody } from '@dorkos/http-kit';
 import { createHmac } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
@@ -116,7 +117,10 @@ describe('signed events in the real composed middleware stack', () => {
   });
   // Security's conditions for keeping this open over a tunnel (DOR-3650).
   describe('open over a tunnel, on Security’s conditions (DOR-3650)', () => {
-    const flat = { error: 'INVALID_EVENT_SIGNATURE' };
+    // One problem for every refused event, byte for byte: it names no check.
+    const flat = problemBody('invalid_signature', {
+      detail: 'This event’s signature didn’t check out.',
+    });
     const post = (path: string, headers: Record<string, string>) =>
       request(target.server)
         .post(path)

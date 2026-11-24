@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@dorkos/shared/types';
-import { cn } from '@/layers/shared/lib';
+import { cn, useCopyFeedback } from '@/layers/shared/lib';
 import { SIDEBAR_ROW_ATTRIBUTE, useRovingFocus } from '@/layers/shared/model';
 import { Skeleton } from '@/layers/shared/ui';
 import { useDirectChatRoomIds } from '@/layers/entities/room';
@@ -101,6 +101,10 @@ export function ChatList({
   );
 
   const forkChat = useCallback((sessionId: string) => void fork(sessionId), [fork]);
+  // The row's menu closes on the click, so the toast is the only place left to
+  // say the copy worked (`useCopyFeedback`'s TSDoc).
+  const { copy } = useCopyFeedback({ toastOnSettle: true });
+  const copyLink = useCallback((link: string) => void copy(link), [copy]);
   const keys = useChatListKeys(onNewChat, forkChat);
 
   const { ref: rovingRef, onKeyDown: onRovingKeyDown } = useRovingFocus();
@@ -136,6 +140,7 @@ export function ChatList({
     onOpen: onOpenChat,
     onFork: forkChat,
     onRename: rename,
+    onCopyLink: copyLink,
     registerRow: keys.registerRow,
     search,
   };

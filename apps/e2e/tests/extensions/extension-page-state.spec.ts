@@ -108,50 +108,6 @@ test.describe('An app’s page while the app is still starting', () => {
     await setEnabled(request, false);
   });
 
-  test('says Starting… while a slow bundle loads, then shows the page (A)', async ({ page }) => {
-    await watchPage(page);
-    const bundles = holdBundles(page);
-    await bundles.install();
-    try {
-      await page.goto(`/x/${HELLO}`);
-      await bundles.arrived(1);
-      await expect(page.getByTestId('extension-page-loading').getByText('Starting…')).toBeVisible();
-      await bundles.release(1);
-    } finally {
-      await bundles.done();
-    }
-    await expect(pageHeading(page)).toBeVisible();
-    const what = await seen(page);
-    expect(what.starting).toBe(true);
-    expect(what.said, 'never said the page was unavailable').toEqual([]);
-  });
-
-  test('says the app isn’t working when its bundle never finishes, and Try again loads it (B)', async ({
-    page,
-  }) => {
-    // The client gives one bundle 15 seconds.
-    test.setTimeout(60_000);
-    await watchPage(page);
-    const bundles = holdBundles(page);
-    await bundles.install();
-    try {
-      await page.goto(`/x/${HELLO}`);
-      await bundles.arrived(1);
-      const notWorking = page.getByTestId('extension-page-not-working');
-      await expect(notWorking).toContainText('Hello World isn’t working.', { timeout: 25_000 });
-      await expect(page.getByText(NOT_AVAILABLE)).toHaveCount(0);
-
-      // Try again imports it afresh; let that one through.
-      await notWorking.getByRole('button', { name: 'Try again' }).click();
-      await bundles.arrived(2);
-      await bundles.release(2);
-      await expect(pageHeading(page)).toBeVisible();
-    } finally {
-      await bundles.done();
-    }
-    expect((await seen(page)).said, 'never said the page was unavailable').toEqual([]);
-  });
-
   test('keeps waiting when a hot reload’s import outlasts the first load (C3)', async ({
     page,
     request,

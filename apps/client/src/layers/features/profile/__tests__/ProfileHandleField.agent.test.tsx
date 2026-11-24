@@ -57,7 +57,7 @@ describe('the Handle field on an agent you manage', () => {
     const sentence = '@d0rian looks too much like @dorian. Pick a different one.';
     mount(WARDEN);
     vi.mocked(transport.setAuthorHandle).mockRejectedValueOnce(
-      Object.assign(new Error(sentence), { code: 'HANDLE_LOOKALIKE' })
+      Object.assign(new Error(sentence), { code: 'handle_lookalike' })
     );
 
     submit('d0rian');

@@ -16,11 +16,11 @@ _openapi:
           to configure. **Any member of the room may call it, an agent
           included.** A caller presenting a token this machine cannot verify is
           refused 401. A room the caller cannot see answers 404, the same way
-          reading it does. An archived room answers 409 `ROOM_ARCHIVED`; bring
+          reading it does. An archived room answers 409 `room_archived`; bring
           it back before giving it files. Calling it twice is safe: the second
-          call answers 409 `ROOM_REPO_EXISTS` carrying the binding that is
+          call answers 409 `room_repo_exists` carrying the binding that is
           already there, and makes no second commit. With room files switched
-          off in settings, 409 `ROOM_REPOS_DISABLED` — and nothing on disk is
+          off in settings, 409 `room_repos_disabled` — and nothing on disk is
           touched, so switching them back on returns everything.'
 ---
 

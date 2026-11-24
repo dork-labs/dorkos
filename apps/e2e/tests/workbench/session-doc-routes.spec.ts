@@ -147,7 +147,7 @@ test('a person reviews, allows and turns off a document route from the canvas he
   // A route to an agent that is not there refuses with a reason and allows nothing.
   await panel.getByTestId('doc-route-review-button-helper').click();
   await expect(panel.getByTestId('doc-route-review-helper').getByRole('alert')).toHaveText(
-    'The agent for this route isn’t available.'
+    'The agent for this route is not available.'
   );
   await expect(panel.getByTestId('doc-route-allow-helper')).toBeDisabled();
   await panel

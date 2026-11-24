@@ -148,6 +148,24 @@ function renderStrip(
       </TransportProvider>
     </QueryClientProvider>
   );
+  return { transport, queryClient };
+}
+
+/**
+ * Wait until the fleet has been resolved (and, with `catalog`, the model catalog
+ * asked) and nothing is still fetching, so an absence asserted after it is a
+ * verdict on the data rather than a frame drawn before the data arrived. The
+ * catalog is only fetched for an agent that pins a model or an effort.
+ */
+async function settled(
+  { transport, queryClient }: ReturnType<typeof renderStrip>,
+  { catalog = false } = {}
+): Promise<void> {
+  await waitFor(() => {
+    expect(transport.resolveAgents).toHaveBeenCalled();
+    if (catalog) expect(transport.getModels).toHaveBeenCalled();
+    expect(queryClient.isFetching()).toBe(0);
+  });
 }
 
 describe('ExecutionExceptionsStrip — an injected fleet (showcase path)', () => {
@@ -167,8 +185,17 @@ describe('ExecutionExceptionsStrip — an injected fleet (showcase path)', () =>
     };
   }
 
-  function renderInjected(exceptions: ExecutionException[]) {
-    const transport = createMockTransport();
+  /** Renders the strip with `exceptions` handed in, over a transport whose own fleet is `fleet`. */
+  function renderInjected(
+    exceptions: ExecutionException[],
+    fleet: Record<string, AgentManifest> = {}
+  ) {
+    const transport = createMockTransport({
+      listMeshAgentPaths: vi
+        .fn()
+        .mockResolvedValue({ agents: Object.keys(fleet).map((p) => ({ projectPath: p })) }),
+      resolveAgents: vi.fn().mockResolvedValue(fleet),
+    });
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
     });
@@ -179,7 +206,7 @@ describe('ExecutionExceptionsStrip — an injected fleet (showcase path)', () =>
         </TransportProvider>
       </QueryClientProvider>
     );
-    return transport;
+    return { transport, queryClient };
   }
 
   it('gives a colourless agent its hashed identity colour, not a flat grey', async () => {
@@ -223,25 +250,26 @@ describe('ExecutionExceptionsStrip — an injected fleet (showcase path)', () =>
   });
 
   it('spends no catalog round-trip deciding what the caller already decided', async () => {
-    const transport = renderInjected([exception('alpha', false)]);
+    // The transport's own fleet pins a model, so the live path WOULD fetch the
+    // catalog; wait until that fleet has been read and everything is idle.
+    const strip = renderInjected([exception('alpha', false)], {
+      '/a': agent('alpha', { model: 'opus' }),
+    });
     await screen.findByTestId('execution-exception');
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(transport.getModels).not.toHaveBeenCalled();
+    await settled(strip);
+    expect(strip.transport.getModels).not.toHaveBeenCalled();
   });
 
-  it('still draws nothing at all when it is handed an empty fleet', async () => {
+  it('still draws nothing at all when it is handed an empty fleet', () => {
+    // Nothing here is fetched, so the first render is the final one.
     renderInjected([]);
-    await new Promise((resolve) => setTimeout(resolve, 20));
     expect(screen.queryByTestId('execution-exceptions-strip')).toBeNull();
   });
 });
 
 describe('ExecutionExceptionsStrip', () => {
   it('draws nothing at all when the whole fleet inherits', async () => {
-    renderStrip({ '/a': agent('alpha') });
-    await waitFor(() => expect(screen.queryByTestId('execution-exceptions-strip')).toBeNull());
-    // Give the queries a chance to settle and still show nothing.
-    await new Promise((r) => setTimeout(r, 20));
+    await settled(renderStrip({ '/a': agent('alpha') }));
     expect(screen.queryByTestId('execution-exceptions-strip')).toBeNull();
   });
 
@@ -284,11 +312,11 @@ describe('ExecutionExceptionsStrip', () => {
 
   // ── B1: the catalog answers 200 {models: []} while it warms up ─────────────
   it('does not turn the whole fleet amber against a cold catalog', async () => {
-    renderStrip({ '/a': agent('alpha', { model: 'opus' }) }, { models: [] });
+    const strip = renderStrip({ '/a': agent('alpha', { model: 'opus' }) }, { models: [] });
     // The row still appears — pinning a model IS a deviation — but a warming
     // catalog must not upgrade that deviation to breakage.
-    expect(await screen.findByTestId('execution-exception')).toHaveTextContent('model opus');
-    await new Promise((r) => setTimeout(r, 50));
+    await settled(strip, { catalog: true });
+    expect(screen.getByTestId('execution-exception')).toHaveTextContent('model opus');
     expect(screen.queryByTestId('execution-exception-broken')).toBeNull();
   });
 

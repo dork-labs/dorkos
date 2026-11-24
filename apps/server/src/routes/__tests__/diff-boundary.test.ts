@@ -53,7 +53,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
       .get('/api/diff/baseline')
       .query({ cwd, path: 'link/secret.txt', sessionId: SESSION });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
   });
 
   it('GET /baseline with a ../ path is rejected (403)', async () => {
@@ -61,14 +61,14 @@ describe('Diff routes — real boundary + symlink escapes', () => {
       .get('/api/diff/baseline')
       .query({ cwd, path: '../outside/secret.txt', sessionId: SESSION });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
   });
 
   it('GET /baseline rejects a null-byte path (400)', async () => {
     const qs = `cwd=${encodeURIComponent(cwd)}&path=a%00b.ts&sessionId=${SESSION}`;
     const res = await request(testServer).get(`/api/diff/baseline?${qs}`);
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('NULL_BYTE');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('POST /baseline/advance through a symlinked parent cannot escape cwd (403)', async () => {
@@ -76,7 +76,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
       .post('/api/diff/baseline/advance')
       .send({ cwd, path: 'link/secret.txt', sessionId: SESSION });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
   });
 
   it('GET /pending rejects a cwd outside the boundary (403)', async () => {
@@ -92,7 +92,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
       .get('/api/diff/baseline')
       .query({ cwd, path: 'subdir', sessionId: SESSION });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('NOT_A_FILE');
+    expect(res.body.code).toBe('not_a_file');
   });
 
   it('GET /baseline returns 415 for a binary file', async () => {
@@ -101,7 +101,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
       .get('/api/diff/baseline')
       .query({ cwd, path: 'logo.bin', sessionId: SESSION });
     expect(res.status).toBe(415);
-    expect(res.body.code).toBe('BINARY_FILE');
+    expect(res.body.code).toBe('binary_file');
   });
 
   it('GET /baseline resolves an empty base for an untracked, unsnapshotted file (control)', async () => {
@@ -138,7 +138,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
       .get('/api/diff/baseline/raw')
       .query({ cwd, path: 'link/secret.png', sessionId: SESSION });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
   });
 
   it('GET /baseline/raw with a ../ path is rejected (403)', async () => {
@@ -146,14 +146,14 @@ describe('Diff routes — real boundary + symlink escapes', () => {
       .get('/api/diff/baseline/raw')
       .query({ cwd, path: '../outside/secret.png', sessionId: SESSION });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
   });
 
   it('GET /baseline/raw rejects a null-byte path (400)', async () => {
     const qs = `cwd=${encodeURIComponent(cwd)}&path=a%00b.png&sessionId=${SESSION}`;
     const res = await request(testServer).get(`/api/diff/baseline/raw?${qs}`);
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('NULL_BYTE');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('GET /baseline/raw serves ONLY media types (415 for .ts)', async () => {
@@ -163,7 +163,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
       .get('/api/diff/baseline/raw')
       .query({ cwd, path: 'app.ts', sessionId: SESSION });
     expect(res.status).toBe(415);
-    expect(res.body.code).toBe('UNSUPPORTED_TYPE');
+    expect(res.body.code).toBe('unsupported_media_type');
   });
 
   it('GET /baseline/raw is 404 when no baseline exists', async () => {
@@ -172,7 +172,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
       .get('/api/diff/baseline/raw')
       .query({ cwd, path: 'logo.png', sessionId: SESSION });
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('NO_BASELINE');
+    expect(res.body.code).toBe('not_found');
   });
 
   it('GET /baseline/raw streams the snapshot bytes with the files/raw security posture', async () => {
@@ -214,7 +214,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
       .post('/api/diff/revert')
       .send({ cwd, path: 'link/victim.png', sessionId: SESSION });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
     // The outside file is untouched.
     expect((await fs.readFile(path.join(outside, 'victim.png'))).equals(PNG_V2)).toBe(true);
   });
@@ -239,7 +239,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
       .post('/api/diff/revert')
       .send({ cwd, path: 'new.png', sessionId: SESSION });
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('NO_BASELINE');
+    expect(res.body.code).toBe('not_found');
     expect((await fs.readFile(file)).equals(PNG_V2)).toBe(true);
   });
 });

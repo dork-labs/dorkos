@@ -214,7 +214,7 @@ describe('POST /api/sessions/:id/command-intents/:intent', () => {
     );
 
     expect(res.status).toBe(422);
-    expect(res.body.code).toBe('COMMAND_INTENT_UNSUPPORTED');
+    expect(res.body.code).toBe('not_supported');
     expect(fakeRuntime.executeCommandIntent).not.toHaveBeenCalled();
   });
 
@@ -226,7 +226,7 @@ describe('POST /api/sessions/:id/command-intents/:intent', () => {
     );
 
     expect(res.status).toBe(422);
-    expect(res.body.code).toBe('INVALID_COMMAND_INTENT');
+    expect(res.body.code).toBe('invalid_request');
     expect(fakeRuntime.executeCommandIntent).not.toHaveBeenCalled();
   });
 });

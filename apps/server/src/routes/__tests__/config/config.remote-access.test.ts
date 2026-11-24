@@ -48,7 +48,7 @@ describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
       .patch('/api/config')
       .send({ auth: { enabled: false } })
       .expect(403);
-    expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+    expect(res.body.code).toBe('operator_only');
     expect(res.body.paths).toEqual(['auth.enabled']);
   });
 
@@ -73,7 +73,7 @@ describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
       .patch('/api/config')
       .send({ server: { lanAccess: true } })
       .expect(403);
-    expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+    expect(res.body.code).toBe('operator_only');
   });
 
   it('still lets a Wi-Fi sign-in change an ordinary setting', async () => {
@@ -107,9 +107,9 @@ describe('PATCH /api/config, a Files & commands stop from Wi-Fi (DOR-3037)', () 
       .patch('/api/config')
       .send({ runtimes: { defaultTrustStop: 'autonomy' } })
       .expect(403);
-    expect(everyone.body).toEqual({
-      error: 'Raising permissions works only at this computer.',
-      code: 'NOT_FROM_WIFI',
+    expect(everyone.body).toMatchObject({
+      detail: 'Raising permissions works only at this computer.',
+      code: 'not_from_wifi',
     });
     await request(server)
       .patch('/api/config')

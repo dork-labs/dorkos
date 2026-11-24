@@ -25,6 +25,7 @@ import {
   recoverOriginalDocumentFileSave,
 } from '../installation-file-writes.js';
 import { validateFileSaveIntent } from '../file-save-intents.js';
+import { saved } from './saved-outcome.js';
 
 it('cold authenticated replay carries the original saved frame birth before receipt discovery', async () => {
   const f = await setup(),
@@ -64,7 +65,7 @@ it('cold authenticated replay carries the original saved frame birth before rece
 it('discovers committed proof without the original draft, UUID knowledge or another outbox effect', async () => {
   const f = await setup(),
     input = f.input();
-  const first = await f.save(input);
+  const first = saved(await f.save(input));
   const unknownReceipt = 'documentReceipt' in first.body ? first.body.documentReceipt : undefined;
   if (!unknownReceipt) throw new Error('Original receipt missing');
   const accepted = FileDocumentSaveReceiptSchema.parse(unknownReceipt);

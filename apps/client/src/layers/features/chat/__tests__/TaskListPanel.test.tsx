@@ -31,14 +31,14 @@ describe('TaskListPanel', () => {
 
   it('shows correct progress count in header', () => {
     render(<TaskListPanel tasks={baseTasks} taskMap={makeMap(baseTasks)} {...baseProps} />);
-    expect(screen.getByText('1/3 tasks')).toBeDefined();
+    expect(screen.getByText('1/3 tasks')).toBeInTheDocument();
   });
 
   it('renders all task subjects', () => {
     render(<TaskListPanel tasks={baseTasks} taskMap={makeMap(baseTasks)} {...baseProps} />);
-    expect(screen.getByText('Completed task')).toBeDefined();
-    expect(screen.getByText('In progress task')).toBeDefined();
-    expect(screen.getByText('Pending task')).toBeDefined();
+    expect(screen.getByText('Completed task')).toBeInTheDocument();
+    expect(screen.getByText('In progress task')).toBeInTheDocument();
+    expect(screen.getByText('Pending task')).toBeInTheDocument();
   });
 
   it('applies line-through styling to completed tasks', () => {
@@ -62,7 +62,7 @@ describe('TaskListPanel', () => {
         activeForm="Working on it"
       />
     );
-    expect(screen.getByText('Working on it')).toBeDefined();
+    expect(screen.getByText('Working on it')).toBeInTheDocument();
   });
 
   it('hides task list when collapsed', () => {
@@ -74,7 +74,7 @@ describe('TaskListPanel', () => {
         isCollapsed={true}
       />
     );
-    expect(screen.getByText('1/3 tasks')).toBeDefined();
+    expect(screen.getByText('1/3 tasks')).toBeInTheDocument();
     expect(screen.queryByText('Completed task')).toBeNull();
   });
 
@@ -110,7 +110,7 @@ describe('TaskListPanel', () => {
     render(<TaskListPanel tasks={taskWithDesc} taskMap={makeMap(taskWithDesc)} {...baseProps} />);
     const buttons = screen.getAllByRole('button');
     fireEvent.click(buttons[1]);
-    expect(screen.getByText('Detailed info')).toBeDefined();
+    expect(screen.getByText('Detailed info')).toBeInTheDocument();
   });
 
   it('dims blocked tasks', () => {
@@ -135,6 +135,6 @@ describe('TaskListPanel', () => {
   it('handles singular task count', () => {
     const singleTask: TaskItem[] = [{ id: '1', subject: 'Only task', status: 'pending' }];
     render(<TaskListPanel tasks={singleTask} taskMap={makeMap(singleTask)} {...baseProps} />);
-    expect(screen.getByText('0/1 task')).toBeDefined();
+    expect(screen.getByText('0/1 task')).toBeInTheDocument();
   });
 });

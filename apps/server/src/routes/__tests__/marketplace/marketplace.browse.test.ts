@@ -238,8 +238,8 @@ describe('the package cache', () => {
     const res = await h.post('/cache/prune', {});
 
     expect(res.status).toBe(503);
-    expect(res.body.error).toMatch(/nothing was removed/);
-    expect(res.body.error).not.toContain(h.dorkHome);
+    expect(res.body.detail).toMatch(/Nothing was removed/);
+    expect(res.body.detail).not.toContain(h.dorkHome);
     expect((await h.get('/cache')).body.packages).toBe(1);
   });
 

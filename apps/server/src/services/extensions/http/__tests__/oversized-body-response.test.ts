@@ -1,3 +1,4 @@
+import { problemBody } from '@dorkos/http-kit';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { setImmediate as nextTurn } from 'node:timers/promises';
@@ -43,16 +44,19 @@ function expectDisposed(p: ReturnType<typeof pair>) {
 
 afterEach(() => vi.useRealTimers());
 
-it('flushes exact JSON immediately and uses one 500ms deadline despite progress', async () => {
+it('flushes an exact problem document immediately and uses one 500ms deadline despite progress', async () => {
   vi.useFakeTimers();
   const p = pair();
   const pending = rejectOversizedBody(p.context);
+  const text = JSON.stringify(
+    problemBody('request_too_large', { detail: 'That request is too large.' })
+  );
   expect(p.outgoing.writeHead).toHaveBeenCalledWith(413, {
-    'content-type': 'application/json',
-    'content-length': 38,
+    'content-type': 'application/problem+json',
+    'content-length': Buffer.byteLength(text),
     connection: 'close',
   });
-  expect(p.outgoing.write).toHaveBeenCalledWith('{"error":"That request is too large."}');
+  expect(p.outgoing.write).toHaveBeenCalledWith(text);
   expect(p.outgoing.flushHeaders).toHaveBeenCalledOnce();
   expect(p.outgoing.end).not.toHaveBeenCalled();
   expect(vi.getTimerCount()).toBe(1);

@@ -19,7 +19,7 @@ _openapi:
           404, exactly as reading the room does. **Only a person may ask** — an
           agent enumerating its room-mates'' sessions is arbitration this domain
           has declined, so a caller whose `X-DorkOS-Agent` token resolves to a
-          live agent is refused 403 `PEOPLE_ONLY`, and one whose token does not
+          live agent is refused 403 `person_only`, and one whose token does not
           resolve is refused 401 before the room is looked up at all. A revoked
           agent is still an agent.'
 ---

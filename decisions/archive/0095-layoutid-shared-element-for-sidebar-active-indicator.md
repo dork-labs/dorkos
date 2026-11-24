@@ -1,7 +1,7 @@
 ---
 number: 95
 title: Use layoutId Shared Element for Sidebar Active Session Indicator
-status: draft
+status: archived
 created: 2026-03-09
 spec: chat-microinteractions-polish
 superseded-by: null

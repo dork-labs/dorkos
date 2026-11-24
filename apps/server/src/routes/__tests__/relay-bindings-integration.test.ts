@@ -351,7 +351,10 @@ describe('Binding bridge field — wildcard bindings cannot be bridged (A3.5)', 
       .patch(`/api/relay/bindings/${bindingId}`)
       .send({ bridge: 'room' })
       .expect(400);
-    expect(JSON.stringify(res.body)).toContain('one room cannot honestly be the channel');
+    expect(res.body).toMatchObject({
+      code: 'invalid_request',
+      detail: 'Pick one chat before turning this route into a channel.',
+    });
 
     // The binding is untouched — a rejected PATCH must not half-apply. The
     // schema default is 'off', not undefined: nothing wrote 'room' onto it.
@@ -413,7 +416,10 @@ describe('Binding bridge field — wildcard bindings cannot be bridged (A3.5)', 
       .patch(`/api/relay/bindings/${bindingId}`)
       .send({ chatId: null })
       .expect(400);
-    expect(JSON.stringify(res.body)).toContain('one room cannot honestly be the channel');
+    expect(res.body).toMatchObject({
+      code: 'invalid_request',
+      detail: 'Pick one chat before turning this route into a channel.',
+    });
 
     // Unchanged: still bridged, still pointed at the original chat.
     const readRes = await request(app).get(`/api/relay/bindings/${bindingId}`).expect(200);
@@ -594,7 +600,10 @@ describe('Multi-instance adapter flow', () => {
       .send({ type: 'claude-code', id: 'cc-2', config: {} })
       .expect(400);
 
-    expect(res.body.code).toBe('MULTI_INSTANCE_DENIED');
+    expect(res.body).toMatchObject({
+      code: 'invalid_request',
+      detail: 'This kind of connection can be added only once.',
+    });
   });
 
   it('creates independent bindings for each adapter instance', async () => {
@@ -717,7 +726,7 @@ describe('Observed chats pipeline', () => {
 
     const res = await request(app).get('/api/relay/adapters/telegram-1/chats').expect(404);
 
-    expect(res.body.error).toBe('Tracing not available');
+    expect(res.body).toMatchObject({ code: 'not_found', detail: 'Delivery tracing is off here.' });
   });
 
   it('passes limit parameter to trace store', async () => {

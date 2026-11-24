@@ -1421,7 +1421,7 @@ export interface Transport extends TransportSlices {
    * "reject" (DOR-212 Chunk B). Binary-safe, unlike the text-oriented
    * {@link writeFile}: the server writes the snapshot's own bytes (git-HEAD
    * fallback), atomically, so no bytes travel from the client. Throws with
-   * `code: 'NO_BASELINE'` (404) when no restorable baseline exists — a file
+   * `code: 'not_found'` (404) when no restorable baseline exists — a file
    * the agent created this session has no previous version, and the revert
    * never deletes files. Content-independent and idempotent: it restores the
    * same pre-session bytes regardless of what is on disk now, so the caller
@@ -1438,7 +1438,7 @@ export interface Transport extends TransportSlices {
   revertDiffBaseline(cwd: string, filePath: string, sessionId: string): Promise<void>;
   /**
    * Create a new file or directory within `cwd`. Rejects (409, thrown with
-   * `code: 'CONFLICT'`) when the target already exists. `content` seeds a new
+   * `code: 'already_exists'`) when the target already exists. `content` seeds a new
    * file's bytes (ignored for `type: 'dir'`). The write is atomic for files.
    *
    * @param cwd - Session working directory the path is resolved within.
@@ -1467,7 +1467,7 @@ export interface Transport extends TransportSlices {
   ): Promise<FileMutationResponse>;
   /**
    * Move or rename an entry within `cwd`. Both `from` and `to` are confined to
-   * `cwd`; rejects (409, thrown with `code: 'CONFLICT'`) when `to` already
+   * `cwd`; rejects (409, thrown with `code: 'already_exists'`) when `to` already
    * exists.
    *
    * @param cwd - Session working directory both paths are resolved within.
@@ -1478,9 +1478,9 @@ export interface Transport extends TransportSlices {
   /**
    * Copy an entry within `cwd`, recursively for directories. Both `from` and
    * `to` are confined to `cwd`; rejects when `from` is missing (thrown with
-   * `code: 'NOT_FOUND'`), when `to` already exists (`code: 'CONFLICT'`), or
+   * `code: 'not_found'`), when `to` already exists (`code: 'already_exists'`), or
    * when a directory would be copied into its own subtree
-   * (`code: 'COPY_INTO_SELF'`).
+   * (`code: 'copy_into_self'`).
    *
    * @param cwd - Session working directory both paths are resolved within.
    * @param from - Source path, absolute or relative to `cwd`.
@@ -2004,7 +2004,7 @@ export interface Transport extends TransportSlices {
   updateBinding(id: string, updates: UpdateBindingRequest): Promise<AdapterBinding>;
   /**
    * Re-point an existing binding at a different agent, keeping its id. The
-   * answer to a `CHAT_ALREADY_BOUND` rejection: one chat reaches one agent, so
+   * answer to a `chat_already_bound` rejection: one chat reaches one agent, so
    * moving the binding that already owns the chat is the only way to change
    * who answers it (connection-scoping spec §Part 2).
    *
@@ -3414,7 +3414,7 @@ export interface Transport extends TransportSlices {
   /**
    * Point an unclaimed chat at an agent, creating the binding that routes it.
    * Goes through the same uniqueness check as any other binding create, so a
-   * chat another binding took in the meantime rejects with `CHAT_ALREADY_BOUND`.
+   * chat another binding took in the meantime rejects with `chat_already_bound`.
    *
    * `input.bridge: true` is the claim card's primary action, "Answer in a
    * channel": claim, binding, and bridge happen in one call. The claim always

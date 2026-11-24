@@ -155,7 +155,7 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
         .send(createBody({ cron: 'banana' }));
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('banana');
+      expect(res.body.detail).toContain('banana');
       // The whole point of validating BEFORE the write: no file, no row.
       expect(writeSkillFile).not.toHaveBeenCalled();
       expect(store.getTasks()).toHaveLength(0);
@@ -167,7 +167,7 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
         .send(createBody({ timezone: 'Mars/Phobos' }));
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('Mars/Phobos');
+      expect(res.body.detail).toContain('Mars/Phobos');
       expect(writeSkillFile).not.toHaveBeenCalled();
       expect(store.getTasks()).toHaveLength(0);
     });
@@ -240,7 +240,7 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
         .send({ timezone: 'Mars/Phobos' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('Mars/Phobos');
+      expect(res.body.detail).toContain('Mars/Phobos');
       expect(store.getTask(task.id)?.timezone).toBe('UTC');
     });
 

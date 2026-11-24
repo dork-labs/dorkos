@@ -40,7 +40,7 @@ describe('POST /sources', () => {
     const res = await h.post('/sources', { name: 'dup', source: 'https://example.com/two' });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBeTruthy();
+    expect(res.body.detail).toBeTruthy();
     expect(h.fetcher.fetchMarketplaceJson).not.toHaveBeenCalled();
   });
 
@@ -58,8 +58,9 @@ describe('POST /sources', () => {
 
     expect(res.status).toBe(400);
     // The person reading it learns which addresses do work.
-    expect(res.body.error).toMatch(/isn't one DorkOS can fetch a marketplace from/);
-    expect(res.body.error).toMatch(/https:\/\//);
+    expect(res.body.detail).toBe(
+      "DorkOS can't fetch from that address. Use an https:// or file:// address."
+    );
     expect(h.fetcher.fetchMarketplaceJson).not.toHaveBeenCalled();
     expect(await listSourceNames(h)).not.toContain('hostile');
   });
@@ -70,7 +71,7 @@ describe('POST /sources', () => {
     const res = await h.post('/sources', { name: 'x/..', source: 'https://example.com/m' });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/letters, numbers, dots, dashes and underscores/);
+    expect(res.body.detail).toMatch(/letters, numbers, dots, dashes and underscores/);
     expect(h.fetcher.fetchMarketplaceJson).not.toHaveBeenCalled();
     expect(await listSourceNames(h)).not.toContain('x/..');
   });
@@ -281,11 +282,12 @@ describe('the operator-only bar on the source routes (DOR-502)', () => {
     });
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('operator_only_marketplace_source');
-    expect(res.body.error).toBe('Only the person running DorkOS can add a package source');
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body.code).toBe('operator_only');
     // Legible to a model: it must learn to ask the person, not to retry.
-    expect(res.body.message).toContain('Marketplace sources page');
-    expect(res.body.message).toContain('Retrying will not help');
+    expect(res.body.detail).toBe(
+      "DorkOS added nothing. Package sources are the person's to choose. Ask them; retrying won't help."
+    );
     expect(await listSourceNames(h)).not.toContain('attacker');
   });
 
@@ -296,9 +298,8 @@ describe('the operator-only bar on the source routes (DOR-502)', () => {
     const res = await h.del('/sources/keeper');
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('operator_only_marketplace_source');
-    expect(res.body.error).toBe('Only the person running DorkOS can remove a package source');
-    expect(res.body.message).toContain('Marketplace sources page');
+    expect(res.body.code).toBe('operator_only');
+    expect(res.body.detail).toContain('DorkOS removed nothing.');
     expect(await listSourceNames(h)).toContain('keeper');
   });
 
@@ -308,8 +309,8 @@ describe('the operator-only bar on the source routes (DOR-502)', () => {
     const res = await h.post('/sources', { name: '' });
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('operator_only_marketplace_source');
-    expect(res.body.details).toBeUndefined();
+    expect(res.body.code).toBe('operator_only');
+    expect(res.body.issues).toBeUndefined();
   });
 
   it('lets the person in the app add and then remove a source', async () => {

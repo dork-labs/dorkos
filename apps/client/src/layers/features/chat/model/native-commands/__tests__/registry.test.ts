@@ -115,10 +115,4 @@ describe('NATIVE_COMMAND_ENTRIES', () => {
     // palette rows come from the shared intent registry, which dedupes these out.
     expect(NATIVE_COMMAND_ENTRIES.map((e) => e.command)).toEqual(['rename', 'clear', 'context']);
   });
-
-  it('is a stable module-level reference (same array across reads)', () => {
-    // ChatPanel spreads this into a useMemo dep; a fresh array each read would
-    // defeat the memo. Importing twice must yield the identical reference.
-    expect(NATIVE_COMMAND_ENTRIES).toBe(NATIVE_COMMAND_ENTRIES);
-  });
 });

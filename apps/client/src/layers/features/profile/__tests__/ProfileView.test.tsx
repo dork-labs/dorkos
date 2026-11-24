@@ -245,6 +245,39 @@ describe('the portrait, in one fixed order', () => {
   });
 });
 
+describe('Copy link in the actions menu (DOR-5046)', () => {
+  const AGENT_ID = '01KJXYKJYW4N8QGQ5W4GB6YM9J';
+  const withMeshId = (member: TeamMember): TeamMember => ({
+    ...member,
+    agent: { ...member.agent!, manifestId: AGENT_ID },
+  });
+
+  it('copies the agent’s full /r/ link, and says so with one toast', async () => {
+    await renderProfile(withMeshId(MANAGED));
+
+    await userEvent.click(
+      screen.getByRole('button', { name: `Actions for ${MANAGED.displayName}` })
+    );
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Copy link' }));
+
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        `${window.location.origin}/r/dork:agent:${AGENT_ID}`
+      )
+    );
+    await waitFor(() => expect(toasts.success).toHaveBeenCalledWith('Copied'));
+  });
+
+  it('offers it on an agent someone else owns, too', async () => {
+    await renderProfile(withMeshId(OTHERS_AGENT));
+
+    await userEvent.click(
+      screen.getByRole('button', { name: `Actions for ${OTHERS_AGENT.displayName}` })
+    );
+    expect(await screen.findByRole('menuitem', { name: 'Copy link' })).toBeInTheDocument();
+  });
+});
+
 describe('the status line', () => {
   it('spends its one live dot only on a turn that is running now', async () => {
     await renderProfile(MANAGED);

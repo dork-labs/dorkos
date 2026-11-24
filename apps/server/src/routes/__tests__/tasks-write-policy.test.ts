@@ -201,7 +201,7 @@ describe('operator-only task fields on the REST routes', () => {
         });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('operator_only_task_field');
+      expect(res.body.code).toBe('person_only');
       expect(res.body.fields).toEqual(['permissionMode']);
 
       const after = store.getTask(existing.id)!;
@@ -292,7 +292,7 @@ describe('operator-only task fields on the REST routes', () => {
           });
 
         expect(res.status, `reason ${JSON.stringify(reason)}`).toBe(400);
-        expect(String(res.body.error)).toContain('needs a reason');
+        expect(String(res.body.detail)).toContain('needs a reason');
       }
 
       // Refused before the file is written, so nothing is left on disk or in the
@@ -585,6 +585,7 @@ describe('operator-only task fields on the REST routes', () => {
         .send({ permissionMode: 'bypassPermissions' });
 
       expect(res.status).toBe(403);
+      // The front-door hold's own refusal (`front-door-step-up.ts`), still in its old spelling.
       expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
       expect(res.body.heldActionId).toBeUndefined();
       expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
@@ -638,7 +639,7 @@ describe('operator-only task fields on the REST routes', () => {
           .send({ permissionMode: 'bypassPermissions' });
 
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('operator_only_task_field');
+        expect(res.body.code).toBe('person_only');
         expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
       });
 
@@ -706,7 +707,7 @@ describe('operator-only task fields on the REST routes', () => {
         const res = await request(fixtureServer).post(`/api/tasks/${existing.id}/trigger`);
 
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('operator_only_task_field');
+        expect(res.body.code).toBe('person_only');
         expect(scheduler.triggerManualRun).not.toHaveBeenCalled();
       });
     });
@@ -722,7 +723,7 @@ describe('operator-only task fields on the REST routes', () => {
         .send({ prompt: 'an updated prompt', agentId: 'nightly-bot' });
 
       expect(res.status, 'a silent 200 is the bug').toBe(400);
-      expect(res.body.code).toBe('unknown_task_field');
+      expect(res.body.code).toBe('invalid_request');
       expect(res.body.fields).toEqual(['agentId']);
       expect(String(res.body.message)).toContain('delete this task and create it again');
 

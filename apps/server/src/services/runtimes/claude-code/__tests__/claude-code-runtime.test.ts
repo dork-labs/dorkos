@@ -339,7 +339,7 @@ describe('ClaudeCodeRuntime', () => {
             canonicalCwd: DEFAULT_CWD,
             signal: expect.any(AbortSignal),
           },
-          { isCurrent: expect.any(Function) }
+          { isCurrent: expect.any(Function), readToolTurn: expect.any(Function) }
         );
         expect(principals.resolve).toHaveBeenCalledWith({
           bearer: 'turn-secret',

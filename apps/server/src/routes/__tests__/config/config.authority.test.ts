@@ -43,7 +43,7 @@ const send = (body: object) => request(server).patch('/api/config').send(body);
 async function expectAgentRefused(body: object, leaf: string): Promise<void> {
   asAgent();
   const refused = await send(body).expect(403);
-  expect(refused.body.code).toBe('operator_only_config');
+  expect(refused.body.code).toBe('person_only');
   expect(refused.body.paths).toContain(leaf);
 }
 
@@ -211,7 +211,7 @@ describe('PATCH /api/config, who may write what', () => {
       for (const leaf of carried) {
         const refused = await send(leaf.patch);
         expect(refused.status, leaf.path).toBe(403);
-        expect(refused.body.code, leaf.path).toBe('operator_only_config');
+        expect(refused.body.code, leaf.path).toBe('person_only');
         expect(refused.body.paths, leaf.path).toContain(leaf.path);
         expect(configManager.getDot(leaf.path), leaf.path).toEqual(leaf.protective);
       }
@@ -319,7 +319,7 @@ describe('PATCH /api/config, who may write what', () => {
       caller.signedInUser = { userId: 'user_program', credential: 'api-key' };
 
       const refused = await send({ auth: { enabled: false } }).expect(403);
-      expect(refused.body.code).toBe('operator_cookie_required');
+      expect(refused.body.code).toBe('person_only');
       expect(refused.body.paths).toEqual(['auth.enabled']);
       for (const patch of [
         { tunnel: { authtoken: 'attacker-ngrok-token' } },
@@ -327,7 +327,7 @@ describe('PATCH /api/config, who may write what', () => {
         { server: { boundary: '/' } },
         { runtimes: { codex: { binaryPath: '/tmp/evil' } } },
       ]) {
-        expect((await send(patch).expect(403)).body.code).toBe('operator_cookie_required');
+        expect((await send(patch).expect(403)).body.code).toBe('person_only');
       }
 
       const configManager = await store();
@@ -389,7 +389,7 @@ describe('PATCH /api/config, who may write what', () => {
       await enableLogin();
       caller.agentHeader = 'agent-token';
       const refused = await send({ auth: { enabled: false } }).expect(403);
-      expect(refused.body.code).toBe('operator_only_config');
+      expect(refused.body.code).toBe('person_only');
     });
   });
 

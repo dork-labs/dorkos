@@ -64,7 +64,8 @@ describe('/api/ext/:id/*', () => {
     const res = await request(fixtureServer).get('/api/ext/my-ext/status');
 
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: "Extension 'my-ext' has no server routes" });
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body).toMatchObject({ code: 'not_found', detail: 'my-ext has no server routes.' });
     expect(manager.getServerHandler).toHaveBeenCalledWith('my-ext');
   });
 

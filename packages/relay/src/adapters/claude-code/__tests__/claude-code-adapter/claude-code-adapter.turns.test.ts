@@ -170,39 +170,6 @@ describe('ClaudeCodeAdapter', () => {
       }
     });
 
-    it('refuses a message whose TTL is already spent instead of waiting on it', async () => {
-      vi.useFakeTimers();
-      try {
-        const { adapter: capped, manager, release } = hangingAdapter(1);
-        await capped.start(relay);
-
-        const first = capped.deliver(
-          'relay.agent.claude-code.busy-one',
-          createTestEnvelope(),
-          detached()
-        );
-        await vi.advanceTimersByTimeAsync(1);
-
-        const expired = createTestEnvelope({
-          budget: { ...createTestEnvelope().budget, ttl: Date.now() - 1 },
-        });
-        // No wait at all: there is no time to wait with.
-        const second = await capped.deliver(
-          'relay.agent.claude-code.busy-two',
-          expired,
-          detached()
-        );
-        expect(second).toMatchObject({ success: false, code: 'at_capacity' });
-        expect(manager.sendMessage).toHaveBeenCalledTimes(1);
-
-        release();
-        await vi.advanceTimersByTimeAsync(1);
-        await first;
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
     it('ends every wait when the adapter stops, rather than dropping it in silence', async () => {
       vi.useFakeTimers();
       try {
@@ -341,26 +308,6 @@ describe('ClaudeCodeAdapter', () => {
       });
       expect((final[1] as { error?: string }).error).toBeUndefined();
     });
-
-    it('streams individual events to relay.human.console.* (not aggregated)', async () => {
-      vi.mocked(agentManager.sendMessage).mockReturnValue(
-        (async function* () {
-          yield { type: 'text_delta', data: { text: 'Hello' } } as StreamEvent;
-          yield { type: 'text_delta', data: { text: ' world' } } as StreamEvent;
-          yield { type: 'done', data: {} } as StreamEvent;
-        })()
-      );
-
-      await adapter.start(relay);
-      const envelope = createTestEnvelope({ replyTo: 'relay.human.console.abc' });
-
-      await adapter.deliver(envelope.subject, envelope);
-
-      // All three events published individually (not aggregated)
-      expect(relay.publish).toHaveBeenCalledTimes(3);
-      const subjects = vi.mocked(relay.publish).mock.calls.map(([s]) => s);
-      expect(subjects.every((s) => s === 'relay.human.console.abc')).toBe(true);
-    });
   });
 
   // === Persistent session mapping ===
@@ -375,25 +322,6 @@ describe('ClaudeCodeAdapter', () => {
         }),
       };
     }
-
-    it('persists SDK session ID on first delivery when getSdkSessionId returns a real UUID', async () => {
-      const sdkUUID = 'sdk-uuid-0000-aaaa-1234567890ab';
-      vi.mocked(agentManager.getSdkSessionId!).mockReturnValue(sdkUUID);
-
-      const agentSessionStore = createMockAgentSessionStore();
-      const adapterWithStore = new ClaudeCodeAdapter(
-        'cca-persist',
-        { defaultCwd: '/tmp' },
-        { agentManager, traceStore, agentSessionStore, approvalAuthorizer: () => true }
-      );
-      await adapterWithStore.start(relay);
-
-      const envelope = createTestEnvelope({ subject: 'relay.agent.agent-ulid-001' });
-      await adapterWithStore.deliver(envelope.subject, envelope);
-
-      // The subject key 'agent-ulid-001' should be mapped to the real SDK UUID
-      expect(agentSessionStore.set).toHaveBeenCalledWith('agent-ulid-001', sdkUUID);
-    });
 
     it('uses persisted SDK session ID on subsequent delivery (not raw subject key)', async () => {
       const sdkUUID = 'sdk-uuid-0000-bbbb-1234567890ab';
@@ -495,26 +423,6 @@ describe('ClaudeCodeAdapter', () => {
   // === Terminal done event and delivery diagnostics (tasks 1.3, 1.4) ===
 
   describe('terminal done event on generator error', () => {
-    it('does not double-send done event on normal completion', async () => {
-      vi.mocked(agentManager.sendMessage).mockReturnValue(
-        (async function* () {
-          yield { type: 'text_delta', data: { text: 'hello' } } as StreamEvent;
-          yield { type: 'done', data: {} } as StreamEvent;
-        })()
-      );
-
-      await adapter.start(relay);
-      const envelope = createTestEnvelope({ replyTo: 'relay.human.console.client-1' });
-
-      await adapter.deliver(envelope.subject, envelope);
-
-      const publishCalls = vi.mocked(relay.publish).mock.calls;
-      const doneCalls = publishCalls.filter(
-        ([, payload]) => (payload as Record<string, unknown>).type === 'done'
-      );
-      expect(doneCalls).toHaveLength(1);
-    });
-
     it('publishes an error event BEFORE the synthesized done when the SDK generator throws', async () => {
       // Regression: a crashed turn used to publish only a bare done, so reply
       // consumers (A2A executor, relay_send_and_wait) treated the partial

@@ -186,7 +186,7 @@ describe('ConnectionsPage', () => {
     const user = userEvent.setup();
     const transport = transportWith([summary()]);
     vi.mocked(transport.reconnectConnectorConnection).mockRejectedValue(
-      Object.assign(new Error('provider unavailable'), { code: 'authentication_unavailable' })
+      Object.assign(new Error('provider unavailable'), { code: 'app_not_set_up' })
     );
     renderPage(transport);
 

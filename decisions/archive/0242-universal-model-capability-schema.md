@@ -1,7 +1,7 @@
 ---
 number: 242
 title: Universal Model Capability Schema for Multi-Runtime Future
-status: draft
+status: archived
 created: 2026-04-10
 spec: runtime-model-discovery
 superseded-by: null

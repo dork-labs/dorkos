@@ -41,7 +41,7 @@ describe('useStopTask', () => {
 
   it('drops the row quietly when the task had already finished', async () => {
     const transport = {
-      stopTask: vi.fn().mockRejectedValue(refusal('TASK_NOT_RUNNING')),
+      stopTask: vi.fn().mockRejectedValue(refusal('task_not_running')),
     } as unknown as Transport;
     const { result } = renderHook(() => useStopTask('s1', transport));
 

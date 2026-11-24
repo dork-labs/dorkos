@@ -228,6 +228,66 @@ check 'the note carries the per-head marker' yes "$(has "$out" "<!-- queue-reent
 check 'the note asks for a merge of main' yes "$(has "$out" "merge \`main\` into the branch")"
 check 'the note says auto-merge comes back by itself' yes "$(has "$out" 'Auto-merge comes back on by itself')"
 
+out=$(bash "$SCRIPT" comment "$HEAD" conflicting)
+check 'the auto-merge note carries the same per-head marker' yes "$(has "$out" "<!-- queue-reentry head=$HEAD -->")"
+check 'the auto-merge note says nothing runs until it merges' yes "$(has "$out" 'GitHub runs no checks or review on it')"
+check 'the auto-merge note asks for a merge, not a rebase' yes "$(has "$out" 'a normal merge, not a rebase')"
+check 'the auto-merge note is not the ejection note' no "$(has "$out" 'merge queue took')"
+
+out=$(bash "$SCRIPT" comment "$HEAD" sideways 2>&1)
+rc=$?
+check 'an unknown note kind: usage' 2 "$rc"
+
+# --- conflict-verdict: auto-merge on but conflicting with main -----------------
+
+# One node of the list read: waits on auto-merge, conflicts with main, never
+# touched by the queue (GitHub runs nothing on it, so it never got that far).
+conflict_of() { # jq filter applied to that node, then the verdict
+  base | jq '.autoMergeRequest = {enabledAt: "2026-11-24T09:00:00Z"} | .mergeable = "CONFLICTING"
+             | .events.nodes = [.events.nodes[0]]' | jq "$1" >"$tmp/node.json"
+  out=$(bash "$SCRIPT" conflict-verdict "$tmp/node.json" 2>&1)
+  rc=$?
+}
+
+conflict_of '.'
+check 'auto-merge on, conflicting, never queued: ask the author' COMMENT "$out"
+check '... exit 0' 0 "$rc"
+
+conflict_of '.autoMergeRequest = null'
+check 'auto-merge off and conflicting: not this path' 'SKIP auto-merge-off' "$out"
+
+conflict_of 'del(.autoMergeRequest)'
+check 'auto-merge state missing: left alone' 'SKIP auto-merge-unknown' "$out"
+
+conflict_of '.isDraft = true'
+check 'a draft with auto-merge on: left alone' 'SKIP draft' "$out"
+
+conflict_of '.labels.nodes += [{name: "HOLD"}]'
+check 'held, any case: left alone' 'SKIP held' "$out"
+
+conflict_of '.labels.nodes += [{name: "wip"}]'
+check 'wip is a hold too, the same set as the ejection path' 'SKIP held' "$out"
+
+conflict_of '.labels = null'
+check 'labels unreadable: left alone' 'SKIP labels-unreadable' "$out"
+
+conflict_of '.mergeable = "UNKNOWN"'
+check 'mergeability not computed yet: left to a later sweep' 'SKIP mergeability-unknown' "$out"
+
+conflict_of '.mergeable = "MERGEABLE"'
+check 'merges cleanly: nothing to say' 'SKIP merges-cleanly' "$out"
+
+conflict_of '.baseRefName = "feature/x"'
+check 'not into main: left alone' 'SKIP base-not-main' "$out"
+
+conflict_of '.headRefOid = "nope"'
+check 'no readable head: no marker to write, left alone' 'SKIP head-unknown' "$out"
+
+out=$(bash "$SCRIPT" conflict-verdict "$tmp/bad.json" 2>&1)
+rc=$?
+check 'conflict-verdict, unreadable payload: a skip' 'SKIP unreadable-payload' "$out"
+check '... exit 2' 2 "$rc"
+
 # --- sweep against a stubbed gh -------------------------------------------------
 
 fix=$tmp/fix
@@ -271,13 +331,34 @@ EOF
 chmod +x "$tmp/gh"
 export GH="$tmp/gh" GH_LOG="$tmp/gh.log" FIX="$fix" REPO=made-up/repo REENTRY_RETRY_DELAY=0
 
-# Three open pull requests: #1 green and ejected, #2 ejected and conflicting,
-# #3 already has auto-merge on (the list read alone rules it out).
+# Open pull requests: #1 green and ejected, #2 ejected and conflicting, #3
+# already has auto-merge on (the list read alone rules it out). The rest were
+# never queued: #4 waits on auto-merge and conflicts with main; #5 conflicts
+# with auto-merge off; #6 is a draft, #7 held and #8 not yet computed, each
+# with auto-merge on and otherwise like #4; #9 like #4, but its head already
+# has the ejection note.
+E=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+F=ffffffffffffffffffffffffffffffffffffffff
 base | jq '.number = 1 | .id = "PR_1"' >"$fix/pr-1.json"
 base | jq '.number = 2 | .id = "PR_2" | .mergeable = "CONFLICTING" | .headRefOid = "cccccccccccccccccccccccccccccccccccccccc"' >"$fix/pr-2.json"
 base | jq '.number = 3 | .id = "PR_3" | .autoMergeRequest = {enabledAt: "x"}' >"$fix/pr-3.json"
-jq -s '{data: {repository: {pullRequests: {pageInfo: {hasNextPage: false}, nodes: .}}}}' \
-  "$fix/pr-1.json" "$fix/pr-2.json" "$fix/pr-3.json" >"$fix/list.json"
+waiting() { # number, extra jq filter
+  base | jq --argjson n "$1" --arg e "$E" '.number = $n | .id = "PR_\($n)" | .headRefOid = $e
+    | .autoMergeRequest = {enabledAt: "2026-11-24T09:00:00Z"} | .mergeable = "CONFLICTING"
+    | .events.nodes = [.events.nodes[0]]' | jq "$2" >"$fix/pr-$1.json"
+}
+waiting 4 '.'
+waiting 5 '.autoMergeRequest = null'
+waiting 6 '.isDraft = true'
+waiting 7 '.labels.nodes += [{name: "hold"}]'
+waiting 8 '.mergeable = "UNKNOWN"'
+waiting 9 '.'
+bash "$SCRIPT" comment "$E" ejected >"$fix/comments-9.txt"
+relist() {
+  jq -s '{data: {repository: {pullRequests: {pageInfo: {hasNextPage: false}, nodes: .}}}}' \
+    "$fix"/pr-[1-9].json >"$fix/list.json"
+}
+relist
 
 sweep() {
   : >"$GH_LOG"
@@ -289,7 +370,8 @@ sweep() {
 sweep --dry-run
 check 'dry run: exit 0' 0 "$rc"
 check 'dry run: #1 would come back' yes "$(has "$out" 'PR #1 -> ENABLE (dry run')"
-check 'dry run: #2 would be asked' yes "$(has "$out" 'PR #2 -> COMMENT (dry run')"
+check 'dry run: #2 would be asked' yes "$(has "$out" 'PR #2 -> COMMENT ejected (dry run')"
+check 'dry run: #4 would be told nothing runs' yes "$(has "$out" 'PR #4 -> COMMENT conflicting (dry run')"
 check 'dry run: nothing enabled' no "$(has "$log" ENABLE)"
 check 'dry run: nothing posted' no "$(has "$log" POST)"
 
@@ -300,14 +382,33 @@ check 'sweep: #2 asked once' 1 "$(grep -c '^POST 2$' <<<"$log")"
 check 'sweep: the note carries #2'"'"'s head' yes "$(has "$(cat "$fix/comments-2.txt")" 'head=cccccccccccccccccccccccccccccccccccccccc')"
 check 'sweep: #3 not read in detail' no "$(has "$log" 'DETAIL 3')"
 check 'sweep: #2 never enabled' no "$(has "$log" 'ENABLE PR_2')"
+check 'sweep: #2 got the ejection note' yes "$(has "$(cat "$fix/comments-2.txt")" 'merge queue took')"
+check 'sweep: auto-merge on and conflicting (#4): told once' 1 "$(grep -c '^POST 4$' <<<"$log")"
+check 'sweep: #4 got the no-checks note' yes "$(has "$(cat "$fix/comments-4.txt")" 'GitHub runs no checks or review on it')"
+check 'sweep: #4 note carries its head' yes "$(has "$(cat "$fix/comments-4.txt")" "head=$E")"
+check 'sweep: #4 read from the list alone' no "$(has "$log" 'DETAIL 4')"
+check 'sweep: #4 auto-merge not touched' no "$(has "$log" 'ENABLE PR_4')"
+check 'sweep: auto-merge off, conflicting, not ejected (#5): nothing' no "$(has "$log" ' 5')"
+check 'sweep: draft (#6): nothing' no "$(has "$log" ' 6')"
+check 'sweep: held (#7): nothing' no "$(has "$log" ' 7')"
+check 'sweep: mergeability unknown (#8): nothing, and no retries' no "$(has "$log" ' 8')"
+check 'sweep: one list read' 1 "$(grep -c '^LIST$' <<<"$log")"
+check 'sweep: a head the ejection note already told (#9): no second note' no "$(has "$log" 'POST 9')"
+check 'sweep: says so' yes "$(has "$out" 'PR #9 -> SKIP conflict-already-told')"
+check 'sweep: counts the waiting conflicts' yes "$(has "$out" 'Auto-merge on but conflicting with main: 2; mergeability not known yet: 1')"
 
 sweep
 check 'second sweep: no second note on the same head' no "$(has "$log" 'POST 2')"
+check 'second sweep: #4 not told again on the same head' no "$(has "$log" 'POST 4')"
 check 'second sweep: says why' yes "$(has "$out" 'PR #2 -> SKIP conflict-already-told')"
 
 jq '.headRefOid = "dddddddddddddddddddddddddddddddddddddddd"' "$fix/pr-2.json" >"$fix/x" && mv "$fix/x" "$fix/pr-2.json"
+jq --arg f "$F" '.headRefOid = $f' "$fix/pr-4.json" >"$fix/x" && mv "$fix/x" "$fix/pr-4.json"
+relist
 sweep
 check 'a new head that still conflicts: asked again, once' 1 "$(grep -c '^POST 2$' <<<"$log")"
+check 'auto-merge on, a new head still conflicting: told again, once' 1 "$(grep -c '^POST 4$' <<<"$log")"
+check '... with the new head in the marker' yes "$(has "$(cat "$fix/comments-4.txt")" "head=$F")"
 
 FAKE_FAIL=comments sweep
 check 'comments unreadable: no note' no "$(has "$log" POST)"

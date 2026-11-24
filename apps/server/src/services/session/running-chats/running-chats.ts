@@ -15,6 +15,7 @@
  * @module services/session/running-chats
  */
 import path from 'node:path';
+import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
 import { chatMarkdownLink } from '@dorkos/shared/session-link';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import type {
@@ -200,6 +201,7 @@ export async function listRunningChats(
         id: chat.sessionId,
         title,
         link: chatMarkdownLink(chat.sessionId, title),
+        ref: dorkReferenceOrNull('chat', chat.sessionId),
         state: chat.state,
         ...(chat.backgroundWork !== undefined ? { backgroundWork: chat.backgroundWork } : {}),
         spinOff: starter !== null,

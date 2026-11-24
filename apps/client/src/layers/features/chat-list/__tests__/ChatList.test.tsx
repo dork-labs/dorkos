@@ -38,6 +38,13 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   useRouterState: () => '/session',
 }));
 
+// The row menu closes on the click, so Copy link reports through one toast.
+const { toastSuccess } = vi.hoisted(() => ({ toastSuccess: vi.fn() }));
+vi.mock('sonner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('sonner')>()),
+  toast: Object.assign(vi.fn(), { success: toastSuccess, error: vi.fn() }),
+}));
+
 // The fleet-wide prompt list rides the app's event stream; what the list reads
 // from it is which chats have a prompt waiting, so that is what is stubbed.
 let mockWaiting: { sessionId: string }[] = [];
@@ -532,6 +539,21 @@ describe('ChatList', () => {
           AGENT_PATH
         )
       );
+    });
+
+    it('copies the chat’s full /r/ link from the row menu, and says so (DOR-5046)', async () => {
+      const id = '7c1e4b2a-9f3d-4e8b-a6c5-a1b2c3d4e5f6';
+      renderList([chat(id, 'One')]);
+      await findRow('One');
+      await userEvent.click(screen.getByRole('button', { name: 'One actions' }));
+      const item = await screen.findByRole('menuitem', { name: /Copy link/ });
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+      await userEvent.click(item);
+      await waitFor(() =>
+        expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/r/dork:chat:${id}`)
+      );
+      await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Copied'));
     });
   });
 

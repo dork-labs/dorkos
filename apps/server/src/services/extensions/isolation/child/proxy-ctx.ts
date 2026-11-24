@@ -392,8 +392,8 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
       next();
       return;
     }
-    if (verdict) res.status(verdict.status).json(verdict.body);
-    else res.status(403).json(init.personRefusal);
+    const refusal = verdict ?? { status: 403, body: init.personRefusal };
+    res.status(refusal.status).type('application/problem+json').json(refusal.body);
   };
 
   const consts: Record<string, string> = {

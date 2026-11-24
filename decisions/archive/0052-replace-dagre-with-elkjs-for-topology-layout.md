@@ -1,7 +1,7 @@
 ---
 number: 52
 title: Replace dagre with ELK.js for Topology Layout
-status: proposed
+status: archived
 created: 2026-02-26
 spec: mesh-topology-elevation
 superseded-by: null

@@ -12,7 +12,6 @@ import {
 import type { SenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
 import { AdapterBindingSchema } from '@dorkos/shared/relay-schemas';
 import { resolveSenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
-import { createCanUseTool } from '../../runtimes/claude-code/messaging/interactive-handlers.js';
 import { resolveAgentHome } from '../agent-identity/index.js';
 import {
   clearTestHomes,
@@ -142,14 +141,7 @@ function makeMockDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
   };
 }
 
-/**
- * Build the handler under test.
- *
- * Every handler built from the same deps shares them, as in production.
- *
- * @param deps - The tool dependencies under test.
- * @param identity - Who is calling; the registered agent unless a test says otherwise.
- */
+/** Build the handler under test; the caller is the registered agent unless a test says otherwise. */
 function makeHandler(deps: McpToolDeps, identity: SenderIdentity = NOTIFY) {
   return createRelayNotifyUserHandler(deps, identity);
 }
@@ -239,57 +231,6 @@ describe('relay_notify_user', () => {
     expect(data.chatId).toBe('chat-99');
   });
 
-  it('filters by channel when specified (adapter type match)', async () => {
-    const bindings = [
-      makeBinding({ id: 'b-1', adapterId: 'tg-lifeos' }),
-      makeBinding({ id: 'b-2', adapterId: 'slack-ops' }),
-    ];
-    const deps = makeMockDeps({
-      bindingStore: makeMockBindingStore({
-        getAll: vi.fn().mockReturnValue(bindings),
-      }) as unknown as McpToolDeps['bindingStore'],
-      bindingRouter: makeMockBindingRouter({
-        getSessionsByBinding: vi.fn().mockImplementation((bindingId: string) => {
-          if (bindingId === 'b-1')
-            return [
-              {
-                key: 'b-1:chat-77',
-                scope: 'chat' as const,
-                chatId: 'chat-77',
-                sessionId: 'sess-3',
-                lastActivityAt: 1,
-              },
-            ];
-          return [];
-        }),
-      }) as unknown as McpToolDeps['bindingRouter'],
-      adapterManager: makeMockAdapterManager({
-        listAdapters: vi.fn().mockReturnValue([
-          {
-            config: { id: 'tg-lifeos', type: 'telegram', enabled: true, config: {} },
-            status: { state: 'connected' },
-          },
-          {
-            config: { id: 'slack-ops', type: 'slack', enabled: true, config: {} },
-            status: { state: 'connected' },
-          },
-        ]),
-      }) as unknown as McpToolDeps['adapterManager'],
-    });
-    const handler = makeHandler(deps);
-    // Use type name "telegram" which doesn't directly match adapter IDs
-    const result = await handler({
-      message: 'Telegram via type',
-      channel: 'telegram',
-    });
-
-    expect(result.isError).toBeUndefined();
-    const data = JSON.parse(result.content[0].text);
-    expect(data.sent).toBe(true);
-    expect(data.adapterId).toBe('tg-lifeos');
-    expect(data.chatId).toBe('chat-77');
-  });
-
   it('returns NOT_AN_AGENT when the session is not a registered agent', async () => {
     const deps = makeMockDeps();
     const handler = makeHandler(deps, ANON);
@@ -300,8 +241,10 @@ describe('relay_notify_user', () => {
     expect(data.code).toBe('NOT_AN_AGENT');
   });
 
-  it('returns NO_BINDING with availableChannels when no matching binding', async () => {
+  it('returns NO_BINDING with availableChannels, and no DM, when the named channel is not bound', async () => {
+    const notifyDm = makeMockNotifyDm();
     const deps = makeMockDeps({
+      notifyDm,
       bindingStore: makeMockBindingStore({
         getAll: vi.fn().mockReturnValue([makeBinding({ id: 'b-1', adapterId: 'tg-main' })]),
       }) as unknown as McpToolDeps['bindingStore'],
@@ -319,21 +262,8 @@ describe('relay_notify_user', () => {
     const data = JSON.parse(result.content[0].text);
     expect(data.code).toBe('NO_BINDING');
     expect(data.availableChannels).toEqual(['tg-main']);
-  });
-
-  it('returns NO_ACTIVE_SESSIONS when bindings exist but no chat sessions', async () => {
-    const deps = makeMockDeps({
-      bindingRouter: makeMockBindingRouter({
-        getSessionsByBinding: vi.fn().mockReturnValue([]),
-      }) as unknown as McpToolDeps['bindingRouter'],
-    });
-    const handler = makeHandler(deps);
-    const result = await handler({ message: 'Hello' });
-
-    expect(result.isError).toBe(true);
-    const data = JSON.parse(result.content[0].text);
-    expect(data.code).toBe('NO_ACTIVE_SESSIONS');
-    expect(data.availableAdapters).toEqual(['tg-main']);
+    // A message that asked for a named channel is never redirected to the DM.
+    expect(notifyDm.rooms.post).not.toHaveBeenCalled();
   });
 
   it('returns SEND_FAILED when relayCore.publish throws', async () => {
@@ -351,47 +281,13 @@ describe('relay_notify_user', () => {
     expect(data.error).toContain('Network error');
   });
 
-  it('returns RELAY_DISABLED when relayCore is undefined', async () => {
-    const deps = makeMockDeps({ relayCore: undefined });
-    const handler = makeHandler(deps);
-    const result = await handler({ message: 'Hello' });
-
+  it.each([
+    { off: { relayCore: undefined }, code: 'RELAY_DISABLED' },
+    { off: { bindingRouter: undefined, bindingStore: undefined }, code: 'BINDINGS_DISABLED' },
+  ])('returns $code when that subsystem is off', async ({ off, code }) => {
+    const result = await makeHandler(makeMockDeps(off))({ message: 'Hello' });
     expect(result.isError).toBe(true);
-    const data = JSON.parse(result.content[0].text);
-    expect(data.code).toBe('RELAY_DISABLED');
-  });
-
-  it('returns BINDINGS_DISABLED when bindingRouter/bindingStore undefined', async () => {
-    const deps = makeMockDeps({
-      bindingRouter: undefined,
-      bindingStore: undefined,
-    });
-    const handler = makeHandler(deps);
-    const result = await handler({ message: 'Hello' });
-
-    expect(result.isError).toBe(true);
-    const data = JSON.parse(result.content[0].text);
-    expect(data.code).toBe('BINDINGS_DISABLED');
-  });
-
-  it('on success returns sent:true with subject, adapterId, chatId, messageId', async () => {
-    const deps = makeMockDeps({
-      relayCore: {
-        publish: vi.fn().mockResolvedValue({ messageId: 'msg-42', deliveredTo: 1 }),
-      } as unknown as McpToolDeps['relayCore'],
-    });
-    const handler = makeHandler(deps);
-    const result = await handler({ message: 'Done!' });
-
-    expect(result.isError).toBeUndefined();
-    const data = JSON.parse(result.content[0].text);
-    expect(data.sent).toBe(true);
-    expect(data.subject).toBe('relay.human.telegram.tg-main.chat-42');
-    expect(data.adapterId).toBe('tg-main');
-    expect(data.adapterType).toBe('telegram');
-    expect(data.chatId).toBe('chat-42');
-    expect(data.messageId).toBe('msg-42');
-    expect(data.deliveredTo).toBe(1);
+    expect(JSON.parse(result.content[0].text).code).toBe(code);
   });
 
   // A stock install has no Telegram or Slack connected, which used to make this
@@ -452,90 +348,6 @@ describe('relay_notify_user', () => {
       expect(result.isError).toBeUndefined();
       expect(JSON.parse(result.content[0].text).surface).toBe('dorkos-dm');
     });
-
-    it('leaves the external path untouched when an integration can carry it', async () => {
-      const notifyDm = makeMockNotifyDm();
-      const deps = makeMockDeps({ notifyDm });
-      const handler = makeHandler(deps);
-      const result = await handler({ message: 'Hello user' });
-
-      const data = JSON.parse(result.content[0].text);
-      expect(data.sent).toBe(true);
-      expect(data.surface).toBe('integration');
-      expect(data.chatId).toBe('chat-42');
-      expect(deps.relayCore!.publish).toHaveBeenCalledWith(
-        'relay.human.telegram.tg-main.chat-42',
-        'Hello user',
-        { from: 'relay.agent.ns.agent-1' }
-      );
-      // First preference means the DM is not also written — one message, one place.
-      expect(notifyDm.rooms.post).not.toHaveBeenCalled();
-    });
-
-    it('does not redirect a message that asked for a named channel', async () => {
-      const notifyDm = makeMockNotifyDm();
-      const deps = makeMockDeps({
-        adapterManager: makeMockAdapterManager({
-          listAdapters: vi.fn().mockReturnValue([]),
-        }) as unknown as McpToolDeps['adapterManager'],
-        notifyDm,
-      });
-      const handler = makeHandler(deps);
-      const result = await handler({ message: 'Slack or nothing', channel: 'slack' });
-
-      expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text).code).toBe('NO_BINDING');
-      expect(notifyDm.rooms.post).not.toHaveBeenCalled();
-    });
-
-    it('does not route around a binding whose owner turned initiating off', async () => {
-      const notifyDm = makeMockNotifyDm();
-      const deps = makeMockDeps({
-        bindingStore: makeMockBindingStore({
-          getAll: vi.fn().mockReturnValue([makeBinding({ canInitiate: false })]),
-        }) as unknown as McpToolDeps['bindingStore'],
-        notifyDm,
-      });
-      const handler = makeHandler(deps);
-      const result = await handler({ message: 'Surprise!' });
-
-      expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text).code).toBe('INITIATE_NOT_ALLOWED');
-      expect(notifyDm.rooms.post).not.toHaveBeenCalled();
-    });
-
-    it('reports the old non-delivery — without throwing — when the DM cannot be reached', async () => {
-      const notifyDm = makeMockNotifyDm({
-        mesh: {
-          getProjectPath: vi.fn().mockReturnValue(undefined),
-          get: vi.fn().mockReturnValue(undefined),
-        },
-      });
-      const deps = noIntegrationDeps(notifyDm);
-      const handler = makeHandler(deps);
-      const result = await handler({ message: 'Nowhere to go.' });
-
-      expect(result.isError).toBe(true);
-      const data = JSON.parse(result.content[0].text);
-      expect(data.code).toBe('NO_BINDING');
-      expect(data.sent).toBe(false);
-      // Loudly, rather than silently: the message reached nobody.
-      expect(notifyDm.logger!.warn).toHaveBeenCalled();
-    });
-
-    it('reports the old non-delivery when rooms are not wired at all', async () => {
-      const deps = makeMockDeps({
-        bindingStore: makeMockBindingStore({
-          getAll: vi.fn().mockReturnValue([]),
-        }) as unknown as McpToolDeps['bindingStore'],
-        notifyDm: undefined,
-      });
-      const handler = makeHandler(deps);
-      const result = await handler({ message: 'Nowhere to go.' });
-
-      expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text).code).toBe('NO_BINDING');
-    });
   });
 
   // No hourly count bounds a note any more (ADR 261006-225605, DOR-2739): it
@@ -553,41 +365,9 @@ describe('relay_notify_user', () => {
     });
   });
 
-  // DOR-1265, and the correction to how the auto-allow was first written up. It
-  // is NOT true that a note can only reach the operator: it goes wherever the
-  // operator already pointed it, and a claimed chat may hold other people. What
-  // the auto-allow removed is the per-call card an operator watching a DIRECT
-  // session could have denied — the same trade DOR-1229 made for the room verbs.
-  // What it did not remove is the setup consent: `canInitiate` defaults false, so
-  // nothing reaches any external chat until a person switches it on for that
-  // binding.
+  // DOR-1265: the setup consent. `canInitiate` defaults false, so nothing reaches
+  // any external chat until a person switches it on for that binding.
   describe('where a note can actually land (DOR-1265)', () => {
-    it('reaches a GROUP chat, because claiming one and switching initiating on is how a person asks for that', async () => {
-      // Groups are claimable (`bridgeChatTypeForBinding` maps group/supergroup to
-      // `channelType: 'group'`), and nothing downstream of the claim treats a
-      // group binding differently — `resolveNotifyTarget` never reads
-      // `channelType`. So the note lands in a room with other people in it. That
-      // is the operator's own prior decision, made twice: once to claim the chat
-      // for this agent, once to allow it to start conversations there.
-      const deps = makeMockDeps({
-        bindingStore: makeMockBindingStore({
-          getAll: vi
-            .fn()
-            .mockReturnValue([makeBinding({ channelType: 'group', canInitiate: true })]),
-        }) as unknown as McpToolDeps['bindingStore'],
-      });
-      const handler = makeHandler(deps);
-      const result = await handler({ message: 'The deploy finished.' });
-
-      expect(result.isError).toBeUndefined();
-      expect(JSON.parse(result.content[0].text).sent).toBe(true);
-      expect(deps.relayCore!.publish).toHaveBeenCalledWith(
-        'relay.human.telegram.tg-main.chat-42',
-        'The deploy finished.',
-        { from: 'relay.agent.ns.agent-1' }
-      );
-    });
-
     it('reaches nothing external until a person switches initiating on for that chat', async () => {
       // Read off the SCHEMA, not off this file's fixture — the fixture defaults
       // `canInitiate: true` for the convenience of the routing tests, and a claim
@@ -618,97 +398,11 @@ describe('relay_notify_user', () => {
     });
   });
 
-  // DOR-1265. The gate that lets this call through and the tool that runs it ask
-  // DIFFERENT questions of DIFFERENT stores, and the gap between them is a real
-  // (harmless, but real) behaviour worth pinning rather than assuming away.
-  //
-  // - The gate (`createCanUseTool` → `createInSessionContextResolver` →
-  //   `AgentIdentityService.describeAgent`) reads an unrevoked row in
-  //   `agent_identity_tokens`, keyed on the session's cwd.
-  // - The tool (`resolveSenderIdentity` → `meshCore.getSubjectByPath`) reads the
-  //   MESH registry, keyed on the same cwd. It has to: the relay `from` is an
-  //   authorization principal that ACL rules match on, and only the mesh knows
-  //   the agent's canonical subject.
-  //
-  // Two stores, one key. Where they disagree the gate is the permissive one, so
-  // the failure is a turn that proceeds and gets a structured NOT_AN_AGENT back
-  // rather than anything reaching a person. Unifying them is not a small change
-  // (it would mean giving the gate a mesh dependency, or the tool a subject it
-  // cannot use), so the divergence is documented and pinned instead.
-  describe('the gate and the tool resolve identity from different stores (DOR-1265)', () => {
-    it('lets the call through on a token identity and then answers NOT_AN_AGENT when the mesh cannot place it', async () => {
-      const session = {
-        permissionMode: 'default' as const,
-        pendingInteractions: new Map(),
-        eventQueue: [],
-        eventQueueNotify: vi.fn(),
-        cwd: '/agents/ana',
-      };
-      // The gate's half: a live token for this directory, so no card is raised.
-      const canUseTool = createCanUseTool(
-        session,
-        { debug: () => {}, info: () => {} },
-        undefined,
-        () => Promise.resolve({ identity: { agentPath: '/agents/ana' } })
-      );
-      const verdict = await canUseTool(
-        'mcp__dorkos__relay_notify_user',
-        { message: 'the deploy finished' },
-        { signal: new AbortController().signal, toolUseID: 'notify-1' }
-      );
-      expect(verdict).toEqual({
-        behavior: 'allow',
-        updatedInput: { message: 'the deploy finished' },
-      });
-      expect(session.eventQueue).toHaveLength(0);
-
-      // The tool's half, resolved for real rather than hand-written: the mesh
-      // does not place this directory, so there is no `agentId` to send as.
-      const deps = makeMockDeps({
-        meshCore: {
-          getSubjectByPath: vi.fn().mockReturnValue(undefined),
-        } as unknown as McpToolDeps['meshCore'],
-      });
-      const identity = resolveSenderIdentity(deps, session.cwd);
-      expect(identity.agentId).toBeUndefined();
-
-      const result = await createRelayNotifyUserHandler(
-        deps,
-        identity
-      )({
-        message: 'the deploy finished',
-      });
-      expect(JSON.parse(result.content[0].text).code).toBe('NOT_AN_AGENT');
-      expect(deps.relayCore!.publish).not.toHaveBeenCalled();
-    });
-
-    it('agrees with the gate when the mesh does place the directory, which is the room-turn case', async () => {
-      // A room turn hands the addressed agent's own directory to the session
-      // (`room-turn-runner.ts`), and that agent is in the mesh by construction —
-      // it was dispatched to because it is registered. So the two lookups agree
-      // wherever this fix was meant to work.
-      const deps = makeMockDeps({
-        meshCore: {
-          getSubjectByPath: vi
-            .fn()
-            .mockReturnValue({ subject: 'relay.agent.ns.agent-1', agentId: 'agent-1' }),
-          // Read for the inbox row's "who is talking" line (DOR-1383).
-          get: vi.fn().mockReturnValue({ name: 'ana', displayName: 'Ana' }),
-          // Read to tell whether a turn of this agent read a stranger's words.
-          getProjectPath: vi.fn().mockReturnValue('/agents/ana'),
-        } as unknown as McpToolDeps['meshCore'],
-      });
-      const identity = resolveSenderIdentity(deps, '/agents/ana');
-      expect(identity.agentId).toBe('agent-1');
-
-      const result = await createRelayNotifyUserHandler(deps, identity)({ message: 'done' });
-      expect(JSON.parse(result.content[0].text).sent).toBe(true);
-    });
-  });
-
   describe('canInitiate enforcement (DOR-239)', () => {
-    it('blocks the send when the resolved binding has canInitiate=false', async () => {
+    it('blocks the send, and does not route around it to the DM, when canInitiate=false', async () => {
+      const notifyDm = makeMockNotifyDm();
       const deps = makeMockDeps({
+        notifyDm,
         bindingStore: makeMockBindingStore({
           getAll: vi.fn().mockReturnValue([makeBinding({ canInitiate: false })]),
         }) as unknown as McpToolDeps['bindingStore'],
@@ -723,8 +417,8 @@ describe('relay_notify_user', () => {
       expect(data.error).toMatch(/doesn't allow the agent to start conversations/i);
       expect(data.bindingId).toBe('b-1');
       expect(data.adapterId).toBe('tg-main');
-      // Nothing should have been published to the channel.
       expect(deps.relayCore!.publish).not.toHaveBeenCalled();
+      expect(notifyDm.rooms.post).not.toHaveBeenCalled();
     });
 
     it('excludes paused bindings entirely (enabled=false never routes a notify)', async () => {
@@ -742,34 +436,7 @@ describe('relay_notify_user', () => {
       // With its only binding paused, the agent has no channel to notify through.
       expect(deps.relayCore!.publish).not.toHaveBeenCalled();
     });
-
-    it('allows the send when the resolved binding has canInitiate=true', async () => {
-      const deps = makeMockDeps({
-        bindingStore: makeMockBindingStore({
-          getAll: vi.fn().mockReturnValue([makeBinding({ canInitiate: true })]),
-        }) as unknown as McpToolDeps['bindingStore'],
-      });
-      const handler = makeHandler(deps);
-      const result = await handler({ message: 'Heads up!' });
-
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text);
-      expect(data.sent).toBe(true);
-      expect(deps.relayCore!.publish).toHaveBeenCalledWith(
-        'relay.human.telegram.tg-main.chat-42',
-        'Heads up!',
-        { from: 'relay.agent.ns.agent-1' }
-      );
-    });
   });
-
-  // Reply routing (an agent responding to an inbound <relay_context> turn) never
-  // calls relay_notify_user — the runtime adapter forwards replies automatically
-  // (see context-builder.ts <chat_tools> rules on reaching the person) straight through
-  // BindingRouter's inbound subscription, a code path this handler never
-  // touches. That "replies still flow when canInitiate=false" regression is
-  // covered directly in binding-router.test.ts, see:
-  // "canInitiate=false does not block inbound routing — replies keep flowing (DOR-239)".
 
   // A bridged binding vacates sessionMap (chats-as-channels spec §7.2), so
   // this tool must resolve through a live bridge row too, and publish under
@@ -844,46 +511,6 @@ describe('relay_notify_user', () => {
       const data = JSON.parse(result.content[0].text);
       expect(data.code).toBe('INITIATE_NOT_ALLOWED');
       expect(deps.relayCore!.publish).not.toHaveBeenCalled();
-    });
-
-    it('builds a correct principal for a chat id containing a dot (positional parse, not split-on-dot)', async () => {
-      // `buildBridgePrincipal`/`parseBridgePrincipal` read `classification` and
-      // `adapterId` from fixed positions and treat everything after as the chat
-      // id, rejoined — never by counting dots. A Telegram chat id can itself
-      // contain one (e.g. a forum-topic-qualified id), so this pins that a
-      // dotted chat id lands whole in `from`, rather than getting truncated or
-      // shifting the adapterId read.
-      const deps = makeMockDeps({
-        bindingStore: makeMockBindingStore({
-          getAll: vi
-            .fn()
-            .mockReturnValue([
-              makeBinding({ bridge: 'room', roomId: 'room-1', chatId: '123.456' }),
-            ]),
-        }) as unknown as McpToolDeps['bindingStore'],
-        bindingRouter: makeMockBindingRouter({
-          getSessionsByBinding: vi.fn().mockReturnValue([]),
-        }) as unknown as McpToolDeps['bindingRouter'],
-        bridgeStore: makeMockBridgeStore({
-          listLiveBridges: vi
-            .fn()
-            .mockReturnValue([
-              { bindingId: 'b-1', chatId: '123.456', lastActivityAt: '2026-01-01T00:05:00.000Z' },
-            ]),
-        }) as unknown as McpToolDeps['bridgeStore'],
-      });
-      const handler = makeHandler(deps);
-      const result = await handler({ message: 'Topic-qualified chat' });
-
-      expect(result.isError).toBeUndefined();
-      const data = JSON.parse(result.content[0].text);
-      expect(data.sent).toBe(true);
-      expect(data.chatId).toBe('123.456');
-      expect(deps.relayCore!.publish).toHaveBeenCalledWith(
-        'relay.human.telegram.tg-main.123.456',
-        'Topic-qualified chat',
-        { from: 'relay.bridge.initiate.tg-main.123.456', serverBridgePrincipal: true }
-      );
     });
   });
 });

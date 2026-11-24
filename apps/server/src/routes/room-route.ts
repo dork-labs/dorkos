@@ -14,14 +14,13 @@
  * @module routes/room-route
  */
 import type { Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ZodType } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import type { AuthorRecord } from '../services/rooms/index.js';
 import { callerAccessOf } from './caller-access.js';
 import { resolveCaller } from './room-caller.js';
-import { isOwnerCaller, roomErrorReply } from './room-error-response.js';
+import { isOwnerCaller, sendRoomError } from './room-error-response.js';
 import { validationProblem } from '@dorkos/http-kit';
 
 /** The caller of one room request, resolved the first time it is asked for. */
@@ -42,8 +41,7 @@ export function roomErrorResponse(
   context: string,
   caller: AuthorRecord | undefined
 ): Response {
-  const reply = roomErrorReply(err, context, () => isOwnerCaller(caller));
-  return c.json(reply.body, reply.status as ContentfulStatusCode);
+  return sendRoomError(c, err, context, () => isOwnerCaller(caller));
 }
 
 /**

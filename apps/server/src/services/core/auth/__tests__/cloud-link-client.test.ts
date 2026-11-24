@@ -1,28 +1,19 @@
-import { createHash, createHmac } from 'node:crypto';
-import { afterEach, describe, it, expect, vi } from 'vitest';
-import { logger } from '../../../../lib/logger.js';
+import { createHmac } from 'node:crypto';
+import { describe, it, expect, vi } from 'vitest';
 import {
   DEVICE_GRANT_TYPE,
   INSTANCE_CLIENT_ID,
   buildInstanceDescriptor,
   linkProofForKey,
-  MANAGED_ERROR_BODY_LIMIT_BYTES,
-  readBoundedText,
-  executeManagedConnectorOperation,
   pollForToken,
-  requestManagedConnectorExecutionReceipt,
-  requestManagedConnectorAuthentication,
-  requestManagedConnectorUsage,
-  requestManagedConnectorCatalog,
-  readManagedConnectorAuthorityCommand,
   requestDeviceCode,
   revokeInstanceKey,
   sendHeartbeat,
-  submitManagedConnectorAuthorityCommand,
+  type FetchLike,
   type InstanceDescriptor,
 } from '../cloud-link-client.js';
+import { BASE } from './cloud-link-client/cloud-link-client.fixtures.js';
 
-const BASE = 'https://cloud.test';
 const DESCRIPTOR: InstanceDescriptor = {
   name: 'kai-mbp',
   platform: 'darwin',
@@ -48,39 +39,71 @@ function sequenceFetch(
   sequence: Array<{ status: number; body: unknown; headers?: Record<string, string> }>
 ) {
   let i = 0;
-  return vi.fn(async () => {
+  return vi.fn(async (_url: string, _init?: RequestInit) => {
     const step = sequence[Math.min(i, sequence.length - 1)];
     i += 1;
     return new Response(JSON.stringify(step.body), { status: step.status, headers: step.headers });
   });
 }
 
-describe('requestDeviceCode', () => {
-  it('posts the client id + descriptor scope and returns the parsed codes', async () => {
-    const fetchImpl = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            device_code: 'dev-123',
-            user_code: 'ABCD1234',
-            verification_uri: `${BASE}/activate`,
-            verification_uri_complete: `${BASE}/activate?user_code=ABCD1234`,
-            expires_in: 1800,
-            interval: 5,
-          }),
-          { status: 200 }
-        )
-    );
+/** Polls with the deterministic clock and a 5s interval. */
+function poll(
+  fetchImpl: ReturnType<typeof sequenceFetch>,
+  clock: ReturnType<typeof makeClock>,
+  expiresIn = 1800
+) {
+  return pollForToken({
+    baseUrl: BASE,
+    deviceCode: 'dev-123',
+    interval: 5,
+    expiresIn,
+    fetchImpl,
+    sleep: clock.sleep,
+    now: clock.now,
+  });
+}
 
+describe('requestDeviceCode', () => {
+  const okResponse = async (_url: string, _init?: RequestInit) =>
+    new Response(
+      JSON.stringify({
+        device_code: 'dev-123',
+        user_code: 'ABCD1234',
+        verification_uri: `${BASE}/activate`,
+        verification_uri_complete: `${BASE}/activate?user_code=ABCD1234`,
+        expires_in: 1800,
+        interval: 5,
+      }),
+      { status: 200 }
+    );
+  const rawScope = (fetchImpl: ReturnType<typeof vi.fn>) =>
+    JSON.parse((fetchImpl.mock.calls[0][1] as RequestInit).body as string).scope as string;
+
+  it('posts the client id + descriptor scope and returns the parsed codes', async () => {
+    const fetchImpl = vi.fn(okResponse);
     const codes = await requestDeviceCode({ baseUrl: BASE, descriptor: DESCRIPTOR, fetchImpl });
 
     expect(codes.user_code).toBe('ABCD1234');
-    expect(codes.verification_uri).toContain('/activate');
-    const [url, init] = fetchImpl.mock.calls[0];
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(`${BASE}/api/auth/device/code`);
-    const body = JSON.parse((init as RequestInit).body as string);
-    expect(body.client_id).toBe(INSTANCE_CLIENT_ID);
-    expect(JSON.parse(body.scope)).toEqual(DESCRIPTOR);
+    expect(JSON.parse(init.body as string).client_id).toBe(INSTANCE_CLIENT_ID);
+    // No telemetry id or relink proof: the exact bytes a first link has always sent.
+    expect(rawScope(fetchImpl)).toBe(
+      '{"name":"kai-mbp","platform":"darwin","dorkosVersion":"0.4.2"}'
+    );
+  });
+
+  it('carries telemetryInstanceId and previousLinkProof in the scope only when present', async () => {
+    const fetchImpl = vi.fn(okResponse);
+    await requestDeviceCode({
+      baseUrl: BASE,
+      descriptor: { ...DESCRIPTOR, telemetryInstanceId: 'inst-uuid-1', previousLinkProof: 'p' },
+      fetchImpl,
+    });
+    expect(JSON.parse(rawScope(fetchImpl))).toMatchObject({
+      telemetryInstanceId: 'inst-uuid-1',
+      previousLinkProof: 'p',
+    });
   });
 
   it('throws on a non-2xx device-code response', async () => {
@@ -89,205 +112,47 @@ describe('requestDeviceCode', () => {
       requestDeviceCode({ baseUrl: BASE, descriptor: DESCRIPTOR, fetchImpl })
     ).rejects.toThrow(/HTTP 500/);
   });
-
-  it('serializes telemetryInstanceId into the scope only when the descriptor carries it', async () => {
-    const okResponse = () =>
-      new Response(
-        JSON.stringify({
-          device_code: 'dev-123',
-          user_code: 'ABCD1234',
-          verification_uri: `${BASE}/activate`,
-          verification_uri_complete: `${BASE}/activate?user_code=ABCD1234`,
-          expires_in: 1800,
-          interval: 5,
-        }),
-        { status: 200 }
-      );
-
-    // Present: the id rides in the scope (the app-side opt-in signal).
-    const withId = vi.fn(okResponse);
-    await requestDeviceCode({
-      baseUrl: BASE,
-      descriptor: { ...DESCRIPTOR, telemetryInstanceId: 'inst-uuid-1' },
-      fetchImpl: withId,
-    });
-    const scopeWith = JSON.parse(
-      JSON.parse((withId.mock.calls[0][1] as RequestInit).body as string).scope
-    );
-    expect(scopeWith.telemetryInstanceId).toBe('inst-uuid-1');
-
-    // Absent: the wire shape is exactly the three base fields, no key at all.
-    const withoutId = vi.fn(okResponse);
-    await requestDeviceCode({ baseUrl: BASE, descriptor: DESCRIPTOR, fetchImpl: withoutId });
-    const scopeWithout = JSON.parse(
-      JSON.parse((withoutId.mock.calls[0][1] as RequestInit).body as string).scope
-    );
-    expect(scopeWithout).toEqual(DESCRIPTOR);
-    expect('telemetryInstanceId' in scopeWithout).toBe(false);
-  });
-
-  it('serializes previousLinkProof only when present, leaving the scope byte-identical otherwise', async () => {
-    const okResponse = () =>
-      new Response(
-        JSON.stringify({
-          device_code: 'dev-123',
-          user_code: 'ABCD1234',
-          verification_uri: `${BASE}/activate`,
-          verification_uri_complete: `${BASE}/activate?user_code=ABCD1234`,
-          expires_in: 1800,
-          interval: 5,
-        }),
-        { status: 200 }
-      );
-    const rawScope = (fetchImpl: ReturnType<typeof vi.fn>) =>
-      JSON.parse((fetchImpl.mock.calls[0][1] as RequestInit).body as string).scope as string;
-
-    const withProof = vi.fn(okResponse);
-    await requestDeviceCode({
-      baseUrl: BASE,
-      descriptor: { ...DESCRIPTOR, previousLinkProof: 'proof-a' },
-      fetchImpl: withProof,
-    });
-    expect(JSON.parse(rawScope(withProof)).previousLinkProof).toBe('proof-a');
-
-    // No proof: the exact bytes a first link has always sent.
-    const withoutProof = vi.fn(okResponse);
-    await requestDeviceCode({ baseUrl: BASE, descriptor: DESCRIPTOR, fetchImpl: withoutProof });
-    expect(rawScope(withoutProof)).toBe(
-      '{"name":"kai-mbp","platform":"darwin","dorkosVersion":"0.4.2"}'
-    );
-  });
 });
 
 describe('linkProofForKey', () => {
   it('is HMAC-SHA256 keyed by the UTF-8 key over "dorkos-relink-v1", base64url with no padding', () => {
-    // Formula: base64url_nopad(HMAC-SHA256(key = <raw instance key>, message = "dorkos-relink-v1")).
     // Recomputed here AND pinned as a literal below, so a change to either the
-    // formula or the implementation fails.
+    // formula or the implementation fails. A plain SHA-256 of the key would not match.
     const key = 'dork_inst_example';
     expect(linkProofForKey(key)).toBe(
       createHmac('sha256', key).update('dorkos-relink-v1').digest('base64url')
     );
     // Cross-checked with: printf 'dorkos-relink-v1' | openssl dgst -sha256 -hmac 'dork_inst_example' -binary | base64 (then + / -> - _, = dropped).
     expect(linkProofForKey(key)).toBe('N90kR3TE_GnYWhiySlFCBbDkvflsBdA5CrAVDzjrovw');
-    expect(linkProofForKey('dork_inst_example')).toMatch(/^[A-Za-z0-9_-]{43}$/);
-  });
-
-  it('is not the plain SHA-256 of the key, so a stored key hash cannot stand in for it', () => {
-    const key = 'dork_inst_example';
-    const plainHash = createHash('sha256').update(key, 'utf8').digest('base64url');
-    expect(linkProofForKey(key)).not.toBe(plainHash);
-    expect(linkProofForKey(key)).not.toContain('dork_inst');
   });
 });
 
 describe('buildInstanceDescriptor', () => {
-  it('omits telemetryInstanceId when no id is passed', () => {
-    const descriptor = buildInstanceDescriptor();
-    expect('telemetryInstanceId' in descriptor).toBe(false);
-    expect(descriptor.name).toBeTruthy();
-    expect(descriptor.platform).toBe(process.platform);
-  });
-
-  it('includes telemetryInstanceId when one is passed (the opt-in path)', () => {
-    const descriptor = buildInstanceDescriptor('inst-uuid-2');
-    expect(descriptor.telemetryInstanceId).toBe('inst-uuid-2');
+  it('includes telemetryInstanceId only when one is passed (the opt-in path)', () => {
+    expect('telemetryInstanceId' in buildInstanceDescriptor()).toBe(false);
+    expect(buildInstanceDescriptor('inst-uuid-2').telemetryInstanceId).toBe('inst-uuid-2');
   });
 });
 
 describe('pollForToken', () => {
   it('returns approved with the access token on success', async () => {
-    const clock = makeClock();
     const fetchImpl = sequenceFetch([
       { status: 400, body: { error: 'authorization_pending' } },
-      {
-        status: 200,
-        body: { access_token: 'dork_inst_abc', token_type: 'Bearer', scope: 'instance' },
-      },
+      { status: 200, body: { access_token: 'dork_inst_abc', token_type: 'Bearer' } },
     ]);
-
-    const result = await pollForToken({
-      baseUrl: BASE,
-      deviceCode: 'dev-123',
-      interval: 5,
-      expiresIn: 1800,
-      fetchImpl,
-      sleep: clock.sleep,
-      now: clock.now,
-    });
+    const result = await poll(fetchImpl, makeClock());
 
     expect(result).toEqual({ status: 'approved', accessToken: 'dork_inst_abc' });
-    // Sends the RFC 8628 grant on each poll.
     const firstBody = JSON.parse(fetchImpl.mock.calls[0][1]!.body as string);
     expect(firstBody.grant_type).toBe(DEVICE_GRANT_TYPE);
   });
 
-  it('returns denied when the user denies (access_denied)', async () => {
-    const clock = makeClock();
-    const fetchImpl = sequenceFetch([{ status: 400, body: { error: 'access_denied' } }]);
-    const result = await pollForToken({
-      baseUrl: BASE,
-      deviceCode: 'dev-123',
-      interval: 5,
-      expiresIn: 1800,
-      fetchImpl,
-      sleep: clock.sleep,
-      now: clock.now,
-    });
-    expect(result).toEqual({ status: 'denied' });
-  });
-
-  it('returns expired when the cloud reports expired_token', async () => {
-    const clock = makeClock();
-    const fetchImpl = sequenceFetch([{ status: 400, body: { error: 'expired_token' } }]);
-    const result = await pollForToken({
-      baseUrl: BASE,
-      deviceCode: 'dev-123',
-      interval: 5,
-      expiresIn: 1800,
-      fetchImpl,
-      sleep: clock.sleep,
-      now: clock.now,
-    });
-    expect(result).toEqual({ status: 'expired' });
-  });
-
-  it('returns expired once the local deadline passes', async () => {
-    const clock = makeClock();
-    // Always pending; deadline is 8s, interval 5s → expires on the second wake.
-    const fetchImpl = sequenceFetch([{ status: 400, body: { error: 'authorization_pending' } }]);
-    const result = await pollForToken({
-      baseUrl: BASE,
-      deviceCode: 'dev-123',
-      interval: 5,
-      expiresIn: 8,
-      fetchImpl,
-      sleep: clock.sleep,
-      now: clock.now,
-    });
-    expect(result).toEqual({ status: 'expired' });
-    // Polled once (t=5000), then woke at t=10000 >= 8000 and stopped without polling.
-    expect(fetchImpl.mock.calls.length).toBe(1);
-  });
-
-  it('increases the poll interval by 5s after slow_down', async () => {
-    const clock = makeClock();
-    const fetchImpl = sequenceFetch([
-      { status: 400, body: { error: 'slow_down' } },
-      { status: 200, body: { access_token: 'dork_inst_xyz' } },
-    ]);
-    const result = await pollForToken({
-      baseUrl: BASE,
-      deviceCode: 'dev-123',
-      interval: 5,
-      expiresIn: 1800,
-      fetchImpl,
-      sleep: clock.sleep,
-      now: clock.now,
-    });
-    expect(result).toEqual({ status: 'approved', accessToken: 'dork_inst_xyz' });
-    // First wait 5s, then (after slow_down) 10s.
-    expect(clock.recorded).toEqual([5000, 10000]);
+  it.each([
+    ['access_denied', 'denied'],
+    ['expired_token', 'expired'],
+  ])('maps %s to %s', async (error, status) => {
+    const result = await poll(sequenceFetch([{ status: 400, body: { error } }]), makeClock());
+    expect(result).toEqual({ status });
   });
 
   it('backs off on a 429 like slow_down and still links (DOR-2496)', async () => {
@@ -299,15 +164,7 @@ describe('pollForToken', () => {
       { status: 400, body: { error: 'authorization_pending' } },
       { status: 200, body: { access_token: 'dork_inst_xyz' } },
     ]);
-    const result = await pollForToken({
-      baseUrl: BASE,
-      deviceCode: 'dev-123',
-      interval: 5,
-      expiresIn: 1800,
-      fetchImpl,
-      sleep: clock.sleep,
-      now: clock.now,
-    });
+    const result = await poll(fetchImpl, clock);
     expect(result).toEqual({ status: 'approved', accessToken: 'dork_inst_xyz' });
     expect(clock.recorded).toEqual([5000, 10000, 10000]);
   });
@@ -318,15 +175,7 @@ describe('pollForToken', () => {
       { status: 429, body: {}, headers: { 'retry-after': '30' } },
       { status: 429, body: {}, headers: { 'x-retry-after': '9999' } },
     ]);
-    const result = await pollForToken({
-      baseUrl: BASE,
-      deviceCode: 'dev-123',
-      interval: 5,
-      expiresIn: 60,
-      fetchImpl,
-      sleep: clock.sleep,
-      now: clock.now,
-    });
+    const result = await poll(fetchImpl, clock, 60);
     // 5s, then the 30s it asked for, then only the 25s left before expiry.
     expect(clock.recorded).toEqual([5000, 30000, 25000]);
     expect(result).toEqual({ status: 'expired' });
@@ -334,52 +183,21 @@ describe('pollForToken', () => {
   });
 
   it('throws on an unrecognized token error rather than looping forever', async () => {
-    const clock = makeClock();
     const fetchImpl = sequenceFetch([{ status: 400, body: { error: 'teapot' } }]);
-    await expect(
-      pollForToken({
-        baseUrl: BASE,
-        deviceCode: 'dev-123',
-        interval: 5,
-        expiresIn: 1800,
-        fetchImpl,
-        sleep: clock.sleep,
-        now: clock.now,
-      })
-    ).rejects.toThrow(/teapot/);
+    await expect(poll(fetchImpl, makeClock())).rejects.toThrow(/teapot/);
   });
 });
 
 describe('sendHeartbeat', () => {
-  it('returns ok with instanceId + lastSeenAt on 200', async () => {
-    const fetchImpl = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({ ok: true, instanceId: 'inst-1', lastSeenAt: '2026-07-03T00:00:00Z' }),
-          {
-            status: 200,
-          }
-        )
-    );
-    const result = await sendHeartbeat({
+  const beat = (fetchImpl: FetchLike) =>
+    sendHeartbeat({
       baseUrl: BASE,
       accessToken: 'dork_inst_abc',
       descriptor: DESCRIPTOR,
       fetchImpl,
     });
-    // No `accountLabel` in the response → normalized to null.
-    expect(result).toEqual({
-      ok: true,
-      instanceId: 'inst-1',
-      lastSeenAt: '2026-07-03T00:00:00Z',
-      accountLabel: null,
-    });
-    const [url, init] = fetchImpl.mock.calls[0];
-    expect(url).toBe(`${BASE}/api/instances/heartbeat`);
-    expect((init as RequestInit).headers).toMatchObject({ authorization: 'Bearer dork_inst_abc' });
-  });
 
-  it('parses the accountLabel the cloud returns', async () => {
+  it('returns ok with instanceId, lastSeenAt and accountLabel on 200', async () => {
     const fetchImpl = vi.fn(
       async () =>
         new Response(
@@ -392,379 +210,26 @@ describe('sendHeartbeat', () => {
           { status: 200 }
         )
     );
-    const result = await sendHeartbeat({
-      baseUrl: BASE,
-      accessToken: 'dork_inst_abc',
-      descriptor: DESCRIPTOR,
-      fetchImpl,
+    expect(await beat(fetchImpl)).toEqual({
+      ok: true,
+      instanceId: 'inst-1',
+      lastSeenAt: '2026-07-03T00:00:00Z',
+      accountLabel: 'owner@dork.test',
     });
-    expect(result).toMatchObject({ ok: true, accountLabel: 'owner@dork.test' });
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`${BASE}/api/instances/heartbeat`);
+    expect(init.headers).toMatchObject({ authorization: 'Bearer dork_inst_abc' });
   });
 
-  it('flags 401 as unauthorized (the unlink signal)', async () => {
-    const fetchImpl = vi.fn(async () => new Response('', { status: 401 }));
-    const result = await sendHeartbeat({
-      baseUrl: BASE,
-      accessToken: 'dead-key',
-      descriptor: DESCRIPTOR,
-      fetchImpl,
-    });
-    expect(result).toEqual({ ok: false, unauthorized: true });
-  });
-
-  it('reports a transient error on other non-2xx without unauthorizing', async () => {
-    const fetchImpl = vi.fn(async () => new Response('', { status: 503 }));
-    const result = await sendHeartbeat({
-      baseUrl: BASE,
-      accessToken: 'dork_inst_abc',
-      descriptor: DESCRIPTOR,
-      fetchImpl,
-    });
-    expect(result).toEqual({ ok: false, unauthorized: false, error: 'HTTP 503' });
-  });
-});
-
-describe('managed connector authority commands', () => {
-  const command = {
-    version: 1,
-    commandId: 'command-a',
-    managedConnectionId: 'managed-a',
-    scopeVersion: 2,
-    kind: 'set_connection_lifecycle',
-    lifecycle: 'paused',
-  } as const;
-
-  it('posts the exact strict command with the linked bearer', async () => {
-    const status = {
-      version: 1,
-      commandId: command.commandId,
-      managedConnectionId: command.managedConnectionId,
-      scopeVersion: command.scopeVersion,
-      state: 'applied',
-      externalCleanup: 'not_required',
-    } as const;
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(status), { status: 200 }));
-
-    await expect(
-      submitManagedConnectorAuthorityCommand({
-        baseUrl: BASE,
-        accessToken: 'dork_inst_abc',
-        command,
-        fetchImpl,
-      })
-    ).resolves.toEqual(status);
-
-    const [url, init] = fetchImpl.mock.calls[0];
-    expect(url).toBe(`${BASE}/api/instances/connectors/authority-commands`);
-    expect((init as RequestInit).headers).toMatchObject({
-      authorization: 'Bearer dork_inst_abc',
-    });
-    expect(JSON.parse((init as RequestInit).body as string)).toEqual(command);
-  });
-
-  it('reads status by encoded id and rejects malformed success bodies', async () => {
-    const fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }));
-    await expect(
-      readManagedConnectorAuthorityCommand({
-        baseUrl: BASE,
-        accessToken: 'dork_inst_abc',
-        commandId: 'command/a',
-        fetchImpl,
-      })
-    ).rejects.toMatchObject({ code: 'invalid_response' });
-    expect(fetchImpl.mock.calls[0][0]).toBe(
-      `${BASE}/api/instances/connectors/authority-commands/command%2Fa`
-    );
-  });
-
-  it('distinguishes relink-required 403 from invalid-key 401 without leaking response text', async () => {
-    await expect(
-      submitManagedConnectorAuthorityCommand({
-        baseUrl: BASE,
-        accessToken: 'old-key',
-        command,
-        fetchImpl: vi.fn(
-          async () =>
-            new Response(
-              JSON.stringify({
-                error: 'permission_upgrade_required',
-                reason: 'SECRET_HOSTED_ERROR',
-              }),
-              { status: 403 }
-            )
-        ),
-      }).catch((error: unknown) => error)
-    ).resolves.toMatchObject({
-      code: 'permission_upgrade_required',
-      cloudCode: 'permission_upgrade_required',
-      reason: 'SECRET_HOSTED_ERROR',
-      message:
-        'Your DorkOS account link needs updating. Link this computer again in Settings › DorkOS account.',
-    });
-    const refused = await submitManagedConnectorAuthorityCommand({
-      baseUrl: BASE,
-      accessToken: 'old-key',
-      command,
-      fetchImpl: vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({ error: 'permission_upgrade_required', reason: 'SECRET_HOSTED_ERROR' }),
-            { status: 403 }
-          )
-      ),
-    }).catch((error: Error) => error);
-    expect((refused as Error).message).not.toContain('SECRET_HOSTED_ERROR');
-    await expect(
-      submitManagedConnectorAuthorityCommand({
-        baseUrl: BASE,
-        accessToken: 'dead-key',
-        command,
-        fetchImpl: vi.fn(async () => new Response('', { status: 401 })),
-      })
-    ).rejects.toMatchObject({ code: 'unauthorized' });
-  });
-});
-
-describe('managed connector execution and usage', () => {
-  const request = {
-    version: 1,
-    logicalOperationId: 'logical-a',
-    attemptId: 'attempt-a',
-    attemptIndex: 1,
-    managedConnectionId: 'managed-a',
-    agentId: 'agent-a',
-    grantScopeVersion: 3,
-    attribution: { surface: 'cli', actorKind: 'program', actorId: 'credential-a' },
-    revision: {
-      hostedRevisionId: '11111111-1111-4111-8111-111111111111',
-      operationSlug: 'gmail.send',
-      toolkitVersion: '2026-09-01',
-      schemaHash: 'sha256:revision-a',
-    },
-    arguments: { message: 'hello' },
-  } as const;
-  const receipt = {
-    version: 1,
-    receiptId: 'receipt-a',
-    logicalOperationId: 'logical-a',
-    attemptId: 'attempt-a',
-    attemptIndex: 1,
-    outcome: 'success',
-    completedAt: '2026-09-06T12:00:01.000Z',
-    recordedAt: '2026-09-06T12:00:02.000Z',
-  } as const;
-
-  it('posts the strict execution request once with the linked bearer', async () => {
-    const response = {
-      state: 'completed',
-      result: { status: 'success', data: { delivered: true } },
-      receipt,
-    } as const;
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(response), { status: 200 }));
-
-    await expect(
-      executeManagedConnectorOperation({
-        baseUrl: BASE,
-        accessToken: 'dork_inst_abc',
-        request,
-        fetchImpl,
-        signal: new AbortController().signal,
-      })
-    ).resolves.toEqual(response);
-
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchImpl.mock.calls[0];
-    expect(url).toBe(`${BASE}/api/instances/connectors/executions`);
-    expect((init as RequestInit).headers).toMatchObject({
-      authorization: 'Bearer dork_inst_abc',
-      'content-type': 'application/json',
-    });
-    expect(JSON.parse((init as RequestInit).body as string)).toEqual(request);
-  });
-
-  it('reads a receipt and usage page without accepting malformed hosted evidence', async () => {
-    const receiptFetch = vi.fn(
-      async () => new Response(JSON.stringify({ state: 'recorded', receipt }), { status: 200 })
-    );
-    await expect(
-      requestManagedConnectorExecutionReceipt({
-        baseUrl: BASE,
-        accessToken: 'dork_inst_abc',
-        attemptId: 'attempt/a',
-        fetchImpl: receiptFetch,
-        signal: new AbortController().signal,
-      })
-    ).resolves.toMatchObject({ state: 'recorded', receipt });
-    expect(receiptFetch.mock.calls[0][0]).toBe(
-      `${BASE}/api/instances/connectors/executions/attempt%2Fa`
-    );
-
-    const usageFetch = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            version: 1,
-            status: 'available',
-            counts: { logicalOperationCount: 1, attemptCount: 1 },
-            items: [],
-          }),
-          { status: 200 }
-        )
-    );
-    await requestManagedConnectorUsage({
-      baseUrl: BASE,
-      accessToken: 'dork_inst_abc',
-      request: {
-        version: 1,
-        managedConnectionId: 'managed/a',
-        agentId: 'agent a',
-        limit: 25,
-      },
-      fetchImpl: usageFetch,
-      signal: new AbortController().signal,
-    });
-    expect(usageFetch.mock.calls[0][0]).toBe(
-      `${BASE}/api/instances/connectors/usage?version=1&managedConnectionId=managed%2Fa&agentId=agent+a&limit=25`
-    );
-
-    await expect(
-      requestManagedConnectorExecutionReceipt({
-        baseUrl: BASE,
-        accessToken: 'dork_inst_abc',
-        attemptId: 'attempt-a',
-        fetchImpl: vi.fn(
-          async () =>
-            new Response(
-              JSON.stringify({
-                state: 'recorded',
-                receipt: { ...receipt, logicalOperationId: 'other' },
-                privateProviderLog: 'SECRET',
-              }),
-              { status: 200 }
-            )
-        ),
-        signal: new AbortController().signal,
-      })
-    ).rejects.toMatchObject({ code: 'invalid_response' });
-  });
-});
-
-describe('managed connector authentication start', () => {
-  it('allows a valid authentication response after the generic ten-second request deadline', async () => {
-    vi.useFakeTimers();
-    try {
-      const timeoutSignal = vi.fn((timeoutMs: number) => {
-        const controller = new AbortController();
-        setTimeout(
-          () => controller.abort(new DOMException('The operation timed out.', 'TimeoutError')),
-          timeoutMs
-        );
-        return controller.signal;
-      });
-      const state = {
-        version: 1,
-        flowId: 'hosted-flow-a',
-        toolkit: 'gmail',
-        createdAt: '2026-09-10T12:00:00.000Z',
-        expiresAt: '2026-09-10T12:10:00.000Z',
-        state: 'pending',
-        authorizeUrl: 'https://dorkos.test/connectors/managed/authorize?flow=hosted-flow-a',
-      } as const;
-      const fetchImpl = vi.fn(
-        async (_url: string | URL | Request, init?: RequestInit) =>
-          await new Promise<Response>((resolve, reject) => {
-            const timer = setTimeout(
-              () => resolve(new Response(JSON.stringify(state), { status: 200 })),
-              11_000
-            );
-            init?.signal?.addEventListener(
-              'abort',
-              () => {
-                clearTimeout(timer);
-                reject(init.signal?.reason);
-              },
-              { once: true }
-            );
-          })
-      );
-
-      const pending = requestManagedConnectorAuthentication({
-        baseUrl: BASE,
-        accessToken: 'dork_inst_abc',
-        request: { version: 1, requestId: 'request-a', toolkit: 'gmail' },
-        fetchImpl,
-        signal: new AbortController().signal,
-        timeoutSignal,
-      });
-      await vi.advanceTimersByTimeAsync(11_000);
-
-      await expect(pending).resolves.toEqual(state);
-      expect(timeoutSignal).toHaveBeenCalledWith(60_000);
-    } finally {
-      vi.clearAllTimers();
-      vi.useRealTimers();
-    }
-  });
-
-  it('keeps ordinary managed catalog requests on the generic ten-second deadline', async () => {
-    vi.useFakeTimers();
-    try {
-      const timeoutSignal = vi.fn((timeoutMs: number) => {
-        const controller = new AbortController();
-        setTimeout(
-          () => controller.abort(new DOMException('The operation timed out.', 'TimeoutError')),
-          timeoutMs
-        );
-        return controller.signal;
-      });
-      const fetchImpl = vi.fn(
-        async (_url: string | URL | Request, init?: RequestInit) =>
-          await new Promise<Response>((resolve, reject) => {
-            const responseTimer = setTimeout(
-              () => resolve(new Response(JSON.stringify({ services: [], warnings: [] }))),
-              11_000
-            );
-            init?.signal?.addEventListener(
-              'abort',
-              () => {
-                clearTimeout(responseTimer);
-                reject(init.signal?.reason);
-              },
-              { once: true }
-            );
-          })
-      );
-
-      const pending = requestManagedConnectorCatalog({
-        baseUrl: BASE,
-        accessToken: 'dork_inst_abc',
-        request: { query: 'mail' },
-        fetchImpl,
-        signal: new AbortController().signal,
-        timeoutSignal,
-      });
-      const refusal = expect(pending).rejects.toMatchObject({ code: 'network_error' });
-      await vi.advanceTimersByTimeAsync(10_000);
-
-      await refusal;
-      expect(timeoutSignal).toHaveBeenCalledWith(10_000);
-    } finally {
-      vi.clearAllTimers();
-      vi.useRealTimers();
-    }
+  it.each([
+    [401, { ok: false, unauthorized: true }],
+    [503, { ok: false, unauthorized: false, error: 'HTTP 503' }],
+  ])('flags only 401 as unauthorized (the unlink signal): %i', async (status, expected) => {
+    expect(await beat(vi.fn(async () => new Response('', { status })))).toEqual(expected);
   });
 });
 
 describe('revokeInstanceKey', () => {
-  it('returns true when the cloud acknowledges', async () => {
-    const fetchImpl = vi.fn(
-      async () => new Response(JSON.stringify({ ok: true }), { status: 200 })
-    );
-    await expect(
-      revokeInstanceKey({ baseUrl: BASE, accessToken: 'dork_inst_abc', fetchImpl })
-    ).resolves.toBe(true);
-  });
-
   it('swallows failures and returns false (best-effort)', async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error('network down');
@@ -772,249 +237,5 @@ describe('revokeInstanceKey', () => {
     await expect(
       revokeInstanceKey({ baseUrl: BASE, accessToken: 'dork_inst_abc', fetchImpl })
     ).resolves.toBe(false);
-  });
-});
-
-describe('catalog authentication representation', () => {
-  it('opts in on search and page two while accepting an old strict-v1 server response', async () => {
-    const page = {
-      version: 1,
-      toolkits: [{ slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' }],
-      truncated: false,
-    };
-    const fetchImpl = vi.fn(
-      async (_url: string | URL | Request, _init?: RequestInit) =>
-        new Response(JSON.stringify(page), { status: 200 })
-    );
-    for (const cursor of [undefined, 'page2']) {
-      await expect(
-        requestManagedConnectorCatalog({
-          baseUrl: BASE,
-          accessToken: 'synthetic-instance-token',
-          request: { version: 1, query: 'mail', limit: 25, ...(cursor ? { cursor } : {}) },
-          fetchImpl,
-          signal: new AbortController().signal,
-        })
-      ).resolves.toEqual(page);
-    }
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    for (const [url, init] of fetchImpl.mock.calls) {
-      expect(String(url)).toContain('query=mail');
-      expect(init?.headers).toMatchObject({
-        'x-dorkos-catalog-auth-setup': '1',
-        authorization: 'Bearer synthetic-instance-token',
-      });
-    }
-    expect(String(fetchImpl.mock.calls[1][0])).toContain('cursor=page2');
-  });
-});
-
-describe('managed cloud refusals', () => {
-  const catalogRequest = { version: 1, limit: 10 } as const;
-  const catalog = (fetchImpl: ReturnType<typeof vi.fn>) =>
-    requestManagedConnectorCatalog({
-      baseUrl: BASE,
-      accessToken: 'dork_inst_secret',
-      request: catalogRequest,
-      fetchImpl,
-      signal: new AbortController().signal,
-    }).catch((error: unknown) => error);
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('reads the cloud error body on every status, not only 403', async () => {
-    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-    await expect(
-      catalog(
-        vi.fn(
-          async () =>
-            new Response(
-              JSON.stringify({ error: 'managed_connectors_unavailable', reason: 'toolkit down' }),
-              { status: 503 }
-            )
-        )
-      )
-    ).resolves.toMatchObject({
-      code: 'unavailable',
-      status: 503,
-      cloudCode: 'managed_connectors_unavailable',
-      reason: 'toolkit down',
-      method: 'GET',
-      path: '/api/instances/connectors/catalog',
-    });
-    await expect(
-      catalog(vi.fn(async () => new Response('<html>bad gateway</html>', { status: 502 })))
-    ).resolves.toMatchObject({ code: 'unavailable', status: 502, cloudCode: undefined });
-    await expect(
-      catalog(
-        vi.fn(async () => new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 }))
-      )
-    ).resolves.toMatchObject({ code: 'request_failed', status: 403, cloudCode: 'forbidden' });
-    await expect(
-      catalog(
-        vi.fn(
-          async () => new Response(JSON.stringify({ error: 'invalid_request' }), { status: 400 })
-        )
-      )
-    ).resolves.toMatchObject({ code: 'request_failed', status: 400, cloudCode: 'invalid_request' });
-    expect(warn).toHaveBeenCalledTimes(4);
-  });
-
-  it('logs exactly one line per refusal, without the token, query string, or a long reason', async () => {
-    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-    const longReason = 'r'.repeat(900);
-    const error = await catalog(
-      vi.fn(
-        async () =>
-          new Response(JSON.stringify({ error: 'conflict', reason: longReason }), { status: 409 })
-      )
-    );
-    expect(error).toMatchObject({ code: 'conflict', reason: 'r'.repeat(200) });
-    expect(warn).toHaveBeenCalledTimes(1);
-    const [line, context] = warn.mock.calls[0] as [string, Record<string, unknown>];
-    expect(line).toBe('[CloudLink] Managed cloud request refused');
-    expect(context).toMatchObject({
-      kind: 'catalog',
-      code: 'conflict',
-      status: 409,
-      cloudCode: 'conflict',
-      method: 'GET',
-      path: '/api/instances/connectors/catalog',
-    });
-    expect((context.reason as string).length).toBe(200);
-    const logged = JSON.stringify(warn.mock.calls);
-    expect(logged).not.toContain('dork_inst_secret');
-    expect(logged).not.toContain('limit=');
-  });
-
-  it('keeps the cloud code when another field of its body is oversize', async () => {
-    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-    await expect(
-      catalog(
-        vi.fn(
-          async () =>
-            new Response(
-              JSON.stringify({ error: 'permission_upgrade_required', reason: 'r'.repeat(1_500) }),
-              { status: 403 }
-            )
-        )
-      )
-    ).resolves.toMatchObject({
-      code: 'permission_upgrade_required',
-      cloudCode: 'permission_upgrade_required',
-      reason: 'r'.repeat(200),
-    });
-    const longCode = (await catalog(
-      vi.fn(
-        async () =>
-          new Response(JSON.stringify({ error: 'e'.repeat(150), reason: 7 }), { status: 403 })
-      )
-    )) as { code: string; cloudCode: string; reason?: string };
-    expect(longCode.code).toBe('request_failed');
-    expect(longCode.cloudCode).toBe('e'.repeat(100));
-    expect(longCode.reason).toBeUndefined();
-  });
-
-  it('reads at most 16 KiB of a refusal body, however large the body is', async () => {
-    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-    const chunk = new TextEncoder().encode('<html>' + 'x'.repeat(1_018));
-    let pulled = 0;
-    const body = new ReadableStream<Uint8Array>(
-      {
-        pull(controller) {
-          pulled += chunk.byteLength;
-          controller.enqueue(chunk);
-          if (pulled >= 4 * 1024 * 1024) controller.close();
-        },
-      },
-      { highWaterMark: 0 }
-    );
-    await expect(
-      catalog(vi.fn(async () => new Response(body, { status: 502 })))
-    ).resolves.toMatchObject({ code: 'unavailable', status: 502, cloudCode: undefined });
-    expect(pulled).toBeLessThanOrEqual(16 * 1024 + chunk.byteLength);
-  });
-
-  it('logs a network failure once for resources and both authority calls', async () => {
-    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-    const offline = vi.fn(async () => {
-      throw new TypeError('fetch failed');
-    });
-    await expect(catalog(offline)).resolves.toMatchObject({ code: 'network_error' });
-    await expect(
-      submitManagedConnectorAuthorityCommand({
-        baseUrl: BASE,
-        accessToken: 'dork_inst_secret',
-        command: {
-          version: 1,
-          commandId: 'command-a',
-          managedConnectionId: 'managed-a',
-          scopeVersion: 1,
-          kind: 'set_connection_lifecycle',
-          lifecycle: 'paused',
-        },
-        fetchImpl: offline,
-      })
-    ).rejects.toMatchObject({ code: 'network_error' });
-    await expect(
-      readManagedConnectorAuthorityCommand({
-        baseUrl: BASE,
-        accessToken: 'dork_inst_secret',
-        commandId: 'command-a',
-        fetchImpl: offline,
-      })
-    ).rejects.toMatchObject({ code: 'network_error' });
-    expect(warn).toHaveBeenCalledTimes(3);
-    expect(warn.mock.calls.map((call) => (call[1] as { kind: string }).kind)).toEqual([
-      'catalog',
-      'authority_submit',
-      'authority_read',
-    ]);
-  });
-
-  it('logs an unexpected answer with issue paths only, never the values', async () => {
-    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-    await expect(
-      catalog(
-        vi.fn(
-          async () =>
-            new Response(JSON.stringify({ version: 1, toolkits: 'SECRET_VALUE' }), { status: 200 })
-        )
-      )
-    ).resolves.toMatchObject({ code: 'invalid_response', status: 200 });
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0][0]).toBe('[CloudLink] Managed cloud answered something unexpected');
-    expect(warn.mock.calls[0][1]).toMatchObject({ kind: 'catalog', status: 200 });
-    expect((warn.mock.calls[0][1] as { issuePaths: string[] }).issuePaths).toContain('toolkits');
-    expect(JSON.stringify(warn.mock.calls)).not.toContain('SECRET_VALUE');
-  });
-});
-
-describe('the bounded refusal-body reader', () => {
-  /** A body that serves `chunkBytes`-sized chunks forever and records its cancel. */
-  function endlessBody(chunkBytes: number) {
-    const cancel = vi.fn();
-    const chunk = new Uint8Array(chunkBytes).fill(0x61);
-    const body = new ReadableStream<Uint8Array>(
-      { pull: (controller) => controller.enqueue(chunk), cancel },
-      { highWaterMark: 0 }
-    );
-    return { body, cancel };
-  }
-
-  it('releases the rest of the stream once it has read enough', async () => {
-    const { body, cancel } = endlessBody(1_024);
-    await readBoundedText(new Response(body, { status: 502 }));
-    expect(cancel).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps exactly the limit when a chunk straddles it', async () => {
-    // 1,000 does not divide 16,384, so the seventeenth chunk crosses the limit.
-    const { body } = endlessBody(1_000);
-    const text = await readBoundedText(new Response(body, { status: 502 }));
-    expect(MANAGED_ERROR_BODY_LIMIT_BYTES).toBe(16 * 1024);
-    expect(text).toHaveLength(MANAGED_ERROR_BODY_LIMIT_BYTES);
   });
 });

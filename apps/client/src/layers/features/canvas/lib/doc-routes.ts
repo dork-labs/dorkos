@@ -4,6 +4,7 @@
  *
  * @module features/canvas/lib/doc-routes
  */
+import { docRefusalSentence, isDocReviewChanged } from './doc-refusal';
 import type {
   CanvasDocRoute,
   CanvasDocRouteDestination,
@@ -113,8 +114,7 @@ export function routeChangeAnnouncement(route: CanvasDocRoute): string {
 
 /** Whether a refusal means the reviewed details went stale. */
 export function isRouteChanged(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === 'string' && ROUTE_CHANGED_CODES.has(code);
+  return isDocReviewChanged(error);
 }
 
 /** How many routes are on, and how many wait on a person. */
@@ -125,45 +125,11 @@ export function routesSummary(routes: readonly CanvasDocRoute[]): { on: number; 
   };
 }
 
-const CHANGED = 'This route changed. Review it again.';
-/** Refusals that mean the reviewed details are stale, so the review is read again. */
-export const ROUTE_CHANGED_CODES: ReadonlySet<string> = new Set([
-  'ROUTE_CHANGED',
-  'GRANT_BINDING_CHANGED',
-  'DECLARATION_HASH_MISMATCH',
-  'MANIFEST_CHANGED',
-]);
-const NOT_A_PERSON = 'Only a signed-in person can change routes.';
-const REFUSALS: Record<string, string> = {
-  ROUTE_CHANGED: CHANGED,
-  GRANT_BINDING_CHANGED: CHANGED,
-  DECLARATION_HASH_MISMATCH: CHANGED,
-  MANIFEST_CHANGED: CHANGED,
-  ROUTE_UNDECLARED: 'This document no longer declares that route.',
-  ROUTE_ALREADY_ON: 'This route is already on.',
-  ROUTE_ALREADY_GRANTED: 'This route is already on.',
-  APPROVAL_NOT_RECORDED: 'Couldn’t record the approval. Nothing was allowed.',
-  TARGET_UNAVAILABLE: 'The agent for this route isn’t available.',
-  TARGET_IDENTITY_MISMATCH: 'The agent for this route isn’t available.',
-  TARGET_SCOPE_MISMATCH: 'The agent for this route isn’t available.',
-  ROOM_ROUTE_UNAVAILABLE: 'This room can’t take events right now.',
-  ORIGIN_AUTHORITY_LOST: 'The agent that opened this isn’t available.',
-  GRANT_EXPIRED: 'That end time has passed. Pick another.',
-  AGENT_CANNOT_DECIDE: NOT_A_PERSON,
-  REQUESTER_CANNOT_DECIDE: NOT_A_PERSON,
-  PERSON_REQUIRED: NOT_A_PERSON,
-  operator_cookie_required: NOT_A_PERSON,
-  AUTH_REQUIRED: 'Sign in to change routes.',
-};
-
 /**
  * What to tell a person when a route request was refused.
  *
  * @param error - The thrown error, carrying the server's `code` when there is one.
  */
 export function routeRefusal(error: unknown): string {
-  const code = (error as { code?: unknown } | null)?.code;
-  if (typeof code === 'string' && REFUSALS[code]) return REFUSALS[code];
-  if (error instanceof TypeError) return 'Couldn’t reach DorkOS. Check your connection.';
-  return 'Couldn’t change this route. Try again.';
+  return docRefusalSentence(error, 'Couldn’t change this route. Try again.');
 }

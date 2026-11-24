@@ -124,11 +124,33 @@ if (!parsed.success) return validationProblem(c, parsed.error); // 400 invalid_r
 
 `validationProblem` writes `detail` from the first failing field ("`name`: Required.", plus "(and N more)"); pass `detail` when the route can say what to send in plainer words. Two 400 codes, two meanings: `invalid_request` is a body that was read and failed its checks; `malformed_request` is a body that could not be read at all (the chain sends it). `problem()` takes the status and title from the list; pass `status` only when this occurrence needs a different one, and `retryAfterMs` for a transient failure. `detail` is for a person: write it with the `writing-for-humans` skill, and never put a path, a stack or a secret in it.
 
+**Extra fields** a client acts on (the id of a held action, the packages that conflict, when a window ends) ride as RFC 9457 extension members: `problem(c, 'conflict', { detail, extensions: { conflicts } })`, named in camelCase. An extension member never replaces a standard one. **One code per refusal, and no second one:** a problem names what went wrong in `code` alone, never in a `reason` or any other member. A refusal a client branches on gets a code on `PROBLEM_CODE_LIST` (`precondition_failed` when what the caller was shown changed, `already_resolved`, `not_running`, `no_agent`, …); one no client branches on keeps the generic code (`conflict`, `invalid_request`, `forbidden`) and says which in `detail`. Same meaning, same code: a caller that is not a person is always `person_only`, one not at this computer is always `operator_only`, and a NUL byte in a path is always `400 invalid_request`. A call from one app to another's routes (`/api/ext/<id>/…`) that is refused answers `403 forbidden` with the rule in `detail`, and `403 caller_token_invalid` for a token the server forgot (ask for a new one). It was `{ code: 'app_call_refused', reason: 'not-declared' }`. The SDK's own `AppCallRefusal` words, decided in the frame before any request, keep their kebab-case spelling.
+
 **What the chain answers for you.** An error a route throws reaches the error handler (`middleware/error-handler.ts`): a body over the limit is `413 request_too_large`, broken JSON `400 malformed_request`, a body in an encoding or charset the parser cannot read `415 unsupported_media_type`, a path outside the boundary `403 outside_boundary`, a path with a NUL byte `400 invalid_request`, and anything else `500 internal_error`. Every `detail` the chain writes is a fixed sentence: an exception's message or stack never goes on the wire, in any environment (it is logged instead). The upload refusals follow the same rule. A path no route claims under `/api` is `404 not_found`; a route that must look like such a path answers `apiNotFound(c)` (`http/unclaimed.ts`). A multipart upload the parser refused is `uploadRefusalProblem(c, err)` (`http/problems/upload-refusal.ts`).
 
 **Reading one.** Every client reads failures through `readErrorBody` in `@dorkos/shared/problem` (the web client through `shared/lib/response-error`, the CLI through `ApiError`, the desktop shell directly): `detail`, else `title`, as the message; `code` as the kind. A surface that shows the server's own sentence in place of its own copy (`serverSentence`) takes `detail` only, never the generic `title`.
 
 **Never** `c.json({ error: '…' }, 4xx)`, `c.json({ error, details: z.flattenError(…) })` or a hand-built `{ error, code }` body in new code. Older routes still answer `{ error, code, details }`; they move to problem documents folder by folder under DOR-4979, and the readers keep reading both shapes until the last folder moves, when the old branch and the old shape are removed and a lint rule bans `c.json({ error })`.
+
+### Codes that changed: Relay and connected apps
+
+Relay (`/api/relay/*`: messages, mailboxes, chat connections, chat routes, delivery status, the webhook receiver) and connected apps (`/api/connectors/*`, the signed event receiver included) moved to problem documents together (DOR-4979). No `detail` carries an error's own text, an id, an address or a field value any more: the cause is in the server log. For a script written against the old answers:
+
+- **New codes:** `RESERVED_SENDER` → `reserved_sender`, `RESERVED_SUBJECT` (and a mailbox in a namespace DorkOS manages, which now carries `reservedPrefixes`) → `reserved_subject`, `ROOM_SESSION` → `room_conversation`, `BROADCAST_NOT_BRIDGEABLE` → `broadcast_not_bridgeable`, `BRIDGE_NOT_A_DM` → `chat_type_unknown`, a paused chat route's test → `chat_route_paused`, `INVALID_SIGNATURE` and `INVALID_EVENT_SIGNATURE` → `invalid_signature`, `DUPLICATE_ID` → `connection_id_taken`, `CHAT_ALREADY_BOUND` → `chat_already_bound` (still with `conflict`), `cloud_link_needs_update` → `cloud_link_required` (now 401), `provider_not_found` and `authentication_unavailable` → `app_not_set_up` (404), `writes_back_unsupported_app`, `operations_unsupported` and `every_agent_unavailable` → `app_not_supported` (422), `connection_cleanup_pending` → `account_cleanup_pending`, `connection_not_disconnected` → `still_connected`, `session_access_other_agent` → `other_agent_chat`, `session_access_off` → `app_off_in_chat`, `invalid_filter` → `invalid_filter` (now a problem code of its own), `request_open_elsewhere` keeps its name, `definition_changed` and `review_conflict` → `updates_changed` (412, was 409), `event_selection_unavailable` and `events_unavailable` → `updates_unavailable` (503). A new connection that was saved but couldn't start answers `502 connection_saved_not_started` (it was a 500 with the start error's text); trying the add again would meet `connection_id_taken`, so turn it on instead. `INVALID_CONFIG` answers `400 invalid_request` with `fields`, the manifest keys of the refused settings (a map entry is named by the field that holds it; never a value). `cloud_unavailable`, `cloud_refused`, `destination_unavailable` (now 409 everywhere) and `review_resolving` keep their names.
+- **Folded into a shared code** (`detail` still says which):
+  - `not_found` (404): `NOT_FOUND`, `connection_not_found`, `agent_not_found`, `agent_not_owned`, `flow_not_found`, `review_not_found`, `target_not_found`, `request_not_found`, `UNDO_NOT_FOUND`, `GRANT_NOT_FOUND`, `HOLD_NOT_FOUND`, `MINI_APP_ACCESS_NOT_FOUND`, `RELAY_RECEIPT_NOT_FOUND`, an unknown message, mailbox, trace, chat route or connection, and tracing being off. `session_not_found` keeps its own code.
+  - `invalid_request` (400): `INVALID_CONFIG` (with `fields`), `UNKNOWN_TYPE`, `MULTI_INSTANCE_DENIED`, `REMOVE_BUILTIN_DENIED`, `INVALID_AMOUNT`, `INVALID_TOOLKIT`, `INVALID_RELAY_MESSAGE_ID`, `invalid_cursor`, `invalid_selection`, `invalid_event_request`, an unknown agent or connection named in a chat route, a bridge on a route for every chat, and a refused publish or mailbox registration (both were 422).
+  - `precondition_failed` (412, was 409): `CONFIRMATION_STALE`, `LISTS_CHANGED`, `UNDO_STALE`, `preview_stale`.
+  - `person_only` (403): `connector_owner_required`, `operator_cookie_required`. `owner_only` (403): `OWNER_ADDS_LIST_ID`. `origin_not_allowed` (403): `connector_owner_origin_required`.
+  - `forbidden` (403): `HOLD_REQUESTER`, `CONNECTOR_PROGRAM_AGENT_IDENTITY_DENIED`, `marked_turn_typed_secret`, `marked_turn_moves_secret`, `EVENT_BINDING_REJECTED`, `principal_required`.
+  - `unauthenticated` (401): `CONNECTOR_PROGRAM_CREDENTIAL_REQUIRED`, `connector_program_credential_required`, `credential_unavailable`, and an account owner DorkOS could not work out.
+  - `expired` (410): `request_expired`, `review_expired`, `authority_expired`, `runtime_authority_expired`.
+  - `already_resolved` (409): `request_already_resolved`. `rate_limited` (429): `request_rate_limited`, too many chat route tests. `conflict` (409): `idempotency_conflict`, `selection_invalid`, `action_failed`.
+  - `temporarily_unavailable` (503): `RELAY_RECEIPT_RESPONSE_UNAVAILABLE` (still with `messageId` and `statusUrl`), `RELAY_RECEIPT_STORAGE_UNAVAILABLE` and the other receipt codes, `EVENTS_UNAVAILABLE`, `service_unavailable`, `agent_requests_unavailable`, `authority_sync_failed`, `managed_sync_unavailable`, `catalog_incomplete`, a chat route store that isn't ready, and a failed connected-apps start (`migration_failed`).
+  - `upstream_unavailable` (502): `actions_unavailable`. `internal_error` (500): any other failure, which used to echo the error's message; a non-refusal failure to turn a connection off is now 500 (was 400).
+  - `unsupported_media_type` (415), `request_too_large` (413) and `malformed_request` (400): the signed event receiver's `UNSUPPORTED_EVENT_ENCODING`, `EVENT_TOO_LARGE` and `INVALID_EVENT_REQUEST`.
+- **The webhook receiver** (`POST /api/relay/webhooks/:id`) answers every refusal before a verified signature with the one flat `401 invalid_signature`: an unknown or stopped connection, one aimed at an address DorkOS keeps, a request with no content type (it was 400) and a bad signature all look the same. After the signature checks out, a body that isn't JSON is `400 malformed_request` (it was the flat 401), a connection that isn't running or a refused delivery is `503 temporarily_unavailable`, and a failed delivery is `500 internal_error`.
+- **Kept as they were:** the `401` `AUTH_REQUIRED` body a delivery-status read or send gets before it is signed in (the same one the login gate sends), the `428` "Confirm it's you" body, and the capability gate's answers on `POST /api/connectors/executions` (moved with the capability doors).
 
 ## Regenerating the published API docs (two steps, not one)
 
@@ -243,7 +265,7 @@ The marketplace routes are mounted at `/api/marketplace` and backed by injected 
 
 A source name rides in the path or, from the app, in `?name=`: a name saved by an older DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL path (DOR-4212). Both forms run the same handler.
 
-**Error responses** use a centralised `mapErrorToStatus` helper — `400` for invalid manifests, `409` for file conflicts, `404` for missing packages/sources, `500` for unexpected failures.
+**Error responses** are problem documents from a centralised `mapErrorToProblem` helper — `400 invalid_request` for invalid manifests, `409 conflict` for file conflicts, `404 not_found` for missing packages/sources, `500 internal_error` for unexpected failures.
 
 See `contributing/marketplace-installs.md` for the full install pipeline, transaction semantics, and per-kind flow details.
 
@@ -261,7 +283,7 @@ Trigger-only and accept-only. The server validates the request, accepts the mess
 
 - `content` (string, required) - Message text.
 - `cwd` (optional) - Working directory.
-- `create` (optional) - Allows first-message creation under an unknown id; without it, an unknown session returns `404 SESSION_NOT_FOUND`.
+- `create` (optional) - Allows first-message creation under an unknown id; without it, an unknown session returns `404 session_not_found`.
 - `clientMessageId` (optional) - Client correlation for the submitted message.
 - `context` (optional) - Neutral client signals, including UI state.
 - `runtime`, `account`, `agentPath` (optional) - First-message launch/provenance hints; later messages do not rebind the session.
@@ -270,7 +292,7 @@ Trigger-only and accept-only. The server validates the request, accepts the mess
 **Responses:**
 
 - `202` - `SendMessageResponse`: `{ sessionId, messageId, outcome, queuePosition }`. Re-target to the returned canonical id when it differs. `queuePosition: 1` can mean an immediate start or the only waiting message; it is not a start signal.
-- `404` - `SESSION_NOT_FOUND` when no session exists and `create` was not requested.
+- `404` - `session_not_found` when no session exists and `create` was not requested.
 
 The session stream carries queue changes and the eventual turn. `apps/server/src/routes/sessions.ts`, `packages/shared/src/schemas.ts` and `Transport.postMessage` define the contract.
 
@@ -298,7 +320,7 @@ Schemas live in `packages/shared/src/session-stream.ts`; the handler in `apps/se
 
 ### GET /api/events
 
-Unified SSE stream for all real-time system events. Replaces individual per-resource SSE endpoints (`GET /api/tunnel/stream`, `GET /api/extensions/events`, `GET /api/relay/stream`) with a single multiplexed connection. Clients filter by the SSE `event:` field.
+Unified SSE stream for all real-time system events, on one connection. Clients filter by the SSE `event:` field. Three older streams that overlap it are still served today: `GET /api/tunnel/stream`, `GET /api/extensions/events` and `GET /api/relay/stream`. The plan (ADR `261123-170833`) is to remove each one, not deprecate it, in the change that moves every caller onto `/api/events`. New code reads `/api/events` only.
 
 **Events:**
 
@@ -417,7 +439,7 @@ Approve a pending tool call. Resolves the server-side deferred promise so the SD
 - `200` - `{ ok: true }`
 - `400` - Invalid request
 - `404` - No pending interaction for this tool call
-- `409` - Interaction already resolved (`INTERACTION_ALREADY_RESOLVED`)
+- `409` - Interaction already resolved (`already_resolved`)
 
 ### POST /api/sessions/:id/deny
 
@@ -445,7 +467,7 @@ Deny a pending tool call, optionally saying why.
 - `200` - `{ ok: true }`
 - `400` - Invalid request
 - `404` - No pending interaction for this tool call
-- `409` - Interaction already resolved (`INTERACTION_ALREADY_RESOLVED`)
+- `409` - Interaction already resolved (`already_resolved`)
 
 ### POST /api/sessions/:id/batch-approve
 
@@ -963,7 +985,7 @@ Relay system metrics.
 
 ### GET /api/relay/stream
 
-> **Deprecated** — Use `GET /api/events` (event names: `relay_connected`, `relay_message`, `relay_backpressure`, `relay_signal`).
+> **Still served; to be removed.** New code uses `GET /api/events` (event names: `relay_connected`, `relay_message`, `relay_backpressure`, `relay_signal`). This stream is not a strict duplicate yet: it accepts `relay.system.*` and `relay.signal.*` subjects, which `/api/events` does not carry. Under ADR `261123-170833` it is removed once `/api/events` carries those subjects and every caller has moved.
 
 SSE event stream for real-time relay activity. Supports server-side subject filtering.
 
@@ -1774,7 +1796,7 @@ Compiles the extension and activates it against a server-side mock API. Reports 
 
 **Endpoint**: `GET /api/extensions/events`
 
-> **Deprecated** — Use `GET /api/events` (event name: `extension_reloaded`).
+> **Still served; to be removed.** New code uses `GET /api/events` (event name: `extension_reloaded`). Under ADR `261123-170833` this stream is removed in the change that moves its callers onto `/api/events`.
 
 **Event**: `extension_reloaded`
 

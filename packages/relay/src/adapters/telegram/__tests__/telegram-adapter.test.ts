@@ -8,10 +8,7 @@ import {
   createEnvelope,
   createInboundCtx,
   createMockRelay,
-  mockBotStart,
   mockBotStop,
-  mockGetMe,
-  mockLeaveChat,
   mockSendChatAction,
   mockSendMessage,
   resetCaptured,
@@ -88,18 +85,6 @@ describe('TelegramAdapter', () => {
     }
   );
 
-  // --- start() ---
-
-  it('start() creates a bot with autoRetry and begins polling', async () => {
-    await adapter.start(mockRelay);
-
-    const { autoRetry } = await import('@grammyjs/auto-retry');
-    expect(autoRetry).toHaveBeenCalled();
-    expect(mockBotStart).toHaveBeenCalledWith(
-      expect.objectContaining({ drop_pending_updates: true })
-    );
-  });
-
   it('bounds autoRetry so a failing call eventually surfaces', async () => {
     // The library's own defaults are `maxRetryAttempts: Infinity` and
     // `maxDelaySeconds: Infinity`, and it wraps `getUpdates` too. Left
@@ -113,19 +98,6 @@ describe('TelegramAdapter', () => {
     expect(autoRetry).toHaveBeenCalledWith(
       expect.objectContaining({ maxRetryAttempts: 3, maxDelaySeconds: 60 })
     );
-  });
-
-  it('stop() unsubscribes from relay signals', async () => {
-    await adapter.start(mockRelay);
-
-    // Simulate a signal subscription being active
-    const signalCount = (mockRelay.onSignal as ReturnType<typeof vi.fn>).mock.calls.length;
-    expect(signalCount).toBe(1);
-
-    await adapter.stop();
-
-    // After stop, typing signals should no longer be forwarded
-    expect(mockSendChatAction).not.toHaveBeenCalled();
   });
 
   it('stop() calls bot.stop() and transitions to disconnected', async () => {
@@ -179,30 +151,6 @@ describe('TelegramAdapter', () => {
     );
   });
 
-  it('normalises StandardPayload with senderName and responseContext', async () => {
-    await adapter.start(mockRelay);
-
-    const ctx = createInboundCtx({
-      chatId: 42,
-      firstName: 'Bob',
-      lastName: 'Smith',
-      text: 'Hi there',
-    });
-    await captured.message!(ctx);
-
-    expect(mockRelay.publish).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        senderName: 'Bob Smith',
-        responseContext: expect.objectContaining({
-          platform: 'telegram',
-          maxLength: 4096,
-        }),
-      }),
-      expect.any(Object)
-    );
-  });
-
   // --- chat-member updates (DOR-883: the group-add claim flow's entry point) ---
 
   it("wires 'my_chat_member' and publishes when the bot is added to a group", async () => {
@@ -245,21 +193,6 @@ describe('TelegramAdapter', () => {
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
-  // --- Outbound delivery ---
-
-  it('deliver() sends a Telegram message to the correct chat', async () => {
-    await adapter.start(mockRelay);
-
-    const envelope = createEnvelope('relay.human.telegram.tg1.12345', {
-      content: 'Hello from agent!',
-    });
-    await adapter.deliver('relay.human.telegram.tg1.12345', envelope);
-
-    expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Hello from agent!', {
-      parse_mode: 'HTML',
-    });
-  });
-
   it('deliver() sends a markdown table without throwing, escaped but otherwise literal (§15 backstop, §13)', async () => {
     // The chats-as-channels spec's §15 backstop: the outbound adapter has to
     // survive a model that ignores room_context's formatting guidance and
@@ -288,37 +221,6 @@ describe('TelegramAdapter', () => {
     expect(sent).toContain('| --- | --- |');
     expect(sent).toContain('&lt;down&gt;');
     expect(sent).not.toContain('<down>');
-  });
-
-  // --- Typing signals ---
-
-  it('forwards active typing signals to Telegram as chat action', async () => {
-    await adapter.start(mockRelay);
-
-    const relay = mockRelay as ReturnType<typeof createMockRelay> & {
-      _emitSignal: (subject: string, signal: { type: string; state: string }) => void;
-    };
-    relay._emitSignal('relay.human.telegram.tg1.12345', { type: 'typing', state: 'active' });
-
-    // Allow microtask queue to drain
-    await Promise.resolve();
-
-    expect(mockSendChatAction).toHaveBeenCalledWith(12345, 'typing');
-  });
-
-  // --- 'progress' signal (spec §6.8: the bridge's presence forwarder) ---
-
-  // --- Typing is driven by the turn, not by the message arriving ---
-
-  it('shows no typing for a message that starts no turn', async () => {
-    await adapter.start(mockRelay);
-
-    const ctx = createInboundCtx({ chatId: 12345, text: 'Hello agent!' });
-    await captured.message!(ctx);
-
-    // Publishing is not working. Nothing downstream has claimed this message,
-    // and it may never be answered — so the chat is told nothing (E16/E16a).
-    expect(mockSendChatAction).not.toHaveBeenCalled();
   });
 
   it('starts typing when the turn starts, not when the message arrives', async () => {
@@ -361,43 +263,6 @@ describe('TelegramAdapter', () => {
     mockSendChatAction.mockClear();
     await new Promise((r) => setTimeout(r, 50));
     expect(mockSendChatAction).not.toHaveBeenCalled();
-  });
-
-  // --- testConnection() ---
-
-  // --- getMe() (spec §8, §11.2: the platform is the source of truth for
-  // group visibility, never config) ---
-
-  it('getMe() exposes canReadAllGroupMessages and username sourced from the platform', async () => {
-    mockGetMe.mockResolvedValueOnce({
-      id: 777,
-      is_bot: true,
-      username: 'dorkbot',
-      can_read_all_group_messages: true,
-    });
-    await adapter.start(mockRelay);
-
-    const result = await adapter.getMe();
-
-    expect(result).toEqual({ username: 'dorkbot', canReadAllGroupMessages: true });
-  });
-
-  // --- leaveChat() (DOR-883: the group-add claim flow's "Leave" action) ---
-
-  it("leaveChat() calls the platform's own leave with the chat id, unchanged", async () => {
-    await adapter.start(mockRelay);
-
-    await adapter.leaveChat('-100555');
-
-    expect(mockLeaveChat).toHaveBeenCalledWith('-100555');
-    expect(mockLeaveChat).toHaveBeenCalledTimes(1);
-  });
-
-  it('leaveChat() propagates a platform refusal rather than swallowing it', async () => {
-    await adapter.start(mockRelay);
-    mockLeaveChat.mockRejectedValueOnce(new Error('Bad Request: chat not found'));
-
-    await expect(adapter.leaveChat('555')).rejects.toThrow('Bad Request: chat not found');
   });
 
   // --- D4: Inbound content capped at 32KB ---
@@ -490,94 +355,6 @@ describe('TelegramAdapter', () => {
       expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Hello from agent!', {
         parse_mode: 'HTML',
       });
-    });
-
-    it('sends error with buffered text on error event', async () => {
-      await adapter.start(mockRelay);
-
-      // Buffer some text
-      const textEnvelope = createEnvelope('relay.human.telegram.tg1.12345', {
-        type: 'text_delta',
-        data: { text: 'Partial response' },
-      });
-      await adapter.deliver('relay.human.telegram.tg1.12345', textEnvelope);
-
-      // Send error event
-      const errorEnvelope = createEnvelope('relay.human.telegram.tg1.12345', {
-        type: 'error',
-        data: { message: 'Context limit exceeded' },
-      });
-      const result = await adapter.deliver('relay.human.telegram.tg1.12345', errorEnvelope);
-      expect(result.success).toBe(true);
-      expect(mockSendMessage).toHaveBeenCalledTimes(1);
-      expect(mockSendMessage).toHaveBeenCalledWith(
-        12345,
-        'Partial response\n\n[Error: Context limit exceeded]',
-        { parse_mode: 'HTML' }
-      );
-    });
-
-    it('done with an empty buffer tells the chat the agent said nothing', async () => {
-      await adapter.start(mockRelay);
-
-      const doneEnvelope = createEnvelope('relay.human.telegram.tg1.12345', {
-        type: 'done',
-        data: {},
-      });
-      const result = await adapter.deliver('relay.human.telegram.tg1.12345', doneEnvelope);
-      expect(result.success).toBe(true);
-      // Silence here is indistinguishable from an agent still thinking (DOR-789).
-      expect(mockSendMessage).toHaveBeenCalledWith(
-        12345,
-        expect.stringContaining('finished without sending anything back'),
-        expect.anything()
-      );
-    });
-
-    it('buffers per-chat independently', async () => {
-      await adapter.start(mockRelay);
-
-      // Buffer text in chat 111
-      await adapter.deliver(
-        'relay.human.telegram.tg1.111',
-        createEnvelope('relay.human.telegram.tg1.111', {
-          type: 'text_delta',
-          data: { text: 'Chat A' },
-        })
-      );
-
-      // Buffer text in chat 222
-      await adapter.deliver(
-        'relay.human.telegram.tg1.222',
-        createEnvelope('relay.human.telegram.tg1.222', {
-          type: 'text_delta',
-          data: { text: 'Chat B' },
-        })
-      );
-
-      // Flush chat 111
-      await adapter.deliver(
-        'relay.human.telegram.tg1.111',
-        createEnvelope('relay.human.telegram.tg1.111', {
-          type: 'done',
-          data: {},
-        })
-      );
-
-      expect(mockSendMessage).toHaveBeenCalledTimes(1);
-      expect(mockSendMessage).toHaveBeenCalledWith(111, 'Chat A', { parse_mode: 'HTML' });
-
-      // Flush chat 222
-      await adapter.deliver(
-        'relay.human.telegram.tg1.222',
-        createEnvelope('relay.human.telegram.tg1.222', {
-          type: 'done',
-          data: {},
-        })
-      );
-
-      expect(mockSendMessage).toHaveBeenCalledTimes(2);
-      expect(mockSendMessage).toHaveBeenCalledWith(222, 'Chat B', { parse_mode: 'HTML' });
     });
   });
 

@@ -109,7 +109,9 @@ describe('the panel', () => {
 
   it('morphs the copy button to a check once the address is on the clipboard', async () => {
     renderPanel();
-    await waitFor(() => expect(screen.getByRole('button', { name: /copy link/i })).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /copy link/i })).toBeInTheDocument()
+    );
 
     fireEvent.click(screen.getByRole('button', { name: /copy link/i }));
 
@@ -132,7 +134,9 @@ describe('the panel', () => {
   it('hands over to the full dialog, and gets out of its way', async () => {
     const onClose = vi.fn();
     renderPanel(onClose);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Manage…' })).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Manage…' })).toBeInTheDocument()
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Manage…' }));
 

@@ -161,26 +161,26 @@ describe('SettingsDialog', () => {
   // Verifies the dialog renders with the correct title
   it('renders with "Settings" title when open', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    expect(screen.getByText('Settings')).toBeDefined();
+    expect(screen.getByText('Settings')).toBeInTheDocument();
   });
 
   // Verifies appearance controls are visible on the default tab
   it('displays appearance controls on the default tab', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    expect(screen.getByText('Theme')).toBeDefined();
-    expect(screen.getByText('Font size')).toBeDefined();
-    expect(screen.getByText('Font family')).toBeDefined();
+    expect(screen.getByText('Theme')).toBeInTheDocument();
+    expect(screen.getByText('Font size')).toBeInTheDocument();
+    expect(screen.getByText('Font family')).toBeInTheDocument();
   });
 
   // Verifies preference controls are visible after navigating
   it('displays preference controls when navigating to Preferences', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     navigateTo(/preferences/i);
-    expect(screen.getByText('Show timestamps')).toBeDefined();
-    expect(screen.getByText('Expand tool calls')).toBeDefined();
+    expect(screen.getByText('Show timestamps')).toBeInTheDocument();
+    expect(screen.getByText('Expand tool calls')).toBeInTheDocument();
     // The two rows that came back from the old Advanced tab (DOR-1758).
-    expect(screen.getByText('Format text as you type')).toBeDefined();
-    expect(screen.getByText('Watch for work started elsewhere')).toBeDefined();
+    expect(screen.getByText('Format text as you type')).toBeInTheDocument();
+    expect(screen.getByText('Watch for work started elsewhere')).toBeInTheDocument();
     // The developer panel is a debugging aid; it went to Experiments.
     expect(screen.queryByText('Show dev tools')).toBeNull();
   });
@@ -197,10 +197,10 @@ describe('SettingsDialog', () => {
     // The port is reported as the address you can act on, not as a bare number:
     // a standalone "Port 4242" row told a desktop user nothing they could copy
     // into an MCP client or a browser.
-    expect(screen.getByText('http://localhost:4242')).toBeDefined();
+    expect(screen.getByText('http://localhost:4242')).toBeInTheDocument();
     // The working directory is one of the four diagnostics behind the fold.
     fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));
-    expect(screen.getByText('/home/user/project')).toBeDefined();
+    expect(screen.getByText('/home/user/project')).toBeInTheDocument();
   });
 
   // Verifies server tab shows endpoint and directory info
@@ -210,10 +210,10 @@ describe('SettingsDialog', () => {
       wrapper: createWrapper(transport),
     });
     navigateTo(/server/i);
-    expect(await screen.findByText('http://localhost:4242')).toBeDefined();
-    expect(screen.getByText('http://localhost:4242/mcp')).toBeDefined();
+    expect(await screen.findByText('http://localhost:4242')).toBeInTheDocument();
+    expect(screen.getByText('http://localhost:4242/mcp')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));
-    expect(screen.getByText('/home/user/.dork')).toBeDefined();
+    expect(screen.getByText('/home/user/.dork')).toBeInTheDocument();
   });
 
   // Verifies the dialog content is not rendered when closed
@@ -239,19 +239,19 @@ describe('SettingsDialog', () => {
   it('renders the built-in sidebar items and drops the retired Integrations and Agents tabs', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     fireEvent.click(advancedToggle());
-    expect(screen.getByRole('tab', { name: /appearance/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /preferences/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /server/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /tools/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /^runtimes/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /^dorkos account$/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /^login & security$/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /privacy & data/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /remote access/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /danger zone/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /experiments/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /^connections$/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /^room limits$/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /appearance/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /preferences/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /server/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /tools/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^runtimes/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^dorkos account$/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^login & security$/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /privacy & data/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /remote access/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /danger zone/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /experiments/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^connections$/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^room limits$/i })).toBeInTheDocument();
     // The two deleted tabs are gone.
     expect(screen.queryByRole('tab', { name: /integrations/i })).toBeNull();
     expect(screen.queryByRole('tab', { name: /^agents$/i })).toBeNull();
@@ -269,8 +269,8 @@ describe('SettingsDialog', () => {
     expect(screen.queryByRole('tab', { name: /^dorkos account$/i })).toBeNull();
     expect(screen.queryByRole('tab', { name: /remote access/i })).toBeNull();
     // The rest stay.
-    expect(screen.getByRole('tab', { name: /^login & security$/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /^connections$/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /^login & security$/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^connections$/i })).toBeInTheDocument();
   });
 
   // The staging area for flags that ship OFF (DOR-1304). Reachable by click and
@@ -280,8 +280,8 @@ describe('SettingsDialog', () => {
     navigateTo(/experiments/i);
     expect(
       await screen.findByRole('switch', { name: /keep agents warm between messages/i })
-    ).toBeDefined();
-    expect(screen.getByText(/Each one graduates or goes away\./)).toBeDefined();
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Each one graduates or goes away\./)).toBeInTheDocument();
   });
 
   it('opens straight onto Experiments from ?settings=experiments', async () => {
@@ -292,7 +292,7 @@ describe('SettingsDialog', () => {
     // item somewhere.
     expect(
       await screen.findByRole('switch', { name: /keep agents warm between messages/i })
-    ).toBeDefined();
+    ).toBeInTheDocument();
     expect(screen.queryByText('Font family')).toBeNull();
   });
 
@@ -302,9 +302,9 @@ describe('SettingsDialog', () => {
     deepLink.tab = 'connections';
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     const panel = screen.getByRole('tabpanel');
-    expect(within(panel).getByText('How DorkOS reaches your apps')).toBeDefined();
-    expect(within(panel).getByText('Chat apps')).toBeDefined();
-    expect(await within(panel).findByText('Set up with your first app')).toBeDefined();
+    expect(within(panel).getByText('How DorkOS reaches your apps')).toBeInTheDocument();
+    expect(within(panel).getByText('Chat apps')).toBeInTheDocument();
+    expect(await within(panel).findByText('Set up with your first app')).toBeInTheDocument();
   });
 
   it('switches to the DorkOS account tab from the DorkOS account row', async () => {
@@ -319,7 +319,7 @@ describe('SettingsDialog', () => {
       wrapper: createWrapper(transport),
     });
     fireEvent.click(await screen.findByRole('button', { name: /Manage account/ }));
-    expect(await screen.findByRole('button', { name: 'Unlink this computer' })).toBeDefined();
+    expect(await screen.findByRole('button', { name: 'Unlink this computer' })).toBeInTheDocument();
   });
 
   // The DorkOS account's one home sits directly after Profile and never moves
@@ -354,7 +354,7 @@ describe('SettingsDialog', () => {
   // Light, Dark and System does not need a sentence saying it picks a theme.
   it('displays font family selector in Appearance tab, with no filler description', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    expect(screen.getByText('Font family')).toBeDefined();
+    expect(screen.getByText('Font family')).toBeInTheDocument();
     expect(screen.queryByText('Choose the typeface for the interface')).toBeNull();
     expect(screen.queryByText('Choose your preferred color scheme')).toBeNull();
   });
@@ -362,9 +362,9 @@ describe('SettingsDialog', () => {
   // Verifies Theme and Font size are in Appearance tab alongside Font family
   it('displays Theme, Font family, and Font size in Appearance tab', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    expect(screen.getByText('Theme')).toBeDefined();
-    expect(screen.getByText('Font family')).toBeDefined();
-    expect(screen.getByText('Font size')).toBeDefined();
+    expect(screen.getByText('Theme')).toBeInTheDocument();
+    expect(screen.getByText('Font family')).toBeInTheDocument();
+    expect(screen.getByText('Font size')).toBeInTheDocument();
   });
 
   // The status bar has no Settings tab: what shows in the line is decided by the
@@ -391,8 +391,8 @@ describe('SettingsDialog', () => {
     expect(screen.queryByText('Notification sound')).toBeNull();
 
     navigateTo(/notifications/i);
-    expect(screen.getByText('Knock when an agent needs you')).toBeDefined();
-    expect(screen.getByText('Chime every time a turn finishes')).toBeDefined();
+    expect(screen.getByText('Knock when an agent needs you')).toBeInTheDocument();
+    expect(screen.getByText('Chime every time a turn finishes')).toBeInTheDocument();
   });
 
   // Verifies the Appearance tab still has its own "Reset to defaults" button (global reset)
@@ -408,8 +408,8 @@ describe('SettingsDialog', () => {
   it('renders "Feature suggestions" toggle in Preferences tab', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     navigateTo(/preferences/i);
-    expect(screen.getByText('Feature suggestions')).toBeDefined();
-    expect(screen.getByText('Feature tips on the dashboard and sidebar.')).toBeDefined();
+    expect(screen.getByText('Feature suggestions')).toBeInTheDocument();
+    expect(screen.getByText('Feature tips on the dashboard and sidebar.')).toBeInTheDocument();
   });
 
   // Verifies Feature suggestions toggle is enabled (promoEnabled defaults to true)
@@ -431,8 +431,10 @@ describe('SettingsDialog', () => {
     const panel = screen
       .getByText('Show timestamps')
       .closest('[data-slot="navigation-layout-panel"]')!;
-    expect(within(panel as HTMLElement).getByRole('heading', { name: 'Chat' })).toBeDefined();
-    expect(within(panel as HTMLElement).getByRole('heading', { name: 'Discovery' })).toBeDefined();
+    expect(within(panel as HTMLElement).getByRole('heading', { name: 'Chat' })).toBeInTheDocument();
+    expect(
+      within(panel as HTMLElement).getByRole('heading', { name: 'Discovery' })
+    ).toBeInTheDocument();
 
     const labels = Array.from(panel.querySelectorAll('[data-slot="field-label"]')).map(
       (el) => el.textContent
@@ -536,7 +538,7 @@ describe('SettingsDialog — Advanced fold', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     expect(advancedToggle()).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('tab', { name: label })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tabpanel')).toBeDefined();
+    expect(screen.getByRole('tabpanel')).toBeInTheDocument();
   });
 
   it.each([
@@ -590,6 +592,6 @@ describe('SettingsDialog — Advanced fold', () => {
     fireEvent.click(advancedToggle());
     expect(advancedToggle()).toHaveAttribute('aria-expanded', 'false');
     // The panel stays where the person is; only the list folds.
-    expect(screen.getByRole('tabpanel')).toBeDefined();
+    expect(screen.getByRole('tabpanel')).toBeInTheDocument();
   });
 });

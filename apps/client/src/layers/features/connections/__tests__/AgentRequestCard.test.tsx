@@ -402,7 +402,7 @@ describe('AgentRequestCard — an account exists', () => {
       preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }])
     );
     vi.mocked(transport.resolveConnectorAgentRequest)
-      .mockRejectedValueOnce(Object.assign(new Error('off'), { code: 'session_access_off' }))
+      .mockRejectedValueOnce(Object.assign(new Error('off'), { code: 'app_off_in_chat' }))
       .mockResolvedValueOnce({ ...REQUEST, status: 'approved' } as never);
     vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue(chatTurnedOff(true));
     vi.mocked(transport.setSessionConnectorAccess).mockResolvedValue({
@@ -443,7 +443,7 @@ describe('AgentRequestCard — an account exists', () => {
       preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }])
     );
     vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValue(
-      Object.assign(new Error('off'), { code: 'session_access_off' })
+      Object.assign(new Error('off'), { code: 'app_off_in_chat' })
     );
     vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue(chatTurnedOff(true));
     vi.mocked(transport.setSessionConnectorAccess).mockRejectedValue(new Error('offline'));
@@ -688,7 +688,7 @@ describe('AgentRequestCard — a request that also asks for updates', () => {
     const user = userEvent.setup();
     const transport = updatesTransport();
     vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValueOnce(
-      Object.assign(new Error('unavailable'), { code: 'event_selection_unavailable' })
+      Object.assign(new Error('unavailable'), { code: 'updates_unavailable' })
     );
     renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
 
@@ -745,7 +745,7 @@ describe('AgentRequestCard — a request that also asks for updates', () => {
     const user = userEvent.setup();
     const transport = updatesTransport();
     vi.mocked(transport.resolveConnectorAgentRequest)
-      .mockRejectedValueOnce(Object.assign(new Error('off'), { code: 'session_access_off' }))
+      .mockRejectedValueOnce(Object.assign(new Error('off'), { code: 'app_off_in_chat' }))
       .mockResolvedValueOnce({ ...EVENT_REQUEST, status: 'granted' } as never);
     vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue(chatTurnedOff(true));
     vi.mocked(transport.setSessionConnectorAccess).mockResolvedValue({

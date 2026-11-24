@@ -87,7 +87,8 @@ describe('POST /api/mesh/discover', () => {
       .send({ roots: ['/root/secret'] });
 
     expect(res.status).toBe(500);
-    expect(res.body.error).toBe('Permission denied');
+    expect(res.type).toBe('application/problem+json');
+    expect(res.body.code).toBe('internal_error');
   });
 
   it('validates every root and refuses if any one is outside the boundary', async () => {
@@ -100,7 +101,7 @@ describe('POST /api/mesh/discover', () => {
       .send({ roots: ['/home/user/good', '/outside/boundary'] });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain('/outside/boundary');
+    expect(res.body.code).toBe('outside_boundary');
     expect(meshCore.discover).not.toHaveBeenCalled();
   });
 });
@@ -190,8 +191,8 @@ describe('POST /api/mesh/agents', () => {
     });
 
     it.each([
-      [{ color: 'pinkish' }, 'INVALID_COLOR'],
-      [{ icon: 'sparkles' }, 'INVALID_ICON'],
+      [{ color: 'pinkish' }, 'invalid_request'],
+      [{ icon: 'sparkles' }, 'invalid_request'],
     ])('refuses %j with 400 and never registers', async (face, code) => {
       const res = await register({ ...BASIC, ...face });
 
@@ -232,7 +233,7 @@ describe('POST /api/mesh/agents', () => {
     const res = await register(BASIC, { scanRoot: '/etc' });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain('Scan root outside boundary');
+    expect(res.body.code).toBe('outside_boundary');
     expect(meshCore.registerByPath).not.toHaveBeenCalled();
   });
 
@@ -242,7 +243,7 @@ describe('POST /api/mesh/agents', () => {
       const res = await register(overrides);
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('overrides.name and overrides.runtime are required');
+      expect(res.body.detail).toContain('overrides.name and overrides.runtime');
     }
   );
 
@@ -252,7 +253,7 @@ describe('POST /api/mesh/agents', () => {
     const res = await register(BASIC);
 
     expect(res.status).toBe(422);
-    expect(res.body.error).toBe('Duplicate agent');
+    expect(res.body.detail).toBe('This folder couldn’t be registered as an agent.');
   });
 });
 

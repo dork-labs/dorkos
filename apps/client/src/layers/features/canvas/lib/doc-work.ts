@@ -5,6 +5,7 @@
  * @module features/canvas/lib/doc-work
  */
 import type { CanvasDocWorkItem } from '@dorkos/shared/canvas-doc-routes';
+import { docRefusalSentence } from './doc-refusal';
 
 /** A piece of work's state as a short status word. */
 export function workStatusLabel(status: CanvasDocWorkItem['status']): string {
@@ -48,36 +49,11 @@ export function workSummary(count: number): string {
   return `${count} to review`;
 }
 
-const NOT_A_PERSON = 'Only a signed-in person can change this.';
-const STALE = 'This work changed. The list is up to date now.';
-const REFUSALS: Record<string, string> = {
-  WORK_ALREADY_REVIEWED: 'This was already run again or cleared.',
-  WORK_STILL_RUNNING: 'It may still be running. Try again once it stops.',
-  WORK_NOT_FOUND: STALE,
-  WORK_NOT_REVIEWABLE: STALE,
-  CONFIRM_REPEAT_REQUIRED: 'Confirm before running this again.',
-  GRANT_REQUIRED: 'This route is off. Allow it first.',
-  GRANT_REVOKED: 'This route is off. Allow it first.',
-  GRANT_EXPIRED: 'This route’s approval ended. Allow it again first.',
-  MANIFEST_CHANGED: 'The document’s app changed. Allow the route again.',
-  ROUTE_CHANGED: 'The route changed, so this can’t run again.',
-  INPUTS_GONE: 'Some of its events are no longer kept.',
-  ROUTE_BUSY: 'Newer work is waiting on this route.',
-  AGENT_CANNOT_DECIDE: NOT_A_PERSON,
-  REQUESTER_CANNOT_DECIDE: NOT_A_PERSON,
-  PERSON_REQUIRED: NOT_A_PERSON,
-  operator_cookie_required: NOT_A_PERSON,
-  AUTH_REQUIRED: 'Sign in to change this.',
-};
-
 /**
  * What to tell a person when a replay or clear was refused.
  *
- * @param error - The thrown error, carrying the server's `code` when there is one.
+ * @param error - The thrown error, carrying the server's sentence when there is one.
  */
 export function workRefusal(error: unknown): string {
-  const code = (error as { code?: unknown } | null)?.code;
-  if (typeof code === 'string' && REFUSALS[code]) return REFUSALS[code];
-  if (error instanceof TypeError) return 'Couldn’t reach DorkOS. Check your connection.';
-  return 'Couldn’t change this work. Try again.';
+  return docRefusalSentence(error, 'Couldn’t change this work. Try again.');
 }

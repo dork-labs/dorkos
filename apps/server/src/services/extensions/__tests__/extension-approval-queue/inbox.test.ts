@@ -115,8 +115,8 @@ describe('an extension waiting to run asks in the inbox', () => {
     const stale = await request(server)
       .post(`/api/extensions/${EXT_ID}/approve`)
       .send({ version: '1.1.0', expectedDigest: `sha256:${'0'.repeat(64)}` });
-    expect(stale.status).toBe(409);
-    expect(stale.body.code).toBe('stale_approval');
+    expect(stale.status).toBe(412);
+    expect(stale.body).toMatchObject({ code: 'precondition_failed' });
 
     // A yes to exactly the files shown runs them.
     const ok = await request(server)
@@ -194,8 +194,8 @@ describe('an extension waiting to run asks in the inbox', () => {
         .post(`/api/extensions/${EXT_ID}/dismiss-approval`)
         .send({ path: extensionDir('flow'), version: '1.0.0' });
 
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('stale_approval');
+      expect(res.status).toBe(412);
+      expect(res.body).toMatchObject({ code: 'precondition_failed' });
       expect(state.extensions.dismissedApprovals).toEqual({});
       expect(await pending()).toHaveLength(1);
     });
@@ -342,8 +342,8 @@ describe('an extension waiting to run asks in the inbox', () => {
         expectedDigest: shown.digest,
       });
 
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('stale_approval');
+      expect(res.status).toBe(412);
+      expect(res.body).toMatchObject({ code: 'precondition_failed' });
       expect(state.extensions.approvedToRun).not.toContain(EXT_ID);
       expect(state.extensions.approvedSources).toEqual({});
       fs.rmSync(project, { recursive: true, force: true });
@@ -355,7 +355,7 @@ describe('an extension waiting to run asks in the inbox', () => {
       const wrong = await request(server)
         .post(`/api/extensions/${EXT_ID}/approve`)
         .send({ version: '9.9.9', plugin: 'flow' });
-      expect(wrong.status).toBe(409);
+      expect(wrong.status).toBe(412);
       expect(state.extensions.approvedToRun).toEqual([]);
 
       const right = await request(server)
@@ -372,11 +372,11 @@ describe('an extension waiting to run asks in the inbox', () => {
       const wrongPlugin = await request(server)
         .post(`/api/extensions/${EXT_ID}/approve`)
         .send({ path: shown.path, version: shown.version, plugin: 'other' });
-      expect(wrongPlugin.status).toBe(409);
+      expect(wrongPlugin.status).toBe(412);
       const wrongVersion = await request(server)
         .post(`/api/extensions/${EXT_ID}/approve`)
         .send({ path: shown.path, version: '9.9.9', plugin: shown.plugin });
-      expect(wrongVersion.status).toBe(409);
+      expect(wrongVersion.status).toBe(412);
       expect(state.extensions.approvedToRun).toEqual([]);
 
       const exact = await request(server).post(`/api/extensions/${EXT_ID}/approve`).send({

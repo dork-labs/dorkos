@@ -450,7 +450,7 @@ describe('ComposerInput', () => {
   describe('ARIA attributes', () => {
     it('textarea has combobox role', () => {
       render(<ComposerInput {...defaultProps} />);
-      expect(screen.getByRole('combobox')).toBeDefined();
+      expect(screen.getByRole('combobox')).toBeInTheDocument();
     });
 
     it('has aria-expanded true when palette open', () => {
@@ -613,12 +613,12 @@ describe('ComposerInput', () => {
           onSaveEdit={vi.fn()}
         />
       );
-      expect(screen.getByLabelText('Save edit')).toBeDefined();
+      expect(screen.getByLabelText('Save edit')).toBeInTheDocument();
     });
 
     it('queue badge renders with correct count', () => {
       render(<ComposerInput {...defaultProps} isStreaming={true} value="text" queueDepth={3} />);
-      expect(screen.getByText('3')).toBeDefined();
+      expect(screen.getByText('3')).toBeInTheDocument();
     });
   });
 
@@ -1110,7 +1110,7 @@ describe('ComposerInput', () => {
           onStop={vi.fn()}
         />
       );
-      expect(screen.getByLabelText('Stop generating')).toBeDefined();
+      expect(screen.getByLabelText('Stop generating')).toBeInTheDocument();
     });
 
     describe('when the host can stop it', () => {
@@ -1165,7 +1165,7 @@ describe('ComposerInput', () => {
           onStop={vi.fn()}
         />
       );
-      expect(screen.getByLabelText('Stop generating')).toBeDefined();
+      expect(screen.getByLabelText('Stop generating')).toBeInTheDocument();
     });
   });
 
@@ -1179,7 +1179,7 @@ describe('ComposerInput', () => {
           canSubmitReason="Getting your agent ready…"
         />
       );
-      expect(screen.getByText('Getting your agent ready…')).toBeDefined();
+      expect(screen.getByText('Getting your agent ready…')).toBeInTheDocument();
     });
 
     it('offers a way out on that line when there is one, and it works', () => {

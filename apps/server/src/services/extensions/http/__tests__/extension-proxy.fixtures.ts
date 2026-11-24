@@ -54,7 +54,12 @@ const limiterHoisted = vi.hoisted(() => ({ hits: 0, refuse: false }));
 
 vi.mock('../../../../middleware/extension-proxy-rate-limit.js', () => ({
   EXTENSION_PROXY_RATE_LIMIT_DEFAULT: 120,
-  EXTENSION_PROXY_RATE_LIMITED_BODY: { error: 'Too many requests', code: 'PROXY_RATE_LIMITED' },
+  EXTENSION_PROXY_RATE_LIMITED_BODY: {
+    type: 'urn:dorkos:problem:rate_limited',
+    title: 'Too many requests. Wait a moment, then try again.',
+    status: 429,
+    code: 'rate_limited',
+  },
   buildExtensionProxyRateLimiter: () => () => {
     limiterHoisted.hits += 1;
     return { allowed: !limiterHoisted.refuse, headers: { 'RateLimit-Limit': '120' } };
@@ -166,7 +171,7 @@ export function getProxyHandler(
     });
     res.status(answer.status);
     for (const [name, value] of Object.entries(answer.headers)) res.setHeader(name, value);
-    if (answer.json !== undefined) res.json(answer.json);
+    if (answer.problem !== undefined) res.json(answer.problem);
     else res.send(answer.text);
   };
 }

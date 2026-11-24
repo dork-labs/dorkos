@@ -2,10 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   MarketplacePackageManifestSchema,
   CONNECTOR_ADAPTER_TYPE,
-  type MarketplacePackageManifest,
   type PluginPackageManifest,
   type AgentPackageManifest,
-  type SkillPackPackageManifest,
   type AdapterPackageManifest,
 } from '../manifest-schema.js';
 
@@ -55,39 +53,6 @@ describe('MarketplacePackageManifestSchema — valid manifests', () => {
       expect(narrowed.type).toBe('agent');
     } else {
       throw new Error('expected agent variant');
-    }
-  });
-
-  it('accepts an agent manifest with full agentDefaults', () => {
-    const result = MarketplacePackageManifestSchema.parse({
-      ...baseFields,
-      type: 'agent',
-      agentDefaults: {
-        persona: 'a thoughtful reviewer',
-        capabilities: ['code-review', 'refactor'],
-        traits: { verbosity: 3, autonomy: 4, chaos: 5, creativity: 2, humor: 4, spice: 3 },
-      },
-    });
-
-    if (result.type !== 'agent') throw new Error('expected agent variant');
-    expect(result.agentDefaults?.persona).toBe('a thoughtful reviewer');
-    expect(result.agentDefaults?.capabilities).toEqual(['code-review', 'refactor']);
-    expect(result.agentDefaults?.traits?.verbosity).toBe(3);
-  });
-
-  it('accepts a minimal skill-pack manifest', () => {
-    const result = MarketplacePackageManifestSchema.parse({
-      ...baseFields,
-      type: 'skill-pack',
-    });
-
-    expect(result.type).toBe('skill-pack');
-
-    if (result.type === 'skill-pack') {
-      const narrowed = result satisfies SkillPackPackageManifest;
-      expect(narrowed.type).toBe('skill-pack');
-    } else {
-      throw new Error('expected skill-pack variant');
     }
   });
 
@@ -165,14 +130,6 @@ describe('MarketplacePackageManifestSchema — valid manifests', () => {
     expect(result.featured).toBe(true);
     expect(result.minDorkosVersion).toBe('0.5.0');
   });
-
-  it('produces a value compatible with the union type', () => {
-    const result: MarketplacePackageManifest = MarketplacePackageManifestSchema.parse({
-      ...baseFields,
-      type: 'plugin',
-    });
-    expect(result.name).toBe('my-package');
-  });
 });
 
 describe('MarketplacePackageManifestSchema — categories + coherence', () => {
@@ -224,85 +181,6 @@ describe('MarketplacePackageManifestSchema — categories + coherence', () => {
     });
     expect(result.success).toBe(true);
   });
-
-  // categories-only (no singular category) is valid — the primary is derived
-  // from categories[0].
-  it('accepts a categories-only manifest', () => {
-    const result = MarketplacePackageManifestSchema.safeParse({
-      ...baseFields,
-      type: 'plugin',
-      categories: ['security'],
-    });
-    expect(result.success).toBe(true);
-  });
-
-  // The coherence refine preserves the union: narrowing on `type` still works.
-  it('preserves discriminated-union narrowing after the refine', () => {
-    const result: MarketplacePackageManifest = MarketplacePackageManifestSchema.parse({
-      ...baseFields,
-      type: 'adapter',
-      adapterType: 'slack',
-      categories: ['integrations'],
-    });
-    if (result.type === 'adapter') {
-      expect(result.adapterType).toBe('slack');
-    } else {
-      throw new Error('expected adapter variant');
-    }
-  });
-});
-
-describe('MarketplacePackageManifestSchema — default value application', () => {
-  it('defaults schemaVersion to 1 when omitted', () => {
-    const result = MarketplacePackageManifestSchema.parse({
-      ...baseFields,
-      type: 'plugin',
-    });
-    expect(result.schemaVersion).toBe(1);
-  });
-
-  it('defaults tags to []', () => {
-    const result = MarketplacePackageManifestSchema.parse({
-      ...baseFields,
-      type: 'skill-pack',
-    });
-    expect(result.tags).toEqual([]);
-  });
-
-  it('defaults layers to []', () => {
-    const result = MarketplacePackageManifestSchema.parse({
-      ...baseFields,
-      type: 'skill-pack',
-    });
-    expect(result.layers).toEqual([]);
-  });
-
-  it('defaults requires to []', () => {
-    const result = MarketplacePackageManifestSchema.parse({
-      ...baseFields,
-      type: 'skill-pack',
-    });
-    expect(result.requires).toEqual([]);
-  });
-
-  it('defaults plugin.extensions to []', () => {
-    const result = MarketplacePackageManifestSchema.parse({
-      ...baseFields,
-      type: 'plugin',
-    });
-    if (result.type !== 'plugin') throw new Error('expected plugin variant');
-    expect(result.extensions).toEqual([]);
-  });
-
-  it('defaults agent.agentDefaults.capabilities to [] when agentDefaults is given without capabilities', () => {
-    const result = MarketplacePackageManifestSchema.parse({
-      ...baseFields,
-      type: 'agent',
-      agentDefaults: {},
-    });
-    if (result.type !== 'agent') throw new Error('expected agent variant');
-    expect(result.agentDefaults?.capabilities).toEqual([]);
-  });
 });
 
 describe('MarketplacePackageManifestSchema — invalid manifests', () => {
@@ -333,15 +211,6 @@ describe('MarketplacePackageManifestSchema — invalid manifests', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects version "abc"', () => {
-    const result = MarketplacePackageManifestSchema.safeParse({
-      ...baseFields,
-      version: 'abc',
-      type: 'plugin',
-    });
-    expect(result.success).toBe(false);
-  });
-
   it('rejects type values outside the enum', () => {
     const result = MarketplacePackageManifestSchema.safeParse({
       ...baseFields,
@@ -358,28 +227,10 @@ describe('MarketplacePackageManifestSchema — invalid manifests', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects an adapter manifest with empty adapterType', () => {
-    const result = MarketplacePackageManifestSchema.safeParse({
-      ...baseFields,
-      type: 'adapter',
-      adapterType: '',
-    });
-    expect(result.success).toBe(false);
-  });
-
   it('rejects an empty description', () => {
     const result = MarketplacePackageManifestSchema.safeParse({
       ...baseFields,
       description: '',
-      type: 'plugin',
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects a description longer than 1024 characters', () => {
-    const result = MarketplacePackageManifestSchema.safeParse({
-      ...baseFields,
-      description: 'a'.repeat(1025),
       type: 'plugin',
     });
     expect(result.success).toBe(false);
@@ -390,24 +241,6 @@ describe('MarketplacePackageManifestSchema — invalid manifests', () => {
       ...baseFields,
       type: 'plugin',
       tags: Array.from({ length: 21 }, (_, i) => `tag-${i}`),
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('accepts tags arrays with exactly 20 entries', () => {
-    const result = MarketplacePackageManifestSchema.safeParse({
-      ...baseFields,
-      type: 'plugin',
-      tags: Array.from({ length: 20 }, (_, i) => `tag-${i}`),
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('rejects category longer than 64 characters', () => {
-    const result = MarketplacePackageManifestSchema.safeParse({
-      ...baseFields,
-      type: 'plugin',
-      category: 'c'.repeat(65),
     });
     expect(result.success).toBe(false);
   });

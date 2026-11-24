@@ -1,7 +1,7 @@
 ---
 number: 167
 title: Use Search Params for Sheet Detail State
-status: proposed
+status: archived
 created: 2026-03-20
 spec: attention-item-detail-navigation
 superseded-by: null

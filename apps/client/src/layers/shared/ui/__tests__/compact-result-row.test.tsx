@@ -16,7 +16,7 @@ describe('CompactResultRow', () => {
         trailing={<span>Badge</span>}
       />
     );
-    expect(screen.getByText('Badge')).toBeDefined();
+    expect(screen.getByText('Badge')).toBeInTheDocument();
   });
 
   it('passes data attributes through', () => {

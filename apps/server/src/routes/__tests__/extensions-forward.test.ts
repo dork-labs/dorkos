@@ -301,7 +301,7 @@ describe('forwarding a comment', () => {
   it('refuses when no agent is picked, and sends nothing', async () => {
     const res = await request(server).post(FORWARD).set(APP).send({ text: 'hi', itemId: 'i' });
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('no_agent');
+    expect(res.body).toMatchObject({ code: 'no_agent' });
     expect(dmPosts()).toHaveLength(0);
   });
 
@@ -322,7 +322,7 @@ describe('forwarding a comment', () => {
       .set(APP)
       .send({ text: 'hi', itemId: 'i' });
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('extension_off');
+    expect(res.body).toMatchObject({ code: 'not_running' });
     expect(dmPosts()).toHaveLength(0);
   });
 
@@ -368,7 +368,8 @@ describe('the forward bar', () => {
   ): Promise<void> {
     const res = await req.send({ text: why, itemId: 'i' });
     expect(res.status, JSON.stringify(res.body)).toBe(403);
-    expect(res.body.code).toBe('person_required');
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body.code).toBe('person_only');
     expect(dmPosts().some((e) => e.body.text === why)).toBe(false);
     expect(forwardAudits().some((row) => row.outcome === 'refused')).toBe(true);
   }
@@ -657,7 +658,7 @@ describe('the first-use prompt', () => {
       .set(APP)
       .send({ text, itemId: 'item-7', agentId });
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('no_agent');
+    expect(res.body).toMatchObject({ code: 'no_agent' });
     return res.body as { consent: { id: string; agent: { id: string; name: string } } };
   }
 

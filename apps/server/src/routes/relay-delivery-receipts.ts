@@ -18,6 +18,7 @@ import { readOwnerAccount } from '../services/core/auth/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import { logger } from '../lib/logger.js';
+import { problem } from '@dorkos/http-kit';
 import { authRequiredBody } from '../services/core/auth/session-gate.js';
 import type { ApiEnv } from '../http/api-chain.js';
 
@@ -30,6 +31,9 @@ export interface RelayPublishDeps {
   /** Where adapter deliveries and failures are recorded. */
   activity?: ActivityService;
 }
+
+/** Delivery statuses can't be read or written right now. */
+const RECEIPTS_UNAVAILABLE = 'Delivery status isn’t available right now. Try again soon.';
 
 /** The answer for a client that is gone: nothing more is written to it. */
 const UNANSWERABLE = (): Response => new Response(null);
@@ -82,25 +86,19 @@ export async function publishRelayMessage(
     return c.json({ ...publishResult, ...(statusUrl ? { statusUrl } : {}) });
   } catch (error) {
     if (cannotRespond(c)) return UNANSWERABLE();
+    // The message may have gone out: the answer says where to check it.
     if (messageId)
-      return c.json(
-        {
-          error: 'Delivery receipt response is unavailable.',
-          code: 'RELAY_RECEIPT_RESPONSE_UNAVAILABLE',
-          messageId,
-          statusUrl,
-        },
-        503
-      );
+      return problem(c, 'temporarily_unavailable', {
+        detail: 'The message may have gone. Check its status link.',
+        extensions: { messageId, statusUrl },
+      });
     if (error instanceof RelayReceiptUnavailableError)
-      return c.json({ error: error.message, code: error.code }, 503);
-    return c.json(
-      {
-        error: error instanceof Error ? error.message : 'Publish failed',
-        code: (error as { code?: string })?.code ?? 'PUBLISH_FAILED',
-      },
-      422
-    );
+      return problem(c, 'temporarily_unavailable', { detail: RECEIPTS_UNAVAILABLE });
+    // The bus refuses with its own words, which can name senders and rules: logged only.
+    logger.info('[relay] POST /messages refused', { error });
+    return problem(c, 'invalid_request', {
+      detail: 'DorkOS couldn’t send that message. Check its address and sender.',
+    });
   }
 }
 
@@ -115,7 +113,7 @@ export function createReceiptStatusHandler(relayCore: RelayCore): Handler<ApiEnv
     }
     const id = RelayMessageIdSchema.safeParse(c.req.param('messageId'));
     if (!id.success) {
-      return c.json({ error: 'Invalid relay message ID.', code: 'INVALID_RELAY_MESSAGE_ID' }, 400);
+      return problem(c, 'invalid_request', { detail: 'That isn’t a message id.' });
     }
     try {
       const receipt = relayCore.getDeliveryReceipt(
@@ -129,24 +127,15 @@ export function createReceiptStatusHandler(relayCore: RelayCore): Handler<ApiEnv
           : { loginEnabled: false }
       );
       if (!receipt) {
-        return c.json(
-          { error: 'Delivery receipt not found.', code: 'RELAY_RECEIPT_NOT_FOUND' },
-          404
-        );
+        return problem(c, 'not_found', { detail: 'No delivery status for that message.' });
       }
       return c.json(RelayDeliveryReceiptSchema.parse(receipt));
     } catch (error) {
       if (cannotRespond(c)) return UNANSWERABLE();
-      return c.json(
-        {
-          error: 'Delivery receipt status is unavailable.',
-          code:
-            error instanceof RelayReceiptUnavailableError
-              ? error.code
-              : 'RELAY_RECEIPT_STORAGE_UNAVAILABLE',
-        },
-        503
-      );
+      if (!(error instanceof RelayReceiptUnavailableError)) {
+        logger.error('[relay] reading a delivery status failed', { error });
+      }
+      return problem(c, 'temporarily_unavailable', { detail: RECEIPTS_UNAVAILABLE });
     }
   };
 }

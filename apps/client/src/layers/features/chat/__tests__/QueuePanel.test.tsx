@@ -72,14 +72,14 @@ describe('QueuePanel', () => {
       makeItem('Third message', 2),
     ];
     renderPanel({ queue });
-    expect(screen.getByText('First message')).toBeDefined();
-    expect(screen.getByText('Second message')).toBeDefined();
-    expect(screen.getByText('Third message')).toBeDefined();
+    expect(screen.getByText('First message')).toBeInTheDocument();
+    expect(screen.getByText('Second message')).toBeInTheDocument();
+    expect(screen.getByText('Third message')).toBeInTheDocument();
   });
 
   it('renders "Queued (N)" header with correct count', () => {
     renderPanel({ queue: [makeItem('A', 0), makeItem('B', 1)] });
-    expect(screen.getByText('Queued (2)')).toBeDefined();
+    expect(screen.getByText('Queued (2)')).toBeInTheDocument();
   });
 
   it('clicking card calls onEdit with the item id, not its position', () => {
@@ -360,6 +360,6 @@ describe('QueuePanel — the "more below" fade (DOR-3060)', () => {
 
     withBox(400, 200);
     act(() => notify?.());
-    expect(screen.getByTestId('queue-more-below')).toBeDefined();
+    expect(screen.getByTestId('queue-more-below')).toBeInTheDocument();
   });
 });

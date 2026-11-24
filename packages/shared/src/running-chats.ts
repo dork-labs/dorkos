@@ -59,6 +59,11 @@ export const RunningChatSchema = z.object({
   title: z.string().nullable(),
   /** A ready markdown link to the chat. */
   link: z.string(),
+  /**
+   * Its `dork:chat:` reference, for a `/r/` link (`[Title](/r/<ref>)`), or null for an id that
+   * cannot be one (DOR-5046).
+   */
+  ref: z.string().nullable(),
   /** Working, waiting on an answer, or finished talking with work still running. */
   state: RunningChatStateSchema,
   /**

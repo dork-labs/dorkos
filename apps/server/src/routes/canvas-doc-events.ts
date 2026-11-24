@@ -9,13 +9,13 @@ import type { InstallationFileWrites } from '../services/canvas/doc-channel/writ
 import type { ServerResponse } from 'node:http';
 import bodyParser from 'body-parser';
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   CanvasChannelEventIdSchema,
   CanvasChannelReplayQuerySchema,
 } from '@dorkos/shared/canvas-channel-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, underMount, type BodyRule } from '@dorkos/http-kit';
+import { problemBody, readJsonBody, underMount, type BodyRule } from '@dorkos/http-kit';
+import { docRefusalProblem } from './canvas-doc-refusal.js';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import type { DocChannelActor } from '../services/canvas/doc-channel/authorization.js';
@@ -91,13 +91,19 @@ export function canvasDocBodyRule(metrics: () => DocChannelMetrics | undefined):
           reason: tooLarge ? 'too_large' : 'invalid',
         });
       }
-      return {
-        status: tooLarge ? 413 : 400,
-        body: {
-          error: tooLarge ? 'The document event is too large.' : 'The document event is not valid.',
-          code: tooLarge ? 'DOC_EVENT_TOO_LARGE' : 'INVALID_DOC_EVENT',
-        },
-      };
+      return tooLarge
+        ? {
+            status: 413,
+            body: problemBody('request_too_large', {
+              detail: 'The document event is too large. Send a smaller one.',
+            }),
+          }
+        : {
+            status: 400,
+            body: problemBody('malformed_request', {
+              detail: 'The document event is not valid JSON.',
+            }),
+          };
     },
   };
 }
@@ -157,17 +163,19 @@ export function createCanvasDocEventRoutes(
       503: 'Document events are not available yet.',
       507: 'The document event could not be saved.',
     };
-    if (status === 429 && typeof refusal.retryAfterSeconds === 'number')
-      c.header('Retry-After', String(refusal.retryAfterSeconds));
     observeResult(c.env.outgoing, source()?.metrics, operation, {
       kind: 'refused',
       reason: refusalClass(status),
     });
     if (status === 500) logger.error('[canvas-doc-events] request failed', error);
-    return c.json(
-      { error: messages[status] ?? 'The document request could not be completed.', code },
-      status as ContentfulStatusCode
-    );
+    return docRefusalProblem(c, {
+      status,
+      refusal: code,
+      detail: messages[status] ?? 'The document request could not be completed.',
+      ...(status === 429 && typeof refusal.retryAfterSeconds === 'number'
+        ? { retryAfterMs: refusal.retryAfterSeconds * 1000 }
+        : {}),
+    });
   }
 
   router.post('/:id/events', async (c) => {

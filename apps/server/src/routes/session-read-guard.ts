@@ -25,7 +25,8 @@ import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { parseSessionId } from '../lib/route-utils.js';
 import { sessionExists } from '../services/session/launch/session-exists.js';
-import { canReadSession, readerOfRequest, SESSION_NOT_FOUND_BODY } from './audit-reader.js';
+import { canReadSession, readerOfRequest } from './audit-reader.js';
+import { sessionNotFound } from './session-route-replies.js';
 
 export { readableSessions } from './audit-reader.js';
 
@@ -60,6 +61,6 @@ export const guardSessionParam: MiddlewareHandler<ApiEnv> = async (c, next) => {
   const facts = honoRequestFacts(c);
   if (readerOfRequest(facts).kind === 'owner') return next();
   if (await startsNewSession(c, sessionId)) return next();
-  if (!canReadSession(facts, sessionId)) return c.json(SESSION_NOT_FOUND_BODY, 404);
+  if (!canReadSession(facts, sessionId)) return sessionNotFound(c);
   await next();
 };

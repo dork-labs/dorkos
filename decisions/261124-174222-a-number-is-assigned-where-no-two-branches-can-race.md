@@ -1,7 +1,7 @@
 ---
 id: 261124-174222
 title: 'A number is assigned where no two branches can race: a timestamp, or by automation after merge'
-status: proposed
+status: accepted
 created: 2026-11-24
 spec: null
 superseded-by: null
@@ -12,7 +12,9 @@ amends: null
 
 ## Status
 
-Proposed by the architect (2026-11-24), from the review of the problems of 2026-11-23 (`research/20261124_architecture-direction-review.md` and Linear DOR-5195, DOR-5197 and DOR-4558). The CI owner (ci-steward) agreed on 2026-11-24. Becomes Accepted when the release owner and the marketplace owner agree and the operator rules on it.
+Accepted (2026-11-24): the CI owner (ci-steward), who owns the release flow, agreed, and the operator agreed to the rule in principle. The marketplace's part is not built or agreed in detail yet: it lands with DOR-5197, and its owner may still shape how.
+
+Proposed by the architect (2026-11-24), from the review of the problems of 2026-11-23 (`research/20261124_architecture-direction-review.md` and Linear DOR-5195, DOR-5197 and DOR-4558).
 
 **Builds on** [0312](0312-timestamp-identifiers-for-adrs-and-specs.md) and widens its rule from ADRs and specs to every shared counter. Its rule:
 

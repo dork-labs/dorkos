@@ -178,8 +178,9 @@ describe('POST /api/extensions/:id/start-work', () => {
       .send(BODY);
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('start_work_person_required');
-    expect(res.body.message).toMatch(/DorkOS started nothing/);
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body.code).toBe('person_only');
+    expect(res.body.detail).toMatch(/DorkOS started nothing/);
     expect(launches).toHaveLength(0);
   });
 
@@ -216,11 +217,13 @@ describe('POST /api/extensions/:id/start-work', () => {
       .send({ ...BODY, project: '/tmp/scratch' });
 
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({
-      error:
-        "That folder isn't in a project Hello World can start work in. Choose a folder inside one of your projects.",
-      code: 'not_a_project',
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body).toMatchObject({
+      detail: 'Choose a folder inside one of your projects.',
+      code: 'not_found',
     });
+    // The service's own sentence, which names the extension, stays in the log.
+    expect(JSON.stringify(res.body)).not.toContain('Hello World');
     expect(launches).toHaveLength(0);
   });
 
@@ -240,7 +243,7 @@ describe('POST /api/extensions/:id/start-work', () => {
     const res = await request(server).post('/api/extensions/hello/start-work').send(BODY);
 
     expect(res.status).toBe(429);
-    expect(res.body.code).toBe('start_limit');
+    expect(res.body).toMatchObject({ code: 'rate_limited' });
     expect(launches).toHaveLength(0);
   });
 
@@ -249,7 +252,8 @@ describe('POST /api/extensions/:id/start-work', () => {
       .post('/api/extensions/hello/start-work')
       .send({ ...BODY, title: 'x'.repeat(81) });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/title of 1 to 80 characters/);
+    expect(res.body.code).toBe('invalid_request');
+    expect(res.body.detail).toBe('Keep the prompt, title and reason within their length limits.');
     expect(launches).toHaveLength(0);
   });
 
@@ -271,16 +275,26 @@ describe('POST /api/extensions/:id/start-work', () => {
     );
     const res = await request(server).post('/api/extensions/hello/start-work').send(BODY);
     expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: 'The chat could not be started. Try again.' });
+    expect(res.body).toMatchObject({
+      code: 'internal_error',
+      detail: 'The chat couldn’t be started. Try again.',
+    });
+    expect(JSON.stringify(res.body)).not.toContain('Cannot read properties');
     expect(launches).toHaveLength(0);
   });
 
-  it('answers 404 for an unknown extension and 409 for one that is off', async () => {
+  it('answers not_running for an unknown extension and one that is off, never not_found', async () => {
+    // `not_found` from this route means a folder outside every project, which
+    // the app throws as `not_a_project`: an unknown extension must not read so.
     const unknown = await request(server).post('/api/extensions/nope/start-work').send(BODY);
-    expect(unknown.status).toBe(404);
+    expect(unknown.status).toBe(409);
+    expect(unknown.body.code).toBe('not_running');
     const off = await request(server).post('/api/extensions/off/start-work').send(BODY);
     expect(off.status).toBe(409);
-    expect(off.body.error).toBe('Turn on Off in Settings → Extensions first.');
+    expect(off.body).toMatchObject({
+      code: 'not_running',
+      detail: 'Turn on Off in Settings → Extensions first.',
+    });
     expect(launches).toHaveLength(0);
   });
 });

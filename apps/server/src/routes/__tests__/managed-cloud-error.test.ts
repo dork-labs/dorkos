@@ -16,7 +16,7 @@ async function answerFor(error: unknown): Promise<globalThis.Response> {
 describe('managedCloudErrorResponse', () => {
   const cases: Array<[ManagedConnectorCloudErrorCode, number, string]> = [
     ['unauthorized', 401, 'cloud_link_required'],
-    ['permission_upgrade_required', 409, 'cloud_link_needs_update'],
+    ['permission_upgrade_required', 401, 'cloud_link_required'],
     ['unavailable', 503, 'cloud_unavailable'],
     ['network_error', 503, 'cloud_unavailable'],
     ['request_failed', 502, 'cloud_refused'],
@@ -30,9 +30,11 @@ describe('managedCloudErrorResponse', () => {
       new ManagedConnectorCloudError(code, { status: 500, reason: 'PRIVATE_REASON' })
     );
     expect(res.status).toBe(status);
-    const body = (await res.json()) as { error: string; code: string };
+    expect(res.headers.get('content-type')).toContain('application/problem+json');
+    const body = (await res.json()) as { detail: string; code: string };
     expect(body.code).toBe(routeCode);
-    expect(body.error.length).toBeGreaterThan(0);
+    expect(body.detail.length).toBeGreaterThan(0);
+    expect(body).not.toHaveProperty('error');
     expect(JSON.stringify(body)).not.toContain('PRIVATE_REASON');
   });
 

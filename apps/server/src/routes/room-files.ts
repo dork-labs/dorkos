@@ -47,10 +47,9 @@ import {
 import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
 import { describeBytes } from '../services/rooms/repo/room-file-ops.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { parseUploadForm, UploadLimitError, type UploadForm } from '../http/uploads.js';
-import { errorBody } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 import { parseOrRefuse, resolveRoomCaller, roomErrorResponse, roomRoute } from './room-route.js';
 
@@ -74,7 +73,7 @@ const router = new Hono<ApiEnv>();
  * on `PATCH /:id`).
  *
  * **Idempotent.** A room that already has files answers 409
- * `ROOM_REPO_EXISTS` carrying the binding it already had, so a client that lost
+ * `room_repo_exists` carrying the binding it already had, so a client that lost
  * the answer to its first call can carry on with the second. That is the one
  * refusal here with a payload, which is why it is not a `RoomError`.
  *
@@ -87,14 +86,10 @@ router.post('/:id/repo', (c) =>
     const roomId = c.req.param('id');
     const result = await getRoomRepoService().enable(roomId, person.id);
     if (!result.created) {
-      return c.json(
-        {
-          error: 'This room already has files of its own.',
-          code: ROOM_REPO_EXISTS_CODE,
-          repo: result.repo,
-        },
-        409
-      );
+      return problem(c, ROOM_REPO_EXISTS_CODE, {
+        detail: 'This room already has files of its own.',
+        extensions: { repo: result.repo },
+      });
     }
     announceFilesSetUp(getRoomService(), roomId, person.displayName);
     return c.json({ repo: result.repo }, 201);
@@ -242,14 +237,14 @@ router.get('/:id/files/raw', (c) =>
  * **Optimistic locking, on the FILE.** `baseCommit` is the commit the editor
  * read the file at. The save is refused only if THAT PATH changed since — not
  * because `main` moved, which it does every time anybody merges anything. A
- * refusal is 409 `FILE_CHANGED` and carries `conflict`: the commit `main` is at
+ * refusal is 409 `file_changed` and carries `conflict`: the commit `main` is at
  * now and who last touched the file, which is what the reload / keep-mine
  * choice is drawn from. Nothing is written on that path.
  *
  * Every other refusal is the same one a merge would give, for the same reason:
  * `MAIN_CHECKOUT_DIRTY` while something outside DorkOS has written in the
  * room's own copy, `FILE_TOO_LARGE` and `REPO_CAP_EXCEEDED` against the room's
- * frozen caps. **Only `FILE_CHANGED` carries a payload** — every other refusal
+ * frozen caps. **Only `file_changed` carries a payload** — every other refusal
  * here is the ordinary `{ error, code }`, so a client switches on the code and
  * never on whether a field is there.
  *
@@ -270,15 +265,10 @@ router.put('/:id/files/content', (c) =>
       text: body.text,
     });
     if (outcome.status === 'conflict') {
-      return c.json(
-        {
-          error:
-            'Somebody changed this file while you were editing it, so nothing was saved. Open the new version, or save yours over it.',
-          code: ROOM_FILE_CHANGED_CODE,
-          conflict: outcome.conflict,
-        },
-        409
-      );
+      return problem(c, ROOM_FILE_CHANGED_CODE, {
+        detail: 'Somebody changed this file while you edited it. Nothing was saved.',
+        extensions: { conflict: outcome.conflict },
+      });
     }
     return c.json(outcome.result);
   })
@@ -300,22 +290,17 @@ function fileActor(c: Context<ApiEnv>, caller: AuthorRecord): RoomFileActor {
 }
 
 /**
- * Answer a file change that lost the race — the same 409 `FILE_CHANGED` body
+ * Answer a file change that lost the race — the same 409 `file_changed` body
  * the save answers, so one client handler covers every operation.
  *
  * @param c - The Hono context.
  * @param conflict - What moved.
  */
 function fileConflict(c: Context, conflict: RoomFileConflict): Response {
-  return c.json(
-    {
-      error:
-        'Somebody changed these files after you opened them, so nothing was changed. Look at the new version, then try again.',
-      code: ROOM_FILE_CHANGED_CODE,
-      conflict,
-    },
-    409
-  );
+  return problem(c, ROOM_FILE_CHANGED_CODE, {
+    detail: 'Somebody changed these files after you opened them. Nothing changed.',
+    extensions: { conflict },
+  });
 }
 
 /**
@@ -444,7 +429,8 @@ function uploadError(err: unknown, maxFileBytes: number): unknown {
   }
   return new RoomError(
     'ROOM_FILE_PATH_INVALID',
-    `That upload could not be read: ${err.message}. Send the files as the '${ROOM_UPLOAD_FILES_FIELD}' field.`
+    // The parser's own words stay out: they are a library's raw text.
+    `That upload couldn’t be read. Send the files as the '${ROOM_UPLOAD_FILES_FIELD}' field.`
   );
 }
 
@@ -453,7 +439,7 @@ function uploadError(err: unknown, maxFileBytes: number): unknown {
  * `agent-home-desk` §7.1).
  *
  * One commit, `Rename <from> to <to>`, authored as the person. Every path under
- * `from` must be unchanged since `baseCommit` (else 409 `FILE_CHANGED` with the
+ * `from` must be unchanged since `baseCommit` (else 409 `file_changed` with the
  * conflict), and `to` must not exist (409 `ROOM_FILE_EXISTS`). Missing folders
  * above `to` are created; a folder segment that differs only in capitals from
  * one the room has is refused, naming the real one.
@@ -503,7 +489,7 @@ router.post('/:id/files/delete', (c) =>
 router.post('/:id/files/from-attachment', (c) =>
   roomRoute(c, 'POST /:id/files/from-attachment', async (caller) => {
     const roomId = c.req.param('id');
-    const notFound = () => c.json(errorBody('No such file.', 'ATTACHMENT_NOT_FOUND'), 404);
+    const notFound = () => problem(c, 'attachment_not_found', { detail: 'No such file.' });
     try {
       const viewer = caller();
       const body = parseOrRefuse(c, RoomFileFromAttachmentRequestSchema, readJsonBody(c));

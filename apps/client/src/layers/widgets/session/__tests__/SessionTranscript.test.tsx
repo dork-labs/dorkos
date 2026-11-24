@@ -143,8 +143,8 @@ describe('SessionTranscript rows', () => {
     const messages = [messageOnDay('1', 1, 'Yesterday work'), messageOnDay('2', 0, 'Today work')];
     render(<SessionTranscript sessionId="test-session" messages={messages} />);
     expect(screen.getAllByTestId('day-divider')).toHaveLength(2);
-    expect(screen.getByText('Yesterday')).toBeDefined();
-    expect(screen.getByText('Today')).toBeDefined();
+    expect(screen.getByText('Yesterday')).toBeInTheDocument();
+    expect(screen.getByText('Today')).toBeInTheDocument();
   });
 
   it('hands every rendered row to the virtualizer to be measured', () => {
@@ -177,8 +177,8 @@ describe('SessionTranscript rows', () => {
     readState.storedCursor = cursor('test-session', 1);
     const messages = [messageOnDay('1', 0, 'Seen'), messageOnDay('2', 0, 'Unseen')];
     render(<SessionTranscript sessionId="test-session" messages={messages} />);
-    expect(await screen.findByTestId('unread-divider')).toBeDefined();
-    expect(screen.getByText('New messages')).toBeDefined();
+    expect(await screen.findByTestId('unread-divider')).toBeInTheDocument();
+    expect(screen.getByText('New messages')).toBeInTheDocument();
   });
 
   it('clears the rule when the same person reads the session on another device', async () => {
@@ -186,7 +186,7 @@ describe('SessionTranscript rows', () => {
     isAtEndTrueOnlyOnFirstCommit();
     const messages = [messageOnDay('1', 0, 'Seen'), messageOnDay('2', 0, 'Unseen')];
     render(<SessionTranscript sessionId="cross-device-session" messages={messages} />);
-    expect(await screen.findByTestId('unread-divider')).toBeDefined();
+    expect(await screen.findByTestId('unread-divider')).toBeInTheDocument();
 
     // The other screen read to the end. The cursor rides the broadcast, so this
     // one clears on the event — with no second read of the cursor behind it.
@@ -261,9 +261,9 @@ describe('SessionTranscript rows', () => {
     isAtEndTrueOnlyOnFirstCommit();
     const messages = [messageOnDay('1', 0, 'Seen'), messageOnDay('2', 0, 'Unseen')];
     render(<SessionTranscript sessionId="unmeasured-session" messages={messages} />);
-    expect(await screen.findByTestId('unread-divider')).toBeDefined();
+    expect(await screen.findByTestId('unread-divider')).toBeInTheDocument();
     expect(readState.written).toEqual([]);
-    expect(screen.getByTestId('unread-divider')).toBeDefined();
+    expect(screen.getByTestId('unread-divider')).toBeInTheDocument();
   });
 });
 
@@ -292,7 +292,7 @@ describe('SessionTranscript', () => {
       },
     ];
     render(<SessionTranscript sessionId="test-session" messages={messages} />);
-    expect(screen.getByText('Hello world')).toBeDefined();
+    expect(screen.getByText('Hello world')).toBeInTheDocument();
   });
 
   it('renders tool calls within messages', () => {
@@ -318,6 +318,6 @@ describe('SessionTranscript', () => {
       },
     ];
     render(<SessionTranscript sessionId="test-session" messages={messages} />);
-    expect(screen.getByText('Read …')).toBeDefined();
+    expect(screen.getByText('Read …')).toBeInTheDocument();
   });
 });

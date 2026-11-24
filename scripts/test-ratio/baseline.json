@@ -2,8 +2,8 @@
   "$comment": "The test budget (scripts/test-ratio/check-test-ratio.ts). Each package passes while under either its ratio (lines of test per line of source) or its count of test lines. Both only fall. Run `pnpm check:test-ratio -- --update --package <pkg>` after deleting tests; never raise or remove an entry by hand.",
   "packages": {
     "apps/client": {
-      "ratio": 0.79,
-      "tests": 351194
+      "ratio": 0.78,
+      "tests": 349917
     },
     "apps/design-system": {
       "ratio": 0.91,
@@ -14,8 +14,8 @@
       "tests": 19272
     },
     "apps/server": {
-      "ratio": 1.25,
-      "tests": 894160
+      "ratio": 1.24,
+      "tests": 891138
     },
     "apps/site": {
       "ratio": 0.5,
@@ -42,8 +42,8 @@
       "tests": 5631
     },
     "packages/connector-providers": {
-      "ratio": 1.17,
-      "tests": 8145
+      "ratio": 1.15,
+      "tests": 8013
     },
     "packages/db": {
       "ratio": 1.47,
@@ -54,12 +54,12 @@
       "tests": 1381
     },
     "packages/doe": {
-      "ratio": 1.43,
-      "tests": 5897
+      "ratio": 1.39,
+      "tests": 5696
     },
     "packages/evals": {
-      "ratio": 0.55,
-      "tests": 11547
+      "ratio": 0.5,
+      "tests": 9810
     },
     "packages/extension-api": {
       "ratio": 0.5,
@@ -70,24 +70,24 @@
       "tests": 22487
     },
     "packages/marketplace": {
-      "ratio": 1.03,
-      "tests": 5240
+      "ratio": 0.97,
+      "tests": 4960
     },
     "packages/memory": {
       "ratio": 0.95,
       "tests": 1828
     },
     "packages/mesh": {
-      "ratio": 1.2,
-      "tests": 6228
+      "ratio": 1.13,
+      "tests": 5876
     },
     "packages/operating-skills": {
       "ratio": 0.57,
       "tests": 1353
     },
     "packages/relay": {
-      "ratio": 1.13,
-      "tests": 26461
+      "ratio": 1.05,
+      "tests": 24831
     },
     "packages/shared": {
       "ratio": 0.5,

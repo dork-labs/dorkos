@@ -209,6 +209,19 @@ describe('RoomMessage — the action surface', () => {
     expect(last).toHaveFocus();
   });
 
+  it('keeps Copy link out of the hover toolbar and puts it last in the right-click menu (DOR-5046)', async () => {
+    // The capsule already fills a phone-width column, so Copy link lives only
+    // in the two list renderings of the same action set.
+    renderRow();
+    const row = screen.getByTestId('room-entry');
+    expect(screen.queryByRole('button', { name: 'Copy link' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Mention Ana' })).toBeInTheDocument();
+
+    fireEvent.contextMenu(row);
+    const items = await screen.findAllByRole('menuitem');
+    expect(items.at(-1)).toHaveTextContent('Copy link');
+  });
+
   it('moves into the actions on an arrow key', () => {
     renderRow();
     const row = screen.getByTestId('room-entry');

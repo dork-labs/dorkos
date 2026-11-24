@@ -14,6 +14,7 @@
  * @module routes/connector-mini-app-access
  */
 import { Hono } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 import type { MiniAppAccess } from '../services/connectors/extensions/mini-app-access.js';
 import {
@@ -49,10 +50,7 @@ export function createConnectorMiniAppAccessRoutes(
     if (owner instanceof Response) return owner;
     const approvalId = c.req.param('approvalId');
     if (!deps.access()?.revoke(approvalId)) {
-      return c.json(
-        { error: 'That mini app no longer has this access.', code: 'MINI_APP_ACCESS_NOT_FOUND' },
-        404
-      );
+      return problem(c, 'not_found', { detail: 'That mini app no longer has this access.' });
     }
     return c.json({ status: 'revoked' as const, approvalId });
   });

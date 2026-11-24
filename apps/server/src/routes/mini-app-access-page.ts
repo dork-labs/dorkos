@@ -116,7 +116,7 @@ export function createMiniAppAccessPageRoutes(deps: MiniAppAccessPageRouterDeps)
   router.get(`${BASE}/page`, (c) => {
     lockDown(c);
     if (!isPageLoad(c)) {
-      return ownerRefusal(c, 'mini_app_access_page_only', 'Open this page in the browser.');
+      return ownerRefusal(c, 'forbidden', 'Open this page in the browser.');
     }
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
@@ -157,7 +157,7 @@ export function createMiniAppAccessPageRoutes(deps: MiniAppAccessPageRouterDeps)
     const origin = headers.origin;
     const trusted = deps.trustedOrigins?.() ?? resolveTrustedOrigins();
     if (headers['sec-fetch-site'] !== 'same-origin' || !origin || !trusted.includes(origin)) {
-      return ownerRefusal(c, 'mini_app_access_same_page', 'Decide on the DorkOS page itself.');
+      return ownerRefusal(c, 'origin_not_allowed', 'Decide on the DorkOS page itself.');
     }
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;

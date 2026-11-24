@@ -86,7 +86,8 @@ describe('POST/PATCH /bindings conflict + POST /bindings/:id/move', () => {
       .post('/api/relay/bindings')
       .send({ adapterId: 'tg-bot', agentId: 'agent-b', chatId: '123' });
     expect(second.status).toBe(409);
-    expect(second.body.code).toBe('CHAT_ALREADY_BOUND');
+    expect(second.headers['content-type']).toContain('application/problem+json');
+    expect(second.body.code).toBe('chat_already_bound');
     expect(second.body.conflict).toMatchObject({
       bindingId: first.body.binding.id,
       agentId: 'agent-a',

@@ -16,37 +16,49 @@
  * @module routes/extensions-start-work
  */
 import type { Hono } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ExtensionStatus } from '@dorkos/extension-api';
 import { StartWorkError } from '@dorkos/extension-api/server';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import { getStartWorkService, StartWorkInputError } from '../services/extensions/start-work.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 /** What the route says when the bar refuses it. */
 const START_WORK_BAR: PersonBarCopy = {
-  error: 'Only a person can start this.',
-  code: 'start_work_person_required',
+  code: 'person_only',
   subject: 'work started from an extension',
   crossSite: (origin) =>
-    `DorkOS started nothing. This request came from ${origin}, which is not DorkOS. ` +
-    `Only a person using DorkOS can start this.`,
-  agent: 'DorkOS started nothing. Only a person can start this. Ask them to start it in DorkOS.',
+    `DorkOS started nothing. ${origin} isn’t DorkOS. Start this in DorkOS itself.`,
+  agent: 'DorkOS started nothing. Only a person can start this, in DorkOS.',
 };
 
 /** The statuses of an extension that is turned on. */
 const TURNED_ON: ReadonlySet<ExtensionStatus> = new Set(['enabled', 'compiled', 'active']);
 
-/** The HTTP status for each refusal. */
-const STATUS_FOR: Record<StartWorkError['code'], ContentfulStatusCode> = {
-  not_a_project: 404,
-  account_not_allowed_here: 409,
-  start_limit: 429,
+/**
+ * The problem code each refusal goes out as. The app's host code reads it back
+ * into the word `api.startWork` throws as a `StartWorkError`
+ * (`extension-api-factory.ts` in the client holds the other half).
+ */
+const CODE_FOR: Record<StartWorkError['code'], ProblemCode> = {
+  not_a_project: 'not_found',
+  account_not_allowed_here: 'account_not_allowed_here',
+  start_limit: 'rate_limited',
+};
+
+/**
+ * The fixed sentence for each refusal. The error's own message is logged,
+ * never sent (DOR-4979 security rule).
+ */
+const DETAIL_FOR: Record<StartWorkError['code'], string> = {
+  not_a_project: 'Choose a folder inside one of your projects.',
+  account_not_allowed_here: 'That account can’t be used in this project. Pick another.',
+  start_limit: 'Too many chats started or working. Try again later.',
 };
 
 /**
@@ -63,20 +75,25 @@ export function registerExtensionStartWorkRoute(
 ): void {
   router.post('/:id/start-work', async (c) => {
     const id = c.req.param('id');
-    if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+    if (!safeExtId.test(id))
+      return problem(c, 'invalid_request', { detail: 'Use a valid extension ID.' });
     const refused = refusedNotAPerson(c, START_WORK_BAR);
     if (refused) return refused;
     const record = extensionManager.get(id);
-    if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
+    // An extension that is not here, or not on, is `not_running`: `not_found`
+    // from this route means only a folder outside every project.
+    if (!record)
+      return problem(c, 'not_running', { detail: `No extension named ${id} runs here.` });
     if (!TURNED_ON.has(record.status)) {
-      return c.json(
-        { error: `Turn on ${record.manifest.name} in Settings → Extensions first.` },
-        409
-      );
+      return problem(c, 'not_running', {
+        detail: `Turn on ${record.manifest.name} in Settings → Extensions first.`,
+      });
     }
     const service = getStartWorkService();
     if (!service) {
-      return c.json({ error: 'DorkOS cannot start chats yet. Try again in a moment.' }, 503);
+      return problem(c, 'temporarily_unavailable', {
+        detail: 'DorkOS can’t start chats yet. Try again in a moment.',
+      });
     }
     try {
       // From Wi-Fi, the chat's first turn runs at the runtime's default at most (DOR-3037).
@@ -84,14 +101,21 @@ export function registerExtensionStartWorkRoute(
       return c.json(await service.start(id, readJsonBody(c, { emptyAs: {} }), 'api', ceiling));
     } catch (err) {
       if (err instanceof StartWorkError) {
-        return c.json({ error: err.message, code: err.code }, STATUS_FOR[err.code]);
+        logger.info('[Extensions] A start-work request was refused', {
+          code: err.code,
+          why: err.message,
+        });
+        return problem(c, CODE_FOR[err.code], { detail: DETAIL_FOR[err.code] });
       }
       if (err instanceof StartWorkInputError) {
-        return c.json({ error: err.message }, 400);
+        logger.info('[Extensions] A start-work request broke a rule', { why: err.message });
+        return problem(c, 'invalid_request', {
+          detail: 'Keep the prompt, title and reason within their length limits.',
+        });
       }
       // Anything else is the server's own fault: logged, never shown as it is.
       logger.error('[Extensions] Failed to start work in a new chat', err);
-      return c.json({ error: 'The chat could not be started. Try again.' }, 500);
+      return problem(c, 'internal_error', { detail: 'The chat couldn’t be started. Try again.' });
     }
   });
 }

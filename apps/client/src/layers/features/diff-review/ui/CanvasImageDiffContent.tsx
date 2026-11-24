@@ -205,7 +205,7 @@ export function CanvasImageDiffContent({ content }: CanvasImageDiffContentProps)
  *
  * Known trade-off: `<img>` `onError` exposes no status code, so a transient
  * network failure is indistinguishable from the baseline route's 404
- * `NO_BASELINE` — a blip can briefly read as "New image". Accepted for v1: the
+ * `not_found` — a blip can briefly read as "New image". Accepted for v1: the
  * state is display-only (restore is simply not offered, nothing destructive),
  * and the operator's Refresh re-probes and self-corrects. Distinguishing the
  * two would need a `fetch()` probe with credentials duplicated alongside the

@@ -81,7 +81,9 @@ describe('POST /api/connectors/holds/:holdId/cancel', () => {
   it('refuses the agent that asked for the action', async () => {
     const res = await cancel(holdId, { 'x-dorkos-agent': SCOUT_TOKEN });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: 'HOLD_REQUESTER' });
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body).toMatchObject({ code: 'forbidden' });
+    expect(res.body).not.toHaveProperty('error');
     // Still waiting: a person can still cancel it.
     expect(holds.cancel(holdId, { kind: 'person' })).toEqual({ ok: true });
   });
@@ -89,6 +91,6 @@ describe('POST /api/connectors/holds/:holdId/cancel', () => {
   it('answers 404 for an action that is not waiting', async () => {
     const res = await cancel('no-such-hold');
     expect(res.status).toBe(404);
-    expect(res.body).toMatchObject({ code: 'HOLD_NOT_FOUND' });
+    expect(res.body).toMatchObject({ code: 'not_found' });
   });
 });

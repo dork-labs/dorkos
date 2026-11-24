@@ -1,7 +1,7 @@
 ---
 number: 147
 title: Extend Transcript Parser to Extract Error/Subagent/Hook Parts
-status: draft
+status: archived
 created: 2026-03-19
 spec: streaming-message-integrity
 superseded-by: null

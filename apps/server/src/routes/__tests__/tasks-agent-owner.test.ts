@@ -150,7 +150,7 @@ describe('POST /api/tasks from an agent', () => {
     asA();
     const res = await create({ target: 'agent-b' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('not_your_agent');
+    expect(res.body.code).toBe('forbidden');
   });
 
   it('files one under itself, or a global one', async () => {
@@ -181,7 +181,7 @@ describe('PATCH /api/tasks/:id from an agent', () => {
     asA();
     const res = await patch(ownedByB.id, { prompt: 'Do something else.' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('not_your_schedule');
+    expect(res.body.code).toBe('forbidden');
     expect(store.getTask(ownedByB.id)!.prompt).toBe('the prompt of b-nightly');
   });
 
@@ -196,7 +196,7 @@ describe('PATCH /api/tasks/:id from an agent', () => {
     // A token that resolves to nobody: the header says agent, the chain names none.
     const res = await patch(ownedByB.id, { enabled: true, prompt: 'Run as B.' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('not_your_schedule');
+    expect(res.body.code).toBe('forbidden');
   });
 
   it('changes its own', async () => {

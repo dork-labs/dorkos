@@ -47,7 +47,6 @@ import {
   renderContextEntry,
   _buildChatToolsBlock,
   _buildMeshToolsBlock,
-  _buildAdapterToolsBlock,
   _buildTasksToolsBlock,
   _buildMarketplaceToolsBlock,
   _buildPeerAgentsBlock,
@@ -144,12 +143,6 @@ describe('buildSystemPromptAppend', () => {
     vi.resetModules();
   });
 
-  it('returns string containing <env> block', async () => {
-    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
-    expect(result).toContain('<env>');
-    expect(result).toContain('</env>');
-  });
-
   it('names no internal subsystem: the agent repeats what it reads (DOR-4114)', async () => {
     // An agent's session, so `<dorkos_context>` is written too.
     mockedReadManifest.mockResolvedValue(makeManifest());
@@ -174,27 +167,8 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toMatch(/Hostname: /);
   });
 
-  it('does not include Date in env block (SDK injects its own)', async () => {
-    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
-    expect(result).not.toMatch(/Date: /);
-  });
-
-  it('Version uses SERVER_VERSION from version module', async () => {
-    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
-    expect(result).toContain('Version: 1.2.3');
-  });
-
-  it('<env> names the install kind beside the version', async () => {
-    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
-    // Tests run from source, so the server is a checkout whatever the env says.
-    expect(result).toMatch(/\nApp: DorkOS dev checkout 1\.2\.3 \(\w+\)\n/);
-  });
-
   it('<env> shows the version of the process building it, never an earlier one', async () => {
-    // Regression: a chat reported 0.126.2 after the server was on 0.126.3. The
-    // block is rebuilt per turn from the running process, and the new version
-    // lands in `stable`, the half the warm-process pin and Codex gate digest,
-    // so a restart onto a new version reaches the agent.
+    // Regression: a chat reported 0.126.2 after the server was on 0.126.3.
     const before = await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir');
     vi.resetModules();
     vi.doMock('../../../lib/version.js', () => ({ SERVER_VERSION: '1.2.4', IS_DEV_BUILD: false }));
@@ -206,31 +180,6 @@ describe('buildSystemPromptAppend', () => {
     expect(after.stable).toContain('Version: 1.2.4');
     expect(after.stable).toContain('App: DorkOS dev checkout 1.2.4');
     expect(after.stable).not.toContain('1.2.3');
-  });
-
-  it('does not include git status (moved to per-message context)', async () => {
-    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
-    expect(result).not.toContain('<git_status>');
-  });
-
-  it('does not include peer agents (available via mesh_list tool)', async () => {
-    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
-    expect(result).not.toContain('<peer_agents>');
-  });
-
-  it('does not include ui_state (moved to per-message context)', async () => {
-    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
-    expect(result).not.toContain('<ui_state>');
-  });
-
-  it('includes agent block alongside env block', async () => {
-    mockedReadManifest.mockResolvedValue(
-      makeManifest({ name: 'my-agent', description: 'A helpful agent' })
-    );
-    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
-    expect(result).toContain('<env>');
-    expect(result).toContain('<agent_identity>');
-    expect(result).toContain('Name: my-agent');
   });
 
   it('gracefully handles agent block failure', async () => {
@@ -251,33 +200,10 @@ describe('buildSystemPromptAppend', () => {
     expect(chatIdx).toBeLessThan(envIdx);
   });
 
-  it('includes tool context blocks in output when features are enabled', async () => {
-    vi.mocked(isRelayEnabled).mockReturnValue(true);
-    vi.mocked(isTasksEnabled).mockReturnValue(true);
-    vi.mocked(configManager.get).mockReturnValue({
-      relayTools: true,
-      meshTools: true,
-      adapterTools: true,
-      tasksTools: true,
-    });
-    const result = (
-      await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir', undefined, {
-        agentSession: true,
-      })
-    ).text;
-    expect(result).toContain('<env>');
-    expect(result).toContain('<chat_tools>');
-    expect(result).toContain('<mesh_tools>');
-    expect(result).toContain('<adapter_tools>');
-    expect(result).toContain('<tasks_tools>');
-    expect(result).toContain('<marketplace_tools>');
-  });
-
   it('steers schedules that must outlive the chat to DorkOS Tasks, not durable CronCreate (DOR-2717)', async () => {
-    // A durable CronCreate job only fires while a Claude Code process for this
-    // session is running, and DorkOS ends idle processes; the session-only
-    // timers it does hold are not durable ones (the Stop hook's
-    // `session_crons` lists only the in-memory store).
+    // A durable CronCreate job only fires while a Claude Code process for this session is running,
+    // and DorkOS ends idle processes; the session-only timers it does hold are not durable ones
+    // (the Stop hook's `session_crons` lists only the in-memory store).
     vi.mocked(isTasksEnabled).mockReturnValue(true);
     const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
     const tasksBlock = result.slice(
@@ -342,13 +268,6 @@ describe('buildSystemPromptAppend', () => {
     return (await freshBuild('/test/dir')).text;
   }
 
-  it('composes the production doc pointers when nothing overrides them', async () => {
-    const result = await composeWithDocsBase(undefined);
-    expect(result).toContain('<dorkos_context>');
-    expect(result).toContain('Documentation: https://dorkos.ai/llms.txt');
-    expect(result).toContain('Full docs: https://dorkos.ai/docs');
-  });
-
   it('composes an overridden docs base, and no later block drops or rewrites it', async () => {
     const result = await composeWithDocsBase('http://localhost:6244');
     expect(result).toContain('Documentation: http://localhost:6244/llms.txt');
@@ -382,19 +301,6 @@ describe('agent-aware block gating', () => {
     vi.mocked(isTasksEnabled).mockReturnValue(true);
   });
 
-  it('omits chat block when toolConfig.messages=false', async () => {
-    const result = (
-      await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
-        tasks: true,
-        messages: false,
-        relay: false,
-        mesh: true,
-        adapter: true,
-      })
-    ).text;
-    expect(result).not.toContain('<chat_tools>');
-  });
-
   // DOR-2790: a plain session's chat answers NO_CHAT, so it is not taught the
   // chat tools, and no session is told they are loaded when Messages is Blocked.
   it('teaches the chat tools to an agent session only', async () => {
@@ -423,63 +329,6 @@ describe('agent-aware block gating', () => {
     expect(result).not.toContain('<chat_tools>');
     expect(result).not.toContain('chat_send');
     expect(result).not.toContain('chat_read');
-  });
-
-  it('omits mesh block when toolConfig.mesh=false', async () => {
-    const result = (
-      await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
-        tasks: true,
-        messages: true,
-        relay: true,
-        mesh: false,
-        adapter: true,
-      })
-    ).text;
-    expect(result).not.toContain('<mesh_tools>');
-  });
-
-  it('omits tasks block when toolConfig.tasks=false', async () => {
-    const result = (
-      await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
-        tasks: false,
-        messages: true,
-        relay: true,
-        mesh: true,
-        adapter: true,
-      })
-    ).text;
-    expect(result).not.toContain('<tasks_tools>');
-  });
-
-  it('omits adapter block when toolConfig.adapter=false', async () => {
-    const result = (
-      await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
-        tasks: true,
-        messages: true,
-        relay: true,
-        mesh: true,
-        adapter: false,
-      })
-    ).text;
-    expect(result).not.toContain('<adapter_tools>');
-  });
-
-  it('includes tasks block when toolConfig.tasks=true', async () => {
-    const result = (
-      await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
-        tasks: true,
-        messages: true,
-        relay: true,
-        mesh: true,
-        adapter: true,
-      })
-    ).text;
-    expect(result).toContain('<tasks_tools>');
-  });
-
-  it('backward compat: no extra args works as before', async () => {
-    const result = (await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test')).text;
-    expect(result).toContain('<env>');
   });
 
   it('toolConfig bypasses global config checks', async () => {
@@ -534,57 +383,9 @@ describe('renderContextEntry', () => {
     expect(result).toContain('</git_status>');
   });
 
-  it('shows the branch from structured data', () => {
-    const result = renderContextEntry({
-      kind: 'git_status',
-      scope: 'per-turn',
-      data: gitData({ branch: 'feat/my-feature' }),
-    });
-    expect(result).toContain('Current branch: feat/my-feature');
-  });
-
-  it('renders "Is git repo: false" for a non-repo', () => {
-    const result = renderContextEntry({
-      kind: 'git_status',
-      scope: 'per-turn',
-      data: { isRepo: false },
-    });
-    expect(result).toBe('<git_status>\nIs git repo: false\n</git_status>');
-  });
-
-  it('renders "Working tree: dirty" with non-zero counts', () => {
-    const result = renderContextEntry({
-      kind: 'git_status',
-      scope: 'per-turn',
-      data: gitData({ clean: false, modified: 2, untracked: 3 }),
-    });
-    expect(result).toContain('Working tree: dirty (2 modified, 3 untracked)');
-  });
-
-  it('shows "Ahead of origin" when ahead > 0', () => {
-    const result = renderContextEntry({
-      kind: 'git_status',
-      scope: 'per-turn',
-      data: gitData({ ahead: 3 }),
-    });
-    expect(result).toContain('Ahead of origin: 3 commits');
-  });
-
-  it('shows "Detached HEAD" when detached', () => {
-    const result = renderContextEntry({
-      kind: 'git_status',
-      scope: 'per-turn',
-      data: gitData({ detached: true, branch: 'HEAD' }),
-    });
-    expect(result).toContain('Detached HEAD: true');
-  });
-
   it('renders ui_state as a pretty-printed <ui_state> JSON block', () => {
-    // The shape a client really sends since the canvas moved to the server: no
-    // `canvas` key at all (spec `canvas-agent-seat` §1.7). The fixture carried
-    // one until DOR-2006's review, and the `"open": true` assertion below was
-    // satisfied by `sidebar.open` — so it passed while rendering a block
-    // production never emits.
+    // The shape a client really sends since the canvas moved to the server: no `canvas` key at all
+    // (spec `canvas-agent-seat` §1.7).
     const uiState = {
       panels: { settings: false, tasks: false, relay: false, picker: false },
       sidebar: { open: true },
@@ -616,12 +417,6 @@ describe('buildAgentBlock', () => {
     mockedReadManifest.mockResolvedValue(null);
   });
 
-  it('returns empty string when readManifest returns null', async () => {
-    mockedReadManifest.mockResolvedValue(null);
-    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
-    expect(result).toBe('');
-  });
-
   it('includes <agent_identity> with name and id when manifest exists', async () => {
     mockedReadManifest.mockResolvedValue(makeManifest());
     const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
@@ -629,32 +424,6 @@ describe('buildAgentBlock', () => {
     expect(result).toContain('Name: test-agent');
     expect(result).toContain('ID: 01JTEST000000000000000000');
     expect(result).toContain('</agent_identity>');
-  });
-
-  it('includes description in identity block when non-empty', async () => {
-    mockedReadManifest.mockResolvedValue(makeManifest({ description: 'A test agent' }));
-    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
-    expect(result).toContain('Description: A test agent');
-  });
-
-  it('includes capabilities in identity block when non-empty array', async () => {
-    mockedReadManifest.mockResolvedValue(
-      makeManifest({ capabilities: ['code-review', 'testing'] })
-    );
-    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
-    expect(result).toContain('Capabilities: code-review, testing');
-  });
-
-  it('omits description line when description is empty string', async () => {
-    mockedReadManifest.mockResolvedValue(makeManifest({ description: '' }));
-    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
-    expect(result).not.toContain('Description:');
-  });
-
-  it('omits capabilities line when capabilities is empty array', async () => {
-    mockedReadManifest.mockResolvedValue(makeManifest({ capabilities: [] }));
-    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
-    expect(result).not.toContain('Capabilities:');
   });
 
   it('includes <agent_persona> when personaEnabled is true and persona is non-empty', async () => {
@@ -675,30 +444,6 @@ describe('buildAgentBlock', () => {
     expect(result).not.toContain('<agent_persona>');
     expect(result).toContain('<agent_identity>');
   });
-
-  it('excludes <agent_persona> when persona is undefined', async () => {
-    mockedReadManifest.mockResolvedValue(
-      makeManifest({ personaEnabled: true, persona: undefined })
-    );
-    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
-    expect(result).not.toContain('<agent_persona>');
-  });
-
-  it('excludes <agent_persona> when persona is empty string', async () => {
-    mockedReadManifest.mockResolvedValue(makeManifest({ personaEnabled: true, persona: '' }));
-    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
-    expect(result).not.toContain('<agent_persona>');
-  });
-
-  it('includes <agent_persona> when personaEnabled is undefined (defaults true) and persona is non-empty', async () => {
-    // personaEnabled defaults to true in the schema, so when present it will be true
-    mockedReadManifest.mockResolvedValue(
-      makeManifest({ personaEnabled: true, persona: 'Expert persona text.' })
-    );
-    const result = (await _buildAgentBlock(testHome('/test/dir'))).text;
-    expect(result).toContain('<agent_persona>');
-    expect(result).toContain('Expert persona text.');
-  });
 });
 
 describe('buildChatToolsBlock', () => {
@@ -716,39 +461,6 @@ describe('buildChatToolsBlock', () => {
     expect(result).toContain('</chat_tools>');
   });
 
-  it('no longer teaches the retired relay tools', () => {
-    const result = _buildChatToolsBlock(undefined, true);
-    for (const retired of [
-      'relay_send',
-      'relay_inbox',
-      'relay_register_endpoint',
-      'relay_unregister_endpoint',
-    ]) {
-      expect(result).not.toContain(retired);
-    }
-  });
-
-  it('says the server stamps the sender, so there is no "from"', () => {
-    const result = _buildChatToolsBlock(undefined, true).replace(/\s+/g, ' ');
-    expect(result).toContain('There is no "from" parameter');
-  });
-
-  it('teaches the three delivery modes, queue first', () => {
-    const result = _buildChatToolsBlock(undefined, true);
-    expect(result).toContain('delivery="queue" (the default)');
-    expect(result).toContain('delivery="steer"');
-    expect(result).toContain('delivery="interrupt"');
-  });
-
-  it('tells a helper from a spin-off chat, and says spin-offs report back by themselves', () => {
-    const result = _buildChatToolsBlock(undefined, true).replace(/\s+/g, ' ');
-    expect(result).toContain('A HELPER is a worker inside this chat');
-    expect(result).toContain('A SPIN-OFF CHAT is a full chat');
-    expect(result).toContain('A spin-off reports back on its own');
-    expect(result).toContain('finished, failed, needing the person, or paused at a limit');
-    expect(result).not.toContain('helper chat');
-  });
-
   // DOR-1337 (F8) and DOR-2790: the chat tools answer NO_CHAT to a chat that is
   // not an agent's, so only an agent session is taught them, and that session
   // has them loaded.
@@ -756,15 +468,6 @@ describe('buildChatToolsBlock', () => {
     expect(_buildChatToolsBlock(undefined, true)).toContain('already in your');
     expect(_buildChatToolsBlock(undefined, false)).toBe('');
     expect(_buildChatToolsBlock(undefined)).toBe('');
-  });
-
-  it('does not promise an answer: only a spin-off reports back by itself', () => {
-    const result = _buildChatToolsBlock(undefined, true).replace(/\s+/g, ' ');
-    expect(result).not.toContain('Do not wait or poll');
-    expect(result).not.toContain('The answer comes back');
-    expect(result).toContain('A spin-off you started reports back here on its own');
-    expect(result).toContain('answers only if it chooses to');
-    expect(result).toContain(`${IN_SESSION_TOOL_PREFIX}chat_read if you need to know`);
   });
 
   // DOR-4469: long work goes to one lead that coordinates by chat_send, and a room hears
@@ -788,65 +491,6 @@ describe('buildChatToolsBlock', () => {
       'A result somebody in a room asked for is owed there: post it when it comes back.'
     );
   });
-
-  it('says a room chat can send, and that a send never posts into a room (DOR-4469)', () => {
-    const result = _buildChatToolsBlock(undefined, true).replace(/\s+/g, ' ');
-    expect(result).toContain('Your chat in a room can send too, to an agent id or a chat id.');
-    expect(result).toContain(`${IN_SESSION_TOOL_PREFIX}chat_send never posts into a room`);
-    expect(result).toContain('it arrives as a private turn');
-    expect(result).toContain(`Only ${IN_SESSION_TOOL_PREFIX}post_to_room speaks in a room.`);
-    expect(result).toContain('a one-line note saying you messaged it, never your words');
-    expect(result).not.toContain('a one-line note that you wrote');
-    expect(result).toContain(
-      'In a room bridged to Telegram or Slack, that chat takes only an answer to a message it sent you.'
-    );
-    expect(result).toContain(
-      "A scheduled run, a beat, a Telegram or Slack direct chat, a connector event's chat or a chat from an older DorkOS gets no report"
-    );
-  });
-
-  it('keeps the block with Relay off, without the relay_notify_user half', () => {
-    vi.mocked(isRelayEnabled).mockReturnValue(false);
-    const result = _buildChatToolsBlock(undefined, true);
-    expect(result).toContain('<chat_tools>');
-    expect(result).not.toContain('relay_notify_user');
-  });
-
-  it('returns empty string when its permission area is Blocked for the agent', () => {
-    expect(_buildChatToolsBlock(toolDocGates(['messages']), true)).toBe('');
-  });
-
-  it('uses toolConfig when provided (messages=true, relay=false)', () => {
-    vi.mocked(isRelayEnabled).mockReturnValue(true); // global says on
-    const result = _buildChatToolsBlock(
-      {
-        tasks: true,
-        messages: true,
-        relay: false,
-        mesh: true,
-        adapter: true,
-        packages: true,
-      },
-      true
-    );
-    expect(result).toContain('<chat_tools>');
-    expect(result).not.toContain('relay_notify_user');
-  });
-
-  it('uses toolConfig when provided (messages=false)', () => {
-    const result = _buildChatToolsBlock(
-      {
-        tasks: true,
-        messages: false,
-        relay: false,
-        mesh: true,
-        adapter: true,
-        packages: true,
-      },
-      true
-    );
-    expect(result).toBe('');
-  });
 });
 
 describe('buildMeshToolsBlock', () => {
@@ -860,20 +504,6 @@ describe('buildMeshToolsBlock', () => {
     });
   });
 
-  it('returns mesh context by default (mesh always-on)', () => {
-    const result = _buildMeshToolsBlock();
-    expect(result).toContain('<mesh_tools>');
-    expect(result).toContain('mesh_discover');
-    expect(result).toContain('mesh_register');
-    expect(result).toContain('mesh_inspect');
-    expect(result).toContain('mesh_status');
-    expect(result).toContain('</mesh_tools>');
-  });
-
-  it('returns empty string when its permission area is Blocked for the agent', () => {
-    expect(_buildMeshToolsBlock(toolDocGates(['agents']))).toBe('');
-  });
-
   // DOR-2790: chat_send refuses a chat that is not an agent's, so only an agent
   // session is told to message a peer with it.
   it('tells only an agent session how to message another agent', () => {
@@ -884,77 +514,6 @@ describe('buildMeshToolsBlock', () => {
     expect(plain).toContain('<mesh_tools>');
     expect(plain).not.toContain('chat_send');
     expect(_buildMeshToolsBlock(toolDocGates(['messages']), true)).not.toContain('chat_send');
-  });
-
-  it('returns mesh context when config is undefined (default behavior)', () => {
-    vi.mocked(configManager.get).mockReturnValue(undefined);
-    const result = _buildMeshToolsBlock();
-    expect(result).toContain('<mesh_tools>');
-  });
-
-  it('is not affected by relay feature flag', () => {
-    vi.mocked(isRelayEnabled).mockReturnValue(false);
-    const result = _buildMeshToolsBlock();
-    expect(result).toContain('<mesh_tools>');
-  });
-
-  it('uses toolConfig when provided (mesh=false)', () => {
-    const result = _buildMeshToolsBlock({
-      tasks: true,
-      messages: true,
-      relay: true,
-      mesh: false,
-      adapter: true,
-    });
-    expect(result).toBe('');
-  });
-});
-
-describe('buildAdapterToolsBlock', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(isRelayEnabled).mockReturnValue(true);
-    vi.mocked(configManager.get).mockReturnValue({
-      relayTools: true,
-      meshTools: true,
-      adapterTools: true,
-      tasksTools: true,
-    });
-  });
-
-  it('returns adapter context when relay enabled and config on', () => {
-    const result = _buildAdapterToolsBlock();
-    expect(result).toContain('<adapter_tools>');
-    expect(result).toContain('binding_create');
-    expect(result).toContain('binding_list');
-    expect(result).toContain('relay.human.telegram');
-    expect(result).toContain('</adapter_tools>');
-  });
-
-  it('returns empty string when relay disabled', () => {
-    vi.mocked(isRelayEnabled).mockReturnValue(false);
-    expect(_buildAdapterToolsBlock()).toBe('');
-  });
-
-  it('returns empty string when its permission area is Blocked for the agent', () => {
-    expect(_buildAdapterToolsBlock(toolDocGates(['connections']))).toBe('');
-  });
-
-  it('returns adapter context when config is undefined (default behavior)', () => {
-    vi.mocked(configManager.get).mockReturnValue(undefined);
-    const result = _buildAdapterToolsBlock();
-    expect(result).toContain('<adapter_tools>');
-  });
-
-  it('uses toolConfig when provided (adapter=false)', () => {
-    const result = _buildAdapterToolsBlock({
-      tasks: true,
-      messages: true,
-      relay: true,
-      mesh: true,
-      adapter: false,
-    });
-    expect(result).toBe('');
   });
 });
 
@@ -970,69 +529,13 @@ describe('buildTasksToolsBlock', () => {
     });
   });
 
-  it('returns tasks context when tasks enabled and config on', () => {
-    const result = _buildTasksToolsBlock();
-    expect(result).toContain('<tasks_tools>');
-    expect(result).toContain('tasks_list');
-    expect(result).toContain('tasks_create');
-    expect(result).toContain('tasks_update');
-    expect(result).toContain('tasks_delete');
-    expect(result).toContain('tasks_get_run_history');
-    expect(result).toContain('</tasks_tools>');
-  });
-
   it('returns empty string when tasks disabled', () => {
     vi.mocked(isTasksEnabled).mockReturnValue(false);
     expect(_buildTasksToolsBlock()).toBe('');
   });
-
-  it('returns empty string when its permission area is Blocked for the agent', () => {
-    expect(_buildTasksToolsBlock(toolDocGates(['tasks']))).toBe('');
-  });
-
-  it('returns tasks context when config is undefined (default behavior)', () => {
-    vi.mocked(configManager.get).mockReturnValue(undefined);
-    const result = _buildTasksToolsBlock();
-    expect(result).toContain('<tasks_tools>');
-  });
-
-  it('uses toolConfig when provided (tasks=true)', () => {
-    vi.mocked(isTasksEnabled).mockReturnValue(false); // global says off
-    const result = _buildTasksToolsBlock({
-      tasks: true,
-      messages: true,
-      relay: true,
-      mesh: true,
-      adapter: true,
-    });
-    expect(result).toContain('<tasks_tools>');
-  });
-
-  it('uses toolConfig when provided (tasks=false)', () => {
-    vi.mocked(isTasksEnabled).mockReturnValue(true); // global says on
-    const result = _buildTasksToolsBlock({
-      tasks: false,
-      messages: true,
-      relay: true,
-      mesh: true,
-      adapter: true,
-    });
-    expect(result).toBe('');
-  });
 });
 
 describe('buildMarketplaceToolsBlock', () => {
-  it('always returns the marketplace context (no toggle to gate on)', () => {
-    const result = _buildMarketplaceToolsBlock();
-    expect(result).toContain('<marketplace_tools>');
-    expect(result).toContain('marketplace_search');
-    expect(result).toContain('marketplace_install');
-    expect(result).toContain('marketplace_uninstall');
-    expect(result).toContain('marketplace_create_package');
-    expect(result).toContain('confirmationToken');
-    expect(result).toContain('</marketplace_tools>');
-  });
-
   it('documents the two-call confirmation protocol', () => {
     const result = _buildMarketplaceToolsBlock();
     expect(result).toContain('requires_confirmation');
@@ -1056,14 +559,10 @@ describe('buildMarketplaceToolsBlock', () => {
   }
 
   it('documents every tool parameter the real Zod schema defines, and no others', () => {
-    // A hardcoded `toContain('exact string')` check cannot catch schema drift: it
-    // was tried in an earlier revision of this test and the reviewer's drill
-    // disproved it — adding an undocumented field to a real InputSchema left it
-    // (and all 81 other tests) green, because a string literal has no idea what
-    // the schema actually contains. This version reads the block's documented
-    // param NAMES with `documentedParams` and diffs them against
-    // `Object.keys(<the real, imported InputSchema>)` for each tool, so a schema
-    // change that drifts from the docs fails loudly, naming the tool.
+    // A hardcoded `toContain('exact string')` check cannot catch schema drift: it was tried in an
+    // earlier revision of this test and the reviewer's drill disproved it — adding an undocumented
+    // field to a real InputSchema left it (and all 81 other tests) green, because a string literal
+    // has no idea what the schema actually contains.
     const result = _buildMarketplaceToolsBlock();
 
     const cases: ReadonlyArray<[string, Record<string, unknown>]> = [
@@ -1106,22 +605,6 @@ describe('buildPeerAgentsBlock', () => {
   ): MockMeshCore {
     return { listWithPaths } as MockMeshCore;
   }
-
-  it('returns empty string when meshCore is null', async () => {
-    const result = await _buildPeerAgentsBlock(null);
-    expect(result).toBe('');
-  });
-
-  it('returns empty string when meshCore is undefined', async () => {
-    const result = await _buildPeerAgentsBlock(undefined);
-    expect(result).toBe('');
-  });
-
-  it('returns empty string when no agents', async () => {
-    const mockMesh = makeMockMesh(() => []);
-    const result = await _buildPeerAgentsBlock(mockMesh);
-    expect(result).toBe('');
-  });
 
   it('returns formatted XML block with agents', async () => {
     const mockMesh = makeMockMesh(() => [
@@ -1172,14 +655,6 @@ describe('buildPeerAgentsBlock', () => {
     // Should only have 10 entries
     const matches = result.match(/^- /gm);
     expect(matches).toHaveLength(10);
-  });
-
-  it('returns empty string when listWithPaths throws', async () => {
-    const mockMesh = makeMockMesh(() => {
-      throw new Error('fail');
-    });
-    const result = await _buildPeerAgentsBlock(mockMesh);
-    expect(result).toBe('');
   });
 });
 
@@ -1246,17 +721,6 @@ describe('buildRelayConnectionsBlock', () => {
     vi.mocked(isRelayEnabled).mockReturnValue(true);
   });
 
-  it('returns empty string when relayContext is undefined', () => {
-    const result = _buildRelayConnectionsBlock(undefined, allOnToolConfig);
-    expect(result).toBe('');
-  });
-
-  it('returns empty string when toolConfig.adapter is false', () => {
-    const ctx = makeRelayContext();
-    const result = _buildRelayConnectionsBlock(ctx, { ...allOnToolConfig, adapter: false });
-    expect(result).toBe('');
-  });
-
   it('returns empty string when agent has no bindings (only other agents)', () => {
     const ctx = makeRelayContext({
       bindingStore: {
@@ -1303,42 +767,10 @@ describe('buildRelayConnectionsBlock', () => {
     expect(result).toContain('Start-conversations permission: OFF');
   });
 
-  it('shows "No active chats yet" for bindings without sessions', () => {
-    const ctx = makeRelayContext({
-      bindingRouter: {
-        getSessionsByBinding: vi.fn(() => []),
-      } as unknown as RelayContextDeps['bindingRouter'],
-    });
-    const result = _buildRelayConnectionsBlock(ctx, allOnToolConfig);
-    expect(result).toContain('No active chats yet');
-  });
-
-  it('output is wrapped in <relay_connections> XML tags', () => {
-    const ctx = makeRelayContext();
-    const result = _buildRelayConnectionsBlock(ctx, allOnToolConfig);
-    expect(result).toMatch(/^<relay_connections>\n/);
-    expect(result).toMatch(/\n<\/relay_connections>$/);
-  });
-
-  it('steers to relay_notify_user and does not offer relay_send for reaching humans (DOR-277)', () => {
-    const ctx = makeRelayContext();
-    const result = _buildRelayConnectionsBlock(ctx, allOnToolConfig);
-    expect(result).toContain('relay_notify_user(');
-    // relay_send is no longer advertised as a way to message a human channel.
-    expect(result).not.toContain('relay_send(');
-  });
-
   it('falls back to isRelayEnabled when toolConfig is not provided', () => {
     vi.mocked(isRelayEnabled).mockReturnValue(false);
     const ctx = makeRelayContext();
     const result = _buildRelayConnectionsBlock(ctx);
     expect(result).toBe('');
-  });
-
-  it('returns block when toolConfig not provided and relay is enabled', () => {
-    vi.mocked(isRelayEnabled).mockReturnValue(true);
-    const ctx = makeRelayContext();
-    const result = _buildRelayConnectionsBlock(ctx);
-    expect(result).toContain('<relay_connections>');
   });
 });

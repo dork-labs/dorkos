@@ -10,6 +10,14 @@
       "linearIssue": "DOR-5153"
     },
     {
+      "id": "261124-194020",
+      "slug": "space-computer-contract",
+      "title": "The space-computer contract: one contract between the space side and the computer side",
+      "created": "2026-11-24",
+      "status": "ideation",
+      "linearIssue": "DOR-5152"
+    },
+    {
       "id": "261119-052319",
       "slug": "canvas-recovery-timeout",
       "title": "Bound the canvas recovery test timeout",
@@ -2523,8 +2531,8 @@
     },
     {
       "id": "261119-021000",
-      "slug": "accounts-l1b-launch",
-      "title": "L1b hardening and the rest of launch",
+      "slug": "accounts-l1b-hardening",
+      "title": "L1b hardening and the rest of the accounts work",
       "created": "2026-11-19",
       "status": "draft",
       "linearIssue": "DOR-2963"

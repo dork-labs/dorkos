@@ -41,7 +41,7 @@ function claimQuestion(chat: UnclaimedChat): string {
  * be ignored or left (design-decisions D-3 item 4, DOR-883). A row with no
  * recorded platform type (an older sighting, or an adapter that reports none)
  * is treated as an ordinary group rather than a broadcast — the conservative
- * direction, since the server's own bridge refusal (`BROADCAST_NOT_BRIDGEABLE`)
+ * direction, since the server's own bridge refusal (`broadcast_not_bridgeable`)
  * still catches a genuine broadcast if this ever guesses wrong.
  */
 function isBroadcastChannel(chat: UnclaimedChat): boolean {

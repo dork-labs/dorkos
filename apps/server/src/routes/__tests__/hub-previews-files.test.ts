@@ -176,10 +176,10 @@ describe('uploads', () => {
     expect(res.headers['cache-control']).toBe('private, max-age=0, must-revalidate');
   });
 
-  it('answers a missing upload as JSON, not as a download', async () => {
+  it('answers a missing upload as a problem document, not as a download', async () => {
     const res = await upload('missing.html');
     expect(res.status).toBe(404);
-    expect(res.headers['content-type']).toContain('application/json');
+    expect(res.headers['content-type']).toContain('application/problem+json');
   });
 
   it('downloads one that could open as a page on a person’s own computer too', async () => {

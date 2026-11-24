@@ -103,8 +103,8 @@ describe('TunnelDialog', () => {
       wrapper: createWrapper(),
     });
     await waitFor(() => {
-      expect(screen.getByText('Enable remote access')).toBeDefined();
-      expect(screen.getByText('Open a secure tunnel via ngrok')).toBeDefined();
+      expect(screen.getByText('Enable remote access')).toBeInTheDocument();
+      expect(screen.getByText('Open a secure tunnel via ngrok')).toBeInTheDocument();
     });
   });
 
@@ -112,7 +112,7 @@ describe('TunnelDialog', () => {
     render(<TunnelDialog open={true} onOpenChange={vi.fn()} />, {
       wrapper: createWrapper(),
     });
-    expect(screen.getByText('Remote access')).toBeDefined();
+    expect(screen.getByText('Remote access')).toBeInTheDocument();
   });
 
   it('shows landing view when tokenConfigured is false', async () => {
@@ -121,7 +121,7 @@ describe('TunnelDialog', () => {
       wrapper: createWrapper(transport),
     });
     await waitFor(() => {
-      expect(screen.getByTestId('tunnel-landing')).toBeDefined();
+      expect(screen.getByTestId('tunnel-landing')).toBeInTheDocument();
     });
   });
 
@@ -144,7 +144,7 @@ describe('TunnelDialog', () => {
       wrapper: createWrapper(transport),
     });
     await waitFor(() => {
-      expect(screen.getByTestId('tunnel-settings')).toBeDefined();
+      expect(screen.getByTestId('tunnel-settings')).toBeInTheDocument();
     });
   });
 
@@ -167,9 +167,9 @@ describe('TunnelDialog', () => {
     });
 
     // Fail a start, so the error view is on screen with its button.
-    await waitFor(() => expect(screen.getByRole('switch')).toBeDefined());
+    await waitFor(() => expect(screen.getByRole('switch')).toBeInTheDocument());
     await user.click(screen.getByRole('switch'));
-    await waitFor(() => expect(screen.getByTestId('tunnel-error')).toBeDefined());
+    await waitFor(() => expect(screen.getByTestId('tunnel-error')).toBeInTheDocument());
     expect(vi.mocked(transport.startTunnel)).toHaveBeenCalledTimes(1);
 
     // The button has to actually try again. Wired to a handler that only reset

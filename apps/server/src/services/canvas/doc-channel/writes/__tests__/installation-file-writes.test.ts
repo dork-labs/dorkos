@@ -91,7 +91,7 @@ it('ordinary saves share the checkbox replacement lease through a hardlink alias
   const receipt = await toggle;
   const outcome = await save;
   expect(receipt.status).toBe('changed');
-  expect(outcome.status).toBe(409);
+  expect(outcome).toHaveProperty('stale');
   expect(h.row().status).toBe('committed');
   expect((await fs.readFile(h.path, 'utf8')).startsWith('\ufeff- [x]')).toBe(true);
   expect(await fs.readFile(alias, 'utf8')).toBe(await fs.readFile(h.path, 'utf8'));

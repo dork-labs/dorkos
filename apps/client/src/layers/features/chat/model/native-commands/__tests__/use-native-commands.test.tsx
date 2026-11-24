@@ -424,7 +424,7 @@ describe('useNativeCommands — the in-flight latch (DOR-479)', () => {
     await waitFor(() => expect(result.current.commandPending).toBe(true));
 
     await act(async () => {
-      reject(Object.assign(new Error('locked'), { code: 'SESSION_LOCKED' }));
+      reject(Object.assign(new Error('locked'), { code: 'session_locked' }));
     });
     // A refusal must hand the composer back — otherwise the honest "keep the
     // text" behavior becomes a box you can never send from again.

@@ -384,7 +384,7 @@
     "apps/client/src/layers/features/app-tabs/__tests__/route-badges.test.ts": 7,
     "apps/client/src/layers/features/app-tabs/__tests__/tab-history.test.tsx": 30,
     "apps/client/src/layers/features/app-tabs/__tests__/tab-identity.test.ts": 17,
-    "apps/client/src/layers/features/app-tabs/__tests__/tab-link-and-reorder.test.ts": 87,
+    "apps/client/src/layers/features/app-tabs/__tests__/tab-reorder.test.ts": 87,
     "apps/client/src/layers/features/app-tabs/__tests__/TabHistoryControls.test.tsx": 1405,
     "apps/client/src/layers/features/app-tabs/__tests__/TabStatusMark.test.tsx": 34,
     "apps/client/src/layers/features/app-tabs/__tests__/use-app-tab-actions.test.tsx": 51,

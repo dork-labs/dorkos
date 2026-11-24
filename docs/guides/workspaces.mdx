@@ -263,11 +263,11 @@ All endpoints are under `/api/workspaces`:
 
 <Callout type="warn">
   A new workspace is shown to you before anything runs there. A copy can bring its own settings,
-  skills and setup commands, so `POST` answers `409` with the code `workspace_needs_review` and a
-  list of what the copy brings. Read it, then send the same request again with `approvedReviewHash`
-  set to the `reviewHash` you were shown. When an agent asks for a clone, or for a worktree whose
-  source runs setup commands, you get an approval card instead. Only the setup commands you were
-  shown ever run, both when the workspace is made and when it is removed.
+  skills and setup commands, so `POST` answers `409` with the code `needs_review` and a list of what
+  the copy brings. Read it, then send the same request again with `approvedReviewHash` set to the
+  `reviewHash` you were shown. When an agent asks for a clone, or for a worktree whose source runs
+  setup commands, you get an approval card instead. Only the setup commands you were shown ever run,
+  both when the workspace is made and when it is removed.
 </Callout>
 
 <Callout type="info">

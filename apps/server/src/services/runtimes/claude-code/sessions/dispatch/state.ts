@@ -39,6 +39,8 @@ export interface SessionBundle {
   recoveryBilling?: { sessionId: string; root: string; perToken: boolean };
   /** The plan of the dispatch currently in flight, read by the launcher. */
   plan: PumpLaunchPlan | undefined;
+  /** Retire only the logical turn this pump published. */
+  retireToolTurn?: ReturnType<NonNullable<AgentSession['connectorTurn']>['prepareToolTurn']>;
   /**
    * True while a turn is BOOTING on this session — the launch is in flight and
    * the pump has not yet reached its `running` edge, so `session.activeQuery` is

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { DORK_DESKTOP_LINK_PREFIX, dorkLinkPath, dorkUriFromLink } from '@dorkos/shared/dork-ref';
 import { findDeepLinkArg, parseDeepLink } from '../navigation';
 
 vi.mock('electron', () => import('./electron-mock'));
@@ -52,8 +53,23 @@ describe('parseDeepLink', () => {
     // The way back a finished account connection offers (DOR-2721): the
     // server forwards exactly this link, so it must land on Connections.
     ['dorkos://connections', '/connections'],
+    // A `dorkos://r/<dork-uri>` link (DOR-5046) opens the app's `/r/` route,
+    // which finds what the reference names and opens it.
+    [
+      'dorkos://r/dork:chat:7c1e4b2a-9f3d-4e8b-a6c5-a1b2c3d4e5f6',
+      '/r/dork:chat:7c1e4b2a-9f3d-4e8b-a6c5-a1b2c3d4e5f6',
+    ],
+    ['dorkos://r/dork:room:01JD3G5W7X9Y2Z4A6B8C0D1E2F', '/r/dork:room:01JD3G5W7X9Y2Z4A6B8C0D1E2F'],
+    ['dorkos://r/dork%3Aentry%3A01JD3H', '/r/dork%3Aentry%3A01JD3H'],
   ])('maps %s to %s', (url, expected) => {
     expect(parseDeepLink(url)).toBe(expected);
+  });
+
+  it('hands the /r/ route the same dork: reference the desktop link named', () => {
+    const uri = 'dork:agent:01KJ0000000000000000SC7T9Z';
+    const path = parseDeepLink(`${DORK_DESKTOP_LINK_PREFIX}${uri}`);
+    expect(path).toBe(dorkLinkPath({ kind: 'agent', id: '01KJ0000000000000000SC7T9Z' }));
+    expect(dorkUriFromLink(path!)).toBe(uri);
   });
 
   it.each([

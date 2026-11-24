@@ -6,7 +6,8 @@ import { clearAgentByPerson, declareAgent } from '../services/core/turn-power/de
 import { READS_OUTSIDE_TEXT_PERSON_ONLY } from '../services/core/operator/agent-updater.js';
 import { withPersonRepin } from '../services/runtimes/claude-code/folder-settings/folder-config-consent.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { agentNotFound, manifestUnreadable } from './mesh-problems.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { setCreditsAllowedForAgent } from '../services/core/cloud/credits-defaults.js';
 import { creditsAgentPatchRefusal } from '../services/core/cloud/credits-model-gate.js';
@@ -29,7 +30,7 @@ export async function patchMeshAgent(
   const caller = confirmation?.facts ?? honoRequestFacts(c);
 
   const id = c.req.param('id');
-  if (!id) return c.json({ error: 'Agent not found' }, 404);
+  if (!id) return agentNotFound(c);
   // Read as an object: anything else fails the schema below before a field
   // is looked up, as `req.body` did on Express.
   const body = readJsonBody(c) as Record<string, unknown>;
@@ -40,15 +41,10 @@ export async function patchMeshAgent(
   // caller learns where to go instead of getting a 200 that changed nothing.
   const refused = retiredPermissionFields(body);
   if (refused.length > 0) {
-    return c.json(
-      {
-        error:
-          'Only a person can change permissions, from the Permissions page. Agents can ask the person.',
-        code: 'USE_PERMISSIONS_API',
-        fields: refused,
-      },
-      400
-    );
+    return problem(c, 'invalid_request', {
+      detail: 'Only a person changes permissions, on the Permissions page. Agents can ask.',
+      extensions: { fields: refused },
+    });
   }
   const result = UpdateAgentRequestSchema.safeParse(body);
   if (!result.success) {
@@ -57,7 +53,7 @@ export async function patchMeshAgent(
   // Anyone may say an agent reads outside text; only a person takes it back (DOR-3969).
   const readsOutsideText = result.data.readsOutsideText;
   if (readsOutsideText === false && !clearsTheAgentBar(caller)) {
-    return c.json({ error: READS_OUTSIDE_TEXT_PERSON_ONLY, code: 'person_only' }, 403);
+    return problem(c, 'person_only', { detail: READS_OUTSIDE_TEXT_PERSON_ONLY });
   }
 
   // Guard: system agents cannot have identity fields changed
@@ -66,18 +62,18 @@ export async function patchMeshAgent(
     ? SYSTEM_PROTECTED_FIELDS.filter((f) => f in body)
     : [];
   if (blockedFields.length > 0) {
-    return c.json(
-      {
-        error: `Cannot modify ${blockedFields.join(', ')} on system agents`,
-      },
-      403
-    );
+    return problem(c, 'forbidden', {
+      detail: `A system agent’s ${blockedFields.join(', ')} can’t be changed.`,
+    });
   }
 
   // Only the keys the caller sent, `null` as "clear", and a reports-to change
   // checked for loops (spec `heartbeats` §4.1) — see `prepareAgentPatch`.
   const patch = prepareAgentPatch(meshCore, id, body, result.data);
-  if ('refusal' in patch) return c.json(patch.refusal, 400);
+  if ('refusal' in patch) {
+    const code = patch.refusal.code === 'REPORTS_TO_CYCLE' ? 'reports_to_cycle' : 'invalid_request';
+    return problem(c, code, { detail: patch.refusal.error });
+  }
   // An agent on DorkOS credits may be set only to a model credits serve on
   // its runtime's protocol, the same menu its Model row offers (DOR-2636).
   const modelRefusal = await creditsAgentPatchRefusal(
@@ -86,11 +82,11 @@ export async function patchMeshAgent(
     Object.hasOwn(body as object, 'account'),
     meshCore.get(id)
   );
-  if (modelRefusal) return c.json({ error: modelRefusal, code: 'UNSUPPORTED_MODEL' }, 400);
+  if (modelRefusal) return problem(c, 'invalid_request', { detail: modelRefusal });
   const grantsCredits =
     body.account === CREDITS_ACCOUNT_ID && refuseUnlessAccountOwner(caller) === undefined;
   if (grantsCredits && !confirmation) {
-    if (!meshCore.get(id)) return c.json({ error: 'Agent not found' }, 404);
+    if (!meshCore.get(id)) return agentNotFound(c);
     const revision = await agentPatchRevision(meshCore, id);
     return runAccountWrite(c, {
       kind: 'cloud.credits',
@@ -101,7 +97,7 @@ export async function patchMeshAgent(
     });
   }
   if (confirmation && (await agentPatchRevision(meshCore, id)) !== confirmation.revision)
-    return c.json({ error: 'The agent changed. Try again.', code: 'AGENT_CHANGED' }, 409);
+    return agentChanged(c);
 
   // ADR-0043: update() is async — writes to disk first, then DB.
   //
@@ -113,7 +109,7 @@ export async function patchMeshAgent(
   // can act on the sentence.
   // Narrowed to the sentinel class on purpose. An unconditional catch here
   // also swallowed `writeManifest`'s schema rejection and any I/O failure, and
-  // answered all of them `409 MANIFEST_UNREADABLE` with the raw message —
+  // answered all of them `409 `conflict`` with the raw message —
   // a wrong status over a wrong story, and internals on the wire (DOR-486
   // re-review). Anything else rethrows to the error middleware, which is where
   // an unexpected failure belongs.
@@ -140,14 +136,11 @@ export async function patchMeshAgent(
           )
         : await write();
   } catch (err) {
-    if (err instanceof AgentPatchChangedError)
-      return c.json({ error: 'The agent changed. Try again.', code: 'AGENT_CHANGED' }, 409);
+    if (err instanceof AgentPatchChangedError) return agentChanged(c);
     if (!(err instanceof ManifestUnreadableError)) throw err;
-    return c.json({ error: err.message, code: 'MANIFEST_UNREADABLE' }, 409);
+    return manifestUnreadable(c);
   }
-  if (!updated) {
-    return c.json({ error: 'Agent not found' }, 404);
-  }
+  if (!updated) return agentNotFound(c);
   // DorkOS's own record, which no edit of the file clears: a person's `false`
   // (checked above) is the only way out (DOR-3969).
   if (readsOutsideText === true) declareAgent(id, home);
@@ -182,6 +175,11 @@ function retiredPermissionFields(body: unknown): string[] {
 }
 
 class AgentPatchChangedError extends Error {}
+
+/** The agent changed between the person's confirmation and the write. */
+function agentChanged(c: Context<ApiEnv>): Response {
+  return problem(c, 'precondition_failed', { detail: 'The agent changed. Try again.' });
+}
 
 /** Bind the target and execution settings to the exact manifest bytes the person saw. */
 async function agentPatchRevision(

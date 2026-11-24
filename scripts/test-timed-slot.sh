@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Fixture suite for scripts/timed-slot.sh (ledger 261124-161126), and for
-# the wiring of the two daily workflows that call it: each cron matches the slot
+# the wiring of the two daily workflows that call it (and of review-redispatch,
+# which ticks on the same backstop): each cron matches the slot
 # its `due` job asks about, the backstop names a workflow that runs on every
 # push to main, and the marker is uploaded under the name `due` printed.
 # `due` runs against a stubbed `gh` (GH=...) that answers from fixture files
@@ -194,6 +195,9 @@ wired() {
 }
 wired daily-release.yml 7 15
 wired daily-sweep.yml 13 17
+rr=$(cat "$repo_root/.github/workflows/review-redispatch.yml")
+check 'review-redispatch ticks on the same backstop' yes "$(grep -A3 '^  workflow_run:' <<<"$rr" | tr -d ' \n' | grep -F 'workflows:[CLISmokeTest]types:[completed]branches:[main]' >/dev/null && echo yes || echo no)"
+check 'and its scan keeps one concurrency group, so ticks collapse' yes "$(grep -A1 '^    concurrency:' <<<"$rr" | grep -F 'group: review-redispatch' >/dev/null && echo yes || echo no)"
 smoke=$(cat "$repo_root/.github/workflows/cli-smoke-test.yml")
 check 'the backstop workflow is named CLI Smoke Test' yes "$(grep -qx 'name: CLI Smoke Test' <<<"$smoke" && echo yes || echo no)"
 check 'and runs on every push to main' yes "$(grep -A2 '^  push:' <<<"$smoke" | grep -F 'branches: [main]' >/dev/null && echo yes || echo no)"

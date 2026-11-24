@@ -1,7 +1,7 @@
 ---
 number: 198
 title: Use electron-vite for Electron Build Tooling
-status: draft
+status: archived
 created: 2026-03-24
 spec: electron-desktop-app
 superseded-by: null

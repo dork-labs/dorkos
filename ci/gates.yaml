@@ -245,12 +245,9 @@ gates:
     purpose: Publishes and attests the immutable Community image and its strict version-to-digest release manifest.
 
   # --- review-redispatch.yml ---
-  - id: wf.review-redispatch.wait
-    source: .github/workflows/review-redispatch.yml
-    purpose: Never gates a merge. After a claude-code-review run fails, sleeps until the retry ladder's next rung for that head has passed (review-redispatch-wait.sh), so the scan that follows can act on it.
   - id: wf.review-redispatch.redispatch
     source: .github/workflows/review-redispatch.yml
-    purpose: Never gates a merge. After a failed review (once its rung has passed) and on a 10-minute cron backstop, re-requests a lost automated review (re-review label) on PRs whose review check is red, up to the ladder in should-redispatch-review.sh, so pr-gates is not left waiting (DOR-5124; was merge-tail's second duty).
+    purpose: Never gates a merge. On every CLI Smoke Test finish on main (a tick after each push) and a 10-minute cron backstop, re-requests a lost automated review (re-review label) on PRs whose review check is red, up to the ladder in should-redispatch-review.sh, so pr-gates is not left waiting (DOR-5124; was merge-tail's second duty).
 
   # --- release-publish.yml ---
   - id: wf.release-publish.prove
@@ -271,7 +268,7 @@ gates:
   # --- queue-reentry.yml ---
   - id: wf.queue-reentry.sweep
     source: .github/workflows/queue-reentry.yml
-    purpose: Never gates a merge. After the merge queue itself takes a PR out, turns auto-merge back on once its head is green and mergeable (at most twice per head, never after a person's dequeue, a hold or a repeat failure), and asks the author once per head to merge main when it conflicts (DOR-5098).
+    purpose: Never gates a merge. After the merge queue itself takes a PR out, turns auto-merge back on once its head is green and mergeable (at most twice per head, never after a person's dequeue, a hold or a repeat failure), and asks the author once per head to merge main when it conflicts; also tells the author, once per head, of any PR with auto-merge on that conflicts with main, since GitHub then runs no checks or review on it (DOR-5098).
 
   # --- security-verdict.yml ---
   - id: wf.security-verdict.security-verdict

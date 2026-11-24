@@ -322,7 +322,7 @@ function FolderChangedDemo() {
   const [transport] = useState<Transport>(() =>
     browserTransport(NOT_OPEN, async () => {
       throw Object.assign(new Error('Sign-ins weren’t forgotten.'), {
-        code: 'profiles_folder_changed',
+        code: 'precondition_failed',
       });
     })
   );

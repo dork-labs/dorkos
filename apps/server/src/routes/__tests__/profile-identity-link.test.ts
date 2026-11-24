@@ -136,7 +136,7 @@ describe('the operator claiming a platform identity', () => {
       );
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OPERATOR_ONLY');
+      expect(res.body.code).toBe('operator_only');
       expect(claimed(phoneAuthor.id)).toBe(false);
     });
 
@@ -150,7 +150,7 @@ describe('the operator claiming a platform identity', () => {
       );
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OPERATOR_ONLY');
+      expect(res.body.code).toBe('operator_only');
       expect(claimed(phoneAuthor.id)).toBe(true);
     });
 
@@ -165,7 +165,7 @@ describe('the operator claiming a platform identity', () => {
       );
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OPERATOR_ONLY');
+      expect(res.body.code).toBe('operator_only');
       expect(claimed(phoneAuthor.id)).toBe(false);
     });
 
@@ -179,7 +179,7 @@ describe('the operator claiming a platform identity', () => {
       const res = await request(app()).post(`/api/profile/identities/${ana.id}`);
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('IDENTITY_NOT_EXTERNAL');
+      expect(res.body.code).toBe('identity_not_external');
       expect(claimed(ana.id)).toBe(false);
     });
 
@@ -187,7 +187,7 @@ describe('the operator claiming a platform identity', () => {
       const res = await request(app()).post(`/api/profile/identities/${ownerAuthor.id}`);
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('IDENTITY_NOT_EXTERNAL');
+      expect(res.body.code).toBe('identity_not_external');
     });
 
     it('answers 404 for an author id this install has never minted', async () => {

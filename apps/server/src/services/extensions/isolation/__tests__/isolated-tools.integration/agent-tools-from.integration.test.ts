@@ -48,10 +48,13 @@ describe('agent tools from an isolated extension (real child)', () => {
   it('gives extension code no raw channel, and never offers a tool bound late', async () => {
     await boot();
     expect((await childStats()).sendType).toBe('undefined');
-    await new Promise((r) => setTimeout(r, 200));
+    // The late binding's refusal is the signal that it arrived; only then is
+    // the missing tool an answer rather than a race.
+    await vi.waitFor(() => {
+      const card = st.manager.listPublic().find((r) => r.id === ID);
+      expect(card?.tools?.find((t) => t.name === 'late')).toMatchObject({ status: 'refused' });
+    });
     expect(st.registry.get(`${DOMAIN}.late`)).toBeUndefined();
-    const card = st.manager.listPublic().find((r) => r.id === ID);
-    expect(card?.tools?.find((t) => t.name === 'late')).toMatchObject({ status: 'refused' });
   }, 60_000);
 
   // Purpose: the gate runs in DorkOS, unchanged, BEFORE anything reaches the
@@ -214,9 +217,10 @@ module.exports.probes = {};
       overrides: { ctx: built.ctx, tools: toolChecks },
     });
     await startOk(host);
-    await new Promise((r) => setTimeout(r, 300));
-    expect(h.logs.some((l) => l.message.includes('refused a tool binding after register()'))).toBe(
-      true
+    await vi.waitFor(() =>
+      expect(
+        h.logs.some((l) => l.message.includes('refused a tool binding after register()'))
+      ).toBe(true)
     );
     expect(built.tools.seal().handled.map((x) => x.tool.name)).toEqual(['wait']);
     built.dispose();

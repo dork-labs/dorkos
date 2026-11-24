@@ -96,7 +96,7 @@ describe('SessionMessage', () => {
         {...authorProps(msg)}
       />
     );
-    expect(screen.getByText('**not bold**')).toBeDefined();
+    expect(screen.getByText('**not bold**')).toBeInTheDocument();
     expect(screen.queryByTestId('streamdown')).toBeNull();
   });
 
@@ -116,7 +116,7 @@ describe('SessionMessage', () => {
         author={AGENT_AUTHOR}
       />
     );
-    expect(screen.getByText('DorkBot')).toBeDefined();
+    expect(screen.getByText('DorkBot')).toBeInTheDocument();
     expect(container.querySelector('[data-slot="message-author-avatar"]')).not.toBeNull();
   });
 
@@ -196,8 +196,8 @@ describe('SessionMessage', () => {
       />
     );
     // Under the motion mock, motion.div renders as a plain div.
-    expect(screen.getByText('Hello')).toBeDefined();
-    expect(screen.getByTestId('message-item')).toBeDefined();
+    expect(screen.getByText('Hello')).toBeInTheDocument();
+    expect(screen.getByTestId('message-item')).toBeInTheDocument();
   });
 
   it('renders user messages in the same left gutter as everyone else', () => {
@@ -311,7 +311,7 @@ describe('Auto-hide tool calls', () => {
     const { rerender } = render(
       <SessionMessage message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
     );
-    expect(screen.getByText('Read …')).toBeDefined();
+    expect(screen.getByText('Read …')).toBeInTheDocument();
 
     // Transition to complete
     const completedMsg = makeMsg('complete');
@@ -324,7 +324,7 @@ describe('Auto-hide tool calls', () => {
       />
     );
     // Still visible immediately after completion
-    expect(screen.getByText('Read …')).toBeDefined();
+    expect(screen.getByText('Read …')).toBeInTheDocument();
 
     // Advance past 5s timer
     act(() => {
@@ -342,6 +342,6 @@ describe('Auto-hide tool calls', () => {
     act(() => {
       vi.advanceTimersByTime(10_000);
     });
-    expect(screen.getByText('Read …')).toBeDefined();
+    expect(screen.getByText('Read …')).toBeInTheDocument();
   });
 });

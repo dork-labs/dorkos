@@ -18,7 +18,7 @@ _openapi:
           `null` is also distinct from a stored `0`, which is a thread read up
           to its own beginning. As with the write, the cursor is always the
           caller''s own — there is no way to name a user — and an agent caller
-          is refused with 403 `PEOPLE_ONLY`, or with 401 when its token does not
+          is refused with 403 `person_only`, or with 401 when its token does not
           verify.'
 ---
 

@@ -23,15 +23,13 @@
  * @module routes/read-cursors
  */
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   ReadCursorParamsSchema,
   SetReadCursorPositionRequestSchema,
   type ReadCursorResponse,
 } from '@dorkos/shared/read-cursor-schemas';
-import { errorBody } from '../lib/route-utils.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { getReadCursorService } from '../services/core/read-cursor-service.js';
 import {
@@ -40,7 +38,7 @@ import {
   type AuthorRecord,
 } from '../services/rooms/index.js';
 import { resolveCaller } from './room-caller.js';
-import { isOwnerCaller, roomErrorReply } from './room-error-response.js';
+import { isOwnerCaller, sendRoomError } from './room-error-response.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -97,10 +95,9 @@ router.put('/:kind/:id', (c) => {
   // the room was picked for it, the person's membership and the room-write
   // bar (DOR-3017). This route checks none of those, so it does not move one.
   if (params.kind === 'room-thread') {
-    return c.json(
-      { error: 'Mark a thread read from the mini app showing it.', code: 'invalid_kind' },
-      400
-    );
+    return problem(c, 'invalid_request', {
+      detail: 'Mark a thread read from the mini app showing it.',
+    });
   }
 
   // Somebody is at the keyboard, and this request is the proof: a client only
@@ -117,8 +114,7 @@ router.put('/:kind/:id', (c) => {
       // The rooms domain's own mapping, shared rather than mirrored: a caller
       // who is not in the room gets the 404 the room route gives them, not a
       // 500 from a router that had no opinion.
-      const reply = roomErrorReply(err, 'PUT /read-cursors/room/:id', () => isOwnerCaller(caller));
-      return c.json(reply.body, reply.status as ContentfulStatusCode);
+      return sendRoomError(c, err, 'PUT /read-cursors/room/:id', () => isOwnerCaller(caller));
     }
     // Read back rather than returned by the delegation, because the room
     // service answers in the ROOM's vocabulary (a membership) and this route
@@ -163,12 +159,12 @@ router.get('/:kind/:id', (c) => {
  *
  * Two refusals, and they are different facts about the caller:
  *
- * - **401 `AGENT_IDENTITY_UNVERIFIED`**, thrown by `resolveCaller` when the
+ * - **401 `agent_identity_unverified`**, thrown by `resolveCaller` when the
  *   caller presented an agent token this machine could not verify. Answered
- *   through `roomErrorReply` so it reads identically here and on the room routes
+ *   through `sendRoomError` so it reads identically here and on the room routes
  *   — a caller that cannot be named is not a caller with no read state, it is a
  *   caller with a credential problem (DOR-1361).
- * - **403 `PEOPLE_ONLY`** for an agent that IS named. A 403 rather than a 404:
+ * - **403 `person_only`** for an agent that IS named. A 403 rather than a 404:
  *   there is nothing to hide here, and telling an agent "this is not yours to
  *   write" is more useful than pretending the route does not exist.
  *
@@ -181,11 +177,10 @@ function personOrRefuse(c: Context<ApiEnv>): AuthorRecord | Response {
     caller = resolveCaller(honoRequestFacts(c), 'read');
   } catch (err) {
     // No caller resolved, so nobody is the owner here.
-    const reply = roomErrorReply(err, 'read-cursors', () => false);
-    return c.json(reply.body, reply.status as ContentfulStatusCode);
+    return sendRoomError(c, err, 'read-cursors', () => false);
   }
   if (caller.kind !== 'human') {
-    return c.json(errorBody('Only people have read state', 'PEOPLE_ONLY'), 403);
+    return problem(c, 'person_only', { detail: 'Only people have read state.' });
   }
   return caller;
 }

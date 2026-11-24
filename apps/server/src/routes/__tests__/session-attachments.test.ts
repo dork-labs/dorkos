@@ -159,7 +159,7 @@ describe('GET /api/sessions/:id/attachments/:file', () => {
     const res = await request(testServer).get(`/api/sessions/${SESSION}/attachments/nothing.png`);
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('ATTACHMENT_NOT_FOUND');
+    expect(res.body.code).toBe('not_found');
   });
 
   it('400s a malformed session id', async () => {
@@ -174,7 +174,7 @@ describe('GET /api/sessions/:id/attachments/:file', () => {
     );
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('ATTACHMENT_NOT_FOUND');
+    expect(res.body.code).toBe('not_found');
   });
 
   it('refuses to serve an SVG even when one is sitting in the directory', async () => {

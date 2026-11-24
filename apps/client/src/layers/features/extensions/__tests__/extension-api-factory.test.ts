@@ -778,9 +778,13 @@ describe('createExtensionAPI', () => {
         vi.fn().mockResolvedValue({
           ok: false,
           status: 409,
-          json: vi
-            .fn()
-            .mockResolvedValue({ error: 'This was already settled.', code: 'already_resolved' }),
+          json: vi.fn().mockResolvedValue({
+            type: 'urn:dorkos:problem:already_resolved',
+            title: 'This was already settled.',
+            status: 409,
+            code: 'already_resolved',
+            detail: 'This was already settled.',
+          }),
         })
       );
       const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
@@ -872,8 +876,11 @@ describe('createExtensionAPI', () => {
           ok: false,
           status: 429,
           json: vi.fn().mockResolvedValue({
-            error: 'Mine has started a lot of chats in the last hour. Try again later.',
-            code: 'start_limit',
+            type: 'urn:dorkos:problem:rate_limited',
+            title: 'Too many requests. Wait a moment, then try again.',
+            status: 429,
+            code: 'rate_limited',
+            detail: 'Mine has started a lot of chats in the last hour. Try again later.',
           }),
         })
       );

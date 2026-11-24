@@ -20,6 +20,8 @@
  *
  * @module routes/cloud-owner-bar
  */
+import { problemBody } from '@dorkos/http-kit';
+import type { Problem } from '@dorkos/shared/problem';
 import type { RequestFacts } from '../http/request-facts.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import type { Context } from 'hono';
@@ -92,6 +94,27 @@ export function errorRefusalUnlessOwner(
 ): { error: string; code: string } | undefined {
   const refusal = refusalFor(caller, wording);
   return refusal === undefined ? undefined : { error: refusal.message, code: refusal.code };
+}
+
+/**
+ * The 403 problem document for a write that answers problems, for a route on
+ * the Hono chain: send it with `sendProblem`, or hand it back from a held
+ * action's commit as its body.
+ *
+ * @param caller - The request's facts.
+ * @param wording - What this write says when it refuses.
+ * @returns `person_only` or `owner_only`, or `undefined` when the caller owns
+ *   this install.
+ */
+export function problemRefusalUnlessOwner(
+  caller: RequestFacts,
+  wording: AccountOwnerWording
+): Problem | undefined {
+  const refusal = refusalFor(caller, wording);
+  if (refusal === undefined) return undefined;
+  return problemBody(refusal.code === PERSON_ONLY_CODE ? 'person_only' : 'owner_only', {
+    detail: refusal.message,
+  });
 }
 
 /**

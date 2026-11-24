@@ -193,8 +193,11 @@ recovery ladder (`gates.ts`, `recovery.ts`) handles what happens after an arm.
 
 In this repo, outside the plugin's own approve path, nobody arms a PR:
 `scripts/open-pr.sh` turns on auto-merge when it opens one, and the required
-`pr-gates` check holds the merge until Security signs off (a passing
-`security-verdict` or the `security-reviewed` label), whoever armed it. QA's and
+`pr-gates` check holds the merge until Security signs off, whoever armed it.
+Security's sign-off is a signed review marker or a passing cloud
+`security-verdict`; a `security-reviewed` label alone is only a note. The
+plugin's own guard, described above, still asks for the label, so in this repo
+`pr-gates` is the gate that decides. QA's and
 the designer's labels are notes, not gates. `arm.sh`, `arm-door.yml` and
 merge-tail's arming are retired (DOR-5124). See
 [CI Pipeline Guide → Merging](ci.md#merging-auto-merge-at-open-the-pr-side-gates-and-the-door).

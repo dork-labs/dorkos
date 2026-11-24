@@ -1,7 +1,7 @@
 ---
 number: 126
 title: Enrich Envelope Payload with Binding CWD in BindingRouter
-status: draft
+status: archived
 created: 2026-03-14
 spec: relay-adapter-streaming-fixes
 superseded-by: null

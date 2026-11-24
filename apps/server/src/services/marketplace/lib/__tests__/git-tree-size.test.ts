@@ -197,28 +197,40 @@ describe('the blobless path sizes files before checkout (DOR-2321)', () => {
   });
 });
 
+/** The child processes of `pid` right now (none while the shell is still starting). */
+function childrenOf(pid: number): number[] {
+  try {
+    return execFileSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .map(Number);
+  } catch {
+    return [];
+  }
+}
+
+/** Whether `pid` is still running. */
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe('stopping git (DOR-2321)', () => {
   // Purpose: a stopped git must not leave helpers running. On POSIX the whole
   // process group goes: a shell and the two sleeps it started all stop.
   it.skipIf(process.platform === 'win32')('kills the whole process group on POSIX', async () => {
     const child = spawn('sh', ['-c', 'sleep 30 & sleep 30 & wait'], { detached: true });
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    const kids = execFileSync('pgrep', ['-P', String(child.pid)], { encoding: 'utf8' })
-      .trim()
-      .split('\n')
-      .map(Number);
-    expect(kids.length).toBeGreaterThanOrEqual(2);
-    killProcessTree(child.pid!);
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const alive = [child.pid!, ...kids].filter((pid) => {
-      try {
-        process.kill(pid, 0);
-        return true;
-      } catch {
-        return false;
-      }
+    let kids: number[] = [];
+    await vi.waitFor(() => {
+      kids = childrenOf(child.pid!);
+      expect(kids.length).toBeGreaterThanOrEqual(2);
     });
-    expect(alive).toEqual([]);
+    killProcessTree(child.pid!);
+    await vi.waitFor(() => expect([child.pid!, ...kids].filter(isAlive)).toEqual([]));
   });
 
   // Purpose: on Windows the tree is stopped with taskkill /T /F.
@@ -285,9 +297,8 @@ describe('git output and running groups (DOR-2321)', () => {
     const before = process.listenerCount('SIGTERM');
     trackGit(child.pid!);
     expect(process.listenerCount('SIGTERM')).toBeGreaterThanOrEqual(Math.min(before + 1, 1));
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await vi.waitFor(() => expect(childrenOf(child.pid!).length).toBeGreaterThanOrEqual(1));
     stopAllGit();
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(() => process.kill(child.pid!, 0)).toThrow();
+    await vi.waitFor(() => expect(isAlive(child.pid!)).toBe(false));
   });
 });

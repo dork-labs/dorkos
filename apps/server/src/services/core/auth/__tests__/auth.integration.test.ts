@@ -1,11 +1,11 @@
 /**
  * @vitest-environment node
  */
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, onTestFinished, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
+import type { RequestListener } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, user, apikey, session, eq, type Db } from '@dorkos/db';
@@ -14,26 +14,32 @@ import {
   createAuth,
   initAuth,
   readOwnerEmail,
-  toNodeHandler,
   isBetterAuthBaseUrlAdvisory,
   SESSION_LIFETIME_SECONDS,
 } from '../index.js';
-import { initConfigManager } from '../../config-manager.js';
+import { configManager, initConfigManager } from '../../config-manager.js';
 import { env } from '../../../../env.js';
 import { logger } from '../../../../lib/logger.js';
+import { createApiApp } from '../../../../http/api-chain.js';
+import { mountBetterAuth } from '../../../../http/better-auth.js';
+import { frontDoorListener } from '../../../../http/front-door.js';
+import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
 /**
- * Mounts the Better Auth handler over a throwaway temp SQLite database exactly
- * as `app.ts` does: `app.all('/api/auth/*splat', ...)` BEFORE `express.json()`.
+ * Mounts Better Auth over a throwaway temp SQLite database the way production
+ * does: on the Hono API chain, before body parsing, behind the front door.
  */
-function buildApp(db: Db, dorkHome: string): express.Express {
-  const app = express();
-  app.all('/api/auth/*splat', toNodeHandler(createAuth(db, dorkHome)));
-  app.use(express.json({ limit: '1mb' }));
-  return app;
+function buildApp(db: Db, dorkHome: string): RequestListener {
+  const app = createApiApp({
+    admission: new MainRequestAdmission(),
+    beforeBodyParsing: (early) => {
+      mountBetterAuth(early, { auth: createAuth(db, dorkHome), maxAttempts: 1000 });
+    },
+  });
+  return frontDoorListener(app);
 }
 
 // Emails are assembled from parts so the source never contains a literal
@@ -45,12 +51,13 @@ const OWNER_PASSWORD = 'correct-horse-battery-staple';
 const OWNER_NAME = 'Owner';
 
 // A trusted origin so Better Auth's CSRF origin check accepts the request.
-const ORIGIN = `http://localhost:${env.DORKOS_PORT}`;
+const LOCAL = `localhost:${env.DORKOS_PORT}`;
+const ORIGIN = `http://${LOCAL}`;
 
 describe('Better Auth — local identity core (integration)', () => {
   let tmpDir: string;
   let db: Db;
-  let app: express.Express;
+  let app: RequestListener;
 
   beforeAll(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-auth-'));
@@ -166,14 +173,24 @@ describe('Better Auth — local identity core (integration)', () => {
   });
 
   it('round-trips the session cookie via get-session', async () => {
+    // With login on, as it is wherever a session cookie means anything: with
+    // login off the chain honours a session only beside the app's person
+    // proof (DOR-3330). Both requests name this computer's own address, the
+    // host the session was signed in on.
+    configManager.setDot('auth.enabled', true);
+    onTestFinished(() => {
+      configManager.setDot('auth.enabled', false);
+    });
     const signIn = await request(fixtureServer)
       .post('/api/auth/sign-in/email')
+      .set('Host', LOCAL)
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
     const cookies = signIn.headers['set-cookie'] as unknown as string[];
 
     const res = await request(fixtureServer)
       .get('/api/auth/get-session')
+      .set('Host', LOCAL)
       .set('Origin', ORIGIN)
       .set('Cookie', cookies);
 

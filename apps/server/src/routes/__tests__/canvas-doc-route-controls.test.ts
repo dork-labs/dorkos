@@ -329,7 +329,7 @@ describe('document route controls over the mounted app', () => {
     expect(current.find((item) => item.route.id === 'helper')?.grantId).toBe(grant!.grantId);
     expect(
       (await approve('helper', { expiresAt: hour(), reviewHash: reviewed.reviewHash })).status
-    ).toBe(409);
+    ).toBe(412);
   });
 
   it('refuses a review hash that does not match the details sent', async () => {
@@ -341,8 +341,8 @@ describe('document route controls over the mounted app', () => {
       expiresAt: later,
       reviewHash: reviewed.body.reviewHash,
     });
-    expect(refused.status).toBe(409);
-    expect(refused.body.code).toBe('ROUTE_CHANGED');
+    expect(refused.status).toBe(412);
+    expect(refused.body.code).toBe('precondition_failed');
     expect(grantRows()).toHaveLength(0);
     expect(db.select().from(approvalRows).all()).toHaveLength(approvalsBefore);
   });
@@ -357,7 +357,7 @@ describe('document route controls over the mounted app', () => {
       expiresAt: reviewed.body.expiresAt,
       reviewHash: reviewed.body.reviewHash,
     });
-    expect(refused.status).toBe(409);
+    expect(refused.status).toBe(412);
     expect(grantRows()).toHaveLength(0);
   });
 
@@ -365,14 +365,14 @@ describe('document route controls over the mounted app', () => {
     declare();
     const past = await review('helper', new Date(Date.now() - 1000).toISOString());
     expect(past.status).toBe(403);
-    expect(past.body).toEqual({
-      code: 'GRANT_EXPIRED',
-      error: 'That end time has already passed. Pick a later one.',
+    expect(past.headers['content-type']).toContain('application/problem+json');
+    expect(past.body).toMatchObject({
+      code: 'forbidden',
+      detail: 'That end time has already passed. Pick a later one.',
     });
     const undeclared = await review('nowhere');
-    expect(undeclared.body).toEqual({
-      code: 'ROUTE_UNDECLARED',
-      error: 'This document does not declare that route.',
+    expect(undeclared.body).toMatchObject({
+      detail: 'This document does not declare that route.',
     });
     expect(
       (await request(server).post(`${endpoint()}/routes/helper/review`).send({ expiresAt: 'soon' }))
@@ -398,7 +398,7 @@ describe('document route controls over the mounted app', () => {
       .set('Cookie', wifi)
       .send({ expiresAt: reviewed.body.expiresAt, reviewHash: reviewed.body.reviewHash });
     expect(refused.status).toBe(403);
-    expect(refused.body.code).toBe('NOT_FROM_WIFI');
+    expect(refused.body.code).toBe('not_from_wifi');
     expect(grantRows()).toHaveLength(0);
     expect(db.select().from(approvalRows).all()).toHaveLength(approvalsBefore);
     await allow('helper');
@@ -426,16 +426,16 @@ describe('document route controls over the mounted app', () => {
         .set('X-DorkOS-Agent', token)
         .send(body);
       expect(refused.status).toBe(403);
-      expect(refused.body.code).toBe('AGENT_CANNOT_DECIDE');
+      expect(refused.body.code).toBe('person_only');
     }
     const requester = await request(server)
       .post(`${endpoint()}/routes/helper/approve`)
       .set('X-DorkOS-Approval', 'held-token')
       .send(body);
-    expect(requester.body.code).toBe('REQUESTER_CANNOT_DECIDE');
+    expect(requester.body.code).toBe('person_only');
     const read = await request(server).get(`${endpoint()}/routes`).set('X-DorkOS-Agent', token);
     expect(read.status).toBe(403);
-    expect(read.body.code).toBe('PERSON_REQUIRED');
+    expect(read.body.code).toBe('person_only');
     expect(grantRows()).toHaveLength(0);
   });
 
@@ -462,7 +462,7 @@ describe('document route controls over the mounted app', () => {
     const body = { expiresAt: reviewed.body.expiresAt, reviewHash: reviewed.body.reviewHash };
     const keyed = await approve('helper', body, { authorization: `Bearer ${created.body.key}` });
     expect(keyed.status).toBe(403);
-    expect(keyed.body.code).toBe('operator_cookie_required');
+    expect(keyed.body.code).toBe('person_only');
     expect(grantRows()).toHaveLength(0);
     const approved = await approve('helper', body, {
       cookie: cookies.map((value) => value.split(';')[0]).join('; '),
@@ -503,7 +503,7 @@ describe('document route controls over the mounted app', () => {
     await allow('notes');
     const refused = await request(server).post(`${endpoint()}/routes/nowhere/revoke`).send({});
     expect(refused.status).toBe(404);
-    expect(refused.body.code).toBe('ROUTE_UNDECLARED');
+    expect(refused.body.detail).toBe('This document does not declare that route.');
     expect(await stateOf('notes')).toBe('granted');
   });
 
@@ -734,7 +734,7 @@ describe('document route controls over the mounted app', () => {
       throw new DocRouteGrantError('TARGET_UNAVAILABLE');
     });
     const refused = await approve('helper', body);
-    expect(refused.body.code).toBe('TARGET_UNAVAILABLE');
+    expect(refused.body.detail).toBe('The agent for this route is not available.');
     expect(newest()).toMatchObject({
       state: 'granted',
       inputHash: reviewed.reviewHash,

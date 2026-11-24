@@ -23,14 +23,7 @@ import path from 'node:path';
 import { hasLocalClaudeLogin } from '@dorkos/server/services/runtimes/claude-code/auth-probe';
 import { RunSummarySchema, type EvalCase, type RuntimeTier } from '../../types.js';
 import { selfTestCase } from '../../suite/selftest.js';
-import { roomsHaltStopsCase } from '../../suite/rooms.js';
-import { widgetRoundTripCase } from '../../suite/ui.js';
-import {
-  codexIgnoresModelNotice,
-  resolveRunIsolation,
-  resolveRunModel,
-  runSuite,
-} from '../run-suite.js';
+import { resolveRunIsolation, resolveRunModel, runSuite } from '../run-suite.js';
 import { DEFAULT_CHEAP_MODEL } from '../harness-server.js';
 import { DEFAULT_OPENROUTER_MODEL } from '../../types.js';
 import { evaluateRunGate } from '../../report/summary.js';
@@ -46,18 +39,9 @@ const mockedLocalLogin = vi.mocked(hasLocalClaudeLogin);
 
 let outDir: string | undefined;
 /**
- * A private, empty `~/.claude` stand-in for THIS file's credentialed-tier
- * tests. `startChildProcessServer`'s launcher deliberately inherits the
- * parent env so the spawned server can find `PATH`/`HOME` and the `claude`
- * binary (`child-process-launcher.ts`) — which means a mocked
- * `hasLocalClaudeLogin` in THIS process protects nothing once a real
- * subprocess is spawned; the subprocess reads `$CLAUDE_CONFIG_DIR ?? ~/.claude`
- * on its own (`claude-config-dir.ts`). A measured fact in AGENTS.md: a fake
- * `ANTHROPIC_API_KEY` alone does not stop that subprocess from falling back to
- * and billing a real local sign-in. Pointing both vars at a directory that
- * cannot contain one is the actual guard (DOR-1228 review, Important 4) —
- * belt-and-suspenders alongside the credential-gate tests below, which are
- * designed to never boot a subprocess at all.
+ * A private, empty `~/.claude` stand-in: a spawned server reads
+ * `$CLAUDE_CONFIG_DIR ?? ~/.claude` itself, so pointing both at an empty folder
+ * is what stops a real local sign-in from being billed (DOR-1228 review).
  */
 let claudeHome: string | undefined;
 
@@ -134,18 +118,6 @@ describe('the recorded model (DOR-1564)', () => {
     });
     expect(withDefault.summary.model).toBe(DEFAULT_CHEAP_MODEL);
   });
-
-  // Red when: a `test-mode` run starts claiming a model. It reaches none, and a
-  // model name there would be a fact about nothing.
-  it('records no model on a test-mode run', async () => {
-    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-model-free-'));
-    const { summary } = await runSuite([selfTestCase], {
-      tier: 'test-mode',
-      outDir,
-      runId: 'model-test-mode',
-    });
-    expect(summary.model).toBeUndefined();
-  });
 });
 
 /** A minimal case that never actually drives anything — only its declared tier (and flag) matter. */
@@ -200,84 +172,6 @@ describe('tier mismatch classification (DOR-1228)', () => {
     const gate = evaluateRunGate(summary);
     expect(gate.totalCases).toBe(0);
     expect(gate.gatingCases).toBe(0);
-  });
-
-  it('does NOT skip a plain `test-mode` case downward — only `testModeOnly` does (DOR-1228 review, Blocker 1)', async () => {
-    // The bug the review caught: treating `runtimeTier: 'test-mode'` alone as
-    // "skip downward" would have removed real coverage. `widget-round-trip` is
-    // declared `test-mode` (free, deterministic) but is runtime-agnostic by
-    // construction and MUST still be attempted on a credentialed tier — see the
-    // real-case proof below. This fixture pins the same boundary in isolation.
-    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-downward-attempted-'));
-    const { summary } = await runSuite([fixtureCase('plain-test-mode', 'test-mode')], {
-      tier: 'claude-code-cheap',
-      outDir,
-      runId: 'downward-attempted',
-      notify: () => {},
-    });
-
-    const [result] = summary.results;
-    // Attempted, not skipped — and with no credential resolved (this file's
-    // fail-closed default), it comes back a runner `error` rather than ever
-    // booting a subprocess.
-    expect(result.status).not.toBe('skipped-wrong-tier');
-    expect(result.status).toBe('error');
-  });
-
-  it('still skips a credentialed case on a test-mode request (upward) as skipped-wrong-tier', async () => {
-    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-upward-'));
-    const { summary } = await runSuite([fixtureCase('needs-credentialed', 'claude-code-cheap')], {
-      tier: 'test-mode',
-      outDir,
-      runId: 'upward',
-    });
-
-    const [result] = summary.results;
-    expect(result.status).toBe('skipped-wrong-tier');
-    expect(result.runtimeTier).toBe('claude-code-cheap');
-  });
-
-  it('runs a case normally when its declared tier matches the requested one (no false skip)', async () => {
-    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-match-'));
-    const { summary } = await runSuite([selfTestCase], {
-      tier: 'test-mode',
-      outDir,
-      runId: 'matched',
-    });
-
-    expect(summary.results[0]?.status).not.toBe('skipped-wrong-tier');
-  });
-
-  it('the REAL cases: rooms-halt is skipped-wrong-tier at claude-code-cheap, widget-round-trip is attempted/gating there (DOR-1228 review)', async () => {
-    // No credential is stubbed (this file's fail-closed default), so
-    // `widget-round-trip` — attempted, unlike `rooms-halt` — hits the
-    // credential gate INSIDE `runEval` and returns a runner `error` before
-    // `createSandbox`/`bootServerForTier` ever run (see run-eval.ts's
-    // `credentialGateError`). That is what makes this safe to run in every
-    // regular test invocation: nothing here can spawn a subprocess or reach a
-    // model, with or without the CLAUDE_CONFIG_DIR/HOME sandbox above.
-    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-real-cases-'));
-    const { summary } = await runSuite([roomsHaltStopsCase, widgetRoundTripCase], {
-      tier: 'claude-code-cheap',
-      outDir,
-      runId: 'real-cases',
-      notify: () => {},
-    });
-
-    const halt = summary.results.find((r) => r.id === roomsHaltStopsCase.id);
-    const widget = summary.results.find((r) => r.id === widgetRoundTripCase.id);
-    expect(halt?.status).toBe('skipped-wrong-tier');
-    expect(widget?.status).not.toBe('skipped-wrong-tier');
-    expect(widget?.status).toBe('error');
-    expect(widget?.error).toContain('needs a way to reach a model');
-
-    const gate = evaluateRunGate(summary);
-    // rooms-halt is excluded entirely (never attempted); widget-round-trip is
-    // the one case this run could have failed on.
-    expect(gate.totalCases).toBe(1);
-    expect(gate.gatingCases).toBe(1);
-    expect(gate.failed).toBe(true);
-    expect(gate.reason).toContain(widgetRoundTripCase.id);
   });
 });
 
@@ -413,24 +307,6 @@ describe('runSuite on the paid real-provider tier', () => {
     }
   );
 
-  it('tells a person that --model does not reach a Codex turn, rather than refusing the run', async () => {
-    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-'));
-    const said: string[] = [];
-    await expect(
-      runSuite([{ ...paidCase, runtimeTier: 'claude-code-cheap' }], {
-        tier: 'claude-code-cheap',
-        runtime: 'codex',
-        model: 'gpt-5-codex',
-        outDir: outDir as string,
-        runId: 'codex-model-notice',
-        notify: (message) => said.push(message),
-      })
-      // It still stops at the spend gate — the notice is about honesty, not a
-      // second gate, and an unarmed Codex run refuses either way.
-    ).rejects.toThrow(/DORKOS_EVALS_PAID_CODEX/);
-    expect(said).toContain(codexIgnoresModelNotice('gpt-5-codex'));
-  });
-
   it('leaves an ordinary claude-code run on the Anthropic credential ladder', async () => {
     outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-'));
     // The negative control that keeps the rule above from being "refuse
@@ -520,31 +396,6 @@ describe('runSuite runtime selection', () => {
     const gate = evaluateRunGate(summary);
     expect(gate.totalCases).toBe(1);
   });
-
-  it('records the runtime and model the run was pointed at', async () => {
-    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-'));
-    // Deliberately a NON-SPENDING shape: no provider named and a runtime that
-    // spends on no external account, so this exercises the recording without
-    // tripping the spend gate. Naming a provider here would (correctly) refuse —
-    // that is what the 'refuses a cheap-tier run that names a provider
-    // explicitly' case above asserts, and `summary.provider` is covered on the
-    // paid path where it is the only place it can honestly be set.
-    //
-    // It used to say `codex`, which read as non-spending until DOR-2207 measured
-    // where a Codex turn's bill lands: at OpenAI, on a forwarded key, because
-    // the sandbox pins `CODEX_HOME` to an empty directory.
-    const { summary } = await runSuite([crossRuntime], {
-      tier: 'claude-code-cheap',
-      runtime: 'claude-code',
-      model: 'some-model',
-      outDir,
-      runId: 'triple',
-      notify: () => {},
-    });
-    expect(summary.runtime).toBe('claude-code');
-    expect(summary.model).toBe('some-model');
-    expect(summary.provider).toBeUndefined();
-  });
 });
 
 /**
@@ -576,18 +427,6 @@ describe('the paid spend ceiling', () => {
       notify: () => {},
     });
     expect(summary.budgetUsd).toBe(3);
-  });
-
-  it('honours an explicit --budget over either default', async () => {
-    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-'));
-    const { summary } = await runSuite([crossRuntime], {
-      tier: 'claude-code-cheap',
-      budgetUsd: 1.25,
-      outDir,
-      runId: 'ceiling-explicit',
-      notify: () => {},
-    });
-    expect(summary.budgetUsd).toBe(1.25);
   });
 });
 

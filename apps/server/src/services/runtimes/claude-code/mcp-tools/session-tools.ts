@@ -60,6 +60,7 @@ import {
   LEDGER_RUNTIMES,
   type LedgerRuntime,
 } from '@dorkos/shared/account-usage';
+import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
 import { chatMarkdownLink, sessionPath } from '@dorkos/shared/session-link';
 import { validateBoundaryOrDorkHome } from '../../../../lib/boundary.js';
 import { isInsideRoomsDir } from '../../../core/agent-identity/index.js';
@@ -578,6 +579,7 @@ export function createSessionStartHandler(
       sessionId: canonicalId,
       title,
       link: chatMarkdownLink(canonicalId, title),
+      ref: dorkReferenceOrNull('chat', canonicalId),
       runtime: runtimeType,
       account: account ? { id: account.id, label: account.label } : null,
       permission,
