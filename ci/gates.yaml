@@ -274,6 +274,11 @@ gates:
     source: .github/workflows/auto-revert.yml
     purpose: Never gates a merge. Opens a revert PR with auto-merge for a merge that broke main, only while the AUTO_REVERT repo variable is on (DOR-5122).
 
+  # --- daily-sweep.yml ---
+  - id: wf.daily-sweep.sweep
+    source: .github/workflows/daily-sweep.yml
+    purpose: Never gates a merge. Once a day, rewrites one issue per release window listing the PRs merged since the last release that the design-ok or qa-real-data rules flag, for QA's and the designer's batch review (DOR-5120).
+
   # --- pr-gates.yml ---
   - id: wf.pr-gates.pr-gates
     source: .github/workflows/pr-gates.yml
