@@ -85,6 +85,11 @@ export const REPO_WIDE_SUITES = [
   '__tests__/tsconfig-extends-resolve.test.ts',
   '__tests__/vitest-projects.test.ts',
   'release-checks/__tests__/chromium-age.test.ts',
+  // Import packages/cli/scripts/release-branch/rules.ts: the release commit must
+  // pass the release-branch-contents rule, so a change there can turn these red.
+  'release/__tests__/release-commit-cli.test.ts',
+  'release/__tests__/release-commit-git-data.test.ts',
+  'release/__tests__/release-commit.test.ts',
 ] as const;
 
 /**
