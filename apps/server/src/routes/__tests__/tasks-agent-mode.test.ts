@@ -413,8 +413,8 @@ describe('the HTTP door and an agent’s mode or approval', () => {
       const res = await request(fixtureServer)
         .post(`/api/tasks/${existing.id}/approve-file`)
         .send({ hash: 'sha256:x' });
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('conflict');
+      expect(res.status).toBe(412);
+      expect(res.body.code).toBe('precondition_failed');
     });
 
     it('refuses a person on Wi-Fi: approving a file is approving a schedule (DOR-3037)', async () => {
@@ -440,8 +440,8 @@ describe('the HTTP door and an agent’s mode or approval', () => {
       const res = await request(fixtureServer)
         .post(`/api/tasks/${existing.id}/approve-file`)
         .send({ capAt: '2026-11-03T03:00:00.000Z', hash: 'sha256:x' });
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('conflict');
+      expect(res.status).toBe(412);
+      expect(res.body.code).toBe('precondition_failed');
     });
   });
 

@@ -13,7 +13,7 @@
  * supported, it drives `runtime.executeCommandIntent` through the durable
  * projector + session lock via the message dispatcher (trigger-only, `202`;
  * the compaction is delivered solely over `/events`, e.g. a `compact_boundary`).
- * A lock held by another turn `409`s SESSION_LOCKED, exactly like `/messages`.
+ * A lock held by another turn `409`s `session_locked`, exactly like `/messages`.
  * The session must already exist (a compact operates on live context): mirroring
  * `/ui-action`, a session present in runtime storage cold-starts, one that exists
  * nowhere `404`s (this route never creates sessions).

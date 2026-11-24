@@ -44,8 +44,7 @@ const TASK_PROBLEM_CODES: Readonly<Record<string, ProblemCode>> = {
   schedule_file_unreadable: 'conflict',
   account_not_allowed_here: 'account_not_allowed_here',
   nothing_to_undo: 'conflict',
-  file_changed_since: 'conflict',
-  TASK_CHANGED: 'conflict',
+  file_changed_since: 'precondition_failed',
 };
 
 /** The code a refusal with no mapped code answers with, by its status. */

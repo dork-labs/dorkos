@@ -40,6 +40,7 @@ describe('PROBLEM_CODE_LIST', () => {
     ['needs_review', 409],
     ['not_running', 409],
     ['no_agent', 409],
+    ['room_not_allowed', 403],
     ['caller_token_invalid', 403],
     ['secret_left', 500],
     ['signing_in', 409],

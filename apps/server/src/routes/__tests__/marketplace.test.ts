@@ -3601,7 +3601,7 @@ describe('Marketplace Routes', () => {
         effects: shown.effects,
         bindsTo: 'sha256:other',
       });
-      expect(stale.status).toBe(409);
+      expect(stale.status).toBe(412);
 
       const ok = await decide({
         decision: 'allow',
@@ -3762,8 +3762,8 @@ describe('Marketplace Routes', () => {
 
       const res = await keep({ keepKey });
 
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('conflict');
+      expect(res.status).toBe(412);
+      expect(res.body.code).toBe('precondition_failed');
       expect(await unprovenOnDisk(root)).toBeDefined();
     });
 

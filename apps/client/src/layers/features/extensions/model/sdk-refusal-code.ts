@@ -23,6 +23,7 @@ type SdkRefusalCode =
 const FROM_CODE: Readonly<Record<string, SdkRefusalCode>> = {
   no_agent: 'no_agent',
   not_running: 'extension_off',
+  room_not_allowed: 'room_not_allowed',
   not_found: 'not_found',
   person_only: 'person_required',
   person_session_required: 'person_required',

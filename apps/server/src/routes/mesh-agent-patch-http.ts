@@ -178,7 +178,7 @@ class AgentPatchChangedError extends Error {}
 
 /** The agent changed between the person's confirmation and the write. */
 function agentChanged(c: Context<ApiEnv>): Response {
-  return problem(c, 'conflict', { detail: 'The agent changed. Try again.' });
+  return problem(c, 'precondition_failed', { detail: 'The agent changed. Try again.' });
 }
 
 /** Bind the target and execution settings to the exact manifest bytes the person saw. */

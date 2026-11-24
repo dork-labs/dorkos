@@ -234,9 +234,9 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
       200: { description: 'Started', content: json(StartWorkResponseSchema) },
       400: error('`invalid_request`: the body breaks a length rule'),
       403: error('`person_only`: not a person'),
-      404: error('`not_found`: no such extension, or the folder is not inside a project'),
+      404: error('`not_found`: the folder is not inside a project'),
       409: error(
-        '`conflict`: the extension is off; `account_not_allowed_here`: that account can’t work there'
+        '`not_running`: no such extension, or it is off; `account_not_allowed_here`: that account can’t work there'
       ),
       429: error('`rate_limited`: too many starts or working chats'),
       503: error('`temporarily_unavailable`: chats cannot be started yet'),

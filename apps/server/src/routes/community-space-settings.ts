@@ -12,8 +12,8 @@
  * @module routes/community-space-settings
  */
 import type { Context, Hono } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { problemBody, sendProblem } from '@dorkos/http-kit';
+import { problem, problemBody, sendProblem, type ProblemStatus } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import {
   COMMUNITY_SPACE_READS,
@@ -30,6 +30,20 @@ import {
   SpaceReadRefusedError,
   type SpaceSettingsReader,
 } from '../services/communities/remote/settings/index.js';
+
+/**
+ * The problem code a space's own refusal goes out as, by its status. Its
+ * sentence (never the space's own text) is the `detail`; no reader branches on
+ * which space refusal it was.
+ */
+const CODE_BY_SPACE_STATUS: Readonly<Record<SpaceReadRefusedError['status'], ProblemCode>> = {
+  403: 'forbidden',
+  404: 'not_found',
+  409: 'conflict',
+  423: 'conflict',
+  502: 'upstream_unavailable',
+  503: 'temporarily_unavailable',
+};
 
 /** What these reads say when the caller is not the person at the app. */
 const PERSON_BAR: PersonBarCopy = {
@@ -83,21 +97,23 @@ export function addSpaceSettingsRoutes(
       const owner = resolveCommunityOwner(c);
       if (typeof owner !== 'string') return owner;
       const ref = CommunityRefSchema.safeParse(c.req.param('ref'));
-      if (!ref.success) return c.json({ error: 'Space connection not found.' }, 404);
+      if (!ref.success) return problem(c, 'not_found', { detail: 'That space isn’t joined here.' });
       try {
         const result = await reader().read(ref.data, owner, read);
         return c.json(COMMUNITY_SPACE_READ_SCHEMAS[read].parse(result));
       } catch (error) {
         if (error instanceof SpaceReadRefusedError)
-          return c.json({ error: error.sentence, code: error.code }, error.status);
+          return problem(c, CODE_BY_SPACE_STATUS[error.status], {
+            detail: error.sentence,
+            status: error.status as ProblemStatus,
+          });
         if (error instanceof RemoteConnectionAuthorizationError)
-          return c.json(
-            { error: 'Reconnect this space to continue.', code: 'COMMUNITY_RECONNECT_REQUIRED' },
-            409
-          );
+          return problem(c, 'conflict', { detail: 'Reconnect this space to continue.' });
         if (error instanceof RemoteConnectionNotFoundError)
-          return c.json({ error: 'Space connection not found.' }, 404);
-        return c.json({ error: 'The space connection is unavailable.' }, 502);
+          return problem(c, 'not_found', { detail: 'That space isn’t joined here.' });
+        return problem(c, 'upstream_unavailable', {
+          detail: 'Can’t reach that space right now.',
+        });
       }
     });
   }

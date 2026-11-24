@@ -516,17 +516,17 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
   {
     name: 'GET /api/projects/resolve refuses a folder outside the boundary',
     path: '/api/projects/resolve?cwd=/etc',
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/projects/resolve refuses a walk out of the boundary',
     path: `/api/projects/resolve?cwd=${q(`${REPO_ROOT}/../..`)}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
-    name: 'GET /api/projects/resolve refuses a NUL byte with a 403',
+    name: 'GET /api/projects/resolve refuses a NUL byte with a 400',
     path: `/api/projects/resolve?cwd=${q(`${REPO_ROOT}\0`)}`,
-    expect: { status: 403, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'GET /api/projects/resolve refuses a missing cwd',

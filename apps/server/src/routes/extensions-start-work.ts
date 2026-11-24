@@ -80,9 +80,12 @@ export function registerExtensionStartWorkRoute(
     const refused = refusedNotAPerson(c, START_WORK_BAR);
     if (refused) return refused;
     const record = extensionManager.get(id);
-    if (!record) return problem(c, 'not_found', { detail: `No extension named ${id}.` });
+    // An extension that is not here, or not on, is `not_running`: `not_found`
+    // from this route means only a folder outside every project.
+    if (!record)
+      return problem(c, 'not_running', { detail: `No extension named ${id} runs here.` });
     if (!TURNED_ON.has(record.status)) {
-      return problem(c, 'conflict', {
+      return problem(c, 'not_running', {
         detail: `Turn on ${record.manifest.name} in Settings → Extensions first.`,
       });
     }

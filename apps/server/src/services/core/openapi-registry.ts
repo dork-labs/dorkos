@@ -1395,7 +1395,7 @@ registry.registerPath({
     400: problemResponse('Validation error or non-ui:// URI'),
     404: problemResponse('Session, server, or captured config not found'),
     415: problemResponse('Resource is not renderable HTML'),
-    502: problemResponse('Upstream MCP read failed'),
+    502: problemResponse('`upstream_unavailable`: the MCP server did not send the resource'),
   },
 });
 
@@ -2033,7 +2033,7 @@ registry.registerPath({
     400: problemResponse('The body names no cap'),
     403: problemResponse('Only a person can do this'),
     404: problemResponse('Schedule not found'),
-    409: problemResponse('The file changed again since the cap you saw'),
+    412: problemResponse('`precondition_failed`: the file changed again since the cap you saw'),
   },
 });
 
@@ -2085,7 +2085,8 @@ registry.registerPath({
     },
     404: problemResponse('Run not found'),
     502: problemResponse(
-      'The stop request went out and nothing acknowledged it — the run may still be going'
+      '`upstream_unavailable`: the stop request could not be sent, was refused, or nothing ' +
+        'acknowledged it; the run may still be going'
     ),
   },
 });
@@ -3432,7 +3433,7 @@ registry.registerPath({
       '`operator_only` (an agent) or `person_only` (sign-in is on and this is not a signed-in session)'
     ),
     404: problemResponse('`not_found`: package not installed'),
-    409: problemResponse('`conflict`: the kept files changed since they were shown'),
+    412: problemResponse('`precondition_failed`: the kept files changed since they were shown'),
   },
 });
 
@@ -3684,7 +3685,9 @@ registry.registerPath({
     403: problemResponse(
       '`operator_only` (an agent) or `person_only` (sign-in is on and this is not a signed-in session)'
     ),
-    409: problemResponse('`conflict`: not held back, unreadable, or changed since it was shown'),
+    412: problemResponse(
+      '`precondition_failed`: not held back, unreadable, or changed since it was shown'
+    ),
   },
 });
 

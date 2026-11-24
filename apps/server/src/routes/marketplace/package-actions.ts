@@ -91,7 +91,7 @@ const KeepFilesRequestBodySchema = z
 function keepFilesFailed(c: MarketplaceContext, name: string, err: unknown): Response {
   if (err instanceof KeptFilesChangedError) {
     logger.info(`[Marketplace] Kept files of ${name} changed`, { error: err.message });
-    return problem(c, 'conflict', {
+    return problem(c, 'precondition_failed', {
       detail: 'The kept files changed since you looked. Nothing was changed.',
     });
   }

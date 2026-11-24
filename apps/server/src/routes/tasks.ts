@@ -70,11 +70,21 @@ import { mountTaskModeUndo } from './task-mode-undo.js';
 import type { TasksRouterDeps } from './tasks-deps.js';
 import { createTaskHttp } from './tasks-create-http.js';
 import { updateTaskHttp } from './tasks-update-http.js';
+import { logger } from '../lib/logger.js';
+import type { UnconfirmedStop } from '../services/tasks/run-cancel.js';
 
 export type { TasksRouterDeps } from './tasks-deps.js';
 
 /** What a request naming a run that is not there is told. */
 const RUN_NOT_FOUND = 'No run has that id.';
+
+/** What a stop nobody confirmed says, by why: a fixed sentence, never the bus's own words. */
+const UNCONFIRMED_STOP: Readonly<Record<UnconfirmedStop, string>> = {
+  no_bus: 'This run isn’t driven by this server. It may still be working.',
+  send_failed: 'The stop couldn’t be sent. The agent may still be working.',
+  refused: 'The stop was refused for now. Try again in a moment.',
+  no_answer: 'Nothing confirmed the stop. Check the run again in a moment.',
+};
 
 /**
  * Create the Tasks routes with schedule and run management endpoints.
@@ -296,8 +306,10 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     if (outcome.state === 'not_found') return problem(c, 'not_found', { detail: RUN_NOT_FOUND });
     if (outcome.state === 'unconfirmed') {
       // 502: the request left this server and nothing answered for it. Saying
-      // "cancelled" here would be a claim about a run we cannot see.
-      return problem(c, 'temporarily_unavailable', { detail: outcome.reason, status: 502 });
+      // "cancelled" here would be a claim about a run we cannot see. The full
+      // account can hold the bus's own error text: it goes to the log only.
+      logger.warn('[tasks] a run stop was not confirmed', { runId: id, why: outcome.reason });
+      return problem(c, 'upstream_unavailable', { detail: UNCONFIRMED_STOP[outcome.why] });
     }
     // Nothing was stopped, so nothing happened worth telling the activity feed.
     if (outcome.state === 'already_finished') {

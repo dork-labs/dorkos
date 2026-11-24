@@ -143,7 +143,9 @@ export function holdTaskRaise(
     run: async (confirming) => {
       const current = store.getTask(existing.id);
       if (!current || taskReviewRevision(current) !== revision)
-        return problem(c, 'conflict', { detail: 'The scheduled task changed. Try again.' });
+        return problem(c, 'precondition_failed', {
+          detail: 'The scheduled task changed. Try again.',
+        });
       return hold.run(confirming);
     },
   });

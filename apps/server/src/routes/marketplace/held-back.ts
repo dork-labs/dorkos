@@ -139,11 +139,11 @@ export function mountHeldBackRoutes(
   });
 }
 
-/** Answer a decision that was not recorded: 409 `conflict` when it cannot be decided as shown, else 500. */
+/** Answer a decision that was not recorded: 412 `precondition_failed` when it is not as shown, else 500. */
 function decisionFailed(c: MarketplaceContext, name: string, err: unknown): Response {
   if (err instanceof HeldBackDecisionError) {
     logger.info(`[Marketplace] Decision for ${name} not recorded`, { error: err.message });
-    return problem(c, 'conflict', {
+    return problem(c, 'precondition_failed', {
       detail: "That package isn't held back as shown. Check again, then decide.",
     });
   }

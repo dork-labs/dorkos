@@ -3163,6 +3163,7 @@ describe('TaskSchedulerService', () => {
       // the run may still be going, which is the same news either way.
       expect(outcome).toEqual({
         state: 'unconfirmed',
+        why: 'send_failed',
         reason: expect.stringContaining('Access denied'),
       });
 

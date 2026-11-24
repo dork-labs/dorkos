@@ -243,14 +243,14 @@ describe('reading a thread', () => {
 
     const res = await request(server).get(base());
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: 'forbidden' });
+    expect(res.body).toMatchObject({ code: 'room_not_allowed' });
   });
 
   it('refuses a room picked for another mini app', async () => {
     state.extensions = { roomAccess: { other: [roomId] } };
     const res = await request(server).get(base());
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: 'forbidden' });
+    expect(res.body).toMatchObject({ code: 'room_not_allowed' });
   });
 
   it('follows room membership: a picked room the person is not in reads as not found', async () => {
@@ -272,7 +272,7 @@ describe('reading a thread', () => {
       `/api/extensions/plain/rooms/${roomId}/threads/${rootId}`
     );
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: 'forbidden' });
+    expect(res.body).toMatchObject({ code: 'room_not_allowed' });
   });
 
   it('refuses a room reply from a mini app that does not declare rooms, posting nothing', async () => {
@@ -464,7 +464,7 @@ describe('replying as the person', () => {
       .set(APP)
       .send({ text: 'sneaky' });
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: 'forbidden' });
+    expect(res.body).toMatchObject({ code: 'room_not_allowed' });
     expect(storedReplies(otherRoot).length).toBe(0);
   });
 

@@ -263,7 +263,7 @@ Trigger-only and accept-only. The server validates the request, accepts the mess
 
 - `content` (string, required) - Message text.
 - `cwd` (optional) - Working directory.
-- `create` (optional) - Allows first-message creation under an unknown id; without it, an unknown session returns `404 SESSION_NOT_FOUND`.
+- `create` (optional) - Allows first-message creation under an unknown id; without it, an unknown session returns `404 session_not_found`.
 - `clientMessageId` (optional) - Client correlation for the submitted message.
 - `context` (optional) - Neutral client signals, including UI state.
 - `runtime`, `account`, `agentPath` (optional) - First-message launch/provenance hints; later messages do not rebind the session.
@@ -272,7 +272,7 @@ Trigger-only and accept-only. The server validates the request, accepts the mess
 **Responses:**
 
 - `202` - `SendMessageResponse`: `{ sessionId, messageId, outcome, queuePosition }`. Re-target to the returned canonical id when it differs. `queuePosition: 1` can mean an immediate start or the only waiting message; it is not a start signal.
-- `404` - `SESSION_NOT_FOUND` when no session exists and `create` was not requested.
+- `404` - `session_not_found` when no session exists and `create` was not requested.
 
 The session stream carries queue changes and the eventual turn. `apps/server/src/routes/sessions.ts`, `packages/shared/src/schemas.ts` and `Transport.postMessage` define the contract.
 
@@ -419,7 +419,7 @@ Approve a pending tool call. Resolves the server-side deferred promise so the SD
 - `200` - `{ ok: true }`
 - `400` - Invalid request
 - `404` - No pending interaction for this tool call
-- `409` - Interaction already resolved (`INTERACTION_ALREADY_RESOLVED`)
+- `409` - Interaction already resolved (`already_resolved`)
 
 ### POST /api/sessions/:id/deny
 
@@ -447,7 +447,7 @@ Deny a pending tool call, optionally saying why.
 - `200` - `{ ok: true }`
 - `400` - Invalid request
 - `404` - No pending interaction for this tool call
-- `409` - Interaction already resolved (`INTERACTION_ALREADY_RESOLVED`)
+- `409` - Interaction already resolved (`already_resolved`)
 
 ### POST /api/sessions/:id/batch-approve
 

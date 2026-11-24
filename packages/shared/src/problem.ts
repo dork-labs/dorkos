@@ -141,6 +141,8 @@ export const PROBLEM_CODE_LIST = [
   // Mini apps (extensions) and their calls.
   /** The mini app is turned off, or stopped: turn it on first. */
   { code: 'not_running', status: 409, title: 'That mini app isn’t running.' },
+  /** A mini app asked for a room the person did not pick for it: pick it in Settings. */
+  { code: 'room_not_allowed', status: 403, title: 'This mini app may not use that room.' },
   /** A forward named no agent the person allowed: pick one first. */
   { code: 'no_agent', status: 409, title: 'Pick an agent for this mini app first.' },
   /** A call between apps carried a token this server no longer knows: ask for a new one. */

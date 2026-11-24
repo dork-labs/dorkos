@@ -517,9 +517,12 @@ describe('runUpdate', () => {
             mockResponse(200, { checks: [installation({ disclosed: runs('x') })] })
           )
           .mockResolvedValueOnce(
-            mockResponse(409, {
-              error: 'What an update would install is not what was shown.',
+            mockResponse(412, {
+              type: 'urn:dorkos:problem:precondition_failed',
+              title: 'Something changed since you last looked.',
+              status: 412,
               code: 'precondition_failed',
+              detail: 'Nothing was changed. A newer version arrived. Check again and review it.',
             })
           )
       );
@@ -528,7 +531,34 @@ describe('runUpdate', () => {
 
       expect(code).toBe(1);
       expect(errSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
-        'Nothing was updated. What an update would install is not what was shown.'
+        'Nothing was updated. Nothing was changed. A newer version arrived. Check again and review it.'
+      );
+    });
+
+    it('updates nothing and exits 1 when a person said no to the update', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValueOnce(
+            mockResponse(200, { checks: [installation({ disclosed: runs('x') })] })
+          )
+          .mockResolvedValueOnce(
+            mockResponse(403, {
+              type: 'urn:dorkos:problem:declined',
+              title: 'A person said no to this.',
+              status: 403,
+              code: 'declined',
+              detail: 'A person said no, or the approval ended. Nothing was updated.',
+            })
+          )
+      );
+
+      const code = await runUpdate({ apply: true, yes: true });
+
+      expect(code).toBe(1);
+      expect(errSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
+        'Nothing was updated. A person said no, or the approval ended. Nothing was updated.'
       );
     });
 

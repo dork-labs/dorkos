@@ -679,7 +679,9 @@ router.post('/mcp/rotate-token', async (c) => {
       subject: 'the local MCP token',
       run: async (confirming) => {
         if (env.MCP_API_KEY?.trim() || gateAccessFor(confirming) !== 'open')
-          return problem(c, 'conflict', { detail: 'The local token settings changed. Try again.' });
+          return problem(c, 'precondition_failed', {
+            detail: 'The local token settings changed. Try again.',
+          });
         const dorkHome = resolveDorkHome();
         const localToken = rotateMcpLocalToken(dorkHome);
         return c.json({ localToken });
@@ -732,10 +734,14 @@ router.post('/mcp/reveal-token', async (c) => {
       subject: 'the local MCP token',
       run: async (confirming) => {
         if (env.MCP_API_KEY?.trim() || gateAccessFor(confirming) !== 'open')
-          return problem(c, 'conflict', { detail: 'The local token settings changed. Try again.' });
+          return problem(c, 'precondition_failed', {
+            detail: 'The local token settings changed. Try again.',
+          });
         const current = getMcpLocalToken();
         if (current !== localToken)
-          return problem(c, 'conflict', { detail: 'The local token changed. Try again.' });
+          return problem(c, 'precondition_failed', {
+            detail: 'The local token changed. Try again.',
+          });
         return c.json({ localToken: current });
       },
     });

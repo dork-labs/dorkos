@@ -209,7 +209,7 @@ export function TerminalInstance({
           // Refused by design on this device (Wi-Fi): said plainly, not as an error.
           term.write(`\r\n\x1b[2m${away}\x1b[0m\r\n`);
         } else if (isTerminalLimitError(err)) {
-          // The live-terminal cap (429, TERMINAL_LIMIT) is an expected
+          // The live-terminal cap (429, `terminal_limit`) is an expected
           // operational state, not a fault — show human copy in-panel and keep
           // the (empty) tab so the message stays visible; the user closes it.
           term.write(

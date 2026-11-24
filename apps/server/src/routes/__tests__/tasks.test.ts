@@ -842,12 +842,16 @@ describe('Tasks routes', () => {
     it('says so — and does not claim success — when the stop could not be confirmed', async () => {
       vi.mocked(scheduler.cancelRun).mockResolvedValue({
         state: 'unconfirmed',
+        why: 'no_answer',
         reason: 'nothing picked it up',
       });
 
       const res = await request(fixtureServer).post('/api/tasks/runs/run-1/cancel');
       expect(res.status).toBe(502);
-      expect(res.body.detail).toContain('nothing picked it up');
+      expect(res.body).toMatchObject({
+        code: 'upstream_unavailable',
+        detail: 'Nothing confirmed the stop. Check the run again in a moment.',
+      });
     });
   });
 });

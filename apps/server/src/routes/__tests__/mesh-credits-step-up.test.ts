@@ -85,8 +85,8 @@ describe('agent credits confirmation', () => {
     expect(held.status).toBe(428);
     writeFileSync(file, JSON.stringify({ ...agent, model: 'different-work' }));
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
-      status: 409,
-      result: { code: 'conflict' },
+      status: 412,
+      result: { code: 'precondition_failed' },
     });
     expect(update).not.toHaveBeenCalled();
     expect(creditsAllowedForAgent(agent.id)).toBe(false);

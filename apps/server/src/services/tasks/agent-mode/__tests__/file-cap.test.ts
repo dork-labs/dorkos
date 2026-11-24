@@ -845,7 +845,7 @@ describe('a SKILL file changed outside the task tools (M4, M8)', () => {
         const id = await reBodiedBySync();
         await rawEdit(id, 'changed after the review was drawn');
         const outcome = await approveFileAsItIs(store, id, bodyHash('triage the new inbox'));
-        expect(outcome).toMatchObject({ ok: false, status: 409 });
+        expect(outcome).toMatchObject({ ok: false, status: 412 });
         expect(store.approvals.agentModeColumnOf(id).fileAttest).toBeUndefined();
       });
 
@@ -854,7 +854,7 @@ describe('a SKILL file changed outside the task tools (M4, M8)', () => {
         await nextRun(id);
         expect(store.approvals.agentModeColumnOf(id).fileCap).toBeDefined();
         const outcome = await approveFileAsItIs(store, id, bodyHash('triage the new inbox'));
-        expect(outcome).toMatchObject({ ok: false, status: 409 });
+        expect(outcome).toMatchObject({ ok: false, status: 412 });
       });
     });
   });

@@ -230,6 +230,7 @@
           "upstream_unavailable",
           "outside_turn",
           "not_running",
+          "room_not_allowed",
           "no_agent",
           "caller_token_invalid",
           "secret_left",
@@ -1587,18 +1588,6 @@
         "required": [
           "root",
           "name"
-        ]
-      },
-      "ErrorResponse": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string"
-          },
-          "details": {}
-        },
-        "required": [
-          "error"
         ]
       },
       "ProjectResolveResponse": {
@@ -4174,6 +4163,18 @@
             ],
             "additionalProperties": false
           }
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "details": {}
+        },
+        "required": [
+          "error"
         ]
       },
       "HealthResponse": {
@@ -25476,11 +25477,11 @@
             }
           },
           "500": {
-            "description": "The projects could not be read",
+            "description": "`internal_error`: the projects could not be read",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -25519,31 +25520,31 @@
             }
           },
           "400": {
-            "description": "`cwd` is missing or empty",
+            "description": "`invalid_request`: `cwd` is missing or empty, or has a NUL byte",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "`cwd`, or the repository it belongs to, is outside the server's directory boundary; or the caller is not a person",
+            "description": "`outside_boundary`: `cwd`, or the repository it belongs to, is outside the server's directory boundary; `person_only`: the caller is not a person",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "500": {
-            "description": "The project could not be resolved",
+            "description": "`internal_error`: the project could not be resolved",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -26672,8 +26673,8 @@
               }
             }
           },
-          "409": {
-            "description": "It changed since",
+          "412": {
+            "description": "`precondition_failed`: it changed since it was shown",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -50007,7 +50008,7 @@
             }
           },
           "502": {
-            "description": "Upstream MCP read failed",
+            "description": "`upstream_unavailable`: the MCP server did not send the resource",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -51451,8 +51452,8 @@
               }
             }
           },
-          "409": {
-            "description": "The file changed again since the cap you saw",
+          "412": {
+            "description": "`precondition_failed`: the file changed again since the cap you saw",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -51660,7 +51661,7 @@
             }
           },
           "502": {
-            "description": "The stop request went out and nothing acknowledged it — the run may still be going",
+            "description": "`upstream_unavailable`: the stop request could not be sent, was refused, or nothing acknowledged it; the run may still be going",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -57964,8 +57965,8 @@
               }
             }
           },
-          "409": {
-            "description": "`conflict`: the kept files changed since they were shown",
+          "412": {
+            "description": "`precondition_failed`: the kept files changed since they were shown",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -60874,8 +60875,8 @@
               }
             }
           },
-          "409": {
-            "description": "`conflict`: not held back, unreadable, or changed since it was shown",
+          "412": {
+            "description": "`precondition_failed`: not held back, unreadable, or changed since it was shown",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -109911,7 +109912,7 @@
             }
           },
           "404": {
-            "description": "`not_found`: no such extension, or the folder is not inside a project",
+            "description": "`not_found`: the folder is not inside a project",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -109921,7 +109922,7 @@
             }
           },
           "409": {
-            "description": "`conflict`: the extension is off; `account_not_allowed_here`: that account can’t work there",
+            "description": "`not_running`: no such extension, or it is off; `account_not_allowed_here`: that account can’t work there",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -110603,7 +110604,17 @@
             }
           },
           "409": {
-            "description": "`conflict`: DorkOS manages it, a write is in progress, or it changed",
+            "description": "`conflict`: DorkOS manages it, or a write is in progress",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: it changed since the list was read",
             "content": {
               "application/problem+json": {
                 "schema": {

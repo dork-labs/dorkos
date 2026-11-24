@@ -98,7 +98,7 @@ export function registerTodosOpenApi(registry: OpenAPIRegistry): void {
       401: problemResponse('Step up first'),
       403: problemResponse('Not yours'),
       404: problemResponse('No such to-do'),
-      409: problemResponse('It changed since'),
+      412: problemResponse('`precondition_failed`: it changed since it was shown'),
     },
   });
 }

@@ -84,7 +84,8 @@ export function registerConfigBackupsOpenApi(registry: OpenAPIRegistry): void {
           '(`operator_only`)'
       ),
       404: error('No such older copy (`not_found`)'),
-      409: error('`conflict`: DorkOS manages it, a write is in progress, or it changed'),
+      409: error('`conflict`: DorkOS manages it, or a write is in progress'),
+      412: error('`precondition_failed`: it changed since the list was read'),
     },
   });
 

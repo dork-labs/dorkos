@@ -28,9 +28,9 @@
  * @module routes/projects
  */
 import { Hono } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ProjectResolveQuerySchema } from '@dorkos/shared/project-schemas';
 import { BoundaryError, validateBoundary } from '../lib/boundary.js';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 import { logger } from '../lib/logger.js';
 import { projectRegistry } from '../services/projects/project-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -56,7 +56,7 @@ router.get('/', async (c) => {
     return c.json({ projects: await projectRegistry.list() });
   } catch (err) {
     logger.error('[projects] GET / failed', { err });
-    return c.json({ error: 'Could not list projects' }, 500);
+    return problem(c, 'internal_error', { detail: 'Couldn’t list projects. Try again.' });
   }
 });
 
@@ -76,22 +76,17 @@ router.get('/resolve', async (c) => {
     const cwd = await validateBoundary(parsed.data.cwd);
     const project = await projectRegistry.resolveWithin(cwd);
     if (project === 'outside') {
-      return c.json(
-        {
-          error:
-            'Access denied: that folder belongs to a repository outside the directory boundary',
-          code: 'OUTSIDE_BOUNDARY',
-        },
-        403
-      );
+      return problem(c, 'outside_boundary', {
+        detail: 'That folder’s repository is outside the folders DorkOS may use.',
+      });
     }
     return c.json({ project });
   } catch (err) {
-    if (err instanceof BoundaryError) {
-      return c.json({ error: err.message, code: err.code }, 403);
-    }
+    if (err instanceof BoundaryError) return boundaryProblem(c, err);
     logger.error('[projects] GET /resolve failed', { err });
-    return c.json({ error: 'Could not resolve the project' }, 500);
+    return problem(c, 'internal_error', {
+      detail: 'Couldn’t find that folder’s project. Try again.',
+    });
   }
 });
 

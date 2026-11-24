@@ -127,7 +127,7 @@ describe('GET /api/projects/resolve', () => {
   it('refuses a folder outside the directory boundary with 403', async () => {
     const res = await request(server).get('/api/projects/resolve').query({ cwd: outside });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
   });
 
   it('refuses a caller that names itself an agent with 403, and records nothing', async () => {
@@ -193,7 +193,7 @@ describe('a folder inside the boundary whose repository is outside it (real git)
   ])('refuses %s with 403, and never names the outside folder', async (_what, dir) => {
     const res = await request(server).get('/api/projects/resolve').query({ cwd: dir() });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
     expect(JSON.stringify(res.body)).not.toContain(outside);
   });
 

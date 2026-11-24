@@ -595,13 +595,13 @@ contractSuite('marketplace groups', [
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
-    name: 'POST /api/marketplace/held-back/:name/decision answers 409 for a package not held back',
+    name: 'POST /api/marketplace/held-back/:name/decision answers 412 for a package not held back',
     method: 'POST',
     path: '/api/marketplace/held-back/nothing-here/decision',
     body: { decision: 'refuse', effects: EMPTY_EFFECTS, bindsTo: 'x' },
     expect: {
-      status: 409,
-      schema: problemCoded('conflict'),
+      status: 412,
+      schema: problemCoded('precondition_failed'),
     },
   },
 
@@ -1252,7 +1252,7 @@ describe('contract: the marketplace groups with login on', () => {
         path: '/api/marketplace/held-back/nothing-here/decision',
         headers: { ...cookie, origin: server!.baseUrl },
         body: decision,
-        expect: { status: 409, schema: problemCoded('conflict') },
+        expect: { status: 412, schema: problemCoded('precondition_failed') },
       });
       await check(server, {
         method: 'POST',

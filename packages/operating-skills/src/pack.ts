@@ -57,7 +57,7 @@ export interface OperatingSkill {
  * - 5: adding and removing a marketplace SOURCE is the person's, not the agent's
  *   (DOR-502). Version 4 taught `dorkos marketplace list|add|remove|refresh|
  *   validate` as five verbs an agent could run. Two of them now answer 403 with
- *   `operator_only_marketplace_source`, and no approval unlocks them, so the pack
+ *   `operator_only` (then `operator_only_marketplace_source`), and no approval unlocks them, so the pack
  *   had to stop teaching a command that cannot work and start teaching what to ask
  *   the person for instead.
  * - 6: the pack stops calling a `destructive` tool ungated (DOR-509). Version 4

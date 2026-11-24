@@ -524,8 +524,11 @@ export function createExtensionAPI(
 
 /**
  * The {@link StartWorkError} word for a start-work refusal's problem code, or
- * `undefined` for a refusal `api.startWork` throws as a plain error. The server
- * side of this mapping is `routes/extensions-start-work.ts`.
+ * `undefined` for a refusal `api.startWork` throws as a plain error. Keyed on
+ * the codes `POST /api/extensions/:id/start-work` itself sends for its three
+ * rules (`routes/extensions-start-work.ts`): that route answers `not_found`
+ * only for a folder outside every project and `rate_limited` only for its start
+ * limit, and no shared limiter sits in front of it.
  */
 const START_WORK_CODE_FOR: Readonly<Record<string, StartWorkErrorCode>> = {
   not_found: 'not_a_project',

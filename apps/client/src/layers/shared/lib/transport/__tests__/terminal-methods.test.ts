@@ -10,7 +10,7 @@ import { createTerminalMethods } from '../terminal-methods';
  * - the abort signal is forwarded to the create POST, so an unmount racing the
  *   create cancels the request and no orphan PTY is ever spawned;
  * - a failed create carries the server's machine-readable `code` (e.g.
- *   `TERMINAL_LIMIT`) on the thrown error for friendlier client copy.
+ *   `terminal_limit`) on the thrown error for friendlier client copy.
  */
 
 const originalFetch = globalThis.fetch;

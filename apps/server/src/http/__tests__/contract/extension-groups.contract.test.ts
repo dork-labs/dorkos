@@ -451,14 +451,15 @@ const CASES: ContractCase[] = [
     },
   },
   {
-    name: 'starting work from an extension that is not installed is a 404',
+    // `not_found` from start-work means a folder outside every project.
+    name: 'starting work from an extension that is not installed is not_running',
     method: 'POST',
     path: `/api/extensions/${MISSING}/start-work`,
     body: {},
     expect: {
-      status: 404,
+      status: 409,
       headers: PROBLEM_TYPE_A2,
-      body: problemBody('not_found', { detail: `No extension named ${MISSING}.` }),
+      body: problemBody('not_running', { detail: `No extension named ${MISSING} runs here.` }),
     },
   },
   {

@@ -3,6 +3,7 @@ covers:
   - 'feat(api): extensions and packages answer errors as problem documents (DOR-4979)'
   - 'fix(api): review round 1 on the extensions-and-packages problem switch (DOR-4979)'
   - 'refactor(api): one error code per problem (DOR-4979)'
+  - 'fix(api): review round 1 on the combined problem switch (DOR-4979)'
 ---
 
 ### Changed
@@ -13,7 +14,10 @@ covers:
   - An extension whose own server fails to start is 502, not 400 or 409.
   - An upload path with a null character in it is 400, not 403.
   - A package offer that can't be saved is 500, and one for a project that can't take it is 409, not 422.
-  - Anything refused because it changed since you looked (an extension waiting to be turned on, a package update, a dev link folder, a scheduled task under review, a question from an extension, a document route) is 412 `precondition_failed`, not 409.
+  - Anything refused because it changed since you looked is 412 `precondition_failed`, not 409: an extension waiting to be turned on or a set of them, a package install or update, a dev link folder, a question from an extension, a document route or its work, an MCP server changed since its sheet was shown, and a page, its history or the sign-ins folder in the agent browser.
+  - A mini app starting work for an extension that is missing or turned off is 409 `not_running`; a folder outside every project stays 404 `not_found`.
+  - A room a mini app may not use is 403 `room_not_allowed`, not `forbidden`.
+  - The answer for an update a person said no to (403 `declined`) no longer carries a `reason` field: read `detail`.
 
 ### Note for people upgrading
 

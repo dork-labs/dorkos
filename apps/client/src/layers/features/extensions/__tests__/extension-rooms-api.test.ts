@@ -72,10 +72,10 @@ describe('api.rooms', () => {
     vi.stubGlobal(
       'fetch',
       answer(403, {
-        type: 'urn:dorkos:problem:forbidden',
+        type: 'urn:dorkos:problem:room_not_allowed',
         title: 'Refused.',
         status: 403,
-        code: 'forbidden',
+        code: 'room_not_allowed',
         detail: 'This mini app may not use that room.',
       })
     );

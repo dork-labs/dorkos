@@ -283,13 +283,16 @@ describe('POST /api/extensions/:id/start-work', () => {
     expect(launches).toHaveLength(0);
   });
 
-  it('answers 404 for an unknown extension and 409 for one that is off', async () => {
+  it('answers not_running for an unknown extension and one that is off, never not_found', async () => {
+    // `not_found` from this route means a folder outside every project, which
+    // the app throws as `not_a_project`: an unknown extension must not read so.
     const unknown = await request(server).post('/api/extensions/nope/start-work').send(BODY);
-    expect(unknown.status).toBe(404);
+    expect(unknown.status).toBe(409);
+    expect(unknown.body.code).toBe('not_running');
     const off = await request(server).post('/api/extensions/off/start-work').send(BODY);
     expect(off.status).toBe(409);
     expect(off.body).toMatchObject({
-      code: 'conflict',
+      code: 'not_running',
       detail: 'Turn on Off in Settings → Extensions first.',
     });
     expect(launches).toHaveLength(0);

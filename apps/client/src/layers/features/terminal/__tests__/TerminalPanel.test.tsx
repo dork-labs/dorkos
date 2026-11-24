@@ -17,7 +17,7 @@ import {
 import { readTerminalTabs, writeTerminalTabs } from '../lib/terminal-id-store';
 
 // Shared, hoist-safe capture of everything written to the stubbed xterm, so
-// tests can assert the `[reconnected]` cue and the TERMINAL_LIMIT copy — plus
+// tests can assert the `[reconnected]` cue and the `terminal_limit` copy — plus
 // a focus() call count for the keyboard-vs-pointer focus gate (DOR-229).
 const xterm = vi.hoisted(() => ({
   writes: [] as string[],

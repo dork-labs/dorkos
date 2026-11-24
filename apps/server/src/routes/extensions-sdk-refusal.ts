@@ -28,7 +28,7 @@ export type SdkRefusalCode =
 const WIRE: Readonly<Record<SdkRefusalCode, ProblemCode>> = {
   no_agent: 'no_agent',
   extension_off: 'not_running',
-  room_not_allowed: 'forbidden',
+  room_not_allowed: 'room_not_allowed',
   not_found: 'not_found',
   person_required: 'person_only',
   invalid_input: 'invalid_request',

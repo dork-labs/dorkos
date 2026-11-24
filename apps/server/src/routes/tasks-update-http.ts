@@ -161,7 +161,9 @@ export async function updateTaskHttp(
       run: async (verified) => {
         const current = store.getTask(id);
         if (!current || personReview.taskReviewRevision(current) !== revision)
-          return problem(c, 'conflict', { detail: 'The scheduled task changed. Try again.' });
+          return problem(c, 'precondition_failed', {
+            detail: 'The scheduled task changed. Try again.',
+          });
         return updateTaskHttp(c, deps, present, verified);
       },
     });

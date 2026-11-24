@@ -38,13 +38,13 @@ test.describe('Tasks — reviewing a task’s file with no cap standing', () => 
     await page.route(`**/api/tasks/${task.id}/approve-file`, async (route) => {
       sent = route.request().postDataJSON();
       await route.fulfill({
-        status: 409,
+        status: 412,
         contentType: 'application/problem+json',
         body: JSON.stringify({
-          type: 'urn:dorkos:problem:conflict',
-          title: 'That clashes with a change made meanwhile.',
-          status: 409,
-          code: 'conflict',
+          type: 'urn:dorkos:problem:precondition_failed',
+          title: 'Something changed since you last looked.',
+          status: 412,
+          code: 'precondition_failed',
           detail: 'Nothing to change',
           message: 'The file changed again. Review it once more.',
         }),

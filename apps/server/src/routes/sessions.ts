@@ -635,7 +635,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   // (spec gen-ui-tier1 §3). The handler lives in `session-ui-action-handler.ts`
   // so this route file stays under the file-size rule, mirroring `/:id/events`.
   // Semantics: fresh turn via the dispatcher, 202, turn streams over /events. A
-  // session still PRODUCING a turn answers 409 SESSION_LOCKED here — unlike
+  // session still PRODUCING a turn answers 409 `session_locked` here — unlike
   // /messages, which now queues: a widget action is answered by the turn it was
   // clicked in, so running it against whatever a later turn leaves behind is not
   // the same action. A click after that turn ENDED is accepted, even while the

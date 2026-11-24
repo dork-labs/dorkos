@@ -69,7 +69,8 @@ const PROBLEM: Record<TodoPromiseErrorCode, ProblemCode> = {
   NOT_FOUND: 'not_found',
   NOT_YOURS: 'forbidden',
   NOTHING_TO_CHANGE: 'invalid_request',
-  CONFLICT: 'conflict',
+  // The to-do (or promise) is not in the state the caller saw: look again.
+  CONFLICT: 'precondition_failed',
   PAST_DUE: 'past_due',
   NO_AGENT: 'forbidden',
   UNKNOWN_AGENT: 'not_found',

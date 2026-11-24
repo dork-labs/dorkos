@@ -29,11 +29,24 @@ import {
   type McpAppResourceErrorCode,
 } from '../services/mcp-apps/index.js';
 
-/** The problem each resource refusal answers with; a failed read has none of its own. */
-const RESOURCE_ERROR_CODES: Partial<Record<McpAppResourceErrorCode, ProblemCode>> = {
-  INVALID_SCHEME: 'invalid_request',
-  UNSUPPORTED_MIME: 'unsupported_media_type',
-  NOT_FOUND: 'not_found',
+/**
+ * The problem each resource refusal answers with, and its fixed sentence. The
+ * error's own message names the resource and its server, which an MCP server
+ * chooses, so it goes to the log only. A failed read is the upstream's fault.
+ */
+const RESOURCE_ERRORS: Readonly<
+  Record<McpAppResourceErrorCode, { code: ProblemCode; detail: string }>
+> = {
+  INVALID_SCHEME: { code: 'invalid_request', detail: 'That isn’t an app resource address.' },
+  UNSUPPORTED_MIME: {
+    code: 'unsupported_media_type',
+    detail: 'That tool server sent an app DorkOS can’t show.',
+  },
+  NOT_FOUND: { code: 'not_found', detail: 'That tool server has no such app.' },
+  READ_FAILED: {
+    code: 'upstream_unavailable',
+    detail: 'The tool server didn’t send its app. Try again.',
+  },
 };
 
 /**
@@ -92,13 +105,15 @@ export async function sessionMcpAppResourceHandler(c: Context<ApiEnv>): Promise<
     return c.json(resource, 200);
   } catch (err) {
     if (err instanceof McpAppResourceError) {
-      const code = RESOURCE_ERROR_CODES[err.code];
-      if (code === undefined) {
-        logger.warn('[POST /mcp-app/resource] read failed', { sessionId, serverName, uri });
-        // The MCP server's read failed: a bad answer from upstream, so 502.
-        return problem(c, 'temporarily_unavailable', { detail: err.message, status: 502 });
-      }
-      return problem(c, code, { detail: err.message });
+      logger.warn('[POST /mcp-app/resource] read refused', {
+        sessionId,
+        serverName,
+        uri,
+        code: err.code,
+        why: err.message,
+      });
+      const { code, detail } = RESOURCE_ERRORS[err.code];
+      return problem(c, code, { detail });
     }
     throw err;
   }

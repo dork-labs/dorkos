@@ -60,7 +60,9 @@ export const NO_AUTO_MOVE_FAILED = 'Could not save whether agents move to this a
  * @param c - The request.
  */
 export function accountRulesChanged(c: Context<ApiEnv>): Response {
-  return problem(c, 'conflict', { detail: 'Where this account may work changed. Try again.' });
+  return problem(c, 'precondition_failed', {
+    detail: 'Where this account may work changed. Try again.',
+  });
 }
 
 /** One widening of an account rule, held. */

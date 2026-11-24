@@ -52,7 +52,6 @@ import {
   FORWARD_STAMPS_MAX,
   FORWARD_TEXT_MAX_CHARS,
   type ExtensionStatus,
-  type ForwardErrorCode,
   type ForwardReceipt,
 } from '@dorkos/extension-api';
 import { getRoomService, type AuthorRecord } from '../services/rooms/index.js';
@@ -207,11 +206,6 @@ export function liveForwardDeps(
   };
 }
 
-/** A refusal, answered as a problem document (`extensions-sdk-refusal.ts`). */
-function refuse(c: Context<ApiEnv>, code: ForwardErrorCode, message: string): Response {
-  return sdkRefusal(c, code, message);
-}
-
 /**
  * Mount the `api.forward` routes and the forward-agents setting on the
  * extensions router.
@@ -234,17 +228,17 @@ export function registerExtensionForwardRoutes(
     c: Context<ApiEnv>
   ): { extensionId: string; extensionName: string } | Response => {
     const extensionId = c.req.param('id') ?? '';
-    if (!safeExtId.test(extensionId)) return refuse(c, 'invalid_input', INVALID_ID);
+    if (!safeExtId.test(extensionId)) return sdkRefusal(c, 'invalid_input', INVALID_ID);
     const record = extensionManager.get(extensionId);
-    if (!record) return refuse(c, 'not_found', `No mini app named ${extensionId}.`);
+    if (!record) return sdkRefusal(c, 'not_found', `No mini app named ${extensionId}.`);
     if (!TURNED_ON.has(record.status)) {
-      return refuse(
+      return sdkRefusal(
         c,
         'extension_off',
         `Turn on ${record.manifest.name} in Settings → Extensions first.`
       );
     }
-    if (!asksToForward(record)) return refuse(c, 'invalid_input', NO_FORWARD_DECLARED);
+    if (!asksToForward(record)) return sdkRefusal(c, 'invalid_input', NO_FORWARD_DECLARED);
     return { extensionId, extensionName: record.manifest.name };
   };
 
@@ -265,7 +259,7 @@ export function registerExtensionForwardRoutes(
     } catch (err) {
       if (err instanceof PersonForwardError) return sdkErrorRefusal(c, err);
       logger.error('[Extensions] A mini app forward call failed', err);
-      return refuse(c, 'unavailable', 'DorkOS could not do that. Try again.');
+      return sdkRefusal(c, 'unavailable', 'DorkOS could not do that. Try again.');
     }
   };
 
@@ -286,7 +280,7 @@ export function registerExtensionForwardRoutes(
     const refusal = refuseForward(honoRequestFacts(c), c.req.header('content-type'));
     if (refusal) {
       auditRefused(refusal);
-      return refuse(c, 'person_required', REFUSAL_MESSAGE[refusal]);
+      return sdkRefusal(c, 'person_required', REFUSAL_MESSAGE[refusal]);
     }
     const app = appFor(c);
     if (app instanceof Response) {
@@ -296,7 +290,7 @@ export function registerExtensionForwardRoutes(
     const viewer = ownerOf(c);
     if (!viewer) {
       auditRefused('not-the-owner');
-      return refuse(c, 'person_required', REFUSAL_MESSAGE['not-the-owner']);
+      return sdkRefusal(c, 'person_required', REFUSAL_MESSAGE['not-the-owner']);
     }
     return { app, viewer };
   };
@@ -324,7 +318,7 @@ export function registerExtensionForwardRoutes(
       }
       logger.error('[Extensions] A mini app forward failed', err);
       auditForward(app, 'failed');
-      return refuse(c, 'unavailable', 'The comment was not sent. Try again.');
+      return sdkRefusal(c, 'unavailable', 'The comment was not sent. Try again.');
     }
   };
 
@@ -335,7 +329,7 @@ export function registerExtensionForwardRoutes(
     const body = ForwardBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!body.success) {
       auditForward(app, 'refused', 'invalid_input');
-      return refuse(
+      return sdkRefusal(
         c,
         'invalid_input',
         `Send { text, itemId }, with text of 1 to ${FORWARD_TEXT_MAX_CHARS.toLocaleString('en-US')} characters.`
@@ -374,7 +368,11 @@ export function registerExtensionForwardRoutes(
     const caller = gate(c);
     if (caller instanceof Response) return caller;
     if (!EmptyBodySchema.safeParse(readJsonBody(c, { emptyAs: {} })).success) {
-      return refuse(c, 'invalid_input', 'Allow takes no body. DorkOS sends the comment it kept.');
+      return sdkRefusal(
+        c,
+        'invalid_input',
+        'Allow takes no body. DorkOS sends the comment it kept.'
+      );
     }
     const { app, viewer } = caller;
     let itemId = '';
@@ -402,7 +400,8 @@ export function registerExtensionForwardRoutes(
         c.req.param('pendingId'),
         c.req.header('x-client-id') ?? ''
       );
-    if (!read()) return refuse(c, 'not_found', 'That comment is no longer waiting. Send it again.');
+    if (!read())
+      return sdkRefusal(c, 'not_found', 'That comment is no longer waiting. Send it again.');
     const held = holdExtensionPowerChange(c, {
       id: app.extensionId,
       effect: 'extension-forward-agent',
@@ -430,18 +429,18 @@ export function registerExtensionForwardRoutes(
   // so a mini app can tell its real forwards from comments its data claims.
   router.get('/:id/forward/stamps', (c) => {
     const refusal = refuseForwardRead(honoRequestFacts(c));
-    if (refusal) return refuse(c, 'person_required', REFUSAL_MESSAGE[refusal]);
+    if (refusal) return sdkRefusal(c, 'person_required', REFUSAL_MESSAGE[refusal]);
     const app = appFor(c);
     if (app instanceof Response) return app;
     const viewer = ownerOf(c);
-    if (!viewer) return refuse(c, 'person_required', REFUSAL_MESSAGE['not-the-owner']);
+    if (!viewer) return sdkRefusal(c, 'person_required', REFUSAL_MESSAGE['not-the-owner']);
     const raw = readQuery(c).ids;
     const ids = (Array.isArray(raw) ? raw.join(',') : (raw ?? ''))
       .split(',')
       .map((id) => id.trim())
       .filter((id) => id.length > 0);
     if (ids.length > FORWARD_STAMPS_MAX) {
-      return refuse(
+      return sdkRefusal(
         c,
         'invalid_input',
         `Ask about at most ${FORWARD_STAMPS_MAX} forwards at once.`
@@ -454,11 +453,11 @@ export function registerExtensionForwardRoutes(
     // The same bar as sending, less the body: an agent's answers to the
     // person are theirs to read, not a relayed caller's or a local program's.
     const refusal = refuseForwardRead(honoRequestFacts(c));
-    if (refusal) return refuse(c, 'person_required', REFUSAL_MESSAGE[refusal]);
+    if (refusal) return sdkRefusal(c, 'person_required', REFUSAL_MESSAGE[refusal]);
     const app = appFor(c);
     if (app instanceof Response) return app;
     const viewer = ownerOf(c);
-    if (!viewer) return refuse(c, 'person_required', REFUSAL_MESSAGE['not-the-owner']);
+    if (!viewer) return sdkRefusal(c, 'person_required', REFUSAL_MESSAGE['not-the-owner']);
     return answer(c, () =>
       c.json({ replies: forwards.replies(app.extensionId, viewer, c.req.param('forwardId')) })
     );
@@ -466,32 +465,32 @@ export function registerExtensionForwardRoutes(
 
   router.get('/:id/forward-agents', (c) => {
     const id = c.req.param('id');
-    if (!safeExtId.test(id)) return refuse(c, 'invalid_input', INVALID_ID);
+    if (!safeExtId.test(id)) return sdkRefusal(c, 'invalid_input', INVALID_ID);
     // Withheld from agents, as the leaf is in `config_get`, and held to the
     // same signed-in session as a forward: no headerless local caller.
     const readRefusal = refuseForwardRead(honoRequestFacts(c));
-    if (readRefusal) return refuse(c, 'person_required', REFUSAL_MESSAGE[readRefusal]);
-    if (!extensionManager.get(id)) return refuse(c, 'not_found', `No mini app named ${id}.`);
+    if (readRefusal) return sdkRefusal(c, 'person_required', REFUSAL_MESSAGE[readRefusal]);
+    if (!extensionManager.get(id)) return sdkRefusal(c, 'not_found', `No mini app named ${id}.`);
     // A listed agent that is gone still reads back, so the person can remove it.
     return answer(c, () => c.json(forwards.agents(id)));
   });
 
   router.put('/:id/forward-agents', (c) => {
     const id = c.req.param('id');
-    if (!safeExtId.test(id)) return refuse(c, 'invalid_input', INVALID_ID);
+    if (!safeExtId.test(id)) return sdkRefusal(c, 'invalid_input', INVALID_ID);
     const refused = refusedNotAPerson(c, FORWARD_AGENTS_BAR);
     if (refused) return refused;
     // The forward bar too (Security M1 on #3207): with the password off at this
     // computer, the person bar lets a headerless local caller through, and this
     // list decides who receives the person's words.
     const why = refuseForward(honoRequestFacts(c), c.req.header('content-type'));
-    if (why) return refuse(c, 'person_required', REFUSAL_MESSAGE[why]);
+    if (why) return sdkRefusal(c, 'person_required', REFUSAL_MESSAGE[why]);
     const record = extensionManager.get(id);
-    if (!record) return refuse(c, 'not_found', `No mini app named ${id}.`);
-    if (!asksToForward(record)) return refuse(c, 'invalid_input', NO_FORWARD_DECLARED);
+    if (!record) return sdkRefusal(c, 'not_found', `No mini app named ${id}.`);
+    if (!asksToForward(record)) return sdkRefusal(c, 'invalid_input', NO_FORWARD_DECLARED);
     const body = ForwardAgentsBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!body.success) {
-      return refuse(
+      return sdkRefusal(
         c,
         'invalid_input',
         `Send { agentIds }, at most ${FORWARD_AGENTS_MAX}, or [] for none.`
@@ -501,14 +500,14 @@ export function registerExtensionForwardRoutes(
       answer(c, () => {
         // By id only, and only agents Mesh knows: a name or a stale id adds nothing.
         if (body.data.agentIds.some((agentId) => !forwards.registered(agentId))) {
-          return refuse(c, 'not_found', 'There is no agent with that id here.');
+          return sdkRefusal(c, 'not_found', 'There is no agent with that id here.');
         }
         // Recorded in the audit trail as a settings change by `setForwardAgents`.
         setForwardAgents(id, body.data.agentIds);
         return c.json(forwards.agents(id));
       });
     if (body.data.agentIds.some((agentId) => !forwards.registered(agentId)))
-      return refuse(c, 'not_found', 'There is no agent with that id here.');
+      return sdkRefusal(c, 'not_found', 'There is no agent with that id here.');
     const prior = forwardAgentsOf(id);
     const widening = body.data.agentIds.some((agentId) => !prior.includes(agentId));
     const held = holdExtensionPowerChange(c, {

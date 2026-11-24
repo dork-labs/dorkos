@@ -134,6 +134,23 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
       expect(res.body.success).toBe(true);
       expect(scheduler.cancelRun).toHaveBeenCalledWith(runId);
     });
+
+    it('answers a stop nobody confirmed in fixed words, never the bus’s own error text', async () => {
+      vi.mocked(scheduler.cancelRun).mockResolvedValueOnce({
+        state: 'unconfirmed',
+        why: 'send_failed',
+        reason: 'The stop request could not be sent: EACCES /private/relay/socket',
+      });
+      const res = await request(fixtureServer).post(`/api/tasks/runs/${runId}/cancel`);
+
+      expect(res.status).toBe(502);
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({
+        code: 'upstream_unavailable',
+        detail: 'The stop couldn’t be sent. The agent may still be working.',
+      });
+      expect(JSON.stringify(res.body)).not.toContain('EACCES');
+    });
   });
 
   describe('with login ON — an API key is not a person in the cockpit', () => {
