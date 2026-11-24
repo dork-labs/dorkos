@@ -35,7 +35,7 @@
 import { replaceRoomSeat, type SeatReplacementPlan } from './seat-replacement.js';
 import type { FailedSeatCandidate } from './failed-seat-candidate.js';
 import type { RequiredRoomLaunchStore } from './required-launch-store.js';
-import { IMPLICIT_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-usage';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { DeclaredPermissionModes } from '@dorkos/shared/permission-semantics';
 import type { SessionSettings } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
@@ -44,6 +44,7 @@ import type { ReseatNoticeReason } from '../notices/notice-copy.js';
 import {
   canTakeWork,
   highestUsedPct,
+  isMainAccount,
   nearlyOut,
   pickReseatAccount,
   reseatCandidates,
@@ -414,7 +415,7 @@ export class RoomSeatMover {
       // A person may name an account kept out of automatic moves, so it is offered; an agent
       // may not, and never the main account either.
       accounts: reseatCandidates(
-        opts.byAgent ? ranking.filter((row) => !mainAccount(row)) : ranking,
+        opts.byAgent ? ranking.filter((row) => !isMainAccount(row)) : ranking,
         runtime,
         { keptOut: !opts.byAgent, signinHealthy: this.deps.signinHealthy }
       )
@@ -463,7 +464,7 @@ export class RoomSeatMover {
     const ranking = await this.deps.ranking(runtime, seat.agentPath);
     const named = opts.accountId !== undefined;
     // An agent never moves itself onto the main account, whatever its id (Dorian's third limit).
-    const allowed = opts.byAgent ? ranking.filter((row) => !mainAccount(row)) : ranking;
+    const allowed = opts.byAgent ? ranking.filter((row) => !isMainAccount(row)) : ranking;
     const offered = named ? allowed.filter((row) => row.id === opts.accountId) : allowed;
     const pick = pickReseatAccount(
       offered,
@@ -598,11 +599,6 @@ export class RoomSeatMover {
     const tail = CONTINUE_LINE + (plan.alreadyPosted ? ALREADY_POSTED_LINE : NOT_POSTED_LINE);
     return summary ? `${summary}\n\n${tail}` : tail;
   }
-}
-
-/** Whether an account is the runtime's main one, which an agent never moves itself to (DOR-3145). */
-function mainAccount(row: RankedAccount): boolean {
-  return row.isDefault === true || row.id === IMPLICIT_ACCOUNT_ID;
 }
 
 function seatKey(roomId: string, authorId: string): string {
