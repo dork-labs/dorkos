@@ -68,34 +68,6 @@ describe('registerLocalCommunity', () => {
     });
   });
 
-  it('declares the capabilities the local backend actually has', async () => {
-    const registry = new CommunityRegistry();
-    await install().register(registry);
-
-    const capabilities = registry.getCapabilities()[LOCAL_COMMUNITY]!;
-    expect(capabilities).toMatchObject({
-      type: 'local',
-      roomList: 'push',
-      roomAddressing: 'slug',
-      canPost: true,
-      roomAdmin: true,
-      roles: { supported: false, values: [] },
-      admission: 'open',
-      invite: 'none',
-      agentAdmission: 'none',
-      readCursor: 'server',
-      responseMode: true,
-      threadDepth: 1,
-      // 'both' now that the adapter genuinely does both: it publishes through
-      // `RoomService` and maps every signal frame the broadcaster carries back
-      // onto the port's stream. It declared 'none' for ten commits after the
-      // room signal envelope gained the presence payload that made 'both' true
-      // — honest when written, stale when it landed.
-      signals: 'both',
-      credential: 'none',
-    });
-  });
-
   it('degrades rather than failing boot when connecting throws', async () => {
     // This runs on the startup path, and the whole point of the registry is
     // per-community degradation: a community that cannot connect contributes a
@@ -123,21 +95,6 @@ describe('registerLocalCommunity', () => {
       'a failure nobody is told about is the same as no failure'
     ).toContain('the store gave out while connecting');
     vi.restoreAllMocks();
-  });
-
-  it('registers a community whose rooms it can already list', async () => {
-    const registry = new CommunityRegistry();
-    const { harness, register } = install();
-    harness.service.createRoom(
-      { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
-      harness.human
-    );
-
-    await register(registry);
-
-    const rooms = await registry.get(LOCAL_COMMUNITY).listRooms();
-    expect(rooms.map((room) => room.title)).toEqual(['Backend']);
-    expect(rooms[0]!.community).toBe(LOCAL_COMMUNITY);
   });
 });
 

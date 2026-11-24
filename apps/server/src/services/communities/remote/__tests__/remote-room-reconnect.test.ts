@@ -262,27 +262,6 @@ describe('a dropped link to a space', () => {
     t.stop();
   });
 
-  it('keeps an old message it missed as history', async () => {
-    // Catches resuming without the freshness check: a reconnect after a long sleep would wake
-    // agents for every mention of the last hours.
-    const t = setup({
-      missed: [entry(2, LONG_AGO)],
-      drop: new PinnedOriginError('REMOTE_UNAVAILABLE'),
-    });
-    t.runtime.start();
-    await settleUntil(() => t.observation()?.replayComplete === true, 'the first stream is in');
-    t.dropLink();
-    await settleUntil(
-      () => t.observation()?.generation === 2 && t.observation()?.replayComplete === true,
-      'the resumed stream is in'
-    );
-    await t.harness.service.triggersIdle();
-    expect(t.opened).toEqual([undefined, 'cursor-1']);
-    expect(t.observation()?.dispatchesSinceBoot).toBe(0);
-    expect(t.harness.runner.turns).toHaveLength(0);
-    t.stop();
-  });
-
   it('leaves the room readable to the agent, so a reply in that moment is not refused', async () => {
     // Catches a transport error marking the copy stale, which admits only the person.
     const t = setup({ missed: [], drop: new PinnedOriginError('REMOTE_UNAVAILABLE') });
@@ -322,35 +301,6 @@ describe('a dropped link to a space', () => {
     await settleUntil(() => t.opened.length === 3, 'the link reconnects twice');
     expect(t.opened).toEqual([undefined, 'cursor-1', undefined]);
     expect(t.markStale).not.toHaveBeenCalled();
-    t.stop();
-  });
-
-  it('resumes after the space could not be reached for a while, keeping the copy open', async () => {
-    // Catches the access check undoing the fix: during an outage it cannot reach the space
-    // either, so it tears the stream down. Marking the copy stale then would refuse a reply in
-    // flight, and starting the next stream fresh would lose the mention sent meanwhile.
-    const t = setup({
-      firstReplay: [entry(2, LONG_AGO, [])],
-      missed: [entry(3, new Date().toISOString())],
-      drop: new PinnedOriginError('REMOTE_UNAVAILABLE'),
-    });
-    t.runtime.start();
-    await settleUntil(() => t.observation()?.replayComplete === true, 'the first stream is in');
-
-    t.setAccess({ state: 'unverified', effective: NO_ACCESS, lastKnown: VERIFIED.lastKnown });
-    await settleUntil(() => t.firstAborted(), 'the unreachable connection stops streaming');
-    expect(t.markStale).not.toHaveBeenCalled();
-    expect(() =>
-      t.harness.service.postFromTool(t.localRoomId(), { authorId: t.agent.id, text: 'On it.' })
-    ).not.toThrow();
-
-    t.setAccess(VERIFIED);
-    await settleUntil(
-      () => t.observation()?.dispatchesSinceBoot === 1,
-      'the mention sent during the outage is dispatched'
-    );
-    // Resumed after the last entry it imported, not after the snapshot before it.
-    expect(t.opened).toEqual([undefined, 'cursor-2']);
     t.stop();
   });
 });

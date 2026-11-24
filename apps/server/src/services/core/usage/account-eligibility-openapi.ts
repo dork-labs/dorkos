@@ -9,6 +9,7 @@ import { z } from 'zod';
 import {
   AccountEligibilityQuerySchema,
   AccountEligibilityResponseSchema,
+  AgentsMayPickSchema,
   NoAutoMoveSchema,
   OnlyProjectsRequestSchema,
   OnlyProjectsResponseSchema,
@@ -154,6 +155,32 @@ export function registerAccountEligibilityOpenApi(registry: OpenAPIRegistry): vo
       200: {
         description: 'The flag as it is now',
         content: { 'application/json': { schema: NoAutoMoveSchema } },
+      },
+      400: error('The body is not valid'),
+      403: error('Not a person'),
+      404: error('There is no such registered account'),
+      500: error('The change could not be saved'),
+    },
+  });
+
+  registry.registerPath({
+    method: 'put',
+    path: '/api/runtimes/claude-code/accounts/{id}/agents-may-pick',
+    tags: ['Runtimes'],
+    summary: 'Let agents pick a Claude account by name',
+    description:
+      'With `agentsMayPick: true`, an agent may start a chat on this registered account by ' +
+      'naming it while no account advisor (Flow) is set up; `false` refuses it again. Opening ' +
+      'an account waits for the owner to confirm it’s them; closing it is immediate. Recorded ' +
+      `in Activity. Main (\`default\`) has no registry row, so it answers \`404\`. ${PERSON_BAR}`,
+    request: {
+      params: ACCOUNT_PARAMS,
+      body: { content: { 'application/json': { schema: AgentsMayPickSchema } } },
+    },
+    responses: {
+      200: {
+        description: 'The flag as it is now',
+        content: { 'application/json': { schema: AgentsMayPickSchema } },
       },
       400: error('The body is not valid'),
       403: error('Not a person'),

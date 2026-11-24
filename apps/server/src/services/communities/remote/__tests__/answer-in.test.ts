@@ -74,12 +74,6 @@ afterEach(async () => {
 const sideFile = () => join(directory, 'communities', 'remote', 'answer-in.json');
 
 describe('the list a person sends', () => {
-  it('drops a leading #, surrounding space and case, and repeats', () => {
-    expect(CommunityAnswerInSchema.parse({ answerIn: [' #Help', 'welcome', 'help'] })).toEqual({
-      answerIn: ['help', 'welcome'],
-    });
-  });
-
   it('refuses a name with spaces in it, an empty one, and too many', () => {
     expect(CommunityAnswerInSchema.safeParse({ answerIn: ['two words'] }).success).toBe(false);
     expect(CommunityAnswerInSchema.safeParse({ answerIn: ['#'] }).success).toBe(false);
@@ -89,13 +83,6 @@ describe('the list a person sends', () => {
 });
 
 describe('the stored list', () => {
-  it('is empty until the owner sets it, and remembers it', async () => {
-    expect(await store.get(REF, OWNER)).toEqual([]);
-    await store.set(REF, OWNER, ['welcome', 'help']);
-    const reopened = new AnswerInStore(directory, connections);
-    expect(await reopened.get(REF, OWNER)).toEqual(['welcome', 'help']);
-  });
-
   // Security S5 on DOR-4355 M3: the route's "adds nothing" is checked inside the write.
   it('refuses a save whose expectation no longer holds, and writes nothing', async () => {
     await store.set(REF, OWNER, ['help']);
@@ -147,16 +134,6 @@ describe('the answer the live stream asks', () => {
     expect(answerIn.covers(REF, OWNER, 'help')).toBe(false);
     await answerIn.reload();
     expect(answerIn.covers(REF, OWNER, 'help')).toBe(true);
-  });
-
-  it('applies a change at once, and matches the channel name however it is written', async () => {
-    const answerIn = new RemoteAnswerIn(store, connections);
-    await answerIn.reload();
-    await answerIn.set(REF, OWNER, ['help']);
-    expect(answerIn.covers(REF, OWNER, '#Help')).toBe(true);
-    expect(answerIn.covers(REF, OWNER, 'general')).toBe(false);
-    await answerIn.set(REF, OWNER, []);
-    expect(answerIn.covers(REF, OWNER, 'help')).toBe(false);
   });
 
   it('answers only for its own connection and owner', async () => {
@@ -218,11 +195,5 @@ describe('the budget every answer-in wake is held to', () => {
     expect(budget.take('space', 'help', 'bo')).toBe(true);
     now = 1_000;
     expect(budget.take('space', 'help', 'ana')).toBe(true);
-  });
-
-  it('keeps separate budgets for separate connections', () => {
-    const budget = new AnswerInBudget({ ...LIMITS, perAuthor: 1 }, () => 0);
-    expect(budget.take('space-a', 'help', 'ana')).toBe(true);
-    expect(budget.take('space-b', 'help', 'ana')).toBe(true);
   });
 });

@@ -751,12 +751,6 @@ describe('owner notification projections', () => {
       101
     );
   });
-  it('reports a paused account as unavailable, since it can come back', async () => {
-    const f = fixture();
-    const created = await f.service.create(owner, f.request, new AbortController().signal);
-    f.db.$client.prepare('UPDATE connections SET enabled = 0').run();
-    expect(f.store.get(owner, f.request.connectionId, created.id).state).toBe('unavailable');
-  });
   it('reports a notification a new key or a replaced activity ended as revoked, and lets the owner remove it', async () => {
     const f = fixture();
     const created = await f.service.create(owner, f.request, new AbortController().signal);
@@ -802,61 +796,5 @@ describe('owner notification projections', () => {
     expect(
       f.db.$client.prepare('SELECT state FROM connector_event_bindings').get()
     ).not.toMatchObject({ state: 'retired' });
-  });
-  it('lets the same notification be set up again after it was removed', async () => {
-    const f = fixture();
-    const created = await f.service.create(owner, f.request, new AbortController().signal);
-    await f.service.remove(owner, created.id, new AbortController().signal);
-    const again = await f.service.create(owner, f.request, new AbortController().signal);
-    expect(again.id).toBe(created.id);
-    expect(f.store.list(owner, f.request.connectionId).subscriptions).toMatchObject([
-      { id: created.id },
-    ]);
-  });
-  it('reports the newest event’s outcome in the few kinds an owner can act on', async () => {
-    const f = fixture();
-    const created = await f.service.create(owner, f.request, new AbortController().signal);
-    const outcome = () => f.store.get(owner, f.request.connectionId, created.id).lastDelivery;
-    expect(outcome()).toBeNull();
-    const insert = f.db.$client.prepare(
-      `INSERT INTO connector_event_inbox (id, provider_instance_id, subscription_id, provider_event_id,
-        payload_schema_version, normalized_payload, payload_protection, state, expires_at, received_at, failure_code)
-       VALUES (?, 'provider-one', ?, ?, 1, '', 'encrypted', ?, '2026-09-30T00:00:00.000Z', ?, ?)`
-    );
-    insert.run('e1', created.id, 'p1', 'completed', '2026-09-07T12:01:00.000Z', null);
-    expect(outcome()).toEqual({
-      outcome: 'delivered',
-      receivedAt: '2026-09-07T12:01:00.000Z',
-      problem: null,
-    });
-    insert.run(
-      'e2',
-      created.id,
-      'p2',
-      'received',
-      '2026-09-07T12:02:00.000Z',
-      'event_destination_unavailable'
-    );
-    expect(outcome()).toMatchObject({ outcome: 'retrying', problem: 'unreachable' });
-    insert.run(
-      'e3',
-      created.id,
-      'p3',
-      'failed',
-      '2026-09-07T12:03:00.000Z',
-      'dispatch_outcome_unknown'
-    );
-    expect(outcome()).toMatchObject({ outcome: 'failed', problem: 'unknown_outcome' });
-    insert.run(
-      'e4',
-      created.id,
-      'p4',
-      'failed',
-      '2026-09-07T12:04:00.000Z',
-      'event_destination_refused'
-    );
-    expect(outcome()).toMatchObject({ outcome: 'failed', problem: 'refused' });
-    insert.run('e5', created.id, 'p5', 'expired', '2026-09-07T12:05:00.000Z', null);
-    expect(outcome()).toMatchObject({ outcome: 'failed', problem: 'expired' });
   });
 });

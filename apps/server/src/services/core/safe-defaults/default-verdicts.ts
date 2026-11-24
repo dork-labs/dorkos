@@ -378,6 +378,10 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'docs.enabled': false,
   // Spaces stay hidden until a person opts in (DOR-2740).
   'spaces.enabled': false,
+  // No account is open to agents' own picks until a person opens it
+  // (DOR-5033). Absent reads as closed, and the '0.142.0' migration writes
+  // `false` on every stored row.
+  'runtimes.claudeCode.accounts[].agentsMayPick': undefined,
   // No official space until a release or a person names one (spec
   // `official-community-space` D4).
   'spaces.official.url': '',

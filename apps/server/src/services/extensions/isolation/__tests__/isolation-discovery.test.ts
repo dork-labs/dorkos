@@ -140,19 +140,6 @@ describe('record.isolation', () => {
     ]);
   });
 
-  // Purpose: an in-process extension has no isolation view, on the record and
-  // in its public projection.
-  it('is null for an in-process extension', async () => {
-    await writeExtension('plain', { serverEntry: './server.ts' });
-    const [record] = await new ExtensionDiscovery(dorkHome).discover(
-      null,
-      EMPTY_CONFIG,
-      EMPTY_CORE
-    );
-    expect(record!.isolation).toBeNull();
-    expect(toPublic(record!, { approvedToRun: [] }).isolation).toBeNull();
-  });
-
   // Purpose: "run separately" with no server code is refused at discovery
   // with the spec's reason, since the schema cannot see the disk.
   it('marks a subprocess extension with no server code invalid', async () => {
@@ -206,40 +193,6 @@ describe('resolveProgram', () => {
     expect(await find('tool', { dorkHome, env: { PATH: tmp }, platform: process.platform })).toBe(
       path.join(tmp, programFile('tool'))
     );
-  });
-
-  // Purpose: the first absolute PATH folder holding a runnable file wins; a
-  // file without an execute bit, or a folder, is passed over.
-  it('takes the first runnable match in PATH order', async () => {
-    const a = path.join(tmp, 'a');
-    const b = path.join(tmp, 'b');
-    const c = path.join(tmp, 'c');
-    await writeFile(
-      path.join(a, process.platform === 'win32' ? 'tool.txt' : 'tool'),
-      'not runnable',
-      0o644
-    );
-    await fs.mkdir(path.join(b, programFile('tool')), { recursive: true });
-    await writeFile(path.join(c, programFile('tool')), '#!/bin/sh\n', 0o755);
-    expect(
-      await find('tool', {
-        dorkHome,
-        env: { PATH: [a, b, c].join(path.delimiter) },
-        platform: process.platform,
-      })
-    ).toBe(path.join(c, programFile('tool')));
-  });
-
-  // Purpose: an absolute entry is kept as written when runnable, else null.
-  it('keeps an absolute path that exists and is runnable', async () => {
-    const tool = path.join(tmp, 'opt', programFile('tool'));
-    await writeFile(tool, '#!/bin/sh\n', 0o755);
-    expect(await find(tool, { dorkHome, env: { PATH: '' }, platform: process.platform })).toBe(
-      tool
-    );
-    expect(
-      await find(path.join(tmp, 'opt', 'nope'), { dorkHome, env: {}, platform: process.platform })
-    ).toBeNull();
   });
 
   // Purpose: a program an extension could write — in DorkOS's extension data

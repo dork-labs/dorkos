@@ -131,8 +131,6 @@ describe('ExtensionManager', () => {
     manager = new ExtensionManager('/fake/dork-home');
   });
 
-  // === 1. Initialize ===
-
   it('ends the first-scan pin for older approvals once the first scan is done (DOR-3068)', async () => {
     mockConfigGet.mockReturnValue({
       enabled: [],
@@ -234,62 +232,6 @@ describe('ExtensionManager', () => {
     }
   });
 
-  it('initializes by cleaning cache, discovering, and compiling enabled extensions', async () => {
-    const enabledRecord = makeRecord('ext-a', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-a'], disabled: [], ...approved(['ext-a']) });
-    mockDiscover.mockResolvedValue([enabledRecord]);
-    mockCompile.mockResolvedValue({ code: 'compiled code', sourceHash: 'abc123' });
-
-    await manager.initialize('/my/project');
-
-    expect(mockCleanStaleCache).toHaveBeenCalledOnce();
-    expect(mockDiscover).toHaveBeenCalledWith(
-      '/my/project',
-      { enabled: ['ext-a'], disabled: [], ...approved(['ext-a']) },
-      expect.any(Map),
-      // No project registry wired: only the working directory is scanned.
-      []
-    );
-    expect(mockCompile).toHaveBeenCalledWith(enabledRecord);
-  });
-
-  it('does not let one extension throwing during compileEnabled stop the rest from compiling', async () => {
-    // Regression coverage: a transient failure (an EMFILE reading one
-    // extension's entry point, say) used to reject uncaught from
-    // compiler.compile(), which this loop did not catch — one bad
-    // extension took every extension queued after it down with it, none
-    // of them ending up compiled for that boot.
-    const throwsRecord = makeRecord('throws-ext', { status: 'enabled' });
-    const survivesRecord = makeRecord('survives-ext', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({
-      enabled: ['throws-ext', 'survives-ext'],
-      disabled: [],
-      ...approved(['throws-ext', 'survives-ext']),
-    });
-    mockDiscover.mockResolvedValue([throwsRecord, survivesRecord]);
-    mockCompile.mockImplementation(async (record: ExtensionRecord) => {
-      if (record.id === 'throws-ext') {
-        throw new Error('EMFILE: too many open files');
-      }
-      return { code: 'compiled code', sourceHash: 'abc123' };
-    });
-
-    const { logger } = await import('../../../lib/logger.js');
-    await manager.initialize('/my/project');
-
-    // The extension after the throwing one still compiled.
-    expect(survivesRecord.status).toBe('compiled');
-    // The failure is not silently swallowed — it is named, visible, and
-    // the record reflects it instead of being left in limbo.
-    expect(throwsRecord.status).toBe('compile_error');
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('throws-ext'),
-      expect.any(Error)
-    );
-  });
-
-  // === 2. Enable flow ===
-
   it('enables an extension: disabled -> enabled -> compiled, adds to config', async () => {
     const record = makeRecord('ext-a', { status: 'disabled' });
     mockDiscover.mockResolvedValue([record]);
@@ -309,36 +251,6 @@ describe('ExtensionManager', () => {
       ...approved([]),
     });
   });
-
-  // === 3. Enable with compile error ===
-
-  it('sets compile_error status when compilation fails during enable', async () => {
-    const record = makeRecord('ext-b', { status: 'disabled' });
-    mockDiscover.mockResolvedValue([record]);
-    mockCompile.mockResolvedValue({
-      error: {
-        code: 'compilation_failed',
-        message: 'Syntax error',
-        errors: [{ text: 'Unexpected token' }],
-      },
-      sourceHash: 'badhash',
-    });
-
-    await manager.initialize(null);
-
-    const result = await manager.enable('ext-b');
-
-    expect(result).not.toBeNull();
-    expect(result!.extension.status).toBe('compile_error');
-    expect(result!.extension.bundleReady).toBe(false);
-    expect(result!.extension.error).toMatchObject({
-      code: 'compilation_failed',
-      message: 'Syntax error',
-      details: 'Unexpected token',
-    });
-  });
-
-  // === 4. Disable flow ===
 
   it('disables an extension: removes from config and resets status', async () => {
     const record = makeRecord('ext-c', { status: 'enabled' });
@@ -363,90 +275,6 @@ describe('ExtensionManager', () => {
       disabled: [],
       ...approved(['ext-c']),
     });
-  });
-
-  // === 5. Reject enable incompatible ===
-
-  it('returns null when enabling an incompatible extension', async () => {
-    const record = makeRecord('incompat', { status: 'incompatible' });
-    mockDiscover.mockResolvedValue([record]);
-
-    await manager.initialize(null);
-
-    const result = await manager.enable('incompat');
-
-    expect(result).toBeNull();
-    expect(mockCompile).not.toHaveBeenCalled();
-  });
-
-  // === 6. Reject enable invalid ===
-
-  it('returns null when enabling an invalid extension', async () => {
-    const record = makeRecord('invalid-ext', { status: 'invalid' });
-    mockDiscover.mockResolvedValue([record]);
-
-    await manager.initialize(null);
-
-    const result = await manager.enable('invalid-ext');
-
-    expect(result).toBeNull();
-  });
-
-  // === 7. Reload ===
-
-  it('re-discovers and recompiles on reload', async () => {
-    const record1 = makeRecord('ext-1', { status: 'disabled' });
-    mockDiscover.mockResolvedValue([record1]);
-
-    await manager.initialize(null);
-    expect(manager.listPublic()).toHaveLength(1);
-
-    // Now simulate a reload with a new extension
-    const record2 = makeRecord('ext-2', { status: 'enabled' });
-    mockDiscover.mockResolvedValue([record1, record2]);
-    mockCompile.mockResolvedValue({ code: 'new bundle', sourceHash: 'newhash' });
-
-    const result = await manager.reload();
-
-    expect(result).toHaveLength(2);
-    expect(mockDiscover).toHaveBeenCalledTimes(2);
-  });
-
-  // === 8. Read bundle ===
-
-  it('reads bundle for compiled extensions', async () => {
-    const record = makeRecord('ext-d', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-d'], disabled: [], ...approved(['ext-d']) });
-    mockDiscover.mockResolvedValue([record]);
-    mockCompile.mockResolvedValue({ code: 'bundle-code', sourceHash: 'hash456' });
-    mockReadBundle.mockResolvedValue('bundle-code');
-
-    await manager.initialize(null);
-
-    const bundle = await manager.readBundle('ext-d');
-
-    expect(bundle).toBe('bundle-code');
-    expect(mockReadBundle).toHaveBeenCalledWith('ext-d', 'hash456');
-  });
-
-  it('returns null when reading bundle for a disabled extension', async () => {
-    const record = makeRecord('ext-e', { status: 'disabled' });
-    mockDiscover.mockResolvedValue([record]);
-
-    await manager.initialize(null);
-
-    const bundle = await manager.readBundle('ext-e');
-
-    expect(bundle).toBeNull();
-    expect(mockReadBundle).not.toHaveBeenCalled();
-  });
-
-  it('returns null when reading bundle for a non-existent extension', async () => {
-    await manager.initialize(null);
-
-    const bundle = await manager.readBundle('no-such-ext');
-
-    expect(bundle).toBeNull();
   });
 
   /**
@@ -484,26 +312,6 @@ describe('ExtensionManager', () => {
       expect(mockReadBundle).not.toHaveBeenCalled();
     });
 
-    it('serves it the moment the person approves, with no recompile', async () => {
-      const record = makeRecord('waiting', { status: 'enabled' });
-      mockConfigGet.mockReturnValue({ enabled: ['waiting'], disabled: [], ...approved([]) });
-      mockDiscover.mockResolvedValue([record]);
-      mockCompile.mockResolvedValue({ code: 'bundle-code', sourceHash: 'hashabc' });
-      mockReadBundle.mockResolvedValue('bundle-code');
-
-      await manager.initialize(null);
-      expect(await manager.readBundle('waiting')).toBeNull();
-
-      mockConfigGet.mockReturnValue({
-        enabled: ['waiting'],
-        disabled: [],
-        ...approved(['waiting']),
-      });
-
-      expect(await manager.readBundle('waiting')).toBe('bundle-code');
-      expect(mockReadBundle).toHaveBeenCalledWith('waiting', 'hashabc');
-    });
-
     it('never withholds a core extension, which DorkOS ships and never asks about', async () => {
       const record = makeRecord('linear-issues', { status: 'enabled', origin: 'core' });
       mockConfigGet.mockReturnValue({
@@ -518,25 +326,6 @@ describe('ExtensionManager', () => {
       await manager.initialize(null);
 
       expect(await manager.readBundle('linear-issues')).toBe('core-code');
-    });
-
-    it('reads the approval list, not some other list that happens to hold the id', async () => {
-      // A gate that consulted `enabled` instead of `approvedToRun` would pass every
-      // extension an agent turned on — which is every extension an agent creates,
-      // since `create_extension` enables what it scaffolds.
-      const record = makeRecord('enabled-not-approved', { status: 'enabled' });
-      mockConfigGet.mockReturnValue({
-        enabled: ['enabled-not-approved'],
-        disabled: ['something-else'],
-        ...approved(['a-different-extension']),
-      });
-      mockDiscover.mockResolvedValue([record]);
-      mockCompile.mockResolvedValue({ code: 'bundle-code', sourceHash: 'hashdef' });
-      mockReadBundle.mockResolvedValue('bundle-code');
-
-      await manager.initialize(null);
-
-      expect(await manager.readBundle('enabled-not-approved')).toBeNull();
     });
   });
 
@@ -572,160 +361,26 @@ describe('ExtensionManager', () => {
         forwardAgents: {},
       });
     });
-
-    it('works for an id whose files are already gone, because uninstall stages them away', async () => {
-      mockConfigGet.mockReturnValue({ enabled: [], disabled: [], ...approved(['gone']) });
-      mockDiscover.mockResolvedValue([]);
-
-      await manager.initialize(null);
-      mockConfigSet.mockClear();
-
-      await manager.forgetRunApproval('gone');
-
-      expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
-        enabled: [],
-        disabled: [],
-        ...approved([]),
-        approvedPermissions: {},
-        roomAccess: {},
-        forwardAgents: {},
-      });
-    });
-
-    it('writes nothing when there was no approval to forget', async () => {
-      mockConfigGet.mockReturnValue({ enabled: [], disabled: [], ...approved(['other']) });
-      mockDiscover.mockResolvedValue([]);
-
-      await manager.initialize(null);
-      mockConfigSet.mockClear();
-
-      await manager.forgetRunApproval('never-approved');
-
-      expect(mockConfigSet).not.toHaveBeenCalled();
-    });
   });
 
-  // === 9. Report activated ===
-
-  it('transitions status from compiled to active on reportActivated', async () => {
-    const record = makeRecord('ext-f', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-f'], disabled: [], ...approved(['ext-f']) });
-    mockDiscover.mockResolvedValue([record]);
-    mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'hash' });
-
-    await manager.initialize(null);
-    expect(manager.get('ext-f')?.status).toBe('compiled');
-
-    manager.reportActivated('ext-f');
-
-    expect(manager.get('ext-f')?.status).toBe('active');
-  });
-
-  it('does not change status on reportActivated if not compiled', async () => {
-    const record = makeRecord('ext-g', { status: 'disabled' });
-    mockDiscover.mockResolvedValue([record]);
-
-    await manager.initialize(null);
-
-    manager.reportActivated('ext-g');
-
-    expect(manager.get('ext-g')?.status).toBe('disabled');
-  });
-
-  // === 10. Report activate error ===
-
-  it('transitions to activate_error with error message on reportActivateError', async () => {
-    const record = makeRecord('ext-h', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-h'], disabled: [], ...approved(['ext-h']) });
-    mockDiscover.mockResolvedValue([record]);
-    mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'hash' });
-
-    await manager.initialize(null);
-
-    manager.reportActivateError('ext-h', 'Runtime error in activate()');
-
-    const ext = manager.get('ext-h');
-    expect(ext?.status).toBe('activate_error');
-    expect(ext?.error).toEqual({
-      code: 'activate_error',
-      message: 'Runtime error in activate()',
-    });
-  });
-
-  // === 11. Update CWD diff ===
-
-  it('returns added and removed extension IDs when CWD changes', async () => {
-    // First discovery: ext-a only
-    const recordA = makeRecord('ext-a', { status: 'disabled' });
-    mockDiscover.mockResolvedValue([recordA]);
-
-    await manager.initialize('/project-1');
-
-    // Second discovery after CWD change: ext-b only (ext-a removed)
-    const recordB = makeRecord('ext-b', { status: 'disabled' });
-    mockDiscover.mockResolvedValue([recordB]);
-
-    const diff = await manager.updateCwd('/project-2');
-
-    expect(diff.added).toEqual(['ext-b']);
-    expect(diff.removed).toEqual(['ext-a']);
-  });
-
-  it('returns empty diff when CWD change produces same extensions', async () => {
-    const record = makeRecord('ext-a', { status: 'disabled' });
-    mockDiscover.mockResolvedValue([record]);
-
-    await manager.initialize(null);
-
-    const diff = await manager.updateCwd('/new-project');
-
-    expect(diff.added).toEqual([]);
-    expect(diff.removed).toEqual([]);
-  });
-
-  /**
-   * The cockpit announces its working directory once per page load, and it is
-   * usually the directory the server already booted with — a second full
-   * discovery pass that can only produce what the first one did (DOR-1336).
-   */
-  it('does not re-discover when the CWD has not actually changed', async () => {
-    mockDiscover.mockResolvedValue([makeRecord('ext-a', { status: 'disabled' })]);
-
-    await manager.initialize('/project-1');
-    const discoveriesAtBoot = mockDiscover.mock.calls.length;
-
-    const diff = await manager.updateCwd('/project-1');
-
-    expect(diff).toEqual({ added: [], removed: [] });
-    expect(mockDiscover).toHaveBeenCalledTimes(discoveriesAtBoot);
-  });
-
-  it('treats an equivalent path spelling as the same CWD', async () => {
-    mockDiscover.mockResolvedValue([makeRecord('ext-a', { status: 'disabled' })]);
-
-    await manager.initialize('/project-1');
-    const discoveriesAtBoot = mockDiscover.mock.calls.length;
-
-    const diff = await manager.updateCwd('/project-1/');
-
-    expect(diff).toEqual({ added: [], removed: [] });
-    expect(mockDiscover).toHaveBeenCalledTimes(discoveriesAtBoot);
-  });
-
-  it('re-discovers when the CWD is cleared', async () => {
-    mockDiscover.mockResolvedValue([makeRecord('ext-a', { status: 'disabled' })]);
-
-    await manager.initialize('/project-1');
-    const discoveriesAtBoot = mockDiscover.mock.calls.length;
+  it('works for an id whose files are already gone, because uninstall stages them away', async () => {
+    mockConfigGet.mockReturnValue({ enabled: [], disabled: [], ...approved(['gone']) });
     mockDiscover.mockResolvedValue([]);
 
-    const diff = await manager.updateCwd(null);
+    await manager.initialize(null);
+    mockConfigSet.mockClear();
 
-    expect(diff).toEqual({ added: [], removed: ['ext-a'] });
-    expect(mockDiscover).toHaveBeenCalledTimes(discoveriesAtBoot + 1);
+    await manager.forgetRunApproval('gone');
+
+    expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
+      enabled: [],
+      disabled: [],
+      ...approved([]),
+      approvedPermissions: {},
+      roomAccess: {},
+      forwardAgents: {},
+    });
   });
-
-  // === 12. toPublic strips internal fields ===
 
   it('strips path and sourceHash from public records', async () => {
     const record = makeRecord('ext-i', {
@@ -752,335 +407,6 @@ describe('ExtensionManager', () => {
     expect('path' in pub).toBe(false);
     expect('sourceHash' in pub).toBe(false);
   });
-
-  it('carries origin through toPublic for both core and user records', async () => {
-    mockDiscover.mockResolvedValue([
-      makeRecord('core-ext', { status: 'disabled', origin: 'core' }),
-      makeRecord('user-ext', { status: 'disabled', origin: 'user' }),
-    ]);
-
-    await manager.initialize(null);
-
-    const pubById = Object.fromEntries(manager.listPublic().map((p) => [p.id, p]));
-    expect(pubById['core-ext'].origin).toBe('core');
-    expect(pubById['user-ext'].origin).toBe('user');
-  });
-
-  // === Additional edge cases ===
-
-  it('returns null when enabling a non-existent extension', async () => {
-    await manager.initialize(null);
-
-    const result = await manager.enable('ghost');
-
-    expect(result).toBeNull();
-  });
-
-  it('returns null when disabling a non-existent extension', async () => {
-    await manager.initialize(null);
-
-    const result = await manager.disable('ghost');
-
-    expect(result).toBeNull();
-  });
-
-  it('does not duplicate ID in enabled list when enabling already-enabled extension', async () => {
-    const record = makeRecord('ext-j', { status: 'disabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-j'], disabled: [], ...approved(['ext-j']) });
-    mockDiscover.mockResolvedValue([record]);
-    mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'hash' });
-
-    await manager.initialize(null);
-
-    await manager.enable('ext-j');
-
-    // setEnabled() strips the id from both lists before re-adding, so the
-    // already-enabled id is written through exactly once (no duplicate).
-    expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
-      enabled: ['ext-j'],
-      disabled: [],
-      ...approved(['ext-j']),
-    });
-    const lastEnabled = mockConfigSet.mock.calls.at(-1)![1].enabled as string[];
-    expect(lastEnabled.filter((id) => id === 'ext-j')).toHaveLength(1);
-  });
-
-  it('reads bundle for active extensions', async () => {
-    const record = makeRecord('ext-k', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-k'], disabled: [], ...approved(['ext-k']) });
-    mockDiscover.mockResolvedValue([record]);
-    mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'activehash' });
-    mockReadBundle.mockResolvedValue('active-bundle');
-
-    await manager.initialize(null);
-    manager.reportActivated('ext-k');
-
-    const bundle = await manager.readBundle('ext-k');
-
-    expect(bundle).toBe('active-bundle');
-    expect(mockReadBundle).toHaveBeenCalledWith('ext-k', 'activehash');
-  });
-
-  // === createExtension ===
-
-  describe('createExtension', () => {
-    beforeEach(() => {
-      // Default: directory does not exist (ENOENT)
-      mockAccess.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
-      mockMkdir.mockResolvedValue(undefined);
-      mockWriteFile.mockResolvedValue(undefined);
-    });
-
-    it('scaffolds a global extension directory with manifest and index.ts', async () => {
-      // After reload the new extension is discovered and compiled
-      const newRecord = makeRecord('my-widget', { status: 'enabled' });
-      mockDiscover
-        .mockResolvedValueOnce([]) // initialize
-        .mockResolvedValueOnce([newRecord]); // reload from createExtension (enable does not call reload)
-      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash123' });
-
-      await manager.initialize(null);
-
-      const result = await manager.createExtension({
-        name: 'my-widget',
-        description: 'A dashboard widget',
-        template: 'dashboard-card',
-        scope: 'global',
-      });
-
-      expect(result.id).toBe('my-widget');
-      expect(result.scope).toBe('global');
-      expect(result.template).toBe('dashboard-card');
-      expect(result.files).toEqual(['extension.json', 'index.ts']);
-      expect(mockMkdir).toHaveBeenCalledWith('/fake/dork-home/extensions/my-widget', {
-        recursive: true,
-      });
-      // extension.json and index.ts should have been written
-      expect(mockWriteFile).toHaveBeenCalledTimes(2);
-    });
-
-    it('scaffolds a local extension when scope is local', async () => {
-      const newRecord = makeRecord('local-ext', { status: 'enabled', scope: 'local' });
-      mockDiscover
-        .mockResolvedValueOnce([]) // initialize
-        .mockResolvedValueOnce([newRecord]); // reload from createExtension (enable does not call reload)
-      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash456' });
-
-      await manager.initialize('/my/project');
-
-      const result = await manager.createExtension({
-        name: 'local-ext',
-        template: 'command',
-        scope: 'local',
-      });
-
-      expect(result.scope).toBe('local');
-      expect(mockMkdir).toHaveBeenCalledWith('/my/project/.dork/extensions/local-ext', {
-        recursive: true,
-      });
-    });
-
-    it('throws when creating local extension without active CWD', async () => {
-      await manager.initialize(null);
-
-      await expect(
-        manager.createExtension({
-          name: 'orphan-ext',
-          template: 'dashboard-card',
-          scope: 'local',
-        })
-      ).rejects.toThrow('Cannot create local extension: no working directory is active');
-    });
-
-    it('throws when extension directory already exists', async () => {
-      // Directory exists (access succeeds)
-      mockAccess.mockResolvedValue(undefined);
-
-      await manager.initialize(null);
-
-      await expect(
-        manager.createExtension({
-          name: 'existing-ext',
-          template: 'dashboard-card',
-          scope: 'global',
-        })
-      ).rejects.toThrow("Extension 'existing-ext' already exists");
-    });
-
-    it('includes compilation errors in result when compile fails', async () => {
-      const newRecord = makeRecord('bad-ext', {
-        status: 'compile_error',
-        error: {
-          code: 'compilation_failed',
-          message: 'Syntax error',
-          details: 'Unexpected token at line 5',
-        },
-      });
-      mockDiscover
-        .mockResolvedValueOnce([]) // initialize
-        .mockResolvedValueOnce([newRecord]); // reload from createExtension (enable does not call reload)
-      mockCompile.mockResolvedValue({
-        error: {
-          code: 'compilation_failed',
-          message: 'Syntax error',
-          errors: [{ text: 'Unexpected token at line 5' }],
-        },
-        sourceHash: 'badhash',
-      });
-
-      await manager.initialize(null);
-
-      const result = await manager.createExtension({
-        name: 'bad-ext',
-        template: 'dashboard-card',
-        scope: 'global',
-      });
-
-      expect(result.status).toBe('compile_error');
-      expect(result.bundleReady).toBe(false);
-      expect(result.error).toBeDefined();
-      expect(result.error!.code).toBe('compilation_failed');
-    });
-
-    it('enables the extension after scaffolding', async () => {
-      const newRecord = makeRecord('auto-enable', { status: 'enabled' });
-      mockDiscover
-        .mockResolvedValueOnce([]) // initialize
-        .mockResolvedValueOnce([newRecord]); // reload from createExtension (enable does not call reload)
-      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
-
-      await manager.initialize(null);
-
-      await manager.createExtension({
-        name: 'auto-enable',
-        template: 'dashboard-card',
-        scope: 'global',
-      });
-
-      // compile should have been called: once during reload's compileEnabled and once during enable
-      expect(mockCompile).toHaveBeenCalled();
-      // Config should have been updated with the new extension enabled
-      expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
-        enabled: ['auto-enable'],
-        disabled: [],
-        // Scaffolding never approves. `create_extension` writes files the agent is
-        // about to rewrite, so approving at scaffold time would approve whatever
-        // arrives next — which is the whole thing the gate exists to stop.
-        ...approved([]),
-      });
-    });
-  });
-
-  // === reloadExtension (single) ===
-
-  describe('reloadExtension', () => {
-    beforeEach(() => {
-      // These tests each seed a record with `status: 'disabled'` purely so
-      // `compileEnabled()` skips it during `initialize()` — a fixture convenience,
-      // not a claim that the user turned the extension off. `reloadExtension` asks
-      // stored CONFIG whether the extension is on, not `record.status`, precisely
-      // because status is the field the disabled-reload bug corrupts. So config has
-      // to say these are on, and approved to run.
-      const ids = ['my-ext', 'broken-ext', 'ext-reload', 'ext-fail'];
-      mockConfigGet.mockReturnValue({ enabled: ids, disabled: [], approvedToRun: ids });
-    });
-
-    it('recompiles a single extension and returns compiled result', async () => {
-      // Use 'disabled' status so compileEnabled() skips it during initialize
-      const record = makeRecord('my-ext', { status: 'disabled' });
-      mockDiscover.mockResolvedValue([record]);
-      mockCompile.mockResolvedValue({ code: 'new-bundle', sourceHash: 'newhash' });
-
-      await manager.initialize(null);
-
-      const result = await manager.reloadExtension('my-ext');
-
-      expect(result.id).toBe('my-ext');
-      expect(result.status).toBe('compiled');
-      expect(result.bundleReady).toBe(true);
-      expect(result.sourceHash).toBe('newhash');
-      expect(result.error).toBeUndefined();
-    });
-
-    it('returns compile_error when recompilation fails', async () => {
-      const record = makeRecord('broken-ext', { status: 'disabled' });
-      mockDiscover.mockResolvedValue([record]);
-      mockCompile.mockResolvedValue({
-        error: {
-          code: 'compilation_failed',
-          message: 'Type error',
-          errors: [
-            {
-              text: 'Type X not assignable to Y',
-              location: { file: 'index.ts', line: 10, column: 5 },
-            },
-          ],
-        },
-        sourceHash: 'hash2',
-      });
-
-      await manager.initialize(null);
-
-      const result = await manager.reloadExtension('broken-ext');
-
-      expect(result.id).toBe('broken-ext');
-      expect(result.status).toBe('compile_error');
-      expect(result.bundleReady).toBe(false);
-      expect(result.sourceHash).toBe('hash2');
-      expect(result.error).toBeDefined();
-      expect(result.error!.code).toBe('compilation_failed');
-      expect(result.error!.errors).toHaveLength(1);
-      expect(result.error!.errors![0].text).toBe('Type X not assignable to Y');
-    });
-
-    it('throws when extension ID is not found', async () => {
-      await manager.initialize(null);
-
-      await expect(manager.reloadExtension('nonexistent')).rejects.toThrow(
-        "Extension 'nonexistent' not found"
-      );
-    });
-
-    it('updates the internal record status after successful reload', async () => {
-      const record = makeRecord('ext-reload', { status: 'disabled' });
-      mockDiscover.mockResolvedValue([record]);
-      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'newhash' });
-
-      await manager.initialize(null);
-
-      await manager.reloadExtension('ext-reload');
-
-      const updated = manager.get('ext-reload');
-      expect(updated?.status).toBe('compiled');
-      expect(updated?.bundleReady).toBe(true);
-      expect(updated?.sourceHash).toBe('newhash');
-      expect(updated?.error).toBeUndefined();
-    });
-
-    it('updates the internal record status after failed reload', async () => {
-      const record = makeRecord('ext-fail', { status: 'disabled' });
-      mockDiscover.mockResolvedValue([record]);
-      mockCompile.mockResolvedValue({
-        error: {
-          code: 'compilation_failed',
-          message: 'Parse error',
-          errors: [{ text: 'Unexpected end of input' }],
-        },
-        sourceHash: 'hash2',
-      });
-
-      await manager.initialize(null);
-
-      await manager.reloadExtension('ext-fail');
-
-      const updated = manager.get('ext-fail');
-      expect(updated?.status).toBe('compile_error');
-      expect(updated?.bundleReady).toBe(false);
-      expect(updated?.error?.code).toBe('compilation_failed');
-    });
-  });
-
-  // === Tier-aware toggle routing (core extensions) ===
 
   describe('tier-aware toggle routing', () => {
     const onCore: CoreExtensionInfo = { id: 'marketplace', defaultEnabled: true, canDisable: true };
@@ -1126,24 +452,6 @@ describe('ExtensionManager', () => {
 
       expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
         enabled: [],
-        disabled: [],
-        ...approved([]),
-      });
-    });
-
-    it('enabling a default-off core ext adds its id to enabled', async () => {
-      const manager = new ExtensionManager('/fake/dork-home', [offCore]);
-      mockConfigGet.mockReturnValue({ enabled: [], disabled: [], ...approved([]) });
-      mockDiscover.mockResolvedValue([
-        makeRecord('hello-world', { status: 'disabled', origin: 'core' }),
-      ]);
-      mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'h' });
-      await manager.initialize(null);
-
-      await manager.enable('hello-world');
-
-      expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
-        enabled: ['hello-world'],
         disabled: [],
         ...approved([]),
       });

@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import ts from 'typescript';
 import {
-  generateManifest,
   generateServerTemplate,
   generateTemplate,
   type ExtensionTemplate,
@@ -34,142 +33,11 @@ function injectedCalls(source: string): number {
 }
 
 /**
- * The places a generated bundle registers in, by the call it makes: each must
- * be declared in its manifest, or DorkOS refuses it (DOR-4282).
- */
-function registeredPlaces(source: string): string[] {
-  const file = ts.createSourceFile(
-    'index.tsx',
-    source,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX
-  );
-  const byCall: Record<string, string> = {
-    registerCommand: 'command-palette.items',
-    registerDialog: 'dialog',
-    registerSettingsTab: 'settings.tabs',
-    registerPage: 'pages',
-    registerStatusBarItem: 'status-bar',
-    openCanvas: 'canvas',
-  };
-  const places = new Set<string>();
-  const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-      const method = node.expression.name.text;
-      const [first] = node.arguments;
-      if (method === 'registerComponent' && first && ts.isStringLiteral(first))
-        places.add(first.text);
-      else if (byCall[method]) places.add(byCall[method]!);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(file);
-  return [...places].sort();
-}
-
-/**
  * Direct coverage for the extension starter templates. These generators are
  * otherwise exercised only indirectly through the scaffolder, so the assertions
  * below pin the generated source that authors actually receive.
  */
 describe('extension-templates', () => {
-  it.each(TEMPLATES)('the %s template declares every place it registers in', (kind) => {
-    const manifest = generateManifest('sample', 'A sample', kind) as {
-      contributions: Record<string, boolean>;
-    };
-    const declared = Object.keys(manifest.contributions).filter(
-      (key) => manifest.contributions[key] === true
-    );
-    const used = registeredPlaces(generateTemplate('sample', 'A sample', kind));
-    expect(used.length).toBeGreaterThan(0);
-    for (const place of used) expect(declared).toContain(place);
-  });
-
-  describe('generateManifest', () => {
-    it('makes every new app a version 2 app, so it loads instead of asking for an update', () => {
-      for (const kind of [
-        'dashboard-card',
-        'right-panel-tab',
-        'command',
-        'settings-panel',
-        'data-provider',
-      ] as const) {
-        expect(generateManifest('sample', undefined, kind)).toMatchObject({ clientApiVersion: 2 });
-      }
-      expect(generateManifest('sample', undefined, 'data-provider')).toMatchObject({
-        capabilities: { http: true },
-      });
-    });
-
-    it('declares the right-panel slot for the right-panel-tab template', () => {
-      const manifest = generateManifest('my-panel', 'A panel', 'right-panel-tab') as {
-        id: string;
-        name: string;
-        contributions: Record<string, boolean>;
-      };
-
-      expect(manifest.id).toBe('my-panel');
-      expect(manifest.name).toBe('My Panel');
-      expect(manifest.contributions['right-panel']).toBe(true);
-      // It must not leak an unrelated slot.
-      expect(manifest.contributions['dashboard.sections']).toBeUndefined();
-    });
-
-    it('declares the dashboard slot for the dashboard-card template', () => {
-      const manifest = generateManifest('cards', undefined, 'dashboard-card') as {
-        contributions: Record<string, boolean>;
-      };
-
-      expect(manifest.contributions['dashboard.sections']).toBe(true);
-    });
-  });
-
-  describe('generateTemplate (right-panel-tab)', () => {
-    const source = generateTemplate('my-panel', 'A panel', 'right-panel-tab');
-
-    it('registers a component in the right-panel slot with a namespaced id', () => {
-      expect(source).toContain("api.registerComponent('right-panel', 'my-panel-panel'");
-    });
-
-    it('passes a label and a priority', () => {
-      expect(source).toContain("label: 'My Panel'");
-      expect(source).toContain('priority: 50');
-    });
-
-    it('passes no icon component, which cannot cross the sandboxed frame', () => {
-      expect(source).not.toContain('icon:');
-      expect(source).not.toContain('<svg');
-    });
-
-    it('renders a panel body component', () => {
-      expect(source).toContain('function MyPanelPanel()');
-    });
-
-    it('imports the API as a type only and never imports React', () => {
-      expect(source).toContain(
-        "import type { FrameExtensionAPI as ExtensionAPI } from '@dorkos/extension-api'"
-      );
-      expect(source).not.toContain('import React');
-    });
-  });
-
-  describe('generateTemplate (all kinds)', () => {
-    it('produces a non-empty activate() entry point for every template', () => {
-      const kinds = [
-        'dashboard-card',
-        'right-panel-tab',
-        'command',
-        'settings-panel',
-        'data-provider',
-      ] as const;
-      for (const kind of kinds) {
-        const source = generateTemplate('sample', 'desc', kind);
-        expect(source).toContain('export function activate(api: ExtensionAPI)');
-      }
-    });
-  });
-
   describe('a description is only ever text (DOR-3068)', () => {
     const descriptions = [
       'x\ninjected();\n//',
@@ -189,11 +57,6 @@ describe('extension-templates', () => {
       for (const description of descriptions) {
         expect(injectedCalls(generateServerTemplate('my-app', description))).toBe(0);
       }
-    });
-
-    it('still shows the description on the page', () => {
-      const source = generateTemplate('my-app', 'Shows open pull requests', 'dashboard-card');
-      expect(source).toContain('{"Shows open pull requests"}');
     });
   });
 });

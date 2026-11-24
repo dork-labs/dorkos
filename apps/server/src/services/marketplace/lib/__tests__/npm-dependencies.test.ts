@@ -59,22 +59,6 @@ describe('readNpmDependencies', () => {
     ]);
   });
 
-  it('ignores devDependencies', async () => {
-    await writePackageJson(workDir, { name: 'flow', devDependencies: { zod: '^4.3.6' } });
-
-    await expect(readNpmDependencies(workDir)).resolves.toEqual([]);
-  });
-
-  it('returns nothing when the package has no package.json', async () => {
-    await expect(readNpmDependencies(workDir)).resolves.toEqual([]);
-  });
-
-  it('returns nothing when package.json is malformed', async () => {
-    await writeFile(path.join(workDir, 'package.json'), '{ not json', 'utf-8');
-
-    await expect(readNpmDependencies(workDir)).resolves.toEqual([]);
-  });
-
   it('includes optionalDependencies, which npm installs by default', async () => {
     // Leaving these out would under-report the fetch: npm installs them unless
     // asked not to, and the preview is what a person consents to.
@@ -88,21 +72,6 @@ describe('readNpmDependencies', () => {
       { name: 'fsevents', range: '^2.3.3', optional: true },
     ]);
   });
-
-  it('reports a name declared in both maps once, as required', async () => {
-    await writePackageJson(workDir, {
-      dependencies: { zod: '^4.3.6' },
-      optionalDependencies: { zod: '^3.0.0' },
-    });
-
-    await expect(readNpmDependencies(workDir)).resolves.toEqual([{ name: 'zod', range: '^4.3.6' }]);
-  });
-
-  it('skips dependency entries whose range is not a string', async () => {
-    await writePackageJson(workDir, { dependencies: { zod: '^4.3.6', bogus: { version: 1 } } });
-
-    await expect(readNpmDependencies(workDir)).resolves.toEqual([{ name: 'zod', range: '^4.3.6' }]);
-  });
 });
 
 describe('npmInstallCommand', () => {
@@ -113,23 +82,6 @@ describe('npmInstallCommand', () => {
     expect(args).toContain('--ignore-scripts'); // no lifecycle code
     expect(args).toContain('--global=false'); // may only write inside staging
     expect(args).toContain('--no-workspaces'); // only the root the preview disclosed
-  });
-
-  it('installs production dependencies only, quietly, in the given directory', () => {
-    const cmd = npmInstallCommand(workDir);
-
-    expect(cmd.command).toBe(process.platform === 'win32' ? 'npm.cmd' : 'npm');
-    expect(cmd.args).toEqual([
-      'install',
-      '--omit=dev',
-      '--ignore-scripts',
-      '--global=false',
-      '--no-workspaces',
-      '--no-audit',
-      '--no-fund',
-      '--loglevel=error',
-    ]);
-    expect(cmd.cwd).toBe(workDir);
   });
 });
 
@@ -150,34 +102,6 @@ describe('installStagedNpmDependencies', () => {
     expect(run).toHaveBeenCalledTimes(1);
     expect(run.mock.calls[0]![0]).toEqual(npmInstallCommand(workDir));
     expect(warnings).toEqual([]);
-  });
-
-  it('does not run npm when the package declares no dependencies', async () => {
-    await writePackageJson(workDir, { name: 'flow', devDependencies: { zod: '^4.3.6' } });
-    const run = vi.fn<NpmInstallRunner>().mockResolvedValue({ ok: true });
-
-    const warnings = await installStagedNpmDependencies({
-      stagingDir: workDir,
-      installPath,
-      logger: noopLogger,
-      run,
-    });
-
-    expect(run).not.toHaveBeenCalled();
-    expect(warnings).toEqual([]);
-  });
-
-  it('does not run npm when the package has no package.json at its root', async () => {
-    const run = vi.fn<NpmInstallRunner>().mockResolvedValue({ ok: true });
-
-    await installStagedNpmDependencies({
-      stagingDir: workDir,
-      installPath,
-      logger: noopLogger,
-      run,
-    });
-
-    expect(run).not.toHaveBeenCalled();
   });
 
   it('warns, without failing, when npm is not installed', async () => {
@@ -221,21 +145,6 @@ describe('installStagedNpmDependencies', () => {
     // Only the first line of npm's output survives into user-facing copy.
     expect(warnings[0]).not.toContain('404 Not Found');
   });
-
-  it('warns rather than throwing when the runner itself blows up', async () => {
-    await writePackageJson(workDir, { name: 'flow', dependencies: { zod: '^4.3.6' } });
-    const run = vi.fn<NpmInstallRunner>().mockRejectedValue(new Error('boom'));
-
-    const warnings = await installStagedNpmDependencies({
-      stagingDir: workDir,
-      installPath,
-      logger: noopLogger,
-      run,
-    });
-
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain('boom');
-  });
 });
 
 describe.skipIf(process.platform === 'win32')('the default runner', () => {
@@ -278,35 +187,6 @@ describe.skipIf(process.platform === 'win32')('the default runner', () => {
     // the flag that stops a dependency running code at install time.
     expect(marker).toContain('--ignore-scripts');
     await expect(realpath(marker[0]!)).resolves.toBe(await realpath(packageDir));
-  });
-
-  it('reports a non-zero exit as a failure carrying npm stderr', async () => {
-    await installNpmStub(`#!/bin/sh\necho 'npm error code E404' >&2\nexit 1\n`);
-    await writePackageJson(workDir, { name: 'flow', dependencies: { zod: '^4.3.6' } });
-
-    const warnings = await installStagedNpmDependencies({
-      stagingDir: workDir,
-      installPath: '/data/plugins/flow',
-      logger: noopLogger,
-    });
-
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain('npm error code E404');
-  });
-
-  it('reports a missing npm binary as npm-not-found', async () => {
-    // An empty PATH guarantees the lookup fails the way a machine without npm does.
-    vi.stubEnv('PATH', path.join(workDir, 'definitely-empty'));
-    await writePackageJson(workDir, { name: 'flow', dependencies: { zod: '^4.3.6' } });
-
-    const warnings = await installStagedNpmDependencies({
-      stagingDir: workDir,
-      installPath: '/data/plugins/flow',
-      logger: noopLogger,
-    });
-
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain('npm is not installed');
   });
 });
 

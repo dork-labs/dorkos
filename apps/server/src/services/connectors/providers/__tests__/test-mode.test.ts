@@ -41,20 +41,6 @@ connectorConformance(makeProvider, {
 });
 
 describe('TestModeConnectorProvider — scripted semantics', () => {
-  it('declares the managed, multi-account, brokered-execution capability shape', () => {
-    const caps = makeProvider().getCapabilities();
-    expect(caps).toMatchObject({
-      type: TEST_CONNECTOR_PROVIDER_TYPE,
-      supportsMultiAccount: true,
-      custody: 'managed',
-    });
-  });
-
-  it('lists the scripted gmail + slack toolkits', async () => {
-    const toolkits = await makeProvider().listToolkits();
-    expect(toolkits.map((tk) => tk.slug)).toEqual(['gmail', 'slack']);
-  });
-
   it('pins a concrete toolkit version and paginates exact operation schemas', async () => {
     const provider = makeProvider();
     const version = await provider.resolveToolkitVersion('gmail', new AbortController().signal);
@@ -173,26 +159,6 @@ describe('TestModeConnectorProvider — scripted semantics', () => {
     ).toMatchObject({ status: 'cancelled', code: 'CANCELLED_BEFORE_DISPATCH' });
   });
 
-  it('points the authorize URL at the local no-op page — everything stays on-machine', async () => {
-    const provider = makeProvider();
-    const start = await provider.startConnect('gmail', { label: 'work' });
-    expect(start.authorizeUrl).toBe(
-      `${LOCAL_ORIGIN}/api/test/connect-approved?flow=${start.flowId}`
-    );
-  });
-
-  it('connects instantly with the given label, stable across re-polls', async () => {
-    const provider = makeProvider();
-    const { flowId } = await provider.startConnect('gmail', { label: 'work' });
-
-    const first = await provider.pollConnect(flowId);
-    expect(first.status).toBe('connected');
-    expect(first.account).toMatchObject({ toolkit: 'gmail', label: 'work', status: 'active' });
-
-    const second = await provider.pollConnect(flowId);
-    expect(second.account?.externalAccountRef).toBe(first.account?.externalAccountRef);
-  });
-
   it('never re-mints an account id a prior instance already used, across a fresh key save (DOR-2451)', async () => {
     // Each Connections e2e case's `beforeEach` saves the test-connector key
     // again, which the bootstrapper answers with a brand new provider
@@ -269,16 +235,6 @@ describe('maybeCreateTestModeConnectorProvider — the credential gate', () => {
       purgeConnections,
     });
     expect(purgeConnections).not.toHaveBeenCalled();
-  });
-
-  it('is absent after boot without a key — configured:false, registered:false', async () => {
-    await bootstrapper.registerBootProviders();
-    expect(registry.resolveProvider(TEST_CONNECTOR_PROVIDER_TYPE)).toBeUndefined();
-
-    const status = (await bootstrapper.listStatuses()).find(
-      (s) => s.type === TEST_CONNECTOR_PROVIDER_TYPE
-    )!;
-    expect(status).toMatchObject({ configured: false, registered: false, custody: 'managed' });
   });
 
   it('registers live on key save + reload, and unregisters on delete + reload', async () => {

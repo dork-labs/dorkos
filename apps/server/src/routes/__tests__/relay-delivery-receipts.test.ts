@@ -139,7 +139,9 @@ function send(extra: Record<string, unknown> = {}) {
     .post('/api/relay/messages')
     .send({
       subject: SUBJECT,
-      from: 'relay.human.console.forged',
+      // Not a person's address: with an owner and no session these callers are programs, which
+      // the route refuses one (DOR-5151, `relay-message-sender.test.ts`). Receipts are the subject.
+      from: 'relay.external.receipt-fixture',
       payload: { secret: SECRET },
       ...extra,
     });

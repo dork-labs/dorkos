@@ -10,11 +10,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isCreditsTokenVar } from '../../../core/cloud/credits-protocols.js';
+import { CREDITS_PROVIDER_ID } from '../../shared/credits/environment.js';
 
 /** The token variable these cases name, so the expected shapes can say it. */
 const TOKEN_VAR = 'DORKOS_CREDITS_TOKEN_TEST';
 import {
-  CODEX_CREDITS_PROVIDER_ID,
   codexCreditsAppServerEnv,
   codexCreditsThreadConfig,
   codexRoutesOrPays,
@@ -127,9 +127,9 @@ describe('a credits turn’s client options', () => {
     expect(options.codexPathOverride).toBe('/bin/codex');
     expect(options.config).toEqual({
       mcp_servers: { dorkos: { url: 'http://127.0.0.1:1/mcp' } },
-      model_provider: CODEX_CREDITS_PROVIDER_ID,
+      model_provider: CREDITS_PROVIDER_ID,
       model_providers: {
-        [CODEX_CREDITS_PROVIDER_ID]: {
+        [CREDITS_PROVIDER_ID]: {
           name: 'DorkOS credits',
           base_url: LAUNCH.baseUrl,
           env_key: TOKEN_VAR,
@@ -153,9 +153,8 @@ describe('a credits turn’s client options', () => {
     const first = withCodexCredits({ env: {} }, LAUNCH);
     const second = withCodexCredits({ env: {} }, LAUNCH);
     const varOf = (options: typeof first) =>
-      (options.config?.model_providers as Record<string, { env_key: string }>)[
-        CODEX_CREDITS_PROVIDER_ID
-      ].env_key;
+      (options.config?.model_providers as Record<string, { env_key: string }>)[CREDITS_PROVIDER_ID]
+        .env_key;
     expect(isCreditsTokenVar(varOf(first))).toBe(true);
     expect(varOf(first)).not.toBe(varOf(second));
     expect(first.env?.[varOf(first)]).toBe(LAUNCH.token);
@@ -167,10 +166,8 @@ describe('a credits turn’s client options', () => {
       LAUNCH,
       TOKEN_VAR
     );
-    expect(options.config?.model_provider).toBe(CODEX_CREDITS_PROVIDER_ID);
-    expect(Object.keys(options.config?.model_providers as object)).toEqual([
-      CODEX_CREDITS_PROVIDER_ID,
-    ]);
+    expect(options.config?.model_provider).toBe(CREDITS_PROVIDER_ID);
+    expect(Object.keys(options.config?.model_providers as object)).toEqual([CREDITS_PROVIDER_ID]);
   });
 });
 
@@ -178,22 +175,31 @@ describe('credits on app-server (ADR 261005-113107)', () => {
   it('gives the credits process nothing that routes or pays, and no token at all', () => {
     const env = codexCreditsAppServerEnv({
       PATH: '/usr/bin',
+      HTTPS_PROXY: 'http://proxy.invalid',
+      No_Proxy: 'localhost',
+      NODE_EXTRA_CA_CERTS: '/fixture/ca.pem',
       OPENAI_API_KEY: 'person-key',
       OPENAI_BASE_URL: 'https://elsewhere',
       CODEX_HOME: '/home/me/.codex',
       AZURE_OPENAI_API_KEY: 'azure',
       [TOKEN_VAR]: 'stale-token',
     });
-    expect(env).toEqual({ PATH: '/usr/bin', CODEX_HOME: creditsCodexHome() });
+    expect(env).toEqual({
+      PATH: '/usr/bin',
+      HTTPS_PROXY: 'http://proxy.invalid',
+      No_Proxy: 'localhost',
+      NODE_EXTRA_CA_CERTS: '/fixture/ca.pem',
+      CODEX_HOME: creditsCodexHome(),
+    });
   });
 
   it('points a thread at the relay with its key, and turns web search off', () => {
     expect(
       codexCreditsThreadConfig({ baseUrl: 'http://127.0.0.1:5/v1', key: 'relay-key' })
     ).toEqual({
-      model_provider: CODEX_CREDITS_PROVIDER_ID,
+      model_provider: 'dorkos-credits',
       model_providers: {
-        [CODEX_CREDITS_PROVIDER_ID]: {
+        [CREDITS_PROVIDER_ID]: {
           name: 'DorkOS credits',
           base_url: 'http://127.0.0.1:5/v1',
           wire_api: 'responses',

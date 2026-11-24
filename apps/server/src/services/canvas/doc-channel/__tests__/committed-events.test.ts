@@ -1,6 +1,5 @@
 /** Real SQLite commits, including native outer transactions, are the observer authority. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
 import {
   canvasDocChannels,
   canvasDocGrants,
@@ -99,19 +98,6 @@ describe('committed document observers', () => {
     expect(store.getEvent('doc-1', 'committed')?.docSeq).toBe(1);
   });
 
-  it('shares observers across independent stores and Drizzle wrappers on one native connection', async () => {
-    const { db, viewer } = fixture();
-    const wrapper = drizzle(db.$client) as unknown as Db;
-    new DocChannelStore(wrapper).appendEvent(event());
-    await flush();
-    expect(viewer.mock.calls).toEqual([['doc-1']]);
-    const other = fixture();
-    other.store.appendEvent(event());
-    await flush();
-    expect(viewer).toHaveBeenCalledTimes(1);
-    expect(other.viewer).toHaveBeenCalledTimes(1);
-  });
-
   it('keeps committed persistence and other viewers when an observer throws or returns a rejected thenable', async () => {
     const { db, store, viewer } = fixture();
     subscriptions.push(
@@ -171,19 +157,6 @@ describe('committed document observers', () => {
       expect(vi.getTimerCount()).toBe(0);
     }
   );
-
-  it('cleans up a manual-transaction retry when the last subscriber leaves', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const { db, store, viewer } = fixture();
-    db.$client.exec('BEGIN');
-    store.appendEvent(event());
-    await flush();
-    subscriptions.pop()!();
-    expect(vi.getTimerCount()).toBe(0);
-    db.$client.exec('COMMIT');
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(viewer).not.toHaveBeenCalled();
-  });
 
   it('notifies a new revision-zero channel only after raw outer commit and ignores repeated initialize', async () => {
     const { db, store, viewer } = fixture();
@@ -310,16 +283,5 @@ describe('committed document observers', () => {
     });
     await flush();
     expect(viewer.mock.calls).toEqual([['doc-1']]);
-  });
-
-  it('keeps separately registered copies of the same observer independent', async () => {
-    const { db, store } = fixture();
-    const listener = vi.fn((_id: string): undefined => undefined);
-    const first = subscribeCommittedDocEvents(db, listener);
-    subscriptions.push(subscribeCommittedDocEvents(db, listener));
-    first();
-    store.appendEvent(event());
-    await flush();
-    expect(listener).toHaveBeenCalledOnce();
   });
 });

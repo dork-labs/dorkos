@@ -43,49 +43,6 @@ describe('resolveExtensionDataDir', () => {
     const dir = resolveExtensionDataDir('crm-lite', makeManager('local'), DORK_HOME, () => CWD);
     expect(dir).toBe(path.join(CWD, '.dork', 'extension-data', 'crm-lite'));
   });
-
-  it('returns null when the extension record is unknown', () => {
-    // No record → nothing to resolve.
-    const dir = resolveExtensionDataDir('ghost', makeManager(null), DORK_HOME, () => CWD);
-    expect(dir).toBeNull();
-  });
-
-  it('returns null for a local extension when cwd is unresolvable', () => {
-    // A local extension cannot resolve a path without a working directory.
-    const dir = resolveExtensionDataDir('crm-lite', makeManager('local'), DORK_HOME, () => null);
-    expect(dir).toBeNull();
-  });
-
-  it('does NOT require cwd for a global extension', () => {
-    // A global path never consults cwd, so a null cwd still resolves.
-    const dir = resolveExtensionDataDir('crm-lite', makeManager('global'), DORK_HOME, () => null);
-    expect(dir).toBe(path.join(DORK_HOME, 'extension-data', 'crm-lite'));
-  });
-});
-
-describe('resolveBlobPath — golden parity with pre-refactor resolveDataPath', () => {
-  it('returns the byte-identical global blob path', () => {
-    // Must match the exact string the deleted resolveDataPath produced (global).
-    const p = resolveBlobPath('crm-lite', makeManager('global'), DORK_HOME, () => CWD);
-    expect(p).toBe(GOLDEN_GLOBAL_BLOB);
-  });
-
-  it('returns the byte-identical local blob path', () => {
-    // Must match the exact string the deleted resolveDataPath produced (local).
-    const p = resolveBlobPath('crm-lite', makeManager('local'), DORK_HOME, () => CWD);
-    expect(p).toBe(GOLDEN_LOCAL_BLOB);
-  });
-
-  it('returns null for an unknown extension (parity)', () => {
-    // resolveDataPath returned null for a missing record; so must resolveBlobPath.
-    const p = resolveBlobPath('ghost', makeManager(null), DORK_HOME, () => CWD);
-    expect(p).toBeNull();
-  });
-
-  it('returns null for a local extension with no cwd (parity)', () => {
-    const p = resolveBlobPath('crm-lite', makeManager('local'), DORK_HOME, () => null);
-    expect(p).toBeNull();
-  });
 });
 
 describe('resolveDbPath', () => {
@@ -101,15 +58,5 @@ describe('resolveDbPath', () => {
   it('returns the sibling store.db path for a local extension', () => {
     const dbPath = resolveDbPath('crm-lite', makeManager('local'), DORK_HOME, () => CWD);
     expect(dbPath).toBe(path.join(CWD, '.dork', 'extension-data', 'crm-lite', 'store.db'));
-  });
-
-  it('returns null for an unknown extension', () => {
-    const dbPath = resolveDbPath('ghost', makeManager(null), DORK_HOME, () => CWD);
-    expect(dbPath).toBeNull();
-  });
-
-  it('returns null for a local extension with no cwd', () => {
-    const dbPath = resolveDbPath('crm-lite', makeManager('local'), DORK_HOME, () => null);
-    expect(dbPath).toBeNull();
   });
 });

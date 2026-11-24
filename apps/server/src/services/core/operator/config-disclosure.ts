@@ -511,6 +511,10 @@ export const CONFIG_DISCLOSURE = {
   // boolean preference that names no folder and no secret; an agent knowing
   // its seat will not move there on its own is harmless.
   'runtimes.claudeCode.accounts[].noAutoMove': 'expose',
+  // Whether a person let agents pick an account by name (DOR-5033). A boolean
+  // that names no folder and no secret; an agent that can see it can tell why a
+  // pick was refused before it asks.
+  'runtimes.claudeCode.accounts[].agentsMayPick': 'expose',
   'runtimes.claudeCode.defaultAccountOnlyProjects': 'withhold',
   'runtimes.claudeCode.projectAccounts': 'withhold',
   // The execution defaults a new session on each runtime starts with. A model id

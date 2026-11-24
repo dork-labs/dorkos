@@ -76,6 +76,9 @@ const ROUTE_BARS: Record<string, readonly string[]> = {
   // The chat route's person question moved here with the launch rule (DOR-3644).
   'routes/session-launcher.ts': ['isPersonTurn'],
   'http/hono-api.ts': ['askForPersonBeforeTaskWrite'],
+  // A relay message's sender is the person's only on the chat route's own reading (DOR-5151).
+  'routes/relay.ts': ['relayMessageSender'],
+  'routes/relay-message-sender.ts': ['sessionLauncherOf', 'launcherTurnCeiling'],
   'routes/marketplace/context.ts': ['trustedCaller', 'personSessionRequired'],
   // `PATCH /api/mesh/agents/:id` moved out of routes/mesh.ts with its bar (DOR-4355).
   'routes/mesh-agent-patch-http.ts': ['clearsTheAgentBar'],
@@ -95,6 +98,15 @@ describe('the person bar census', () => {
   it.each(Object.entries(ROUTE_BARS))('%s runs a session-aware bar', (file, bars) => {
     const source = fs.readFileSync(path.join(SRC, file), 'utf8');
     for (const bar of bars) expect(source, `${file} should name ${bar}`).toContain(bar);
+  });
+
+  it('sends a relay message over HTTP only through the route that sets its sender', () => {
+    // A second route publishing a caller's message would need its own reading of the
+    // person; it has to take this route's (`relayMessageSender`, DOR-5151) instead.
+    const callers = sourceFiles().filter((file) =>
+      fs.readFileSync(path.join(SRC, file), 'utf8').includes('publishRelayMessage(')
+    );
+    expect(callers.sort()).toEqual(['routes/relay-delivery-receipts.ts', 'routes/relay.ts']);
   });
 
   it('keys every shared person bar off the person question', () => {

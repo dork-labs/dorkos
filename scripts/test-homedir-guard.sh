@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# scripts-suite-lane: harness (needs node_modules; see scripts/run-scripts-suites.sh)
 # Fixtures for the os.homedir() ban (Hard Rule 3) in apps/server/eslint.config.js.
 #
 # This suite exists because that guard spent its whole life enforcing nothing and

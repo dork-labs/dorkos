@@ -1,14 +1,80 @@
 /**
- * Whether a chat's latest room turn answered someone from outside this machine (DOR-3440). A stamp
- * on what the turn saves, kept apart from the marks on purpose: it lowers nothing.
+ * Whether a chat's latest turn read words from outside the team (DOR-3440): a room turn that
+ * answered or was shown a stranger's words, or a turn another chat's outside words reached
+ * (DOR-4029). A stamp on what the turn saves, kept apart from the marks on purpose: it lowers
+ * nothing.
+ *
+ * Saved with the chat (`session_outside_words`, DOR-4148), so a restart cannot clear it: a
+ * spin-off a stranger’s words reached reads as noted after a restart as well as before it. Memory
+ * keeps what this process last wrote or read, so an unchanged note writes nothing and a read hits
+ * the database once per chat: this module is the table's only writer, so what it remembers stays
+ * true. A record that cannot be read may say noted, so it is.
  *
  * @module services/core/turn-power/outside-words
  */
+import { eq, sessionOutsideWords, type Db } from '@dorkos/db';
+import { logger } from '../../../lib/logger.js';
 
 /** How many chats are remembered, oldest dropped first (as `turn-levels.ts`). */
 const MEMORY = 10_000;
 
-const chats = new Set<string>();
+let db: Db | undefined;
+
+/** What this process last wrote or read per chat id: noted, or not. */
+const chats = new Map<string, boolean>();
+
+/** Chat ids whose last save failed, so the next note on them saves again. */
+const unsaved = new Set<string>();
+
+/** Remember a chat's note, newest last, dropping the oldest past {@link MEMORY}. */
+function remember(sessionId: string, noted: boolean): void {
+  chats.delete(sessionId);
+  chats.set(sessionId, noted);
+  if (chats.size > MEMORY) chats.delete(chats.keys().next().value!);
+}
+
+/**
+ * Hand over (or clear) the database the note is saved in. Forgets what this process remembered,
+ * as a restart does.
+ *
+ * @param handle - The consolidated database; `undefined` clears it.
+ */
+export function setOutsideWordsDb(handle: Db | undefined): void {
+  db = handle;
+  chats.clear();
+  unsaved.clear();
+}
+
+/** Whether the note's database is wired, so a failed read is a failure and not early boot. */
+export function outsideWordsDbReady(): boolean {
+  return db !== undefined;
+}
+
+/**
+ * Save the note, or its absence. Never throws: a failed write leaves the last saved answer, and
+ * the chat is kept as unsaved so its next note tries again.
+ */
+function save(sessionId: string, noted: boolean): void {
+  if (!db) return;
+  unsaved.delete(sessionId);
+  try {
+    if (noted) {
+      db.insert(sessionOutsideWords)
+        .values({ sessionId, notedAt: new Date().toISOString() })
+        .onConflictDoNothing({ target: sessionOutsideWords.sessionId })
+        .run();
+    } else {
+      db.delete(sessionOutsideWords).where(eq(sessionOutsideWords.sessionId, sessionId)).run();
+    }
+  } catch (err) {
+    unsaved.add(sessionId);
+    if (unsaved.size > MEMORY) unsaved.delete(unsaved.values().next().value!);
+    logger.warn('[outside-words] could not save the outside-words note', {
+      sessionId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 /**
  * Note what a room turn answers, on every turn, so the chat's next turn starts clean.
@@ -17,32 +83,72 @@ const chats = new Set<string>();
  * @param outside - Whether any message it answers came from outside this machine.
  */
 export function noteRoomTurnWords(sessionId: string, outside: boolean): void {
+  if (chats.get(sessionId) !== outside || unsaved.has(sessionId)) save(sessionId, outside);
+  remember(sessionId, outside);
+}
+
+/**
+ * Drop a chat's note, saved or not: for an id minted for a launch that never started, which
+ * nothing will read again.
+ *
+ * @param sessionId - The id the launch was minted under.
+ */
+export function forgetRoomTurnWords(sessionId: string): void {
   chats.delete(sessionId);
-  if (!outside) return;
-  chats.add(sessionId);
-  if (chats.size > MEMORY) chats.delete(chats.values().next().value!);
+  save(sessionId, false);
+  unsaved.delete(sessionId);
 }
 
 /**
  * Carry a chat's outside words to the id its session goes by next: a runtime renaming a first
- * turn's session, or a room seat moving to a fresh one (Security M1 on #3576). Only ever adds.
+ * turn's session, or a room seat moving to a fresh one (Security M1 on #3576). Only ever adds,
+ * and reads the saved note, so a seat moved after a restart keeps it too.
  *
  * @param from - The id the turn was noted under.
  * @param to - The id the session is known by now.
  */
 export function aliasRoomTurnWords(from: string, to: string): void {
-  if (from === to || !chats.has(from)) return;
-  chats.add(to);
-  if (chats.size > MEMORY) chats.delete(chats.values().next().value!);
+  if (from === to || !roomTurnReadOutsideWords(from)) return;
+  noteRoomTurnWords(to, true);
 }
 
 /**
- * Whether this chat's latest room turn answered someone from outside this machine.
+ * Whether this chat's latest turn read outside words, or `'unreadable'` when its saved note could
+ * not be read. `false` with no database and nothing noted in this process. A caller that compares
+ * two chats reads this, so a chat it cannot read never passes for clean.
+ *
+ * @param sessionId - The chat.
+ */
+export function readRoomTurnWords(sessionId: string): boolean | 'unreadable' {
+  const known = chats.get(sessionId);
+  if (known !== undefined) return known;
+  if (!db) return false;
+  try {
+    const noted =
+      db
+        .select({ id: sessionOutsideWords.sessionId })
+        .from(sessionOutsideWords)
+        .where(eq(sessionOutsideWords.sessionId, sessionId))
+        .get() !== undefined;
+    remember(sessionId, noted);
+    return noted;
+  } catch (err) {
+    logger.warn('[outside-words] could not read the outside-words note; reading it as noted', {
+      sessionId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return 'unreadable';
+  }
+}
+
+/**
+ * Whether this chat's latest room turn answered someone from outside this machine. `false` with no
+ * database and nothing noted in this process; `true` when the saved note cannot be read.
  *
  * @param sessionId - The chat.
  */
 export function roomTurnReadOutsideWords(sessionId: string): boolean {
-  return chats.has(sessionId);
+  return readRoomTurnWords(sessionId) !== false;
 }
 
 /** Room posts an agent wrote from a chat that had read outside words, newest kept. */
@@ -51,8 +157,8 @@ const posts = new Set<string>();
 /**
  * Keep a room post's outside words with it when its writer's chat had read some (DOR-4023): marks
  * spread through agent hops, so the turn the post wakes counts them as its own. Called as the post
- * is written, before anything it triggers is dispatched. Kept in memory, like the levels: a room's
- * pending replies don't outlive the process.
+ * is written, before anything it triggers is dispatched. Kept in memory here; the post's own row
+ * keeps the outsider mark for it across a restart (`room-entry-writer.ts`, DOR-4587).
  *
  * @param entryId - The post.
  * @param writers - The chats that wrote or vouch for it.

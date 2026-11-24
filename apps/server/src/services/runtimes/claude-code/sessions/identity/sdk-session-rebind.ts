@@ -2,6 +2,7 @@ import type { AgentSession } from '../../agent-types.js';
 /** Persist a native rename before SDK publication, retaining mandatory identity failures. */
 import { RequiredSessionIdentityError } from '../../../../../lib/replay/required-session-identity-error.js';
 import { logger } from '../../../../../lib/logger.js';
+import { aliasRoomTurnWords } from '../../../../core/turn-power/outside-words.js';
 
 /** Server-only ownership observation; absent from tool and HTTP contracts. */
 export type NativeIdentityOwnerGuard = () => boolean;
@@ -16,6 +17,9 @@ export async function persistSdkSessionRebind(
   nextSdkSessionId: string,
   owner?: NativeIdentityOwnerGuard
 ): Promise<void> {
+  // The outside-words note goes with the chat to its next runtime id, saved or not, whatever the
+  // settings re-key does: it only ever adds (DOR-4148).
+  aliasRoomTurnWords(previousSdkSessionId, nextSdkSessionId);
   try {
     await settings?.rekeySessionSettings(previousSdkSessionId, nextSdkSessionId, owner);
   } catch (error) {

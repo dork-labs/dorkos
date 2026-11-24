@@ -120,6 +120,8 @@ describe('Relay routes', () => {
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('RESERVED_SENDER');
+      // It points at an address a program may send from, never a person's (DOR-5151).
+      expect(res.body.error).toContain('(e.g. relay.external.<name>)');
       expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
     });
 
@@ -168,6 +170,26 @@ describe('Relay routes', () => {
 
       expect(res.status).toBe(200);
       expect(vi.mocked(relayCore.publish)).toHaveBeenCalledOnce();
+    });
+
+    // DOR-5151: with nobody signed up yet there is nobody to prove, so a caller at this computer
+    // is the person (`sessionLauncherOf`), and its message goes as theirs, shaping fields and all.
+    it('sends as the person with nobody signed up yet, shaping fields and all', async () => {
+      const payload = {
+        content: 'operator message',
+        cwd: '/made-up/agents/scout',
+        __bindingPermissions: { permissionMode: 'acceptEdits' },
+      };
+      const res = await request(server)
+        .post('/api/relay/messages')
+        .send({ subject: 'relay.agent.some-agent', payload, from: 'relay.human.console' });
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(relayCore.publish)).toHaveBeenCalledWith(
+        'relay.agent.some-agent',
+        payload,
+        expect.objectContaining({ from: 'relay.human.console' })
+      );
     });
 
     // DOR-3088 (G2): a room's conversation, a Direct chat's above all, takes its turns from the

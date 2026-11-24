@@ -11,6 +11,7 @@ import {
   extractSessionIdFromSubject,
   isServerManagedSubject,
   SERVER_MANAGED_PREFIXES,
+  withoutCarriedTurnLimits,
 } from '@dorkos/relay';
 import {
   SendMessageRequestSchema,
@@ -46,6 +47,7 @@ import {
   publishRelayMessage,
   type RelayPublishDeps,
 } from './relay-delivery-receipts.js';
+import { relayMessageSender, type AgentSubjectLookup } from './relay-message-sender.js';
 
 /** Allowed subject prefixes for SSE subscription patterns. */
 const ALLOWED_PREFIXES = ['relay.human.console.', 'relay.system.', 'relay.signal.'];
@@ -143,7 +145,8 @@ export function buildConversations(
     let preview = '';
     let payload: unknown = undefined;
     if (deadLetter?.envelope?.payload) {
-      payload = deadLetter.envelope.payload;
+      // The sender's words, never the limits the server carried on them (DOR-5151).
+      payload = withoutCarriedTurnLimits(deadLetter.envelope.payload);
       const p = payload as Record<string, unknown>;
       const text = p?.content ?? p?.text ?? p?.message;
       preview =
@@ -195,6 +198,8 @@ export interface RelayRouteDeps extends RelayPublishDeps {
    * can't be published straight into it past the room (DOR-3088, Security's G2).
    */
   isRoomSession: (sessionId: string) => boolean;
+  /** The registry's relay address for the agent at a home, so its message goes from it (DOR-5151). */
+  agentSubjectOf?: AgentSubjectLookup;
 }
 
 /** Why a message addressed to a room's own conversation is refused. */
@@ -223,8 +228,8 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
     // (reply-forwarding, system, inbound adapter echo) — doing so would let a
     // local caller deliver to a bound human channel with `canInitiate` off,
     // bypassing DOR-277. Server-injected principals never travel this route, so
-    // rejecting them here is safe. Ordinary principals (`relay.human.console`,
-    // `relay.agent.*`, …) still flow and remain subject to the gate.
+    // rejecting them here is safe. Ordinary principals go on to the sender rule
+    // below, which keeps them only for the person, and remain subject to the gate.
     //
     // DOR-871: also rejects `relay.bridge.*`, which the gate evaluates
     // (non-exempt) rather than skips — see `isServerOnlyPrincipal`'s doc for
@@ -234,7 +239,7 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
         {
           error:
             `Sender "${result.data.from}" is a reserved server principal and cannot be ` +
-            `asserted by a client. Send from your own principal (e.g. relay.human.console).`,
+            `asserted by a client. Send from your own principal (e.g. relay.external.<name>).`,
           code: 'RESERVED_SENDER',
         },
         403
@@ -275,7 +280,10 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
       return c.json({ error: ROOM_SESSION_REFUSAL, code: 'ROOM_SESSION' }, 403);
     }
 
-    return publishRelayMessage(c, deps, result.data);
+    // DOR-5151: the server sets the sender, by the chat route's own reading of the caller.
+    const sent = relayMessageSender(honoRequestFacts(c), result.data, deps.agentSubjectOf);
+    if ('refused' in sent) return c.json(sent.refused, 403);
+    return publishRelayMessage(c, deps, { ...result.data, ...sent });
   });
 
   router.get('/messages/:messageId/status', createReceiptStatusHandler(relayCore));

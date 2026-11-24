@@ -86,8 +86,8 @@ function classifyRelayFrom(from: string): { origin?: SessionOrigin; originLabel?
  *
  * Pure and synchronous — no IO. Absent `origin` in the result means
  * user-initiated, the unmarked default. Best-effort and advisory only: this
- * is a UX affordance, never a security boundary (the raw relay publish route
- * lets callers assert `from`).
+ * is a UX affordance, never a security boundary (it reads the transcript's own
+ * text, which the words of a message can imitate).
  *
  * For channel-origin sessions (Telegram/Slack/Webhook), when the
  * block also carries `Sender:`/`Chat:` lines (DOR-411 producer), the origin

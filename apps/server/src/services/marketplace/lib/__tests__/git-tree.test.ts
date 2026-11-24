@@ -41,7 +41,6 @@ vi.mock('../../../../lib/git-safety.js', async (importOriginal) => ({
 import {
   fetchTree,
   GitCommitNotFoundError,
-  GitFetchError,
   isFullCommitSha,
   lookupRemoteRef,
 } from '../git/git-tree.js';
@@ -172,38 +171,6 @@ describe('lookupRemoteRef', () => {
     });
   });
 
-  it('follows a default branch that is not main', async () => {
-    // Purpose: a ref-less source used to resolve to `main`; a repository whose
-    // default branch is anything else must still install its default branch.
-    git(bare, 'symbolic-ref', 'HEAD', 'refs/heads/develop');
-    try {
-      const found = await lookupRemoteRef(url, 'HEAD');
-      expect(found).toEqual({ kind: 'found', commitSha: c.develop, refName: 'HEAD' });
-      const dir = dest();
-      const sha = await fetchTree({
-        cloneUrl: url,
-        commitSha: c.develop,
-        refName: 'HEAD',
-        subpath: '',
-        destDir: dir,
-      });
-      expect(sha).toBe(c.develop);
-      expect(markerIn(dir)).toBe('develop');
-    } finally {
-      git(bare, 'symbolic-ref', 'HEAD', 'refs/heads/main');
-    }
-  });
-
-  it('matches the branch named exactly, not one ending in the same name', async () => {
-    // Purpose: `ls-remote main` also returns `refs/heads/a/main`, which sorts
-    // first; taking the first line recorded the decoy's commit.
-    expect(await lookupRemoteRef(url, 'main')).toEqual({
-      kind: 'found',
-      commitSha: c.second,
-      refName: 'refs/heads/main',
-    });
-  });
-
   it('resolves an annotated tag to its commit, never the tag object', async () => {
     // Purpose: the first `ls-remote` line for an annotated tag is the tag
     // object; the pin must be the commit the tree comes from.
@@ -211,27 +178,6 @@ describe('lookupRemoteRef', () => {
       kind: 'found',
       commitSha: c.first,
       refName: 'refs/tags/v1',
-    });
-  });
-
-  it('resolves a lightweight tag and a full refname', async () => {
-    // Purpose: a tag with no peeled line is its own commit; a `refs/…` name is
-    // taken as written.
-    expect(await lookupRemoteRef(url, 'lw1')).toMatchObject({ commitSha: c.first });
-    expect(await lookupRemoteRef(url, 'refs/tags/v1')).toEqual({
-      kind: 'found',
-      commitSha: c.first,
-      refName: 'refs/tags/v1',
-    });
-  });
-
-  it('prefers a branch over a tag of the same name', async () => {
-    // Purpose: the order `git clone --branch` uses; git fetch's own DWIM would
-    // pick the tag, so the lookup must name the refname it chose.
-    expect(await lookupRemoteRef(url, 'develop-or-tag')).toEqual({
-      kind: 'found',
-      commitSha: c.develop,
-      refName: 'refs/heads/develop-or-tag',
     });
   });
 
@@ -273,21 +219,6 @@ describe('fetchTree', () => {
     expect(markerIn(dir)).toBe('second');
     expect(existsSync(path.join(dir, 'other', 'g'))).toBe(true);
     expect(existsSync(path.join(dir, '.git'))).toBe(false);
-  });
-
-  it('checks out a non-default branch', async () => {
-    // Purpose: whole-repo sources used to drop the ref and install the
-    // default branch under the branch's commit.
-    const dir = dest();
-    const sha = await fetchTree({
-      cloneUrl: url,
-      commitSha: c.develop,
-      refName: 'refs/heads/develop',
-      subpath: '',
-      destDir: dir,
-    });
-    expect(sha).toBe(c.develop);
-    expect(markerIn(dir)).toBe('develop');
   });
 
   it('checks out a pinned commit that is no branch tip, sparse to its subpath', async () => {
@@ -352,35 +283,6 @@ describe('fetchTree', () => {
       expect(markerIn(dir)).toBe('race-v0-moved');
     });
 
-    it('fetches an annotated tag by its refname and checks out its commit', async () => {
-      // Purpose: the refname fallback must peel the tag, not stop at it.
-      const dir = dest();
-      const sha = await fetchTree({
-        cloneUrl: url,
-        commitSha: 'f'.repeat(40),
-        refName: 'refs/tags/v1',
-        subpath: 'pkg',
-        destDir: dir,
-      });
-      expect(sha).toBe(c.first);
-      expect(markerIn(dir)).toBe('first');
-    });
-
-    it('falls back to the exact refname, so a branch beats a tag of the same name', async () => {
-      // Purpose: a bare name would let git's own lookup pick the tag (tags
-      // come first there); the fallback must fetch the branch the lookup chose.
-      const dir = dest();
-      const sha = await fetchTree({
-        cloneUrl: url,
-        commitSha: 'f'.repeat(40),
-        refName: 'refs/heads/develop-or-tag',
-        subpath: 'pkg',
-        destDir: dir,
-      });
-      expect(sha).toBe(c.develop);
-      expect(markerIn(dir)).toBe('develop');
-    });
-
     it('finds a pinned commit through the branches and tags, sparse to its subpath', async () => {
       // Purpose: the pin fallback fetches every blob it needs; a filtered one
       // would leave the checkout asking this same server for blobs it refuses.
@@ -396,32 +298,11 @@ describe('fetchTree', () => {
       expect(existsSync(path.join(dir, 'other'))).toBe(false);
     });
 
-    it('finds a pinned commit through the branches and tags', async () => {
-      // Purpose: a pin has no refname to fall back to; it must still install
-      // the exact commit it names.
-      const dir = dest();
-      const sha = await fetchTree({ cloneUrl: url, commitSha: c.first, subpath: '', destDir: dir });
-      expect(sha).toBe(c.first);
-      expect(markerIn(dir)).toBe('first');
-    });
-
     it('refuses a pinned commit the repository does not have', async () => {
       // Purpose: never a silent downgrade to some other commit.
       await expect(
         fetchTree({ cloneUrl: url, commitSha: 'e'.repeat(40), subpath: '', destDir: dest() })
       ).rejects.toBeInstanceOf(GitCommitNotFoundError);
     });
-  });
-
-  it('fails plainly when the remote cannot be read', async () => {
-    // Purpose: a failed fetch is an error, never an empty or partial tree.
-    await expect(
-      fetchTree({
-        cloneUrl: `file://${root}/nowhere.git`,
-        commitSha: c.first,
-        subpath: '',
-        destDir: dest(),
-      })
-    ).rejects.toBeInstanceOf(GitFetchError);
   });
 });

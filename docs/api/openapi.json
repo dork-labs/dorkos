@@ -1808,6 +1808,17 @@
           "noAutoMove"
         ]
       },
+      "AgentsMayPick": {
+        "type": "object",
+        "properties": {
+          "agentsMayPick": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agentsMayPick"
+        ]
+      },
       "KeepAwakeStatus": {
         "type": "object",
         "properties": {
@@ -25977,6 +25988,110 @@
           }
         },
         "operationId": "runtimes.updateClaudeCodeAccountsNoAutoMove"
+      }
+    },
+    "/api/runtimes/claude-code/accounts/{id}/agents-may-pick": {
+      "put": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Let agents pick a Claude account by name",
+        "description": "With `agentsMayPick: true`, an agent may start a chat on this registered account by naming it while no account advisor (Flow) is set up; `false` refuses it again. Opening an account waits for the owner to confirm it’s them; closing it is immediate. Recorded in Activity. Main (`default`) has no registry row, so it answers `404`. Only a person may call it: a request from another site, a caller that names itself an agent (`X-DorkOS-Agent`), and, with Require login on, a caller without a signed-in session are refused with `403`. With Require login off, a local caller that sends no agent header is trusted, and an approved extension's own browser code shares the app's page, so it passes in either posture. Each change is recorded in Activity.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The Claude account’s id; `default` is Main"
+            },
+            "required": true,
+            "description": "The Claude account’s id; `default` is Main",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentsMayPick"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The flag as it is now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentsMayPick"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "There is no such registered account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Always `no-store`: the held action is for this request only.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpRequired"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The change could not be saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "runtimes.updateClaudeCodeAccountsAgentsMayPick"
       }
     },
     "/api/keep-awake": {
@@ -52558,7 +52673,7 @@
           "Relay"
         ],
         "summary": "Send a relay message",
-        "description": "Publish a message using the caller-supplied `from`. Reserved server senders, destinations, and reply addresses are refused. `from` is a caller's claim, not authenticated attribution. HTTP authentication permits the request but does not bind the sender to the authenticated person. A program run by an agent can also choose a permitted `relay.human.*` address.\n\nWith login off, no app credential is required. The Host allowlist permits loopback addresses, configured trusted hosts, and the live tunnel unless `DORKOS_ALLOW_INSECURE_BIND` disables it. With login on, a session cookie or per-user bearer API key is required and the Host guard is off. CORS browser-origin policy still applies and permits requests without Origin; it does not authenticate the sender.\n\nA permitted human sender may supply `payload.cwd`, `payload.forAgent` (agent home path), and `payload.__bindingPermissions.permissionMode`. Existing folder and agent checks apply. The nested mode defaults to `default`; top-level `payload.permissionMode` does not set it. Supported approval modes depend on the receiving runtime. MCP send tools instead publish a server-resolved sender under separate MCP authentication and tool permissions. Agent, session, and external MCP sender addresses cannot use those three turn-shaping fields. Account selection follows separate host policy for new conversations and grants no sender authority.",
+        "description": "Publish a message. The server sets its sender. The person's own turn (no agent identity, and the person's browser session wherever one can exist) sends from the `from` it names. An agent whose token verified sends from its own registered address, or `relay.external.http` when the registry does not know it. Any other caller sends from `relay.external.http`. A caller other than the person naming a `relay.human.*` sender is refused with `person_required`, except a verified agent, which is sent from its own address; an app window without a session is asked for the password instead (`person_session_required`). Reserved server senders, destinations, and reply addresses are refused.\n\nWith login off, no app credential is required. The Host allowlist permits loopback addresses, configured trusted hosts, and the live tunnel unless `DORKOS_ALLOW_INSECURE_BIND` disables it. With login on, a session cookie or per-user bearer API key is required and the Host guard is off; an API key is not the person. CORS browser-origin policy still applies and permits requests without Origin; it does not authenticate the sender.\n\nThe person's message may supply `payload.cwd`, `payload.forAgent` (agent home path), and `payload.__bindingPermissions.permissionMode`. Existing folder and agent checks apply. The nested mode defaults to `default`; top-level `payload.permissionMode` does not set it. Supported approval modes depend on the receiving runtime. Any other caller's message has those fields and `payload.responseContext` removed, runs no looser than the receiving runtime's default, and carries the marks its agent's running turns hold. MCP send tools instead publish a server-resolved sender under separate MCP authentication and tool permissions. Account selection follows separate host policy for new conversations and grants no sender authority.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -52678,7 +52793,7 @@
             }
           },
           "401": {
-            "description": "Login requires a verified session or per-user API key",
+            "description": "Login requires a verified session or per-user API key, or an app window without a session must confirm the person (person_session_required)",
             "content": {
               "application/json": {
                 "schema": {
@@ -52688,7 +52803,7 @@
             }
           },
           "403": {
-            "description": "Reserved sender, destination or reply address",
+            "description": "Reserved sender, destination or reply address, or a person's address from someone other than the person",
             "content": {
               "application/json": {
                 "schema": {
