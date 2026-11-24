@@ -481,7 +481,10 @@ export class PersistentDispatch {
 
   /**
    * Read the existing crash policy. `'cold'` (no process held) never authorizes a fresh-id escape
-   * from live memory; only a later process's durable record may use it (DOR-4626).
+   * from live memory; only a later process's durable record may use it (DOR-4626). Decided: a
+   * cold chat (reaped while idle, or evicted) may recover once after a restart, but `'refuses'`
+   * (a crash loop) is final: `session-crash-recovery.ts` spends the record when it starts, so a
+   * restart never unlocks it.
    */
   failedSeatCrashAllows(sessionId: string): 'allows' | 'refuses' | 'cold' {
     const key = this.sessionKeyOf(sessionId);

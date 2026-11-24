@@ -39,6 +39,42 @@ export function failedSeatLedger(): FailedSeatLedger | undefined {
   }
 }
 
+/** Chats this process refuses for a crash loop, until a turn completes on them again. */
+const crashRefused = new Set<string>();
+const CRASH_REFUSED_MEMORY = 10_000;
+
+/**
+ * Spend a chat's failed-turn record because its own process refuses it for a crash loop, and
+ * write none for it until a turn completes there again, so a restart never unlocks what that
+ * process refused (DOR-4626). Best effort: a write that fails leaves the record, which is still
+ * bound by the latest-turn and current-guard checks. Keyed as the crash policy names the chat.
+ *
+ * @param sessionId - The chat whose process keeps dying.
+ */
+export function refuseFailedSeat(sessionId: string): void {
+  crashRefused.delete(sessionId);
+  crashRefused.add(sessionId);
+  if (crashRefused.size > CRASH_REFUSED_MEMORY)
+    crashRefused.delete(crashRefused.values().next().value!);
+  try {
+    failedSeatLedger()?.consume(sessionId);
+  } catch (err) {
+    logger.warn('[rooms] could not spend a crash-looping room chat’s recovery record', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * A turn completed on the chat, so its crash policy no longer refuses it.
+ *
+ * @param sessionId - The chat, as its crash policy names it.
+ */
+export function clearFailedSeatRefusal(sessionId: string): void {
+  crashRefused.delete(sessionId);
+}
+
 /**
  * Keep a room chat's failed turn for one recovery by a later server process. Called by the
  * runtime that saw the failure, at the moment it saw it; a chat with no recorded level, or a
@@ -53,6 +89,7 @@ export function recordFailedSeatTurn(
   agentPath: string | undefined,
   failure: Omit<FailedSeatRecord, 'carry'>
 ): void {
+  if (crashRefused.has(sessionId)) return;
   try {
     const carry = failedTurnCarry(sessionId, agentPath ?? '');
     if (carry) failedSeatLedger()?.record(sessionId, { ...failure, carry });

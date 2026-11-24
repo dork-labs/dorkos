@@ -142,6 +142,23 @@ describe('FailedSeatLedger', () => {
     ).toEqual(['new-chat']);
   });
 
+  it('drops a record too old to restore when a later process reads it', () => {
+    const { db, writer, later } = processes();
+    writer.record('chat-1', RECORD, NOW);
+    expect(later.restore('chat-1', NOW + FAILED_SEAT_RESTORE_MAX_MS + 1)).toBeNull();
+    expect(db.select().from(roomSeatFailures).all()).toEqual([]);
+  });
+
+  it('knows which chats its own current attempt has claimed', () => {
+    const { writer, later } = processes();
+    writer.record('chat-1', RECORD, NOW);
+    expect(later.holdsClaim('chat-1')).toBe(false);
+    expect(later.claim('chat-1', NOW + 1)).toBe(true);
+    expect(later.holdsClaim('chat-1')).toBe(true);
+    later.endClaim('chat-1');
+    expect(later.holdsClaim('chat-1')).toBe(false);
+  });
+
   it('restores for as long as a hand-off waits, and no longer', () => {
     expect(FAILED_SEAT_RESTORE_MAX_MS).toBe(HANDOFF_WAIT_MAX_MS);
   });

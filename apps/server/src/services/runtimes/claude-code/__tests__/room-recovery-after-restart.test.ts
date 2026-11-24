@@ -48,8 +48,14 @@ const OLD_TEXT = 'Prior instruction never to replay.';
 const DRAFT = 'The release is ready.';
 const NOTICE = 'API Error: upstream unavailable';
 
+/** What one booted process does differently. */
+interface BootOptions {
+  /** The recovery candidate check throws, as a storage fault between claim and move would. */
+  candidateThrows?: boolean;
+}
+
 /** Boot one server process over the database file; nothing in memory survives from the last. */
-async function boot(p: Paths, ids: Ids) {
+async function boot(p: Paths, ids: Ids, options: BootOptions = {}) {
   vi.resetModules();
   const { query } = await import('@anthropic-ai/claude-agent-sdk');
   const { sdkSimpleText, wrapSdkQuery } = await import('./sdk-scenarios.js');
@@ -183,7 +189,10 @@ async function boot(p: Paths, ids: Ids) {
   );
   h.service.handoffs.initializeDurable(() => notices.flush());
   const mover: InstanceType<typeof RoomSeatMover> = new RoomSeatMover({
-    recoveryCandidate: failedSeatCandidate,
+    recoveryCandidate: async (seat) => {
+      if (options.candidateThrows) throw new Error('fixture fault between claim and move');
+      return failedSeatCandidate(seat);
+    },
     requiredLaunches: runtimeRegistry.requiredLaunches(),
     runtimeOf: async () => 'claude-code',
     newSeatRuntime: async () => 'claude-code',
@@ -219,10 +228,15 @@ async function boot(p: Paths, ids: Ids) {
 
   const launches: Array<{ id: string; options: Options }> = [];
   const children = new Set<string>();
+  const quiet = new Set<string>();
+  /** How each of the seat's own turns ends, in order; a failure when none is queued. */
+  const priorOutcomes: Array<'fail' | 'ok'> = [];
+  let priorRuns = 0;
   vi.mocked(query, { partial: true }).mockImplementation(({ options }) => {
     expect(options?.env?.CLAUDE_CONFIG_DIR).toBe(p.root);
-    expect(options?.resume).toBeUndefined();
-    const id = options!.sessionId!;
+    // Only the seat's own repeated turns resume; every other chat launches fresh.
+    const id = (options!.sessionId ?? options!.resume)!;
+    if (id !== ids.prior) expect(options?.resume).toBeUndefined();
     launches.push({ id, options: options! });
     async function* sdk() {
       const native = claudeTranscriptPath(p.root, p.home, id)!;
@@ -249,7 +263,13 @@ async function boot(p: Paths, ids: Ids) {
         skills: [],
         plugins: [],
       } as unknown as SDKMessage;
-      if (id === ids.prior) {
+      const outcome = id === ids.prior ? (priorOutcomes.shift() ?? 'fail') : undefined;
+      if (outcome === 'ok' || quiet.has(id)) {
+        for await (const frame of sdkSimpleText('Done.', id))
+          if (frame.type !== 'system') yield frame;
+        return;
+      }
+      if (outcome === 'fail') {
         yield {
           type: 'assistant',
           error: 'server_error',
@@ -354,14 +374,45 @@ async function boot(p: Paths, ids: Ids) {
     await h.service.triggersIdle();
   };
 
-  /** The failed room turn, through the production runner, as the first process saw it. */
-  const failPriorTurn = async () => {
-    const room = h.service.createRoom(
-      { kind: 'channel', title: 'Restart recovery', members: [], agentPaths: [p.home] },
-      h.human
+  /** A plain person's chat turn that says a line and posts nothing. */
+  const quietTurn = async () => {
+    const chat = randomUUID();
+    owned.add(chat);
+    quiet.add(chat);
+    await runtimeRegistry.persistSessionRuntime(
+      chat,
+      'claude-code',
+      { kind: 'interactive' },
+      p.home
     );
-    ids.roomId = room.id;
-    ids.authorId = h.authors.resolveAgent(p.home, 'Fixture').id;
+    await runtimeRegistry.saveSessionSettings(chat, { permissionMode: 'plan', fastMode: false });
+    const chatRuntime = await runtimeRegistry.resolveForSession(chat);
+    for await (const event of chatRuntime.sendMessage(chat, 'Hello', {
+      cwd: p.home,
+      accountHint: 'actual-account',
+      forAgent: p.home,
+    }))
+      void event;
+    return chat;
+  };
+
+  /** One of the seat's own room turns, through the production runner; the first creates the room. */
+  const failPriorTurn = async (outcome: 'fail' | 'ok' = 'fail') => {
+    if (!ids.roomId) {
+      const created = h.service.createRoom(
+        { kind: 'channel', title: 'Restart recovery', members: [], agentPaths: [p.home] },
+        h.human
+      );
+      ids.roomId = created.id;
+      ids.authorId = h.authors.resolveAgent(p.home, 'Fixture').id;
+      h.store.bindRoomSession(created.id, ids.authorId, ids.prior, new Date().toISOString());
+      await runtimeRegistry.saveSessionSettings(ids.prior, {
+        permissionMode: 'plan',
+        fastMode: false,
+      });
+    }
+    const room = h.store.getRoom(ids.roomId)!;
+    priorOutcomes.push(outcome);
     const entryId = randomUUID();
     const entry = h.store.appendEntry({
       id: entryId,
@@ -377,11 +428,6 @@ async function boot(p: Paths, ids: Ids) {
       threadRootEntryId: null,
       createdAt: new Date().toISOString(),
     });
-    h.store.bindRoomSession(room.id, ids.authorId, ids.prior, new Date().toISOString());
-    await runtimeRegistry.saveSessionSettings(ids.prior, {
-      permissionMode: 'plan',
-      fastMode: false,
-    });
     const context = buildRoomContext(
       {
         store: h.store,
@@ -396,7 +442,7 @@ async function boot(p: Paths, ids: Ids) {
       },
       {
         room,
-        agentAuthorId: ids.authorId,
+        agentAuthorId: ids.authorId!,
         cwd: p.home,
         entry,
         lastReadSeq: 0,
@@ -406,7 +452,8 @@ async function boot(p: Paths, ids: Ids) {
         engaged: null,
       }
     );
-    await runInDispatch({ dispatchId: 'restart-prior-dispatch', origin: 'room', entryId }, () =>
+    const dispatchId = `restart-prior-dispatch-${priorRuns++}`;
+    await runInDispatch({ dispatchId, origin: 'room', entryId }, () =>
       productionRunner.run({
         room,
         authorId: ids.authorId!,
@@ -445,6 +492,7 @@ async function boot(p: Paths, ids: Ids) {
     turnLevels,
     launches,
     handOff,
+    quietTurn,
     failPriorTurn,
     stop,
     candidate: () => failedSeatCandidate(seat()),
@@ -504,7 +552,7 @@ it('recovers a failed room chat once after a restart, carrying its marks, and ne
   const first = await boot(p, ids);
   await first.failPriorTurn();
   expect(first.runtime.readFailedSeatAuthority(ids.prior)).toMatchObject({
-    dispatchId: 'restart-prior-dispatch',
+    dispatchId: 'restart-prior-dispatch-0',
     root: p.root,
     accountId: 'actual-account',
   });
@@ -523,14 +571,15 @@ it('recovers a failed room chat once after a restart, carrying its marks, and ne
   const second = await boot(p, ids);
   expect(second.turnLevels.lastTurnLevelOf(ids.prior)).toBeUndefined();
   expect(second.runtime.readFailedSeatAuthority(ids.prior)).toMatchObject({
-    dispatchId: 'restart-prior-dispatch',
+    dispatchId: 'restart-prior-dispatch-0',
     root: p.root,
     accountId: 'actual-account',
     inference: 'own-account',
     billing: 'subscription',
     restored: true,
   });
-  expect(await second.candidate()).not.toBeNull();
+  // Outside an attempt that spent the record, a restored authority stands for nothing.
+  expect(await second.candidate()).toBeNull();
   await second.handOff();
   expect(second.launches.map((launch) => launch.id)).toEqual([
     expect.any(String), // the person's chat that handed off
@@ -571,4 +620,95 @@ it('recovers a failed room chat once after a restart, carrying its marks, and ne
   expect(third.runtime.readFailedSeatAuthority(ids.prior)).toBeNull();
   expect(await third.candidate()).toBeNull();
   await third.stop();
-}, 30000);
+}, 60000);
+
+/** A restarted process's view of the failed chat's durable row. */
+function rowOf(b: Awaited<ReturnType<typeof boot>>, sessionId: string) {
+  return b.database
+    .select()
+    .from(b.db.roomSeatFailures)
+    .where(b.db.eq(b.db.roomSeatFailures.sessionId, sessionId))
+    .get();
+}
+
+it('keeps the failed turn’s marks when the new process already holds a level for the old chat', async () => {
+  const p = await paths();
+  const ids: Ids = { prior: randomUUID(), fresh: randomUUID() };
+  const first = await boot(p, ids);
+  await first.failPriorTurn();
+  const failedMarks = first.turnLevels.marksOf(ids.prior, undefined);
+  expect(failedMarks).toMatchObject({ outsider: true });
+  await first.stop();
+
+  const second = await boot(p, ids);
+  // A level for the old chat with no durable turn behind it: a clean chat's turn carried onto
+  // the old id, as a runtime rename does. It must not stand in for the failed turn's record.
+  const clean = await second.quietTurn();
+  second.turnLevels.aliasTurnLevel(clean, ids.prior);
+  expect(second.turnLevels.lastTurnLevelOf(ids.prior)).toBeDefined();
+  expect(second.turnLevels.marksOf(ids.prior, undefined).outsider).toBeUndefined();
+  await second.handOff();
+  expect(second.h.store.getRoomSession(ids.roomId!, ids.authorId!)).toBe(ids.fresh);
+  expect(second.turnLevels.marksOf(ids.fresh, undefined)).toMatchObject(failedMarks);
+  expect(rowOf(second, ids.prior)?.consumedAt).toEqual(expect.any(Number));
+  await second.stop();
+}, 60000);
+
+it('spends the record before the move, so a fault in between never grants another try', async () => {
+  const p = await paths();
+  const ids: Ids = { prior: randomUUID(), fresh: randomUUID() };
+  const first = await boot(p, ids);
+  await first.failPriorTurn();
+  await first.stop();
+
+  const second = await boot(p, ids, { candidateThrows: true });
+  await second.handOff();
+  expect(second.h.store.getRoomSession(ids.roomId!, ids.authorId!)).toBe(ids.prior);
+  expect(rowOf(second, ids.prior)?.consumedAt).toEqual(expect.any(Number));
+  await second.stop();
+
+  const third = await boot(p, ids);
+  expect(third.runtime.readFailedSeatAuthority(ids.prior)).toBeNull();
+  await third.handOff();
+  expect(third.h.store.getRoomSession(ids.roomId!, ids.authorId!)).toBe(ids.prior);
+  await third.stop();
+}, 60000);
+
+it('refuses a record whose chat later finished a turn, even though the row was never spent', async () => {
+  const p = await paths();
+  const ids: Ids = { prior: randomUUID(), fresh: randomUUID() };
+  const first = await boot(p, ids);
+  await first.failPriorTurn();
+  await first.stop();
+
+  // A later process runs the chat once more, and that turn finishes; it writes no record.
+  const second = await boot(p, ids);
+  await second.failPriorTurn('ok');
+  await second.stop();
+
+  const third = await boot(p, ids);
+  expect(rowOf(third, ids.prior)?.consumedAt).toBeNull();
+  expect(third.runtime.readFailedSeatAuthority(ids.prior)).toMatchObject({ restored: true });
+  await third.handOff();
+  expect(third.h.store.getRoomSession(ids.roomId!, ids.authorId!)).toBe(ids.prior);
+  expect(third.launches.map((launch) => launch.id)).not.toContain(ids.fresh);
+  await third.stop();
+}, 60000);
+
+it('never lets a restart unlock a chat its own process refused for a crash loop', async () => {
+  const p = await paths();
+  const ids: Ids = { prior: randomUUID(), fresh: randomUUID() };
+  const first = await boot(p, ids);
+  // Each fixture turn ends its process without a completed turn, so two failures in a row are
+  // two crashes in a row: the crash policy now refuses the chat.
+  await first.failPriorTurn();
+  await first.failPriorTurn();
+  expect(first.runtime.readFailedSeatAuthority(ids.prior)).toBeNull();
+  await first.stop();
+
+  const second = await boot(p, ids);
+  expect(second.runtime.readFailedSeatAuthority(ids.prior)).toBeNull();
+  await second.handOff();
+  expect(second.h.store.getRoomSession(ids.roomId!, ids.authorId!)).toBe(ids.prior);
+  await second.stop();
+}, 60000);

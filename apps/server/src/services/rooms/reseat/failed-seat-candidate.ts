@@ -13,6 +13,7 @@ import { agentPause } from '../../mesh/pause/agent-pause.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { mayAutoPickClaudeFolder } from '../../core/usage/account-ranking.js';
 import type { RecoveryAuthority } from './required-launch-store.js';
+import { failedSeatLedger } from './failed-seat-record.js';
 import type { Seat } from './seat-mover.js';
 
 /** A positive historical witness, with current guard revalidation owned by its runtime. */
@@ -103,6 +104,8 @@ export async function failedSeatCandidate(seat: Seat): Promise<FailedSeatCandida
         now.inference === authority.inference &&
         now.accountId === authority.accountId &&
         now.restored === authority.restored &&
+        // A restored authority stands only inside the attempt that spent its record (DOR-4626).
+        (authority.restored !== true || failedSeatLedger()?.holdsClaim(sessionId) === true) &&
         pause !== undefined &&
         !pause.isPaused(seat.agentPath) &&
         // A later process holds no projector for a chat it never ran; nothing can wait on a

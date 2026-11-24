@@ -71,6 +71,10 @@
  * @module services/runtimes/claude-code/sessions/session-crash-recovery
  */
 import { logger } from '../../../../lib/logger.js';
+import {
+  clearFailedSeatRefusal,
+  refuseFailedSeat,
+} from '../../../rooms/reseat/failed-seat-record.js';
 import type { PumpCrash, PumpDispatch, PumpState } from './session-pump-contract.js';
 import type { TurnWindow } from './session-turn-windows.js';
 
@@ -260,6 +264,9 @@ export class SessionCrashRecovery {
       willAutoResume: this.willAutoResume,
     };
     this.latest = record;
+    // A restart must not unlock what this process now refuses: spend the chat's room-recovery
+    // record here (DOR-4626, `failed-seat-ledger.ts`).
+    if (!record.willAutoResume) refuseFailedSeat(record.sessionId);
     logger.warn('[SessionCrashRecovery] a session lost its process', {
       sessionId: record.sessionId,
       stateAtCrash: record.stateAtCrash,
@@ -285,6 +292,7 @@ export class SessionCrashRecovery {
   noteStateChange(change: { from: PumpState; to: PumpState }): void {
     if (change.from !== 'running' || change.to !== 'warm') return;
     this.run = 0;
+    clearFailedSeatRefusal(this.opts.sessionId);
   }
 
   /**

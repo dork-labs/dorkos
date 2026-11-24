@@ -14,6 +14,20 @@
  * is never proof on its own: the caller still matches it against the session's latest durable
  * turn and every current guard.
  *
+ * ## Crash loops and cold chats (decided for DOR-4626)
+ *
+ * A restart must never unlock what the writing process refused: when that process's crash
+ * policy refuses the chat (its process keeps dying), the row is spent there and then
+ * ({@link FailedSeatLedger.consume} from `session-crash-recovery.ts`), so no later process
+ * restores it. A chat whose process was merely gone (reaped while idle, or evicted) is `'cold'`,
+ * not refused, and may recover once after a restart.
+ *
+ * ## One process per data folder
+ *
+ * "Another process" means "an earlier one" only because DorkOS holds an instance lock on the
+ * data folder, so two servers never share this table at once. Without that lock, two live
+ * servers would each read the other's rows as restorable.
+ *
  * @module services/rooms/reseat/failed-seat-ledger
  */
 import { randomUUID } from 'node:crypto';
@@ -103,10 +117,7 @@ export class FailedSeatLedger {
    */
   record(sessionId: string, record: FailedSeatRecord, now = Date.now()): void {
     const payload = JSON.stringify(payloadSchema.parse({ version: 1, ...record }));
-    this.db
-      .delete(roomSeatFailures)
-      .where(lt(roomSeatFailures.recordedAt, now - FAILED_SEAT_RESTORE_MAX_MS))
-      .run();
+    this.dropOlderThan(now);
     this.db
       .insert(roomSeatFailures)
       .values({ sessionId, bootId: this.bootId, payload, recordedAt: now, consumedAt: null })
@@ -131,7 +142,11 @@ export class FailedSeatLedger {
       .where(eq(roomSeatFailures.sessionId, sessionId))
       .get();
     if (!row || row.bootId === this.bootId) return null;
-    if (row.recordedAt > now || now - row.recordedAt > FAILED_SEAT_RESTORE_MAX_MS) return null;
+    if (row.recordedAt > now || now - row.recordedAt > FAILED_SEAT_RESTORE_MAX_MS) {
+      // Too old ever to restore: drop it here rather than wait for the next failure's write.
+      if (row.recordedAt <= now) this.dropOlderThan(now);
+      return null;
+    }
     if (row.consumedAt !== null && !this.claims.has(sessionId)) return null;
     let parsed: z.infer<typeof payloadSchema>;
     try {
@@ -171,6 +186,23 @@ export class FailedSeatLedger {
   }
 
   /**
+   * Whether this process's current attempt holds the chat's claim.
+   *
+   * @param sessionId - The failed chat.
+   */
+  holdsClaim(sessionId: string): boolean {
+    return this.claims.has(sessionId);
+  }
+
+  /** Drop rows too old ever to restore. */
+  private dropOlderThan(now: number): void {
+    this.db
+      .delete(roomSeatFailures)
+      .where(lt(roomSeatFailures.recordedAt, now - FAILED_SEAT_RESTORE_MAX_MS))
+      .run();
+  }
+
+  /**
    * End this process's attempt. The row stays spent.
    *
    * @param sessionId - The failed chat.
@@ -180,7 +212,8 @@ export class FailedSeatLedger {
   }
 
   /**
-   * Spend a chat's row after any recovery moved its seat, whichever process recorded it.
+   * Spend a chat's row after any recovery moved its seat, whichever process recorded it, or when
+   * this process refuses the chat for a crash loop.
    *
    * @param sessionId - The chat the seat moved away from.
    * @param now - The clock, for tests.
