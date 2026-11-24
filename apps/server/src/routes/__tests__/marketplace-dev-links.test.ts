@@ -217,7 +217,7 @@ describe('POST /api/marketplace/dev-links', () => {
       expectedChange: preview.body.change,
     });
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('dev_link_changed');
+    expect(res.body).toMatchObject({ code: 'conflict', reason: 'dev_link_changed' });
     await expect(readlink(slot())).rejects.toThrow();
     expect((await request(server).get('/api/marketplace/dev-links')).body.links).toEqual([]);
   });
@@ -285,9 +285,11 @@ describe('POST /api/marketplace/dev-links', () => {
       .post('/api/marketplace/dev-links')
       .send({ path: empty, scope: 'global' });
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({
-      error: 'No package found in this folder.',
-      code: 'dev_link_not_a_package',
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body).toMatchObject({
+      code: 'invalid_request',
+      detail: 'No valid package found in this folder.',
+      reason: 'dev_link_not_a_package',
     });
   });
 });

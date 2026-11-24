@@ -18,7 +18,7 @@ import { randomBytes } from 'node:crypto';
 import type { Context, Hono } from 'hono';
 import { calledApps, type ExtensionManifest } from '@dorkos/extension-api';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { corsAllowsOrigin } from '../http/cors-policy.js';
@@ -27,7 +27,7 @@ import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 /** The header a call between apps carries its token in. */
 export const CALLER_TOKEN_HEADER = 'x-dorkos-caller-token';
 
-/** The code a refused or unknown token answers with, so the window can ask for a new one. */
+/** The `reason` a refused or unknown token answers with, so the window can ask for a new one. */
 export const CALLER_TOKEN_INVALID = 'caller_token_invalid';
 
 /** How long a token lasts without being used. */
@@ -107,9 +107,12 @@ export interface CallerTokenDeps {
   manifest(id: string): ExtensionManifest | undefined;
 }
 
-/** Answer a refused mint. */
-function refuseMint(c: Context<ApiEnv>, status: 400 | 403, error: string): Response {
-  return c.json({ error, code: CALLER_TOKEN_INVALID }, status);
+/** Answer a refused mint, with `reason: caller_token_invalid`. */
+function refuseMint(c: Context<ApiEnv>, status: 400 | 403, detail: string): Response {
+  return problem(c, status === 400 ? 'invalid_request' : 'forbidden', {
+    detail,
+    extensions: { reason: CALLER_TOKEN_INVALID },
+  });
 }
 
 /**

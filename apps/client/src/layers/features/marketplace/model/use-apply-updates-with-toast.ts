@@ -121,7 +121,7 @@ function showOutcome(outcome: ApplyOutcomeToast, toastId: string | number): void
 }
 
 /** The server's code for a batch that would need a person to approve each install. */
-const BATCH_NEEDS_APPROVAL = 'batch_update_needs_approval';
+const BATCH_NEEDS_APPROVAL = 'needs_approval';
 
 /** The server's code when a new version runs something the person was not shown. */
 const DISCLOSURE_CHANGED = 'disclosure_changed';

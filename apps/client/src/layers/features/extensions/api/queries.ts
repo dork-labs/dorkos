@@ -120,7 +120,7 @@ export interface RunApprovalTarget {
 
 /**
  * A refused approve or revoke: the server's sentence, and whether the card
- * went out of date while it was on screen (`stale_approval`).
+ * went out of date while it was on screen (`reason: stale_approval`).
  */
 export class RunApprovalError extends Error {
   constructor(
@@ -161,7 +161,7 @@ export function useSetExtensionRunApproval(approve: boolean) {
     mutationFn: async ({ id, version, plugin, permissions, expectedDigest }: RunApprovalTarget) => {
       // Approving binds the copy the card shows — its version and carrying
       // plugin — so a copy that took its place since the card was drawn is
-      // refused with `stale_approval` instead of approved (DOR-2517). The card
+      // refused with `reason: stale_approval` instead of approved (DOR-2517). The card
       // is never told a path; the server compares what it is sent.
       const res = await fetch(
         extensionApiUrl(`/extensions/${id}/${approve ? 'approve' : 'revoke'}`),
@@ -183,7 +183,7 @@ export function useSetExtensionRunApproval(approve: boolean) {
           res,
           `Couldn’t update ${id}. The server answered ${res.status}.`
         );
-        throw new RunApprovalError(body.message, body.code === STALE_APPROVAL_CODE, body.code);
+        throw new RunApprovalError(body.message, body.reason === STALE_APPROVAL_CODE, body.code);
       }
       return res.json() as Promise<ExtensionApprovalResponse>;
     },

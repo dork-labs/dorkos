@@ -265,8 +265,20 @@ describe('mounted document HTTP endpoints', () => {
   it('returns 409 for conflicting accepted identity and 413 for oversized data', async () => {
     const input = event();
     expect((await post(input)).status).toBe(201);
-    expect((await post({ ...input, payload: { different: true } })).status).toBe(409);
-    expect((await post(event({ text: 'x'.repeat(17000) }))).status).toBe(413);
+    const conflict = await post({ ...input, payload: { different: true } });
+    expect(conflict.status).toBe(409);
+    expect(conflict.headers['content-type']).toContain('application/problem+json');
+    expect(conflict.body).toMatchObject({
+      code: 'conflict',
+      detail: 'The document changed. Refresh it before trying again.',
+    });
+    const tooLarge = await post(event({ text: 'x'.repeat(17000) }));
+    expect(tooLarge.status).toBe(413);
+    expect(tooLarge.headers['content-type']).toContain('application/problem+json');
+    expect(tooLarge.body).toMatchObject({
+      code: 'request_too_large',
+      reason: 'doc_event_too_large',
+    });
   });
   it('keeps accepted retries before rate accounting and returns Retry-After for new input', async () => {
     localDocument();
@@ -277,6 +289,7 @@ describe('mounted document HTTP endpoints', () => {
     const limited = await post(event());
     expect(limited.status).toBe(429);
     expect(limited.headers['retry-after']).toBe('60');
+    expect(limited.body).toMatchObject({ code: 'rate_limited', retryAfterMs: 60_000 });
     expect((await post(input)).status).toBe(200);
   });
   it('accepts and retains new input while a destination batch is already running', async () => {

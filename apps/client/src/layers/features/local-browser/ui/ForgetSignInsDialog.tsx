@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { LocalBrowserProfileChoice } from '@dorkos/shared/local-browser';
-import { LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
+import { LOCAL_BROWSER_STATE_KEY, browserRefusalCode } from '@/layers/entities/local-browser';
 import { useTransport } from '@/layers/shared/model';
 import {
   AlertDialog,
@@ -68,8 +68,7 @@ export function ForgetSignInsDialog({
       await client.invalidateQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
       onOpenChange(false);
     } catch (cause) {
-      if ((cause as { code?: string } | null)?.code === 'profiles_folder_changed')
-        setFolderChanged(true);
+      if (browserRefusalCode(cause) === 'profiles_folder_changed') setFolderChanged(true);
       else setError(browserErrorMessage(cause));
     } finally {
       setPending(false);

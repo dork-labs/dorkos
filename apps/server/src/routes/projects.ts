@@ -37,12 +37,11 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
-import { validationProblem } from '@dorkos/http-kit';
+import { problem, sendProblem, validationProblem } from '@dorkos/http-kit';
 
 /** What `GET /api/projects/resolve` says when the caller is not a person. */
 const PROJECT_LOOKUP_BAR: PersonBarCopy = {
-  error: 'Only a person can look up a project.',
-  code: 'project_lookup_person_required',
+  code: 'person_only',
   subject: 'the projects DorkOS remembers',
   crossSite: (origin) =>
     `DorkOS looked nothing up. This request came from ${origin}, which is not DorkOS. ` +
@@ -65,17 +64,10 @@ router.get('/resolve', async (c) => {
   const facts = honoRequestFacts(c);
   if (facts.headers['sec-fetch-site'] === 'cross-site') {
     const from = facts.headers.origin ?? facts.headers.referer ?? 'another site';
-    return c.json(
-      {
-        error: PROJECT_LOOKUP_BAR.error,
-        code: PROJECT_LOOKUP_BAR.code,
-        message: PROJECT_LOOKUP_BAR.crossSite(from),
-      },
-      403
-    );
+    return problem(c, PROJECT_LOOKUP_BAR.code, { detail: PROJECT_LOOKUP_BAR.crossSite(from) });
   }
   const refusal = assessPerson(facts, PROJECT_LOOKUP_BAR);
-  if (refusal) return c.json(refusal.body, refusal.status as ContentfulStatusCode);
+  if (refusal) return sendProblem(c, refusal.body);
   const parsed = ProjectResolveQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
     return validationProblem(c, parsed.error);

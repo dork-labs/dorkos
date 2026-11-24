@@ -43,7 +43,7 @@ import { noteStepUpRisksBeforeServing } from '../services/extensions/step-up/ste
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { registerExtensionApprovalRoutes } from './extensions-approval.js';
 import { registerExtensionStepUpRoutes } from './extensions-step-up.js';
@@ -58,10 +58,6 @@ import type { PersonForwardDeps } from '../services/extensions/forward/person-fo
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 import { markedExtensionSecretRefusal } from './extension-secret-agent-gate.js';
-import {
-  OPERATOR_ONLY_CONFIG_CODE,
-  OPERATOR_ONLY_CONFIG_ERROR,
-} from '../services/core/operator/config-write-policy.js';
 
 /** Connected SSE clients for extension lifecycle events. */
 const sseClients = new Set<ServerResponse>();
@@ -117,8 +113,8 @@ export const SAFE_EXT_ID = /^[a-z0-9][a-z0-9-]*$/;
  *
  * They write `extensions.enabled` / `extensions.disabled`, both `operator-only`
  * in `config-write-policy.ts`, straight through `configManager` — around the
- * door that enforces that classification. So they answer with that door's own
- * code and headline: one setting, one refusal, wherever a caller meets it.
+ * door that enforces that classification. They answer `person_only`: a refusal
+ * of an agent is not about where the caller is, so never `operator_only`.
  *
  * The messages talk about which code DorkOS runs rather than about a config
  * key, because that is what a person reading a refusal actually needs to know.
@@ -126,18 +122,11 @@ export const SAFE_EXT_ID = /^[a-z0-9][a-z0-9-]*$/;
  * {@link module:routes/extensions-person-bar}, shared with the approval routes.
  */
 const EXTENSION_TOGGLE_BAR: PersonBarCopy = {
-  error: OPERATOR_ONLY_CONFIG_ERROR,
-  code: OPERATOR_ONLY_CONFIG_CODE,
+  code: 'person_only',
   subject: 'which extensions are turned on',
   crossSite: (origin) =>
-    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
-    `Turning an extension on or off changes which code this copy of DorkOS runs, and ` +
-    `that is something a person does in their own app — not something another site ` +
-    `can ask for on their behalf.`,
-  agent:
-    `DorkOS changed nothing. Turning an extension on or off decides which code runs ` +
-    `inside DorkOS, so it is a decision only a person makes. Ask them to open ` +
-    `Settings > Extensions and make the change there.`,
+    `Nothing changed. ${origin} isn’t DorkOS. Turn extensions on or off in the app.`,
+  agent: 'Nothing changed. Only a person turns extensions on or off, in Settings.',
 };
 
 /** What the `/api/extensions` routes read. */
@@ -155,17 +144,16 @@ export interface ExtensionsRouterDeps {
 }
 
 /** The answer for an id outside {@link SAFE_EXT_ID}. */
-const INVALID_ID = { error: 'Invalid extension ID' };
+const invalidId = (c: Context<ApiEnv>) =>
+  problem(c, 'invalid_request', { detail: 'Use an extension id in lowercase, like my-extension.' });
 
-/**
- * A validation failure, in the shape these routes have always answered.
- *
- * @param c - The request's context.
- * @param error - What Zod refused.
- */
-function validationFailed(c: Context<ApiEnv>, error: z.ZodError): Response {
-  return validationProblem(c, error);
-}
+/** The answer for an extension this computer does not have. */
+const noSuchExtension = (c: Context<ApiEnv>, id: string) =>
+  problem(c, 'not_found', { detail: `No extension named ${id} is installed.` });
+
+/** A server fault, said in a sentence: what failed, and to try again. */
+const failed = (c: Context<ApiEnv>, what: string) =>
+  problem(c, 'internal_error', { detail: `Couldn’t ${what}. Try again.` });
 
 /**
  * Create the `/api/extensions` routes.
@@ -209,7 +197,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       return c.json([...extensionManager.listPublic(), ...extensionManager.listShadowedPublic()]);
     } catch (err) {
       logger.error('[Extensions] Failed to list extensions', err);
-      return c.json({ error: 'Failed to list extensions' }, 500);
+      return failed(c, 'list extensions');
     }
   });
 
@@ -217,7 +205,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   router.post('/:id/enable', async (c) => {
     const id = c.req.param('id');
     try {
-      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      if (!SAFE_EXT_ID.test(id)) return invalidId(c);
       // Identity before the state of the world, matching the order the tunnel
       // and approval routes use: a caller that may not do this at all is told
       // so, rather than being told whether the extension exists.
@@ -234,7 +222,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       });
     } catch (err) {
       logger.error(`[Extensions] Failed to enable ${id}`, err);
-      return c.json({ error: 'Failed to enable extension' }, 500);
+      return failed(c, 'turn the extension on');
     }
   });
 
@@ -243,7 +231,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
     try {
       const result = await extensionManager.enable(id);
       if (!result) {
-        return c.json({ error: `Extension '${id}' not found or cannot be enabled` }, 404);
+        return problem(c, 'not_found', { detail: `No extension named ${id} can be turned on.` });
       }
 
       await activity?.emit({
@@ -268,7 +256,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       return c.json(result);
     } catch (err) {
       logger.error(`[Extensions] Failed to enable ${id}`, err);
-      return c.json({ error: 'Failed to enable extension' }, 500);
+      return failed(c, 'turn the extension on');
     }
   }
 
@@ -276,7 +264,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   router.post('/:id/disable', async (c) => {
     const id = c.req.param('id');
     try {
-      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      if (!SAFE_EXT_ID.test(id)) return invalidId(c);
       // Barred in this direction too, unlike `POST /api/tunnel/stop`, which runs
       // nothing because stopping only narrows exposure. `operator-only` is a rule
       // about PATHS and never about values (`config-write-policy.ts`, pinned by
@@ -292,9 +280,9 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
         // (`canDisable: false`). Distinguish them so the client gets an honest
         // status — 409 Conflict for "exists but forbidden", not a misleading 404.
         if (extensionManager.get(id)) {
-          return c.json({ error: `Extension '${id}' is required and cannot be disabled` }, 409);
+          return problem(c, 'conflict', { detail: `${id} is required, so it stays on.` });
         }
-        return c.json({ error: `Extension '${id}' not found` }, 404);
+        return noSuchExtension(c, id);
       }
 
       await activity?.emit({
@@ -317,7 +305,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       return c.json(result);
     } catch (err) {
       logger.error(`[Extensions] Failed to disable ${id}`, err);
-      return c.json({ error: 'Failed to disable extension' }, 500);
+      return failed(c, 'turn the extension off');
     }
   });
 
@@ -325,13 +313,19 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   router.post('/:id/init-server', async (c) => {
     const id = c.req.param('id');
     try {
-      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      if (!SAFE_EXT_ID.test(id)) return invalidId(c);
+      if (!extensionManager.get(id)) return noSuchExtension(c, id);
       const result = await extensionManager.initializeServer(id);
-      if (!result.ok) return c.json({ error: result.error }, 400);
+      if (!result.ok) {
+        logger.warn(`[Extensions] ${id} did not start: ${result.error}`);
+        return problem(c, 'upstream_unavailable', {
+          detail: 'Its server didn’t start. Check Settings.',
+        });
+      }
       return c.json({ ok: true });
     } catch (err) {
       logger.error(`[Extensions] Failed to init server for ${id}`, err);
-      return c.json({ error: 'Failed to initialize server extension' }, 500);
+      return failed(c, 'start the extension’s server');
     }
   });
 
@@ -346,7 +340,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       return c.json(extensionManager.listPublic());
     } catch (err) {
       logger.error('[Extensions] Failed to reload extensions', err);
-      return c.json({ error: 'Failed to reload extensions' }, 500);
+      return failed(c, 'reload extensions');
     }
   });
 
@@ -354,7 +348,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   router.post('/cwd-changed', async (c) => {
     try {
       const parsed = CwdChangedBodySchema.safeParse(readJsonBody(c));
-      if (!parsed.success) return validationFailed(c, parsed.error);
+      if (!parsed.success) return validationProblem(c, parsed.error);
 
       const diff = await extensionManager.updateCwd(parsed.data.cwd);
       const changed = diff.added.length > 0 || diff.removed.length > 0;
@@ -366,7 +360,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       return c.json({ changed, added: diff.added, removed: diff.removed });
     } catch (err) {
       logger.error('[Extensions] Failed to handle CWD change', err);
-      return c.json({ error: 'Failed to handle CWD change' }, 500);
+      return failed(c, 'load this folder’s extensions');
     }
   });
 
@@ -374,14 +368,17 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   router.get('/:id/bundle', async (c) => {
     const id = c.req.param('id');
     try {
-      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      if (!SAFE_EXT_ID.test(id)) return invalidId(c);
       const bundle = await extensionManager.readBundle(id);
-      if (!bundle) return c.json({ error: `Bundle not available for '${id}'` }, 404);
+      if (!bundle)
+        return problem(c, 'not_found', { detail: `${id} has no app to load. Reload extensions.` });
       // Code is entering a page: note its risk first, so a later clear is
       // remembered against every browser that loaded it (Security, M1 on
       // #3401). A reading that could not be kept serves nothing (DOR-4906).
       if (!noteStepUpRisksBeforeServing(id)) {
-        return c.json({ error: 'Failed to serve bundle' }, 503);
+        return problem(c, 'temporarily_unavailable', {
+          detail: 'Couldn’t load the extension. Try again.',
+        });
       }
       return c.body(bundle, 200, {
         'Content-Type': 'application/javascript; charset=utf-8',
@@ -389,7 +386,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       });
     } catch (err) {
       logger.error(`[Extensions] Failed to serve bundle for ${id}`, err);
-      return c.json({ error: 'Failed to serve bundle' }, 500);
+      return failed(c, 'load the extension');
     }
   });
 
@@ -397,9 +394,9 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   router.get('/:id/data', async (c) => {
     const id = c.req.param('id');
     try {
-      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      if (!SAFE_EXT_ID.test(id)) return invalidId(c);
       const dataPath = resolveBlobPath(id, extensionManager, dorkHome, getCwd);
-      if (!dataPath) return c.json({ error: `Extension '${id}' not found` }, 404);
+      if (!dataPath) return noSuchExtension(c, id);
 
       try {
         const data = await fs.readFile(dataPath, 'utf-8');
@@ -410,7 +407,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       }
     } catch (err) {
       logger.error(`[Extensions] Failed to read data for ${id}`, err);
-      return c.json({ error: 'Failed to read extension data' }, 500);
+      return failed(c, 'read the extension’s data');
     }
   });
 
@@ -434,17 +431,17 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   router.put('/:id/data', async (c) => {
     const id = c.req.param('id');
     try {
-      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      if (!SAFE_EXT_ID.test(id)) return invalidId(c);
       const refused = refusedExtensionWrite(c, id);
       if (refused) return refused;
       const dataPath = resolveBlobPath(id, extensionManager, dorkHome, getCwd);
-      if (!dataPath) return c.json({ error: `Extension '${id}' not found` }, 404);
+      if (!dataPath) return noSuchExtension(c, id);
 
       await writeFileAtomic(dataPath, JSON.stringify(readJsonBody(c), null, 2));
       return c.json({ ok: true }, 200);
     } catch (err) {
       logger.error(`[Extensions] Failed to write data for ${id}`, err);
-      return c.json({ error: 'Failed to write extension data' }, 500);
+      return failed(c, 'save the extension’s data');
     }
   });
 
@@ -452,9 +449,9 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   router.get('/:id/secrets', async (c) => {
     const id = c.req.param('id');
     try {
-      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      if (!SAFE_EXT_ID.test(id)) return invalidId(c);
       const record = extensionManager.get(id);
-      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
+      if (!record) return noSuchExtension(c, id);
 
       const declared = record.manifest.serverCapabilities?.secrets ?? [];
       const store = new ExtensionSecretStore(id, dorkHome);
@@ -470,7 +467,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       return c.json(result);
     } catch (err) {
       logger.error(`[Extensions] Failed to list secrets for ${id}`, err);
-      return c.json({ error: 'Failed to list secrets' }, 500);
+      return failed(c, 'list the extension’s secrets');
     }
   });
 
@@ -478,19 +475,21 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   router.put('/:id/secrets/:key', async (c) => {
     const { id, key } = c.req.param();
     try {
-      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      if (!SAFE_EXT_ID.test(id)) return invalidId(c);
       const refused = refusedExtensionWrite(c, id);
       if (refused) return refused;
       const parsed = SetSecretBodySchema.safeParse(readJsonBody(c));
-      if (!parsed.success) return validationFailed(c, parsed.error);
+      if (!parsed.success) return validationProblem(c, parsed.error);
 
       const record = extensionManager.get(id);
-      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
+      if (!record) return noSuchExtension(c, id);
 
       // Validate key is declared in manifest
       const declared = record.manifest.serverCapabilities?.secrets ?? [];
       if (!declared.some((s) => s.key === key)) {
-        return c.json({ error: `Secret '${key}' not declared in extension manifest` }, 400);
+        return problem(c, 'invalid_request', {
+          detail: `${id} doesn’t declare a secret named ${key}.`,
+        });
       }
 
       const { value } = parsed.data;
@@ -516,7 +515,8 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       const caller = honoRequestFacts(c);
       // Not from a turn that read outside words, or an agent DorkOS can't name (Security S3).
       const marked = markedExtensionSecretRefusal(c);
-      if (marked) return c.json(marked, 403);
+      const reason = marked?.code;
+      if (marked) return problem(c, 'forbidden', { detail: marked.error, extensions: { reason } });
       if (caller.agentIdentity !== undefined) return await run();
       return await runFrontDoorWrite(c, {
         kind: 'extensions.secret',
@@ -529,13 +529,13 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
             return await run();
           } catch (err) {
             logger.error(`[Extensions] Failed to set secret for ${id}`, err);
-            return c.json({ error: 'Failed to set secret' }, 500);
+            return failed(c, 'save the secret');
           }
         },
       });
     } catch (err) {
       logger.error(`[Extensions] Failed to set secret for ${id}`, err);
-      return c.json({ error: 'Failed to set secret' }, 500);
+      return failed(c, 'save the secret');
     }
   });
 
@@ -543,11 +543,11 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   router.delete('/:id/secrets/:key', async (c) => {
     const { id, key } = c.req.param();
     try {
-      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      if (!SAFE_EXT_ID.test(id)) return invalidId(c);
       const refused = refusedExtensionWrite(c, id);
       if (refused) return refused;
       const record = extensionManager.get(id);
-      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
+      if (!record) return noSuchExtension(c, id);
 
       const store = new ExtensionSecretStore(id, dorkHome);
       // Asked BEFORE the delete, because `delete` is idempotent and says nothing
@@ -573,7 +573,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       return c.json({ ok: true });
     } catch (err) {
       logger.error(`[Extensions] Failed to delete secret for ${id}`, err);
-      return c.json({ error: 'Failed to delete secret' }, 500);
+      return failed(c, 'delete the secret');
     }
   });
 
@@ -581,9 +581,9 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   router.get('/:id/settings', async (c) => {
     const id = c.req.param('id');
     try {
-      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      if (!SAFE_EXT_ID.test(id)) return invalidId(c);
       const record = extensionManager.get(id);
-      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
+      if (!record) return noSuchExtension(c, id);
 
       const declared = record.manifest.serverCapabilities?.settings ?? [];
       const store = new ExtensionSettingsStore(dorkHome, id);
@@ -609,7 +609,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       );
     } catch (err) {
       logger.error(`[Extensions] Failed to list settings for ${id}`, err);
-      return c.json({ error: 'Failed to list settings' }, 500);
+      return failed(c, 'list the extension’s settings');
     }
   });
 
@@ -617,19 +617,21 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   router.put('/:id/settings/:key', async (c) => {
     const { id, key } = c.req.param();
     try {
-      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      if (!SAFE_EXT_ID.test(id)) return invalidId(c);
       const refused = refusedExtensionWrite(c, id);
       if (refused) return refused;
       const parsed = SetSettingBodySchema.safeParse(readJsonBody(c));
-      if (!parsed.success) return validationFailed(c, parsed.error);
+      if (!parsed.success) return validationProblem(c, parsed.error);
 
       const record = extensionManager.get(id);
-      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
+      if (!record) return noSuchExtension(c, id);
 
       // Validate key is declared in manifest
       const declared = record.manifest.serverCapabilities?.settings ?? [];
       if (!declared.some((s) => s.key === key)) {
-        return c.json({ error: `Setting '${key}' not declared in extension manifest` }, 400);
+        return problem(c, 'invalid_request', {
+          detail: `${id} doesn’t declare a setting named ${key}.`,
+        });
       }
 
       const store = new ExtensionSettingsStore(dorkHome, id);
@@ -649,7 +651,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       return c.json({ ok: true });
     } catch (err) {
       logger.error(`[Extensions] Failed to set setting for ${id}`, err);
-      return c.json({ error: 'Failed to set setting' }, 500);
+      return failed(c, 'save the setting');
     }
   });
 
@@ -657,11 +659,11 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   router.delete('/:id/settings/:key', async (c) => {
     const { id, key } = c.req.param();
     try {
-      if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
+      if (!SAFE_EXT_ID.test(id)) return invalidId(c);
       const refused = refusedExtensionWrite(c, id);
       if (refused) return refused;
       const record = extensionManager.get(id);
-      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
+      if (!record) return noSuchExtension(c, id);
 
       const store = new ExtensionSettingsStore(dorkHome, id);
       // Read first, for the reason the secrets route above states: resetting a
@@ -686,7 +688,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       return c.json({ ok: true });
     } catch (err) {
       logger.error(`[Extensions] Failed to delete setting for ${id}`, err);
-      return c.json({ error: 'Failed to delete setting' }, 500);
+      return failed(c, 'delete the setting');
     }
   });
 

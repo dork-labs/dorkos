@@ -87,16 +87,25 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
         // The extension widened while the row was on screen.
         if (staleReplacement) waiting = [staleReplacement];
         return json(
-          { error: 'This extension changed since you saw it.', code: 'stale_approval' },
+          {
+            title: 'That clashes with a change made meanwhile.',
+            status: 409,
+            code: 'conflict',
+            detail: 'This extension changed since you saw it.',
+            reason: 'stale_approval',
+          },
           409
         );
       }
       if (approveStatus === 419) {
-        // A copy DorkOS cannot check (DOR-3068): plain words, its own code.
+        // A copy DorkOS cannot check (DOR-3068): plain words, its own reason.
         return json(
           {
-            error: "Its folder links to files outside it, so DorkOS can't check what would run.",
-            code: 'extension_unpinnable',
+            title: 'That clashes with a change made meanwhile.',
+            status: 409,
+            code: 'conflict',
+            detail: "Its folder links to files outside it, so DorkOS can't check what would run.",
+            reason: 'extension_unpinnable',
           },
           409
         );

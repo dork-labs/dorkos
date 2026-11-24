@@ -12,6 +12,7 @@ import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { readMcpJsonServers, summarizeMcpJsonServers } from '../services/mesh/mcp-json.js';
 import { logger } from '../lib/logger.js';
+import { problem, validationProblem } from '@dorkos/http-kit';
 
 const router = new Hono<ApiEnv>();
 
@@ -23,12 +24,12 @@ const QuerySchema = z.object({
 router.get('/', async (c) => {
   const parsed = QuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return c.json({ error: 'Missing required query param: path' }, 400);
+    return validationProblem(c, parsed.error, { detail: 'Send the folder as `path`.' });
   }
 
   const runtimeParam = parsed.data.runtime;
   if (runtimeParam !== undefined && !runtimeRegistry.has(runtimeParam)) {
-    return c.json({ error: `Unknown runtime: ${runtimeParam}` }, 400);
+    return problem(c, 'invalid_request', { detail: 'There is no runtime by that name.' });
   }
 
   try {
@@ -57,10 +58,18 @@ router.get('/', async (c) => {
     return c.json({ servers: summarizeMcpJsonServers(mcpServers) });
   } catch (err) {
     if (err instanceof BoundaryError) {
-      return c.json({ error: err.message, code: err.code }, 403);
+      if (err.code === 'OUTSIDE_BOUNDARY') {
+        return problem(c, 'outside_boundary', { detail: 'Pick a folder DorkOS may use.' });
+      }
+      if (err.code === 'NULL_BYTE') {
+        return problem(c, 'invalid_request', {
+          detail: 'That path has a character paths can’t hold.',
+        });
+      }
+      return problem(c, 'forbidden', { detail: "DorkOS can't read that folder." });
     }
     logger.error('[mcp-config] GET / failed', { err, path: parsed.data.path });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error', { detail: "Couldn't read this folder's MCP servers." });
   }
 });
 

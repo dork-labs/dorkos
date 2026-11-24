@@ -52,11 +52,13 @@ export function registerProblemOpenApi(registry: OpenAPIRegistry): void {
  * The content of an error response a route declares: a problem document. The
  * schema is the registered `Problem`, so the document points at it.
  */
-export const PROBLEM_CONTENT = { [PROBLEM_CONTENT_TYPE]: { schema: ProblemSchema } } as const;
+const PROBLEM_CONTENT = { [PROBLEM_CONTENT_TYPE]: { schema: ProblemSchema } } as const;
 
 /**
- * One error response for a route's `responses` map: what it means, and the
- * problem document it carries.
+ * One route's own error answer in the API document: a problem document, with
+ * what this route means by it. Use it in a `registerPath` call's `responses`
+ * for every error status the route itself sends; point at a chain answer
+ * (`{ $ref: '#/components/responses/ValidationProblem' }`) when it is one.
  *
  * @param description - When the route answers this status, and with which code.
  * @returns The response declaration.

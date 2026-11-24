@@ -5,7 +5,7 @@
  * @module services/work-queue/work-queue-openapi
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { PROBLEM_CONTENT } from '../core/openapi/problem-openapi.js';
+import { problemResponse } from '../core/openapi/problem-openapi.js';
 import { z } from 'zod';
 import {
   AddWorkItemRequestSchema,
@@ -18,14 +18,8 @@ import {
 
 /** The answers every route shares. */
 const REFUSALS = {
-  403: {
-    description: 'The caller is an agent (`person_only`), or not the owner (`owner_only`)',
-    content: PROBLEM_CONTENT,
-  },
-  404: {
-    description: 'No such agent or item (`not_found`)',
-    content: PROBLEM_CONTENT,
-  },
+  403: problemResponse('The caller is an agent (`person_only`), or not the owner (`owner_only`)'),
+  404: problemResponse('No such agent or item (`not_found`)'),
 };
 
 /** A 200 or 201 answering with `schema`. */
@@ -102,10 +96,7 @@ export function registerWorkQueueOpenApi(registry: OpenAPIRegistry): void {
     responses: {
       201: answers('The new item', WorkItemSchema),
       ...REFUSALS,
-      409: {
-        description: 'The queue is full (`conflict`)',
-        content: PROBLEM_CONTENT,
-      },
+      409: problemResponse('The queue is full (`conflict`)'),
     },
   });
 
@@ -119,10 +110,7 @@ export function registerWorkQueueOpenApi(registry: OpenAPIRegistry): void {
     responses: {
       204: { description: 'Removed' },
       ...REFUSALS,
-      409: {
-        description: 'It already started (`conflict`)',
-        content: PROBLEM_CONTENT,
-      },
+      409: problemResponse('It already started (`conflict`)'),
     },
   });
 
@@ -136,10 +124,7 @@ export function registerWorkQueueOpenApi(registry: OpenAPIRegistry): void {
     responses: {
       200: answers('The item, waiting again', WorkItemSchema),
       ...REFUSALS,
-      409: {
-        description: 'It has not ended (`conflict`)',
-        content: PROBLEM_CONTENT,
-      },
+      409: problemResponse('It has not ended (`conflict`)'),
     },
   });
 }

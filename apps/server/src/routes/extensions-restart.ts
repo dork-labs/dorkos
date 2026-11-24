@@ -18,12 +18,12 @@ import type { Hono } from 'hono';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { logger } from '../lib/logger.js';
+import { problem } from '@dorkos/http-kit';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 /** What the Restart button says when the person bar refuses it. */
 const RESTART_BAR: PersonBarCopy = {
-  error: 'Only a person can restart this app.',
-  code: 'restart_person_required',
+  code: 'person_only',
   subject: 'app restarts',
   crossSite: () => 'DorkOS restarted nothing. Open the app to restart it.',
   agent: 'DorkOS restarted nothing. Ask a person to restart it in the app.',
@@ -36,7 +36,7 @@ export type ExtensionRestartManager = Pick<
 >;
 
 /** What a person is told when the copy on disk is not the one they approved. */
-const NEEDS_APPROVAL = 'It changed or waits for your approval. Review it in Settings → Extensions.';
+const NEEDS_APPROVAL = 'It changed or waits for your approval. Review it in Settings.';
 
 /**
  * Whether a person approved the copy on disk to run, as the cards report it.
@@ -64,43 +64,47 @@ export function registerExtensionRestartRoute(
 ): void {
   router.post('/:id/restart', async (c) => {
     const id = c.req.param('id');
-    if (!safeId.test(id)) return c.json({ error: 'Couldn’t find that app.' }, 400);
+    if (!safeId.test(id))
+      return problem(c, 'invalid_request', { detail: 'Couldn’t find that app.' });
     const refused = refusedNotAPerson(c, RESTART_BAR);
     if (refused) return refused;
     const record = manager.get(id);
-    if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
+    if (!record) return problem(c, 'not_found', { detail: `No app named ${id} is installed.` });
     // Never runs bytes a person has not approved (Security, DOR-4785): asked
     // before the reload, and again after it, since the reload's own pin check
     // is what notices files that changed since the yes.
     if (!approvedToRun(manager, id)) {
-      return c.json({ error: NEEDS_APPROVAL, code: 'needs_approval' }, 409);
+      return problem(c, 'needs_approval', { detail: NEEDS_APPROVAL });
     }
     try {
       const result = await manager.reloadExtension(id);
       if (result.status !== 'compiled') {
-        return c.json(
-          { error: result.error?.message ?? 'Couldn’t build it.', code: result.status },
-          409
-        );
+        logger.warn(`[Extensions] Restart of ${id} did not build`, result.error);
+        return problem(c, 'conflict', {
+          detail: 'It no longer builds. Open Settings to see why.',
+          extensions: { reason: result.status },
+        });
       }
       if (!approvedToRun(manager, id)) {
         broadcastReloaded([id]);
-        return c.json({ error: NEEDS_APPROVAL, code: 'needs_approval' }, 409);
+        return problem(c, 'needs_approval', { detail: NEEDS_APPROVAL });
       }
       broadcastReloaded([id]);
       // A successful client build does not prove the server half started.
       if ((record.hasServerEntry || record.hasDataProxy) && !manager.getServerHandler(id)) {
-        return c.json(
-          { error: 'Couldn’t start the app. Open Settings to check.', code: 'server_start_failed' },
-          409
-        );
+        return problem(c, 'upstream_unavailable', {
+          detail: 'Couldn’t start the app. Open Settings to check.',
+          extensions: { reason: 'server_start_failed' },
+        });
       }
       return c.json(result);
     } catch (err) {
       // Turned off since: the reload refuses it rather than turning it back on.
       logger.warn(`[Extensions] Restart of ${id} refused`, err);
-      const message = err instanceof Error ? err.message : 'Couldn’t restart it.';
-      return c.json({ error: message, code: 'restart_refused' }, 409);
+      return problem(c, 'conflict', {
+        detail: 'Couldn’t restart it. Check it’s turned on in Settings.',
+        extensions: { reason: 'restart_refused' },
+      });
     }
   });
 }

@@ -31,6 +31,8 @@ export type ResponseError = Error & {
   issues?: ErrorBodyReading['issues'];
   /** How long to wait before retrying, when the answer said. */
   retryAfterMs?: number;
+  /** The problem's finer `reason`, when the route named one under its code. */
+  reason?: string;
 };
 
 /**
@@ -94,5 +96,6 @@ export function errorFromReading(reading: ResponseErrorReading): ResponseError {
   if (reading.code !== undefined) error.code = reading.code;
   if (reading.issues !== undefined) error.issues = reading.issues;
   if (reading.retryAfterMs !== undefined) error.retryAfterMs = reading.retryAfterMs;
+  if (reading.reason !== undefined) error.reason = reading.reason;
   return error;
 }

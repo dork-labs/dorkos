@@ -51,6 +51,8 @@ import {
 import { problemBody } from '@dorkos/http-kit';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
+/** A problem document's media type (DOR-4979). */
+const PROBLEM_TYPE_A2 = { 'content-type': /^application\/problem\+json\b/ };
 const NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
 });
@@ -69,14 +71,30 @@ const deleteBody = (body: object) => ({
 const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
-const COOKIE_REQUIRED = z.object({ code: z.literal('operator_cookie_required') }).loose();
-const INVALID_ID = { error: 'Invalid extension ID' };
+/** The person bar's cookie refusal under login: `person_only`, whatever the surface. */
+const COOKIE_REQUIRED = z.object({ code: z.literal('person_only') }).loose();
+const INVALID_ID = problemBody('invalid_request', {
+  detail: 'Use an extension id in lowercase, like my-extension.',
+});
+/** A person-bar refusal: the problem document, with this surface's code and a sentence. */
 const refusal = (code: string) =>
-  z.object({ error: z.string(), code: z.literal(code), message: z.string() }).strict();
-const TOGGLE_REFUSED = refusal('operator_only_config');
-const APPROVAL_REFUSED = refusal('extension_not_approved_to_run');
-const TRUST_REFUSED = refusal('trusted_source_person_only');
-const NO_ROUTES = (id: string) => ({ error: `Extension '${id}' has no server routes` });
+  z
+    .object({
+      type: z.literal(`urn:dorkos:problem:${code}`),
+      title: z.string(),
+      status: z.literal(403),
+      code: z.literal(code),
+      detail: z.string(),
+    })
+    .strict();
+const TOGGLE_REFUSED = refusal('person_only');
+const APPROVAL_REFUSED = refusal('person_only');
+const TRUST_REFUSED = refusal('person_only');
+const NO_ROUTES = (id: string) =>
+  problemBody('not_found', { detail: `${id} has no server routes.` });
+/** No extension with this id is installed. */
+const NO_SUCH = (id: string) =>
+  problemBody('not_found', { detail: `No extension named ${id} is installed.` });
 const EXTENSION_LIST = z.array(
   z.object({ id: z.string(), status: z.string(), approvedToRun: z.boolean() }).loose()
 );
@@ -173,14 +191,14 @@ const CASES: ContractCase[] = [
     path: `/api/extensions/${MISSING}/enable`,
     expect: {
       status: 404,
-      body: { error: `Extension '${MISSING}' not found or cannot be enabled` },
+      body: problemBody('not_found', { detail: `No extension named ${MISSING} can be turned on.` }),
     },
   },
   {
     name: 'disable of an extension that is not installed is a 404',
     method: 'POST',
     path: `/api/extensions/${MISSING}/disable`,
-    expect: { status: 404, body: { error: `Extension '${MISSING}' not found` } },
+    expect: { status: 404, body: NO_SUCH(MISSING) },
   },
   {
     name: 'approve refuses an agent: it is the code being approved',
@@ -200,7 +218,7 @@ const CASES: ContractCase[] = [
     name: 'approve of an extension that is not installed is a 404',
     method: 'POST',
     path: `/api/extensions/${MISSING}/approve`,
-    expect: { status: 404, body: { error: `Extension '${MISSING}' not found` } },
+    expect: { status: 404, body: NO_SUCH(MISSING) },
   },
   {
     name: 'revoke refuses an agent',
@@ -213,7 +231,7 @@ const CASES: ContractCase[] = [
     name: 'revoke of an extension that is not installed is a 404',
     method: 'POST',
     path: `/api/extensions/${MISSING}/revoke`,
-    expect: { status: 404, body: { error: `Extension '${MISSING}' not found` } },
+    expect: { status: 404, body: NO_SUCH(MISSING) },
   },
   {
     name: '"Not now" refuses an agent',
@@ -230,7 +248,9 @@ const CASES: ContractCase[] = [
     body: {},
     expect: {
       status: 400,
-      body: { error: 'Send the path and version of the extension you were shown' },
+      body: problemBody('invalid_request', {
+        detail: 'Send the path and version of the extension you were shown.',
+      }),
     },
   },
   {
@@ -246,7 +266,12 @@ const CASES: ContractCase[] = [
     method: 'POST',
     path: '/api/extensions/trusted-sources',
     body: {},
-    expect: { status: 400, body: { error: 'Send the source to trust, like owner/repo' } },
+    expect: {
+      status: 400,
+      body: problemBody('invalid_request', {
+        detail: 'Send the source to trust, like owner/repo.',
+      }),
+    },
   },
   {
     name: 'a source nothing came from cannot be trusted',
@@ -255,7 +280,9 @@ const CASES: ContractCase[] = [
     body: { source: 'dork-labs/marketplace' },
     expect: {
       status: 409,
-      schema: z.object({ code: z.literal('unproven_source') }).loose(),
+      schema: z
+        .object({ code: z.literal('conflict'), reason: z.literal('unproven_source') })
+        .loose(),
     },
   },
   {
@@ -272,13 +299,16 @@ const CASES: ContractCase[] = [
     path: '/api/extensions/trusted-sources',
     headers: deleteBody({ source: 'dork-labs/marketplace' }),
     body: { source: 'dork-labs/marketplace' },
-    expect: { status: 404, body: { error: "dork-labs/marketplace isn't a trusted source" } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'dork-labs/marketplace isn’t a trusted source.' }),
+    },
   },
   {
-    name: 'starting a server half of an extension that is not installed says why',
+    name: 'starting a server half of an extension that is not installed is a 404',
     method: 'POST',
     path: `/api/extensions/${MISSING}/init-server`,
-    expect: { status: 400, schema: z.object({ error: z.string() }).strict() },
+    expect: { status: 404, headers: PROBLEM_TYPE_A2, body: NO_SUCH(MISSING) },
   },
   {
     // DOR-4785: the Restart on a stopped-app notice meets the same chain as every write.
@@ -292,29 +322,37 @@ const CASES: ContractCase[] = [
     name: 'restart of an extension that is not installed is a 404',
     method: 'POST',
     path: `/api/extensions/${MISSING}/restart`,
-    expect: { status: 404, body: { error: `Extension '${MISSING}' not found` } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: `No app named ${MISSING} is installed.` }),
+    },
   },
   {
     name: 'the bundle of an extension that is not installed is a 404',
     path: `/api/extensions/${MISSING}/bundle`,
-    expect: { status: 404, body: { error: `Bundle not available for '${MISSING}'` } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', {
+        detail: `${MISSING} has no app to load. Reload extensions.`,
+      }),
+    },
   },
   {
     name: 'the data of an extension that is not installed is a 404',
     path: `/api/extensions/${MISSING}/data`,
-    expect: { status: 404, body: { error: `Extension '${MISSING}' not found` } },
+    expect: { status: 404, body: NO_SUCH(MISSING) },
   },
   {
     name: 'writing the data of an extension that is not installed is a 404',
     method: 'PUT',
     path: `/api/extensions/${MISSING}/data`,
     body: { a: 1 },
-    expect: { status: 404, body: { error: `Extension '${MISSING}' not found` } },
+    expect: { status: 404, body: NO_SUCH(MISSING) },
   },
   {
     name: 'secrets of an extension that is not installed is a 404',
     path: `/api/extensions/${MISSING}/secrets`,
-    expect: { status: 404, body: { error: `Extension '${MISSING}' not found` } },
+    expect: { status: 404, body: NO_SUCH(MISSING) },
   },
   {
     name: 'a secret needs a value',
@@ -330,12 +368,12 @@ const CASES: ContractCase[] = [
     name: 'deleting a secret of an extension that is not installed is a 404',
     method: 'DELETE',
     path: `/api/extensions/${MISSING}/secrets/token`,
-    expect: { status: 404, body: { error: `Extension '${MISSING}' not found` } },
+    expect: { status: 404, body: NO_SUCH(MISSING) },
   },
   {
     name: 'settings of an extension that is not installed is a 404',
     path: `/api/extensions/${MISSING}/settings`,
-    expect: { status: 404, body: { error: `Extension '${MISSING}' not found` } },
+    expect: { status: 404, body: NO_SUCH(MISSING) },
   },
   {
     name: 'a setting needs a string, number or boolean',
@@ -351,7 +389,7 @@ const CASES: ContractCase[] = [
     name: 'resetting a setting of an extension that is not installed is a 404',
     method: 'DELETE',
     path: `/api/extensions/${MISSING}/settings/name`,
-    expect: { status: 404, body: { error: `Extension '${MISSING}' not found` } },
+    expect: { status: 404, body: NO_SUCH(MISSING) },
   },
   {
     name: 'an extension’s open decisions',
@@ -364,12 +402,27 @@ const CASES: ContractCase[] = [
     path: `/api/extensions/${MISSING}/decisions/01J00000000000000000000000/action`,
     headers: AGENT,
     body: { action: 'approve' },
-    expect: { status: 403, schema: refusal('decision_person_required') },
+    expect: {
+      status: 403,
+      headers: PROBLEM_TYPE_A2,
+      body: problemBody('person_only', {
+        detail: 'DorkOS changed nothing. Only a person can answer this, in DorkOS.',
+      }),
+    },
   },
   {
     name: 'project settings need a folder',
     path: `/api/extensions/${MISSING}/project-settings`,
-    expect: { status: 400, body: { error: 'Send ?project=<folder>' } },
+    expect: {
+      status: 400,
+      headers: PROBLEM_TYPE_A2,
+      schema: z
+        .object({
+          code: z.literal('invalid_request'),
+          detail: z.literal('Send ?project=<folder>.'),
+        })
+        .loose(),
+    },
   },
   {
     name: 'writing project settings refuses an agent',
@@ -377,7 +430,13 @@ const CASES: ContractCase[] = [
     path: `/api/extensions/${MISSING}/project-settings`,
     headers: AGENT,
     body: { project: '/tmp', value: {} },
-    expect: { status: 403, schema: refusal('extension_person_required') },
+    expect: {
+      status: 403,
+      headers: PROBLEM_TYPE_A2,
+      body: problemBody('person_only', {
+        detail: 'DorkOS changed nothing. Only a person can change these settings, in DorkOS.',
+      }),
+    },
   },
   {
     name: 'starting work refuses an agent',
@@ -385,14 +444,24 @@ const CASES: ContractCase[] = [
     path: `/api/extensions/${MISSING}/start-work`,
     headers: AGENT,
     body: {},
-    expect: { status: 403, schema: refusal('start_work_person_required') },
+    expect: {
+      status: 403,
+      headers: PROBLEM_TYPE_A2,
+      body: problemBody('person_only', {
+        detail: 'DorkOS started nothing. Only a person can start this, in DorkOS.',
+      }),
+    },
   },
   {
     name: 'starting work from an extension that is not installed is a 404',
     method: 'POST',
     path: `/api/extensions/${MISSING}/start-work`,
     body: {},
-    expect: { status: 404, body: { error: `Extension '${MISSING}' not found` } },
+    expect: {
+      status: 404,
+      headers: PROBLEM_TYPE_A2,
+      body: problemBody('not_found', { detail: `No extension named ${MISSING}.` }),
+    },
   },
   {
     name: 'malformed JSON is the chain’s error',
@@ -416,7 +485,7 @@ const CASES: ContractCase[] = [
   {
     name: 'an extension that is not running has no routes',
     path: `/api/ext/${MISSING}/anything`,
-    expect: { status: 404, headers: JSON_TYPE, body: NO_ROUTES(MISSING) },
+    expect: { status: 404, headers: PROBLEM_TYPE_A2, body: NO_ROUTES(MISSING) },
   },
   {
     name: 'nor at its mount itself',
@@ -685,8 +754,11 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
       const enabled = await call(server, 'POST', `/api/extensions/${id}/enable`, {});
       expect(enabled.status, enabled.text).toBe(200);
       const started = await call(server, 'POST', `/api/extensions/${id}/init-server`, {});
-      expect(started.status).toBe(400);
-      expect(started.json.error).toEqual(expect.any(String));
+      expect(started.status).toBe(502);
+      expect(started.json).toMatchObject({
+        code: 'upstream_unavailable',
+        detail: 'Its server didn’t start. Check Settings.',
+      });
       await check(server, {
         path: `/api/ext/${id}/where`,
         expect: { status: 404, body: NO_ROUTES(id) },
@@ -861,7 +933,7 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
       path: `/api/ext/${ROUTED}/person`,
       headers: AGENT,
       body: {},
-      expect: { status: 403, schema: refusal('extension_person_required') },
+      expect: { status: 403, schema: refusal('person_only') },
     });
     await check(server, {
       method: 'POST',
@@ -887,7 +959,7 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
       path: `${ext}/record`,
       headers: AGENT,
       body: { text: 'an agent’s words' },
-      expect: { status: 403, schema: refusal('extension_person_required') },
+      expect: { status: 403, schema: refusal('person_only') },
     });
     await check(server, {
       method: 'POST',
@@ -941,7 +1013,9 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
       body: { value: 'x' },
       expect: {
         status: 400,
-        body: { error: "Secret 'undeclared' not declared in extension manifest" },
+        body: problemBody('invalid_request', {
+          detail: `${PROXIED} doesn’t declare a secret named undeclared.`,
+        }),
       },
     });
     await check(server, {
@@ -987,10 +1061,9 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
       path: `/api/ext/${PROXIED}/proxy/things`,
       expect: {
         status: 503,
-        body: {
-          error: `Secret 'token' not configured for extension '${PROXIED}'`,
-          hint: `Set the secret via PUT /api/extensions/${PROXIED}/secrets/token`,
-        },
+        body: problemBody('temporarily_unavailable', {
+          detail: 'Set the token secret for this extension in Settings.',
+        }),
       },
     });
   });
@@ -1035,10 +1108,10 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
       path: `/api/ext/${PROXIED}/proxy/..%2f..%2fadmin`,
       expect: {
         status: 400,
-        body: {
-          error: 'Proxy path is outside the extension upstream',
-          code: 'PROXY_PATH_NOT_ALLOWED',
-        },
+        body: problemBody('outside_boundary', {
+          status: 400,
+          detail: 'That path is outside what this extension may reach.',
+        }),
       },
     });
   });
@@ -1080,15 +1153,21 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
     });
     await check(server, {
       path: `/api/ext/${ISOLATED}/boom`,
-      expect: { status: 500, body: { error: 'the isolated route broke' } },
+      expect: {
+        status: 500,
+        // A fixed sentence: the route's own message stays in the log (DOR-4979).
+        body: problemBody('internal_error', {
+          detail: 'The extension’s route failed. Check its log.',
+        }),
+      },
     });
     await check(server, {
       path: `/api/ext/${ISOLATED}/nothing-here`,
       expect: {
         status: 404,
-        body: {
-          error: `Extension '${ISOLATED}' has no route for /api/ext/${ISOLATED}/nothing-here`,
-        },
+        body: problemBody('not_found', {
+          detail: `${ISOLATED} has no route at /api/ext/${ISOLATED}/nothing-here.`,
+        }),
       },
     });
   });
@@ -1343,7 +1422,12 @@ describe('contract: an extension served with a fetch handler (login off)', () =>
     });
     await check(server, {
       path: `/api/ext/${ISOLATED_FETCHED}/boom`,
-      expect: { status: 500, body: { error: 'the fetch handler broke' } },
+      expect: {
+        status: 500,
+        body: problemBody('internal_error', {
+          detail: 'The extension’s route failed. Check its log.',
+        }),
+      },
     });
   });
 
@@ -1463,7 +1547,7 @@ describe('contract: the extension routes with login on', () => {
       path: `/api/extensions/${MISSING}/approve`,
       headers: { ...cookie, origin: server!.baseUrl },
       body: {},
-      expect: { status: 404, body: { error: `Extension '${MISSING}' not found` } },
+      expect: { status: 404, body: NO_SUCH(MISSING) },
     });
   });
 

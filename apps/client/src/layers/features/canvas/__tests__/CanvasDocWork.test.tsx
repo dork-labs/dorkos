@@ -195,7 +195,11 @@ describe('CanvasDocWork', () => {
 
   it('shows the server’s refusal in plain words and keeps the work listed', async () => {
     vi.mocked(transport.replayCanvasDocWork).mockRejectedValue(
-      Object.assign(new Error('refused'), { code: 'GRANT_REQUIRED', status: 409 })
+      Object.assign(new Error('refused'), {
+        code: 'conflict',
+        status: 409,
+        body: { code: 'conflict', reason: 'grant_required' },
+      })
     );
     vi.mocked(transport.clearCanvasDocWork).mockRejectedValue(new TypeError('Failed to fetch'));
     show([item()]);

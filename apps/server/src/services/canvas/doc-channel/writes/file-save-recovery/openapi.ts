@@ -2,33 +2,22 @@
 import { z } from 'zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
-  DocSaveRefusalReasonSchema,
   FileSaveDiscoverySchema,
   FileSaveRecoverBodySchema,
   FileSaveRecoverResultSchema,
 } from '@dorkos/shared/file-save/recovery';
-const refusal = z.object({
-  error: z.string(),
-  code: z.string(),
-  // Which check refused a 404, for the owner's own canvas (DOR-4442).
-  reason: DocSaveRefusalReasonSchema.optional(),
-});
+import { problemResponse } from '../../../../core/openapi/problem-openapi.js';
 /** Register current-birth discovery and proof-only recovery API documentation. */
 export function registerFileSaveRecoveryOpenApi(registry: OpenAPIRegistry): void {
   const id = z.string().min(1).max(200);
   const failures = {
-    400: {
-      description: 'Invalid recovery input',
-      content: { 'application/json': { schema: refusal } },
-    },
-    404: {
-      description: 'Current owning chat document or original operation unavailable',
-      content: { 'application/json': { schema: refusal } },
-    },
-    503: {
-      description: 'Evidence, authority or storage unavailable; no fence is cleared',
-      content: { 'application/json': { schema: refusal } },
-    },
+    400: problemResponse('`invalid_request`: invalid recovery input'),
+    404: problemResponse(
+      '`not_found`: current owning chat document or original operation unavailable; `reason` names the check that refused, for the owner (`not_session`, `no_recorded_folder`, `root_mismatch`, `folder_gone`, `outside_boundary`)'
+    ),
+    503: problemResponse(
+      '`temporarily_unavailable`: evidence, authority or storage unavailable; no fence is cleared'
+    ),
   };
   registry.registerPath({
     method: 'get',

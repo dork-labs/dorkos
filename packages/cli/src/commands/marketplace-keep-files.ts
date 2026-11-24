@@ -46,7 +46,7 @@ export interface MarketplaceKeepFilesArgs {
 }
 
 /** The code the server answers with when only a signed-in session may do this. */
-const OPERATOR_COOKIE_REQUIRED = 'operator_cookie_required';
+const PERSON_ONLY = 'person_only';
 
 /** One-line usage string surfaced in error messages. */
 const USAGE_LINE =
@@ -188,7 +188,7 @@ export async function runMarketplaceKeepFiles(args: MarketplaceKeepFilesArgs): P
       } satisfies KeepFilesOptions
     );
   } catch (err) {
-    if (err instanceof ApiError && err.body.code === OPERATOR_COOKIE_REQUIRED) {
+    if (err instanceof ApiError && err.code === PERSON_ONLY) {
       console.error(
         `Nothing was changed. DorkOS requires sign-in, so do this in the app: open ` +
           `Marketplace, then Installed, and press Keep these as mine on ${args.name}.`

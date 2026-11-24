@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
-import { PROBLEM_CONTENT_TYPE, isProblem } from '@dorkos/shared/problem';
+import { PROBLEM_CODES, PROBLEM_CONTENT_TYPE, isProblem } from '@dorkos/shared/problem';
 import {
   problem,
   problemBody,
@@ -30,10 +30,23 @@ describe('problemBody', () => {
 describe('problemBody options', () => {
   it('carries extension members, and never lets one replace a standard member', () => {
     const body = problemBody('conflict', {
-      detail: 'Paused.',
-      extensions: { agentId: 'a1', code: 'other', status: 200 },
+      detail: 'Reload it.',
+      extensions: {
+        heldActionId: 'held-1',
+        code: 'other',
+        title: 'other',
+        detail: 'other',
+        status: 200,
+      },
     });
-    expect(body).toMatchObject({ agentId: 'a1', code: 'conflict', status: 409, detail: 'Paused.' });
+    expect(body).toMatchObject({
+      code: 'conflict',
+      status: 409,
+      detail: 'Reload it.',
+      heldActionId: 'held-1',
+    });
+    expect(body.title).toBe(PROBLEM_CODES.conflict.title);
+    expect(problemBody('conflict', { extensions: { detail: 'x' } })).not.toHaveProperty('detail');
   });
 
   it('accepts only error statuses', () => {

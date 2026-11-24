@@ -287,7 +287,7 @@ describe('a waiting copy whose folder is gone', () => {
     const response = await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(shown);
 
     expect(response.status).toBe(409);
-    expect(response.body.code).toBe('stale_approval');
+    expect(response.body).toMatchObject({ code: 'conflict', reason: 'stale_approval' });
     expect(state.extensions).toEqual(before);
     expect(await pending()).toEqual([]);
   });
@@ -622,7 +622,7 @@ describe('an extension waiting to run asks in the inbox', () => {
       .post(`/api/extensions/${EXT_ID}/approve`)
       .send({ version: '1.1.0', expectedDigest: `sha256:${'0'.repeat(64)}` });
     expect(stale.status).toBe(409);
-    expect(stale.body.code).toBe('stale_approval');
+    expect(stale.body).toMatchObject({ code: 'conflict', reason: 'stale_approval' });
 
     // A yes to exactly the files shown runs them.
     const ok = await request(server)
@@ -698,7 +698,7 @@ describe('an extension waiting to run asks in the inbox', () => {
         .send({ path: extensionDir('flow'), version: '1.0.0' });
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('stale_approval');
+      expect(res.body).toMatchObject({ code: 'conflict', reason: 'stale_approval' });
       expect(state.extensions.dismissedApprovals).toEqual({});
       expect(await pending()).toHaveLength(1);
     });
@@ -871,7 +871,7 @@ describe('an extension waiting to run asks in the inbox', () => {
       });
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('stale_approval');
+      expect(res.body).toMatchObject({ code: 'conflict', reason: 'stale_approval' });
       expect(state.extensions.approvedToRun).not.toContain(EXT_ID);
       expect(state.extensions.approvedSources).toEqual({});
       fs.rmSync(project, { recursive: true, force: true });

@@ -5,7 +5,7 @@
  * @module services/todos/todos-openapi
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { PROBLEM_CONTENT } from '../core/openapi/problem-openapi.js';
+import { problemResponse } from '../core/openapi/problem-openapi.js';
 import { z } from 'zod';
 import {
   CreateTodoRequestSchema,
@@ -55,22 +55,10 @@ export function registerTodosOpenApi(registry: OpenAPIRegistry): void {
         description: 'The new to-do',
         content: { 'application/json': { schema: TodoSchema } },
       },
-      400: {
-        description: 'A bad body',
-        content: PROBLEM_CONTENT,
-      },
-      401: {
-        description: 'Step up first',
-        content: PROBLEM_CONTENT,
-      },
-      403: {
-        description: 'An agent',
-        content: PROBLEM_CONTENT,
-      },
-      429: {
-        description: 'Past a daily cap',
-        content: PROBLEM_CONTENT,
-      },
+      400: problemResponse('A bad body'),
+      401: problemResponse('Step up first'),
+      403: problemResponse('An agent'),
+      429: problemResponse('Past a daily cap'),
     },
   });
 
@@ -88,10 +76,7 @@ export function registerTodosOpenApi(registry: OpenAPIRegistry): void {
         description: 'The to-do',
         content: { 'application/json': { schema: TodoCardSchema } },
       },
-      404: {
-        description: 'No such to-do',
-        content: PROBLEM_CONTENT,
-      },
+      404: problemResponse('No such to-do'),
     },
   });
 
@@ -109,26 +94,11 @@ export function registerTodosOpenApi(registry: OpenAPIRegistry): void {
     },
     responses: {
       200: { description: 'The to-do', content: { 'application/json': { schema: TodoSchema } } },
-      400: {
-        description: 'A bad body',
-        content: PROBLEM_CONTENT,
-      },
-      401: {
-        description: 'Step up first',
-        content: PROBLEM_CONTENT,
-      },
-      403: {
-        description: 'Not yours',
-        content: PROBLEM_CONTENT,
-      },
-      404: {
-        description: 'No such to-do',
-        content: PROBLEM_CONTENT,
-      },
-      409: {
-        description: 'It changed since',
-        content: PROBLEM_CONTENT,
-      },
+      400: problemResponse('A bad body'),
+      401: problemResponse('Step up first'),
+      403: problemResponse('Not yours'),
+      404: problemResponse('No such to-do'),
+      409: problemResponse('It changed since'),
     },
   });
 }

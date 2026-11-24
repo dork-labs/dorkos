@@ -118,14 +118,20 @@ const DOC_METRICS_FORBIDDEN = {
   code: 'DOC_METRICS_FORBIDDEN',
   error: 'Only the owner can read document metrics.',
 };
-const DOC_NOT_FOUND = {
-  error: 'The document is not available.',
-  code: 'CANVAS_DOCUMENT_NOT_FOUND',
-};
-const DOC_EVENT_TOO_LARGE = {
-  error: 'The document event is too large.',
-  code: 'DOC_EVENT_TOO_LARGE',
-};
+const DOC_NOT_FOUND = problemBody('not_found', {
+  detail: 'The document is not available.',
+  extensions: { reason: 'canvas_document_not_found' },
+});
+const DOC_EVENT_TOO_LARGE = problemBody('request_too_large', {
+  detail: 'The document event is too large. Send a smaller one.',
+  extensions: { reason: 'doc_event_too_large' },
+});
+/** A document query or event id the routes refuse, with the channel's own reason. */
+const DOC_QUERY_REFUSED = (reason: string) =>
+  problemBody('invalid_request', {
+    detail: 'The document event or query is not valid.',
+    extensions: { reason },
+  });
 const SETUP_REFUSED = (code: string) => ({ error: 'Only the owner can set up DorkOS.', code });
 const RESET_TOKEN_REQUIRED = {
   error:
@@ -397,26 +403,42 @@ contractSuite(
       path: '/api/mcp-config',
       expect: {
         status: 400,
-        headers: JSON_TYPE,
-        body: { error: 'Missing required query param: path' },
+        headers: PROBLEM_TYPE,
+        schema: z
+          .object({
+            code: z.literal('invalid_request'),
+            detail: z.literal('Send the folder as `path`.'),
+          })
+          .loose(),
       },
     },
     {
       name: 'GET /api/mcp-config refuses a repeated path',
       path: '/api/mcp-config?path=a&path=b',
-      expect: { status: 400, body: { error: 'Missing required query param: path' } },
+      expect: {
+        status: 400,
+        schema: z
+          .object({
+            code: z.literal('invalid_request'),
+            detail: z.literal('Send the folder as `path`.'),
+          })
+          .loose(),
+      },
     },
     {
       name: 'GET /api/mcp-config refuses a runtime this server does not run',
       path: '/api/mcp-config?path=.&runtime=nope',
-      expect: { status: 400, body: { error: 'Unknown runtime: nope' } },
+      expect: {
+        status: 400,
+        body: problemBody('invalid_request', { detail: 'There is no runtime by that name.' }),
+      },
     },
     {
       name: 'GET /api/mcp-config refuses a path outside the boundary',
       path: '/api/mcp-config?path=/etc',
       expect: {
         status: 403,
-        body: { error: 'Access denied: path outside directory boundary', code: 'OUTSIDE_BOUNDARY' },
+        body: problemBody('outside_boundary', { detail: 'Pick a folder DorkOS may use.' }),
       },
     },
     // feedback
@@ -484,7 +506,7 @@ contractSuite(
       method: 'POST',
       path: '/api/canvas/docs/doc-1/events',
       body: {},
-      expect: { status: 404, headers: JSON_TYPE, body: DOC_NOT_FOUND },
+      expect: { status: 404, headers: PROBLEM_TYPE, body: DOC_NOT_FOUND },
     },
     {
       name: 'POST /api/canvas/docs/:id/events refuses malformed JSON with its own words',
@@ -494,8 +516,11 @@ contractSuite(
       body: '{bad',
       expect: {
         status: 400,
-        headers: JSON_TYPE,
-        body: { error: 'The document event is not valid.', code: 'INVALID_DOC_EVENT' },
+        headers: PROBLEM_TYPE,
+        body: problemBody('malformed_request', {
+          detail: 'The document event is not valid JSON.',
+          extensions: { reason: 'invalid_doc_event' },
+        }),
       },
     },
     {
@@ -504,7 +529,7 @@ contractSuite(
       path: '/api/canvas/docs/doc-1/events',
       headers: { 'content-type': 'application/json' },
       body: ABOVE_DOC_EVENT_LIMIT,
-      expect: { status: 413, headers: JSON_TYPE, body: DOC_EVENT_TOO_LARGE },
+      expect: { status: 413, headers: PROBLEM_TYPE, body: DOC_EVENT_TOO_LARGE },
     },
     {
       name: 'POST /api/canvas/docs/:id/events takes a body just inside the limit',
@@ -522,7 +547,10 @@ contractSuite(
       body: {},
       expect: {
         status: 401,
-        body: { error: 'Sign in or use a valid agent token.', code: 'AGENT_IDENTITY_UNVERIFIED' },
+        body: problemBody('agent_identity_unverified', {
+          detail: 'Sign in or use a valid agent token.',
+          extensions: { reason: 'agent_identity_unverified' },
+        }),
       },
     },
     {
@@ -550,7 +578,7 @@ contractSuite(
       path: '/api/canvas/docs/doc-1/channel?since=abc',
       expect: {
         status: 400,
-        body: { error: 'The document event or query is not valid.', code: 'INVALID_DOC_QUERY' },
+        body: DOC_QUERY_REFUSED('invalid_doc_query'),
       },
     },
     {
@@ -558,7 +586,7 @@ contractSuite(
       path: '/api/canvas/docs/doc-1/channel?other=1',
       expect: {
         status: 400,
-        body: { error: 'The document event or query is not valid.', code: 'INVALID_DOC_QUERY' },
+        body: DOC_QUERY_REFUSED('invalid_doc_query'),
       },
     },
     {
@@ -566,10 +594,7 @@ contractSuite(
       path: '/api/canvas/docs/doc-1/events/not-an-id',
       expect: {
         status: 400,
-        body: {
-          error: 'The document event or query is not valid.',
-          code: 'INVALID_DOC_EVENT_ID',
-        },
+        body: DOC_QUERY_REFUSED('invalid_doc_event_id'),
       },
     },
     {

@@ -186,7 +186,7 @@ describe('make it ask', () => {
       new Error(
         "This agent's settings file isn't a plain file in its folder, so it was left alone."
       ),
-      { code: 'not-a-real-file' }
+      { code: 'conflict', body: { reason: 'not_a_real_file' } }
     );
     const undo = vi.fn().mockRejectedValue(refused);
     renderTab(transportWith({ undoGlobalMcpStandingAllow: undo }));

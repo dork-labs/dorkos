@@ -1118,9 +1118,14 @@ describe('createExtensionAPI', () => {
         vi.fn().mockResolvedValue({
           ok: false,
           status: 409,
-          json: vi
-            .fn()
-            .mockResolvedValue({ error: 'This was already settled.', code: 'already_resolved' }),
+          json: vi.fn().mockResolvedValue({
+            type: 'urn:dorkos:problem:conflict',
+            title: 'That clashes with a change made meanwhile.',
+            status: 409,
+            code: 'conflict',
+            reason: 'already_resolved',
+            detail: 'This was already settled.',
+          }),
         })
       );
       const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
@@ -1239,8 +1244,12 @@ describe('createExtensionAPI', () => {
           ok: false,
           status: 429,
           json: vi.fn().mockResolvedValue({
-            error: 'Mine has started a lot of chats in the last hour. Try again later.',
-            code: 'start_limit',
+            type: 'urn:dorkos:problem:rate_limited',
+            title: 'Too many requests. Wait a moment, then try again.',
+            status: 429,
+            code: 'rate_limited',
+            reason: 'start_limit',
+            detail: 'Mine has started a lot of chats in the last hour. Try again later.',
           }),
         })
       );
@@ -1261,15 +1270,22 @@ describe('createExtensionAPI', () => {
           ok: false,
           status: 403,
           json: vi.fn().mockResolvedValue({
-            error: 'Only a person can start this.',
-            code: 'start_work_person_required',
+            type: 'urn:dorkos:problem:person_only',
+            title: 'Only a person can do that, not an agent.',
+            status: 403,
+            code: 'person_only',
+            detail: 'DorkOS started nothing. Only a person can start this.',
           }),
         })
       );
       const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const err = await api.startWork(input).catch((e: unknown) => e);
       expect(err).not.toBeInstanceOf(StartWorkError);
-      expect(err).toMatchObject({ code: 'start_work_person_required', status: 403 });
+      expect(err).toMatchObject({
+        code: 'person_only',
+        status: 403,
+        message: 'DorkOS started nothing. Only a person can start this.',
+      });
     });
   });
 

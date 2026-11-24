@@ -59,8 +59,9 @@ function card(overrides: Partial<DevLinkPreviewResponse> = {}): DevLinkPreviewRe
 }
 
 /** A refusal shaped the way the HTTP transport raises one. */
-function refusal(message: string, code: string): Error {
-  return Object.assign(new Error(message), { code });
+/** A refused request as the transport rejects it: the dev link's own refusal rides as `reason`. */
+function refusal(message: string, reason: string): Error {
+  return Object.assign(new Error(message), { code: 'conflict', body: { reason } });
 }
 
 let transport: Transport;

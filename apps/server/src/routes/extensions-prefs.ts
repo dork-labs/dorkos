@@ -19,7 +19,7 @@ import type { ExtensionManager } from '../services/extensions/extension-manager.
 import { resolveExtensionDataDir } from '../services/extensions/extension-data-paths.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { refusedExtensionWrite } from './extension-write-binding.js';
 
 /** The file an app's screen data lives in, beside its server half's `data.json`. */
@@ -50,9 +50,12 @@ export function registerExtensionPrefsRoutes(router: Hono<ApiEnv>, deps: Extensi
 
   router.get('/:id/prefs', async (c) => {
     const id = c.req.param('id');
-    if (!deps.safeId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+    if (!deps.safeId.test(id))
+      return problem(c, 'invalid_request', {
+        detail: 'Use an extension id in lowercase, like my-extension.',
+      });
     const file = prefsPath(id);
-    if (!file) return c.json({ error: `Extension '${id}' not found` }, 404);
+    if (!file) return problem(c, 'not_found', { detail: `No app named ${id} is installed.` });
     try {
       return c.json(JSON.parse(await fs.readFile(file, 'utf-8')));
     } catch {
@@ -62,16 +65,20 @@ export function registerExtensionPrefsRoutes(router: Hono<ApiEnv>, deps: Extensi
 
   router.put('/:id/prefs', async (c) => {
     const id = c.req.param('id');
-    if (!deps.safeId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+    if (!deps.safeId.test(id))
+      return problem(c, 'invalid_request', {
+        detail: 'Use an extension id in lowercase, like my-extension.',
+      });
     const refused = refusedExtensionWrite(c, id);
     if (refused) return refused;
     const file = prefsPath(id);
-    if (!file) return c.json({ error: `Extension '${id}' not found` }, 404);
+    if (!file) return problem(c, 'not_found', { detail: `No app named ${id} is installed.` });
     const value = readJsonBody(c);
-    if (value === undefined) return c.json({ error: 'Send the data to save, as JSON.' }, 400);
+    if (value === undefined)
+      return problem(c, 'invalid_request', { detail: 'Send the data to save, as JSON.' });
     const text = JSON.stringify(value);
     if (Buffer.byteLength(text, 'utf-8') > PREFS_MAX_BYTES) {
-      return c.json({ error: 'That is more than an app may save (512 KB).' }, 413);
+      return problem(c, 'request_too_large', { detail: 'An app may save up to 512 KB.' });
     }
     try {
       await fs.mkdir(path.dirname(file), { recursive: true });
@@ -79,7 +86,7 @@ export function registerExtensionPrefsRoutes(router: Hono<ApiEnv>, deps: Extensi
       return c.json({ ok: true }, 200);
     } catch (err) {
       logger.error(`[Extensions] Failed to write screen data for ${id}`, err);
-      return c.json({ error: 'Failed to save the app’s data' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t save the app’s data. Try again.' });
     }
   });
 }

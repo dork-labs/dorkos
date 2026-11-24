@@ -210,7 +210,8 @@ describe('only the person at the app', () => {
     // Purpose: fails if any non-person caller gets a read, or the space is asked for one.
     const response = await request(server).get(`${base}/settings`).set(headers);
     expect(response.status).toBe(403);
-    expect(response.body.code).toBe('NOT_A_PERSON');
+    expect(response.headers['content-type']).toContain('application/problem+json');
+    expect(response.body.code).toBe('person_only');
     expect(remote).not.toHaveBeenCalled();
     expect(credential).not.toHaveBeenCalled();
   });

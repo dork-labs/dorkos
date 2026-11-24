@@ -82,7 +82,7 @@ import { checkClaudeLaunchAccount } from '../services/runtimes/claude-code/launc
 import { projectRegistry } from '../services/projects/project-registry.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
@@ -228,11 +228,7 @@ function refuseIfNotAPerson(
   copy: PersonBarCopy = ACCOUNT_RULES_BAR
 ): Response | undefined {
   const refusal = assessPerson(caller, copy);
-  // The bar's own sentence for this caller (cross-site, signed out, or an
-  // agent) is the detail; every one of them is a person-only refusal here.
-  return refusal
-    ? problem(c, 'person_only', { detail: refusal.body.message ?? refusal.body.error })
-    : undefined;
+  return refusal ? sendProblem(c, refusal.body) : undefined;
 }
 
 /**

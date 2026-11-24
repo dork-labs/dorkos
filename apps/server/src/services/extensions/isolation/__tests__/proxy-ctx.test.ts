@@ -20,9 +20,11 @@ import type { ToolHandleCheck } from '../../agent-tools/tool-handle-rules.js';
 import { PERSON_VERDICT_HEADER, type ChildMessage } from '../ipc-protocol.js';
 
 const PERSON_REFUSAL = {
-  error: "Only a person can change Ext A's settings.",
-  code: 'extension_person_required',
-  message: 'Ask them to do it in DorkOS.',
+  type: 'urn:dorkos:problem:person_only',
+  title: 'Only a person can do that, not an agent.',
+  status: 403,
+  code: 'person_only',
+  detail: 'Ask a person to do it in DorkOS.',
 };
 
 const errors = {
@@ -360,7 +362,7 @@ describe('proxy ctx local members', () => {
   /** Run requirePerson on a request carrying `header` as the verdict. */
   function person(header: string | undefined) {
     const t = setup();
-    const res = { status: vi.fn(() => res), json: vi.fn() };
+    const res = { status: vi.fn(() => res), type: vi.fn(() => res), json: vi.fn() };
     const next = vi.fn();
     const headers = header === undefined ? {} : { [PERSON_VERDICT_HEADER]: header };
     t.ctx.requirePerson({ headers } as never, res as never, next);
@@ -376,7 +378,13 @@ describe('proxy ctx local members', () => {
 
   // Purpose: the host's refusal is answered word for word.
   it('answers the host refusal as is', () => {
-    const body = { error: 'e', code: 'operator_cookie_required', message: 'm' };
+    const body = {
+      type: 'urn:dorkos:problem:person_session_required',
+      title: 'Enter your password to confirm it’s you.',
+      status: 401,
+      code: 'person_session_required',
+      detail: 'm',
+    };
     const { res, next } = person(JSON.stringify({ ok: false, status: 401, body }));
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
@@ -394,6 +402,7 @@ describe('proxy ctx local members', () => {
     const { res, next } = person(header);
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.type).toHaveBeenCalledWith('application/problem+json');
     expect(res.json).toHaveBeenCalledWith(PERSON_REFUSAL);
   });
 

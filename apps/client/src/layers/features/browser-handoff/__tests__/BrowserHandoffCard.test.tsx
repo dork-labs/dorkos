@@ -114,7 +114,7 @@ describe('BrowserHandoffCard', () => {
 
   it('draws nothing on a phone, where the state read is refused', async () => {
     transport.getLocalBrowserState.mockRejectedValue(
-      Object.assign(new Error('nope'), { code: 'local_only' })
+      Object.assign(new Error('nope'), { code: 'operator_only' })
     );
     const { container } = mount();
     await waitFor(() => expect(transport.getLocalBrowserState).toHaveBeenCalled());
@@ -254,7 +254,7 @@ describe('BrowserHandoffCard', () => {
   it('keeps an unknown server message out of the app', async () => {
     transport.getLocalBrowserState.mockResolvedValue(person());
     transport.handBackLocalBrowser.mockRejectedValue(
-      Object.assign(new Error('EACCES /secret/path'), { code: 'browser_error' })
+      Object.assign(new Error('EACCES /secret/path'), { code: 'internal_error' })
     );
     mount();
     fireEvent.click(await button('Continue'));

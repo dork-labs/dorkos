@@ -136,7 +136,7 @@ describe('GET /api/projects/resolve', () => {
       .set('x-dorkos-agent', 'agent-token-abc')
       .query({ cwd: worktree });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('project_lookup_person_required');
+    expect(res.body.code).toBe('person_only');
     expect(res.body).not.toHaveProperty('project');
   });
 
@@ -146,8 +146,9 @@ describe('GET /api/projects/resolve', () => {
       .set('origin', 'https://evil.example')
       .query({ cwd: worktree });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('project_lookup_person_required');
-    expect(res.body.message).toContain('https://evil.example');
+    expect(res.body.code).toBe('person_only');
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body.detail).toContain('https://evil.example');
   });
 
   it('refuses a cross-site browser request that sends no Origin (an <img> or no-cors fetch)', async () => {
@@ -156,7 +157,7 @@ describe('GET /api/projects/resolve', () => {
       .set('sec-fetch-site', 'cross-site')
       .query({ cwd: worktree });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('project_lookup_person_required');
+    expect(res.body.code).toBe('person_only');
     expect(res.body).not.toHaveProperty('project');
   });
 

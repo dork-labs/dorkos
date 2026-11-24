@@ -583,7 +583,7 @@ describe('the dev loop stays free after one approval, for the approved files', (
       }
     );
 
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ code: 'needs_approval' });
     expect(mockCompileServer).not.toHaveBeenCalled();
     expect(manager.getServerHandler('my-ext')).toBeNull();

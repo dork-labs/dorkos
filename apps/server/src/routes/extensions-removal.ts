@@ -27,19 +27,14 @@ import { readActivityActor } from '../services/activity/activity-actor.js';
 import { logger } from '../lib/logger.js';
 import { broadcastExtensionReloaded } from './extensions.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
-import { EXTENSION_NOT_APPROVED_CODE } from '../services/extensions/extension-load-policy.js';
+import { problem } from '@dorkos/http-kit';
 
 /** What the bar says when it refuses a remove or a forget. */
 const REMOVAL_BAR: PersonBarCopy = {
-  error: 'Only a person can remove an extension or forget its approval',
-  code: EXTENSION_NOT_APPROVED_CODE,
-  subject: 'which extensions are on this computer and what they were allowed',
-  crossSite: (origin) =>
-    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
-    `Removing an extension is something a person does in their own copy of the app.`,
-  agent:
-    `DorkOS changed nothing. Removing an extension, or forgetting what it was allowed, ` +
-    `is a decision only a person makes. Ask the person to do it in Settings > Extensions.`,
+  code: 'person_only',
+  subject: 'which extensions are installed',
+  crossSite: (origin) => `Nothing changed. ${origin} isn’t DorkOS. Remove extensions in the app.`,
+  agent: 'Nothing changed. Only a person removes an extension, in Settings.',
 };
 
 /** Why a remove was refused, in words a person reads. */
@@ -47,8 +42,7 @@ const REFUSAL_COPY: Record<Exclude<RemoveRefusal, 'not_found'>, string> = {
   core: 'It comes with DorkOS, so it can’t be removed. Turn it off instead.',
   plugin: 'It came with a plugin. Uninstall the plugin in Marketplace to remove it.',
   dev_link: 'It runs from a folder you linked. Unlink it in Marketplace.',
-  unexpected_folder:
-    'Its folder isn’t where DorkOS puts extensions, so DorkOS won’t delete it. Remove it by hand.',
+  unexpected_folder: 'Its folder isn’t where DorkOS keeps extensions. Remove it by hand.',
 };
 
 /**
@@ -77,7 +71,9 @@ export function registerExtensionRemovalRoutes(
       });
     } catch (err) {
       logger.error('[Extensions] Failed to list approvals left behind', err);
-      return c.json({ error: 'Failed to list approvals left behind' }, 500);
+      return problem(c, 'internal_error', {
+        detail: 'Couldn’t list leftover approvals. Try again.',
+      });
     }
   });
 
@@ -86,16 +82,22 @@ export function registerExtensionRemovalRoutes(
   router.post('/:id/remove', async (c) => {
     const id = c.req.param('id');
     try {
-      if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+      if (!safeExtId.test(id))
+        return problem(c, 'invalid_request', {
+          detail: 'Use an extension id in lowercase, like my-extension.',
+        });
       const refused = refusedNotAPerson(c, REMOVAL_BAR);
       if (refused) return refused;
 
       const result = await removeExtension(extensionManager, id);
       if (!result.ok) {
         if (result.reason === 'not_found') {
-          return c.json({ error: `Extension '${id}' not found` }, 404);
+          return problem(c, 'not_found', { detail: `No extension named ${id} is installed.` });
         }
-        return c.json({ error: REFUSAL_COPY[result.reason], code: result.reason }, 409);
+        return problem(c, 'conflict', {
+          detail: REFUSAL_COPY[result.reason],
+          extensions: { reason: result.reason },
+        });
       }
 
       await activity?.emit({
@@ -111,7 +113,7 @@ export function registerExtensionRemovalRoutes(
       return c.json({ removed: id });
     } catch (err) {
       logger.error(`[Extensions] Failed to remove ${id}`, err);
-      return c.json({ error: 'Failed to remove extension' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t remove the extension. Try again.' });
     }
   });
 
@@ -121,21 +123,21 @@ export function registerExtensionRemovalRoutes(
   router.post('/:id/forget', async (c) => {
     const id = c.req.param('id');
     try {
-      if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+      if (!safeExtId.test(id))
+        return problem(c, 'invalid_request', {
+          detail: 'Use an extension id in lowercase, like my-extension.',
+        });
       const refused = refusedNotAPerson(c, REMOVAL_BAR);
       if (refused) return refused;
 
       const result = await forgetStaleApproval(extensionManager, id);
       if (!result.ok) {
         return result.reason === 'installed'
-          ? c.json(
-              {
-                error: 'It’s still installed. Stop it running or remove it instead.',
-                code: 'installed',
-              },
-              409
-            )
-          : c.json({ error: `No approval left for '${id}'` }, 404);
+          ? problem(c, 'conflict', {
+              detail: 'It’s still installed. Stop it running or remove it instead.',
+              extensions: { reason: 'installed' },
+            })
+          : problem(c, 'not_found', { detail: `No approval is left for ${id}.` });
       }
 
       await activity?.emit({
@@ -151,7 +153,7 @@ export function registerExtensionRemovalRoutes(
       return c.body(null, 204);
     } catch (err) {
       logger.error(`[Extensions] Failed to forget the approval for ${id}`, err);
-      return c.json({ error: 'Failed to forget extension approval' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t forget the approval. Try again.' });
     }
   });
 }

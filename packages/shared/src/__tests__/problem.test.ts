@@ -30,6 +30,17 @@ describe('PROBLEM_CODE_LIST', () => {
     }
   });
 
+  it.each([
+    ['method_not_allowed', 405],
+    ['disclosure_changed', 409],
+    ['declined', 403],
+    ['client_outdated', 400],
+    ['upstream_unavailable', 502],
+    ['outside_turn', 403],
+  ] as const)('sends %s with status %i by default', (code, status) => {
+    expect(PROBLEM_CODES[code].status).toBe(status);
+  });
+
   it('indexes every code, and the schema accepts exactly the list', () => {
     expect(Object.keys(PROBLEM_CODES).sort()).toEqual(
       PROBLEM_CODE_LIST.map((entry) => entry.code).sort()
@@ -197,6 +208,15 @@ describe('readErrorBody', () => {
     expect(
       readErrorBody({ title: 'Not found.', status: 404, code: 'not_found' }, 'HTTP 404')
     ).toEqual({ code: 'not_found', message: 'Not found.', status: 404 });
+  });
+
+  it('carries a problem’s reason extension, and only a string one', () => {
+    const conflict = { title: 'Changed.', status: 409, code: 'conflict' };
+    expect(readErrorBody({ ...conflict, reason: 'stale_approval' }, 'HTTP 409')).toMatchObject({
+      code: 'conflict',
+      reason: 'stale_approval',
+    });
+    expect(readErrorBody({ ...conflict, reason: 7 }, 'HTTP 409')).not.toHaveProperty('reason');
   });
 
   it('carries a problem’s issues and retry delay', () => {

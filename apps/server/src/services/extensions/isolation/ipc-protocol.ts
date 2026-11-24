@@ -345,15 +345,29 @@ export function parsePersonVerdict(raw: unknown): PersonCheck | null {
   if (typeof status !== 'number' || !Number.isInteger(status) || status < 400 || status > 599) {
     return null;
   }
+  // The refusal is a problem document (`@dorkos/shared/problem`), checked by
+  // hand so the child loads no schema library to read one header.
   if (
     !isRecord(body) ||
-    typeof body.error !== 'string' ||
     typeof body.code !== 'string' ||
-    typeof body.message !== 'string'
+    typeof body.title !== 'string' ||
+    body.status !== status ||
+    (body.type !== undefined && typeof body.type !== 'string') ||
+    (body.detail !== undefined && typeof body.detail !== 'string')
   ) {
     return null;
   }
-  return { ok: false, status, body: { error: body.error, code: body.code, message: body.message } };
+  return {
+    ok: false,
+    status,
+    body: {
+      ...(typeof body.type === 'string' ? { type: body.type } : {}),
+      title: body.title,
+      status,
+      code: body.code,
+      ...(typeof body.detail === 'string' ? { detail: body.detail } : {}),
+    },
+  };
 }
 
 /** The host's answer to a {@link CallMessage}, or a refusal of a `sub` or `expose`. */

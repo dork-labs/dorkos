@@ -86,12 +86,11 @@ const REQUESTER_CANNOT_DECIDE = {
 };
 const UNKNOWN_APPROVAL = { error: 'No such approval', code: 'UNKNOWN_APPROVAL' };
 const ONLY_A_PERSON = 'Only a person can change permissions. Agents can ask the person.';
-const DECISION_AGENT_REFUSAL = {
-  error: 'Only a person can answer this.',
-  code: 'decision_person_required',
-  message:
-    'DorkOS changed nothing. Only a person can answer this. Ask them to answer it in DorkOS.',
-};
+const DECISION_AGENT_REFUSAL = problemBody('person_only', {
+  detail: 'DorkOS changed nothing. Only a person can answer this, in DorkOS.',
+});
+const PROBLEM_CODE = (code: string) =>
+  z.object({ code: z.literal(code), detail: z.string() }).loose();
 const VALIDATION_FAILED = z
   .object({ code: z.literal('invalid_request'), issues: z.unknown() })
   .loose();
@@ -419,7 +418,10 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     path: '/api/extension-decisions/not-a-ulid/action',
     headers: AGENT,
     body: { action: 'approve' },
-    expect: { status: 404, body: { error: 'Not found' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'There is no such decision.' }),
+    },
   },
   {
     name: 'POST /api/extension-decisions/:id/action refuses an agent',
@@ -451,7 +453,12 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     headers: { origin: SERVER_ORIGIN },
     expect: {
       status: 400,
-      body: { error: 'Send an action, and keep notes under 2000 characters.' },
+      schema: z
+        .object({
+          code: z.literal('invalid_request'),
+          detail: z.literal('Send an action, and keep notes under 2000 characters.'),
+        })
+        .loose(),
     },
   },
   {
@@ -459,14 +466,22 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     method: 'POST',
     path: `/api/extension-decisions/${UNKNOWN_ULID}/action`,
     body: { action: 'approve' },
-    expect: { status: 404, schema: z.object({ error: z.string(), code: z.string() }) },
+    expect: { status: 404, schema: PROBLEM_CODE('not_found') },
   },
   {
     name: 'POST /api/extension-decisions/:id/offer refuses a body with no answer',
     method: 'POST',
     path: `/api/extension-decisions/${UNKNOWN_ULID}/offer/`,
     body: { accept: 'yes' },
-    expect: { status: 400, body: { error: 'Send { accept: true | false }.' } },
+    expect: {
+      status: 400,
+      schema: z
+        .object({
+          code: z.literal('invalid_request'),
+          detail: z.literal('Send { accept: true | false }.'),
+        })
+        .loose(),
+    },
   },
   {
     name: 'POST /api/extension-decisions/:id/offer refuses an agent',
@@ -481,7 +496,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     method: 'POST',
     path: `/api/extension-decisions/${UNKNOWN_ULID}/offer`,
     body: { accept: false },
-    expect: { status: 404, schema: z.object({ error: z.string(), code: z.string() }) },
+    expect: { status: 404, schema: PROBLEM_CODE('not_found') },
   },
 
   // permissions
@@ -1097,12 +1112,7 @@ describe('contract: the same groups with login on', () => {
       body: { action: 'approve' },
       expect: {
         status: 403,
-        schema: z
-          .object({
-            error: z.literal('Only a person can answer this.'),
-            code: z.literal('operator_cookie_required'),
-          })
-          .loose(),
+        schema: z.object({ code: z.literal('person_only'), detail: z.string() }).loose(),
       },
     });
   });

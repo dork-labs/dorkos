@@ -20,7 +20,7 @@ import type { Context, Hono } from 'hono';
 import { z } from 'zod';
 import { isReservedMcpServerName } from '@dorkos/shared/global-mcp-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { logger } from '../lib/logger.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import { notify } from '../services/notifications/notification-service.js';
@@ -69,10 +69,29 @@ const UndoSchema = z.object({
   rule: z.string().regex(UNDOABLE_RULE),
 });
 
-const UNDO_STATUS: Record<StandingAllowUndoError['code'], 400 | 409> = {
-  'bad-rule': 400,
-  'not-a-real-file': 409,
-  unreadable: 409,
+/**
+ * How each undo refusal answers: a fixed sentence (the error's own message can
+ * name the settings file), and its own code as `reason`, in lower_snake.
+ */
+const UNDO_PROBLEM: Record<
+  StandingAllowUndoError['code'],
+  { code: 'invalid_request' | 'conflict'; reason: string; detail: string }
+> = {
+  'bad-rule': {
+    code: 'invalid_request',
+    reason: 'bad_rule',
+    detail: "That rule can't be undone here.",
+  },
+  'not-a-real-file': {
+    code: 'conflict',
+    reason: 'not_a_real_file',
+    detail: "That agent's settings file isn't a plain file, so it was left alone.",
+  },
+  unreadable: {
+    code: 'conflict',
+    reason: 'unreadable',
+    detail: "That agent's settings file couldn't be read. Nothing changed.",
+  },
 };
 
 /** The most Inbox lines one check says; the sheet lists the rest as new. */
@@ -98,7 +117,7 @@ export function addMcpServerSheetRoutes(
   deps: McpServerSheetDeps
 ): void {
   const unknown = (c: Context<ApiEnv>) =>
-    c.json({ error: 'There is no MCP server by that name.', code: 'not_found' }, 404);
+    problem(c, 'not_found', { detail: 'There is no MCP server by that name.' });
   // Every server's name, so a server whose name holds `__` stays off a shorter one's sheet.
   const serverNames = () => store.list().map((server) => server.name);
   const allowsFor = (name: string) => readStandingAllows(name, deps.agents(), serverNames());
@@ -146,15 +165,15 @@ export function addMcpServerSheetRoutes(
     if (!store.has(name)) return unknown(c);
     const parsed = UndoSchema.safeParse(readJsonBody(c));
     if (!parsed.success || standingAllowBreadth(parsed.data.rule, name, serverNames()) === null) {
-      return c.json(
-        { error: `Send an agent and one ${name} rule to undo.`, code: 'bad_rule' },
-        400
-      );
+      return problem(c, 'invalid_request', {
+        detail: 'Send an agent and one rule for this server to undo.',
+        extensions: { reason: 'bad_rule' },
+      });
     }
     const { agentId, rule } = parsed.data;
     // The folder comes from the registry, never from the request.
     const agent = deps.agents().find((candidate) => candidate.id === agentId);
-    if (!agent) return c.json({ error: 'There is no agent by that id.', code: 'not_found' }, 404);
+    if (!agent) return problem(c, 'not_found', { detail: 'There is no agent by that id.' });
     let outcome: 'removed' | 'not-found';
     try {
       outcome = await removeStandingAllow(agent.home, rule);
@@ -168,10 +187,11 @@ export function addMcpServerSheetRoutes(
         error: err.message,
         summary: `Couldn't undo ${rule} for ${agent.name}`,
       });
-      return c.json({ error: err.message, code: err.code }, UNDO_STATUS[err.code]);
+      const { code, reason, detail } = UNDO_PROBLEM[err.code];
+      return problem(c, code, { detail, extensions: { reason } });
     }
     if (outcome === 'not-found') {
-      return c.json({ error: `${agent.name} no longer has that rule.`, code: 'not_found' }, 404);
+      return problem(c, 'not_found', { detail: 'That agent no longer has that rule.' });
     }
     recordAudit({
       action: 'mcp-server.allow-undone',

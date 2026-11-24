@@ -1,5 +1,5 @@
 /** Ordinary authenticated operator recovery: content/path/authority never come from this body. */
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import {
   DocChannelNotFoundError,
   disclosableRefusalReason,
@@ -12,7 +12,7 @@ import {
 } from '@dorkos/shared/file-save/recovery';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { honoRequestFacts } from '../../http/request-facts.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../../http/request-query.js';
 import {
   discoverOriginalDocumentFileSaves,
@@ -23,24 +23,33 @@ import {
 export function createFileSaveRecoveryRoutes(source: () => InstallationFileWrites | undefined) {
   const router = new Hono<ApiEnv>();
   const documentId = (value: unknown) => z.string().min(1).max(200).parse(value);
-  const failure = (error: unknown) => {
-    // Which check refused, in the log always and to the owner when safe (DOR-4442). A code, never a path.
-    if (error instanceof DocChannelNotFoundError)
+  /**
+   * Answer a refusal as a problem: a fixed sentence per case, and for a 404
+   * which check refused as `reason` when the owner may know (DOR-4442). A code,
+   * never a path; anything else stays in the log.
+   */
+  const failure = (c: Context<ApiEnv>, error: unknown): Response => {
+    if (error instanceof z.ZodError)
+      return problem(c, 'invalid_request', { detail: 'That save recovery request isn’t valid.' });
+    if (error instanceof DocChannelNotFoundError) {
       logger.info('[file-saves] a document save check refused', { reason: error.reason ?? null });
-    const reason = disclosableRefusalReason(error);
-    return {
-      error: 'The document save evidence is not available.',
-      code:
-        error instanceof z.ZodError ? 'INVALID_FILE_SAVE_RECOVERY' : 'DOC_FILE_SAVE_UNAVAILABLE',
-      ...(reason ? { reason } : {}),
-    };
+      const reason = disclosableRefusalReason(error);
+      return problem(c, 'not_found', {
+        detail: 'The document save evidence is not available.',
+        ...(reason ? { extensions: { reason } } : {}),
+      });
+    }
+    if (error !== undefined) logger.warn('[file-saves] save evidence failed', { error });
+    return problem(c, 'temporarily_unavailable', {
+      detail: 'Save evidence isn’t available right now. Try again soon.',
+    });
   };
   router.get('/:id/file-saves', async (c) => {
     c.header('Cache-Control', 'no-store');
     try {
       if (Object.keys(readQuery(c)).length) throw new z.ZodError([]);
       const owner = source();
-      if (!owner) return c.json(failure(undefined), 503);
+      if (!owner) return failure(c, undefined);
       return c.json(
         await discoverOriginalDocumentFileSaves(
           owner,
@@ -49,10 +58,7 @@ export function createFileSaveRecoveryRoutes(source: () => InstallationFileWrite
         )
       );
     } catch (error) {
-      return c.json(
-        failure(error),
-        error instanceof z.ZodError ? 400 : error instanceof DocChannelNotFoundError ? 404 : 503
-      );
+      return failure(c, error);
     }
   });
   router.post('/:id/file-saves/:eventId/recover', async (c) => {
@@ -66,13 +72,10 @@ export function createFileSaveRecoveryRoutes(source: () => InstallationFileWrite
         eventId: c.req.param('eventId'),
       });
       const owner = source();
-      if (!owner) return c.json(failure(undefined), 503);
+      if (!owner) return failure(c, undefined);
       return c.json(await recoverOriginalDocumentFileSave(owner, lookup, honoRequestFacts(c)));
     } catch (error) {
-      return c.json(
-        failure(error),
-        error instanceof z.ZodError ? 400 : error instanceof DocChannelNotFoundError ? 404 : 503
-      );
+      return failure(c, error);
     }
   });
   return router;

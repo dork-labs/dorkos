@@ -21,7 +21,6 @@
  * @module routes/canvas-doc-route-controls
  */
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import {
   PERMISSION_ANSWERED_EVENT,
@@ -33,7 +32,7 @@ import {
   type DocRouteTurnedOffMetadata,
 } from '@dorkos/shared/canvas-doc-routes';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
@@ -45,6 +44,7 @@ import { logger } from '../lib/logger.js';
 import { writerForPosture } from './permissions.js';
 import type { DocChannelHttpSource } from './canvas-doc-events.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
+import { docRefusalProblem } from './canvas-doc-refusal.js';
 
 const IdSchema = z.string().min(1).max(200);
 
@@ -96,7 +96,7 @@ function failure(c: Context<ApiEnv>, error: unknown): Response {
   if (status === 500) logger.error('[canvas-doc-route-controls] request failed', error);
   const message =
     CODE_MESSAGES[code] ?? STATUS_MESSAGES[status] ?? 'The route request could not be completed.';
-  return c.json({ error: message, code }, status as ContentfulStatusCode);
+  return docRefusalProblem(c, { status, reason: code, detail: message });
 }
 
 /**
@@ -152,7 +152,7 @@ export function createCanvasDocRouteControlRoutes(
     const result = decideAsPerson(honoRequestFacts(c));
     if ('decision' in result) return result.decision;
     const { status, error, code } = result.refusal;
-    return c.json({ error, code }, status as ContentfulStatusCode);
+    return docRefusalProblem(c, { status, reason: code, detail: error });
   }
 
   /** One `permission.answered` line for a person's allow, as `/api/approvals` writes. */
@@ -252,10 +252,7 @@ export function createCanvasDocRouteControlRoutes(
     // person's yes is never a standing one (DOR-2969). Review and turning off
     // stay open there: one changes nothing, the other only narrows.
     if (honoRequestFacts(c).ingress === 'wifi') {
-      return c.json(
-        { error: 'Allow document routes at this computer.', code: 'NOT_FROM_WIFI' },
-        403
-      );
+      return problem(c, 'not_from_wifi', { detail: 'Allow document routes at this computer.' });
     }
     const person = personOrRefuse(c);
     if (person instanceof Response) return person;
@@ -276,7 +273,7 @@ export function createCanvasDocRouteControlRoutes(
             const decided = decideAsPerson(who);
             if (!('decision' in decided)) {
               const { status, error, code } = decided.refusal;
-              return c.json({ error, code }, status as ContentfulStatusCode);
+              return docRefusalProblem(c, { status, reason: code, detail: error });
             }
             const { controls: service, actor } = controls();
             const { route, approvalId } = await service.approve(

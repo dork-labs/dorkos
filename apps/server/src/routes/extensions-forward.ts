@@ -44,7 +44,6 @@
 import { holdExtensionPowerChange } from './extension-decision-step-up.js';
 import { declaresBridgeCapability } from '@dorkos/shared/extension-approval-schemas';
 import type { Context, Hono } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { FORWARD_ITEM_ID_PATTERN } from '@dorkos/shared/chat-messages';
 import {
@@ -81,19 +80,13 @@ import { resolveCaller } from './room-caller.js';
 import { isOwnerCaller } from './room-error-response.js';
 import { refuseRoomWrite, type RoomWriteRefusal } from './extensions-rooms-bar.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { sdkErrorRefusal, sdkRefusal } from './extensions-sdk-refusal.js';
+
+/** What an id that cannot name a mini app is told. */
+const INVALID_ID = 'Use a valid mini app ID.';
 
 /** The statuses of a mini app that is turned on. */
 const TURNED_ON: ReadonlySet<ExtensionStatus> = new Set(['enabled', 'compiled', 'active']);
-
-/** The HTTP status for each refusal. */
-const STATUS_FOR: Record<ForwardErrorCode, ContentfulStatusCode> = {
-  no_agent: 409,
-  not_found: 404,
-  person_required: 403,
-  extension_off: 409,
-  invalid_input: 400,
-  unavailable: 503,
-};
 
 /** Why the forward bar refused, beyond the room-write bar's reasons. */
 export type ForwardRefusal = RoomWriteRefusal | 'login-off' | 'not-the-owner' | 'not-json';
@@ -105,17 +98,15 @@ const REFUSAL_MESSAGE: Record<ForwardRefusal, string> = {
   'no-origin': 'Nothing was sent. A mini app can only forward from your own window of DorkOS.',
   'other-site': 'Nothing was sent. This request came from a page that is not DorkOS.',
   'no-app-window': 'Nothing was sent. A mini app can only forward from your own window of DorkOS.',
-  'not-a-browser-session':
-    'Nothing was sent. Sign in to DorkOS in your browser to forward from a mini app.',
-  'login-off':
-    'Nothing was sent. DorkOS must ask for your password here, so it can tell your words are yours.',
+  'not-a-browser-session': 'Nothing was sent. Sign in to DorkOS in your browser first.',
+  'login-off': 'Nothing was sent. Set a DorkOS password first, so your words are provably yours.',
   'not-the-owner': 'Nothing was sent. Only the person who owns DorkOS can forward to their agents.',
   'not-json': 'Nothing was sent. Send the comment as JSON.',
 };
 
 /** What a mini app that never asked to forward is told. */
 const NO_FORWARD_DECLARED =
-  'This mini app does not ask to forward comments. Add "capabilities": { "forward": true } to its manifest.';
+  'This mini app doesn’t ask to forward. Add "capabilities": { "forward": true }.';
 
 const ForwardBodySchema = z
   .object({
@@ -138,12 +129,10 @@ const EmptyBodySchema = z.object({}).strict();
 
 /** What the person bar says when it refuses a change of agent. */
 const FORWARD_AGENTS_BAR: PersonBarCopy = {
-  error: 'Only a person can choose the agents a mini app forwards to.',
-  code: 'forward_agents_person_required',
+  code: 'person_only',
   subject: 'which agents a mini app forwards to',
   crossSite: (origin) =>
-    `Nothing changed. This request came from ${origin}, which is not DorkOS. ` +
-    `Only a person using DorkOS can choose the agents a mini app forwards to.`,
+    `Nothing changed. ${origin} isn’t DorkOS. Choose forward agents in DorkOS itself.`,
   agent: 'Nothing changed. Only a person can choose the agents a mini app forwards to.',
 };
 
@@ -218,9 +207,9 @@ export function liveForwardDeps(
   };
 }
 
-/** A refusal, answered. */
+/** A refusal, answered as a problem document (`extensions-sdk-refusal.ts`). */
 function refuse(c: Context<ApiEnv>, code: ForwardErrorCode, message: string): Response {
-  return c.json({ error: message, code }, STATUS_FOR[code]);
+  return sdkRefusal(c, code, message);
 }
 
 /**
@@ -245,7 +234,7 @@ export function registerExtensionForwardRoutes(
     c: Context<ApiEnv>
   ): { extensionId: string; extensionName: string } | Response => {
     const extensionId = c.req.param('id') ?? '';
-    if (!safeExtId.test(extensionId)) return c.json({ error: 'Invalid extension ID' }, 400);
+    if (!safeExtId.test(extensionId)) return refuse(c, 'invalid_input', INVALID_ID);
     const record = extensionManager.get(extensionId);
     if (!record) return refuse(c, 'not_found', `No mini app named ${extensionId}.`);
     if (!TURNED_ON.has(record.status)) {
@@ -274,7 +263,7 @@ export function registerExtensionForwardRoutes(
     try {
       return run();
     } catch (err) {
-      if (err instanceof PersonForwardError) return refuse(c, err.code, err.message);
+      if (err instanceof PersonForwardError) return sdkErrorRefusal(c, err);
       logger.error('[Extensions] A mini app forward call failed', err);
       return refuse(c, 'unavailable', 'DorkOS could not do that. Try again.');
     }
@@ -331,7 +320,7 @@ export function registerExtensionForwardRoutes(
     } catch (err) {
       if (err instanceof PersonForwardError) {
         auditForward(app, 'refused', err.code);
-        return onNoAgent?.(err) ?? refuse(c, err.code, err.message);
+        return onNoAgent?.(err) ?? sdkErrorRefusal(c, err);
       }
       logger.error('[Extensions] A mini app forward failed', err);
       auditForward(app, 'failed');
@@ -349,7 +338,7 @@ export function registerExtensionForwardRoutes(
       return refuse(
         c,
         'invalid_input',
-        `Send { text, itemId } and an optional itemTitle and agentId. Text is 1 to ${FORWARD_TEXT_MAX_CHARS.toLocaleString('en-US')} characters.`
+        `Send { text, itemId }, with text of 1 to ${FORWARD_TEXT_MAX_CHARS.toLocaleString('en-US')} characters.`
       );
     }
     // A forward always lands in the person's Direct chat with the agent (DOR-3325), so an unproven
@@ -376,7 +365,7 @@ export function registerExtensionForwardRoutes(
         // Kept here, so the Allow sends exactly these words and nothing the
         // extension says afterwards.
         const consent = forwards.hold(request, err.suggestedAgentId);
-        return c.json({ error: err.message, code: err.code, consent }, STATUS_FOR.no_agent);
+        return sdkErrorRefusal(c, err, { consent });
       }
     );
   });
@@ -477,19 +466,19 @@ export function registerExtensionForwardRoutes(
 
   router.get('/:id/forward-agents', (c) => {
     const id = c.req.param('id');
-    if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+    if (!safeExtId.test(id)) return refuse(c, 'invalid_input', INVALID_ID);
     // Withheld from agents, as the leaf is in `config_get`, and held to the
     // same signed-in session as a forward: no headerless local caller.
     const readRefusal = refuseForwardRead(honoRequestFacts(c));
     if (readRefusal) return refuse(c, 'person_required', REFUSAL_MESSAGE[readRefusal]);
-    if (!extensionManager.get(id)) return c.json({ error: `No mini app named ${id}.` }, 404);
+    if (!extensionManager.get(id)) return refuse(c, 'not_found', `No mini app named ${id}.`);
     // A listed agent that is gone still reads back, so the person can remove it.
     return answer(c, () => c.json(forwards.agents(id)));
   });
 
   router.put('/:id/forward-agents', (c) => {
     const id = c.req.param('id');
-    if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+    if (!safeExtId.test(id)) return refuse(c, 'invalid_input', INVALID_ID);
     const refused = refusedNotAPerson(c, FORWARD_AGENTS_BAR);
     if (refused) return refused;
     // The forward bar too (Security M1 on #3207): with the password off at this
@@ -498,7 +487,7 @@ export function registerExtensionForwardRoutes(
     const why = refuseForward(honoRequestFacts(c), c.req.header('content-type'));
     if (why) return refuse(c, 'person_required', REFUSAL_MESSAGE[why]);
     const record = extensionManager.get(id);
-    if (!record) return c.json({ error: `No mini app named ${id}.` }, 404);
+    if (!record) return refuse(c, 'not_found', `No mini app named ${id}.`);
     if (!asksToForward(record)) return refuse(c, 'invalid_input', NO_FORWARD_DECLARED);
     const body = ForwardAgentsBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!body.success) {

@@ -6,7 +6,7 @@ import type { Hono } from 'hono';
 import { z } from 'zod';
 import { LocalBrowserProfileBindSchema } from '@dorkos/shared/local-browser';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, problemBody, readJsonBody, sendProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { refuseUnlessAccountOwner, requirePersonAtThisComputer } from '../lib/caller-authority.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
@@ -22,12 +22,17 @@ export interface LocalBrowserProfileRouteDeps {
   agent(agentId: string): { name: string; projectPath: string } | undefined;
 }
 
-const NOT_FOUND = { error: 'That browser profile no longer exists.', code: 'profile_not_found' };
-const NO_AGENT = { error: 'That agent no longer exists.', code: 'agent_not_found' };
-const OWNER_ONLY = {
-  error: 'Only this DorkOS owner, on this computer, can change who uses a profile.',
-  code: 'owner_only',
-};
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'That browser profile no longer exists. Refresh and try again.',
+  extensions: { reason: 'profile_not_found' },
+});
+const NO_AGENT = problemBody('not_found', { detail: 'That agent no longer exists.' });
+const OWNER_ONLY = problemBody('owner_only', {
+  detail: 'Only this DorkOS owner, on this computer, can change who uses a profile.',
+});
+const OUTSIDE_TURN = problemBody('outside_turn', {
+  detail: 'Wait until this agent’s turn ends, then share.',
+});
 
 /**
  * Add the profile routes to the owner-only browser router.
@@ -44,23 +49,20 @@ export function mountLocalBrowserProfileRoutes(
   // Named profiles are cut for launch (DOR-4105): the panel can't show one, so no one may
   // make one. A hidden sign-in store is access the person can't see or remove.
   router.post('/profiles', (c) =>
-    c.json({ error: 'New browser profiles aren’t available.', code: 'profiles_closed' }, 403)
+    problem(c, 'forbidden', { detail: 'New browser profiles aren’t available.' })
   );
   router.post('/profiles/:id/agents', async (c) => {
     if (requirePersonAtThisComputer(honoRequestFacts(c)) !== undefined)
-      return c.json({ error: 'Only you can share a browser.', code: 'person_only' }, 403);
+      return problem(c, 'person_only', { detail: 'Only you can share a browser.' });
     const profileId = c.req.param('id');
     const sessionId = z.string().min(1).max(256).optional().parse(c.req.query('sessionId'));
     const { agentId } = LocalBrowserProfileBindSchema.parse(readJsonBody(c));
     const profile = profiles.get(profileId);
-    if (!profile) return c.json(NOT_FOUND, 404);
+    if (!profile) return sendProblem(c, NOT_FOUND);
     const agent = deps.agent(agentId);
-    if (!agent) return c.json(NO_AGENT, 404);
+    if (!agent) return sendProblem(c, NO_AGENT);
     if (!sessionId || !(await deps.mayShare?.(agentId, sessionId)))
-      return c.json(
-        { error: 'Wait until this agent’s turn ends, then share.', code: 'outside_turn' },
-        403
-      );
+      return sendProblem(c, OUTSIDE_TURN);
     return holdForStepUp(c, {
       kind: 'browser-profile.bind',
       target: profile.label,
@@ -82,10 +84,7 @@ export function mountLocalBrowserProfileRoutes(
         // The person confirmed this folder. An agent that moved since is a new question.
         if (current.projectPath !== agent.projectPath) return { status: 404, body: NO_AGENT };
         if (!sessionId || !(await deps.mayShare?.(agentId, sessionId)))
-          return {
-            status: 403,
-            body: { error: 'Wait until this agent’s turn ends, then share.', code: 'outside_turn' },
-          };
+          return { status: 403, body: OUTSIDE_TURN };
         profiles.bind(profileId, agentId, current.projectPath);
         return { status: 200, body: profiles.get(profileId) };
       },
@@ -95,9 +94,9 @@ export function mountLocalBrowserProfileRoutes(
   // during a marked turn, with no share-admission check or step-up.
   router.delete('/profiles/:id/agents/:agentId', async (c) => {
     if (requirePersonAtThisComputer(honoRequestFacts(c)) !== undefined)
-      return c.json({ error: 'Only you can change browser sharing.', code: 'person_only' }, 403);
+      return problem(c, 'person_only', { detail: 'Only you can change browser sharing.' });
     const profileId = c.req.param('id');
-    if (!profiles.get(profileId)) return c.json(NOT_FOUND, 404);
+    if (!profiles.get(profileId)) return sendProblem(c, NOT_FOUND);
     const agentId = c.req.param('agentId');
     profiles.unbind(profileId, agentId);
     return c.json(profiles.get(profileId));
