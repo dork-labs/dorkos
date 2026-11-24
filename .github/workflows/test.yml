@@ -1004,11 +1004,11 @@ jobs:
     env:
       NODE_OPTIONS: --max-old-space-size=8192
       # TRIAL (DOR-5130, ledger 261124-114526): vitest picks 3 workers on
-      # these 4-core runners. Variant one asked for 4; this variant asks for
-      # 5. vitest reads the variable over any config, and it is on turbo's globalPassThroughEnv,
+      # these 4-core runners; this asks for one per core (5 timed tests
+      # out). vitest reads the variable over any config, and it is on turbo's globalPassThroughEnv,
       # so no task hash moves. Local runs are untouched:
       # scripts/local-vitest-workers.sh still prints nothing under CI.
-      VITEST_MAX_WORKERS: '5'
+      VITEST_MAX_WORKERS: '4'
     steps:
       # A canary run is against `main` or it is nothing.
       #

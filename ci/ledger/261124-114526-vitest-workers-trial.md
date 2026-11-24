@@ -26,3 +26,17 @@ Evaluate: on this draft's PR run (a `.github/` change plans every suite on six s
 
 Revert if the shards go red, a worker runs out of heap, or the filesystem-watcher tests
 (`access-control`, `relay-gc`) start flaking under the extra worker.
+
+Results (Nov 24; full suite on six PR shards; sums over the six shards' vitest summaries):
+
+- Same-day baseline, 3 workers (runs 45310028117, 45318208073, 45331754886): apps/server wall
+  3,558-4,016 s, import 5,666-6,446 s; apps/client wall 1,776-2,014 s; slowest shard job
+  1,363-1,420 s.
+- 4 workers (run 45387267533): apps/server wall 3,565 s, import 7,705 s, tests 5,942 s; apps/client
+  wall 1,794 s; slowest shard job 1,266 s. All green, no OOM.
+- 5 workers (run 45390901689): apps/server wall 3,955 s, import 11,097 s; apps/client wall 1,972 s;
+  slowest shard job 1,529 s. Seven tests timed out at 5 s on three shards (canvas doc-channel,
+  ProfilePanel, router tests).
+
+Summed import time grows with the worker count, so the shards are CPU-bound. A fourth worker is
+within noise on summed wall time and misses the target. Five oversubscribes the runner.
