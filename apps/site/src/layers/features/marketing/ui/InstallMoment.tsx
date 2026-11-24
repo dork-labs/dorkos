@@ -35,7 +35,7 @@ const INSTALL_METHODS = [
   // Until then, listing it here would hand people a command that 404s.
 ] as const;
 
-/** The terminal one-liner — the launch-critical native install path. */
+/** The terminal one-liner: the primary native install path. */
 const CURL_COMMAND = INSTALL_METHODS[0].command;
 
 /** One copy of the one-liner, with a per-copy install ref when one applies. */

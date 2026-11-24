@@ -15,6 +15,9 @@ parent: everything-is-a-space
 **Parent spec:** [`everything-is-a-space`](../everything-is-a-space/02-specification.md) (cited as "the parent"; read its step table first). Its ideation: [`01-ideation.md`](../everything-is-a-space/01-ideation.md).
 **Decisions it carries out:** ADR `261015-042933` (the design) and ADR `261015-125850` (this computer and other devices). Plan: [`plans/2026-10-accounts-and-devices.md`](../../plans/2026-10-accounts-and-devices.md).
 
+> **Changed 2026-11-24 by ADR `261124-150515` (sequence, not dates).** The dates, the launch and the "before launch / after launch" split in this document are retired, milestone due dates included. What it decided to build, and the order where one step needs another, stand. The live order is `meta/ROADMAP.md`.
+> For B9's outbox, and anything else that must survive a restart, see ADR `261124-150517` (follow-up work saved with the turn, recovery with caps).
+
 ## Overview
 
 The parent spec lists every launch step. Most of chats A and B, plus the F steps, have merged. This spec covers what is left for the last milestone: eleven steps, in build order. It does not restate the parent's design. It says, per step, what exists today, what is still missing, and when the step is done.
@@ -54,6 +57,8 @@ Sizes follow `contributing/prioritization.md`: 1 under an hour, 2 half a day, 3 
 | 9   | nickname | DOR-2995 | 2    | DOR-3065, C5                                | none        |
 | 10  | banner   | DOR-2977 | 1    | none                                        | copy review |
 | 11  | L1b      | DOR-2963 | 8    | every step above, in slices from December 1 | none        |
+
+_Retired 2026-11-24 (ADR 261124-150515): kept as a record of the old plan. The order of the steps stands; the dates do not._
 
 Total: 54 points. It fits before January 29 alongside M3 only with 2–3 app lanes from late November and the cut list ready to use (see "Cut list").
 
@@ -311,6 +316,8 @@ Total: 54 points. It fits before January 29 alongside M3 only with 2–3 app lan
 
 **Goal.** As the parent defines it: the security review and its fixes, the timed "under a minute" runs, and the docs and canon moves for whatever passed.
 
+_Retired 2026-11-24 (ADR 261124-150515): kept as a record of the old plan. The order of the steps stands; the dates do not._
+
 **What changes from the parent.** The review starts **December 1, in slices, in merge order**, instead of one block in January. Each slice is reviewed against its merged PRs. Fixes are their own PRs, each citing the slice.
 
 **Review slices.**
@@ -347,6 +354,8 @@ The parent's order (A2 to A5, then B1 to B5, then C7) is kept. F0 goes first bec
 **Done when.** Every slice has a signed review with its fixes merged. Both timed runs are under a minute. Docs and ROADMAP move only for what passed.
 
 ## Cut list
+
+_Retired 2026-11-24 (ADR 261124-150515): kept as a record of the old plan. The order of the steps stands; the dates do not._
 
 In this order; Dorian decides each cut.
 

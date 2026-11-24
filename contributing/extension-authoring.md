@@ -19,6 +19,18 @@ Two name collisions worth flagging:
 - **"marketplace"** names three things — the **`@dorkos/marketplace`** library (schemas / validator / scaffolder), the **`marketplace` core extension** (display name **"Marketplace"**, the browse UI), and the **install runtime** at `apps/server/src/services/marketplace/`. This guide's "marketplace" is the extension; the package and the install runtime are separate layers it sits on top of.
 - **"Linear Loop"** is the _display name_ of the **`linear-issues`** core extension — not to be confused with the `linear-loop` _skill_ bundle retired in spec #257. Both the display name and the `linear-issues` id are provisional and may be renamed.
 
+## Is this a mini app or a core feature?
+
+Before you add a feature to the DorkOS server, ask three questions (ADR `261124-150519`):
+
+1. Does the core itself act on it?
+2. Can only the core see what it needs?
+3. Would a mini app get it wrong, even with care?
+
+If one answer is yes, it may go in the core. If all three are no, build it as a mini app (this guide), or as a schedule with a skill. Some repeated code between mini apps is an accepted price.
+
+**A watcher is a mini app.** Something that watches a pull request, a pipeline or an outside app and tells an agent when it changes belongs here, built on the same author API as everyone else's. Today a watcher can poll with `ctx.schedule()` and message an agent with [`ctx.agent`](#ctxagent), but it cannot yet wake the chat that asked it to watch. The core will own one way to wake a chat or an agent when something happens, stored and safe across a restart. It is not built yet, so do not build your own version of it in the server.
+
 ## Quick Start
 
 **See a live example.** Hello World ships with DorkOS as a core extension (source at `apps/server/src/core-extensions/hello-world/`). It is staged automatically at server startup but ships disabled:
@@ -779,7 +791,7 @@ The generalized `ensureCoreExtensions()` scanner picks the new directory up auto
 
 ## Limitations (v1)
 
-- No sandboxing: client-side extensions run in the browser with full DOM access; server-side extensions run in the Node.js host process.
+- No full sandbox. A server half runs inside DorkOS by default (ADR 0213), with DorkOS's own access, or in its own limited process with `"runtime": "subprocess"` (see [Running separately](#running-separately)). Screens run in a sandboxed frame (`"clientApiVersion": 2`; a bundle built for an older API does not run until it is rebuilt), but they still act with the person's access. Neither is a full sandbox.
 - The `hello-world` core extension (`apps/server/src/core-extensions/hello-world/`) is the worked example of a page, a status-bar item and a tab marker. It ships turned off.
 - No extension marketplace or auto-update mechanism.
 - Storage is local-only (no sync across machines).
@@ -788,7 +800,7 @@ The generalized `ensureCoreExtensions()` scanner picks the new directory up auto
 
 ## Server-Side Data Providers
 
-Extensions can run code on the DorkOS server. A **data provider** extension adds a `server.ts` file alongside `index.ts`, giving it Express routes, encrypted secrets, persistent storage, background scheduling, and SSE event emission — all scoped and isolated per extension.
+Extensions can run code on the DorkOS server. A **data provider** extension adds a `server.ts` file alongside `index.ts`, giving it HTTP routes (an Express router or a fetch handler), encrypted secrets, persistent storage, background scheduling, and SSE event emission — all scoped and isolated per extension.
 
 The three tiers of server-side capability, from simplest to most powerful:
 
