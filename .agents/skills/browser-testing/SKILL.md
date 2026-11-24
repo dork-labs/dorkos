@@ -25,7 +25,7 @@ description: Methodology for writing and maintaining DorkOS browser tests. Use w
 
 **Rule of thumb:** If the behavior spans multiple FSD layers or requires a real server, it's a browser test.
 
-**Browser tests are the most expensive tests we have.** They run only in the merge queue, they are the slowest and the flakiest, and each one is a journey someone has to keep working. Before adding a spec, look for an existing journey that can take one more step. A spec that only proves what a component or route test already proves is deleted, not kept "for safety". The keep-or-delete rubric is `.claude/rules/testing.md`, "Is this test worth keeping?", and the `pruning-tests` skill covers removing specs.
+**Browser tests are the most expensive tests we have.** The full suite runs on `main` after each merge; pull requests and the merge queue run only the specs tagged `@smoke`, as the required `browser-test` check (`contributing/ci.md`). They are the slowest and the flakiest, and each one is a journey someone has to keep working. Before adding a spec, look for an existing journey that can take one more step. A spec that only proves what a component or route test already proves is deleted, not kept "for safety". The keep-or-delete rubric is `.claude/rules/testing.md`, "Is this test worth keeping?", and the `pruning-tests` skill covers removing specs.
 
 ## 2. Page Object Model Patterns
 

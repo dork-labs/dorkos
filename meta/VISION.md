@@ -49,7 +49,7 @@ How to use these lines (casing, the exact page title, what headlines may never s
 
 **Three things make us different, always in this order:**
 
-1. **Mini apps.** Ask for a tool your business needs, and your agents build it inside DorkOS. This leads every pitch, feature list and launch video.
+1. **Mini apps.** Ask for a tool your business needs, and your agents build it inside DorkOS. This leads every pitch, feature list and demo video.
 2. **Built for founders.** Not general purpose. Goals, business connections and ready-made founder mini apps are where it is going.
 3. **Ownership.** Your agents, tools, files and data stay yours, wherever they run.
 

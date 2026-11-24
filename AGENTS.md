@@ -17,7 +17,7 @@ Before you decide or write anything about what DorkOS is, read the north-star se
 - [VISION.md](meta/VISION.md): what and why, who it is for, what sets us apart
 - [PRINCIPLES.md](meta/PRINCIPLES.md): how we decide (trusted by default, proactive co-workers, ownership, ready in under a minute, local first, claim only what works)
 - [VOICE.md](meta/VOICE.md): the words we use and avoid
-- [ROADMAP.md](meta/ROADMAP.md): what is built, what is next, and the **demo-claim gate**. Public copy, docs and release notes may claim only what that gate lists as built.
+- [ROADMAP.md](meta/ROADMAP.md): what is built, then one ordered list of what is next (no dates), and the **demo-claim gate**. Public copy, docs and release notes may claim only what that gate lists as built.
 - [PROACTIVE-AGENTS.md](meta/PROACTIVE-AGENTS.md): how our agents take initiative. Read it before designing anything an agent does on its own.
 - The full story is [meta/dorkos-litepaper.md](meta/dorkos-litepaper.md). Personas are in `meta/personas/` (the founder first, Kai the developer second).
 
@@ -73,7 +73,7 @@ The map is `contributing/architecture.md` and `contributing/system-architecture.
 
 - **Swappable seams:** `AgentRuntime` (agent backends: claude-code, codex, opencode, doe), `Transport` (client to backend), `ConnectorProvider`, and `CommunityAdapter` (rooms in more than one place). Every runtime passes `runtimeConformance` and every community backend passes `communityConformance`. Adding a runtime: `contributing/adding-a-runtime.md`.
 - **The server is Hono.** Express runs only behind the extension bridge, and an ESLint rule bans it elsewhere (ADR `261009-192542`).
-- **One space model** (ADR `261122-173853`): the space store (`services/spaces`, Postgres) is the one model for a space. Only execution state (workspaces, runtime transcripts and sign-ins, running processes) lives on the computer that runs turns. A shared host never holds a member's credentials or a key to a member's computer. Until launch, `services/rooms` is this computer's local store; a new feature built only on it needs a ticket naming its move. The import wall between `rooms` and `spaces` (`apps/server/eslint-rules/space-boundary.js`) stays.
+- **One space model** (ADR `261122-173853`). There are two kinds of state. Space data (members, agents, conversations, rules, memory, schedules, connections, settings, documents, mini apps) belongs to a space. Execution state (workspaces and worktrees, the runtimes' own transcripts and sign-ins, running processes) stays on the computer that runs turns. Nothing is Mac-only by design. A shared host never holds a member's credentials or a key to a member's computer. Today `services/rooms` is this computer's store and `services/spaces` (Postgres) is the space store; a new feature built only on `services/rooms` needs a ticket naming its move. The import wall between them (`apps/server/eslint-rules/space-boundary.js`) stays.
 - **Telegram and Slack rooms are projections into local rooms**, not community backends (ADR `260814-024525`).
 - **Sessions are runtime-owned** (ADR-0310). There is no unified DorkOS transcript store. Turns are delivered over the per-session SSE stream; `POST /api/sessions/:id/messages` only triggers.
 - **Agents:** `.dork/agent.json` on disk is the source of truth, and SQLite is a derived cache (ADR-0043). DorkBot is the system agent; system agents can't be renamed, deleted or unregistered.
@@ -82,6 +82,21 @@ The map is `contributing/architecture.md` and `contributing/system-architecture.
 - **The external MCP server at `/mcp` is fail-closed** (`apps/server/src/middleware/mcp-auth.ts`). `MCP_API_KEY` is an optional override, not the thing that turns auth on.
 - **Marketplace installs** use a file-scoped transaction: stage, back up, rename, restore on failure (ADR-0304).
 - **Client:** Feature-Sliced Design, `shared ← entities ← features ← widgets`. Import from a layer's barrel `index.ts`. Zustand for UI state, TanStack Query for server state.
+
+## Where the system is going
+
+Decided. Target shape: `contributing/architecture-target.md`. Order: `meta/ROADMAP.md`.
+
+- **Two sides, one contract** (ADR `261124-150516`). One program, one release. The space side holds space data; the computer side runs turns. One contract joins them: start, stream and stop a turn, answer an ask, call a DorkOS tool, sync an agent, report status. A Mac runs both; an agent computer runs only the computer side.
+- **Turns survive restarts** (ADR `261124-150517`): a run record, follow-up work saved with the turn, capped recovery.
+- **Every agent can be messaged directly** (ADR `261124-150518`): one send-to-agent capability for the API, CLI, MCP and A2A.
+- **Playbooks** (ADR `261124-152801`): how agents work together is a setting of a space. DorkOS holds its rules at its own gate and the turn port, never in one runtime's hooks.
+
+Rules today:
+
+1. A feature goes in the server core only if the core acts on it, only the core can see it, or a mini app can't do it right. Otherwise: a mini app, or a schedule with a skill (ADR `261124-150519`).
+2. No new service or process unless its lifetime or trust level differs.
+3. Never plan, rank or write work by a date or a launch (ADR `261124-150515`).
 
 ## The `/flow` Workflow
 
@@ -99,11 +114,11 @@ If compaction fires mid-`/flow`, keep verbatim: the work item id and title, stag
 
 ## Pull Requests
 
-Everything lands through a PR and the merge queue; repository rules reject direct pushes to `main`. Open PRs with `scripts/open-pr.sh` from a worktree branch based on `origin/main`. Docs-only PRs take `skip-changelog` and `review:light`. Review labels and flow: `creating-pull-requests` skill; the reviewer rubric is `REVIEW.md`.
+Everything lands through a PR and the merge queue; repository rules reject direct pushes to `main`. Open PRs with `scripts/open-pr.sh` from a worktree branch based on `origin/main`. It adds `skip-changelog` and the review label from the diff. Review labels and flow: `creating-pull-requests` skill; the reviewer rubric is `REVIEW.md`.
 
 - One topic, one PR. If an open PR must land first, stack on it with `gh stack` and merge the stack with `gh stack merge` from its top.
-- UI PRs run their affected Playwright specs locally before pushing, and say so.
-- **Every gate names an owner and a time** ("@x labels `abc1234` by 15:00"). An OK from Security, QA, design or the PM covers only the commit it names; any push voids it (E31 and E32 in `meta/agent-etiquette.md`).
+- UI PRs: CI runs the affected browser smoke. Run a spec locally only to debug one, through `pnpm heavy`.
+- **A wait names an owner and a time** ("@x answers by 15:00"), never "someone should" (E31 in `meta/agent-etiquette.md`). Security's sign-off counts only for the head it names (`pr-gates` checks this); any push needs a new one. QA and design review what merged, once a day.
 
 ## Hard Rules
 
@@ -138,7 +153,7 @@ The full guide is [contributing/ci.md](contributing/ci.md). What you must know:
 - **Don't print full process command lines** (`ps -ww`, `ps aux`, `pgrep -a`); they can show tokens.
 - **A throwaway test server gets a throwaway home:** a temp `DORK_HOME`, `DORKOS_TEST_RUNTIME=true`, and `HOME` and `CLAUDE_CONFIG_DIR` pointed inside the temp folder.
 - **Test data uses made-up names only**, not a real person, account or email.
-- **A release goes first.** While one is being cut, other PRs stay held and unrelated heavy runs wait until the new version is live on npm.
+- **A release goes first.** The `release-window` check holds other merges until the new version is on npm; you add no `hold`. Heavy runs the release doesn't name wait too.
 
 ## Signing outward writes
 

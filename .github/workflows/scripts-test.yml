@@ -454,6 +454,13 @@ jobs:
       - name: Queue repeat-guard fixtures
         run: bash scripts/test-queue-repeat-guard.sh
 
+      # queue-reentry.yml's decision: auto-merge back on after the queue (never
+      # a person) took a PR out, once it is green and mergeable; one note per
+      # head when it conflicts with main. Both mistakes are pinned: a dequeue,
+      # hold or repeat failure undone, and a ready PR left idle.
+      - name: Queue re-entry fixtures
+        run: bash scripts/test-queue-reentry.sh
+
       # arm-door.yml's decision (DOR-4648): an entry whose head lacks Security's
       # label at or after it, or a verify proof, is taken out of the queue. Both
       # mistakes are pinned: an ungated head let in, and a gated, docs-only,
@@ -495,6 +502,12 @@ jobs:
       # skips the retry; it reads the rungs from the ladder. jq only.
       - name: Review redispatch wait fixtures
         run: bash scripts/test-review-redispatch-wait.sh
+
+      # review-mode.sh decides whether a push gets a full review or the Security
+      # lens only. The expensive mistake is a push re-check on a PR that never
+      # had a full review, so every comment that must not count is pinned.
+      - name: Review mode fixtures
+        run: bash scripts/test-review-mode.sh
 
       # should-reap-worktree.sh is the other side of the same coin: the arming
       # gate decides what LANDS without a human, this one decides what gets

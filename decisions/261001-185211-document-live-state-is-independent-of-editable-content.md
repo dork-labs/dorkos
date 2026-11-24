@@ -1,7 +1,7 @@
 ---
 id: 261001-185211
 title: Document live state is independent of editable content
-status: proposed
+status: accepted
 created: 2026-10-01
 spec: doc-channel
 superseded-by: null
@@ -10,6 +10,8 @@ superseded-by: null
 # 261001-185211. Document live state is independent of editable content
 
 ## Status
+
+Accepted (2026-11-24, on review: built; `apps/server/src/services/canvas/doc-channel/downstream/state.ts` keeps live state as JSON Pointer patches with a revision, never editable document content, and `CanvasChannelPointerSchema` is in `packages/shared/src/canvas-channel-schemas.ts`).
 
 Proposed (extracted from [doc-channel](../specs/doc-channel/02-specification.md)).
 

@@ -1,15 +1,17 @@
 ---
 number: 175
 title: Use A2A Protocol as External Gateway Only
-status: proposed
+status: superseded
 created: 2026-03-22
 spec: a2a-channels-interoperability
-superseded-by: null
+superseded-by: 261124-150518
 ---
 
 # 175. Use A2A Protocol as External Gateway Only
 
 ## Status
+
+Superseded by [261124-150518](../261124-150518-every-agent-can-be-messaged-directly-one-send-capability.md) (accepted 2026-11-24): A2A becomes one projection of the "send to an agent" capability, and Relay is not the transport inside.
 
 Proposed
 
