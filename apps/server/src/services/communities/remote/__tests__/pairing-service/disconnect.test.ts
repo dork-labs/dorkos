@@ -137,6 +137,17 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       await expectLocalCopyGone(store, ref, 'offline-owner');
     });
 
+    it('still revokes the grant when the Community answered any agent removal', async () => {
+      const { service, ref } = await connectedWith('answered-agent-owner', [scout, echo]);
+      agentRemovalAnswers.set(scout.remoteMemberId, 'hang-up');
+      agentRemovalAnswers.set(echo.remoteMemberId, 500);
+      expect(await service.disconnect(ref, 'answered-agent-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout), view(echo)],
+      });
+      expect(revocations).toHaveLength(1);
+    });
+
     // An agent revoked here was already removed on purpose. One enrolled before the Community
     // recorded enrolling grants is still found by its owner and local id, which another
     // installation of the same person can share, so a second removal could take that one's.
@@ -189,6 +200,45 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       });
       expect(agentRemovals).toEqual([]);
       await expectLocalCopyGone(store, ref, 'fenced-owner');
+    });
+
+    it('names every agent when no bearer is left to remove them', async () => {
+      const { store, service, ref } = await connectedWith('no-bearer-owner', [scout]);
+      await store.requireReconnect(ref, 'no-bearer-owner');
+      expect(await service.disconnect(ref, 'no-bearer-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [view(scout)],
+      });
+      expect(agentRemovals).toEqual([]);
+      await expectLocalCopyGone(store, ref, 'no-bearer-owner');
+    });
+
+    it('still disconnects when the agents cannot be read', async () => {
+      fake.approved = true;
+      const store = new RemoteConnectionStore(directory);
+      const service = new RemoteCommunityPairingService(
+        store,
+        undefined,
+        undefined,
+        {},
+        undefined,
+        () => {
+          throw new Error('database closed');
+        }
+      );
+      const started = await service.start('unreadable-owner', origin, 'Agents install');
+      expect((await service.poll(started.connection.ref, 'unreadable-owner')).status).toBe(
+        'connected'
+      );
+      fake.approved = false;
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      expect(await service.disconnect(started.connection.ref, 'unreadable-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+      await expectLocalCopyGone(store, started.connection.ref, 'unreadable-owner');
     });
 
     it('says which agents disconnecting would remove without asking the Community', async () => {
@@ -277,6 +327,17 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       await expectLocalCopyGone(store, ref, 'disconnect-owner');
     });
 
+    it('counts a grant the Community already refuses as revoked', async () => {
+      const { store, service, ref } = await connected('already-revoked-owner');
+      fake.revocationAnswer = 401;
+      expect(await service.disconnect(ref, 'already-revoked-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
+      expect(revocations).toHaveLength(1);
+      await expectLocalCopyGone(store, ref, 'already-revoked-owner');
+    });
+
     it.each([
       ['unreachable', 'hang-up' as const],
       ['failing', 500],
@@ -336,6 +397,24 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       await expectLocalCopyGone(store, ref, 'reconnect-owner');
     });
 
+    it('reports a failed revoke of a reconnect-required grant as unconfirmed', async () => {
+      const { store, service, ref } = await connected('reconnect-offline-owner');
+      const file = join(directory, 'communities', 'remote', 'connections.json');
+      const records = JSON.parse(await readFile(file, 'utf8')) as Array<{
+        ref: string;
+        status: string;
+      }>;
+      records.find((record) => record.ref === ref)!.status = 'reconnect-required';
+      await writeFile(file, JSON.stringify(records));
+      fake.revocationAnswer = 'hang-up';
+      expect(await service.disconnect(ref, 'reconnect-offline-owner')).toEqual({
+        remoteRevoked: false,
+        agentsNotRemoved: [],
+      });
+      expect(revocations).toHaveLength(1);
+      await expectLocalCopyGone(store, ref, 'reconnect-offline-owner');
+    });
+
     it('makes no call once a rejected grant has already dropped its bearer', async () => {
       const { store, service, ref } = await connected('dropped-bearer-owner');
       await store.requireReconnect(ref, 'dropped-bearer-owner');
@@ -345,6 +424,31 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       });
       expect(revocations).toEqual([]);
       await expectLocalCopyGone(store, ref, 'dropped-bearer-owner');
+    });
+
+    it('reports a connected record that lost its bearer as unconfirmed', async () => {
+      const { store, service, ref } = await connected('lost-bearer-owner');
+      await new EncryptedFileCredentialStore(directory).delete(`community:${ref}:personal`);
+      expect(await service.disconnect(ref, 'lost-bearer-owner')).toEqual({
+        remoteRevoked: false,
+        agentsNotRemoved: [],
+      });
+      expect(revocations).toEqual([]);
+      await expectLocalCopyGone(store, ref, 'lost-bearer-owner');
+    });
+
+    it('does not call the Community for a pending request, which has no grant', async () => {
+      fake.approved = false;
+      const store = new RemoteConnectionStore(directory);
+      const service = new RemoteCommunityPairingService(store);
+      const started = await service.start('pending-disconnect-owner', origin, 'Pending install');
+      revocations.length = 0;
+      expect(await service.disconnect(started.connection.ref, 'pending-disconnect-owner')).toEqual({
+        remoteRevoked: true,
+        agentsNotRemoved: [],
+      });
+      expect(revocations).toEqual([]);
+      expect(await store.list('pending-disconnect-owner')).toEqual([]);
     });
   });
 });

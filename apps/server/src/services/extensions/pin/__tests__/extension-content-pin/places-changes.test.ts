@@ -1,4 +1,4 @@
-import { stored, copy, PANEL, WITH_PAGE, usePlacesFixture } from './harness.js';
+import { stored, IN_PROCESS, copy, PANEL, WITH_PAGE, usePlacesFixture } from './harness.js';
 import { describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';
@@ -19,6 +19,7 @@ import { isPendingApproval } from '../../../extension-approval-queue.js';
 import { initAuditTrail, type AuditTrail } from '../../../../audit/audit-trail.js';
 import { waitingPlacesOf } from '../../../isolation/place-grace.js';
 import type { ExtensionsConfig } from '../../../extension-enable-resolution.js';
+import { approvedVersionOf } from '../../extension-content-pin.js';
 
 describe('an update that only adds places keeps its app running (DOR-4282, C2)', () => {
   const p = usePlacesFixture();
@@ -248,6 +249,19 @@ describe('an update that only adds places keeps its app running (DOR-4282, C2)',
     );
   });
 
+  // Purpose (R3): the approved version is read from the pin's own snapshot,
+  // so it follows the pin when a rebuild moves it.
+  it('moves the approved version with the pin', async () => {
+    const { digest, record } = await rebuiltDorkApp();
+    expect(await approvedVersionOf(p.dorkHome, record, digest)).toBe('1.0.0');
+
+    const after = await repinPlacesOnlyUpdates(p.dorkHome, [record], p.approvals());
+
+    const moved = after.approvedSources!.notes!.digest!;
+    expect(moved).toBe(record.currentDigest);
+    expect(await approvedVersionOf(p.dorkHome, record, moved)).toBe('1.1.0');
+  });
+
   /** A rebuild that only bumps the version and restamps: no new place. */
   const VERSION_ONLY = { ...HEAD_BUILD, contributions: BASE_BUILD.contributions };
 
@@ -314,6 +328,24 @@ describe('an update that only adds places keeps its app running (DOR-4282, C2)',
     expect(waitingPlacesOf(record, after)).toEqual(['pages']);
     expect(isDismissedCopy(record, after)).toBe(false);
     expect(isPendingApproval(record, after)).toBe(true);
+  });
+
+  // Purpose (R3): only a dismissal of this very copy at the old version is
+  // carried; one for another folder stays where it was.
+  it('leaves a "Not now" for another folder of the same id alone', async () => {
+    const { record } = await rebuiltDorkApp(VERSION_ONLY);
+    const elsewhere = { path: '/elsewhere/notes', version: '1.0.0', dismissedAt: 'then' };
+    stored.extensions = { ...stored.extensions, dismissedApprovals: { notes: elsewhere } };
+
+    const after = (await repinPlacesOnlyUpdates(
+      p.dorkHome,
+      [record],
+      p.approvals()
+    )) as unknown as {
+      dismissedApprovals: Record<string, unknown>;
+    };
+
+    expect(after.dismissedApprovals.notes).toEqual(elsewhere);
   });
 
   // Purpose (R2): a rebuild that adds no place is still only what the build

@@ -212,6 +212,24 @@ describe('an update that only adds places keeps its app running (DOR-4282, C2)',
     expect(isPendingApproval(next, p.approvals())).toBe(true);
   });
 
+  // Purpose: a recheck never hides a card the scan already raised. Only a
+  // miss the scan did not see waits for the next one.
+  it('keeps a card the scan raised when a later recheck misses too', async () => {
+    await p.approveNow();
+    await fs.writeFile(path.join(p.dir, 'server.ts'), 'export default () => { steal(); };');
+    const scanned = await p.rescanned(PANEL);
+    await placeSnapshots(p.dorkHome, [scanned], p.approvals());
+    expect(isPendingApproval(scanned, p.approvals())).toBe(true);
+    const onNewMiss = vi.fn();
+
+    expect(await recheckAtItsLevel(p.dorkHome, scanned, onNewMiss)).toBe(false);
+
+    expect(awaitsNextScan(scanned)).toBe(false);
+    expect(isPendingApproval(scanned, p.approvals())).toBe(true);
+    expect(toPublic(scanned, p.approvals()).awaitingScan).toBeUndefined();
+    expect(onNewMiss).not.toHaveBeenCalled();
+  });
+
   // Purpose: a miss between scans asks for the next scan exactly once, and a
   // rescanned record that still misses never asks again.
   it('asks for one rescan when a miss between scans first pauses the copy', async () => {

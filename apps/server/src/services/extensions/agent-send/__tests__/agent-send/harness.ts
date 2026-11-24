@@ -115,11 +115,19 @@ export function chat(facts: Partial<SessionFacts> = {}): SessionFacts {
   };
 }
 
+/** When set, every dispatch waits on it first: a send or retry caught mid-flight. */
+export const dispatchHooks = {
+  dispatchGate: undefined as Promise<void> | undefined,
+  /** The canonical id the next dispatch reports, when a case wants one that differs. */
+  canonicalFor: undefined as ((sessionId: string) => string) | undefined,
+};
+
 /** The launch path, reduced to the dispatcher, with the cap as a switch. */
 export async function fakeDispatch(
   opts: DispatchSessionMessageOpts
 ): Promise<DispatchSessionMessageResult> {
   h.dispatched.push(opts);
+  if (dispatchHooks.dispatchGate) await dispatchHooks.dispatchGate;
   if (opts.countsTowardLaunchCap && h.capFull) {
     return { refused: 'LAUNCH_CAP_FULL', message: 'Too many spin-off chats are running.' };
   }
@@ -139,7 +147,9 @@ export async function fakeDispatch(
     runtime: h.runtime,
     ...(opts.onSettled ? { onSettled: opts.onSettled } : {}),
   });
-  return result;
+  return dispatchHooks.canonicalFor
+    ? { ...result, canonicalId: dispatchHooks.canonicalFor(opts.sessionId) }
+    : result;
 }
 
 /** A person's own turn, holding the chat until `hold` opens. */
@@ -163,7 +173,8 @@ export function build(overrides: Partial<ConstructorParameters<typeof AgentSendS
     meshCore: () => ({
       get: ((id: string) => (h.agents.has(id) ? { id } : undefined)) as never,
       getProjectPath: (id: string) => h.agents.get(id),
-      listWithPaths: () => [...agents].map(([id, projectPath]) => ({ id, name: id, projectPath })),
+      listWithPaths: () =>
+        [...h.agents].map(([id, projectPath]) => ({ id, name: id, projectPath })),
     }),
     describeSession: async (id) => h.sessions.get(id) ?? chat({ bound: false, launchOrigin: null }),
     sessionCwd: async () => '/work/project',
@@ -195,6 +206,8 @@ beforeEach(async () => {
   h.dispatched = [];
   h.reserved = [];
   h.capFull = false;
+  dispatchHooks.canonicalFor = undefined;
+  dispatchHooks.dispatchGate = undefined;
   h.agents = new Map();
   h.sessions = new Map([[h.session, chat()]]);
   h.db = createTestDb();

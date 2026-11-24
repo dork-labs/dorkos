@@ -1,7 +1,20 @@
-import { h, EXT, gate, quickTurn, settle, chat, personTurn } from './harness.js';
-import { describe, expect, it } from 'vitest';
+import {
+  h,
+  EXT,
+  PERSON,
+  gate,
+  heldTurn,
+  quickTurn,
+  settle,
+  projectorFor,
+  chat,
+  personTurn,
+} from './harness.js';
+import { describe, expect, it, vi } from 'vitest';
 import { emitLifecycle } from '../../../../session/message-dispatcher/state.js';
 import { renderAppMessage } from '../../agent-send-message.js';
+import { cancelQueuedMessage } from '../../../../session/queued-message-edits.js';
+import { dispatchMessage } from '../../../../session/message-dispatcher.js';
 
 describe('ctx.agent.send — an idle chat', () => {
   it('runs the message now and acknowledges it by its id', async () => {
@@ -96,6 +109,83 @@ describe('ctx.agent.send — a busy chat holds the message', () => {
     first.open();
     await settle();
   });
+
+  it('tells the extension when a person removes the waiting message', async () => {
+    const first = gate();
+    await personTurn(first.wait);
+    const receipt = await h.service.send(EXT, {
+      to: h.session,
+      text: 'maybe',
+      idempotencyKey: 'k1',
+    });
+
+    cancelQueuedMessage(h.session, receipt.messageId);
+    first.open();
+    await settle();
+
+    expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(h.events).toEqual([
+      {
+        kind: 'turn.failed',
+        messageId: receipt.messageId,
+        sessionId: h.session,
+        reason: 'removed',
+        message: expect.any(String),
+      },
+    ]);
+  });
+});
+
+it('has no hold limit: a message queued for 30 minutes still runs', async () => {
+  // The dispatcher's wait budget (`SESSIONS.LOCK_TTL_MS`, five minutes) ends
+  // in a forced launch attempt, not a drop. A running turn's live lock
+  // refuses that attempt, and the message goes back in line — six times over
+  // in half an hour here — until the turn ends. No `turn.failed`, ever.
+  vi.useFakeTimers();
+  const locks = new Map<string, string>();
+  h.runtime.acquireLock.mockImplementation((sid: string, cid: string) => {
+    if (locks.has(sid) && locks.get(sid) !== cid) return false;
+    locks.set(sid, cid);
+    return true;
+  });
+  h.runtime.releaseLock.mockImplementation((sid: string) => {
+    locks.delete(sid);
+  });
+  h.runtime.isLocked.mockImplementation(
+    (sid: string, cid?: string) => locks.has(sid) && (cid === undefined || locks.get(sid) !== cid)
+  );
+  const first = gate();
+  h.runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+  await dispatchMessage({
+    sessionId: h.session,
+    clientId: PERSON,
+    content: 'a long turn',
+    projector: projectorFor(h.session),
+    runtime: h.runtime,
+    // The person's turn is long but not stalled.
+    stallTimeoutMs: 2 * 60 * 60 * 1000,
+  });
+  await vi.advanceTimersByTimeAsync(50);
+
+  const receipt = await h.service.send(EXT, { to: h.session, text: 'later', idempotencyKey: 'k1' });
+  expect(receipt.status).toBe('queued');
+
+  await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+
+  expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
+  expect(h.queue.list(h.session).map((row) => row.id)).toEqual([receipt.messageId]);
+  expect(h.events).toEqual([]);
+  // The budget really did run out, again and again: each time the message
+  // tried the lock as a stranger, was refused, and went back in line.
+  const attempts = h.runtime.acquireLock.mock.calls.filter(([, cid]) => cid === `extension:${EXT}`);
+  expect(attempts.length).toBeGreaterThanOrEqual(5);
+
+  first.open();
+  await vi.advanceTimersByTimeAsync(100);
+
+  expect(h.runtime.sendMessage).toHaveBeenCalledTimes(2);
+  expect(h.events.map((e) => e.kind)).toEqual(['turn.started', 'turn.done']);
+  expect(h.events[0]).toMatchObject({ messageId: receipt.messageId });
 });
 
 describe('ctx.agent.send — idempotency', () => {

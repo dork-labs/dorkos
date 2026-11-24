@@ -21,6 +21,7 @@ import {
   RemoteCommunityAdapter,
   type RemoteNativeRoomEvent,
 } from '../../remote-community-adapter.js';
+import { logger } from '../../../../../lib/logger.js';
 
 describe('private remote pairing with real HTTP and encrypted local storage', () => {
   // DOR-2334. What the access check treats as "the community is gone", which purges every copy
@@ -138,6 +139,51 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       expect(await store.undeliveredWhenGone(ref, 'undelivered-owner')).toBe(0);
     });
 
+    // Purpose (DOR-2575): a community that answers as live again (a reversed takedown the person
+    // reconnected to) no longer reports what once went undelivered. It fails if the old count
+    // lingers onto a working community.
+    it('forgets the undelivered count once the community answers as live', async () => {
+      const { store, service, ref } = await connectedAt('live-again-owner');
+      await store.recordUndeliveredWhenGone(ref, 'live-again-owner', 2);
+      const answer = await service.status(ref, 'live-again-owner');
+      expect(answer.access?.state).toBe('verified');
+      expect(answer.undeliveredAgentMessages).toBeUndefined();
+      expect(await store.undeliveredWhenGone(ref, 'live-again-owner')).toBe(0);
+      await service.disconnect(ref, 'live-again-owner');
+    });
+
+    // Purpose (DOR-2575): a count that cannot be taken never holds up the purge.
+    it('still purges when the undelivered count fails', async () => {
+      fake.approved = true;
+      const store = new RemoteConnectionStore(directory);
+      const revokeConnection = vi.fn(async () => undefined);
+      const service = new RemoteCommunityPairingService(
+        store,
+        revokeConnection,
+        undefined,
+        { now: () => clock.now, freshMs: 0 },
+        () => {
+          throw new Error('database closed');
+        }
+      );
+      const started = await service.start(
+        'count-fails-owner',
+        `${origin}/c/${remoteCommunityId}`,
+        'Deleted'
+      );
+      const ref = started.connection.ref;
+      expect((await service.poll(ref, 'count-fails-owner')).status).toBe('connected');
+      fake.approved = false;
+      refuse(`${qualified}/me/connection-access`, 410, 'COMMUNITY_DELETED');
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      const answer = await service.status(ref, 'count-fails-owner');
+      warn.mockRestore();
+      expect(revokeConnection).toHaveBeenCalledOnce();
+      expect(answer.access?.lastKnown?.lifecycle).toBe('deleted');
+      expect(answer.undeliveredAgentMessages).toBeUndefined();
+      await service.disconnect(ref, 'count-fails-owner');
+    });
+
     // Purpose: a 410 without that code (a stale cursor, an older route) is not a deletion.
     it('does not treat a 410 without the code as a deletion', async () => {
       const { service, revokeConnection, ref } = await connectedAt('stale-owner');
@@ -195,6 +241,22 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
         await service.disconnect(ref, 'answered-owner');
       }
     );
+
+    // Purpose (review 3): once the deletion is recorded, another request answering
+    // `410 COMMUNITY_DELETED` does not ask the Community again. It fails if every such request
+    // re-runs the access check.
+    it('stops nudging the access check once the deletion is recorded', async () => {
+      const { service, revokeConnection, ref } = await connectedAt('nudged-owner');
+      refuse(`${qualified}/me/connection-access`, 410, 'COMMUNITY_DELETED');
+      const before = fake.accessRequests;
+      await service.communityGoneSeen(ref, 'nudged-owner');
+      expect(fake.accessRequests).toBe(before + 1);
+      await service.communityGoneSeen(ref, 'nudged-owner');
+      await service.communityGoneSeen(ref, 'nudged-owner');
+      expect(fake.accessRequests).toBe(before + 1);
+      expect(revokeConnection).toHaveBeenCalledOnce();
+      await service.disconnect(ref, 'nudged-owner');
+    });
 
     // Purpose: an outage between the 404s does not reset the count (it proves nothing), and the
     // explicit removal purges exactly that connection.

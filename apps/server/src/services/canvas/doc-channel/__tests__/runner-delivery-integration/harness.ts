@@ -25,6 +25,7 @@ import {
   disposeProjector,
   setSessionEventStore,
 } from '../../../../session/session-state-projector.js';
+import { createPrivateDocPumpGates } from '../../delivery/private-gates.js';
 
 export const databases: Db[] = [];
 export const directories: string[] = [];

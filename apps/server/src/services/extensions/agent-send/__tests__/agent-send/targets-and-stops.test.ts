@@ -1,5 +1,5 @@
-import { h, EXT, quickTurn, settle, chat, build } from './harness.js';
-import { describe, expect, it } from 'vitest';
+import { h, EXT, dispatchHooks, gate, quickTurn, settle, chat, build } from './harness.js';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('ctx.agent.send — capacity', () => {
   it('holds the message as queued with a reason, then sends it when there is room', async () => {
@@ -37,6 +37,23 @@ describe('ctx.agent.send — capacity', () => {
       receipt
     );
   });
+});
+
+it('fails a held message whose chat stopped taking messages, never silently', async () => {
+  h.capFull = true;
+  const receipt = await h.service.send(EXT, { to: h.session, text: 'soon', idempotencyKey: 'k' });
+  h.sessions.set(h.session, chat({ launchOrigin: 'room' }));
+
+  h.capFull = false;
+  await h.service.drainHeld();
+
+  expect(h.events).toEqual([
+    expect.objectContaining({
+      kind: 'turn.failed',
+      messageId: receipt.messageId,
+      reason: 'undeliverable',
+    }),
+  ]);
 });
 
 describe('ctx.agent.send — who it is for', () => {
@@ -126,9 +143,75 @@ describe('ctx.agent.send — who it is for', () => {
     ).resolves.toMatchObject({ status: 'started' });
     h.projectors.push('mine-started');
   });
+
+  it('reports ONE chat id for a new chat, even when the runtime settles on another', async () => {
+    h.agents.set('01AGENT', '/agents/reviewer');
+    dispatchHooks.canonicalFor = () => 'canonical-chat';
+    h.runtime.withScenarios([quickTurn()]);
+
+    const receipt = await h.service.send(EXT, { to: '01AGENT', text: 'one', idempotencyKey: 'a' });
+    await settle();
+
+    expect(receipt.sessionId).toBe('canonical-chat');
+    expect(h.events.map((e) => e.sessionId)).toEqual(['canonical-chat', 'canonical-chat']);
+    h.projectors.push(h.reserved[0]!);
+  });
 });
 
 describe('ctx.agent.send — the extension stops', () => {
+  it('fails a held message whose retry was mid-flight when the extension stopped', async () => {
+    h.capFull = true;
+    const receipt = await h.service.send(EXT, { to: h.session, text: 'soon', idempotencyKey: 'k' });
+    const hold = gate();
+    dispatchHooks.dispatchGate = hold.wait;
+    const draining = h.service.drainHeld();
+    await vi.waitFor(() => expect(h.dispatched).toHaveLength(2));
+
+    // The row reads `queued` mid-retry, so the stop cannot see it as held.
+    h.service.extensionStopped(EXT);
+    hold.open();
+    await draining;
+    dispatchHooks.dispatchGate = undefined;
+    h.capFull = false;
+    await h.service.drainHeld();
+    await settle();
+
+    expect(h.runtime.sendMessage).not.toHaveBeenCalled();
+    expect(h.events).toEqual([
+      expect.objectContaining({
+        kind: 'turn.failed',
+        messageId: receipt.messageId,
+        reason: 'stopped',
+      }),
+    ]);
+  });
+
+  it('fails a first send still in flight when the extension stopped, instead of holding it', async () => {
+    h.capFull = true;
+    const hold = gate();
+    dispatchHooks.dispatchGate = hold.wait;
+    const sending = h.service.send(EXT, { to: h.session, text: 'soon', idempotencyKey: 'k' });
+    await vi.waitFor(() => expect(h.dispatched).toHaveLength(1));
+
+    h.service.extensionStopped(EXT);
+    hold.open();
+    const receipt = await sending;
+    dispatchHooks.dispatchGate = undefined;
+    h.capFull = false;
+    await h.service.drainHeld();
+    await settle();
+
+    expect(receipt).toMatchObject({ status: 'failed', failure: 'stopped' });
+    expect(h.runtime.sendMessage).not.toHaveBeenCalled();
+    expect(h.events).toEqual([
+      expect.objectContaining({
+        kind: 'turn.failed',
+        messageId: receipt.messageId,
+        reason: 'stopped',
+      }),
+    ]);
+  });
+
   it('fails its held messages with `stopped`, and keeps them out of any chat', async () => {
     h.capFull = true;
     const receipt = await h.service.send(EXT, { to: h.session, text: 'soon', idempotencyKey: 'k' });
@@ -153,6 +236,16 @@ describe('ctx.agent.send — the extension stops', () => {
     // Only the other extension's message was sent.
     expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
     expect(h.store.get(other.messageId)?.status).not.toBe('failed');
+  });
+
+  it('leaves held messages alone when the whole server shuts down', async () => {
+    h.capFull = true;
+    const receipt = await h.service.send(EXT, { to: h.session, text: 'soon', idempotencyKey: 'k' });
+
+    h.service.stop();
+    h.service.extensionStopped(EXT);
+
+    expect(h.store.get(receipt.messageId)?.status).toBe('held');
   });
 });
 

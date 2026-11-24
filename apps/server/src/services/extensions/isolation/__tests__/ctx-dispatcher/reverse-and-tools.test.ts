@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { CtxDispatcher } from '../../ctx-dispatcher.js';
 import type { RetMessage } from '../../ipc-protocol.js';
 import { createToolBinding } from '../../../agent-tools/tool-binding.js';
+import { MAX_CHILD_REGISTRATIONS } from '../../ctx-dispatcher.js';
 
 describe('CtxDispatcher reverse calls', () => {
   // Purpose: the host's proxy advisor has exactly the methods the child
@@ -89,6 +90,21 @@ describe('CtxDispatcher reverse calls', () => {
     t.dispatcher.close();
     await expect(pending).rejects.toThrow('Ext A stopped.');
     expect(t.advisor()).toBeNull();
+    expect(t.onAction()).toBeNull();
+  });
+
+  // Purpose: re-registering a replacing member (an advisor, an action
+  // handler) frees the replaced entry, so it cannot exhaust the limit, and
+  // the newest registration stays live on the real ctx.
+  it('forgets replaced reverse handlers', () => {
+    const t = setup();
+    for (let i = 1; i <= MAX_CHILD_REGISTRATIONS + 10; i++) {
+      t.handle({ type: 'expose', id: i, path: 'inbox.onAction' });
+    }
+    expect(t.dispatcher.registrations).toBe(1);
+    expect(t.onAction()).not.toBeNull();
+    expect(t.sent.filter((m) => m.type === 'ret')).toEqual([]);
+    t.handle({ type: 'unexpose', id: MAX_CHILD_REGISTRATIONS + 10 });
     expect(t.onAction()).toBeNull();
   });
 });
@@ -223,6 +239,15 @@ describe('CtxDispatcher tools', () => {
     t.handle({ type: 'rret', id: r2!.id, ok: false, error: { message: 'boom', code: 'E_B' } });
     await expect(first).rejects.toThrow("can't use");
     await expect(second).rejects.toMatchObject({ message: 'boom', code: 'E_B' });
+  });
+
+  // Purpose: a dead child rejects every tool call waiting on it at once.
+  it('rejects a waiting tool call on close', async () => {
+    const t = withTools();
+    t.handle({ type: 'expose', id: 1, path: 'tools.handle', name: 'echo' });
+    const pending = invoke(t.handlerOf('echo'), {});
+    t.dispatcher.close();
+    await expect(pending).rejects.toThrow('Ext A stopped.');
   });
 });
 

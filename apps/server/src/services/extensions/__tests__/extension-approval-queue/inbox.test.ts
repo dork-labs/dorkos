@@ -213,6 +213,13 @@ describe('an extension waiting to run asks in the inbox', () => {
       expect(state.extensions.dismissedApprovals).toEqual({});
     });
 
+    it('answers 404 for an extension that is not there', async () => {
+      const res = await request(server)
+        .post('/api/extensions/nope/dismiss-approval')
+        .send({ path: '/x', version: '1.0.0' });
+      expect(res.status).toBe(404);
+    });
+
     it('turning a put-off copy on later records that it is on (history tells the truth)', async () => {
       await installPlugin();
       const [shown] = await pending();
@@ -281,6 +288,19 @@ describe('an extension waiting to run asks in the inbox', () => {
 
       await uninstallPlugin();
       expect(state.extensions.dismissedApprovals).toEqual({});
+      await installPlugin();
+
+      expect(await pending()).toEqual([expect.objectContaining({ id: EXT_ID, version: '1.0.0' })]);
+    });
+
+    it('asks again after "Stop it", uninstall, and a reinstall at the same version', async () => {
+      await installPlugin();
+      await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
+      await request(server).post(`/api/extensions/${EXT_ID}/revoke`).send({});
+      await h.queue.sync();
+      expect(await pending()).toEqual([]);
+
+      await uninstallPlugin();
       await installPlugin();
 
       expect(await pending()).toEqual([expect.objectContaining({ id: EXT_ID, version: '1.0.0' })]);

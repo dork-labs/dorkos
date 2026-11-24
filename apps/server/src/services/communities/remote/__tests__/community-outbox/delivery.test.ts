@@ -93,6 +93,41 @@ describe('community outbox', () => {
     expect(delivery).toHaveBeenCalledTimes(1);
   });
 
+  it('does not release a pending backoff while the same worker holds delivery', async () => {
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    const item = outboxItem({ ownerAuthorId: harness.human });
+    harness.db.transaction((tx) => outbox.enqueue(item, tx));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const delivery = vi.fn(async () => {
+      await held;
+      return { kind: 'retry' as const, reason: 'temporary outage' };
+    });
+    const worker = new CommunityOutboxWorker(
+      outbox,
+      { canDeliver: () => true },
+      { deliver: delivery },
+      () => NOW
+    );
+
+    const running = worker.runOnce();
+    await vi.waitFor(() => expect(delivery).toHaveBeenCalledOnce());
+    expect(
+      worker.retryNow({
+        communityRef: REF,
+        remoteRoomId: item.remoteRoomId,
+        ownerAuthorId: harness.human,
+        idempotencyKey: item.idempotencyKey,
+      })
+    ).toBe('in-flight');
+
+    release();
+    await running;
+  });
+
   it('releases a genuine backoff without changing its delivery identity or expiry', () => {
     const harness = createRoomHarness({ agents: agentLookupFor({}) });
     const outbox = new CommunityOutboxStore(harness.db);
@@ -232,6 +267,36 @@ describe('community outbox', () => {
     expect(runtime.outbox.isPending(item.id)).toBe(true);
   });
 
+  it('publishes an owner replacement when expiry alone removes a pending delivery', async () => {
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    harness.db.transaction((tx) =>
+      outbox.enqueue(
+        outboxItem({
+          ownerAuthorId: harness.human,
+          expiresAt: new Date(NOW - 1).toISOString(),
+        }),
+        tx
+      )
+    );
+    const changed = vi.fn();
+    const worker = new CommunityOutboxWorker(
+      outbox,
+      { canDeliver: () => true },
+      { deliver: vi.fn() },
+      () => NOW,
+      { changed }
+    );
+
+    await worker.runOnce();
+
+    expect(changed).toHaveBeenCalledOnce();
+    expect(changed).toHaveBeenCalledWith(harness.human);
+    expect(outbox.visibleForOwner(harness.human)).toMatchObject([
+      { state: 'failed', failure: 'expired' },
+    ]);
+  });
+
   it('settles a receipt and records owner-scoped echo provenance without account matching', async () => {
     const harness = createRoomHarness({ agents: agentLookupFor({}) });
     const outbox = new CommunityOutboxStore(harness.db);
@@ -264,6 +329,57 @@ describe('community outbox', () => {
     );
     expect(outbox.due(new Date(NOW + 400_000).toISOString())).toEqual([]);
   });
+});
+
+it('keeps every other 423 retryable', async () => {
+  // Purpose: fails if the permanent rule catches a 423 that does not mean read-only.
+  const harness = createRoomHarness({ agents: agentLookupFor({}) });
+  const outbox = new CommunityOutboxStore(harness.db);
+  const item = outboxItem({ ownerAuthorId: harness.human });
+  harness.db.transaction((tx) => outbox.enqueue(item, tx));
+  const delivery = new CommunityAdapterOutboxDelivery(
+    () => ({
+      post: vi.fn(async () => {
+        throw new PinnedHttpError(423, 'STATE_CONFLICT');
+      }),
+      uploadAttachment: vi.fn(),
+    }),
+    { localRoomIdForOwner: () => 'room-1', remoteEntryIdForLocal: () => null } as never,
+    { findRemoteMember: () => ({ remoteMemberId: 'remote-agent-a' }) } as never,
+    { getEntryById: () => ({ kind: 'post', body: { text: 'Output' } }) } as never,
+    {} as never,
+    {} as never,
+    outbox
+  );
+  await expect(delivery.deliver(item, () => true)).resolves.toMatchObject({ kind: 'retry' });
+  for (const [status, code] of [
+    [423, 'COMMUNITY_ARCHIVED'],
+    [423, 'COMMUNITY_DELETION_PENDING'],
+    // DOR-2334: a deleted community will never take the post.
+    [410, 'COMMUNITY_DELETED'],
+    [423, 'COMMUNITY_TAKEN_DOWN'],
+  ] as const) {
+    const refused = new CommunityAdapterOutboxDelivery(
+      () => ({
+        post: vi.fn(async () => {
+          throw new PinnedHttpError(status, code);
+        }),
+        uploadAttachment: vi.fn(),
+      }),
+      { localRoomIdForOwner: () => 'room-1', remoteEntryIdForLocal: () => null } as never,
+      { findRemoteMember: () => ({ remoteMemberId: 'remote-agent-a' }) } as never,
+      { getEntryById: () => ({ kind: 'post', body: { text: 'Output' } }) } as never,
+      {} as never,
+      {} as never,
+      outbox
+    );
+    await expect(
+      refused.deliver(item, () => true),
+      code
+    ).resolves.toMatchObject({
+      kind: 'permanent',
+    });
+  }
 });
 
 // Spec `official-community-space` D5: while spaces are off, a space other than the official one

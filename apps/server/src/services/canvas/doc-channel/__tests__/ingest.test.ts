@@ -139,6 +139,26 @@ describe('document event acceptance', () => {
     expect(f.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM canvas_doc_events`)!.n).toBe(0);
     expect(f.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM canvas_doc_batches`)!.n).toBe(0);
   });
+
+  it('maps wrapped accounting persistence failure to 507 and rolls back acceptance', () => {
+    const f = fixture();
+    const saved = event();
+    f.ingest.accept(saved, f.authority);
+    f.db.run(sql`UPDATE canvas_doc_events SET envelope_bytes=0 WHERE event_id=${saved.id}`);
+    f.db.run(
+      sql`CREATE TRIGGER fail_accounting BEFORE UPDATE OF envelope_bytes ON canvas_doc_events BEGIN SELECT RAISE(ABORT,'accounting failure'); END`
+    );
+    const next = event();
+    try {
+      f.ingest.accept(next, f.authority);
+      throw new Error('Expected storage failure');
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'DOC_EVENT_STORAGE_FAILURE', status: 507 });
+    }
+    expect(f.store.getEvent('doc-1', next.id)).toBeUndefined();
+    expect(f.store.getEvent('doc-1', saved.id)!.envelopeBytes).toBe(0);
+    expect(f.store.getChannel('doc-1')!.nextDocSeq).toBe(3);
+  });
   it('applies precise byte caps once across routes and global documents', () => {
     const f = fixture();
     const input = event();
@@ -416,6 +436,14 @@ describe('failure and floor boundaries', () => {
       )
     ).not.toThrow();
   });
+});
+
+it('stores a legal JSON null payload as JSON rather than SQLite NULL', () => {
+  const f = fixture();
+  const input = event('task.comment', null);
+  f.ingest.accept(input, f.authority);
+  expect(f.store.getEvent('doc-1', input.id)!.payload).toBeNull();
+  expect(f.ingest.accept(input, f.authority).receipt.status).toBe('duplicate');
 });
 
 it('counts one original across multiple routes and permits log-only inputs when pending work is full', () => {

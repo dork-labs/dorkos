@@ -201,6 +201,27 @@ describe('extension agent tools through the real lifecycle', () => {
     expect(registered()).toEqual([]);
   }, 30_000);
 
+  it('removes the tools before the extension’s own cleanup runs', async () => {
+    // Purpose: on stop the tools go first, so nothing can call into an
+    // extension that is already tearing itself down.
+    await install(
+      `export default function register(_r, ctx) {
+        ctx.tools.handle('echo', (i) => i);
+        ctx.tools.handle('bump_counter', () => 1);
+        ctx.tools.handle('delete_note', () => 1);
+        return () => { globalThis.__dor2685_cleanup = globalThis.__dor2685_probe(); };
+      }`
+    );
+    const g = globalThis as Record<string, unknown>;
+    g.__dor2685_probe = () => registry.get('ext_agent_tools_ext.echo') === undefined;
+    await boot();
+    expect(registered()).toHaveLength(3);
+    await manager.shutdownServer(ID);
+    expect(g.__dor2685_cleanup).toBe(true);
+    delete g.__dor2685_probe;
+    delete g.__dor2685_cleanup;
+  }, 30_000);
+
   it('takes the tools away on disable and brings them back on enable', async () => {
     // Purpose: every stop and start path goes through the one pair.
     await install();

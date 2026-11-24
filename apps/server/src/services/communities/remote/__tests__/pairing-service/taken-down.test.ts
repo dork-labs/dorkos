@@ -121,6 +121,22 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       await again.service.disconnect(again.ref, 'reversed-owner');
     });
 
+    // Purpose (review 1): the host reverses AND lifts the takedown before this installation checks
+    // again, so the first answer after "taken down" is the revoked grant's 401. The connection then
+    // needs reconnecting (the app's reconnect path), not a "taken down" panel with no way back.
+    it('needs reconnecting when the next answer after a takedown is a rejected grant', async () => {
+      const { service, ref } = await connectedTo('lifted-owner');
+      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
+      await service.status(ref, 'lifted-owner');
+      refuse(access, 401);
+      const lifted = await service.status(ref, 'lifted-owner');
+      expect(lifted).toMatchObject({
+        status: 'reconnect-required',
+        access: { state: 'reconnect-required' },
+      });
+      await service.disconnect(ref, 'lifted-owner');
+    });
+
     // Purpose: a takedown the host lets run becomes a deletion; the `404 NOT_FOUND` after it is
     // final, without purging again.
     it('treats a 404 after a takedown as the deletion it became', async () => {
@@ -132,6 +148,22 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
       expect(after.access?.lastKnown?.lifecycle).toBe('deleted');
       expect(revokeConnection).toHaveBeenCalledTimes(1);
       await service.disconnect(ref, 'after-owner');
+    });
+
+    // Purpose: a takedown is a definite answer, so the "seems gone" count starts over, and once
+    // recorded, other requests answering it don't ask the Community again.
+    it('resets the not-found count, and nudges once', async () => {
+      const { store, service, ref } = await connectedTo('nudge-owner');
+      refuse(access, 404, 'NOT_FOUND');
+      await service.status(ref, 'nudge-owner');
+      expect(await store.notFoundSince(ref, 'nudge-owner')).not.toBeNull();
+      refuse(access, 423, 'COMMUNITY_TAKEN_DOWN');
+      const before = fake.accessRequests;
+      await service.communityGoneSeen(ref, 'nudge-owner');
+      await service.communityGoneSeen(ref, 'nudge-owner');
+      expect(fake.accessRequests).toBe(before + 1);
+      expect(await store.notFoundSince(ref, 'nudge-owner')).toBeNull();
+      await service.disconnect(ref, 'nudge-owner');
     });
 
     // Purpose: every route family answers `423 COMMUNITY_TAKEN_DOWN` as gone (never as an archive

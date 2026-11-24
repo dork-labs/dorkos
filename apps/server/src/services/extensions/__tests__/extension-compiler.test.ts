@@ -225,6 +225,30 @@ describe('ExtensionCompiler', () => {
     }
   });
 
+  it('removes cache entries older than 7 days', async () => {
+    const cacheDir = path.join(tmpDir, 'cache', 'extensions');
+    await fs.mkdir(cacheDir, { recursive: true });
+
+    // Create a stale file and a fresh file
+    const stalePath = path.join(cacheDir, 'stale-ext.abc123.js');
+    const freshPath = path.join(cacheDir, 'fresh-ext.def456.js');
+    await fs.writeFile(stalePath, 'stale content');
+    await fs.writeFile(freshPath, 'fresh content');
+
+    // Backdate the stale file's access time to 8 days ago
+    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    await fs.utimes(stalePath, eightDaysAgo, eightDaysAgo);
+
+    const cleaned = await compiler.cleanStaleCache();
+
+    expect(cleaned).toBe(1);
+
+    // Stale file should be gone
+    await expect(fs.access(stalePath)).rejects.toThrow();
+    // Fresh file should remain
+    await expect(fs.access(freshPath)).resolves.toBeUndefined();
+  });
+
   // === 9. Stale cache cleanup ===
 
   it.skipIf(isRoot)(

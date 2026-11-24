@@ -6,7 +6,8 @@ import { afterEach } from 'vitest';
 import { fixture as makeFixture } from '../checkbox-fixture.js';
 import type { CheckboxServiceOptions } from '../../checkbox-service.js';
 
-const cleanups: (() => Promise<void>)[] = [];
+/** Cleanups the suites register beside the fixture's own; all run after each test. */
+export const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
   const results = await Promise.allSettled(cleanups.splice(0).map((cleanup) => cleanup()));
   const failed = results.find((result) => result.status === 'rejected');

@@ -16,6 +16,7 @@ import { CommunityOutboxProjection } from '../../community-outbox-projection.js'
 import { CommunityOutboxStore, type CommunityOutboxItem } from '../../community-outbox-store.js';
 import { CommunityOutboxWorker } from '../../community-outbox-worker.js';
 import { RemoteMirrorStore } from '../../mirror-store.js';
+import { Readable } from 'node:stream';
 
 describe('community outbox', () => {
   it('writes an agent mirror post and its bounded delivery row in one RoomService transaction', async () => {
@@ -407,5 +408,77 @@ describe('community outbox', () => {
 
     expect(outbox.undeliveredCount(REF, 'owner')).toBe(3);
     expect(outbox.undeliveredCount(REF, 'nobody')).toBe(0);
+  });
+
+  it('passes abort to a held remote post and records no receipt', async () => {
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    const item = outboxItem({ ownerAuthorId: harness.human });
+    const post = vi.fn(
+      (_roomId: string, _input: unknown, signal?: AbortSignal) =>
+        new Promise<never>((_resolve, reject) =>
+          signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+        )
+    );
+    const recordOrigin = vi.spyOn(outbox, 'recordOrigin');
+    const delivery = new CommunityAdapterOutboxDelivery(
+      () => ({ post, uploadAttachment: vi.fn() }),
+      { localRoomIdForOwner: () => 'room-1' } as never,
+      { findRemoteMember: () => ({ remoteMemberId: 'remote-agent-a' }) } as never,
+      { getEntryById: () => ({ kind: 'post', body: { text: 'Output' } }) } as never,
+      {} as never,
+      {} as never,
+      outbox
+    );
+    const controller = new AbortController();
+    const pending = delivery.deliver(item, () => true, controller.signal);
+    await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+    expect(post.mock.calls[0]?.[2]).toBe(controller.signal);
+    controller.abort();
+
+    await expect(pending).resolves.toEqual({ kind: 'stopped', reason: 'stopped-or-unauthorized' });
+    expect(recordOrigin).not.toHaveBeenCalled();
+  });
+
+  it('passes abort to a held remote upload and never starts its following post', async () => {
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    const item = outboxItem({
+      ownerAuthorId: harness.human,
+      attachmentIds: JSON.stringify(['file-1']),
+    });
+    const uploadAttachment = vi.fn(
+      (_roomId: string, _input: unknown, signal?: AbortSignal) =>
+        new Promise<never>((_resolve, reject) =>
+          signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+        )
+    );
+    const post = vi.fn();
+    const delivery = new CommunityAdapterOutboxDelivery(
+      () => ({ post, uploadAttachment }),
+      { localRoomIdForOwner: () => 'room-1' } as never,
+      { findRemoteMember: () => ({ remoteMemberId: 'remote-agent-a' }) } as never,
+      { getEntryById: () => ({ kind: 'post', body: { text: 'Output' } }) } as never,
+      {
+        get: () => ({
+          id: 'file-1',
+          entryId: item.localEntryId,
+          size: 1,
+          extension: 'txt',
+          mimeType: 'text/plain',
+          name: 'output.txt',
+        }),
+      } as never,
+      { get: () => ({ size: 1, stream: Readable.from([Buffer.from('x')]) }) } as never,
+      outbox
+    );
+    const controller = new AbortController();
+    const pending = delivery.deliver(item, () => true, controller.signal);
+    await vi.waitFor(() => expect(uploadAttachment).toHaveBeenCalledOnce());
+    expect(uploadAttachment.mock.calls[0]?.[2]).toBe(controller.signal);
+    controller.abort();
+
+    await expect(pending).resolves.toEqual({ kind: 'stopped', reason: 'stopped-or-unauthorized' });
+    expect(post).not.toHaveBeenCalled();
   });
 });

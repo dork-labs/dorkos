@@ -376,16 +376,6 @@ describe('ExtensionDiscovery', () => {
         expect(results.find((r) => !r.shadowedBy)?.path).toBe(a.dir);
         expect(results.some((r) => r.shadowedBy)).toBe(false);
       });
-
-      it('scans a root named twice, or naming the DorkOS home, once', async () => {
-        const a = await installedProject('a', '1.0.0');
-        const results = await discovery.discover(a.root, EMPTY_CONFIG, EMPTY_CORE, [
-          a.root,
-          `${a.root}/`,
-          tmpDir,
-        ]);
-        expect(results.filter((r) => r.id === 'flow')).toHaveLength(1);
-      });
     });
 
     describe('security review attacks (DOR-2527)', () => {

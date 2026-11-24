@@ -15,7 +15,7 @@ import { rawByteHash } from '../../checkbox-bytes.js';
 import { VerifiedCheckboxAuthoritySchema } from '../../checkbox-evidence.js';
 import { observeCheckboxSource } from '../../authority-snapshot.js';
 import { readDocSourceDescriptor } from '../../../http-composition.js';
-import { fixture } from './harness.js';
+import { cleanups, fixture } from './harness.js';
 
 async function simultaneous(
   kind: 'distinct' | 'same' | 'different-hash' = 'distinct',
@@ -206,6 +206,18 @@ it('does not launder corrupt original same-ID evidence into a normal hash confli
   expect(h.db.$client.prepare('SELECT count(*) AS n FROM canvas_doc_write_intents').get()).toEqual({
     n: 1,
   });
+  expect(h.counts()).toEqual({ events: { n: 2 }, batches: { n: 1 } });
+});
+
+it('rolls back a refused conflict insert without masking its real SQLite storage error', async () => {
+  const h = await simultaneous();
+  h.db.$client.exec(
+    "CREATE TRIGGER refuse_conflict BEFORE INSERT ON canvas_doc_write_intents WHEN NEW.status='conflict' BEGIN SELECT RAISE(ABORT,'conflict storage refused'); END"
+  );
+  h.release();
+  await h.first;
+  expect((await h.second).error).toBeTruthy();
+  expect(h.service.find(h.documentId, h.secondInput.eventId)).toBeUndefined();
   expect(h.counts()).toEqual({ events: { n: 2 }, batches: { n: 1 } });
 });
 it('does not reinterpret identity-class errors from an already-entered callback as pre-effect conflicts', async () => {

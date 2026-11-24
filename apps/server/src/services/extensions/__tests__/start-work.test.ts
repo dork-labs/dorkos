@@ -154,14 +154,6 @@ afterEach(() => {
 });
 
 describe('a start', () => {
-  it('returns the Codex no-tools warning without assigning the project an agent', async () => {
-    service = build({ defaultRuntime: () => 'codex' });
-    nextLaunch.warnings = [{ code: 'NO_DORKOS_TOOLS', message: 'This chat has no DorkOS tools.' }];
-    const result = await service.start('flow', INPUT, 'ctx');
-    expect(result).toMatchObject({ warnings: nextLaunch.warnings });
-    expect(launches[0]!.request).not.toHaveProperty('agentPath');
-  });
-
   it('launches one chat in the project root, with its title and the prompt as its first message', async () => {
     const { sessionId } = await service.start('flow', INPUT, 'ctx');
 
@@ -215,6 +207,15 @@ describe('a start', () => {
       reason: INPUT.reason,
     });
     expect(rows[1]!.startedBy).toBeUndefined();
+  });
+
+  it('keeps who started it when the runtime settles on another id', async () => {
+    nextLaunch.canonical = (id) => `sdk-${id}`;
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    expect(sessionId).toMatch(/^sdk-/);
+    expect(store.get(sessionId)?.extensionId).toBe('flow');
+    expect(store.get(sessionId.slice('sdk-'.length))).toBeNull();
+    expect(renamed[0]!.sessionId).toBe(sessionId);
   });
 
   it('is reachable as ctx.sessions.start, scoped to the calling extension', async () => {
@@ -340,6 +341,13 @@ describe('refusals launch nothing', () => {
     });
     expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(0);
   });
+
+  it('refuses a launch the machine-wide cap refused, and forgets it', async () => {
+    nextLaunch.refused = { refused: 'LAUNCH_CAP_FULL', message: 'full' };
+    const err = await refusal(service.start('flow', INPUT, 'ctx'));
+    expect(err.code).toBe('start_limit');
+    expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(0);
+  });
 });
 
 describe('the limits', () => {
@@ -382,20 +390,6 @@ describe('the limits', () => {
     });
     expect(grandchild).toMatchObject({ ok: false, error: { code: 'start_limit' } });
     expect(store.get('grandchild-1')).toBeNull();
-  });
-
-  it('never limit a chat whose chain reaches no extension', () => {
-    for (let i = 0; i < 20; i++) {
-      const claimed = service.reserve({
-        sessionId: `plain-${i}`,
-        kind: 'chat',
-        extensionId: null,
-        startedBySessionId: 'a-persons-chat',
-        originExtensionId: null,
-        reason: null,
-      });
-      expect(claimed.ok).toBe(true);
-    }
   });
 });
 
@@ -465,6 +459,32 @@ describe('startedBy', () => {
     // The wire schema accepts what the overlay writes.
     for (const row of rows)
       expect(SessionStartedBySchema.parse(row.startedBy)).toEqual(row.startedBy);
+  });
+
+  it('keeps the recorded level when a started chat is carried to another account', () => {
+    store.insert({
+      sessionId: 'started',
+      kind: 'chat',
+      extensionId: null,
+      startedBySessionId: 'parent-1',
+      originExtensionId: null,
+      reason: 'split the work',
+      permissionMode: 'plan',
+      starterPermissionMode: 'acceptEdits',
+      permissionSameAsStarter: false,
+      createdAt: new Date(clock).toISOString(),
+    });
+    const claimed = service.reserveFromChat({
+      sessionId: 'carried',
+      parentSessionId: 'started',
+      carry: true,
+    });
+    expect(claimed.ok).toBe(true);
+    expect(store.get('carried')).toMatchObject({
+      permissionMode: 'plan',
+      starterPermissionMode: 'acceptEdits',
+      permissionSameAsStarter: false,
+    });
   });
 });
 

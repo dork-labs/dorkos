@@ -222,40 +222,6 @@ describe('ExtensionManager — server lifecycle', () => {
   });
 
   describe('initializeServer', () => {
-    it('compiles, loads, and registers a server extension router', async () => {
-      const record = makeRecord('srv-ext', {
-        status: 'compiled',
-        hasServerEntry: true,
-        serverEntryPath: '/fake/extensions/srv-ext/server.ts',
-      });
-      mockDiscover.mockResolvedValue([record]);
-      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
-      mockCompileServer.mockResolvedValue({
-        code: makeCjsModule(),
-        sourceHash: 'srvhash',
-      });
-
-      await manager.initialize(null);
-
-      const result = await manager.initializeServer('srv-ext');
-
-      expect(result.ok).toBe(true);
-      expect(result.error).toBeUndefined();
-      expect(mockCompileServer).toHaveBeenCalledWith(record);
-      expect(mockCreateDataProviderContext).toHaveBeenCalledWith({
-        extensionId: 'srv-ext',
-        extensionDir: '/fake/extensions/srv-ext',
-        dorkHome: '/fake/dork-home',
-        extensionName: expect.any(String),
-        // The manifest declares no places, so `ctx.inbox` is refused (DOR-4282).
-        contributions: {},
-        // Read from the stored approval on every `ctx.inbox` call (DOR-4282).
-        allowedPlaces: expect.any(Function),
-        // The manifest declares no tools, so `ctx.tools` binds nothing (DOR-2685).
-        toolChecks: [],
-      });
-    });
-
     it('returns ok:false for disabled extensions', async () => {
       const record = makeRecord('disabled-srv', {
         status: 'disabled',
@@ -367,6 +333,34 @@ describe('ExtensionManager — server lifecycle', () => {
       expect(mockDispose).toHaveBeenCalledTimes(1);
     });
 
+    it('serves a fetch handler register() returns, and runs its cleanup on shutdown', async () => {
+      const record = makeRecord('fetch-ext', {
+        status: 'compiled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/fetch-ext/server.ts',
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockResolvedValue({
+        code: `module.exports = function register() {
+          return {
+            fetch: () => new Response('ok'),
+            cleanup() { globalThis.__fetchExtCleaned = true; },
+          };
+        };`,
+        sourceHash: 'srvhash',
+      });
+
+      await manager.initialize(null);
+      expect(await manager.initializeServer('fetch-ext')).toEqual({ ok: true });
+      expect(manager.getServerHandler('fetch-ext')).not.toBeNull();
+
+      await manager.shutdownServer('fetch-ext');
+
+      expect((globalThis as { __fetchExtCleaned?: boolean }).__fetchExtCleaned).toBe(true);
+      delete (globalThis as { __fetchExtCleaned?: boolean }).__fetchExtCleaned;
+    });
+
     it('stops what a refused register() scheduled, and keeps it from starting more', async () => {
       const record = makeRecord('bad-fetch', {
         status: 'compiled',
@@ -416,6 +410,42 @@ describe('ExtensionManager — server lifecycle', () => {
 
       expect(manager.getServerHandler('dis-srv')).toBeNull();
       expect(mockScheduledCleanup).toHaveBeenCalled();
+    });
+  });
+
+  describe('reloadExtension with server entry', () => {
+    it('shuts down old server instance and reinitializes after recompilation', async () => {
+      const record = makeRecord('reload-srv', {
+        status: 'enabled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/reload-srv/server.ts',
+      });
+      mockConfigGet.mockReturnValue({
+        enabled: ['reload-srv'],
+        disabled: [],
+        ...approved(['reload-srv']),
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockResolvedValue({
+        code: makeCjsModule(),
+        sourceHash: 'srvhash',
+      });
+
+      // initialize compiles enabled extensions (disabled -> compiled) and inits server
+      await manager.initialize(null);
+      expect(manager.getServerHandler('reload-srv')).not.toBeNull();
+
+      // Reload should shut down and reinitialize
+      await manager.reloadExtension('reload-srv');
+
+      // Server router should still be available (reinitialized)
+      expect(manager.getServerHandler('reload-srv')).not.toBeNull();
+      // compileServer called twice: once during initialize, once during reload
+      expect(mockCompileServer).toHaveBeenCalledTimes(2);
+      // The old instance's context is disposed, so its timers stop beside the
+      // new instance's (DOR-2462).
+      expect(mockDispose).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -493,21 +523,6 @@ describe('ExtensionManager — server lifecycle', () => {
       await manager.initialize(null);
       expect(manager.getServerHandler(id)).not.toBeNull();
     }
-
-    it('lets a fetch handler answer a video, as no person and below its mount', async () => {
-      await startMedia('media-ext', FETCH_ONLY);
-      const fetchVideo = manager.getMediaFetch('media-ext');
-      expect(fetchVideo).not.toBeNull();
-      const answer = await fetchVideo!('/v.mp4', new Headers({ range: 'bytes=0-0' }), 'GET');
-      expect(answer.status).toBe(206);
-      const seen = (globalThis as { __mediaSeen?: Record<string, unknown> }).__mediaSeen;
-      expect(seen).toMatchObject({
-        url: 'http://dorkos.invalid/v.mp4',
-        method: 'GET',
-        person: { ok: false },
-      });
-      delete (globalThis as { __mediaSeen?: unknown }).__mediaSeen;
-    });
 
     it('gives an extension with only an Express router no way to answer one', async () => {
       await startMedia('router-only', makeCjsModule());

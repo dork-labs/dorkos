@@ -159,6 +159,21 @@ describe('ExtensionManager', () => {
     expect(writes.at(-1)?.[1]).not.toHaveProperty('legacySlotless');
   });
 
+  it('keeps that list when the first scan throws, so the next start tries again (DOR-4891)', async () => {
+    mockConfigGet.mockReturnValue({
+      enabled: [],
+      disabled: [],
+      ...approved([]),
+      legacySlotless: ['notes'],
+    });
+    mockDiscover.mockRejectedValueOnce(new Error('disk gone'));
+
+    await expect(manager.initialize(null)).rejects.toThrow('disk gone');
+
+    const writes = mockConfigSet.mock.calls.filter(([key]) => key === 'extensions');
+    expect(writes.every(([, value]) => 'legacySlotless' in (value as object))).toBe(true);
+  });
+
   it('drops approvals for an extension that is no longer installed, and its tool settings (DOR-4305)', async () => {
     // A real, throwaway parent folder; the extension's own folder is gone.
     const parent = mkdtempSync(path.join(tmpdir(), 'dor4305-'));
@@ -217,41 +232,6 @@ describe('ExtensionManager', () => {
     }
   });
 
-  it('does not let one extension throwing during compileEnabled stop the rest from compiling', async () => {
-    // Regression coverage: a transient failure (an EMFILE reading one
-    // extension's entry point, say) used to reject uncaught from
-    // compiler.compile(), which this loop did not catch — one bad
-    // extension took every extension queued after it down with it, none
-    // of them ending up compiled for that boot.
-    const throwsRecord = makeRecord('throws-ext', { status: 'enabled' });
-    const survivesRecord = makeRecord('survives-ext', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({
-      enabled: ['throws-ext', 'survives-ext'],
-      disabled: [],
-      ...approved(['throws-ext', 'survives-ext']),
-    });
-    mockDiscover.mockResolvedValue([throwsRecord, survivesRecord]);
-    mockCompile.mockImplementation(async (record: ExtensionRecord) => {
-      if (record.id === 'throws-ext') {
-        throw new Error('EMFILE: too many open files');
-      }
-      return { code: 'compiled code', sourceHash: 'abc123' };
-    });
-
-    const { logger } = await import('../../../lib/logger.js');
-    await manager.initialize('/my/project');
-
-    // The extension after the throwing one still compiled.
-    expect(survivesRecord.status).toBe('compiled');
-    // The failure is not silently swallowed — it is named, visible, and
-    // the record reflects it instead of being left in limbo.
-    expect(throwsRecord.status).toBe('compile_error');
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('throws-ext'),
-      expect.any(Error)
-    );
-  });
-
   it('enables an extension: disabled -> enabled -> compiled, adds to config', async () => {
     const record = makeRecord('ext-a', { status: 'disabled' });
     mockDiscover.mockResolvedValue([record]);
@@ -307,6 +287,18 @@ describe('ExtensionManager', () => {
 
     expect(result).toBeNull();
     expect(mockCompile).not.toHaveBeenCalled();
+  });
+
+  it('returns null when reading bundle for a disabled extension', async () => {
+    const record = makeRecord('ext-e', { status: 'disabled' });
+    mockDiscover.mockResolvedValue([record]);
+
+    await manager.initialize(null);
+
+    const bundle = await manager.readBundle('ext-e');
+
+    expect(bundle).toBeNull();
+    expect(mockReadBundle).not.toHaveBeenCalled();
   });
 
   /**
@@ -414,38 +406,35 @@ describe('ExtensionManager', () => {
     });
   });
 
-  it('returns added and removed extension IDs when CWD changes', async () => {
-    // First discovery: ext-a only
-    const recordA = makeRecord('ext-a', { status: 'disabled' });
-    mockDiscover.mockResolvedValue([recordA]);
+  it('works for an id whose files are already gone, because uninstall stages them away', async () => {
+    mockConfigGet.mockReturnValue({ enabled: [], disabled: [], ...approved(['gone']) });
+    mockDiscover.mockResolvedValue([]);
 
-    await manager.initialize('/project-1');
+    await manager.initialize(null);
+    mockConfigSet.mockClear();
 
-    // Second discovery after CWD change: ext-b only (ext-a removed)
-    const recordB = makeRecord('ext-b', { status: 'disabled' });
-    mockDiscover.mockResolvedValue([recordB]);
+    await manager.forgetRunApproval('gone');
 
-    const diff = await manager.updateCwd('/project-2');
-
-    expect(diff.added).toEqual(['ext-b']);
-    expect(diff.removed).toEqual(['ext-a']);
+    expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
+      enabled: [],
+      disabled: [],
+      ...approved([]),
+      approvedPermissions: {},
+      roomAccess: {},
+      forwardAgents: {},
+    });
   });
 
-  /**
-   * The cockpit announces its working directory once per page load, and it is
-   * usually the directory the server already booted with — a second full
-   * discovery pass that can only produce what the first one did (DOR-1336).
-   */
-  it('does not re-discover when the CWD has not actually changed', async () => {
-    mockDiscover.mockResolvedValue([makeRecord('ext-a', { status: 'disabled' })]);
+  it('writes nothing when there was no approval to forget', async () => {
+    mockConfigGet.mockReturnValue({ enabled: [], disabled: [], ...approved(['other']) });
+    mockDiscover.mockResolvedValue([]);
 
-    await manager.initialize('/project-1');
-    const discoveriesAtBoot = mockDiscover.mock.calls.length;
+    await manager.initialize(null);
+    mockConfigSet.mockClear();
 
-    const diff = await manager.updateCwd('/project-1');
+    await manager.forgetRunApproval('never-approved');
 
-    expect(diff).toEqual({ added: [], removed: [] });
-    expect(mockDiscover).toHaveBeenCalledTimes(discoveriesAtBoot);
+    expect(mockConfigSet).not.toHaveBeenCalled();
   });
 
   it('strips path and sourceHash from public records', async () => {
@@ -553,6 +542,24 @@ describe('ExtensionManager', () => {
       expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
         enabled: [],
         disabled: ['marketplace'],
+        ...approved([]),
+      });
+    });
+
+    it('enabling a disabled default-on core ext removes its id from disabled', async () => {
+      const manager = new ExtensionManager('/fake/dork-home', [onCore]);
+      mockConfigGet.mockReturnValue({ enabled: [], disabled: ['marketplace'], ...approved([]) });
+      mockDiscover.mockResolvedValue([
+        makeRecord('marketplace', { status: 'disabled', origin: 'core' }),
+      ]);
+      mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'h' });
+      await manager.initialize(null);
+
+      await manager.enable('marketplace');
+
+      expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
+        enabled: [],
+        disabled: [],
         ...approved([]),
       });
     });

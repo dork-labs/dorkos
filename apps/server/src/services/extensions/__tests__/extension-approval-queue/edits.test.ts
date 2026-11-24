@@ -76,6 +76,19 @@ describe('a waiting copy whose folder is gone', () => {
   });
 });
 
+it('leaves the live list and retires its arrival without a discovery pass', async () => {
+  await installPlugin();
+  expect(await pending()).toHaveLength(1);
+  fs.rmSync(extensionDir('flow'), { recursive: true });
+
+  expect(await pending()).toEqual([]);
+  await h.queue.sync();
+
+  expect(h.manager.listRecords()).toHaveLength(1);
+  expect(broadcasts('standing_resolved')).toHaveLength(1);
+  expect(historyRows()).toEqual([]);
+});
+
 describe('an approved copy changed outside file tools', () => {
   it('requires readable approved files when client compilation is pending', async () => {
     const author = path.join(h.dorkHome, 'agents', 'rowan');
