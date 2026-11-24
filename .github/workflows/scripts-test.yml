@@ -294,6 +294,19 @@ jobs:
       - name: Security verdict fixtures
         run: bash scripts/test-security-verdict-check.sh
 
+      # security-findings.sh encrypts a failing Security lens's details to
+      # Security's key (and review-gh.sh saves them). The plumbing runs on a
+      # stub; the round trip needs the real age, so install the pinned build
+      # and make a missing one a failure rather than a skip.
+      - name: Install age for the Security findings fixtures
+        run: |
+          bash scripts/install-age.sh "$RUNNER_TEMP/age-bin"
+          echo "AGE_BIN_DIR=$RUNNER_TEMP/age-bin" >>"$GITHUB_ENV"
+      - name: Security findings fixtures
+        env:
+          REQUIRE_AGE: '1'
+        run: bash scripts/test-security-findings.sh
+
       - name: Git-guard hook fixtures
         run: bash scripts/test-git-guard.sh
 

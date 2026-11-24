@@ -18,6 +18,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 pnpm typecheck:scripts
 bash scripts/test-review-classifier.sh
 bash scripts/test-security-verdict-check.sh
+bash scripts/test-security-findings.sh
 bash scripts/test-git-guard.sh
 bash scripts/test-process-guard.sh
 bash scripts/test-merge-guard.sh
