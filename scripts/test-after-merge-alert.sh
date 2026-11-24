@@ -191,5 +191,47 @@ reset
 run failed 77 $S scripts-test $URL
 check 'without ROLLING nothing reads the range' no "$(has "$(log)" '/compare/')"
 
+# --- blame / note: a rolling failure bisected (DOR-5122) ---
+reset
+echo '[{"number":40,"title":"After merge: browser-test / browser-shard (3/6) fails on main"},{"number":42,"title":"After merge: db-check / db fails on main"}]' >"$fx/issues"
+run blame 77 $S browser-test $URL
+check 'blame exits 0' 0 "$rc"
+check 'it comments on the culprit PR' yes "$(has "$(log)" 'api --method POST repos/made-up/repo/issues/12/comments')"
+# shellcheck disable=SC2016 # the backticks are the comment's Markdown
+check 'naming its author' yes "$(has "$(log)" '@dev1 `browser-test` failed on main in a rolling run')"
+check 'with one marker per culprit' yes "$(has "$(log)" "<!-- after-merge-alert bisect=$S -->")"
+check 'it says so on the workflow s group' yes "$(has "$(log)" 'api --method POST repos/made-up/repo/issues/40/comments')"
+check 'and assigns the author there' yes "$(has "$(log)" 'issues/40/assignees -f assignees[]=dev1')"
+check 'other workflows groups are untouched' no "$(has "$(log)" 'issues/42')"
+
+reset
+echo '[{"number":40,"title":"After merge: browser-test / browser-shard (3/6) fails on main"}]' >"$fx/issues"
+printf '%s\n' "[{\"id\":5,\"body\":\"<!-- after-merge-alert bisect=$S -->\\nold\"}]" >"$fx/comments"
+run blame 77 $S browser-test $URL
+check 'a second blame of the same merge says nothing' 0 "$(count 'comments -f body')"
+
+reset
+echo '[]' >"$fx/pulls"
+run blame 77 $S browser-test $URL
+check 'no merged PR behind the culprit: exit 2' 2 "$rc"
+run blame 77 abc browser-test $URL
+check 'blame: a bad sha is a usage error' 2 "$rc"
+
+reset
+echo '[{"number":40,"title":"After merge: browser-test / first-run fails on main"}]' >"$fx/issues"
+run note 77 browser-test $URL 'Bisect stopped without naming a merge (flaky).'
+check 'note exits 0' 0 "$rc"
+check 'note goes on the group' yes "$(has "$(log)" 'issues/40/comments -f body=<!-- after-merge-alert bisect-note run=77 -->')"
+check 'with the reason' yes "$(has "$(log)" '(flaky)')"
+check 'note blames nobody' no "$(has "$(log)" 'issues/12')"
+printf '%s\n' '[{"id":5,"body":"<!-- after-merge-alert bisect-note run=77 --> x"}]' >"$fx/comments"
+run note 77 browser-test $URL 'again'
+check 'note says it once per run' 0 "$(count 'comments -f body')"
+reset
+run note 77 browser-test $URL 'nothing open'
+check 'note with no open group is quiet' 0 "$(count '--method')"
+run note 77 browser-test $URL
+check 'note: missing text is a usage error' 2 "$rc"
+
 echo "after-merge-alert fixtures: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

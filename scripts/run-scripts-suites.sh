@@ -73,6 +73,7 @@ bash scripts/test-community-packaged-scope.sh
 bash scripts/test-no-code-scope.sh
 bash scripts/test-pr-related.sh
 bash scripts/test-auto-revert.sh
+bash scripts/test-rolling-bisect.sh
 bash scripts/test-daily-sweep.sh
 bash scripts/test-after-merge-alert.sh
 bash scripts/test-browser-smoke-scope.sh

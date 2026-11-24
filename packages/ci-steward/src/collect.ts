@@ -71,6 +71,11 @@ export interface Run {
   run_attempt: number;
   head_branch: string | null;
   head_sha: string;
+  /**
+   * A rolling-bisect run (DOR-5122): a `workflow_dispatch` on main titled
+   * `bisect <sha> for run <id>` that tests an older merge, not main's head.
+   */
+  bisect?: true;
 }
 
 /** Everything a collect run needs. */
