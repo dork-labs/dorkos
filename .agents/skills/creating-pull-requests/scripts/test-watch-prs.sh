@@ -145,10 +145,10 @@ remedy_has first_ejection_cites_rate 'EJECTED(failed_checks)' '85%'
 remedy_has repeat_is_real 'EJECTED_REPEAT(failed_checks,2)' 'treat it as real'
 # The same check failing twice on one head is a regression only the queue sees
 # (#1964: re-armed unchanged four times, 17 queue builds). Never re-arm it.
-remedy_has repeat_not_rearmed 'EJECTED_REPEAT(failed_checks,2)' 'do not re-arm it'
+remedy_has repeat_not_requeued 'EJECTED_REPEAT(failed_checks,2)' 'do not re-queue it'
 remedy_has repeat_names_pr 'EJECTED_REPEAT(failed_checks,2)' 'pr-1931-'
 remedy_has timeout_is_not_yours 'EJECTED(checks_timed_out)' 'Do not push and do not rerun'
-remedy_has stall_is_not_yours 'STALLED_IN_QUEUE(120)' 'Do not push, rerun or re-arm'
+remedy_has stall_is_not_yours 'STALLED_IN_QUEUE(120)' 'Do not push, rerun or re-queue'
 # FAILING: rerun one job for a failure that is not yours; never an empty commit.
 remedy_has failing_rerun 'FAILING(test)' 'gh run rerun <run-id> --failed'
 remedy_has failing_never_empty 'FAILING(test)' 'Never push an empty commit'
@@ -639,6 +639,10 @@ lacks() { # $1 name, $2 text, $3 fixed string that must NOT appear
   case "$2" in *"$3"*) echo "FAIL $1: has '$3': $2" >&2; fail=1 ;; *) : ;; esac
 }
 has live_turns_it_on "$live" 'gh pr merge --auto 1931'
+# Only the three sanctioned uses of `gh pr merge --auto` (contributing/ci.md).
+has live_after_ejection "$live" 'ejected for a failure plainly not yours'
+has live_pre_nov24 "$live" 'opened before Nov 24'
+has live_draft_or_hold "$live" 'a draft you marked ready or a hold you lifted'
 has live_never_direct "$live" 'Never merge it directly'
 has not_live_names_gate "$not_live" 'pr-gates'
 has not_live_maintainer "$not_live" 'the maintainer merges it'

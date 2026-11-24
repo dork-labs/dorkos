@@ -595,7 +595,7 @@
     },
     {
       "guide": "ci.md",
-      "description": "The CI pipeline for agents: required checks (ruleset only), local ratchets, sharding, the merge queue, arming (arm.sh, the queue doors), the admin-merge guard, and CI Steward (ledger, census, deadlock invariant, fence)",
+      "description": "The CI pipeline for agents: required checks (ruleset only), local ratchets, sharding, the merge queue, merging (auto-merge at open from open-pr.sh, the PR-side gates, the queue door), the admin-merge guard, and CI Steward (ledger, census, deadlock invariant, fence)",
       "patterns": [
         ".github/workflows/",
         "lefthook.yml",
