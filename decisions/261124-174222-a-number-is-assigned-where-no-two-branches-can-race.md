@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed by the architect (2026-11-24), from the review of the problems of 2026-11-23 (`research/20261124_architecture-direction-review.md` and Linear DOR-5195, DOR-5197 and DOR-4558). Becomes Accepted when the release owner and the marketplace owner agree and the operator rules on it.
+Proposed by the architect (2026-11-24), from the review of the problems of 2026-11-23 (`research/20261124_architecture-direction-review.md` and Linear DOR-5195, DOR-5197 and DOR-4558). The CI owner (ci-steward) agreed on 2026-11-24. Becomes Accepted when the release owner and the marketplace owner agree and the operator rules on it.
 
 **Builds on** [0312](0312-timestamp-identifiers-for-adrs-and-specs.md) and widens its rule from ADRs and specs to every shared counter. Its rule:
 
@@ -36,6 +36,8 @@ We will never let an author pick the next value of a shared counter on a branch.
 
 - **A timestamp id**, stamped by the author's own clock, read from no shared state (the 0312 way). Two branches cannot take the same one by accident.
 - **By automation, at release or after merge**, from what has already landed (the changelog and `VERSION` way). Only one writer exists, so there is nothing to race.
+
+The sibling rule, for the same reason: a list that every PR appends to is found from the files (a glob or a folder), never kept by hand. Two hand-kept lists of shell test suites collided this way on 2026-11-24, and pull request #4281 replaces them with a glob.
 
 Each of the three counters moves, and each has its issue:
 

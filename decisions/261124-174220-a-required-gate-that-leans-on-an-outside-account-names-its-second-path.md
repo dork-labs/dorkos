@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed by the architect (2026-11-24), from the review of the problems of 2026-11-23 (`research/20261124_architecture-direction-review.md` and Linear DOR-5189 and DOR-5190). Becomes Accepted when the CI owner (ci-steward) agrees and the operator rules on it.
+Proposed by the architect (2026-11-24), from the review of the problems of 2026-11-23 (`research/20261124_architecture-direction-review.md` and Linear DOR-5189 and DOR-5190). The CI owner (ci-steward) agreed on 2026-11-24, with four changes that are in this text. Becomes Accepted when the operator rules on it. Whether a second sign-in fits the reviewing service's terms is his call; this record names the question and does not answer it.
 
 **Builds on** [260919-174348](260919-174348-merges-are-fully-autonomous-machine-gates-are-the-only-gates.md), which stays Accepted, and settles this Negative bullet in it:
 
@@ -30,10 +30,10 @@ The product has the same shape. Room seats (`apps/server/src/services/rooms/rese
 
 We will treat an outside account as a single point of failure that every required gate must plan for.
 
-- **The gate declares the dependency.** Any required gate whose verdict depends on an account outside the repo (a model account, a paid service) says so in its own entry in `ci/gates.yaml`, and names its second path there.
-- **The second path needs no person.** It is a second credential from a different account, tried when the first is out. For the cloud review that means a second subscription sign-in, still not a metered API key: the team's rule that AI review runs on a subscription stands.
-- **One alarm per outage.** When the first account is out, the PR says so in one line, and the team gets one alarm per outage that says when the account resets. Not one per PR.
-- **The census enforces it.** The CI Steward census fails any required gate that depends on an outside account and declares no second path. A rule people must remember becomes a check.
+- **The gate declares the dependency.** Any required gate whose verdict depends on an account outside the repo (a model account, a paid service) says so in its own entry in `ci/gates.yaml`, with two fields: `outside_account: <name>` and `second_path: <the gate step or credential that takes over>`.
+- **The second path needs no person, and is a different account.** It is a second credential from a different account, tried in the same review run when the first answers that it is out, not on a later retry: a retry gives up after three tries per head, and no weekly limit is that short. For the cloud review that means a second subscription sign-in, still not a metered key. A different signer on the same account is not a second path: today's other sign-off, Security's signed marker, is made by an agent on the same subscription, so when that account is out both stop.
+- **One alarm per outage.** When the first account is out, the PR says so in one line, and one issue is opened for the outage, saying when the account resets. It closes when the account answers again. Not one alarm per PR.
+- **The census enforces it.** The CI Steward census fails any required gate that has an `outside_account` and no `second_path`. A rule people must remember becomes a check.
 - **Never degrade to pass.** A gate whose accounts are all out stays red. Being unable to decide is never the same as passing.
 - **The product follows the same rule.** When an agent's account runs out, its next turn moves to another account the person allowed, by one shared rule for every kind of turn, and the chat says which (DOR-5190). The room seat picker is the starting point.
 
@@ -49,6 +49,7 @@ We will treat an outside account as a single point of failure that every require
 ### Negative
 
 - A second account is a second sign-in to hold, renew and keep secret. If both accounts belong to the same person, one rule change on the outside service can still stop both.
+- The second sign-in is a secret only the operator can add. Until he does, the gate stays exposed to the same stop.
 - The second account must be one whose terms allow this use. If none is, the second path has to be something other than a second sign-in, and this record does not say what.
 - Two accounts that run out in the same week still stop merges. This makes the stop rarer and louder, not impossible.
 - `ci/gates.yaml` gains a field and the census gains a rule, both of which need tests and upkeep.
