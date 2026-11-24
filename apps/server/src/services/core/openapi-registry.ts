@@ -2090,21 +2090,6 @@ registry.registerPath({
 
 // --- Relay ---
 
-/** Receipt availability errors are safe and distinguish acceptance from response loss. */
-const RelayReceiptAvailabilityErrorSchema = z.object({
-  error: z.string(),
-  code: z.enum([
-    'RELAY_RECEIPT_TRANSACTION_ACTIVE',
-    'RELAY_RECEIPT_OBSERVER_BUSY',
-    'RELAY_RECEIPT_STORAGE_UNAVAILABLE',
-  ]),
-});
-const RelayReceiptResponseErrorSchema = z.object({
-  error: z.string(),
-  code: z.literal('RELAY_RECEIPT_RESPONSE_UNAVAILABLE'),
-  messageId: RelayMessageIdSchema,
-  statusUrl: z.string(),
-});
 const RelayPublishResponseSchema = z.object({
   messageId: z.string(),
   deliveredTo: z.number(),
@@ -2159,33 +2144,20 @@ registry.registerPath({
         'Publication result. Agent-target scheduling counts do not confirm delivery or turn success; receipt/statusUrl observe target delivery.',
       content: { 'application/json': { schema: RelayPublishResponseSchema } },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: the body failed its checks, or the bus refused the message before accepting it.'
+    ),
     401: {
       description:
         'Login requires a verified session or per-user API key, or an app window without a session must confirm the person (person_session_required)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
-    403: {
-      description:
-        "Reserved sender, destination or reply address, or a person's address from someone other than the person",
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    422: {
-      description: 'Publication refused before acceptance',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    503: {
-      description:
-        'Receipt storage/observer/caller transaction unavailable before acceptance, or response unavailable after durable acceptance. A retained locator does not permit replay.',
-      content: {
-        'application/json': {
-          schema: z.union([RelayReceiptAvailabilityErrorSchema, RelayReceiptResponseErrorSchema]),
-        },
-      },
-    },
+    403: problemResponse(
+      "`reserved_sender`, `reserved_subject` (a destination or reply address DorkOS keeps), `room_conversation` (post in the room instead), `person_only` (a person's address, sent by someone other than the person) or `not_from_wifi`."
+    ),
+    503: problemResponse(
+      '`temporarily_unavailable`: delivery status storage is unavailable before acceptance, or the answer is unavailable after it. After acceptance the problem carries `messageId` and `statusUrl`; a retained locator does not permit replay.'
+    ),
   },
 });
 
@@ -2203,23 +2175,15 @@ registry.registerPath({
       headers: { 'Cache-Control': { schema: { type: 'string', const: 'no-store' } } },
       content: { 'application/json': { schema: RelayDeliveryReceiptSchema } },
     },
-    400: {
-      description: 'INVALID_RELAY_MESSAGE_ID after authentication',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: not a message id (checked after authentication).'),
     401: {
       description: 'AUTH_REQUIRED before ID validation',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
-    404: {
-      description:
-        'RELAY_RECEIPT_NOT_FOUND: unknown, expired, untracked and other-owner locators have the same response',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    503: {
-      description: 'Receipt observer/storage/caller transaction unavailable',
-      content: { 'application/json': { schema: RelayReceiptAvailabilityErrorSchema } },
-    },
+    404: problemResponse(
+      '`not_found`: unknown, expired, untracked and other-owner locators have the same response.'
+    ),
+    503: problemResponse('`temporarily_unavailable`: delivery status storage is unavailable.'),
   },
 });
 
@@ -2278,10 +2242,7 @@ registry.registerPath({
       description: 'Message details with per-endpoint delivery breakdown',
       content: { 'application/json': { schema: RelayMessageDetailSchema } },
     },
-    404: {
-      description: 'Message not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Message not found'),
   },
 });
 
@@ -2321,10 +2282,7 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
   },
 });
 
@@ -2343,10 +2301,7 @@ registry.registerPath({
         'application/json': { schema: z.object({ success: z.boolean() }) },
       },
     },
-    404: {
-      description: 'Endpoint not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Endpoint not found'),
   },
 });
 
@@ -2389,10 +2344,7 @@ registry.registerPath({
         },
       },
     },
-    404: {
-      description: 'Endpoint not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Endpoint not found'),
   },
 });
 
@@ -4462,10 +4414,7 @@ registry.registerPath({
       description: 'The provider status after the reload',
       content: { 'application/json': { schema: ConnectorProviderStatusSchema } },
     },
-    400: {
-      description: 'Unknown provider or empty secret',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Unknown provider or empty secret'),
   },
 });
 
@@ -4485,10 +4434,7 @@ registry.registerPath({
       description: 'The provider status after the reload',
       content: { 'application/json': { schema: ConnectorProviderStatusSchema } },
     },
-    400: {
-      description: 'Unknown provider',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Unknown provider'),
   },
 });
 
@@ -4515,10 +4461,7 @@ registry.registerPath({
       description: 'Account-free connector catalog page',
       content: { 'application/json': { schema: ConnectorCatalogResourcePageSchema } },
     },
-    400: {
-      description: 'Invalid catalog query or cursor',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Invalid catalog query or cursor'),
   },
 });
 
@@ -4545,10 +4488,7 @@ registry.registerPath({
         ])
       ),
     },
-    404: {
-      description: 'The app has no logo, or its logo could not be fetched just now',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('The app has no logo, or its logo could not be fetched just now'),
   },
 });
 
@@ -4562,10 +4502,7 @@ registry.registerPath({
       description: 'Owner-scoped stable connection inventory',
       content: { 'application/json': { schema: ConnectorConnectionListResourceSchema } },
     },
-    403: {
-      description: 'Verified operator authority is required',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('Verified operator authority is required'),
   },
 });
 
@@ -4584,18 +4521,11 @@ registry.registerPath({
       description: 'Durable owner-only authentication flow state',
       content: { 'application/json': { schema: ConnectorAuthenticationFlowStateSchema } },
     },
-    403: {
-      description: 'Verified operator authority is required',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'The idempotency key belongs to a different request',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    422: {
-      description: 'Authentication is unavailable for the selected provider route',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('Verified operator authority is required'),
+    409: problemResponse('The idempotency key belongs to a different request'),
+    404: problemResponse(
+      '`app_not_set_up`: no working way to reach this app, so there is nothing to sign in to.'
+    ),
   },
 });
 
@@ -4610,10 +4540,7 @@ registry.registerPath({
       description: 'Current owner-only authentication state',
       content: { 'application/json': { schema: ConnectorAuthenticationFlowStateSchema } },
     },
-    404: {
-      description: 'Flow absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Flow absent or owned by someone else'),
   },
 });
 
@@ -4628,10 +4555,7 @@ registry.registerPath({
       description: 'Owner-visible connection detail',
       content: { 'application/json': { schema: ConnectorConnectionDetailSchema } },
     },
-    404: {
-      description: 'Connection absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Connection absent or owned by someone else'),
   },
 });
 
@@ -4649,10 +4573,7 @@ registry.registerPath({
       description: 'Updated lifecycle projection',
       content: { 'application/json': { schema: ConnectorLifecycleResultSchema } },
     },
-    404: {
-      description: 'Connection absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Connection absent or owned by someone else'),
   },
 });
 
@@ -4668,10 +4589,7 @@ registry.registerPath({
       description: 'Local lifecycle and external cleanup state',
       content: { 'application/json': { schema: ConnectorLifecycleResultSchema } },
     },
-    404: {
-      description: 'Connection absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Connection absent or owned by someone else'),
   },
 });
 
@@ -4694,22 +4612,10 @@ registry.registerPath({
       description: 'The app’s actions, or an honest unlisted answer',
       content: { 'application/json': { schema: ConnectorAppActionsSchema } },
     },
-    400: {
-      description: 'Invalid app id or query',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Only the owner can read this, from the DorkOS app',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'The named way of reaching apps is not set up',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    502: {
-      description: 'The service could not list the app’s actions just now',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Invalid app id or query'),
+    403: problemResponse('Only the owner can read this, from the DorkOS app'),
+    404: problemResponse('The named way of reaching apps is not set up'),
+    502: problemResponse('The service could not list the app’s actions just now'),
   },
 });
 
@@ -4724,10 +4630,7 @@ registry.registerPath({
       description: 'Current grant, session, and subscription impact',
       content: { 'application/json': { schema: ConnectorDisconnectImpactSchema } },
     },
-    404: {
-      description: 'Connection absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Connection absent or owned by someone else'),
   },
 });
 
@@ -4739,14 +4642,8 @@ registry.registerPath({
   request: { params: z.object({ connectionId: z.string().min(1) }) },
   responses: {
     204: { description: 'Account removed from the owner inventory' },
-    404: {
-      description: 'Account absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'Account must finish disconnecting before removal',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Account absent or owned by someone else'),
+    409: problemResponse('Account must finish disconnecting before removal'),
   },
 });
 
@@ -4764,14 +4661,8 @@ registry.registerPath({
       description: 'Durable owner-only authentication flow state',
       content: { 'application/json': { schema: ConnectorAuthenticationFlowStateSchema } },
     },
-    404: {
-      description: 'Connection absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'The idempotency key belongs to a different request',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Connection absent or owned by someone else'),
+    409: problemResponse('The idempotency key belongs to a different request'),
   },
 });
 
@@ -4787,10 +4678,7 @@ for (const action of ['pause', 'resume'] as const) {
         description: 'Local lifecycle and managed authority synchronization state',
         content: { 'application/json': { schema: ConnectorLifecycleResultSchema } },
       },
-      404: {
-        description: 'Connection absent or owned by someone else',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
+      404: problemResponse('Connection absent or owned by someone else'),
     },
   });
 }
@@ -4806,10 +4694,7 @@ registry.registerPath({
       description: 'Canonical agent connection grants',
       content: { 'application/json': { schema: ConnectorAgentConnectionsSchema } },
     },
-    404: {
-      description: 'Agent absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Agent absent or owned by someone else'),
   },
 });
 
@@ -4839,10 +4724,7 @@ registry.registerPath({
       description: 'Canonical session connector access',
       content: { 'application/json': { schema: ConnectorSessionConnectionsSchema } },
     },
-    404: {
-      description: 'Session absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Session absent or owned by someone else'),
   },
 });
 
@@ -4862,23 +4744,12 @@ registry.registerPath({
       description: 'The chat’s connector access after the change',
       content: { 'application/json': { schema: ConnectorSessionConnectionsSchema } },
     },
-    400: {
-      description: 'Invalid request body or connection id',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Refused: agents and programs cannot make account decisions',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Session absent, or the agent was not given that app account-wide',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        'Refused: turning it on would drop a limit the owner set on this chat for another agent (`session_access_other_agent`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Invalid request body or connection id'),
+    403: problemResponse('Refused: agents and programs cannot make account decisions'),
+    404: problemResponse('Session absent, or the agent was not given that app account-wide'),
+    409: problemResponse(
+      '`other_agent_chat`: turning it on would drop a limit the owner set on this chat for another agent.'
+    ),
   },
 });
 
@@ -4904,14 +4775,8 @@ registry.registerPath({
         },
       },
     },
-    401: {
-      description: 'A verified program credential is required',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Agent identity or an unverified operator is refused',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    401: problemResponse('A verified program credential is required'),
+    403: problemResponse('Agent identity or an unverified operator is refused'),
   },
 });
 
@@ -4926,10 +4791,7 @@ registry.registerPath({
       description: 'Requester-safe lifecycle and outcome',
       content: { 'application/json': { schema: ConnectorProgramReviewStatusSchema } },
     },
-    404: {
-      description: 'Review absent or belongs to another requester',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Review absent or belongs to another requester'),
   },
 });
 
@@ -4962,10 +4824,7 @@ registry.registerPath({
       description: 'Owner-visible review context and lifecycle',
       content: { 'application/json': { schema: ConnectorManagementReviewItemSchema } },
     },
-    404: {
-      description: 'Review absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Review absent or owned by someone else'),
   },
 });
 
@@ -4983,10 +4842,7 @@ registry.registerPath({
       description: 'Durably resolved review',
       content: { 'application/json': { schema: ConnectorManagementReviewDecisionResultSchema } },
     },
-    409: {
-      description: 'Review is no longer pending or the target changed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse('Review is no longer pending or the target changed'),
   },
 });
 
@@ -5005,10 +4861,7 @@ registry.registerPath({
       description: 'Complete immutable grant preview',
       content: { 'application/json': { schema: ConnectorReconciliationPreviewSchema } },
     },
-    409: {
-      description: 'The connection must be reconciled before it can be edited',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse('The connection must be reconciled before it can be edited'),
   },
 });
 
@@ -5025,10 +4878,7 @@ registry.registerPath({
       description: 'How many shared actions ended',
       content: { 'application/json': { schema: ConnectorEveryAgentRevokeResponseSchema } },
     },
-    404: {
-      description: 'Connection absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Connection absent or owned by someone else'),
   },
 });
 
@@ -5047,10 +4897,7 @@ registry.registerPath({
       description: 'Exact persisted grants and hosted authority synchronization state',
       content: { 'application/json': { schema: ConnectorReconciliationApplyResponseSchema } },
     },
-    409: {
-      description: 'The preview was consumed, expired, or superseded',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse('The preview was consumed, expired, or superseded'),
   },
 });
 
@@ -5065,10 +4912,7 @@ registry.registerPath({
       description: 'Agent-scoped accessible connections',
       content: { 'application/json': { schema: ConnectorAccessibleConnectionsResponseSchema } },
     },
-    401: {
-      description: 'A verified program credential is required',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    401: problemResponse('A verified program credential is required'),
   },
 });
 
@@ -5086,10 +4930,7 @@ registry.registerPath({
       description: 'Exact agent-scoped operation revisions',
       content: { 'application/json': { schema: ConnectorAccessibleOperationsResponseSchema } },
     },
-    404: {
-      description: 'Connection absent, ungranted, or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Connection absent, ungranted, or owned by someone else'),
   },
 });
 
@@ -5184,14 +5025,8 @@ registry.registerPath({
       description: 'The re-pointed binding',
       content: { 'application/json': { schema: BindingResponseSchema } },
     },
-    400: {
-      description: 'Unknown agent',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Unknown binding',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Unknown agent'),
+    404: problemResponse('Unknown binding'),
   },
 });
 
@@ -5239,18 +5074,9 @@ registry.registerPath({
       description: 'The binding created from this claim, optionally bridged',
       content: { 'application/json': { schema: ClaimUnclaimedChatResponseSchema } },
     },
-    400: {
-      description: 'Unknown agent',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Unknown unclaimed chat',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'The chat was bound by something else in the meantime',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Unknown agent'),
+    404: problemResponse('Unknown unclaimed chat'),
+    409: problemResponse('The chat was bound by something else in the meantime'),
   },
 });
 
@@ -5265,10 +5091,7 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Muted' },
-    404: {
-      description: 'Unknown unclaimed chat',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Unknown unclaimed chat'),
   },
 });
 
@@ -5283,10 +5106,7 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Blocked' },
-    404: {
-      description: 'Unknown unclaimed chat',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Unknown unclaimed chat'),
   },
 });
 

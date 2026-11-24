@@ -27,10 +27,11 @@
  * @module routes/relay-adapters
  */
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { honoRateLimit } from '../http/rate-limiter.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
+import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
+import { logger } from '../lib/logger.js';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import {
@@ -38,7 +39,6 @@ import {
   UpdateBindingRequestSchema,
   MoveBindingRequestSchema,
   bridgeAllowsChatId,
-  BRIDGE_REQUIRES_CHAT_ID_MESSAGE,
   type AdapterBinding,
   type PlatformChatType,
 } from '@dorkos/shared/relay-schemas';
@@ -49,13 +49,23 @@ import {
   BindingConflictError,
   type BindingUpdate,
 } from '../services/relay/binding-store.js';
-import { RoomError } from '../services/rooms/room-errors.js';
+import { sendRoomError } from './room-error-response.js';
 import { ADAPTER_EVENTS_KEPT, type TraceStore } from '../services/relay/trace-store.js';
 import {
+  failedProblem,
   registerConfirmReferencesRoute,
   registerEnableRoute,
   sendAdapterError,
 } from './relay-adapter-http.js';
+import {
+  BINDING_NOT_FOUND,
+  BINDINGS_STARTING,
+  BRIDGE_NEEDS_ONE_CHAT,
+  CONNECTION_NOT_FOUND,
+  TRACING_OFF,
+  UNKNOWN_AGENT,
+  chatAlreadyBound,
+} from './relay-problems.js';
 import { registerSettingRoutes } from './relay-adapter-setting-routes.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
@@ -89,8 +99,8 @@ const BRIDGE_UNKNOWN_TYPE_REASON =
   'bridged, and from here we cannot yet rule that out. Re-connect this chat from a new ' +
   'message and it will carry what it is.';
 
-/** The refusal codes {@link bridgeChatTypeForBinding} can return. */
-type BridgeRefusalCode = 'BROADCAST_NOT_BRIDGEABLE' | 'BRIDGE_NOT_A_DM';
+/** The problem codes {@link bridgeChatTypeForBinding} can refuse with. */
+type BridgeRefusalCode = 'broadcast_not_bridgeable' | 'chat_type_unknown';
 
 /**
  * The platform chat type and subject channel type a bridge needs from a stored
@@ -110,19 +120,19 @@ type BridgeRefusalCode = 'BROADCAST_NOT_BRIDGEABLE' | 'BRIDGE_NOT_A_DM';
  * - `private` → bridges as a DM (`private`, no subject channel type).
  * - `group`/`supergroup` → bridges as a channel, mention-only-seeded by
  *   `createBridgedRoom` (spec §3.4). Now allowed, where DOR-878 refused it.
- * - `channel` → **refused** as `BROADCAST_NOT_BRIDGEABLE`: a broadcast is not a
+ * - `channel` → **refused** as `broadcast_not_bridgeable`: a broadcast is not a
  *   conversation and must never be bridged (spec §3.3, A3.7).
  * - **absent/unknown** (an old binding, or one made outside the claim flow) →
  *   the conservative DM-only rule: only a `channelType` of `dm` (a chat that
  *   cannot be a broadcast) bridges, everything else is refused as
- *   `BRIDGE_NOT_A_DM`. We never bridge a non-DM we cannot prove is a group.
+ *   `chat_type_unknown`. We never bridge a non-DM we cannot prove is a group.
  *
  * @param platformChatType - The binding's persisted raw platform chat type, or
  *   `undefined` when it carries none.
  * @param channelType - The binding's subject-level channel type, used only in
  *   the conservative fallback when `platformChatType` is absent.
  * @returns The resolved `chatType`/`channelType` to bridge with, or a `refusal`
- *   reason and its `code`.
+ *   reason (the claim card's note) and its problem `code`.
  */
 export function bridgeChatTypeForBinding(
   platformChatType: PlatformChatType | undefined,
@@ -137,7 +147,7 @@ export function bridgeChatTypeForBinding(
     case 'supergroup':
       return { chatType: platformChatType, channelType: 'group' };
     case 'channel':
-      return { refusal: BRIDGE_BROADCAST_REASON, code: 'BROADCAST_NOT_BRIDGEABLE' };
+      return { refusal: BRIDGE_BROADCAST_REASON, code: 'broadcast_not_bridgeable' };
     default:
       // No persisted platform type: fall back to the DM-only rule DOR-878
       // shipped. A `dm` (or absent) subject channel type is the only stored
@@ -146,18 +156,14 @@ export function bridgeChatTypeForBinding(
       if (channelType == null || channelType === 'dm') {
         return { chatType: 'private', channelType: null };
       }
-      return { refusal: BRIDGE_UNKNOWN_TYPE_REASON, code: 'BRIDGE_NOT_A_DM' };
+      return { refusal: BRIDGE_UNKNOWN_TYPE_REASON, code: 'chat_type_unknown' };
   }
 }
 
-/** Map a {@link RoomError} raised while bridging to its HTTP status. */
-const BRIDGE_ROOM_ERROR_STATUS: Record<string, number> = {
-  BROADCAST_NOT_BRIDGEABLE: 400,
-  UNKNOWN_CHAT_TYPE: 400,
-  OPERATOR_ONLY: 403,
-  SLUG_TAKEN: 409,
-  ROOM_NOT_FOUND: 404,
-  ROOM_ARCHIVED: 409,
+/** The short sentence each bridge refusal answers with; `refusal` is the claim card's longer note. */
+const BRIDGE_REFUSAL_DETAIL: Record<BridgeRefusalCode, string> = {
+  broadcast_not_bridgeable: 'A broadcast is a one-way feed, so it can’t become a channel.',
+  chat_type_unknown: 'Connect this chat again from a new message, then try again.',
 };
 
 /** What the connection routes read. */
@@ -187,8 +193,8 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
     try {
       return c.json(adapterManager.getCatalog());
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to retrieve adapter catalog';
-      return c.json({ error: message }, 500);
+      logger.error('[relay] GET /adapters/catalog failed', { err });
+      return problem(c, 'internal_error', { detail: 'Couldn’t list connections. Try again.' });
     }
   });
 
@@ -197,8 +203,8 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
       await adapterManager.reload();
       return c.json({ ok: true });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Reload failed';
-      return c.json({ error: message }, 500);
+      logger.error('[relay] POST /adapters/reload failed', { err });
+      return problem(c, 'internal_error', { detail: 'Couldn’t reload connections. Try again.' });
     }
   });
 
@@ -206,7 +212,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
 
   router.get('/adapters/:id', (c) => {
     const adapter = adapterManager.getAdapter(c.req.param('id'));
-    if (!adapter) return c.json({ error: 'Adapter not found' }, 404);
+    if (!adapter) return problem(c, 'not_found', { detail: CONNECTION_NOT_FOUND });
     return c.json(adapter);
   });
 
@@ -238,8 +244,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
       return c.json({ ok: true });
     } catch (err) {
       if (err instanceof AdapterError) return sendAdapterError(c, err);
-      const message = err instanceof Error ? err.message : 'Remove failed';
-      return c.json({ error: message }, 500);
+      return sendProblem(c, failedProblem(err, 'Couldn’t remove that connection. Try again.'));
     }
   });
 
@@ -252,13 +257,14 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
       await adapterManager.disable(c.req.param('id'));
       return c.json({ ok: true });
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : 'Disable failed' }, 400);
+      if (err instanceof AdapterError) return sendAdapterError(c, err);
+      return sendProblem(c, failedProblem(err, 'Couldn’t turn that connection off. Try again.'));
     }
   });
 
   // GET /adapters/:id/events — Get adapter event log
   router.get('/adapters/:id/events', (c) => {
-    if (!traceStore) return c.json({ error: 'Tracing not available' }, 404);
+    if (!traceStore) return problem(c, 'not_found', { detail: TRACING_OFF });
     const { id } = c.req.param();
     const limitParam = parseInt(readQuery(c).limit as string);
     // Bounded to what the store keeps per adapter (the Relay sweep drops the rest).
@@ -271,7 +277,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
 
   // GET /adapters/:id/chats — Observed chats from trace data
   router.get('/adapters/:id/chats', (c) => {
-    if (!traceStore) return c.json({ error: 'Tracing not available' }, 404);
+    if (!traceStore) return problem(c, 'not_found', { detail: TRACING_OFF });
     const { id } = c.req.param();
     const limitParam = parseInt(readQuery(c).limit as string);
     const limit = Number.isNaN(limitParam) ? 100 : Math.min(Math.max(limitParam, 1), 500);
@@ -282,21 +288,21 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
   // --- Binding Management Routes ---
   router.get('/bindings', (c) => {
     const bindingStore = adapterManager.getBindingStore();
-    if (!bindingStore) return c.json({ error: 'Binding subsystem not available' }, 503);
+    if (!bindingStore) return problem(c, 'temporarily_unavailable', { detail: BINDINGS_STARTING });
     return c.json({ bindings: bindingStore.getAll() });
   });
 
   router.get('/bindings/:id', (c) => {
     const bindingStore = adapterManager.getBindingStore();
-    if (!bindingStore) return c.json({ error: 'Binding subsystem not available' }, 503);
+    if (!bindingStore) return problem(c, 'temporarily_unavailable', { detail: BINDINGS_STARTING });
     const binding = bindingStore.getById(c.req.param('id'));
-    if (!binding) return c.json({ error: 'Binding not found' }, 404);
+    if (!binding) return problem(c, 'not_found', { detail: BINDING_NOT_FOUND });
     return c.json({ binding });
   });
 
   const createBinding = async (c: Context<ApiEnv>): Promise<Response> => {
     const bindingStore = adapterManager.getBindingStore();
-    if (!bindingStore) return c.json({ error: 'Binding subsystem not available' }, 503);
+    if (!bindingStore) return problem(c, 'temporarily_unavailable', { detail: BINDINGS_STARTING });
     const result = CreateBindingRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
       return validationProblem(c, result.error);
@@ -304,12 +310,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
     // Validate adapter exists
     const adapterExists = adapterManager.getAdapter(result.data.adapterId);
     if (!adapterExists) {
-      return c.json(
-        {
-          error: `Adapter '${result.data.adapterId}' not found`,
-        },
-        400
-      );
+      return problem(c, 'invalid_request', { detail: CONNECTION_NOT_FOUND });
     }
 
     // Validate agent exists in mesh registry
@@ -317,12 +318,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
     if (meshCore && result.data.agentId) {
       const projectPath = meshCore.getProjectPath(result.data.agentId);
       if (!projectPath) {
-        return c.json(
-          {
-            error: `Agent '${result.data.agentId}' not found in mesh registry`,
-          },
-          400
-        );
+        return problem(c, 'invalid_request', { detail: UNKNOWN_AGENT });
       }
     }
 
@@ -353,21 +349,10 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
       // `(adapterId, chatId)` collision is a 409, carrying the conflicting
       // binding so the client can offer a move rather than a bare rejection.
       if (err instanceof BindingConflictError) {
-        return c.json(
-          {
-            error: err.message,
-            code: 'CHAT_ALREADY_BOUND',
-            conflict: {
-              bindingId: err.conflict.id,
-              agentId: err.conflict.agentId,
-              label: err.conflict.label,
-            },
-          },
-          409
-        );
+        return chatAlreadyBound(c, err);
       }
-      const message = err instanceof Error ? err.message : 'Create failed';
-      return c.json({ error: message }, 500);
+      logger.error('[relay] creating a chat route failed', { err });
+      return problem(c, 'internal_error', { detail: 'Couldn’t add that chat route. Try again.' });
     }
   };
 
@@ -380,7 +365,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
    */
   const moveBinding = async (c: Context<ApiEnv>): Promise<Response> => {
     const bindingStore = adapterManager.getBindingStore();
-    if (!bindingStore) return c.json({ error: 'Binding subsystem not available' }, 503);
+    if (!bindingStore) return problem(c, 'temporarily_unavailable', { detail: BINDINGS_STARTING });
     const result = MoveBindingRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
       return validationProblem(c, result.error);
@@ -388,16 +373,11 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
 
     const meshCore = adapterManager.getMeshCore();
     if (meshCore && !meshCore.getProjectPath(result.data.agentId)) {
-      return c.json(
-        {
-          error: `Agent '${result.data.agentId}' not found in mesh registry`,
-        },
-        400
-      );
+      return problem(c, 'invalid_request', { detail: UNKNOWN_AGENT });
     }
 
     const moved = await bindingStore.moveToAgent(c.req.param('id') ?? '', result.data.agentId);
-    if (!moved) return c.json({ error: 'Binding not found' }, 404);
+    if (!moved) return problem(c, 'not_found', { detail: BINDING_NOT_FOUND });
 
     const bindingRouter = adapterManager.getBindingRouter();
     if (bindingRouter) await bindingRouter.clearSessionsForBinding(moved.id);
@@ -427,7 +407,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
   ): Promise<Response> => {
     const bindingStore = adapterManager.getBindingStore();
     if (!bindingStore) {
-      return c.json({ error: 'Binding subsystem not available' }, 503);
+      return problem(c, 'temporarily_unavailable', { detail: BINDINGS_STARTING });
     }
 
     const result = UpdateBindingRequestSchema.safeParse(readJsonBody(c));
@@ -445,13 +425,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
       const mergedBridge = result.data.bridge ?? existing.bridge;
       const mergedChatId = result.data.chatId !== undefined ? result.data.chatId : existing.chatId;
       if (!bridgeAllowsChatId({ bridge: mergedBridge, chatId: mergedChatId })) {
-        return c.json(
-          {
-            error: 'Validation failed',
-            details: { message: BRIDGE_REQUIRES_CHAT_ID_MESSAGE },
-          },
-          400
-        );
+        return problem(c, 'invalid_request', { detail: BRIDGE_NEEDS_ONE_CHAT });
       }
     }
 
@@ -498,13 +472,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
       // room half sanitizes it (spec §9.2).
       const chatId = existing.chatId;
       if (!chatId) {
-        return c.json(
-          {
-            error: 'Validation failed',
-            details: { message: BRIDGE_REQUIRES_CHAT_ID_MESSAGE },
-          },
-          400
-        );
+        return problem(c, 'invalid_request', { detail: BRIDGE_NEEDS_ONE_CHAT });
       }
       // Resolve what this binding bridges as from its persisted raw platform
       // type (DOR-907): a DM bridges private, a group/supergroup bridges as a
@@ -513,16 +481,11 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
       // the lifecycle, so a refused binding is left untouched.
       const typed = bridgeChatTypeForBinding(existing.platformChatType, existing.channelType);
       if ('refusal' in typed) {
-        return c.json({ error: typed.refusal, code: typed.code }, 400);
+        return problem(c, typed.code, { detail: BRIDGE_REFUSAL_DETAIL[typed.code] });
       }
       const agentPath = adapterManager.getMeshCore()?.getProjectPath(existing.agentId);
       if (!agentPath) {
-        return c.json(
-          {
-            error: `Agent '${existing.agentId}' not found in mesh registry`,
-          },
-          400
-        );
+        return problem(c, 'invalid_request', { detail: UNKNOWN_AGENT });
       }
       try {
         await lifecycle.bridge({
@@ -540,12 +503,13 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
           agentPath,
         });
       } catch (err) {
-        if (err instanceof RoomError) {
-          const status = (BRIDGE_ROOM_ERROR_STATUS[err.code] ?? 500) as ContentfulStatusCode;
-          return c.json({ error: err.message, code: err.code }, status);
-        }
-        const message = err instanceof Error ? err.message : 'Bridge failed';
-        return c.json({ error: message }, 500);
+        // The rooms domain's own table words a refusal and logs anything else.
+        return sendRoomError(
+          c,
+          err,
+          'bridge a chat route',
+          () => refuseUnlessAccountOwner(honoRequestFacts(c)) === undefined
+        );
       }
       // The lifecycle already flipped `bridge`/`roomId`; apply any other fields
       // the same PATCH carried on top, then read back the fully-updated row.
@@ -576,29 +540,20 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
         // "One chat, one agent": changing `chatId` onto a value another binding
         // already owns is the same 409 the create path gives (see above).
         if (err instanceof BindingConflictError) {
-          return c.json(
-            {
-              error: err.message,
-              code: 'CHAT_ALREADY_BOUND',
-              conflict: {
-                bindingId: err.conflict.id,
-                agentId: err.conflict.agentId,
-                label: err.conflict.label,
-              },
-            },
-            409
-          );
+          return chatAlreadyBound(c, err);
         }
         // The store re-validates the MERGED result independently of the
         // pre-check above (any in-process caller can reach `update`, not just
         // this route) — so a drift between the two checks lands here rather
         // than as an unhandled 500.
-        const message = err instanceof Error ? err.message : 'Update failed';
-        return c.json({ error: 'Validation failed', details: { message } }, 400);
+        logger.info('[relay] a chat route change was refused', { err });
+        return problem(c, 'invalid_request', {
+          detail: 'That change doesn’t fit this chat route. Check it, then try again.',
+        });
       }
     }
     if (!updated) {
-      return c.json({ error: 'Binding not found' }, 404);
+      return problem(c, 'not_found', { detail: BINDING_NOT_FOUND });
     }
 
     // Push a freshness signal so other clients/tabs re-fetch their binding list.
@@ -625,13 +580,13 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
 
   router.delete('/bindings/:id', async (c) => {
     const bindingStore = adapterManager.getBindingStore();
-    if (!bindingStore) return c.json({ error: 'Binding subsystem not available' }, 503);
+    if (!bindingStore) return problem(c, 'temporarily_unavailable', { detail: BINDINGS_STARTING });
 
     // Capture binding metadata before deletion for the activity event
     const binding = bindingStore.getById(c.req.param('id'));
 
     const deleted = await bindingStore.delete(c.req.param('id'));
-    if (!deleted) return c.json({ error: 'Binding not found' }, 404);
+    if (!deleted) return problem(c, 'not_found', { detail: BINDING_NOT_FOUND });
     const bindingRouter = adapterManager.getBindingRouter();
     if (bindingRouter) {
       const activeBindingIds = new Set(bindingStore.getAll().map((b) => b.id));
@@ -665,33 +620,33 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
     windowMs: 60_000,
     limit: 10,
     headers: 'standard',
-    message: { error: 'Too many test requests, try again in a minute' },
+    // Never sent: `onLimited` answers every refusal as a problem.
+    message: {},
+    onLimited: (c) =>
+      problem(c, 'rate_limited', { detail: 'Too many tests. Wait a minute, then try again.' }),
   });
 
   // POST /bindings/:id/test — Synthetic routing test probe
   router.post('/bindings/:id/test', testRateLimiter, async (c) => {
     const bindingStore = adapterManager.getBindingStore();
     if (!bindingStore) {
-      return c.json({ error: 'Binding subsystem not available' }, 503);
+      return problem(c, 'temporarily_unavailable', { detail: BINDINGS_STARTING });
     }
 
     const binding = bindingStore.getById(c.req.param('id'));
     if (!binding) {
-      return c.json({ error: 'Binding not found' }, 404);
+      return problem(c, 'not_found', { detail: BINDING_NOT_FOUND });
     }
 
     if (binding.enabled === false) {
-      return c.json(
-        {
-          error: 'Binding is paused. Resume to run a test.',
-        },
-        409
-      );
+      return problem(c, 'chat_route_paused', {
+        detail: 'This chat route is paused. Resume it to run a test.',
+      });
     }
 
     const bindingRouter = adapterManager.getBindingRouter();
     if (!bindingRouter) {
-      return c.json({ error: 'Binding router not available' }, 503);
+      return problem(c, 'temporarily_unavailable', { detail: BINDINGS_STARTING });
     }
 
     try {
@@ -706,12 +661,8 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
         details: result.details,
       });
     } catch (err) {
-      return c.json(
-        {
-          error: err instanceof Error ? err.message : 'Internal routing error',
-        },
-        500
-      );
+      logger.error('[relay] testing a chat route failed', { err });
+      return problem(c, 'internal_error', { detail: 'Couldn’t test that chat route. Try again.' });
     }
   });
 

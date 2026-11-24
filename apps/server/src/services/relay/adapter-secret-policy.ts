@@ -226,7 +226,17 @@ export function assertSecretReferences(
         ? 'names a stored secret. Enter the secret itself'
         : referenceRefusal(adapterId, label, value, writer === 'person');
     if (refusal) {
-      throw new AdapterError(`Field '${label}' ${refusal}.`, 'INVALID_CONFIG', adapterId);
+      // A secret map's entry (`headers.Authorization`) is marked on its manifest
+      // field (`headers`): the entry's own name was typed by a person, so it never goes back.
+      const field = secretFieldKeys(manifest).find(
+        (key) => label === key || label.startsWith(`${key}.`)
+      );
+      throw new AdapterError(
+        `Field '${label}' ${refusal}.`,
+        'INVALID_CONFIG',
+        adapterId,
+        field === undefined ? [] : [field]
+      );
     }
   }
 }
@@ -363,7 +373,7 @@ export function mergeSecretUpdate(
   if (!moved) return mergeWithPasswordPreservation(existing, incoming, manifest);
 
   const merged = { ...existing, ...incoming };
-  const missing: string[] = [];
+  const missing: { key: string; label: string }[] = [];
   for (const field of manifest?.configFields ?? []) {
     if (field.type !== 'password') continue;
     const parts = field.key.split('.');
@@ -372,14 +382,15 @@ export function mergeSecretUpdate(
       setNested(merged, parts, fresh);
       continue;
     }
-    if (field.required) missing.push(field.label);
+    if (field.required) missing.push(field);
     setNested(merged, parts, undefined);
   }
   if (missing.length > 0) {
     throw new AdapterError(
-      `A new address needs its secrets entered again: ${missing.join(', ')}.`,
+      `A new address needs its secrets entered again: ${missing.map((f) => f.label).join(', ')}.`,
       'INVALID_CONFIG',
-      adapterId
+      adapterId,
+      missing.map((f) => f.key)
     );
   }
   return merged;

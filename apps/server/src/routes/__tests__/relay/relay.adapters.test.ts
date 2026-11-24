@@ -73,7 +73,7 @@ describe('Adapter routes', () => {
       ['reload', 'post', '/api/relay/adapters/reload', 500],
       ['testConnection', 'post', '/api/relay/adapters/test', 500],
     ] as const)(
-      'answers %s throwing with %i and its message',
+      'answers %s throwing with %i and a fixed sentence, never its message',
       async (method, verb, path, status) => {
         vi.mocked(adapterManager[method]).mockImplementation(() => {
           throw new Error('Unexpected failure');
@@ -84,7 +84,10 @@ describe('Adapter routes', () => {
           .send({ type: 'telegram', config: { token: 'x' } });
 
         expect(res.status).toBe(status);
-        expect(res.body.error).toBe('Unexpected failure');
+        expect(res.headers['content-type']).toContain('application/problem+json');
+        expect(res.body.code).toBe('internal_error');
+        expect(res.body.detail).toMatch(/^Couldn’t .*Try again\.$/);
+        expect(JSON.stringify(res.body)).not.toContain('Unexpected failure');
       }
     );
 
@@ -155,7 +158,7 @@ describe('Adapter routes', () => {
         .send('{}');
 
       expect(res.status).toBe(401);
-      expect(res.body.error).toBe('INVALID_SIGNATURE');
+      expect(res.body.code).toBe('invalid_signature');
     });
 
     it('returns 401 when signature verification fails', async () => {
@@ -170,7 +173,79 @@ describe('Adapter routes', () => {
         .send('{}');
 
       expect(res.status).toBe(401);
-      expect(res.body.error).toBe('INVALID_SIGNATURE');
+      expect(res.body.code).toBe('invalid_signature');
+    });
+
+    // A refusal that runs before the signature (an address DorkOS keeps) must
+    // look like every other unverified refusal, so it tells a stranger nothing.
+    it('answers a refused address with the same flat 401, before any signature check', async () => {
+      vi.mocked(adapterManager._mockWebhookAdapter.handleInbound).mockResolvedValue({
+        ok: false,
+        error: 'reserved',
+        status: 403,
+      });
+
+      const res = await request(server)
+        .post('/api/relay/webhooks/wh-github')
+        .set('Content-Type', 'application/json')
+        .send('{}');
+
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('invalid_signature');
+    });
+
+    // DOR-3650 / DOR-4979 review: everything before a verified signature looks
+    // the same, so an unsigned caller can't tell which ids exist or run.
+    it('answers every unverified refusal with the same status and body', async () => {
+      const unknown = await request(server)
+        .post('/api/relay/webhooks/wh-nobody')
+        .set('Content-Type', 'application/json')
+        .send('{}');
+
+      const registry = adapterManager.getRegistry();
+      vi.mocked(registry.get).mockReturnValueOnce(undefined);
+      const stopped = await request(server)
+        .post('/api/relay/webhooks/wh-github')
+        .set('Content-Type', 'application/json')
+        .send('{}');
+
+      const untyped = await request(server).post('/api/relay/webhooks/wh-github');
+
+      vi.mocked(adapterManager._mockWebhookAdapter.handleInbound).mockResolvedValue({
+        ok: false,
+        error: 'Invalid signature',
+      });
+      const badSignature = await request(server)
+        .post('/api/relay/webhooks/wh-github')
+        .set('Content-Type', 'application/json')
+        .send('{}');
+
+      for (const res of [stopped, untyped, badSignature]) {
+        expect(res.status).toBe(unknown.status);
+        expect(res.body).toEqual(unknown.body);
+      }
+      expect(unknown.status).toBe(401);
+      expect(unknown.body.code).toBe('invalid_signature');
+    });
+
+    it.each([
+      [503, 'temporarily_unavailable'],
+      [500, 'internal_error'],
+    ] as const)('answers a delivery failure after the signature as %i %s', async (status, code) => {
+      vi.mocked(adapterManager._mockWebhookAdapter.handleInbound).mockResolvedValue({
+        ok: false,
+        error: 'Publish failed',
+        status,
+      });
+
+      const res = await request(server)
+        .post('/api/relay/webhooks/wh-github')
+        .set('Content-Type', 'application/json')
+        .send('{}');
+
+      expect(res.status).toBe(status);
+      expect(res.body.code).toBe(code);
+      expect(JSON.stringify(res.body)).not.toContain('Publish failed');
     });
   });
 
@@ -255,13 +330,28 @@ describe('Adapter routes', () => {
       expect(vi.mocked(adapterManager.updateConfig).mock.calls.at(-1)?.[2]).toBe('agent');
     });
 
-    // Each AdapterError code maps to its own status, with the code beside it.
-    // DOR-2432: a refused config carries its rule to the caller (it used to 500).
+    it('names the refused fields by key, never their values', async () => {
+      vi.mocked(adapterManager.addAdapter).mockRejectedValue(
+        new AdapterError('Field token is bad: tok-secret-1', 'INVALID_CONFIG', 'tg-main', ['token'])
+      );
+
+      const res = await request(server)
+        .post('/api/relay/adapters')
+        .send({ type: 'telegram', id: 'tg-main', config: { token: 'x', mode: 'polling' } });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code: 'invalid_request', fields: ['token'] });
+      expect(JSON.stringify(res.body)).not.toContain('tok-secret-1');
+    });
+
+    // Each AdapterError code maps to its own problem, with a fixed sentence:
+    // the error's own message (which can name a field or value) stays in the log.
     it.each([
-      ['DUPLICATE_ID', 409],
-      ['INVALID_CONFIG', 400],
-      ['MULTI_INSTANCE_DENIED', 400],
-    ] as const)('answers %s with %i', async (code, status) => {
+      ['DUPLICATE_ID', 409, 'connection_id_taken'],
+      ['INVALID_CONFIG', 400, 'invalid_request'],
+      ['MULTI_INSTANCE_DENIED', 400, 'invalid_request'],
+      ['START_FAILED', 502, 'connection_saved_not_started'],
+    ] as const)('answers %s with %i %s', async (code, status, problemCode) => {
       vi.mocked(adapterManager.addAdapter).mockRejectedValue(new AdapterError('refused', code));
 
       const res = await request(server)
@@ -269,7 +359,9 @@ describe('Adapter routes', () => {
         .send({ type: 'telegram', id: 'tg-main', config: { token: 'x', mode: 'polling' } });
 
       expect(res.status).toBe(status);
-      expect(res.body).toEqual({ error: 'refused', code });
+      expect(res.body.code).toBe(problemCode);
+      expect(res.body).not.toHaveProperty('error');
+      expect(JSON.stringify(res.body)).not.toContain('refused');
     });
   });
 
@@ -292,7 +384,7 @@ describe('Adapter routes', () => {
       const res = await request(server).delete('/api/relay/adapters/claude-code');
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('REMOVE_BUILTIN_DENIED');
+      expect(res.body.code).toBe('invalid_request');
     });
   });
 

@@ -7,10 +7,10 @@
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
-  CancelHeldActionErrorSchema,
   CancelHeldActionParamsSchema,
   CancelHeldActionResponseSchema,
 } from '@dorkos/shared/connector-hold-schemas';
+import { problemResponse } from '../../core/openapi/problem-openapi.js';
 
 /**
  * Register the held-action route.
@@ -34,15 +34,10 @@ export function registerConnectorHoldsOpenApi(registry: OpenAPIRegistry): void {
         description: 'Cancelled. The action will not run.',
         content: { 'application/json': { schema: CancelHeldActionResponseSchema } },
       },
-      403: {
-        description: 'The caller is the agent that asked for the action (`HOLD_REQUESTER`)',
-        content: { 'application/json': { schema: CancelHeldActionErrorSchema } },
-      },
-      404: {
-        description:
-          'No action is waiting under that id: it already ran, was already cancelled, or DorkOS restarted (`HOLD_NOT_FOUND`)',
-        content: { 'application/json': { schema: CancelHeldActionErrorSchema } },
-      },
+      403: problemResponse('`forbidden`: the caller is the agent that asked for the action'),
+      404: problemResponse(
+        '`not_found`: no action is waiting under that id. It already ran, was cancelled, or DorkOS restarted'
+      ),
     },
   });
 }

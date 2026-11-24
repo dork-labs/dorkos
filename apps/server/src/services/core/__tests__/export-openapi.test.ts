@@ -208,14 +208,7 @@ describe('export-openapi', () => {
     const paths = generateOpenAPISpec().paths ?? {};
     const post = paths['/api/relay/messages']?.post;
     expect(post?.description).toContain('The server sets its sender.');
-    expect(Object.keys(post?.responses ?? {}).sort()).toEqual([
-      '200',
-      '400',
-      '401',
-      '403',
-      '422',
-      '503',
-    ]);
+    expect(Object.keys(post?.responses ?? {}).sort()).toEqual(['200', '400', '401', '403', '503']);
     const status = paths['/api/relay/messages/{messageId}/status']?.get;
     expect(Object.keys(status?.responses ?? {}).sort()).toEqual([
       '200',
@@ -225,10 +218,11 @@ describe('export-openapi', () => {
       '503',
     ]);
     expect(status?.responses?.['404']?.description).toContain('other-owner');
-    expect(JSON.stringify(post?.responses?.['503'])).toContain(
-      'RELAY_RECEIPT_RESPONSE_UNAVAILABLE'
-    );
-    expect(JSON.stringify(status?.responses?.['503'])).toContain('RELAY_RECEIPT_OBSERVER_BUSY');
+    // Receipt storage that is busy or gone answers a problem (DOR-4979); after
+    // acceptance it still names the message and where to watch it.
+    expect(JSON.stringify(post?.responses?.['503'])).toContain('temporarily_unavailable');
+    expect(JSON.stringify(post?.responses?.['503'])).toContain('statusUrl');
+    expect(JSON.stringify(status?.responses?.['503'])).toContain('application/problem+json');
     expect(JSON.stringify(status?.responses?.['200'])).toContain('no-store');
     const receipt = generateOpenAPISpec().components?.schemas?.RelayDeliveryReceipt;
     expect(JSON.stringify(receipt)).not.toMatch(/ownerUserId|observerToken|payload|subject/);

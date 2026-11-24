@@ -5,9 +5,10 @@ vi.mock('../../lib/api-client.js', () => {
   class ApiError extends Error {
     constructor(
       public status: number,
-      public body: { error?: string; code?: string }
+      public body: { error?: string; detail?: string; code?: string }
     ) {
-      super(body.error ?? `HTTP ${status}`);
+      // The real one reads a problem's `detail` first (`readErrorBody`).
+      super(body.detail ?? body.error ?? `HTTP ${status}`);
     }
   }
   return {
@@ -247,15 +248,15 @@ describe('connections call', () => {
   it('surfaces a server refusal and leaves stdout empty', async () => {
     apiCallMock.mockRejectedValue(
       new ApiError(403, {
-        error:
-          'This service call cannot run from an active agent session. Use an API key outside the session.',
-        code: 'CONNECTOR_PROGRAM_AGENT_IDENTITY_DENIED',
+        title: 'This account isn’t allowed to do that.',
+        code: 'forbidden',
+        detail: 'Run this with an API key, outside an agent’s chat.',
       })
     );
 
     expect(await runConnectionsDispatcher(command)).toBe(1);
     expect(console.error).toHaveBeenCalledWith(
-      'Error: This service call cannot run from an active agent session. Use an API key outside the session.'
+      'Error: Run this with an API key, outside an agent’s chat.'
     );
     expect(process.stdout.write).not.toHaveBeenCalled();
   });

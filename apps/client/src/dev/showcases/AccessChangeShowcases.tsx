@@ -75,10 +75,13 @@ function accessChangeTransport(): Transport {
       if (prop === 'undoAccessChange') {
         return async (changeId: string) => {
           if (changeId === 'change-stale') {
-            throw Object.assign(new Error('Access has changed since then.'), {
-              status: 409,
-              code: 'UNDO_STALE',
-            });
+            throw Object.assign(
+              new Error('Access changed since then. Set it on the Connections page.'),
+              {
+                status: 412,
+                code: 'precondition_failed',
+              }
+            );
           }
           return { changeId, undoId: `undo-${changeId}` };
         };

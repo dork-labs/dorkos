@@ -9,48 +9,37 @@
  * @module routes/managed-cloud-error
  */
 import type { Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { problem } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import {
   ManagedConnectorCloudError,
   type ManagedConnectorCloudErrorCode,
 } from '../services/core/auth/cloud-link-client.js';
 
-/** The stable codes a refused managed-cloud call answers with. */
-export type ManagedCloudRouteCode =
-  'cloud_link_required' | 'cloud_link_needs_update' | 'cloud_unavailable' | 'cloud_refused';
-
+/** The problem a refused managed-cloud call answers with: its code and fixed sentence. */
 interface ManagedCloudAnswer {
-  status: ContentfulStatusCode;
-  code: ManagedCloudRouteCode;
-  error: string;
+  readonly code: ProblemCode;
+  readonly detail: string;
 }
 
 const UNAVAILABLE: ManagedCloudAnswer = {
-  status: 503,
   code: 'cloud_unavailable',
-  error:
-    'DorkOS’s servers aren’t answering right now. Nothing changed. Try again in a few minutes.',
+  detail: 'DorkOS’s servers aren’t answering. Nothing changed. Try again soon.',
 };
 
 const REFUSED: ManagedCloudAnswer = {
-  status: 502,
   code: 'cloud_refused',
-  error:
-    'DorkOS’s servers couldn’t finish this. Nothing changed on this computer. Try again later.',
+  detail: 'DorkOS’s servers couldn’t finish this. Nothing changed here. Try again later.',
 };
 
 const ANSWERS: Record<ManagedConnectorCloudErrorCode, ManagedCloudAnswer> = {
   unauthorized: {
-    status: 401,
     code: 'cloud_link_required',
-    error:
-      'This computer isn’t linked to your DorkOS account anymore. Link it again in Settings › DorkOS account.',
+    detail: 'This computer isn’t linked to your DorkOS account. Link it again in Settings.',
   },
   permission_upgrade_required: {
-    status: 409,
-    code: 'cloud_link_needs_update',
-    error:
-      'This computer’s link to your DorkOS account needs updating. Link it again in Settings › DorkOS account.',
+    code: 'cloud_link_required',
+    detail: 'This computer’s link to your DorkOS account needs updating. Link it again.',
   },
   unavailable: UNAVAILABLE,
   network_error: UNAVAILABLE,
@@ -68,11 +57,11 @@ const ANSWERS: Record<ManagedConnectorCloudErrorCode, ManagedCloudAnswer> = {
  *
  * @param c - The Hono context to answer.
  * @param error - Whatever the route caught.
- * @returns The response when `error` was a `ManagedConnectorCloudError`;
+ * @returns The problem response when `error` was a `ManagedConnectorCloudError`;
  *   `undefined` when the caller must keep mapping its own error types.
  */
 export function managedCloudErrorResponse(c: Context, error: unknown): Response | undefined {
   if (!(error instanceof ManagedConnectorCloudError)) return undefined;
   const answer = ANSWERS[error.code];
-  return c.json({ error: answer.error, code: answer.code }, answer.status);
+  return problem(c, answer.code, { detail: answer.detail });
 }

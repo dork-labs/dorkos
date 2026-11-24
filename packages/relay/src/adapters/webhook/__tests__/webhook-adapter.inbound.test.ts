@@ -165,6 +165,21 @@ describe('WebhookAdapter inbound', () => {
 
       expect(result.ok).toBe(false);
       expect(result.error).toBe('Adapter not started');
+      // Not a signature failure: the caller should send it again later.
+      expect(result.status).toBe(503);
+    });
+
+    // An unsigned caller must not learn the connection exists but isn't running.
+    it('answers an unsigned request to an unstarted adapter as any bad signature', async () => {
+      const unstartedAdapter = makeAdapter();
+      const body = '{"x":1}';
+      const result = await unstartedAdapter.handleInbound(
+        Buffer.from(body),
+        buildHeaders(body, 'not-the-secret-at-all')
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.status).toBeUndefined();
     });
 
     it('returns error when relay.publish() throws', async () => {
@@ -175,6 +190,8 @@ describe('WebhookAdapter inbound', () => {
 
       expect(result.ok).toBe(false);
       expect(result.error).toBe('Publish failed');
+      // A delivery failure after the signature passed, never the signature's 401.
+      expect(result.status).toBe(500);
       expect(adapter.getStatus().errorCount).toBe(1);
       expect(adapter.getStatus().lastError).toBe('Relay unavailable');
     });

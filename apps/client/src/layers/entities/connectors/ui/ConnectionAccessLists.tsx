@@ -118,7 +118,7 @@ const THIS_CHAT_SWITCH_FAILED = 'Couldn’t change access for this chat. Try aga
  * words; anything else may pass, so it asks to try again.
  */
 function switchFailure(error: Error | null): string {
-  return (error as { code?: string } | null)?.code === 'session_access_other_agent'
+  return (error as { code?: string } | null)?.code === 'other_agent_chat'
     ? error!.message
     : THIS_CHAT_SWITCH_FAILED;
 }

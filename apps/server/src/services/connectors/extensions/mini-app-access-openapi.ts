@@ -11,6 +11,7 @@ import {
   MiniAppAccessRevokeParamsSchema,
   MiniAppAccessRevokeResponseSchema,
 } from '@dorkos/shared/mini-app-access-schemas';
+import { problemResponse } from '../../core/openapi/problem-openapi.js';
 
 /**
  * Register the mini app access routes.
@@ -32,7 +33,7 @@ export function registerMiniAppAccessOpenApi(registry: OpenAPIRegistry): void {
         description: 'Waiting reads and live yeses.',
         content: { 'application/json': { schema: MiniAppAccessListSchema } },
       },
-      403: { description: 'Not the owner at the app: an agent, a program or another site.' },
+      403: problemResponse('Not the owner at the app: an agent, a program or another site.'),
     },
   });
   registry.registerPath({
@@ -49,8 +50,8 @@ export function registerMiniAppAccessOpenApi(registry: OpenAPIRegistry): void {
         description: 'Revoked.',
         content: { 'application/json': { schema: MiniAppAccessRevokeResponseSchema } },
       },
-      403: { description: 'Not the owner at the app.' },
-      404: { description: 'No live yes under that id (`MINI_APP_ACCESS_NOT_FOUND`).' },
+      403: problemResponse('Not the owner at the app.'),
+      404: problemResponse('`not_found`: no live yes under that id.'),
     },
   });
 }

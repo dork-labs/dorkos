@@ -20,9 +20,6 @@ export interface AddedListId {
   id: string;
 }
 
-/** Refusal code when anything but the owner adds someone to one of those lists. */
-export const OWNER_ADDS_LIST_ID_CODE = 'OWNER_ADDS_LIST_ID';
-
 /**
  * Every id a save adds to either list, compared with what is stored.
  * A list the save does not name is left as it is.
@@ -100,13 +97,9 @@ export function ownerGrantReason(
   return added.length > 0 ? `${open} ${addedListReason(added, connection)}` : open;
 }
 
-/** The refusal anything but the owner gets for adding to one of those lists. */
-export function ownerAddsListIdRefusal(): { error: string; code: string } {
-  return {
-    error: 'Only the owner can let someone approve or message agents here.',
-    code: OWNER_ADDS_LIST_ID_CODE,
-  };
-}
+/** What anything but the owner is told when it adds to one of those lists (`owner_only`). */
+export const OWNER_ADDS_LIST_ID_REFUSAL =
+  'Only the owner can let someone approve or message agents here.';
 
 /**
  * The stored owner lists and DM rule, as one comparable value. An agent's card

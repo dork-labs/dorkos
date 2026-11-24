@@ -2004,7 +2004,7 @@ export interface Transport extends TransportSlices {
   updateBinding(id: string, updates: UpdateBindingRequest): Promise<AdapterBinding>;
   /**
    * Re-point an existing binding at a different agent, keeping its id. The
-   * answer to a `CHAT_ALREADY_BOUND` rejection: one chat reaches one agent, so
+   * answer to a `chat_already_bound` rejection: one chat reaches one agent, so
    * moving the binding that already owns the chat is the only way to change
    * who answers it (connection-scoping spec §Part 2).
    *
@@ -3414,7 +3414,7 @@ export interface Transport extends TransportSlices {
   /**
    * Point an unclaimed chat at an agent, creating the binding that routes it.
    * Goes through the same uniqueness check as any other binding create, so a
-   * chat another binding took in the meantime rejects with `CHAT_ALREADY_BOUND`.
+   * chat another binding took in the meantime rejects with `chat_already_bound`.
    *
    * `input.bridge: true` is the claim card's primary action, "Answer in a
    * channel": claim, binding, and bridge happen in one call. The claim always

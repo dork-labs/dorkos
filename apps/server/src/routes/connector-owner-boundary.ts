@@ -15,6 +15,8 @@
  * @module routes/connector-owner-boundary
  */
 import type { Context, MiddlewareHandler } from 'hono';
+import { problem } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { notePersonSessionMissing } from '../lib/person-without-session.js';
@@ -53,15 +55,31 @@ export function requestUser(c: Context<ApiEnv>): RequestUser | undefined {
 }
 
 /**
- * The 403 every owner refusal answers with.
+ * The 403 problem every owner refusal answers with.
  *
  * @param c - The Hono context.
- * @param code - Why the caller was refused.
- * @param message - What the person reads.
+ * @param code - Why the caller was refused: a 403 code.
+ * @param detail - What the person reads.
  * @returns The response.
  */
-export function ownerRefusal(c: Context<ApiEnv>, code: string, message: string): Response {
-  return c.json({ error: message, code, message }, 403);
+export function ownerRefusal(
+  c: Context<ApiEnv>,
+  code: Extract<ProblemCode, 'forbidden' | 'origin_not_allowed' | 'person_only' | 'owner_only'>,
+  detail: string
+): Response {
+  return problem(c, code, { detail });
+}
+
+/**
+ * The 401 for a caller whose account owner DorkOS could not work out.
+ *
+ * @param c - The Hono context.
+ * @returns The response.
+ */
+export function ownerUnverified(c: Context<ApiEnv>): Response {
+  return problem(c, 'unauthenticated', {
+    detail: 'DorkOS couldn’t confirm who owns this account.',
+  });
 }
 
 /**
@@ -78,11 +96,7 @@ export function untrustedOriginRefusal(
   const origin = c.env.incoming.headers.origin;
   const trustedOrigins = deps.trustedOrigins?.() ?? resolveTrustedOrigins();
   if (!origin || trustedOrigins.includes(origin)) return undefined;
-  return ownerRefusal(
-    c,
-    'connector_owner_origin_required',
-    'Open this account action from the DorkOS app.'
-  );
+  return ownerRefusal(c, 'origin_not_allowed', 'Open this account action from the DorkOS app.');
 }
 
 /**
@@ -113,21 +127,13 @@ export function resolveConnectorOperator(
   const originRefusal = untrustedOriginRefusal(c, deps);
   if (originRefusal) return originRefusal;
   if (presentsMachineSignal(c) || c.env.incoming.headers.authorization !== undefined) {
-    return ownerRefusal(
-      c,
-      'connector_owner_required',
-      'Programs and agents cannot make account decisions.'
-    );
+    return ownerRefusal(c, 'person_only', 'Programs and agents can’t make account decisions.');
   }
   const user = requestUser(c);
   const gated = deps.loginEnabled(honoRequestFacts(c));
   if (gated && user?.credential !== 'cookie') {
     if (!user) notePersonSessionMissing(honoRequestFacts(c));
-    return ownerRefusal(
-      c,
-      'operator_cookie_required',
-      'Sign in to the DorkOS app to make this account decision.'
-    );
+    return ownerRefusal(c, 'person_only', 'Sign in to the DorkOS app to make this decision.');
   }
   // Connections reach their apps through this computer's DorkOS account, so
   // with login on they are the owner's alone, never another signed-in
@@ -140,7 +146,7 @@ export function resolveConnectorOperator(
     );
   }
   const owner = deps.resolveOwner(user);
-  if (!owner) return c.json({ error: 'DorkOS could not verify who owns this account.' }, 401);
+  if (!owner) return ownerUnverified(c);
   return owner;
 }
 
@@ -157,7 +163,10 @@ export function migrationHealthGate(
   return async (c, next) => {
     const health = registry.migrationHealth();
     if (health.status === 'migration_failed') {
-      return c.json({ status: health.status, error: health.error }, 503);
+      // `health.error` names the failed step; it is in the startup log, never here.
+      return problem(c, 'temporarily_unavailable', {
+        detail: 'Connected apps didn’t start. Restart DorkOS, then try again.',
+      });
     }
     await next();
   };

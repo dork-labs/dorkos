@@ -304,7 +304,11 @@ describe('an agent adding someone who may approve on a chat connection', () => {
     const asked = await agentAddsApprover();
     lists = { ...lists, approverAllowlist: '' };
     const done = await yesWithStepUp(asked.body.approvalId);
-    expect(done.body).toMatchObject({ ok: true, status: 409, result: { code: 'LISTS_CHANGED' } });
+    expect(done.body).toMatchObject({
+      ok: true,
+      status: 412,
+      result: { code: 'precondition_failed' },
+    });
     expect(manager.updateConfig).not.toHaveBeenCalled();
   });
 

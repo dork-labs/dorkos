@@ -94,15 +94,28 @@ describe('connections real HTTP seam', () => {
       });
       const id = request.url?.split('/').at(-1);
       if (id === 'unknown') {
-        response.writeHead(409, { 'Content-Type': 'application/json' });
+        response.writeHead(409, { 'Content-Type': 'application/problem+json' });
         response.end(
-          JSON.stringify({ error: 'Review resolution is indeterminate.', code: 'review_resolving' })
+          JSON.stringify({
+            type: 'urn:dorkos:problem:review_resolving',
+            title: 'This review is being settled now.',
+            status: 409,
+            code: 'review_resolving',
+            detail: 'This review is being settled now. Check it again shortly.',
+          })
         );
         return;
       }
       if (id === 'upstream') {
-        response.writeHead(503, { 'Content-Type': 'application/json' });
-        response.end(JSON.stringify({ error: 'Connector review service unavailable.' }));
+        response.writeHead(503, { 'Content-Type': 'application/problem+json' });
+        response.end(
+          JSON.stringify({
+            type: 'urn:dorkos:problem:temporarily_unavailable',
+            title: 'That’s not available right now. Try again soon.',
+            status: 503,
+            code: 'temporarily_unavailable',
+          })
+        );
         return;
       }
       const now = '2026-09-06T12:00:00.000Z';
