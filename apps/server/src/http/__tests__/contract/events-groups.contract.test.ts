@@ -36,12 +36,16 @@ import {
   stepUpAt,
   confirmSetupAnswer,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json$/ };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
-const CORS_REFUSED = z.object({ code: z.literal('ORIGIN_NOT_ALLOWED') }).loose();
+const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 /** The global stream's ceiling on concurrent readers (`SSE.MAX_TOTAL_CLIENTS`). */
@@ -272,18 +276,18 @@ contractSuite('the global event stream, login off, the refusals', [
     method: 'POST',
     path: '/api/events',
     body: {},
-    expect: { status: 404, headers: JSON_TYPE, body: NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NOT_FOUND },
   },
   {
     name: 'DELETE /api/events does not exist',
     method: 'DELETE',
     path: '/api/events',
-    expect: { status: 404, headers: JSON_TYPE, body: NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NOT_FOUND },
   },
   {
     name: 'GET /api/events/anything does not exist',
     path: '/api/events/anything',
-    expect: { status: 404, headers: JSON_TYPE, body: NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NOT_FOUND },
   },
   {
     name: 'GET /api/events at a foreign host is refused by the host guard',

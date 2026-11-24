@@ -48,31 +48,45 @@ export interface ProblemCodeDefinition {
  */
 export const PROBLEM_CODE_LIST = [
   // Who is asking.
-  { code: 'unauthenticated', status: 401, title: 'Sign in to continue.' },
+  { code: 'unauthenticated', status: 401, title: 'Sign in to DorkOS to continue.' },
   {
     code: 'person_session_required',
     status: 401,
     title: 'Enter your password to confirm it’s you.',
   },
-  { code: 'agent_identity_unverified', status: 401, title: 'This agent could not be verified.' },
+  {
+    code: 'agent_identity_unverified',
+    status: 401,
+    title: 'DorkOS couldn’t confirm which agent sent this.',
+  },
   { code: 'step_up_required', status: 428, title: 'Confirm it’s you to continue.' },
-  { code: 'forbidden', status: 403, title: 'You can’t do this.' },
-  { code: 'owner_only', status: 403, title: 'Only the owner can do this.' },
-  { code: 'operator_only', status: 403, title: 'Only the person at this computer can do this.' },
-  { code: 'person_only', status: 403, title: 'Only a person can do this.' },
+  { code: 'forbidden', status: 403, title: 'This account isn’t allowed to do that.' },
+  { code: 'owner_only', status: 403, title: 'Only the owner of this DorkOS can do that.' },
+  { code: 'operator_only', status: 403, title: 'Only the person at this computer can do that.' },
+  { code: 'person_only', status: 403, title: 'Only a person can do that, not an agent.' },
   { code: 'not_from_wifi', status: 403, title: 'This can’t be done from another device on Wi-Fi.' },
   { code: 'origin_not_allowed', status: 403, title: 'This page isn’t allowed to call DorkOS.' },
   { code: 'host_not_allowed', status: 403, title: 'This address isn’t allowed to reach DorkOS.' },
-  { code: 'outside_boundary', status: 403, title: 'That path is outside the allowed folders.' },
+  {
+    code: 'outside_boundary',
+    status: 403,
+    title: 'That path is outside the folders DorkOS may use.',
+  },
   // The request itself.
-  { code: 'malformed_request', status: 400, title: 'The request could not be read.' },
-  { code: 'request_too_large', status: 413, title: 'The request is too large.' },
-  { code: 'unsupported_media_type', status: 415, title: 'That kind of content isn’t accepted.' },
-  { code: 'not_found', status: 404, title: 'Not found.' },
+  /** The body could not be parsed at all: broken JSON, a cut-off form. */
+  { code: 'malformed_request', status: 400, title: 'The request body couldn’t be read.' },
+  /**
+   * The body was read, and failed the route's checks (its schema). `detail`
+   * names the first field and what was wrong with it; `issues` lists them all.
+   */
+  { code: 'invalid_request', status: 400, title: 'The request didn’t pass its checks.' },
+  { code: 'request_too_large', status: 413, title: 'The request is over the size limit.' },
+  { code: 'unsupported_media_type', status: 415, title: 'DorkOS can’t read that kind of content.' },
+  { code: 'not_found', status: 404, title: 'That doesn’t exist here.' },
   { code: 'session_not_found', status: 404, title: 'That chat wasn’t found.' },
   { code: 'unknown_capability', status: 404, title: 'That action doesn’t exist.' },
   // The state it met.
-  { code: 'conflict', status: 409, title: 'Something changed. Try again.' },
+  { code: 'conflict', status: 409, title: 'That clashes with a change made meanwhile.' },
   { code: 'session_locked', status: 409, title: 'This chat is busy with another reply.' },
   /**
    * Refused until a person approves. A refusal, so 403: the capability gate's
@@ -80,15 +94,21 @@ export const PROBLEM_CODE_LIST = [
    * `extensions-restart` answers this code with a `409` today; it moves to
    * `403` when DOR-4979 switches the routes.
    */
-  { code: 'needs_approval', status: 403, title: 'This needs approval first.' },
+  { code: 'needs_approval', status: 403, title: 'This waits for a person to approve it.' },
   { code: 'precondition_failed', status: 412, title: 'Something changed since you last looked.' },
-  { code: 'rate_limited', status: 429, title: 'Too many requests. Try again shortly.' },
+  { code: 'rate_limited', status: 429, title: 'Too many requests. Wait a moment, then try again.' },
   // The server's own faults.
-  { code: 'internal_error', status: 500, title: 'Something went wrong.' },
+  { code: 'internal_error', status: 500, title: 'DorkOS hit an error on its side.' },
+  /** A chat pinned to an agent program this computer is not running. */
+  {
+    code: 'runtime_not_available',
+    status: 503,
+    title: 'This chat’s program isn’t running on this computer.',
+  },
   {
     code: 'temporarily_unavailable',
     status: 503,
-    title: 'Not available right now. Try again soon.',
+    title: 'That’s not available right now. Try again soon.',
   },
 ] as const satisfies readonly ProblemCodeDefinition[];
 
@@ -198,4 +218,62 @@ export type Problem = z.infer<typeof ProblemSchema>;
  */
 export function isProblem(value: unknown): value is Problem {
   return ProblemSchema.safeParse(value).success;
+}
+
+/**
+ * What a failed response said, read the same way by every client: a message to
+ * show a person and, when the server gave one, a stable code to branch on.
+ */
+export interface ErrorBodyReading {
+  /** A sentence safe to show a person. */
+  message: string;
+  /** The machine-readable failure code, exactly as the server spelled it. */
+  code?: string;
+  /** The status the body itself named (a problem's `status`). */
+  status?: number;
+  /** What failed validation, in Zod's flattened form. */
+  issues?: ProblemIssues;
+  /** How long to wait before retrying, when the body says. */
+  retryAfterMs?: number;
+}
+
+/** Whether a value is a validation failure in Zod's flattened form. */
+function isFlattenedIssues(value: unknown): value is ProblemIssues {
+  return ProblemIssuesSchema.safeParse(value).success;
+}
+
+/**
+ * Read a failed response's parsed JSON body: a problem document first
+ * (`detail`, else `title`), then the old `{ error, code, details }` shape.
+ *
+ * The old shape is read only while DOR-4979 moves the routes over, folder by
+ * folder; the series' last change removes that branch.
+ *
+ * @param body - The parsed body, of unknown shape (or nothing, when it was not JSON).
+ * @param fallbackMessage - The message when the body says none, such as `HTTP 500`.
+ * @returns The reading.
+ */
+export function readErrorBody(body: unknown, fallbackMessage: string): ErrorBodyReading {
+  if (isProblem(body)) {
+    return {
+      message: body.detail ?? body.title,
+      code: body.code,
+      status: body.status,
+      ...(body.issues === undefined ? {} : { issues: body.issues }),
+      ...(body.retryAfterMs === undefined ? {} : { retryAfterMs: body.retryAfterMs }),
+    };
+  }
+  if (typeof body !== 'object' || body === null) return { message: fallbackMessage };
+  const old = body as { error?: unknown; message?: unknown; code?: unknown; details?: unknown };
+  const message =
+    typeof old.error === 'string' && old.error !== ''
+      ? old.error
+      : typeof old.message === 'string' && old.message !== ''
+        ? old.message
+        : fallbackMessage;
+  return {
+    message,
+    ...(typeof old.code === 'string' ? { code: old.code } : {}),
+    ...(isFlattenedIssues(old.details) ? { issues: old.details } : {}),
+  };
 }

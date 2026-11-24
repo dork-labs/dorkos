@@ -37,14 +37,13 @@ import { prepareTaskApprovalRequest } from './task-approval-request.js';
 import { applyTaskFileUpdate } from '../services/tasks/lifecycle/update-task-file.js';
 import { conflictingTimingRequest } from '../services/tasks/timing/effective-timing.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { clearsTheAgentBar, refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { errorRefusalUnlessOwner, runAccountWrite } from './cloud-owner-bar.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { raiseStanding } from '../services/notifications/standing-events.js';
@@ -106,7 +105,7 @@ export async function updateTaskHttp(
   if (unknownFields) return c.json(unknownFields, 400);
 
   const parsed = UpdateTaskRequestSchema.safeParse(body);
-  if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+  if (!parsed.success) return validationProblem(c, parsed.error);
   const existing = store.getTask(id);
   if (!existing) return c.json({ error: 'Scheduled task not found' }, 404);
   // Rules, then a stale review, then a looser-than-proposed approval (#3794).

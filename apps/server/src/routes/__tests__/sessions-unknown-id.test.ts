@@ -165,6 +165,6 @@ describe('POST /api/sessions/:id/messages — unknown ids (DOR-2712)', () => {
       .send({ content: 'next' });
 
     expect(res.status).toBe(503);
-    expect(res.body.code).toBe('RUNTIME_NOT_AVAILABLE');
+    expect(res.body.code).toBe('runtime_not_available');
   });
 });

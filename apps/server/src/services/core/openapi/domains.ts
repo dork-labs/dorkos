@@ -29,9 +29,11 @@ import { registerDirectChatOpenApi } from '../../rooms/direct-chat/direct-chat-o
 import { registerDocLinksOpenApi } from '../../docs/links/doc-links-openapi.js';
 import { registerDevicesOpenApi } from '../auth/sessions/devices-openapi.js';
 import { registerOwnerFactorsOpenApi } from '../auth/factors/owner-factors-openapi.js';
+import { registerProblemOpenApi } from './problem-openapi.js';
 
 /** Register independent domain paths in their existing order. */
 export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
+  registerProblemOpenApi(registry);
   registerConnectorEventOpenApi(registry);
   registerConnectorSpendingOpenApi(registry);
   registerSessionContinueOpenApi(registry);

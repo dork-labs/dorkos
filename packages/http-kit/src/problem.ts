@@ -74,7 +74,19 @@ export function problemBody(code: ProblemCode, options: ProblemOptions = {}): Pr
  * @returns The response.
  */
 export function problem(c: Context, code: ProblemCode, options: ProblemOptions = {}): Response {
-  const body = problemBody(code, options);
+  return sendProblem(c, problemBody(code, options));
+}
+
+/**
+ * Answer a request with a problem document already built, such as one the
+ * server's error handler chose: its status, the problem media type, and a
+ * `Retry-After` header when it says how long to wait.
+ *
+ * @param c - The Hono context.
+ * @param body - The document, from {@link problemBody}.
+ * @returns The response.
+ */
+export function sendProblem(c: Context, body: Problem): Response {
   const headers: Record<string, string> = { 'Content-Type': PROBLEM_CONTENT_TYPE };
   if (body.retryAfterMs !== undefined) {
     headers['Retry-After'] = String(Math.ceil(body.retryAfterMs / 1000));
@@ -82,13 +94,62 @@ export function problem(c: Context, code: ProblemCode, options: ProblemOptions =
   return c.body(JSON.stringify(body), body.status as ContentfulStatusCode, headers);
 }
 
+/** The most words {@link validationDetail} writes, so it fits a line of app copy. */
+const VALIDATION_DETAIL_MAX_WORDS = 15;
+
 /**
- * Answer a request whose input failed its schema: a `malformed_request` problem
- * carrying the failure in Zod's flattened form.
+ * One sentence for a validation failure: the first field and what was wrong
+ * with it ("`name`: Required."), then how many more there are.
+ *
+ * @param issues - The failure in Zod's flattened form.
+ * @returns The sentence, or `undefined` when the failure names nothing.
+ */
+export function validationDetail(issues: ProblemIssues): string | undefined {
+  const lines = [
+    ...Object.entries(issues.fieldErrors).flatMap(([field, messages]) =>
+      messages.map((message) => `\`${field}\`: ${message}`)
+    ),
+    ...issues.formErrors,
+  ];
+  if (lines.length === 0) return undefined;
+  const more = lines.length - 1;
+  const suffix = more > 0 ? ` (and ${more} more)` : '';
+  const budget = VALIDATION_DETAIL_MAX_WORDS - (more > 0 ? 3 : 0);
+  const words = lines[0]!.trim().replace(/[.]+$/, '').split(/\s+/);
+  const first = words.length > budget ? `${words.slice(0, budget).join(' ')}…` : words.join(' ');
+  return `${first}${suffix}.`;
+}
+
+/**
+ * The problem document for input that failed its schema: an `invalid_request`
+ * carrying the failure, and a `detail` naming the first field when the sender
+ * gives none.
+ *
+ * @param issues - The failure in Zod's flattened form.
+ * @param options - Anything else to say; `issues` is always the failure's.
+ * @returns The document.
+ */
+export function validationProblemBody(
+  issues: ProblemIssues,
+  options: Omit<ProblemOptions, 'issues'> = {}
+): Problem {
+  const detail = options.detail ?? validationDetail(issues);
+  return problemBody('invalid_request', {
+    ...options,
+    ...(detail === undefined ? {} : { detail }),
+    issues,
+  });
+}
+
+/**
+ * Answer a request whose input was read and failed its schema: an
+ * `invalid_request` problem carrying the failure in Zod's flattened form (a
+ * body that could not be read at all is `malformed_request`, from the chain).
  *
  * @param c - The Hono context.
  * @param error - Why the input failed its schema.
- * @param options - Anything else to say; `issues` is always the error's.
+ * @param options - Anything else to say; `issues` is always the error's, and
+ *   `detail` defaults to one naming the first field.
  * @returns The response.
  */
 export function validationProblem(
@@ -101,8 +162,8 @@ export function validationProblem(
   for (const [field, messages] of Object.entries(flat.fieldErrors)) {
     if (Array.isArray(messages)) fieldErrors[field] = messages;
   }
-  return problem(c, 'malformed_request', {
-    ...options,
-    issues: { formErrors: flat.formErrors, fieldErrors },
-  });
+  return sendProblem(
+    c,
+    validationProblemBody({ formErrors: flat.formErrors, fieldErrors }, options)
+  );
 }

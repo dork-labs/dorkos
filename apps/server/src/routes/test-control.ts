@@ -46,9 +46,8 @@ import { getRemoteConnectionStore } from '../services/communities/remote/state.j
 import type { AgentMcpServerService } from '../services/mesh/agent-mcp-server-service.js';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 
 /** The slice of the agent registry the seeding routes use. */
 export interface TestControlMesh {
@@ -189,7 +188,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   router.post('/scenario', (c) => {
     const result = scenarioSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
+      return validationProblem(c, result.error);
     }
     const { name, sessionId } = result.data;
     try {
@@ -232,7 +231,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   router.post('/canonical-id', async (c) => {
     const result = canonicalIdSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
+      return validationProblem(c, result.error);
     }
     const { sessionId, canonicalId, runtime } = result.data;
     // A draft is not bound yet; declare on the runtime its first send will choose.
@@ -283,7 +282,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   router.post('/interrupt-outcome', (c) => {
     const result = interruptOutcomeSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
+      return validationProblem(c, result.error);
     }
     declareInterruptOutcome(result.data.outcome ?? undefined);
     return c.json({ ok: true, outcome: result.data.outcome });
@@ -314,7 +313,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   router.post('/step', (c) => {
     const result = stepSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
+      return validationProblem(c, result.error);
     }
     return c.json({ ok: true, released: interactionGate.step(result.data.sessionId) });
   });
@@ -403,7 +402,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   router.post('/persistent', async (c) => {
     const result = heldProcessSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
+      return validationProblem(c, result.error);
     }
     const { sessionId, enabled } = result.data;
     const runtime = await resolveTestModeRuntime(sessionId);
@@ -428,7 +427,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   router.get('/persistent', async (c) => {
     const result = heldProcessQuerySchema.safeParse(readQuery(c));
     if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
+      return validationProblem(c, result.error);
     }
     const { sessionId } = result.data;
     const resolved = await resolveTestModeRuntime(sessionId);
@@ -455,7 +454,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   router.post('/reap', async (c) => {
     const result = heldProcessQuerySchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
+      return validationProblem(c, result.error);
     }
     const { sessionId } = result.data;
     const resolved = await resolveTestModeRuntime(sessionId);
@@ -496,7 +495,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   router.post('/room-worktree-commit', async (c) => {
     const result = roomWorktreeCommitSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
+      return validationProblem(c, result.error);
     }
     const { roomId, agentPath, text, message } = result.data;
     const worktrees = tryGetRoomWorktreeManager();
@@ -574,7 +573,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   router.post('/agent-token', async (c) => {
     const result = agentTokenSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
+      return validationProblem(c, result.error);
     }
     const { agentPath } = result.data;
 
@@ -827,7 +826,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   router.post('/seed-agent', async (c) => {
     const input = seedAgentSchema.safeParse(readJsonBody(c));
     if (!input.success) {
-      return c.json(validationFailureBody(input.error), 400);
+      return validationProblem(c, input.error);
     }
     if (runtimeRegistry.has(FIXTURE_AGENT_RUNTIME)) {
       return c.json(
@@ -943,7 +942,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   router.post('/seed-bridge', async (c) => {
     const result = seedBridgeSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
+      return validationProblem(c, result.error);
     }
     try {
       // Register the seeded agent into the mesh cache so the room roster can
@@ -1099,7 +1098,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   router.post('/probe-mcp-oauth-server', async (c) => {
     const parsed = probeSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json(validationFailureBody(parsed.error), 400);
+      return validationProblem(c, parsed.error);
     }
     const service = deps.agentMcpServers?.();
     if (!service) {
@@ -1178,7 +1177,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   router.post('/connectors/request', async (c) => {
     const parsed = connectorRuntimeRequestProbeSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json(validationFailureBody(parsed.error), 400);
+      return validationProblem(c, parsed.error);
     }
     const probe = deps.connectorRequestProbe?.();
     if (!probe) return c.json({ error: 'Service request probe is unavailable.' }, 503);
@@ -1197,7 +1196,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
   router.post('/connectors/execute-read', async (c) => {
     const parsed = connectorRuntimeExecutionProbeSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json(validationFailureBody(parsed.error), 400);
+      return validationProblem(c, parsed.error);
     }
     const probe = deps.connectorExecutionProbe?.();
     if (!probe) return c.json({ error: 'Service access probe is unavailable.' }, 503);

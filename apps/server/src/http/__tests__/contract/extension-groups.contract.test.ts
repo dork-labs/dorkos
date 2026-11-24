@@ -48,23 +48,25 @@ import {
   stepUpAt,
   confirmSetupAnswer,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const CROSS_SITE = { Origin: 'https://evil.example' };
 /** CORS refuses a page from another site before any route's own bar runs. */
-const CORS_REFUSED = {
-  error:
-    'This instance does not answer to pages from "https://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
-  code: 'ORIGIN_NOT_ALLOWED',
-};
+const CORS_REFUSED = problemBody('origin_not_allowed', {
+  detail:
+    'This instance does not answer to pages from this address. If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
+});
 /** A DELETE's JSON body, framed: Node sends a DELETE body only with a length. */
 const deleteBody = (body: object) => ({
   'content-length': String(Buffer.byteLength(JSON.stringify(body))),
 });
-const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
+const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 const COOKIE_REQUIRED = z.object({ code: z.literal('operator_cookie_required') }).loose();
@@ -120,7 +122,7 @@ const CASES: ContractCase[] = [
     body: { cwd: 42 },
     expect: {
       status: 400,
-      schema: z.object({ error: z.literal('Validation failed'), details: z.unknown() }),
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {
@@ -319,7 +321,10 @@ const CASES: ContractCase[] = [
     method: 'PUT',
     path: `/api/extensions/${MISSING}/secrets/token`,
     body: { value: '' },
-    expect: { status: 400, schema: z.object({ error: z.literal('Validation failed') }).loose() },
+    expect: {
+      status: 400,
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
+    },
   },
   {
     name: 'deleting a secret of an extension that is not installed is a 404',
@@ -337,7 +342,10 @@ const CASES: ContractCase[] = [
     method: 'PUT',
     path: `/api/extensions/${MISSING}/settings/name`,
     body: { value: { nested: true } },
-    expect: { status: 400, schema: z.object({ error: z.literal('Validation failed') }).loose() },
+    expect: {
+      status: 400,
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
+    },
   },
   {
     name: 'resetting a setting of an extension that is not installed is a 404',
@@ -392,7 +400,7 @@ const CASES: ContractCase[] = [
     path: '/api/extensions/cwd-changed',
     headers: { 'content-type': 'application/json' },
     body: '{not json',
-    expect: { status: 500, schema: MALFORMED_JSON },
+    expect: { status: 400, schema: MALFORMED_JSON },
   },
   {
     name: 'a foreign Host is refused before any route',
@@ -784,7 +792,7 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
       path: `/api/ext/${ROUTED}/echo`,
       headers: { 'content-type': 'application/json' },
       body: '{not json',
-      expect: { status: 500, schema: MALFORMED_JSON },
+      expect: { status: 400, schema: MALFORMED_JSON },
     });
   });
 
@@ -800,12 +808,14 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
   });
 
   it('answers a route that throws with the server’s own error, and keeps serving', async () => {
-    const thrown = z.object({ error: z.string(), code: z.literal('INTERNAL_ERROR') }).strict();
+    const thrown = z.object({ detail: z.string(), code: z.literal('internal_error') }).loose();
     await check(server, {
       path: `/api/ext/${ROUTED}/boom`,
       expect: {
         status: 500,
-        body: { error: 'the extension route broke', code: 'INTERNAL_ERROR' },
+        body: problemBody('internal_error', {
+          detail: 'DorkOS hit an error. It’s in the server log.',
+        }),
         schema: thrown,
       },
     });
@@ -813,12 +823,19 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
       path: `/api/ext/${ROUTED}/boom-later`,
       expect: {
         status: 500,
-        body: { error: 'the extension route broke later', code: 'INTERNAL_ERROR' },
+        body: problemBody('internal_error', {
+          detail: 'DorkOS hit an error. It’s in the server log.',
+        }),
       },
     });
     await check(server, {
       path: `/api/ext/${ROUTED}/handed-on`,
-      expect: { status: 500, body: { error: 'handed on', code: 'INTERNAL_ERROR' } },
+      expect: {
+        status: 500,
+        body: problemBody('internal_error', {
+          detail: 'DorkOS hit an error. It’s in the server log.',
+        }),
+      },
     });
     await check(server, { path: '/api/health', expect: { status: 200 } });
   });
@@ -1280,7 +1297,12 @@ describe('contract: an extension served with a fetch handler (login off)', () =>
   it('answers a fetch handler that throws with the server’s own error, and keeps serving', async () => {
     await check(server, {
       path: `/api/ext/${FETCHED}/boom`,
-      expect: { status: 500, body: { error: 'the fetch handler broke', code: 'INTERNAL_ERROR' } },
+      expect: {
+        status: 500,
+        body: problemBody('internal_error', {
+          detail: 'DorkOS hit an error. It’s in the server log.',
+        }),
+      },
     });
     await check(server, { path: '/api/health', expect: { status: 200 } });
   });

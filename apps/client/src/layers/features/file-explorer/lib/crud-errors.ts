@@ -26,7 +26,11 @@ const KNOWN_CODES: readonly CrudErrorCode[] = [
 
 /** Read the stable `code` off a thrown file-service error, if present. */
 export function getErrorCode(err: unknown): CrudErrorCode | undefined {
-  const code = errorCodeOf(err);
+  const sent = errorCodeOf(err);
+  // A path outside the boundary that reaches the server's error handler is
+  // answered `outside_boundary` (DOR-4979); the file routes' own refusal still
+  // says `OUTSIDE_BOUNDARY` until they move over. Both are the same refusal.
+  const code = sent === 'outside_boundary' ? 'OUTSIDE_BOUNDARY' : sent;
   return code !== undefined && (KNOWN_CODES as readonly string[]).includes(code)
     ? (code as CrudErrorCode)
     : undefined;

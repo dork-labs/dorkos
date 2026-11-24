@@ -147,8 +147,8 @@ describe('POST /api/capabilities/:id/invoke', () => {
       .post('/api/capabilities/test.echo/invoke')
       .send({ msg: 123 });
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Validation failed');
-    expect(res.body.details).toBeDefined();
+    expect(res.body.code).toBe('invalid_request');
+    expect(res.body.issues).toBeDefined();
   });
 
   it('surfaces a capability error payload verbatim as 400', async () => {

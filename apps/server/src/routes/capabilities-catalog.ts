@@ -17,17 +17,15 @@
  * @module routes/capabilities-catalog
  */
 import { Hono } from 'hono';
-
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
-import { validationFailureBody } from '../lib/route-utils.js';
-
 import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
 import {
   InvalidCursorError,
   listCapabilitiesInputSchema,
   projectCatalog,
 } from '../services/core/self-description/catalog-projection.js';
+import { validationProblem } from '@dorkos/http-kit';
 
 /**
  * The capability-catalog routes over a composed registry.
@@ -39,7 +37,7 @@ export function createCapabilitiesCatalogRoutes(registry: CapabilityRegistry): H
   const router = new Hono<ApiEnv>();
   router.get('/', (c) => {
     const parsed = listCapabilitiesInputSchema.safeParse(readQuery(c));
-    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     try {
       return c.json(projectCatalog(registry.catalog(), parsed.data));
     } catch (err) {

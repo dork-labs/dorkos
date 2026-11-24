@@ -49,6 +49,7 @@ import {
   stepUpAt,
   confirmSetupAnswer,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 /** The repository root: the composed server's directory boundary. */
 const REPO_ROOT = realpathSync(
@@ -145,13 +146,17 @@ writeSkillPack(LINKABLE, LINKED_PACK);
 afterAll(() => rmSync(WORK, { recursive: true, force: true }));
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 /** A caller holding an approval token is the requester, never the person. */
 const REQUESTER = { 'X-DorkOS-Approval': 'not-a-real-approval' };
-const VALIDATION_FAILED = z.object({ error: z.literal('Validation failed') }).loose();
-const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
+const VALIDATION_FAILED = z
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
+  .loose();
+const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const OUTSIDE_BOUNDARY = { error: 'Access denied: projectPath outside boundary' };
 const CLIENT_OUTDATED = z
   .object({ error: z.string(), code: z.literal('client_outdated') })
@@ -255,7 +260,7 @@ contractSuite('marketplace groups', [
     path: '/api/marketplace/sources',
     headers: { 'content-type': 'application/json' },
     body: '{"name":',
-    expect: { status: 500, schema: MALFORMED_JSON },
+    expect: { status: 400, schema: MALFORMED_JSON },
   },
   {
     name: 'POST /api/marketplace/sources refuses an address git must never see',

@@ -41,7 +41,7 @@ import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { getExtensionInbox } from '../services/extensions/inbox/extension-inbox.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { logger } from '../lib/logger.js';
@@ -114,7 +114,7 @@ export function createExtensionDecisionsRoutes(
   // follow-up offers a person has not answered yet.
   router.get('/', (c) => {
     const query = ListExtensionDecisionsQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return c.json({ error: 'Invalid query' }, 400);
+    if (!query.success) return validationProblem(c, query.error);
     const inbox = getExtensionInbox();
     if (!inbox) return c.json(INBOX_NOT_READY, 503);
     return c.json({

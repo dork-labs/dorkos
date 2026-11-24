@@ -12,9 +12,8 @@
 import { Hono } from 'hono';
 import { TriageCreditsChoiceSchema } from '@dorkos/shared/heartbeat-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import { errorRefusalUnlessOwner, runAccountWrite } from './cloud-owner-bar.js';
 
 /** What the route reads and writes. */
@@ -41,7 +40,7 @@ export function createHeartbeatTriageRoutes(deps: HeartbeatTriageRouterDeps): Ho
     });
     if (refusal) return c.json(refusal, 403);
     const parsed = TriageCreditsChoiceSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const { useCredits } = parsed.data;
     const run = async () => {
       const before = deps.choice();

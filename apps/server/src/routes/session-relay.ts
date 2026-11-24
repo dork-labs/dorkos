@@ -95,6 +95,7 @@ import {
   livePasskeyDeps,
   type SessionRelayPasskeyDeps,
 } from './session-relay-passkeys.js';
+import { apiNotFound } from '../http/unclaimed.js';
 
 /** Refusal code for a write from anywhere but the owner at this computer. */
 export const SESSION_RELAY_NEEDS_THIS_COMPUTER = 'SESSION_RELAY_NEEDS_THIS_COMPUTER';
@@ -271,7 +272,7 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
   // The whole group is off on a hub and while the experiment is off.
   router.use('*', async (c, next) => {
     if (deps.isHub() || !deps.enabled()) {
-      return c.json(errorBody('Not found', 'API_NOT_FOUND'), 404);
+      return apiNotFound(c);
     }
     c.header('Cache-Control', 'no-store');
     await next();

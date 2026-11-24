@@ -37,11 +37,9 @@ import {
   SetPermissionPresetBodySchema,
   UndoPermissionChangeBodySchema,
 } from '@dorkos/shared/permissions';
-
-import { validationFailureBody } from '../lib/route-utils.js';
 import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
@@ -214,7 +212,7 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
 
   router.get('/permissions/history', async (c) => {
     const query = PermissionHistoryQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
     return c.json(
       await listPermissionHistory(activity, {
         limit: query.data.limit,
@@ -228,7 +226,7 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     const caller = person(c);
     if ('refusal' in caller) return caller.refusal;
     const body = SetPermissionPresetBodySchema.safeParse(readJsonBody(c));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     const now = await permissions.getOverview();
     const raises = presetRaises(body.data.preset, body.data.applyToAgents, now);
     if (fromWifi(c) && raises) return c.json(wifiRaiseRefusal(), 403);
@@ -256,7 +254,7 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     const caller = person(c);
     if ('refusal' in caller) return caller.refusal;
     const body = PatchPermissionDefaultsBodySchema.safeParse(readJsonBody(c));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     const raises = defaultsPatchRaises(body.data, await permissions.getOverview());
     if (fromWifi(c) && raises) return c.json(wifiRaiseRefusal(), 403);
     const run = async () => {
@@ -282,7 +280,7 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     if ('refusal' in caller) return caller.refusal;
     // An empty POST reads as `{}`, as Express 5's undefined `req.body` did: a plain Undo.
     const body = UndoPermissionChangeBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     // An Undo can put back a looser setting, and which way it goes is only
     // known once it runs, so from Wi-Fi it is refused (DOR-3037).
     if (fromWifi(c)) return c.json({ error: WIFI_UNDO_REFUSAL, code: NOT_FROM_WIFI }, 403);
@@ -326,7 +324,7 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     const caller = person(c);
     if ('refusal' in caller) return caller.refusal;
     const body = PatchAgentPermissionsBodySchema.safeParse(readJsonBody(c));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     const id = c.req.param('id');
     let raises: boolean;
     try {

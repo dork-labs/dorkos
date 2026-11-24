@@ -49,9 +49,13 @@ import {
   stepUpAt,
   confirmSetupAnswer,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json$/ };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const UNVERIFIED = {
@@ -60,10 +64,11 @@ const UNVERIFIED = {
   code: 'AGENT_IDENTITY_UNVERIFIED',
 };
 const NO_SUCH_ROOM = z.object({ code: z.literal('ROOM_NOT_FOUND') }).loose();
-const VALIDATION_FAILED = z.object({ error: z.literal('Validation failed'), details: z.unknown() });
+const VALIDATION_FAILED = z
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
+  .loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
-const CORS_REFUSED = z.object({ code: z.literal('ORIGIN_NOT_ALLOWED') }).loose();
-const INTERNAL_ERROR = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
+const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 /** A ULID nobody minted: a well-formed room id for a room that does not exist. */
 const NO_ROOM = '01HZZZZZZZZZZZZZZZZZZZZZZZ';
@@ -352,26 +357,29 @@ contractSuite('the room routes, login off, the refusals', [
   {
     name: 'GET /api/rooms?kind=bogus is refused 400',
     path: '/api/rooms?kind=bogus',
-    expect: { status: 400, headers: JSON_TYPE, schema: VALIDATION_FAILED },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: VALIDATION_FAILED },
   },
   {
     name: 'GET /api/rooms/threads?limit=0 is refused 400',
     path: '/api/rooms/threads?limit=0',
-    expect: { status: 400, headers: JSON_TYPE, schema: VALIDATION_FAILED },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: VALIDATION_FAILED },
   },
   {
     name: 'POST /api/rooms with no body is refused 400',
     method: 'POST',
     path: '/api/rooms',
-    expect: { status: 400, headers: JSON_TYPE, schema: VALIDATION_FAILED },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: VALIDATION_FAILED },
   },
   {
-    name: 'POST /api/rooms with malformed JSON is the chain’s 500',
+    name: 'POST /api/rooms with malformed JSON is the chain’s 400',
     method: 'POST',
     path: '/api/rooms',
     headers: { 'content-type': 'application/json' },
     body: '{"kind":',
-    expect: { status: 500, schema: INTERNAL_ERROR },
+    expect: {
+      status: 400,
+      body: problemBody('malformed_request', { detail: 'The request body is not valid JSON.' }),
+    },
   },
   {
     name: 'POST /api/rooms over the JSON limit is refused 413',
@@ -379,25 +387,25 @@ contractSuite('the room routes, login off, the refusals', [
     path: '/api/rooms',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ kind: 'channel', topic: 'x'.repeat(1024 * 1024 + 10) }),
-    expect: { status: 413, schema: z.object({ code: z.literal('REQUEST_TOO_LARGE') }).loose() },
+    expect: { status: 413, schema: z.object({ code: z.literal('request_too_large') }).loose() },
   },
   {
     name: 'DELETE /api/rooms/:id does not exist',
     method: 'DELETE',
     path: `/api/rooms/${NO_ROOM}`,
-    expect: { status: 404, headers: JSON_TYPE, body: NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NOT_FOUND },
   },
   {
     name: 'GET /api/rooms/:id/nothing does not exist',
     path: `/api/rooms/${NO_ROOM}/nothing`,
-    expect: { status: 404, headers: JSON_TYPE, body: NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NOT_FOUND },
   },
   {
     name: 'PUT /api/rooms/:id/read-cursor is gone',
     method: 'PUT',
     path: `/api/rooms/${NO_ROOM}/read-cursor`,
     body: { lastReadSeq: 1 },
-    expect: { status: 404, headers: JSON_TYPE, body: NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NOT_FOUND },
   },
 ]);
 
@@ -825,7 +833,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         MULTIPART
       ),
       400,
-      { error: 'Unexpected file field', code: 'LIMIT_UNEXPECTED_FILE' }
+      problemBody('malformed_request', { detail: 'Unexpected file field' })
     );
   });
 
@@ -843,7 +851,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         MULTIPART
       ),
       413,
-      { error: 'File too large (max 1MB)', code: 'LIMIT_FILE_SIZE' }
+      problemBody('request_too_large', { detail: 'File too large (max 1MB)' })
     );
     const exact = await call(
       server,
@@ -868,7 +876,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         MULTIPART
       ),
       400,
-      { error: 'Too many files', code: 'LIMIT_FILE_COUNT' }
+      problemBody('malformed_request', { detail: 'Too many files' })
     );
     expectAnswer(
       await call(
@@ -879,14 +887,18 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         MULTIPART
       ),
       415,
-      { error: 'File type not allowed: text/html', code: 'ATTACHMENT_TYPE_NOT_ALLOWED' }
+      problemBody('unsupported_media_type', {
+        detail: 'That type of file isn’t allowed in uploads.',
+      })
     );
     expectAnswer(
       await call(server, 'POST', rooms('/attachments'), 'nothing', {
         'content-type': 'multipart/form-data',
       }),
-      415,
-      { error: 'Multipart: Boundary not found', code: 'ATTACHMENT_TYPE_NOT_ALLOWED' }
+      400,
+      problemBody('malformed_request', {
+        detail: 'That upload couldn’t be read. Send it again as one complete form.',
+      })
     );
     await setup(server, 'PATCH', '/api/config', {
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },

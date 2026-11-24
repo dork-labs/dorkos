@@ -20,6 +20,7 @@ import type {
   StepUpWindowSubmit,
   StepUpWindowView,
 } from '../../shared/step-up-page';
+import { readErrorBody } from '@dorkos/shared/problem';
 
 /** The shape a held action's id takes: the server's ULIDs, never anything longer. */
 const HELD_ACTION_ID = /^[0-9A-Za-z]{10,64}$/;
@@ -141,7 +142,7 @@ export class StepUpConfirmation {
       const expired = body?.code === 'expired';
       if (expired) this.outcome = { kind: 'ask-again' };
       return {
-        ended: typeof body?.error === 'string' ? body.error : 'That didn’t work. Try again.',
+        ended: readErrorBody(body, 'That didn’t work. Try again.').message,
         askAgain: expired,
       };
     }
@@ -212,8 +213,7 @@ export class StepUpConfirmation {
   }
 
   private answerFor(failure: ServerFailure): StepUpWindowAnswer {
-    const message =
-      typeof failure.error === 'string' ? failure.error : 'That didn’t work. Try again.';
+    const { message } = readErrorBody(failure, 'That didn’t work. Try again.');
     switch (failure.code) {
       case 'password-too-short':
         return {

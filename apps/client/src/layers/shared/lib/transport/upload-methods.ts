@@ -23,6 +23,7 @@ import {
   UPLOAD_STALL_TIMEOUT_MS,
   UPLOAD_UNREADABLE_MESSAGE,
 } from './upload-contract';
+import { readErrorBody } from '@dorkos/shared/problem';
 
 /**
  * Upload files over a request that can always be ended — by the person, or by
@@ -134,9 +135,8 @@ async function uploadOverHttp<T>(
         else reject(new Error(UPLOAD_UNREADABLE_MESSAGE));
       } else {
         try {
-          const error =
-            (JSON.parse(xhr.responseText) as { error?: string }).error ?? `HTTP ${xhr.status}`;
-          reject(new Error(error));
+          const { message } = readErrorBody(JSON.parse(xhr.responseText), `HTTP ${xhr.status}`);
+          reject(new Error(message));
         } catch {
           reject(new Error(`HTTP ${xhr.status}`));
         }

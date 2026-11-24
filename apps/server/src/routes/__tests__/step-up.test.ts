@@ -542,7 +542,7 @@ describe('who may confirm', () => {
   const REFUSED: Array<
     [
       string,
-      'ORIGIN_NOT_ALLOWED' | 'not-a-person',
+      'origin_not_allowed' | 'not-a-person',
       (r: ReturnType<typeof request>, id: string) => ReturnType<ReturnType<typeof request>['post']>,
     ]
   > = [
@@ -553,7 +553,7 @@ describe('who may confirm', () => {
     ],
     [
       'another port’s page on this computer',
-      'ORIGIN_NOT_ALLOWED',
+      'origin_not_allowed',
       (r, id) =>
         r
           .post(`/api/step-up/${id}/password`)
@@ -562,7 +562,7 @@ describe('who may confirm', () => {
     ],
     [
       'another site',
-      'ORIGIN_NOT_ALLOWED',
+      'origin_not_allowed',
       (r, id) =>
         r
           .post(`/api/step-up/${id}/password`)

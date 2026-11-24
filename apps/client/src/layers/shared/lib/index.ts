@@ -488,3 +488,11 @@ export {
 } from './boot-cache-session';
 
 export { signedInDevicesKey } from './auth-query-keys';
+export {
+  errorFromReading,
+  readResponseError,
+  responseError,
+  type ReadResponseErrorOptions,
+  type ResponseError,
+  type ResponseErrorReading,
+} from './response-error';

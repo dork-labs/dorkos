@@ -18,6 +18,7 @@ import { setRunningApps } from '../frame/running-apps';
 import { ExtensionLoadFailure } from '../ui/ExtensionLoadFailure';
 import { importExtensionModule } from './extension-bundle-import';
 import { AppNeedsUpdateNotice, runningCopiesOnly } from '@/layers/entities/extension';
+import { readResponseError } from '@/layers/shared/lib';
 
 /**
  * Fetch the extension list from the server.
@@ -118,11 +119,8 @@ async function initServerExtension(rec: ExtensionRecordPublic): Promise<void> {
       method: 'POST',
     });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: 'Unknown error' }));
-      console.warn(
-        `[extensions] Server init failed for ${rec.id}:`,
-        (body as { error?: string }).error ?? res.statusText
-      );
+      const body = await readResponseError(res, 'Unknown error');
+      console.warn(`[extensions] Server init failed for ${rec.id}:`, body.message);
     }
   } catch (err) {
     console.error(`[extensions] Server init error for ${rec.id}:`, err);

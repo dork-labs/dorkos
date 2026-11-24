@@ -19,6 +19,7 @@ import { extensionQueryKeys } from './use-pending-extension-approvals';
 import { useTrustOfferStore } from './trust-offer-store';
 import { useSeenBeforeStaleStore } from './seen-before-stale-store';
 import { useAllowNotConfirmedStore } from './allow-not-confirmed-store';
+import { readResponseError } from '@/layers/shared/lib';
 
 /**
  * Which copy the person answered — the one their row showed — and the name to
@@ -70,15 +71,10 @@ class AnswerRefused extends Error {
 
 /** A failed request's own sentence, or the status when it sent none. */
 async function failureOf(res: Response): Promise<AnswerRefused> {
-  const body = (await res.json().catch(() => ({}))) as {
-    message?: string;
-    error?: string;
-    code?: string;
-  };
-  return new AnswerRefused(
-    body.message ?? body.error ?? `The server answered ${res.status}`,
-    body.code
-  );
+  const body = await readResponseError(res, `The server answered ${res.status}`, {
+    oldMessageFirst: true,
+  });
+  return new AnswerRefused(body.message, body.code);
 }
 
 /** Whether a refusal says the row went out of date while it was on screen. */

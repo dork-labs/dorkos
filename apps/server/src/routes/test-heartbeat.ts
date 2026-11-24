@@ -19,8 +19,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
-import { validationFailureBody } from '../lib/route-utils.js';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { runningHeartbeats } from '../services/heartbeats/heartbeats-wiring.js';
 
 const BeatRequestSchema = z.object({ agentId: z.string().min(1) });
@@ -34,7 +33,7 @@ export function createTestHeartbeatRoutes(): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
   router.post('/beat', async (c) => {
     const parsed = BeatRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const heartbeats = runningHeartbeats();
     if (!heartbeats) {
       return c.json({ error: 'Heartbeats are not running on this server.' }, 503);

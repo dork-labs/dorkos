@@ -13,10 +13,10 @@
  */
 import { Hono, type Context } from 'hono';
 import { RegisterPushSubscriptionRequestSchema } from '@dorkos/shared/notification-schemas';
-import { errorBody, validationFailureBody } from '../lib/route-utils.js';
+import { errorBody } from '../lib/route-utils.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { notificationEntitlement } from '../services/notifications/notification-entitlement.js';
 import {
@@ -75,7 +75,7 @@ export function createPushRoutes(deps: PushRouterDeps): Hono<ApiEnv> {
     const refused = refusedNonOperator(c);
     if (refused) return refused;
     const body = RegisterPushSubscriptionRequestSchema.safeParse(readJsonBody(c));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
 
     const stored = deps.subscriptions.upsert({
       endpoint: body.data.endpoint,

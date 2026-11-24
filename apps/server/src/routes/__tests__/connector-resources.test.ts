@@ -168,8 +168,9 @@ describe('connector resource routes', () => {
 
     const invalid = await api().get('/api/connectors/catalog?unknown=private').expect(400);
     expect(invalid.body).toMatchObject({
-      error: 'This connection request is invalid. Check the request and try again.',
-      details: expect.any(Array),
+      code: 'invalid_request',
+      detail: 'Unrecognized key: "unknown".',
+      issues: expect.any(Object),
     });
     expect(deps.query.catalog).toHaveBeenCalledTimes(1);
   });

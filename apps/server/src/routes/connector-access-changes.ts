@@ -19,7 +19,6 @@ import {
 } from '@dorkos/shared/connector-exclusion-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import {
   findAccessChangeForOwner,
   listAccessChangesForOwner,
@@ -34,6 +33,7 @@ import {
 } from './connector-owner-boundary.js';
 import { CONNECTED_APPS } from './connector-step-up.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
+import { validationProblem } from '@dorkos/http-kit';
 
 /** What the access-change routes read. */
 export interface ConnectorAccessChangeRouterDeps extends ConnectorOwnerBoundaryDeps {
@@ -58,7 +58,7 @@ export function createConnectorAccessChangeRoutes(
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
     const query = ConnectorAccessChangeListQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
     return c.json(
       ConnectorAccessChangeListSchema.parse({
         changes: listAccessChangesForOwner(deps.db, owner, query.data),

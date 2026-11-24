@@ -46,6 +46,7 @@ import {
   stepUpAt,
   confirmSetupAnswer,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 /** The offline service's project key and signing secret (`test-composio/data.ts`). */
 const OFFLINE_KEY = 'dorkos-offline-composio-project-key';
@@ -54,7 +55,9 @@ const OFFLINE_SIGNING_SECRET = 'whsec_dorkos_offline_browser_fixture';
 const MAX_EVENT_BYTES = 256 * 1024;
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 /** A caller holding an approval token is the requester, never the person. */
@@ -63,10 +66,10 @@ const REQUESTER = { 'X-DorkOS-Approval': 'not-a-real-approval' };
 const BOGUS_KEY = { authorization: 'Bearer not-a-real-key' };
 const FOREIGN_HOST = { host: 'evil.example' };
 const VALIDATION_FAILED = z
-  .object({ error: z.literal('Validation failed'), details: z.unknown() })
-  .strict();
-const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
-const CORS_REFUSED = z.object({ code: z.literal('ORIGIN_NOT_ALLOWED') }).loose();
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
+  .loose();
+const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
+const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
 const OWNER_REQUIRED = {
   error: 'Programs and agents cannot make account decisions.',
@@ -106,16 +109,18 @@ const NOTIFICATION_INVALID = {
 };
 const EXECUTION_INVALID = z
   .object({
-    error: z.literal('This service call is invalid. Check the request and try again.'),
-    details: z.object({ formErrors: z.array(z.string()), fieldErrors: z.unknown() }).strict(),
+    code: z.literal('invalid_request'),
+    detail: z.string(),
+    issues: z.object({ formErrors: z.array(z.string()), fieldErrors: z.unknown() }).strict(),
   })
-  .strict();
+  .loose();
 const RESOURCE_INVALID = z
   .object({
-    error: z.literal('This connection request is invalid. Check the request and try again.'),
-    details: z.array(z.unknown()),
+    code: z.literal('invalid_request'),
+    detail: z.string(),
+    issues: z.object({ formErrors: z.array(z.string()), fieldErrors: z.unknown() }).strict(),
   })
-  .strict();
+  .loose();
 const GRANT_REQUIRED = {
   error: 'This agent is not granted the selected operation.',
   code: 'CONNECTOR_GRANT_REQUIRED',
@@ -339,7 +344,7 @@ contractSuite('the connector groups, login off, nothing set up', [
     path: '/api/connectors/connections',
     headers: { 'content-type': 'application/json' },
     body: '{bad',
-    expect: { status: 500, schema: MALFORMED_JSON },
+    expect: { status: 400, schema: MALFORMED_JSON },
   },
   {
     name: 'POST /connections from an agent is refused before the body is read',

@@ -664,7 +664,7 @@ describe('room files routes', () => {
         .send({ path: 'docs/plan.md', baseCommit: opened.commit, text: 'x'.repeat(1_200_000) });
 
       expect(res.status).toBe(413);
-      expect(res.body.code).toBe('REQUEST_TOO_LARGE');
+      expect(res.body.code).toBe('request_too_large');
       // And nothing of it landed.
       expect((await readFileAt(roomId, 'docs/plan.md')).text).toBe('# Plan\n');
     });

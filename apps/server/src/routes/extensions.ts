@@ -43,7 +43,7 @@ import { noteStepUpRisksBeforeServing } from '../services/extensions/step-up/ste
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { registerExtensionApprovalRoutes } from './extensions-approval.js';
 import { registerExtensionStepUpRoutes } from './extensions-step-up.js';
@@ -164,7 +164,7 @@ const INVALID_ID = { error: 'Invalid extension ID' };
  * @param error - What Zod refused.
  */
 function validationFailed(c: Context<ApiEnv>, error: z.ZodError): Response {
-  return c.json({ error: 'Validation failed', details: z.flattenError(error) }, 400);
+  return validationProblem(c, error);
 }
 
 /**
