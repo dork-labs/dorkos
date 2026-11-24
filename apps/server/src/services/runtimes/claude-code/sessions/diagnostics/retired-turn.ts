@@ -19,7 +19,7 @@ import type { PumpTeardownReason } from '../session-pump-contract.js';
  *   (`isTurnActivity`). A plain idle reap only takes a quiet process, so no
  *   turn is open on one.
  * - `evict` — torn down by a person's pause or a credits unlink (`stop`), a
- *   relaunch (`replace`), or the idle sweep for any other reason.
+ *   relaunch (`replace`), or a record sweep not past the 16-hour limit.
  * - `shutdown` — DorkOS itself is stopping.
  */
 export type RetireReason = 'limit' | 'ceiling' | 'evict' | 'shutdown';

@@ -40,8 +40,9 @@ export class DispatchContextCleanup {
   /**
    * Finish an attempt that did not become a turn. A person's staged notes go back only when the
    * runtime was never invoked: an ambiguous invocation may have read them, and a repeat is worse
-   * than a loss. DorkOS's own notes (the context warning, the cutoff, the stopped timers, what is new since) go back
-   * whenever the attempt failed, as before durable hand-offs: telling the agent twice is harmless.
+   * than a loss. DorkOS's own notes (the context warning, the cutoff, the stopped timers, what is
+   * new since) go back whenever the attempt failed, as before durable hand-offs: telling the agent
+   * twice is harmless.
    */
   cleanup(): void {
     if (this.cleaned) return;

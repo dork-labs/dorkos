@@ -703,9 +703,9 @@ export class SessionPump {
    * outlive the shutdown that raced it.
    *
    * @param reason - Why the pump is ending, read back through
-   *   {@link teardownReason}; defaults to `evict`
+   *   {@link teardownReason}
    */
-  async teardown(reason: PumpTeardownReason = 'evict'): Promise<void> {
+  async teardown(reason: PumpTeardownReason): Promise<void> {
     if (this.disposed) {
       await this.consumed?.catch(() => {});
       return;

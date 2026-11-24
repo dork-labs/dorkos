@@ -283,7 +283,7 @@ describe('SessionPumpRegistry', () => {
     await pump.warm();
     await pump.dispatch([{ content: 'hi', messageId: 'msg-hi' }]);
 
-    await registry.evict('s1');
+    await registry.evict('s1', 'stop');
     expect(queries[0]!.closed).toBe(1);
     expect(registry.size).toBe(0);
     expect(registry.warmth('s1')).toBe('cold');
@@ -321,7 +321,7 @@ describe('the warm ceiling when the asking session leaves mid-reclaim', () => {
     await Promise.resolve();
     await Promise.resolve();
     // The session record retires while its launch is still parked.
-    await registry.evict('s2');
+    await registry.evict('s2', 'stop');
     // s1 left the registry the moment it was reaped (DOR-3012), but its process
     // is still closing, so it still holds the only slot.
     expect(registry.size).toBe(0);
@@ -540,7 +540,7 @@ describe('the process idle timer', () => {
     await settle(registry.reap('reaped'));
     expect(vi.getTimerCount()).toBe(2);
 
-    await settle(registry.evict('evicted'));
+    await settle(registry.evict('evicted', 'stop'));
     expect(vi.getTimerCount()).toBe(1);
 
     await settle(registry.teardownAll());

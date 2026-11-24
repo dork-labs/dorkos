@@ -350,9 +350,9 @@ export class SessionPumpRegistry {
    * private `replaceProcess`, always with an already-resolved key.
    *
    * @param sessionId - Session going away, in any id it answers to
-   * @param reason - Why the pump is ending (`PumpTeardownReason`); `evict` by default
+   * @param reason - Why the pump is ending (`PumpTeardownReason`)
    */
-  async evict(sessionId: string, reason: PumpTeardownReason = 'evict'): Promise<void> {
+  async evict(sessionId: string, reason: PumpTeardownReason): Promise<void> {
     const key = this.sessionKeyOf(sessionId);
     const entry = this.entries.get(key);
     if (!entry) return;

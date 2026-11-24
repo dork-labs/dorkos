@@ -42,7 +42,6 @@ describe('endSessionTimers', () => {
     ['a shutdown, which the next boot wakes', 'shutdown'],
     ["a person's pause or a credits unlink", 'stop'],
     ['a relaunch for a turn that runs at once', 'replace'],
-    ['a teardown that names no reason', 'evict'],
   ] as const)('owes nothing for %s', (_what, reason) => {
     const session = { pendingTimers: 2 };
     endSessionTimers('chat-1', session, 'cold', reason, AT);

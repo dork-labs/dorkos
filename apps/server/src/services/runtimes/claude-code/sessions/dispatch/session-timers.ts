@@ -20,8 +20,12 @@
  * - a crash is not DorkOS ending the process, and its recovery may relaunch it
  *   before the timer is due;
  * - a `stop` (a person's pause, a credits unlink) ended the work on purpose;
- * - a `replace` relaunches the process for a turn that runs at once;
- * - a bare `evict` names no reason, so it is not assumed to be upkeep.
+ * - a `replace` relaunches the process for a turn that runs at once.
+ *
+ * A pause or a relaunch can still drop a one-shot timer that is not due yet,
+ * with no note, and that is accepted: the pause meant to stop the agent's work,
+ * and the relaunched turn runs straight away, and Claude Code's resume can set
+ * a session timer that is not yet due up again there.
  *
  * A note, not a wake: a wake would relaunch a `/loop` chat for ever.
  *
@@ -57,7 +61,7 @@ export function endSessionTimers(
   session.pendingTimers = undefined;
   if (pending === 0) return;
   // A reap is always DorkOS's upkeep (the idle timer or the warm ceiling), and
-  // so is a record sweep. A teardown that names no reason is not assumed to be.
+  // so is a record sweep.
   if (to === 'reaped' || (to === 'cold' && reason === 'sweep')) {
     noteTimersStopped(key, { timers: pending, at: now });
   }

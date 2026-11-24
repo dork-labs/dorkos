@@ -3473,6 +3473,48 @@ describe('the record of background work a process holds (DOR-2065)', () => {
     expect(takeTimersStopped(sessionId)).toEqual({ timers: 2, at: later });
   });
 
+  /** The session record whose timer count the Stop hook writes. */
+  function timersOf(sessionId: string): { pendingTimers?: number } {
+    return (
+      runtime as unknown as {
+        sessionStore: { findSession: (id: string) => { pendingTimers?: number } };
+      }
+    ).sessionStore.findSession(sessionId);
+  }
+
+  // DOR-3755: a person's pause ended the work on purpose, so it owes no note.
+  it('owes no note when a pause ends a process with a timer pending', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    timersOf(sessionId).pendingTimers = 1;
+
+    await expect(
+      runtime.endSessionsWhere((session) => session.sessionId === sessionId)
+    ).resolves.toEqual([sessionId]);
+
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    expect(timersOf(sessionId).pendingTimers).toBeUndefined();
+    expect(takeTimersStopped(sessionId)).toBeNull();
+  });
+
+  // DOR-3755: a relaunch runs its turn at once, so it owes no note either.
+  it('owes no note when a dispatch relaunches a process with a timer pending', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    timersOf(sessionId).pendingTimers = 1;
+    const { buildSystemPromptAppend } = await import('../../messaging/context-builder.js');
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>MOVED</env>',
+      stable: '<env>MOVED</env>',
+    });
+
+    await turn(sessionId, 'after the change');
+
+    expect(cli.launches).toBe(2);
+    expect(cli.processes[0]!.ended).toBe(true);
+    expect(takeTimersStopped(sessionId)).toBeNull();
+  });
+
   it('is cleared when the process crashes while holding work', async () => {
     const { sessionId, process } = await warmWithShell();
     process.crash(new Error('the CLI went away'));

@@ -16,7 +16,7 @@ describe('retireReasonOf', () => {
 
   it("reads a teardown by the pump's own reason", () => {
     expect(retireReasonOf('cold', { teardownReason: 'shutdown' })).toBe('shutdown');
-    expect(retireReasonOf('cold', { teardownReason: 'evict' })).toBe('evict');
+    expect(retireReasonOf('cold', { teardownReason: 'stop' })).toBe('evict');
     expect(retireReasonOf('cold', { teardownReason: 'sweep' })).toBe('evict');
   });
 
@@ -33,7 +33,7 @@ describe('retireReasonOf', () => {
   it("never names the limit over a person's pause, a relaunch or a shutdown", () => {
     const pastLimit = { isPastHardLimit: () => true };
     // A pause and a relaunch both tear down with `evict`.
-    expect(retireReasonOf('cold', { ...pastLimit, teardownReason: 'evict' })).toBe('evict');
+    expect(retireReasonOf('cold', { ...pastLimit, teardownReason: 'stop' })).toBe('evict');
     expect(retireReasonOf('cold', { ...pastLimit, teardownReason: 'shutdown' })).toBe('shutdown');
   });
 });
