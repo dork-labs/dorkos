@@ -202,6 +202,12 @@ describe('the live link lookups', () => {
 
     it('keeps a person’s re-keyed chat from an agent after a restart, as no chat at all', async () => {
       rekeyThenRestart(PERSONS_NEW_CHAT_FIRST_ID, PERSONS_NEW_CHAT_RUNTIME_ID);
+      // The old id is no chat here under any rule, so it can open nothing by
+      // itself: the person's half proves the link reaches the chat it moved to,
+      // and since following a re-key does not depend on the caller, the agent's
+      // refusal is that chat's own read rule, checked on the resolved id.
+      expect(CHATS_HERE.has(PERSONS_NEW_CHAT_FIRST_ID)).toBe(false);
+      expect(CHAT_VISIBILITY.has(PERSONS_NEW_CHAT_FIRST_ID)).toBe(false);
       expect(await resolve(`dork:chat:${PERSONS_NEW_CHAT_FIRST_ID}`, PERSON)).toEqual({
         kind: 'chat',
         sessionId: PERSONS_NEW_CHAT_RUNTIME_ID,

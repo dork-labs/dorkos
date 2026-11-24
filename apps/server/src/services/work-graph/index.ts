@@ -127,7 +127,9 @@ function recordChatLink(
 
 /**
  * Record that a chat's id `newId` replaced its older id `oldId` (ADR-0267), so
- * an old reference can be resolved after a restart. Never throws.
+ * an old reference can be resolved after a restart. A chat is re-keyed once,
+ * so a second re-key of `oldId` to a different id is refused and logged, and
+ * the first stands. Never throws.
  *
  * @param oldId - The id the chat had.
  * @param newId - The id it has now.

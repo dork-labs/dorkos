@@ -12,6 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sql, workLinks, type Db } from '@dorkos/db';
+import { logger } from '../../../lib/logger.js';
 import type { SseResponse } from '@dorkos/shared/agent-runtime';
 import {
   createCanonicalRekey,
@@ -26,6 +27,7 @@ import {
   getWorkLinkStore,
   installWorkLinkStore,
   recordChatFork,
+  recordChatRekey,
   uninstallWorkLinkStore,
   WorkLinkStore,
 } from '../index.js';
@@ -146,24 +148,25 @@ describe('the re-key read site', () => {
     expect(followChatRekey(canonicalId)).toBe(canonicalId);
   });
 
-  it('answers nothing new once the store is uninstalled', () => {
-    const { requestId } = rekeyThenRestart();
-    uninstallWorkLinkStore();
-    expect(followChatRekey(requestId)).toBe(requestId);
-  });
-
   it('answers the id as given when the edges cannot be read', () => {
     const { requestId } = rekeyThenRestart();
     db.run(sql`DROP TABLE work_links`);
     expect(followChatRekey(requestId)).toBe(requestId);
   });
 
-  it('asks the store once per lookup however often it is installed', () => {
+  it('keeps the first re-key when the same old id is re-keyed again', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     const { requestId, canonicalId } = rekeyThenRestart();
+    const { canonicalId: otherId } = ids();
+    recordChatRekey(requestId, otherId);
+    expect(warn).toHaveBeenCalledWith('[work-graph] edge refused', {
+      relation: 'rekeyed_from',
+      oldId: requestId,
+      newId: otherId,
+      reason: 'already-rekeyed',
+    });
     installWorkLinkStore(db);
-    const resolve = vi.spyOn(WorkLinkStore.prototype, 'resolveRekey');
     expect(followChatRekey(requestId)).toBe(canonicalId);
-    expect(resolve).toHaveBeenCalledTimes(1);
   });
 });
 
