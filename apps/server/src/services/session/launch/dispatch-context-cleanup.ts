@@ -4,6 +4,7 @@ import type { AdditionalContext } from '@dorkos/shared/additional-context';
 import { holdStagedContext, takeStagedContext } from '../staged-context-store.js';
 import { restoreContextWarning } from '../agent-compaction/context-warning.js';
 import { restoreTurnCutoff, type takeTurnCutoff } from '../turn-cutoff/turn-cutoff.js';
+import { restoreTimersStopped, type takeTimersStopped } from '../turn-cutoff/timers-stopped.js';
 import { uiTurnFacts } from '../browser-seat/ui-turn-facts.js';
 
 interface CleanupOwner {
@@ -17,6 +18,7 @@ interface CleanupOwner {
 export class DispatchContextCleanup {
   owedWarning: number | null = null;
   owedCutoff: ReturnType<typeof takeTurnCutoff> = null;
+  owedTimers: ReturnType<typeof takeTimersStopped> = null;
   settleNewSince: (delivered?: boolean) => void = () => {};
   runtimeAttempted = false;
   private staged: ReturnType<typeof takeStagedContext> = [];
@@ -38,7 +40,7 @@ export class DispatchContextCleanup {
   /**
    * Finish an attempt that did not become a turn. A person's staged notes go back only when the
    * runtime was never invoked: an ambiguous invocation may have read them, and a repeat is worse
-   * than a loss. DorkOS's own notes (the context warning, the cutoff, what is new since) go back
+   * than a loss. DorkOS's own notes (the context warning, the cutoff, the stopped timers, what is new since) go back
    * whenever the attempt failed, as before durable hand-offs: telling the agent twice is harmless.
    */
   cleanup(): void {
@@ -52,6 +54,7 @@ export class DispatchContextCleanup {
       }
       if (this.owedWarning !== null) restoreContextWarning(turnKey(), this.owedWarning);
       if (this.owedCutoff !== null) restoreTurnCutoff(turnKey(), this.owedCutoff);
+      if (this.owedTimers !== null) restoreTimersStopped(turnKey(), this.owedTimers);
       this.settleNewSince();
     } finally {
       uiTurnFacts.endTurn(turnKey());

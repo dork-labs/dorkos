@@ -504,6 +504,19 @@ describe('createTurnLiveness — against the captured delivery segment', () => {
   });
 });
 
+/**
+ * A run id in the CLI's real shape (SDK 0.3.304): the run's start time in base
+ * 36, padded to nine characters, then eight hex digits. Ids of one task sort,
+ * as plain strings, in the order the runs opened.
+ */
+function runIdAt(ms: number, hex: string): string {
+  return `${ms.toString(36).padStart(9, '0')}-${hex}`;
+}
+
+/** An earlier and a later run of one task. */
+const RUN_1 = runIdAt(Date.UTC(2026, 10, 1, 20, 0, 0), '1a2b3c4d');
+const RUN_2 = runIdAt(Date.UTC(2026, 10, 1, 20, 5, 0), '9f8e7d6c');
+
 /** A level frame whose entries name the run each task is on (SDK 0.3.304). */
 function tasksChangedWithRuns(
   tasks: Array<{ id: string; type: 'local_agent' | 'local_bash'; runId: string }>
@@ -555,8 +568,8 @@ function taskStarted(taskId: string, backgrounded: boolean, runId?: string): SDK
 describe('createTurnLiveness — one task, several runs (DOR-3755)', () => {
   it("a late settle from an earlier run leaves the newer run's helper live", () => {
     const liveness = createTurnLiveness();
-    liveness.observe(tasksChangedWithRuns([{ id: 'agent-1', type: 'local_agent', runId: 'r2' }]));
-    liveness.observe(runSettled('agent-1', 'r1'));
+    liveness.observe(tasksChangedWithRuns([{ id: 'agent-1', type: 'local_agent', runId: RUN_2 }]));
+    liveness.observe(runSettled('agent-1', RUN_1));
 
     expect(liveness.liveAgentCount()).toBe(1);
     // A live helper holds with no deadline, whatever else is owed.
@@ -565,8 +578,8 @@ describe('createTurnLiveness — one task, several runs (DOR-3755)', () => {
 
   it("the run's own settle still ends it", () => {
     const liveness = createTurnLiveness();
-    liveness.observe(tasksChangedWithRuns([{ id: 'agent-1', type: 'local_agent', runId: 'r2' }]));
-    liveness.observe(runSettled('agent-1', 'r2'));
+    liveness.observe(tasksChangedWithRuns([{ id: 'agent-1', type: 'local_agent', runId: RUN_2 }]));
+    liveness.observe(runSettled('agent-1', RUN_2));
 
     expect(liveness.liveAgentCount()).toBe(0);
     expect(liveness.owedCount()).toBe(1);
@@ -574,7 +587,7 @@ describe('createTurnLiveness — one task, several runs (DOR-3755)', () => {
 
   it('a settle that names no run ends the task, as before run ids existed', () => {
     const liveness = createTurnLiveness();
-    liveness.observe(tasksChangedWithRuns([{ id: 'agent-1', type: 'local_agent', runId: 'r2' }]));
+    liveness.observe(tasksChangedWithRuns([{ id: 'agent-1', type: 'local_agent', runId: RUN_2 }]));
     liveness.observe(runSettled('agent-1', undefined));
 
     expect(liveness.liveAgentCount()).toBe(0);
@@ -582,8 +595,8 @@ describe('createTurnLiveness — one task, several runs (DOR-3755)', () => {
 
   it('two runs of one task that both settle owe two deliveries, cleared one at a time', () => {
     const liveness = createTurnLiveness();
-    liveness.observe(runSettled('agent-1', 'r1'));
-    liveness.observe(runSettled('agent-1', 'r2'));
+    liveness.observe(runSettled('agent-1', RUN_1));
+    liveness.observe(runSettled('agent-1', RUN_2));
     expect(liveness.owedCount()).toBe(2);
 
     // One consumed prompt clears one debt, the older one.
@@ -616,19 +629,29 @@ describe('createTurnLiveness — settles nothing is delivered for (DOR-3755)', (
 
   it('a foreground task that later joins the level set owes its delivery', () => {
     const liveness = createTurnLiveness();
-    liveness.observe(taskStarted('fg-1', false, 'r1'));
-    liveness.observe(tasksChangedWithRuns([{ id: 'fg-1', type: 'local_agent', runId: 'r1' }]));
-    liveness.observe(runSettled('fg-1', 'r1'));
+    liveness.observe(taskStarted('fg-1', false, RUN_1));
+    liveness.observe(tasksChangedWithRuns([{ id: 'fg-1', type: 'local_agent', runId: RUN_1 }]));
+    liveness.observe(runSettled('fg-1', RUN_1));
 
     expect(liveness.owedCount()).toBe(1);
   });
 
   it('a resumed run in the background owes, though an earlier run ran in the foreground', () => {
     const liveness = createTurnLiveness();
-    liveness.observe(taskStarted('agent-1', false, 'r1'));
-    liveness.observe(runSettled('agent-1', 'r1'));
-    liveness.observe(taskStarted('agent-1', true, 'r2'));
-    liveness.observe(runSettled('agent-1', 'r2'));
+    liveness.observe(taskStarted('agent-1', false, RUN_1));
+    liveness.observe(runSettled('agent-1', RUN_1));
+    liveness.observe(taskStarted('agent-1', true, RUN_2));
+    liveness.observe(runSettled('agent-1', RUN_2));
+
+    expect(liveness.owedCount()).toBe(1);
+  });
+
+  it('a start in the background clears a foreground mark the task still carries', () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(taskStarted('agent-1', false, RUN_1));
+    // Resumed before the first run's settle arrived: always in the background.
+    liveness.observe(taskStarted('agent-1', true, RUN_2));
+    liveness.observe(runSettled('agent-1', RUN_2));
 
     expect(liveness.owedCount()).toBe(1);
   });

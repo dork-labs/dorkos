@@ -350,7 +350,7 @@ export class SessionPumpRegistry {
    * private `replaceProcess`, always with an already-resolved key.
    *
    * @param sessionId - Session going away, in any id it answers to
-   * @param reason - Why: `sweep` for DorkOS's own record clean-up, else `evict`
+   * @param reason - Why the pump is ending (`PumpTeardownReason`); `evict` by default
    */
   async evict(sessionId: string, reason: PumpTeardownReason = 'evict'): Promise<void> {
     const key = this.sessionKeyOf(sessionId);

@@ -107,7 +107,7 @@ async function endSession(port: SessionEndingPort, id: string): Promise<boolean>
   const wasWarm = port.pumps.warmth(id) !== 'cold';
   const receipt = await port.interruptQuery(id).catch(() => undefined);
   port.persistent.forget(id);
-  await port.pumps.evict(id).catch(() => undefined);
+  await port.pumps.evict(id, 'stop').catch(() => undefined);
   const stopped = receipt?.outcome === 'acked' || receipt?.outcome === 'closed';
   return stopped || (wasWarm && port.pumps.warmth(id) === 'cold');
 }

@@ -190,7 +190,7 @@ import { TURN_NOT_STARTED_CODE } from '../../../../session/launch/turn-not-start
 import { extensionSkillPluginRoots } from '../../../../extensions/agent-skills/running-skills-ledger.js';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
 import { SESSIONS } from '../../../../../config/constants.js';
-import { takeTurnCutoff } from '../../../../session/turn-cutoff/turn-cutoff.js';
+import { takeTimersStopped } from '../../../../session/turn-cutoff/timers-stopped.js';
 import { feedProjector } from '../../../../session/session-event-normalizer.js';
 import {
   SessionStateProjector,
@@ -3455,7 +3455,7 @@ describe('the record of background work a process holds (DOR-2065)', () => {
     // A pending timer holds the process on the first reap; only the ceiling takes it.
     await runtime.reapSession(sessionId);
     expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
-    expect(takeTurnCutoff(sessionId)).toBeNull();
+    expect(takeTimersStopped(sessionId)).toBeNull();
 
     const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
     const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
@@ -3470,7 +3470,7 @@ describe('the record of background work a process holds (DOR-2065)', () => {
     }
 
     expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
-    expect(takeTurnCutoff(sessionId)).toEqual({ timersStopped: 2, at: later });
+    expect(takeTimersStopped(sessionId)).toEqual({ timers: 2, at: later });
   });
 
   it('is cleared when the process crashes while holding work', async () => {

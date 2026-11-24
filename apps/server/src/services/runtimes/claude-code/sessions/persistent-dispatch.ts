@@ -1489,7 +1489,7 @@ export class PersistentDispatch {
    * @param key - The resolved map key, exactly as {@link acquire} takes
    */
   private async replaceProcess(key: string): Promise<void> {
-    await this.registry.evict(key);
+    await this.registry.evict(key, 'replace');
     this.forget(key);
   }
 

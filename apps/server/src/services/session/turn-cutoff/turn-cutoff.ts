@@ -25,15 +25,6 @@
  * the chat still shows the cutoff, because the history overlay reads the
  * durable record instead.
  *
- * ## Timers that ended with their process (DOR-3755)
- *
- * A session timer an agent sets (CronCreate, ScheduleWakeup, /loop) lives in
- * its Claude Code process. When DorkOS ends that process while one is pending,
- * to make room for another chat or at the four-hour ceiling, nothing runs the
- * chat again until its next turn, and a timer due in between never fires. No
- * wake follows on purpose: a chat holding a `/loop` would be relaunched for
- * ever. The next turn carries this note instead.
- *
  * ## A stop by another chat
  *
  * `chat_stop` and a message sent with `delivery: 'interrupt'` end a turn the
@@ -81,11 +72,9 @@ export function turnCutoffMessage(cutoff: StalledTurnCutoff): string {
  * them in its own context and set them aside. Other runtimes word their
  * interrupt differently, and the quotes read there as what to ignore if seen.
  *
- * @param cutoff - Who stopped the turn (the stall guard, or another chat), or
- *   that DorkOS ended the process the session's timers lived in.
+ * @param cutoff - Who stopped the turn: the stall guard, or another chat.
  */
 export function formatTurnCutoff(cutoff: TurnCutoffData): string {
-  if ('timersStopped' in cutoff) return formatTimersStopped(cutoff.timersStopped, cutoff.at);
   const quoted = (by: string) =>
     'Any "[Request interrupted by user]" or "The user doesn\'t want to proceed with this tool use" ' +
     `at the end of that turn was written by ${by}, not by a person.`;
@@ -107,33 +96,12 @@ export function formatTurnCutoff(cutoff: TurnCutoffData): string {
 }
 
 /**
- * The note for timers that ended with their process (DOR-3755). Says only what
- * is certain: nothing ran in the chat between the process ending and this
- * turn, so a timer due in that gap did not fire. Claude Code may set a timer
- * that is not due yet up again when it resumes, so the note never says that
- * every one of them is gone.
- *
- * @param count - How many session timers were pending.
- * @param at - When the process ended, as epoch ms.
- */
-function formatTimersStopped(count: number, at: number): string {
-  const timers = count === 1 ? 'a session timer' : `${count} session timers`;
-  return (
-    `DorkOS ended this chat's Claude Code process at ${new Date(at).toISOString()} while ` +
-    `${timers} you set (CronCreate, ScheduleWakeup or /loop) ${count === 1 ? 'was' : 'were'} ` +
-    'still pending. Nothing ran here after that, so a timer due before this message did not ' +
-    'fire. Check what you were waiting on, and set it again if you still need it.'
-  );
-}
-
-/**
- * Record that the stall guard or another chat ended a turn, or that DorkOS
- * ended a process with session timers pending, so the session's next turn is
- * told. A second cutoff before that turn replaces the first: the latest is
- * what the agent needs.
+ * Record that the stall guard or another chat ended a turn, so the session's
+ * next turn is told. A second cutoff before that turn replaces the first: the
+ * latest is what the agent needs.
  *
  * @param sessionId - Any id the session is known by.
- * @param cutoff - What was stopped, by whom, and when or for how long.
+ * @param cutoff - Who stopped the turn, and for the stall guard, how long it was quiet.
  */
 export function noteTurnCutoff(sessionId: string, cutoff: TurnCutoffData): void {
   owed.set(primaryOf(sessionId), cutoff);
