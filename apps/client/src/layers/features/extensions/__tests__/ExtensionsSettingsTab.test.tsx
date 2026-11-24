@@ -466,6 +466,34 @@ describe('ExtensionsSettingsTab', () => {
     openRow('broken-ext');
     expect(screen.getByText('Couldn’t build: Unexpected token')).toBeInTheDocument();
   });
+
+  /**
+   * A server-side rebuild that failed while the previous version keeps running
+   * is said beside an otherwise healthy extension — never through `status`,
+   * which is what the loader and `readBundle` gate the client bundle on
+   * (DOR-1336 review round 2).
+   */
+  it('warns that the server half is stale without calling the extension broken', async () => {
+    const ext = makeExtension({
+      id: 'stale-srv',
+      status: 'compiled',
+      hasServerEntry: true,
+      serverError: {
+        code: 'compilation_failed',
+        message: 'Server Compilation failed for stale-srv',
+      },
+    });
+    mockFetch({ '/api/extensions': [ext] });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    await screen.findByTestId('extension-card-stale-srv');
+    expect(screen.queryByTestId('extension-health-stale-srv')).not.toBeInTheDocument();
+    openRow('stale-srv');
+
+    expect(screen.getByText(/couldn’t rebuild its server part/i)).toBeInTheDocument();
+    expect(screen.getByText(/last version still runs/i)).toBeInTheDocument();
+    expect(screen.queryByText(/couldn’t build:/i)).not.toBeInTheDocument();
+  });
 });
 
 describe('ExtensionsSettingsTab — what comes with DorkOS', () => {

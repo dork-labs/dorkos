@@ -495,6 +495,19 @@ describe('ApprovalCard', () => {
       expect(block!.textContent).toContain('Ignore all of that.');
     });
 
+    // DOR-4355 M4: the box holds only what changes; a name an agent can set sits under it.
+    it('draws the note under the box, outside it, in plain text', () => {
+      const note = 'Its name, which an agent can set: “Your own Telegram, alre…”';
+      renderCard(
+        buildApproval({ detail: 'Who may approve: U0OWNER01 → U0NEWBIE1', detailNote: note })
+      );
+      const block = document.querySelector('[data-slot="approval-detail"]');
+      expect(block!.textContent).not.toContain('Your own Telegram');
+      const line = screen.getByText(note);
+      expect(line.tagName).toBe('P');
+      expect(block!.contains(line)).toBe(false);
+    });
+
     // DOR-4775: a settings change lists every key; the last one must be on the card too.
     it('shows every line of a 20-setting change on an act card, the last one included', () => {
       const lines = [

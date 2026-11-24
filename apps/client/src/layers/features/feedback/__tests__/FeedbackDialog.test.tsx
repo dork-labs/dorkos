@@ -351,6 +351,25 @@ describe('FeedbackDialog', () => {
         expect(transport.sendFeedback).not.toHaveBeenCalled();
       });
 
+      it('keeps the crash stack when a crash report is closed and reopened', async () => {
+        const transport = createMockTransport();
+        const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
+        const { setOpen } = renderDialog(transport, { startClosed: true });
+        await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
+        await act(async () => {});
+        setOpen(true, { prefillMessage: 'The app crashed.', crashStack: 'Error: boom\n  at x' });
+
+        // The host clears its prefill on close, so the reopen carries nothing.
+        setOpen(false);
+        setOpen(true);
+        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+        await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
+        expect(sendFeedback.mock.calls[0][0].diagnostics?.breadcrumbs).toEqual([
+          expect.objectContaining({ message: 'Error: boom\n  at x' }),
+        ]);
+      });
+
       it('does not let Enter in the email field submit the form', () => {
         renderDialog(createMockTransport(), { currentUser: null });
         type('half done');

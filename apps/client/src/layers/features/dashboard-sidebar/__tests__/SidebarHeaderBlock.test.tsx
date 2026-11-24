@@ -670,6 +670,77 @@ describe('SidebarHeaderBlock', () => {
     await waitFor(() => expect(selected).toHaveFocus());
   });
 
+  it('focuses the route-selected Community when the shortcut opens the menu', async () => {
+    // Spec: "Opening focuses the selected row." Opening by shortcut skipped
+    // the focus step that a click takes, so Radix left focus on the first row.
+    mockSearch = { community: 'a' };
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    renderBlock();
+    await act(async () => undefined);
+    fireEvent.keyDown(document.body, { key: 'K', metaKey: true, shiftKey: true });
+    const selected = await screen.findByRole('menuitemradio', { name: /Alpha/ });
+    expect(selected).toHaveAttribute('aria-checked', 'true');
+    await waitFor(() => expect(selected).toHaveFocus());
+  });
+
+  it('disables keyboard selection of the installation while a destination is pending', async () => {
+    let resolveRemembered!: (value: null) => void;
+    mockSearch = { community: 'b' };
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+      {
+        ref: 'b',
+        remoteCommunityId: 'remote-b',
+        label: 'Beta',
+        pinnedOrigin: 'https://b.example.com',
+        connectedHumanMemberId: 'person-b',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRemembered = resolve;
+        })
+    );
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    const installation = await screen.findByRole('menuitemradio', { name: /Dorian’s team/ });
+    expect(installation).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.keyDown(installation, { key: 'Enter' });
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+
+    resolveRemembered(null);
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/channels',
+      search: { community: 'a' },
+    });
+  });
+
   it('returns to the prior route and says so when the target destination read fails', async () => {
     mockConnections = [
       {
@@ -1117,6 +1188,36 @@ describe('the context switcher’s lifecycle actions', () => {
     expect(confirm).toHaveTextContent('You stay a member of Alpha');
   });
 
+  it('names a single agent, and waits to know the agents before it can disconnect', async () => {
+    mockConnections = [alpha()];
+    mockDisconnectImpact = {
+      data: undefined,
+      isError: false,
+      fetchStatus: 'fetching',
+      refetch: vi.fn(),
+    };
+    const manage = await openManageAlpha();
+    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
+    const confirm = await screen.findByRole('alertdialog');
+    expect(confirm).toHaveTextContent('Checking for agents you added from here…');
+    expect(within(confirm).getByRole('button', { name: 'Disconnect' })).toBeDisabled();
+    cleanup();
+
+    mockDisconnectImpact = {
+      data: { agents: [{ localAgentId: 'scout', displayName: 'Scout' }] },
+      isError: false,
+      fetchStatus: 'idle',
+      refetch: vi.fn(),
+    };
+    const again = await openManageAlpha();
+    fireEvent.click(within(again).getByRole('menuitem', { name: /^Disconnect…$/ }));
+    const single = await screen.findByRole('alertdialog');
+    expect(single).toHaveTextContent(
+      'The agent you added from here, Scout, will be removed from Alpha.'
+    );
+    expect(within(single).getByRole('button', { name: 'Disconnect' })).toBeEnabled();
+  });
+
   it('says so when it cannot check the agents, and still lets the person disconnect', async () => {
     mockConnections = [alpha()];
     const refetch = vi.fn();
@@ -1429,6 +1530,27 @@ describe('focus after a phone choice', () => {
     await idle();
     await settle();
     expect(box).toHaveFocus();
+  });
+
+  it('gives focus back to the trigger when a slow switch fails after the sheet has gone', async () => {
+    let rejectRemembered!: (error: Error) => void;
+    mockResolveCommunityNavigation.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectRemembered = reject;
+        })
+    );
+    renderOnPage({ mobile: true });
+    fireEvent.click(trigger());
+    fireEvent.click(await screen.findByRole('radio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+    // The sheet is closed and held its focus for the heading; nothing has it.
+    await settle();
+    expect(document.activeElement).toBe(document.body);
+    rejectRemembered(new Error('offline'));
+    await idle();
+    await settle();
+    expect(trigger()).toHaveFocus();
   });
 });
 

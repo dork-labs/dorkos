@@ -30,7 +30,10 @@ export function buildApproval(overrides: Partial<PendingApproval> = {}): Pending
 }
 
 /** Render one card over a mock transport. */
-export function renderCard(approval: PendingApproval, overrides: Partial<Transport> = {}) {
+export function renderCard(
+  approval: PendingApproval,
+  overrides: Partial<Transport> = {}
+): { transport: Transport; container: HTMLElement; unmount: () => void } {
   const transport = createMockTransport(overrides);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },

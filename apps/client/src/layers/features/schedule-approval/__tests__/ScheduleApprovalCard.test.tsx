@@ -1036,6 +1036,36 @@ describe('ScheduleApprovalCard — the receipt outlives the refetch', () => {
     });
     expect(slot('schedule-receipt')).toBeNull();
   });
+
+  it('lets go of a schedule the server refused to approve', async () => {
+    // The hold must not outlive the decision it was holding for: a refused
+    // approval hands the card back to the live list, and a stale hold would
+    // draw it twice — once from the server's copy and once from ours.
+    //
+    // Real timers throughout: what has to settle here is a rejected promise,
+    // not a window.
+    const transport = createMockTransport({
+      updateTask: vi.fn().mockRejectedValue(new Error('nope')),
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <Host schedules={[proposal()]} />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+
+    // Answerable again, and drawn exactly once.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeInTheDocument()
+    );
+    expect(screen.getAllByTestId('schedule-approval-card')).toHaveLength(1);
+  });
 });
 
 describe('ScheduleApprovalCard — running it once', () => {

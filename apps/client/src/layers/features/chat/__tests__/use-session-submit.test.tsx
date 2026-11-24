@@ -712,6 +712,29 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(returned).toEqual({ receipt, cancelled: [] });
   });
 
+  it('stop() reports `failed` when the request itself throws, and still resolves rather than rejecting', async () => {
+    const interruptSession = vi.fn().mockRejectedValue(new Error('network error'));
+    const transport = createMockTransport({ interruptSession });
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    let returned: unknown;
+    await act(async () => {
+      returned = await result.current.stop();
+    });
+
+    // `failed`, not `not-running`: nothing ended the turn, so the person must be
+    // able to press Stop again.
+    expect(returned).toEqual({
+      receipt: { outcome: 'failed', reason: 'delivery-failed', runtime: 'unknown' },
+      cancelled: [],
+    });
+  });
+
   it('holds status at streaming through the trigger round-trip (CLI-B7 double-submit window)', async () => {
     // Real failure mode: POST is a 202 trigger, so the lifecycle still says
     // idle for a full RTT + turn spin-up after Enter — a second Enter in that

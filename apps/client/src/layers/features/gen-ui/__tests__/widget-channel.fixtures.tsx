@@ -1,6 +1,6 @@
 /** Shared fixtures for the widget channel tests: a two-button document, receipts and an owned doc channel. */
 import { afterEach, beforeEach, expect, vi } from 'vitest';
-import { cleanup, render, renderHook, waitFor } from '@testing-library/react';
+import { cleanup, render, renderHook, waitFor, type RenderResult } from '@testing-library/react';
 import type { WidgetDocument } from '@dorkos/shared/ui-widget';
 import type { CanvasChannelEventReceipt, PageEvent } from '@dorkos/shared/canvas-channel-schemas';
 import { useDocChannel } from '@/layers/features/canvas';
@@ -55,7 +55,7 @@ export function port(): WidgetChannelPort {
   return { ...ownedChannel };
 }
 
-export function draw(doc = document, channel = port()) {
+export function draw(doc = document, channel = port()): RenderResult {
   return render(
     <TransportProvider transport={transport}>
       <WidgetRenderer document={doc} sessionId="session" channel={channel} />

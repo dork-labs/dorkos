@@ -570,6 +570,23 @@ describe('InstalledPackagesView', () => {
       expect(status).toHaveTextContent('Up to date');
     });
 
+    it('never takes focus from an element that holds it', () => {
+      // Purpose: a blur can arrive without saying where focus went (a window
+      // switch, an iframe); if focus is somewhere real when the button leaves,
+      // it stays there.
+      showRows([REVIEWER], [staleCheck(REVIEWER, '1.3.0')]);
+      const { rerender } = render(<InstalledPackagesView />);
+      const checkAgain = screen.getByRole('button', { name: 'Check again' });
+      checkAgain.focus();
+      // The Update button saw a focus whose blur never said where it went.
+      fireEvent.focus(screen.getByRole('button', { name: /^update reviewer/i }));
+
+      showRows([REVIEWER], [makeCheck(REVIEWER)]);
+      rerender(<InstalledPackagesView />);
+
+      expect(checkAgain).toHaveFocus();
+    });
+
     it('keeps a failed update on its row, with the reason, and still offers it', () => {
       // Purpose: a failure stays visible where it happened, and can be retried.
       showRows([REVIEWER], [{ ...staleCheck(REVIEWER, '1.3.0'), applyError: 'disk full' }]);

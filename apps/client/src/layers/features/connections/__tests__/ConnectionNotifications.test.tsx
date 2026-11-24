@@ -449,6 +449,42 @@ describe('ConnectionNotifications', () => {
     expect(await screen.findByText('No notifications set up.')).toBeInTheDocument();
   });
 
+  it('marks only the row being removed as busy, so others can still be removed', async () => {
+    const user = userEvent.setup();
+    let finish!: () => void;
+    const remove = vi.fn().mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+    );
+    const transport = createMockTransport({
+      getConnectionEventSource: vi.fn().mockResolvedValue({
+        setupMode: 'managed',
+        configured: false,
+        endpoint: null,
+        reason: null,
+      }),
+      listConnectionEventDefinitions: vi.fn().mockResolvedValue({ definitions: [] }),
+      listConnectionEventSubscriptions: vi.fn().mockResolvedValue({
+        subscriptions: [
+          subscription({ filter: { folder: 'inbox' } }),
+          subscription({ id: 'subscription-b', filter: { folder: 'sent' } }),
+        ],
+      }),
+      deleteConnectionEventSubscription: remove,
+    });
+
+    renderNotifications(transport);
+    const first = await screen.findByRole('button', { name: /^Remove New email.*inbox$/ });
+    const second = screen.getByRole('button', { name: /^Remove New email.*sent$/ });
+    await user.click(first);
+    expect(first).toBeDisabled();
+    expect(first).toHaveAttribute('aria-busy', 'true');
+    expect(second).toBeEnabled();
+    finish();
+    await waitFor(() => expect(first).toBeEnabled());
+  });
+
   it.each([
     {
       kind: 'room' as const,

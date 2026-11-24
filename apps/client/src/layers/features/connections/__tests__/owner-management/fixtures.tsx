@@ -1,5 +1,5 @@
 /** Shared fixtures for the owner-management dialogs: a reconciliation preview, a pending pause and a renderer. */
-import { render } from '@testing-library/react';
+import { render, type RenderResult } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import type { Transport } from '@dorkos/shared/transport';
@@ -87,7 +87,7 @@ export const PENDING_PAUSE: ConnectorManagementReviewItem = {
   expiresAt: '2099-09-06T01:00:00.000Z',
 };
 
-export function renderWith(transport: Transport, ui: ReactNode) {
+export function renderWith(transport: Transport, ui: ReactNode): RenderResult {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

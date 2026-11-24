@@ -333,6 +333,27 @@ describe('relevant panel views', () => {
     expect(useAppStore.getState().openDocuments).toEqual([]);
   });
 
+  it('preserves closed view when its POST settles after switching away', async () => {
+    const { resolve } = deferredDocument();
+    useAppStore.getState().loadCanvasForSession('one');
+    const { result } = renderHook(() => usePanelViews(contributions, '/session'));
+    act(() => useAppStore.getState().openCanvasDocument(serverDocument('actual-new').content));
+    const pendingId = useAppStore.getState().openDocuments[0].id;
+    act(() => result.current.closeView(`resource/${pendingId}`));
+    act(() => {
+      useAppStore.getState().loadCanvasForSession('two');
+      useAppStore.getState().setSessionId('two');
+    });
+    await act(async () => resolve(serverDocument('actual-new')));
+    act(() => {
+      useAppStore.getState().loadCanvasForSession('one');
+      useAppStore.getState().setSessionId('one');
+      useAppStore.getState().hydrateCanvasFromSnapshot('one', [serverDocument('actual-new')]);
+    });
+    expect(useAppStore.getState().openDocuments.some((doc) => doc.id === 'actual-new')).toBe(true);
+    expect(result.current.visible.map((view) => view.id)).not.toContain('resource/actual-new');
+  });
+
   it('retains a live pinned echo candidate through a burst of identical twins and prunes replaced snapshot rows', async () => {
     const { resolve } = deferredDocument();
     useAppStore.getState().loadCanvasForSession('one');
@@ -482,6 +503,30 @@ describe('relevant panel views', () => {
       })
     );
     expect(result.current.visible.map((v) => v.id)).toContain('computer');
+  });
+
+  // Real resource IDs replace category tabs, and closure never deletes a server document.
+  it('activates concrete page tabs and hides a view without removing its document', () => {
+    useAppStore.setState({
+      openDocuments: [document('first'), document('second')],
+      activeBrowserDocumentId: 'first',
+    });
+    const { result } = renderHook(() => usePanelViews(contributions, '/session'));
+    expect(result.current.visible.map((v) => v.title)).toEqual([
+      'profile',
+      'files',
+      'Page first',
+      'Page second',
+    ]);
+    expect(result.current.visible.some((v) => v.id === 'browser')).toBe(false);
+    act(() => result.current.activate('resource/second'));
+    expect(useAppStore.getState().activeBrowserDocumentId).toBe('second');
+    expect(result.current.activeId).toBe('resource/second');
+    act(() => result.current.closeView('resource/second'));
+    expect(result.current.visible.map((v) => v.id)).not.toContain('resource/second');
+    expect(useAppStore.getState().openDocuments.map((doc) => doc.id)).toEqual(['first', 'second']);
+    act(() => result.current.activate('resource/second'));
+    expect(result.current.activeId).toBe('resource/second');
   });
 
   // One agent's optional views and closed resources must never leak into another agent's layout.
