@@ -52,7 +52,7 @@ describe('a repo-pin card is raised only by a launch', () => {
       body: '{}',
     });
     expect(res.status).toBe(404);
-    expect(await res.json()).toMatchObject({ code: 'UNKNOWN_CAPABILITY' });
+    expect(await res.json()).toMatchObject({ code: 'unknown_capability' });
   });
 
   /** Seed one card through the test route, as the app's chain would parse it. */
