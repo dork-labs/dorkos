@@ -130,6 +130,13 @@ export const ALLOWED_VERBS: readonly string[] = [
   'trigger',
 ];
 
+/**
+ * Whole paths that end in a command word on purpose. `POST /api/capabilities/{id}/invoke`
+ * is the documented RPC projection of every capability (ADR 261123-170830), not a
+ * resource that lost its noun, so `verb-path` never counts it. Keep this list short.
+ */
+export const ALLOWED_VERB_PATHS: readonly string[] = ['/api/capabilities/{id}/invoke'];
+
 /** Error schemas a 4xx or 5xx body may reference. DOR-4979 adds `Problem`. */
 export const SHARED_ERROR_SCHEMAS: readonly string[] = ['ErrorResponse'];
 
@@ -215,6 +222,7 @@ export function duplicateOperationIds(doc: OpenApiDocument): Record<string, stri
 export function verbPathItems(doc: OpenApiDocument): Items {
   const items: Items = {};
   for (const path of Object.keys(doc.paths)) {
+    if (ALLOWED_VERB_PATHS.includes(path)) continue;
     for (const segment of segments(path)) {
       if (!isParam(segment) && isCommandWord(segment)) {
         add(items, groupOf(path), `${path} (${segment})`);

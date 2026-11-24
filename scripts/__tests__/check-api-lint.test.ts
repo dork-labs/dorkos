@@ -140,6 +140,14 @@ describe('verb-path', () => {
     expect(verbPathItems(d)).toEqual({});
     expect(COMMAND_WORDS).toContain('sign-out-all');
   });
+
+  it('skips only the exact capability invoke path, not the word anywhere', () => {
+    const d = doc({
+      '/api/capabilities/{id}/invoke': { post: op() },
+      '/api/agents/{id}/invoke': { post: op() },
+    });
+    expect(verbPathItems(d)).toEqual({ agents: ['/api/agents/{id}/invoke (invoke)'] });
+  });
 });
 
 describe('param-name', () => {
