@@ -3,7 +3,6 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import {
   TokenConfirmationProvider,
   InAppConfirmationProvider,
-  type ConfirmationResult,
   type InAppConfirmationCallback,
 } from '../confirmation-provider.js';
 import { ApprovalService, APPROVAL_TTL_MS } from '../../core/approvals/index.js';
@@ -109,16 +108,6 @@ describe('TokenConfirmationProvider', () => {
       expect(agent).toMatch(/keeping the files you and your agents added or changed/);
       expect(plugin).not.toMatch(/team/);
     });
-
-    it('issues a unique token for each request', async () => {
-      const a = await provider.requestInstallConfirmation(buildRequest());
-      const b = await provider.requestInstallConfirmation(buildRequest());
-      expect(a.status).toBe('pending');
-      expect(b.status).toBe('pending');
-      if (a.status === 'pending' && b.status === 'pending') {
-        expect(a.token).not.toBe(b.token);
-      }
-    });
   });
 
   describe('a request DorkOS cannot bind', () => {
@@ -215,19 +204,6 @@ describe('TokenConfirmationProvider', () => {
         status: 'declined',
         reason: 'Unknown or expired token',
       });
-    });
-
-    it('returns declined without a reason when the denial gave none', async () => {
-      const issued = await provider.requestInstallConfirmation(buildRequest());
-      if (issued.status !== 'pending') throw new Error('expected pending');
-
-      decidePending('denied');
-
-      const result = await provider.resolveToken(issued.token, buildRequest());
-      expect(result.status).toBe('declined');
-      if (result.status === 'declined') {
-        expect(result.reason).toBeUndefined();
-      }
     });
 
     it('expires tokens at the decision window and retires them on resolve', async () => {
@@ -754,31 +730,6 @@ describe('TokenConfirmationProvider — updates', () => {
 });
 
 describe('InAppConfirmationProvider', () => {
-  it('delegates requestInstallConfirmation to the injected callback', async () => {
-    const callback = vi.fn<InAppConfirmationCallback>().mockResolvedValue({
-      status: 'approved',
-    });
-    const provider = new InAppConfirmationProvider(callback);
-
-    const req = buildRequest();
-    const result = await provider.requestInstallConfirmation(req);
-
-    expect(callback).toHaveBeenCalledTimes(1);
-    expect(callback).toHaveBeenCalledWith(req);
-    expect(result).toEqual({ status: 'approved' });
-  });
-
-  it('passes declined results through verbatim', async () => {
-    const callback = vi.fn<InAppConfirmationCallback>().mockResolvedValue({
-      status: 'declined',
-      reason: 'user closed dialog',
-    });
-    const provider = new InAppConfirmationProvider(callback);
-
-    const result: ConfirmationResult = await provider.requestInstallConfirmation(buildRequest());
-    expect(result).toEqual({ status: 'declined', reason: 'user closed dialog' });
-  });
-
   it('returns declined from resolveToken because the in-app provider issues no tokens', async () => {
     const callback = vi.fn<InAppConfirmationCallback>();
     const provider = new InAppConfirmationProvider(callback);

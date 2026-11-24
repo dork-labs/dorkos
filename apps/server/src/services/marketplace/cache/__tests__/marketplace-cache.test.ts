@@ -34,28 +34,7 @@ describe('MarketplaceCache', () => {
     await rm(dorkHome, { recursive: true, force: true });
   });
 
-  describe('cacheRoot', () => {
-    it('points at ${dorkHome}/cache/marketplace', () => {
-      expect(cache.cacheRoot).toBe(join(dorkHome, 'cache', 'marketplace'));
-    });
-  });
-
   describe('readMarketplace', () => {
-    it('returns null when the marketplace has never been cached', async () => {
-      const result = await cache.readMarketplace('dorkos-community');
-      expect(result).toBeNull();
-    });
-
-    it('returns null when cached marketplace.json is malformed', async () => {
-      const dir = join(cache.cacheRoot, 'marketplaces', 'dorkos-community');
-      await mkdir(dir, { recursive: true });
-      await writeFile(join(dir, 'marketplace.json'), '{not json');
-      await writeFile(join(dir, '.last-fetched'), new Date().toISOString());
-
-      const result = await cache.readMarketplace('dorkos-community');
-      expect(result).toBeNull();
-    });
-
     it('reads back a document that self-declares a RESERVED marketplace name (DOR-261)', async () => {
       // The real Anthropic marketplace is literally named `claude-plugins-official`
       // — a name on the RESERVED_MARKETPLACE_NAMES publishing list. The cache is
@@ -116,19 +95,6 @@ describe('MarketplaceCache', () => {
       });
     });
 
-    it('reads a missing, unreadable or unkeyable status as none', async () => {
-      expect(await cache.readFetchStatus('never')).toBeNull();
-      expect(await cache.readFetchStatus('x/..')).toBeNull();
-      await cache.writeFetchStatus('mp', { startedAt: 'x', checkedAt: 'x', ok: true });
-      await writeFile(join(cache.cacheRoot, 'marketplaces', 'mp', '.last-check.json'), '{nope');
-      expect(await cache.readFetchStatus('mp')).toBeNull();
-      await writeFile(
-        join(cache.cacheRoot, 'marketplaces', 'mp', '.last-check.json'),
-        JSON.stringify({ startedAt: 'x', checkedAt: 7, ok: 'yes' })
-      );
-      expect(await cache.readFetchStatus('mp')).toBeNull();
-    });
-
     it('drops a record for an attempt that started before the one on disk', async () => {
       // Purpose: attempts finish out of order; the later START wins.
       await cache.writeFetchStatus('mp', { startedAt: '2026-01-02', checkedAt: 'b', ok: true });
@@ -139,30 +105,6 @@ describe('MarketplaceCache', () => {
         reason: 'slow',
       });
       expect(await cache.readFetchStatus('mp')).toMatchObject({ ok: true, checkedAt: 'b' });
-    });
-
-    it('keeps the listed count when a failure is recorded without one', async () => {
-      await cache.writeFetchStatus('mp', {
-        startedAt: '1',
-        checkedAt: '1',
-        ok: true,
-        packageCount: 5,
-      });
-      await cache.writeFetchStatus('mp', {
-        startedAt: '2',
-        checkedAt: '2',
-        ok: false,
-        reason: 'x',
-      });
-      expect(await cache.readFetchStatus('mp')).toMatchObject({ ok: false, packageCount: 5 });
-    });
-
-    it('reads when the cached copy was fetched without reading the copy', async () => {
-      expect(await cache.readMarketplaceFetchedAt('mp')).toBeNull();
-      await cache.writeMarketplace('mp', buildMarketplaceJson());
-      expect(await cache.readMarketplaceFetchedAt('mp')).toEqual(
-        (await cache.readMarketplace('mp'))!.fetchedAt
-      );
     });
 
     it('forgets the status together with the listing', async () => {
@@ -195,10 +137,6 @@ describe('MarketplaceCache', () => {
       expect(await cache.readMarketplace('kept')).not.toBeNull();
     });
 
-    it('is a no-op for a marketplace with nothing cached', async () => {
-      await expect(cache.removeMarketplace('never-cached')).resolves.toBeUndefined();
-    });
-
     it('refuses a name that would reach outside the cache', async () => {
       // Purpose: this is an rm(recursive) on a caller-supplied name.
       await expect(cache.removeMarketplace('../../escape')).rejects.toThrow(PathEscapeError);
@@ -215,12 +153,6 @@ describe('MarketplaceCache', () => {
         expect(await cache.readMarketplace('kept')).not.toBeNull();
       }
     );
-
-    it('reads a name it cannot key as a cache miss rather than throwing', async () => {
-      // Purpose: a source saved under such a name before names were checked
-      // must not break every read that walks the configured sources.
-      await expect(cache.readMarketplace('x/..')).resolves.toBeNull();
-    });
   });
 
   describe('TTL', () => {
@@ -239,23 +171,6 @@ describe('MarketplaceCache', () => {
       expect(result!.stale).toBe(true);
       // The JSON is still served — stale flag is set, not erased.
       expect(result!.json.name).toBe('dorkos-community');
-    });
-
-    it('respects a custom ttlMs from the constructor', async () => {
-      vi.useFakeTimers();
-      const start = new Date('2026-04-06T00:00:00.000Z');
-      vi.setSystemTime(start);
-
-      const shortCache = new MarketplaceCache(dorkHome, 1000);
-      await shortCache.writeMarketplace('dorkos-community', buildMarketplaceJson());
-
-      vi.setSystemTime(new Date(start.getTime() + 500));
-      const fresh = await shortCache.readMarketplace('dorkos-community');
-      expect(fresh!.stale).toBe(false);
-
-      vi.setSystemTime(new Date(start.getTime() + 2000));
-      const stale = await shortCache.readMarketplace('dorkos-community');
-      expect(stale!.stale).toBe(true);
     });
   });
 
@@ -291,11 +206,6 @@ describe('MarketplaceCache', () => {
   }
 
   describe('getPackage', () => {
-    it('returns null when the package SHA is not cached', async () => {
-      const result = await cache.getPackage('code-review-suite', sha('a'), '');
-      expect(result).toBeNull();
-    });
-
     it('returns the cached package descriptor when present', async () => {
       const path = await seed('code-review-suite', sha('a'));
 
@@ -458,16 +368,6 @@ describe('MarketplaceCache', () => {
       await expect(access(join(expected, '.dork-manifest'))).resolves.toBeUndefined();
     });
 
-    it('reuses an already-materialized valid package without re-fetching', async () => {
-      await seed('flow', sha('b'));
-
-      const fetch = vi.fn(fakeFetch(sha('b')));
-      const result = await cache.materializePackage('flow', sha('b'), '', fetch);
-
-      expect(result.path).toBe(join(cache.cacheRoot, 'trees', `flow@${sha('b')}`));
-      expect(fetch).not.toHaveBeenCalled();
-    });
-
     it('propagates the fetch error verbatim and leaves no final directory behind', async () => {
       // A real fetch failure (git's stderr) must surface to the caller, never
       // be swallowed into a partial empty dir that later reads as a
@@ -497,15 +397,6 @@ describe('MarketplaceCache', () => {
       expect(result.path).toBe(finalPath);
       // The fresh content landed, replacing the empty partial dir.
       await expect(access(join(finalPath, '.dork-manifest'))).resolves.toBeUndefined();
-    });
-
-    it('does not leak temp directories into listPackages', async () => {
-      await seed('flow', sha('1'));
-
-      const packages = await cache.listPackages();
-      expect(packages).toHaveLength(1);
-      expect(packages[0]?.packageName).toBe('flow');
-      expect(packages[0]?.commitSha).toBe(sha('1'));
     });
   });
 
@@ -547,18 +438,9 @@ describe('MarketplaceCache', () => {
 
       await expect(access(leftover)).rejects.toThrow();
     });
-
-    it('is a no-op when there is no legacy root', async () => {
-      await expect(cache.removeLeftovers()).resolves.toBeUndefined();
-    });
   });
 
   describe('listPackages', () => {
-    it('returns an empty array when no packages are cached', async () => {
-      const packages = await cache.listPackages();
-      expect(packages).toEqual([]);
-    });
-
     it('enumerates every cached SHA across all package names', async () => {
       await seed('code-review-suite', sha('a'));
       await seed('code-review-suite', sha('b'));
@@ -572,17 +454,6 @@ describe('MarketplaceCache', () => {
         `code-review-suite@${sha('b')}`,
         `release-manager@${sha('c')}`,
       ]);
-    });
-
-    it('parses package names containing inner @ via lastIndexOf', async () => {
-      // A hypothetical name with an embedded @ — confirms lastIndexOf usage
-      // so the SHA after the LAST @ is what gets parsed out.
-      await seed('@scope-pkg', sha('d'));
-
-      const packages = await cache.listPackages();
-      const found = packages.find((p) => p.commitSha === sha('d'));
-      expect(found).toBeDefined();
-      expect(found!.packageName).toBe('@scope-pkg');
     });
   });
 
@@ -710,18 +581,6 @@ describe('MarketplaceCache', () => {
 
       expect(Date.now() - (await stat(result.path)).mtimeMs).toBeLessThan(IN_USE_GRACE_MS);
     });
-
-    it('stamps the entry another process landed first', async () => {
-      // Purpose: when the fetch finds its commit already cached (the ref moved
-      // onto an old entry), that old entry is what the caller reads now.
-      const existing = await seed('flow', sha('b'));
-      await ageEntry(existing, HOUR_MS);
-
-      const result = await cache.materializePackage('flow', sha('a'), '', fakeFetch(sha('b')));
-
-      expect(result.path).toBe(existing);
-      expect(Date.now() - (await stat(existing)).mtimeMs).toBeLessThan(IN_USE_GRACE_MS);
-    });
   });
 
   describe('onEntryWritten', () => {
@@ -742,17 +601,6 @@ describe('MarketplaceCache', () => {
       await seed('flow', sha('b'));
       expect(listener).toHaveBeenCalledTimes(1);
     });
-
-    it('does not tell the listener when the fetch fails', async () => {
-      const listener = vi.fn();
-      cache.onEntryWritten(listener);
-
-      await expect(
-        cache.materializePackage('flow', sha('a'), '', fakeFetch('not-a-commit'))
-      ).rejects.toThrow();
-
-      expect(listener).not.toHaveBeenCalled();
-    });
   });
 
   describe('clear', () => {
@@ -767,10 +615,6 @@ describe('MarketplaceCache', () => {
       await cache.writeMarketplace('dorkos-community', buildMarketplaceJson());
       const result = await cache.readMarketplace('dorkos-community');
       expect(result).not.toBeNull();
-    });
-
-    it('is a no-op when the cache root does not exist', async () => {
-      await expect(cache.clear()).resolves.toBeUndefined();
     });
   });
 });

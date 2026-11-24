@@ -9,6 +9,8 @@ Adapters implement the `RelayAdapter` plugin interface, which defines a contract
 - **Inbound**: Converting messages from external channels into Relay envelopes published to specific subjects
 - **Outbound**: Converting Relay envelopes into external channel messages
 
+Relay is the delivery engine, not the record. Under ADR `261017-211859` the conversation log is the record; Relay's Maildir store, described under "Adapter Delivery Observability", carries delivery only, takes nothing new, and retires.
+
 The adapter is responsible for:
 
 1. Connecting to and authenticating with the external service

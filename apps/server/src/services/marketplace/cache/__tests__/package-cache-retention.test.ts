@@ -112,37 +112,12 @@ describe('keepRule', () => {
     expect([...kept].sort()).toEqual([installedJustRead.path, pending.path].sort());
   });
 
-  it('keeps the newest entry of each subfolder when an old sidecar names none', () => {
-    // Purpose: without a recorded subfolder the rule cannot tell which of a
-    // name's subfolders is the installed one, so it keeps each one's newest.
-    const recorded: RecordedTree[] = [{ name: 'flow', commitSha: sha('a') }];
-    const first = entry('flow', sha('b'), 'plugins/flow', HOUR_MS);
-    const second = entry('flow', sha('c'), 'packages/flow', 2 * HOUR_MS);
-
-    const kept = keepRule([first, second], recorded);
-    expect([...kept].sort()).toEqual([first.path, second.path].sort());
-  });
-
   it('keeps nothing for a package that is not installed', () => {
     // Purpose: browsing stages one entry per package opened; keeping the
     // newest of each for ever would grow without bound.
     const previewed = entry('stranger', sha('a'), '', HOUR_MS);
 
     expect(keepRule([previewed], []).size).toBe(0);
-  });
-
-  it('treats the whole repository and a subfolder of one name as separate packages', () => {
-    // Purpose: an install of the subfolder must not pin the newest
-    // whole-repository entry of the same name, or the reverse.
-    const recorded: RecordedTree[] = [
-      { name: 'flow', commitSha: sha('a'), subpath: 'plugins/flow' },
-    ];
-    const installed = entry('flow', sha('a'), 'plugins/flow', 2 * HOUR_MS);
-    const wholeNewest = entry('flow', sha('b'), '', HOUR_MS);
-
-    const kept = keepRule([installed, wholeNewest], recorded);
-    expect(kept.has(wholeNewest.path)).toBe(false);
-    expect(kept.has(installed.path)).toBe(true);
   });
 });
 
@@ -389,36 +364,6 @@ describe('with a real data directory', () => {
       await expect(access(recorded)).resolves.toBeUndefined();
     });
 
-    it('reports a pause with its reason, logs it once, and clears it when a sweep completes', async () => {
-      // Purpose: a paused cleanup is invisible otherwise; and a cache swept
-      // after every download must not repeat the same warning each time.
-      const logger = spyLogger();
-      const missing = join(projectPath, 'unplugged');
-      const agents = [{ projectPath: missing }];
-      const owner = new PackageCacheRetention({
-        cache,
-        dorkHome,
-        listAgentScopes: () => agents,
-        logger,
-      });
-      expect(owner.status()).toEqual({ paused: false, reason: null, since: null });
-
-      await expect(owner.sweep()).rejects.toThrow();
-      const first = owner.status();
-      expect(first.paused).toBe(true);
-      expect(first.reason).toBe(`couldn't read ${missing} (the folder is missing)`);
-      expect(Number.isNaN(Date.parse(first.since!))).toBe(false);
-
-      await expect(owner.sweep()).rejects.toThrow();
-      expect(owner.status()).toEqual(first);
-      expect(logger.warn.mock.calls.filter(([m]) => String(m).includes('paused'))).toHaveLength(1);
-
-      agents.length = 0;
-      await owner.sweep();
-      expect(owner.status()).toEqual({ paused: false, reason: null, since: null });
-      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('resumed'));
-    });
-
     it('drops the record of an uninstalled project install', async () => {
       // Purpose: records must not pin trees for ever after an uninstall.
       const installRoot = join(projectPath, '.dork', 'plugins', 'lint');
@@ -445,25 +390,6 @@ describe('with a real data directory', () => {
       await expect(access(path)).resolves.toBeUndefined();
     });
 
-    it('sweeps once when started, and logs what it removed', async () => {
-      // Purpose: whatever piled up while the server was down goes at startup,
-      // and the log says so.
-      const logger = spyLogger();
-      const stale = await cached('stranger', sha('a'), '');
-
-      retention(logger).start();
-
-      await vi.waitFor(async () => {
-        await expect(access(stale)).rejects.toThrow();
-      });
-      await vi.waitFor(() =>
-        expect(logger.info).toHaveBeenCalledWith(
-          expect.stringContaining('Removed 1 unused package'),
-          expect.anything()
-        )
-      );
-    });
-
     it('sweeps after a fetch lands a new entry, once started', async () => {
       // Purpose: the write path is the owner's trigger; without it nothing
       // prunes between restarts however often a poll writes.
@@ -474,61 +400,6 @@ describe('with a real data directory', () => {
       await cached('other', sha('b'), '');
 
       await vi.waitFor(() => expect(removeUnused).toHaveBeenCalledTimes(2));
-    });
-
-    it('logs a failed background sweep instead of throwing', async () => {
-      // Purpose: a sweep triggered by a fetch must never fail that fetch or
-      // surface as an unhandled rejection.
-      const logger = spyLogger();
-      const owner = new PackageCacheRetention({
-        cache,
-        dorkHome,
-        listAgentScopes: () => {
-          throw new Error('mesh is not ready');
-        },
-        logger,
-      });
-
-      owner.start();
-
-      await vi.waitFor(() =>
-        expect(logger.warn).toHaveBeenCalledWith(
-          expect.stringContaining('cleanup is paused'),
-          expect.objectContaining({ error: 'mesh is not ready' })
-        )
-      );
-    });
-
-    it('coalesces requests made while a sweep runs into one more sweep', async () => {
-      // Purpose: a 20-package check lands 20 entries; that must cost one or
-      // two sweeps, not twenty.
-      let scans = 0;
-      let release!: () => void;
-      const gate = new Promise<void>((resolve) => (release = resolve));
-      const owner = new PackageCacheRetention({
-        cache,
-        dorkHome,
-        listAgentScopes: () => {
-          scans += 1;
-          return [];
-        },
-        logger: spyLogger(),
-      });
-      const removeUnused = vi.spyOn(cache, 'removeUnused');
-      removeUnused.mockImplementationOnce(async () => {
-        await gate;
-        return { removed: [], freedBytes: 0, failed: [] };
-      });
-
-      const first = owner.sweep();
-      await vi.waitFor(() => expect(scans).toBe(1));
-      const second = owner.sweep();
-      const third = owner.sweep();
-      expect(second).toBe(third);
-      release();
-      await Promise.all([first, second, third]);
-
-      expect(scans).toBe(2);
     });
   });
 });

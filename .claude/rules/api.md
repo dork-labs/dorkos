@@ -46,7 +46,7 @@ problem(c, 'conflict', { detail: 'Someone else changed this. Reload and try agai
 // Server errors: throw, and let the error handler answer 500 internal_error
 ```
 
-Never write `c.json({ error: '…' }, 4xx)` or a hand-built `{ error, code }` body in new code. Older routes still do; they move to problem documents folder by folder (DOR-4979), and each one that moves changes its callers in the same PR.
+Never write `c.json({ error: '…' }, 4xx)` or a hand-built `{ error, code }` body in new code. Older routes still do; they move to problem documents folder by folder (DOR-4979), and each one that moves changes its callers in the same PR. No alias, no deprecation notice, no `Sunset` header: the old shape goes away in the same PR (ADR `261123-170832`).
 
 ### Use Service Functions
 

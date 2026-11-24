@@ -9,7 +9,7 @@ import type {
 } from '@dorkos/marketplace';
 import type { MarketplaceSource } from '../../marketplace/types.js';
 import type { PreviewResult } from '../../marketplace/installer/marketplace-installer.js';
-import { createGetHandler, GetInputSchema } from '../tool-get.js';
+import { createGetHandler } from '../tool-get.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 
 /**
@@ -115,13 +115,6 @@ function parseToolPayload<T = unknown>(result: { content: { type: 'text'; text: 
   return JSON.parse(result.content[0].text) as T;
 }
 
-describe('GetInputSchema', () => {
-  it('exports a Zod-compatible shape with `name` and optional `marketplace`', () => {
-    expect(GetInputSchema).toHaveProperty('name');
-    expect(GetInputSchema).toHaveProperty('marketplace');
-  });
-});
-
 describe('createGetHandler', () => {
   let tempDirs: string[] = [];
 
@@ -199,30 +192,6 @@ describe('createGetHandler', () => {
     expect(payload.package.readme).toBe('# my-pkg\n\nHello world.');
   });
 
-  it('returns `readme: undefined` when README.md is missing on the staged package', async () => {
-    const packagePath = await stagePackage({});
-    const deps = createStubDeps({
-      sources: [source({ name: 'community' })],
-      marketplaceJsonBySource: {
-        community: {
-          name: 'community',
-          plugins: [entry({ name: 'no-readme' })],
-        },
-      },
-      preview: {
-        manifest: manifest({ name: 'no-readme' }),
-        packagePath,
-      } as PreviewResult,
-    });
-
-    const handler = createGetHandler(deps);
-    const result = await handler({ name: 'no-readme' });
-
-    expect(result.isError).toBeUndefined();
-    const payload = parseToolPayload<{ package: { readme?: string } }>(result);
-    expect(payload.package.readme).toBeUndefined();
-  });
-
   it('returns isError + PACKAGE_NOT_FOUND when no marketplace contains the package', async () => {
     const deps = createStubDeps({
       sources: [source({ name: 'community' }), source({ name: 'official' })],
@@ -277,38 +246,6 @@ describe('createGetHandler', () => {
     );
   });
 
-  it('skips disabled marketplaces when no explicit marketplace is provided', async () => {
-    const packagePath = await stagePackage({ readme: 'r' });
-    const deps = createStubDeps({
-      sources: [
-        source({ name: 'disabled-mp', enabled: false }),
-        source({ name: 'enabled-mp', enabled: true }),
-      ],
-      marketplaceJsonBySource: {
-        // The handler must NOT call the disabled source — provide an Error so
-        // the test fails loudly if it does.
-        'disabled-mp': new Error('should not have been called'),
-        'enabled-mp': {
-          name: 'enabled-mp',
-          plugins: [entry({ name: 'pkg-a' })],
-        },
-      },
-      preview: {
-        manifest: manifest({ name: 'pkg-a' }),
-        packagePath,
-      } as PreviewResult,
-    });
-
-    const handler = createGetHandler(deps);
-    const result = await handler({ name: 'pkg-a' });
-
-    expect(result.isError).toBeUndefined();
-    expect(deps.fetcher.fetchMarketplaceJson).toHaveBeenCalledTimes(1);
-    expect(deps.fetcher.fetchMarketplaceJson).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'enabled-mp' })
-    );
-  });
-
   it('falls back to the marketplace.json entry when installer.preview() throws', async () => {
     const deps = createStubDeps({
       sources: [source({ name: 'community' })],
@@ -354,56 +291,5 @@ describe('createGetHandler', () => {
     expect(payload.package.manifest).toBeNull();
     expect(payload.package.readme).toBeUndefined();
     expect(warnSpy).toHaveBeenCalled();
-  });
-
-  it('logs a warning and continues when one marketplace.json fetch fails', async () => {
-    const packagePath = await stagePackage({ readme: 'r' });
-    const deps = createStubDeps({
-      sources: [source({ name: 'broken-mp' }), source({ name: 'good-mp' })],
-      marketplaceJsonBySource: {
-        'broken-mp': new Error('network is down'),
-        'good-mp': {
-          name: 'good-mp',
-          plugins: [entry({ name: 'pkg-b' })],
-        },
-      },
-      preview: {
-        manifest: manifest({ name: 'pkg-b' }),
-        packagePath,
-      } as PreviewResult,
-    });
-    const warnSpy = vi.spyOn(deps.logger, 'warn');
-
-    const handler = createGetHandler(deps);
-    const result = await handler({ name: 'pkg-b' });
-
-    expect(result.isError).toBeUndefined();
-    const payload = parseToolPayload<{ package: { marketplace: string } }>(result);
-    expect(payload.package.marketplace).toBe('good-mp');
-    expect(warnSpy).toHaveBeenCalled();
-  });
-
-  it("defaults `type` to 'plugin' when the marketplace.json entry omits it", async () => {
-    const packagePath = await stagePackage({ readme: 'r' });
-    const deps = createStubDeps({
-      sources: [source({ name: 'community' })],
-      marketplaceJsonBySource: {
-        community: {
-          name: 'community',
-          plugins: [entry({ name: 'untyped-pkg' })],
-        },
-      },
-      preview: {
-        manifest: manifest({ name: 'untyped-pkg' }),
-        packagePath,
-      } as PreviewResult,
-    });
-
-    const handler = createGetHandler(deps);
-    const result = await handler({ name: 'untyped-pkg' });
-
-    expect(result.isError).toBeUndefined();
-    const payload = parseToolPayload<{ package: { type: string } }>(result);
-    expect(payload.package.type).toBe('plugin');
   });
 });

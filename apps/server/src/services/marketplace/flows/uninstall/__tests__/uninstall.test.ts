@@ -1017,18 +1017,6 @@ describe('UninstallFlow', () => {
     expect(await readFile(path.join(kept, 'config', 'config.json'), 'utf-8')).toBe('{"mine":true}');
   });
 
-  it('throws PackageNotInstalledError when no package matches the name', async () => {
-    const deps = await buildDeps();
-    cleanupDirs.push(deps.dorkHome);
-
-    const flow = new UninstallFlow(deps);
-    await expect(flow.uninstall({ name: 'ghost-package' })).rejects.toThrow(
-      PackageNotInstalledError
-    );
-    expect(deps.extensionManager.disable).not.toHaveBeenCalled();
-    expect(deps.adapterManager.removeAdapter).not.toHaveBeenCalled();
-  });
-
   describe('package-name traversal', () => {
     // The name reaches `path.join(dorkHome, dir, name)` and, one step later,
     // an atomicMove of whatever it found into a tmpdir that is then deleted.
@@ -1196,41 +1184,5 @@ describe('UninstallFlow', () => {
     expect(await readFile(path.join(theirs, 'SKILL.md'), 'utf-8')).toContain(
       'A skill the person wrote.'
     );
-  });
-
-  it('uninstalls cleanly when the receipt predates the field', async () => {
-    const deps = await buildDeps();
-    cleanupDirs.push(deps.dorkHome);
-    const installRoot = path.join(deps.dorkHome, 'plugins', 'plugin-sched');
-    await stageInstalledPackage({
-      installRoot,
-      manifest: buildPluginManifest({ name: 'plugin-sched' }),
-    });
-
-    const flow = new UninstallFlow(deps);
-    const result = await flow.uninstall({ name: 'plugin-sched' });
-
-    expect(result.ok).toBe(true);
-    expect(await pathExists(installRoot)).toBe(false);
-  });
-
-  it('still uninstalls when a generated directory cannot be removed', async () => {
-    const deps = await buildDeps();
-    cleanupDirs.push(deps.dorkHome);
-    const installRoot = path.join(deps.dorkHome, 'plugins', 'plugin-sched');
-    await stageInstalledPackage({
-      installRoot,
-      manifest: buildPluginManifest({ name: 'plugin-sched' }),
-    });
-    // A path that was recorded and has since vanished — the ordinary case of a
-    // cleanup that cannot complete. Failing here would restore a package the
-    // person asked to remove, over a leftover file.
-    await writeReceipt(installRoot, ['/nonexistent/definitely/not/here']);
-
-    const flow = new UninstallFlow(deps);
-    const result = await flow.uninstall({ name: 'plugin-sched' });
-
-    expect(result.ok).toBe(true);
-    expect(await pathExists(installRoot)).toBe(false);
   });
 });

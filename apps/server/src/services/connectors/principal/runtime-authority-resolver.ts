@@ -1,9 +1,12 @@
 /** Canonical session and Mesh authority for runtime connector turns. */
-import type { OpenConnectorTurnInput, ConnectorRuntime } from '../runtime-principal-port.js';
 import {
   ConnectorRuntimeAuthorityError,
-  type ConnectorRuntimeAuthority,
-  type ConnectorRuntimeAuthorityResolver,
+  type OpenConnectorTurnInput,
+  type ConnectorRuntime,
+} from '../runtime-principal-port.js';
+import type {
+  ConnectorRuntimeAuthority,
+  ConnectorRuntimeAuthorityResolver,
 } from './runtime-principal-service.js';
 import type { ConnectorOwnerAuthority, ServerPrincipalClaims } from './server-principal.js';
 

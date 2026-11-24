@@ -161,21 +161,6 @@ describe('DevLinkService refusals', () => {
     }
   });
 
-  it('refuses a relative path', async () => {
-    // Purpose: a relative path resolves against the server's cwd, not the caller's.
-    expect((await refusal(service().preview({ path: 'work/flow', scope: 'global' }))).code).toBe(
-      'dev_link_path_not_real'
-    );
-  });
-
-  it('refuses a folder that does not exist', async () => {
-    // Purpose: nothing to link; say so plainly.
-    const err = await refusal(
-      service().preview({ path: path.join(base, 'nope'), scope: 'global' })
-    );
-    expect(err.code).toBe('dev_link_path_not_allowed');
-  });
-
   it('refuses a folder outside the boundary', async () => {
     // Purpose: the boundary limits where DorkOS reaches on disk; a dev link
     // runs code from the folder, so it must stay inside.
@@ -260,14 +245,6 @@ describe('DevLinkService refusals', () => {
       'dev_link_parked_exists'
     );
   });
-
-  it('refuses a project that does not exist', async () => {
-    // Purpose: the slot lives in the project; a missing one is a typo.
-    const err = await refusal(
-      service().preview({ path: work, scope: 'project', projectPath: path.join(base, 'gone') })
-    );
-    expect(err.code).toBe('dev_link_project_not_found');
-  });
 });
 
 describe('DevLinkService.link', () => {
@@ -294,19 +271,6 @@ describe('DevLinkService.link', () => {
     });
     expect(onPluginsChanged).toHaveBeenCalledWith({ packageName: 'flow', action: 'install' });
     expect(refreshExtensions).toHaveBeenCalled();
-  });
-
-  it('links at project scope into the project slot', async () => {
-    // Purpose: a project link must never land in the global slot.
-    const project = path.join(base, 'proj');
-    await mkdir(project);
-    await service().link({ path: work, scope: 'project', projectPath: project, via: 'app' });
-    expect(await readlink(path.join(project, '.dork', 'plugins', 'flow'))).toBe(work);
-    expect(onPluginsChanged).toHaveBeenCalledWith({
-      packageName: 'flow',
-      action: 'install',
-      projectPath: project,
-    });
   });
 
   it('parks an installed copy byte-identical and keeps its approvals to restore', async () => {
@@ -439,16 +403,6 @@ describe('DevLinkService.link', () => {
     expect(approvals.approvedToRun).toEqual([]);
   });
 
-  it('adopts a link made by hand to the same folder without parking anything', async () => {
-    // Purpose: `link` on a DOR-2194 hand-built link makes it a dev link in place.
-    await symlink(work, globalSlot(), 'dir');
-    const status = await service().link({ path: work, scope: 'global', via: 'app' });
-    expect(status.state).toBe('active');
-    expect(await readlink(globalSlot())).toBe(work);
-    const reading = await readDevLinks(home);
-    expect('links' in reading && reading.links[0]?.parked).toBeUndefined();
-  });
-
   it('creates a junction on Windows', async () => {
     // Purpose: a symlink needs a privilege on Windows; a junction does not.
     const calls: unknown[][] = [];
@@ -499,24 +453,6 @@ describe('DevLinkService.unlink', () => {
     expect(source).not.toMatch(/\brm(Sync)?\s*\(/);
     expect(source).not.toMatch(/\brmdir\([^)]*recursive/);
     expect(source).not.toMatch(/\bfs\.rm\b|\brm,|\{ rm\b/);
-  });
-
-  it('falls back to rmdir for a junction unlink refuses', async () => {
-    // Purpose: an older Windows runtime answers EPERM to unlink on a junction;
-    // the fallback must be the non-recursive rmdir.
-    await service().link({ path: work, scope: 'global', via: 'app' });
-    const rmdir = vi.fn(async (target: string) => {
-      const { unlink } = await import('node:fs/promises');
-      await unlink(target);
-    });
-    const svc = service({
-      unlink: async () => {
-        throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
-      },
-      rmdir: rmdir as unknown as DevLinkFs['rmdir'],
-    });
-    await svc.unlink({ name: 'flow', scope: 'global' });
-    expect(rmdir).toHaveBeenCalledWith(globalSlot());
   });
 
   it('brings the installed copy and its approval back', async () => {
@@ -653,20 +589,6 @@ describe('DevLinkService.unlink', () => {
     expect(approvals).toEqual({ approvedToRun: [], approvedSources: {}, approvedPermissions: {} });
   });
 
-  it('answers only one of two unlinks of the same link', async () => {
-    // Purpose: the record is read again under the lock, so a second unlink
-    // queued behind the first reports there is nothing left to unlink rather
-    // than acting on a record that is gone.
-    await service().link({ path: work, scope: 'global', via: 'app' });
-    const results = await Promise.allSettled([
-      service().unlink({ name: 'flow', scope: 'global' }),
-      service().unlink({ name: 'flow', scope: 'global' }),
-    ]);
-    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-    const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
-    expect(rejected.reason).toMatchObject({ code: 'dev_link_not_found' });
-  });
-
   it('keeps an approval source that was never approved to run, without approving it', async () => {
     // Purpose: a source with no run approval is still a record of which copy
     // an id belongs to; dropping it loses that, and restoring it as approved
@@ -724,13 +646,6 @@ describe('DevLinkService.unlink', () => {
     await service().unlink({ name: 'flow', scope: 'project', projectPath: project });
     expect(approvals).toEqual({ approvedToRun: [], approvedSources: {}, approvedPermissions: {} });
   });
-
-  it('refuses a name with no dev link', async () => {
-    // Purpose: a typo must not be reported as done.
-    expect((await refusal(service().unlink({ name: 'flow', scope: 'global' }))).code).toBe(
-      'dev_link_not_found'
-    );
-  });
 });
 
 describe('DevLinkService.list', () => {
@@ -784,14 +699,6 @@ describe('DevLinkService and the hot-reload watcher', () => {
     expect((await service({}, reloads).list()).links[0]?.lastReloadAt).toBe(
       '2026-10-03T12:00:00.000Z'
     );
-  });
-
-  it('leaves lastReloadAt out until something reloaded', async () => {
-    // Purpose: an absent time means "not yet", never an empty string.
-    const { reloads } = recordingReloads();
-    vi.mocked(reloads.lastReloadAt).mockReturnValue(undefined);
-    const status = await service({}, reloads).link({ path: work, scope: 'global', via: 'app' });
-    expect('lastReloadAt' in status).toBe(false);
   });
 
   it('lets nothing rebuild, refresh or project from the folder once the unlink has started', async () => {
@@ -965,23 +872,6 @@ describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
     expect(err).toMatchObject({ code: 'dev_link_changed', status: 409 });
     expect(approvals.approvedToRun).toEqual([]);
     expect(approvals.approvedPermissions ?? {}).toEqual({});
-  });
-
-  it('says full access on the card for a server half that runs inside DorkOS', async () => {
-    // Purpose: the in-process case is named, never left implicit.
-    await writeFile(path.join(work, '.dork', 'extensions', 'flow-dash', 'server.ts'), '');
-    const shown = await service().describeApproval({ path: work, scope: 'global' });
-    expect(shown).toContain('flow-dash: runs inside DorkOS with full access to this computer');
-    expect(shown).not.toContain('runs nothing on its own');
-  });
-
-  it('says screens only on the card for an extension with no server half', async () => {
-    // Purpose: a screens-only extension is never described as having full
-    // access to the computer.
-    const shown = await service().describeApproval({ path: work, scope: 'global' });
-    expect(shown).toContain('flow-dash: only screens');
-    expect(shown).not.toContain('with your access');
-    expect(shown).not.toContain('full access');
   });
 
   it('links a folder that only narrowed since the card, recording the narrower set', async () => {

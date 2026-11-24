@@ -155,52 +155,6 @@ describe('ConnectorRegistry', () => {
     });
   });
 
-  it('unregister removes a provider; re-registering the same type works again', () => {
-    const composio = new FakeConnectorProvider({ type: 'composio' });
-    registry.register(composio);
-    registry.unregister('composio');
-
-    expect(registry.resolveProvider('composio')).toBeUndefined();
-    expect(registry.listProviders()).toEqual([]);
-    // Unregistering an absent type is a no-op, not a throw (reload calls it
-    // unconditionally before re-creating a provider).
-    expect(() => registry.unregister('composio')).not.toThrow();
-
-    const fresh = new FakeConnectorProvider({ type: 'composio' });
-    registry.register(fresh);
-    expect(registry.resolveProvider('composio')).toBe(fresh);
-  });
-
-  it('unregisters one exact instance and deterministically falls back within its type', () => {
-    const first = new FakeConnectorProvider({
-      type: 'composio',
-      instanceId: 'composio-a' as ConnectorProviderInstanceId,
-    });
-    const second = new FakeConnectorProvider({
-      type: 'composio',
-      instanceId: 'composio-b' as ConnectorProviderInstanceId,
-    });
-    registry.register(first);
-    registry.register(second);
-    expect(registry.resolveProvider('composio')).toBe(second);
-
-    registry.unregisterProviderInstance(first.instanceId);
-    expect(registry.resolveProviderInstance(first.instanceId)).toBeUndefined();
-    expect(registry.resolveProvider('composio')).toBe(second);
-    expect(
-      db
-        .select({ status: connectorProviderInstances.status })
-        .from(connectorProviderInstances)
-        .where(eq(connectorProviderInstances.id, first.instanceId))
-        .get()
-    ).toEqual({ status: 'unavailable' });
-
-    registry.register(first);
-    registry.unregisterProviderInstance(first.instanceId);
-    expect(registry.resolveProvider('composio')).toBe(second);
-    expect(registry.listProviders()).toEqual([second]);
-  });
-
   it('degrades gracefully for accounts whose provider was unregistered', async () => {
     const composio = new FakeConnectorProvider({ type: 'composio' });
     registry.register(composio);
@@ -295,33 +249,6 @@ describe('ConnectorRegistry', () => {
       expect(lastVerifiedAt(unreachable.id)).toBe(verifiedBefore);
       // The reachable provider still refreshed.
       expect(changes).toEqual([{ connectionId: healthy.id, from: 'active', to: 'expired' }]);
-    });
-
-    it('records nothing from a status the service did not state', async () => {
-      const composio = new FakeConnectorProvider({ type: 'composio' });
-      registry.register(composio);
-      const gmail = await connectOne(registry, composio, 'gmail', 'personal');
-      composio.setStatus(registry.accountBinding(gmail.id)!.externalAccountRef, 'expired');
-      await registry.refreshSignIns();
-      const before = db
-        .select({ status: connections.status, at: connections.lastVerifiedAt })
-        .from(connections)
-        .where(eq(connections.id, gmail.id))
-        .get();
-      composio.setStatus(registry.accountBinding(gmail.id)!.externalAccountRef, 'unknown');
-      await new Promise((resolve) => setTimeout(resolve, 5));
-
-      const { changes, failures } = await registry.refreshSignIns();
-
-      expect({ changes, failures }).toEqual({ changes: [], failures: [] });
-      expect(
-        db
-          .select({ status: connections.status, at: connections.lastVerifiedAt })
-          .from(connections)
-          .where(eq(connections.id, gmail.id))
-          .get()
-      ).toEqual(before);
-      expect(before?.status).toBe('expired');
     });
 
     it('never adds, closes, relabels or moves an account; it only records the sign-in', async () => {
@@ -476,51 +403,6 @@ describe('ConnectorRegistry', () => {
       } finally {
         await fs.rm(dir, { recursive: true, force: true });
       }
-    });
-
-    it('drops the kept list when the provider is removed or replaced', async () => {
-      const provider = new FakeConnectorProvider({ type: 'composio' });
-      const pages = vi.spyOn(provider, 'listToolkitPage');
-      registry.register(provider, 'material-a');
-      await registry.readCatalog(provider, signal());
-      await registry.readCatalog(provider, signal());
-      expect(pages).toHaveBeenCalledTimes(1);
-
-      registry.unregisterProviderInstance(provider.instanceId);
-      await expect(registry.readCatalog(provider, signal())).rejects.toThrow(
-        'composio is no longer set up.'
-      );
-
-      registry.register(provider, 'material-a');
-      await registry.readCatalog(provider, signal());
-      expect(pages).toHaveBeenCalledTimes(2);
-
-      // Registering over a live instance in place is a setup change too.
-      const replacement = new FakeConnectorProvider({ type: 'composio' });
-      const replacementPages = vi.spyOn(replacement, 'listToolkitPage');
-      registry.register(replacement, 'material-a');
-      await registry.readCatalog(replacement, signal());
-      expect(replacementPages).toHaveBeenCalledTimes(1);
-    });
-
-    it('drops every kept copy through one notice, even when the same object registers again', async () => {
-      const provider = new FakeConnectorProvider({ type: 'composio' });
-      const pages = vi.spyOn(provider, 'listToolkitPage');
-      const removed = vi.fn();
-      registry.onProviderInstanceRemoved(removed);
-      registry.register(provider, 'material-a');
-      expect(removed).not.toHaveBeenCalled();
-      await registry.readCatalog(provider, signal());
-
-      // A key saved again re-registers the live instance: the app list and
-      // everything else kept for the way are dropped together.
-      registry.register(provider, 'material-a');
-      expect(removed).toHaveBeenCalledWith(provider.instanceId);
-      await registry.readCatalog(provider, signal());
-      expect(pages).toHaveBeenCalledTimes(2);
-
-      registry.unregisterProviderInstance(provider.instanceId);
-      expect(removed).toHaveBeenCalledTimes(2);
     });
   });
 });

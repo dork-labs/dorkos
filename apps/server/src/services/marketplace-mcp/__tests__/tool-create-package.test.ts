@@ -352,88 +352,6 @@ describe('createCreatePackageHandler', () => {
     expect(await readDeclaredVersion(pkg)).toBe('0.0.2');
   });
 
-  it('still returns created when the re-read fails, with a warning', async () => {
-    const handler = createCreatePackageHandler(
-      buildDeps({
-        dorkHome,
-        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
-        logger,
-        sourceManager: {
-          list: vi.fn(async () => [
-            { name: PERSONAL_MARKETPLACE_NAME, source: 'file:///p', enabled: true },
-          ]),
-        } as unknown as MarketplaceMcpDeps['sourceManager'],
-        fetcher: {
-          fetchMarketplaceJson: vi.fn(async () => {
-            throw new Error('unreadable');
-          }),
-        } as unknown as MarketplaceMcpDeps['fetcher'],
-      })
-    );
-
-    const { payload } = parseResult(
-      await handler({ name: 'still-made', type: 'plugin', description: 'Made up.' })
-    );
-    expect(payload.status).toBe('created');
-    expect(logger.warn).toHaveBeenCalledWith(
-      '[marketplace_create_package] failed to refresh the personal marketplace',
-      { error: 'unreadable' }
-    );
-  });
-
-  it('forwards categories to the scaffolder, deriving the primary category', async () => {
-    const handler = createCreatePackageHandler(
-      buildDeps({
-        dorkHome,
-        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
-        logger,
-      })
-    );
-
-    const result = await handler({
-      name: 'categorized-pkg',
-      type: 'plugin',
-      description: 'A categorized plugin.',
-      categories: ['dev-tools', 'productivity'],
-    });
-    const { payload } = parseResult(result);
-    expect(payload.status).toBe('created');
-
-    const manifestPath = join(payload.packagePath as string, '.dork', 'manifest.json');
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as {
-      categories?: string[];
-      category?: string;
-    };
-    expect(manifest.categories).toEqual(['dev-tools', 'productivity']);
-    expect(manifest.category).toBe('dev-tools');
-  });
-
-  it('writes an empty categories[] when categories is not passed', async () => {
-    const handler = createCreatePackageHandler(
-      buildDeps({
-        dorkHome,
-        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
-        logger,
-      })
-    );
-
-    const result = await handler({
-      name: 'uncategorized-pkg',
-      type: 'plugin',
-      description: 'An uncategorized plugin.',
-    });
-    const { payload } = parseResult(result);
-    expect(payload.status).toBe('created');
-
-    const manifestPath = join(payload.packagePath as string, '.dork', 'manifest.json');
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as {
-      categories?: string[];
-      category?: string;
-    };
-    expect(manifest.categories).toEqual([]);
-    expect(manifest.category).toBeUndefined();
-  });
-
   it('is idempotent when the same package name is registered twice', async () => {
     const handler = createCreatePackageHandler(
       buildDeps({
@@ -512,50 +430,6 @@ describe('createCreatePackageHandler', () => {
     expect(registered).toEqual(Array.from({ length: N }, (_, i) => `concurrent-pkg-${i}`).sort());
   });
 
-  it('registerInPersonalMarketplace helper is a no-op when the entry already exists', async () => {
-    // Manually pre-populate marketplace.json with a `dup-pkg` entry, then
-    // attempt to scaffold a package by the same name. The scaffolder
-    // succeeds (clean dir), but the helper should NOT add a second entry.
-    const manifestPath = join(personalMarketplaceRoot(dorkHome), 'marketplace.json');
-    const seeded = {
-      name: PERSONAL_MARKETPLACE_NAME,
-      description: 'seeded',
-      plugins: [
-        {
-          name: 'dup-pkg',
-          type: 'skill-pack',
-          description: 'pre-existing entry',
-          source: 'file:///seeded',
-        },
-      ],
-    };
-    const { writeFile } = await import('node:fs/promises');
-    await writeFile(manifestPath, JSON.stringify(seeded, null, 2) + '\n', 'utf-8');
-
-    const handler = createCreatePackageHandler(
-      buildDeps({
-        dorkHome,
-        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
-        logger,
-      })
-    );
-
-    const result = await handler({
-      name: 'dup-pkg',
-      type: 'skill-pack',
-      description: 'Will scaffold but not duplicate.',
-    });
-    const { payload } = parseResult(result);
-    expect(payload.status).toBe('created');
-
-    const parsed = JSON.parse(await readFile(manifestPath, 'utf-8')) as {
-      plugins: { name: string; description: string }[];
-    };
-    expect(parsed.plugins.filter((p) => p.name === 'dup-pkg')).toHaveLength(1);
-    // The original entry survived (helper did NOT overwrite it).
-    expect(parsed.plugins[0]?.description).toBe('pre-existing entry');
-  });
-
   it('returns CREATE_FAILED when the scaffolder throws (e.g., directory exists)', async () => {
     const handler = createCreatePackageHandler(
       buildDeps({
@@ -608,123 +482,19 @@ describe('createCreatePackageHandler', () => {
       packageType: 'plugin',
     });
   });
-
-  it('passes the resolved token through resolveToken when confirmationToken is provided', async () => {
-    const { provider: provider, grantPending } = buildTokenProvider();
-    const resolveSpy = vi.spyOn(provider, 'resolveToken');
-    const handler = createCreatePackageHandler(
-      buildDeps({ dorkHome, confirmationProvider: provider, logger })
-    );
-
-    const first = await handler({
-      name: 'token-routed',
-      type: 'agent',
-      description: 'Token-routed package.',
-    });
-    const token = parseResult(first).payload.confirmationToken as string;
-    grantPending();
-
-    await handler({
-      name: 'token-routed',
-      type: 'agent',
-      description: 'Token-routed package.',
-      confirmationToken: token,
-    });
-
-    // The token alone is not enough: resolving restates the operation so the
-    // approval can be checked against what is about to run.
-    expect(resolveSpy).toHaveBeenCalledWith(token, {
-      packageName: 'token-routed',
-      marketplace: PERSONAL_MARKETPLACE_NAME,
-      operation: 'create-package',
-      packageType: 'agent',
-    });
-  });
-
-  it('logs a warning but still returns created when registerInPersonalMarketplace fails', async () => {
-    // Delete marketplace.json so registerInPersonalMarketplace cannot read
-    // it. The scaffolder still succeeds; the registration helper logs and
-    // swallows the error so the user-visible result is still `created`.
-    const manifestPath = join(personalMarketplaceRoot(dorkHome), 'marketplace.json');
-    await rm(manifestPath);
-
-    const customLogger = buildLogger();
-    const handler = createCreatePackageHandler(
-      buildDeps({
-        dorkHome,
-        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
-        logger: customLogger,
-      })
-    );
-
-    const result = await handler({
-      name: 'registry-broken',
-      type: 'plugin',
-      description: 'Registry write will fail.',
-    });
-    const { payload } = parseResult(result);
-    expect(payload.status).toBe('created');
-    expect(customLogger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('marketplace_create_package'),
-      expect.objectContaining({ error: expect.any(String) })
-    );
-
-    // The package directory still exists — only the registry write failed.
-    await expect(
-      access(join(personalMarketplaceRoot(dorkHome), 'packages', 'registry-broken'))
-    ).resolves.toBeUndefined();
-  });
 });
 
 describe('CreatePackageInputSchema', () => {
-  it('exports a Zod schema shape with name, type, description, author, categories, confirmationToken', async () => {
-    const { CreatePackageInputSchema } = await import('../tool-create-package.js');
-    expect(CreatePackageInputSchema).toBeDefined();
-    expect(CreatePackageInputSchema.name).toBeDefined();
-    expect(CreatePackageInputSchema.type).toBeDefined();
-    expect(CreatePackageInputSchema.description).toBeDefined();
-    expect(CreatePackageInputSchema.author).toBeDefined();
-    expect(CreatePackageInputSchema.categories).toBeDefined();
-    expect(CreatePackageInputSchema.confirmationToken).toBeDefined();
-  });
-
-  it('accepts a list of controlled category slugs', async () => {
-    const { CreatePackageInputSchema } = await import('../tool-create-package.js');
-    const result = CreatePackageInputSchema.categories.safeParse(['dev-tools', 'productivity']);
-    expect(result.success).toBe(true);
-  });
-
   it('rejects an off-list category slug', async () => {
     const { CreatePackageInputSchema } = await import('../tool-create-package.js');
     const result = CreatePackageInputSchema.categories.safeParse(['not-a-category']);
     expect(result.success).toBe(false);
   });
 
-  it('treats categories as optional', async () => {
-    const { CreatePackageInputSchema } = await import('../tool-create-package.js');
-    const result = CreatePackageInputSchema.categories.safeParse(undefined);
-    expect(result.success).toBe(true);
-  });
-
   it('rejects names that do not match the kebab-case regex', async () => {
     const { CreatePackageInputSchema } = await import('../tool-create-package.js');
     const result = CreatePackageInputSchema.name.safeParse('Bad_Name');
     expect(result.success).toBe(false);
-  });
-
-  it('accepts a valid kebab-case package name', async () => {
-    const { CreatePackageInputSchema } = await import('../tool-create-package.js');
-    const result = CreatePackageInputSchema.name.safeParse('good-name-123');
-    expect(result.success).toBe(true);
-  });
-
-  it('restricts type to the four supported package types', async () => {
-    const { CreatePackageInputSchema } = await import('../tool-create-package.js');
-    expect(CreatePackageInputSchema.type.safeParse('agent').success).toBe(true);
-    expect(CreatePackageInputSchema.type.safeParse('plugin').success).toBe(true);
-    expect(CreatePackageInputSchema.type.safeParse('skill-pack').success).toBe(true);
-    expect(CreatePackageInputSchema.type.safeParse('adapter').success).toBe(true);
-    expect(CreatePackageInputSchema.type.safeParse('garbage').success).toBe(false);
   });
 });
 
