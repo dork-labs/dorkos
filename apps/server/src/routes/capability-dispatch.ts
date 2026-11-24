@@ -16,7 +16,7 @@
  * | A person must approve first | `202`, the approval payload |
  * | The gate refused for good | `403`, the refusal payload |
  * | A Wi-Fi sign-in asked for an `act` or `destructive` one without `allowFromWifi` | `403` `NOT_FROM_WIFI` |
- * | The input failed the capability's schema | `400` `Validation failed` |
+ * | The input failed the capability's schema | `400` problem, code `invalid_request` |
  * | The capability refused (`CapabilityToolError`) | {@link toolErrorStatus} of its code |
  * | Unknown id / a stopped extension's tool | `404` / `503` |
  * | Anything else | `500` |

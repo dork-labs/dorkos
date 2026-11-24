@@ -4,6 +4,7 @@ covers:
   - 'fix(api): problem copy says something useful, and schema failures get their own code (DOR-4979)'
   - "fix(api): the chain never puts an exception's words on the wire (DOR-4979)"
   - 'fix(api): room uploads and refused origins answer in fixed words (DOR-4979)'
+  - 'fix(api): the capability dispatcher answers a schema failure as a problem, after the mount merged (DOR-4979)'
 ---
 
 ### Changed
