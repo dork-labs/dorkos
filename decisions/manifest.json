@@ -7860,7 +7860,7 @@
       "id": "261017-211859",
       "slug": "a-conversation-is-the-shared-log-a-session-is-private",
       "title": "A conversation is the shared log; a session is one agent's private context seated behind it",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-10-17",
       "extractedFrom": null,
       "specSlug": "conversation-model",

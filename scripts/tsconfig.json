@@ -38,6 +38,7 @@
     "api-lint/**/*.ts",
     "sharding/**/*.ts",
     "neon-preview-sweep.ts",
-    "origin-branch-janitor.ts"
+    "origin-branch-janitor.ts",
+    "provenance/**/*.ts"
   ]
 }

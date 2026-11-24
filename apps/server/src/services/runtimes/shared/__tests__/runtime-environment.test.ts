@@ -14,6 +14,8 @@ const parent = {
   MCP_API_KEY: 'fake-server-token',
   DORKOS_AGENT_TOKEN: 'fake-stale-identity',
   DORKOS_SESSION_ID: 'fake-stale-chat',
+  DORKOS_AGENT_ID: 'fake-stale-agent',
+  DORKOS_SPACE_ID: 'fake-stale-space',
   ANTHROPIC_API_KEY: 'fake-anthropic',
   OPENAI_API_KEY: 'fake-openai',
   OPENROUTER_API_KEY: 'fake-openrouter',
@@ -35,6 +37,8 @@ describe('runtime environment authority', () => {
         'MCP_API_KEY',
         'DORKOS_AGENT_TOKEN',
         'DORKOS_SESSION_ID',
+        'DORKOS_AGENT_ID',
+        'DORKOS_SPACE_ID',
         'SYNTHETIC_TOOL_SETTING',
         'AWS_SECRET_ACCESS_KEY',
         'GOOGLE_APPLICATION_CREDENTIALS',
@@ -231,5 +235,20 @@ it.each(['claude-code', 'codex', 'opencode', 'doe'] as const)(
         overrides: { DORKOS_SESSION_ID: 'server-chat' },
       })
     ).toThrow('Unsupported');
+  }
+);
+
+it.each(['claude-code', 'codex', 'opencode', 'doe'] as const)(
+  'the agent and space references ride a turn, and only a turn, for %s (DOR-5138)',
+  (runtime) => {
+    const references = { DORKOS_AGENT_ID: 'server-agent', DORKOS_SPACE_ID: 'server-space' };
+    expect(
+      projectRuntimeEnvironment({ parent, runtime, purpose: 'turn', overrides: references })
+    ).toMatchObject(references);
+    for (const purpose of ['warmup', 'locator', 'auth-probe'] as const)
+      for (const [name, value] of Object.entries(references))
+        expect(() =>
+          projectRuntimeEnvironment({ parent, runtime, purpose, overrides: { [name]: value } })
+        ).toThrow('Unsupported');
   }
 );
