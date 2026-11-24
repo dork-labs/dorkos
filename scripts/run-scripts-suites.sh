@@ -78,6 +78,7 @@ bash scripts/test-pr-related.sh
 bash scripts/test-auto-revert.sh
 bash scripts/test-rolling-bisect.sh
 bash scripts/test-daily-sweep.sh
+bash scripts/test-attest-pr-check.sh
 bash scripts/test-daily-release.sh
 bash scripts/test-after-merge-alert.sh
 bash scripts/test-browser-smoke-scope.sh
