@@ -23,30 +23,25 @@ review loop cheap.
 The independent adversarial review runs **against a pushed branch, before a PR
 exists**. Opening the PR is the last step, not the first:
 
-1. Build in an isolated worktree and run the local gates.
+1. Build in an isolated worktree. Locally only the fast pre-commit and pre-push
+   hooks run.
 2. Push the branch. **Open nothing.**
 3. A reviewer fetches and checks out that branch. It does not need a PR.
 4. Findings, fixes, convergence.
 5. Squash to one clean commit carrying one changelog fragment.
-6. Run `pnpm verify:preopen` on the final head with a clean tree, then check that
-   exact commit with `node scripts/verify-proof/cli.ts check HEAD --level preopen`.
-   The preopen run is the affected typecheck and lint; the whole scripts suite
-   when the change can reach it, and the repo-wide scripts suites (which any
-   change can break) when it can't; and ESLint on the changed files, or the full
-   root lint when the root lint setup changed. It leaves the package tests to
-   CI's test shards. It records its pass locally in the common git
-   directory, as `<sha>.preopen`, only when HEAD and the working tree stay clean
-   and unchanged throughout the run. A new commit needs its own pass. A full
-   `pnpm verify` pass also satisfies `--level preopen`. A PR that touches
-   `.github/` needs a full `pnpm verify` (or a PM waiver) instead, checked with
-   plain `check HEAD`, since CI can't vouch for changes to itself. Nothing arms on a
-   proof any more: `scripts/open-pr.sh` turns on auto-merge at open, and
-   `arm.sh`, which read full proofs, is retired (DOR-5124). The checker runs no gates. If an exceptional PR must
-   open without proof, add `--no-verify-proof` to plain `check HEAD` (it is
-   refused with `--level preopen`); it logs who, when, and which commit locally.
-   This does not bypass CI.
-7. **Then** open the PR, already reviewed, so the repo's automated review spends
-   its single pass on final content.
+6. **Open the PR with `scripts/open-pr.sh` and let CI judge.** No local check is a
+   step before opening (decided 2026-11-24, when the shared heavy slot had 37 jobs
+   queued and agents waited hours for `pnpm verify:preopen`). The PR's CI runs the
+   same typecheck, lint and tests, and `scripts/open-pr.sh` turns on auto-merge at
+   open, which waits for every required check, so a red PR never merges. Nothing
+   arms on a local proof any more: `arm.sh`, which read full proofs, is retired
+   (DOR-5124). `pnpm verify:preopen` and `pnpm verify` are optional, for debugging
+   a failure; a PR touching `.github/` needs neither. Opening last means the
+   automated review spends its single pass on final content.
+7. **If a check goes red, fix forward.** `gh pr checks <n>` names the failing check;
+   `gh run view <run-id> --log-failed` shows why. Fix it on the branch and push: CI
+   runs again at the new head and auto-merge stays on. See "Watching an armed PR"
+   below for telling your red from a standing one.
 
 **A pushed branch that will not become a PR is yours to delete.** GitHub removes a
 branch from origin only when its PR merges, so a review branch you abandon, or an
@@ -74,9 +69,8 @@ Every reason below is a cost measured on 2026-07-27/28, not a preference:
   every check was green with the defects live. A branch invites nothing.
 - **The automated review fires on open**, so opening early spends it on a draft.
 
-The one real cost: **CI does not run until the PR opens.** Cover it two ways. Run
-the local gates yourself, which is cheap (`pnpm verify:preopen`, plus the changelog gate
-below). And when a runner-only check is the honest gate (smoke tests, the packaged
+The one real cost: **CI does not run until the PR opens.** The changelog gate below is
+cheap to run yourself. When a runner-only check is the honest gate (smoke tests, the packaged
 runtime, Docker, anything path-filtered to its own workflow), open a **draft** so
 CI runs without inviting a merge, then mark ready once review converges.
 
