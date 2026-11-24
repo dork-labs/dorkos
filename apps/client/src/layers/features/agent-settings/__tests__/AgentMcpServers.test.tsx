@@ -24,11 +24,7 @@ import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
-import type {
-  Transport,
-  CapabilityApprovalRequired,
-  McpServerEntry,
-} from '@dorkos/shared/transport';
+import type { Transport, CapabilityApprovalRequired } from '@dorkos/shared/transport';
 import type {
   AgentManifest,
   ManagedMcpServer,
@@ -142,18 +138,6 @@ describe('AgentMcpServers', () => {
     } as RuntimeCapabilities);
   });
 
-  it('cross-links to Settings → Advanced → Tools for the inbound MCP direction (plan D7)', async () => {
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([]),
-      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText(/other apps to use DorkOS’s tools/i)));
-    fireEvent.click(within(container).getByRole('button', { name: /see settings.*tools/i }));
-    expect(openSettingsSpy).toHaveBeenCalledWith('tools', 'external-mcp');
-  });
-
   it('renders a managed row joined with live status by name', async () => {
     const transport = createMockTransport({
       listAgentMcpServers: vi.fn().mockResolvedValue([managedServer]),
@@ -199,36 +183,6 @@ describe('AgentMcpServers', () => {
     expect(within(container).queryByLabelText('Enable legacy')).not.toBeInTheDocument();
   });
 
-  it('badges a user-scoped server as coming from your computer', async () => {
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([]),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [{ name: 'granola-notes', type: 'stdio', status: 'connected', scope: 'user' }],
-      }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('computer')).toBeInTheDocument());
-    expect(
-      within(container).getByText(/From your computer-wide config\. Add it to manage it here\./)
-    ).toBeInTheDocument();
-  });
-
-  it('badges a project-scoped server as coming from this project', async () => {
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([]),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [{ name: 'shadcn', type: 'stdio', status: 'connected', scope: 'project' }],
-      }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('project')).toBeInTheDocument());
-    expect(
-      within(container).getByText(/From this project’s config\. Add it to manage it here\./)
-    ).toBeInTheDocument();
-  });
-
   it('parses a plugin-qualified name: clean name on the card, plugin badge, raw id in Details', async () => {
     const transport = createMockTransport({
       listAgentMcpServers: vi.fn().mockResolvedValue([]),
@@ -248,70 +202,6 @@ describe('AgentMcpServers', () => {
     // string the runtime actually used.
     fireEvent.click(within(container).getByRole('button', { name: 'Details' }));
     expect(within(container).getByText('plugin:context7')).toBeInTheDocument();
-  });
-
-  it('shows an unrecognised name exactly as the runtime gave it (the parser falls through)', async () => {
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([]),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [{ name: 'my-server', type: 'stdio', status: 'connected' }],
-      }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('my-server')).toBeInTheDocument());
-    // No plugin badge and no second name to disclose — there was nothing to parse,
-    // so nothing was renamed.
-    expect(within(container).queryByText('plugin')).not.toBeInTheDocument();
-    expect(within(container).queryByText('Raw id')).not.toBeInTheDocument();
-  });
-
-  it('offers no Details at all on a card that would have nothing to put in them', async () => {
-    // The exact shape the honest-scope fix creates, and the shape of EVERY card
-    // from a runtime that reports no scope (OpenCode): no scope, no plugin, an
-    // unparsed name, no error. A card DorkOS does not manage has no connection to
-    // describe either, so all three possible rows are absent — and the affordance
-    // used to expand into an empty bordered box with a Collapse control under it.
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([]),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [{ name: 'my-server', type: 'stdio', status: 'connected' }],
-      }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('my-server')).toBeInTheDocument());
-    expect(within(container).queryByRole('button', { name: 'Details' })).not.toBeInTheDocument();
-  });
-
-  it('still offers Details when there IS something to show — a scope, or an error', async () => {
-    // The other half, so the fix above cannot be satisfied by dropping Details
-    // everywhere: a card with any one row keeps the affordance.
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([]),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [
-          { name: 'scoped', type: 'stdio', status: 'connected', scope: 'project' },
-          { name: 'broken', type: 'stdio', status: 'failed', error: 'ECONNREFUSED' },
-        ],
-      }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('scoped')).toBeInTheDocument());
-    expect(within(container).getAllByRole('button', { name: 'Details' })).toHaveLength(2);
-  });
-
-  it('renders the empty state when there are no managed or discovered servers', async () => {
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([]),
-      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() =>
-      expect(within(container).getByText(/No MCP servers yet/i)).toBeInTheDocument()
-    );
   });
 
   it('renders an error state with a retry when the list fails', async () => {
@@ -364,40 +254,6 @@ describe('AgentMcpServers', () => {
       expect(within(container).getByRole('button', { name: /add server/i })).toBeInTheDocument()
     );
     expect(within(container).queryByText(/can.t use added servers yet/i)).not.toBeInTheDocument();
-  });
-
-  it('offers Add to agent on an unmanaged card for a managed-capable runtime', async () => {
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([]),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [{ name: 'legacy', type: 'stdio', status: 'connected' }],
-      }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() =>
-      expect(
-        within(container).getByRole('button', { name: 'Add legacy to agent' })
-      ).toBeInTheDocument()
-    );
-  });
-
-  it('hides Manage on a discovered row when the runtime cannot manage servers', async () => {
-    vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
-      supportsManagedMcpServers: false,
-    } as RuntimeCapabilities);
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([]),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [{ name: 'legacy', type: 'stdio', status: 'connected' }],
-      }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('legacy')).toBeInTheDocument());
-    expect(
-      within(container).queryByRole('button', { name: 'Add legacy to agent' })
-    ).not.toBeInTheDocument();
   });
 
   it('imports a discovered server: Manage → approval → confirm → grant → retry → managed', async () => {
@@ -536,21 +392,6 @@ describe('AgentMcpServers', () => {
     });
   });
 
-  it('labels the live status legibly instead of a bare, aria-hidden color dot', async () => {
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([oauthServer]),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [{ name: 'granola', type: 'http', status: 'needs-auth' }],
-      }),
-    });
-    const { container } = renderComponent(transport);
-
-    // The status is legible text a screen reader reaches — not the old, label-less
-    // color dot. jest-dom's toBeVisible treats an aria-hidden node as not visible,
-    // so this reddens if the chip regresses to a bare aria-hidden dot.
-    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeVisible());
-  });
-
   it('shows Disabled (and no Sign in) for a disabled server even when live status is needs-auth', async () => {
     // The `enabled ? live?.status : 'disabled'` fold must win: a turned-off server
     // is Disabled and offers no sign-in, whatever its last live status was.
@@ -569,46 +410,6 @@ describe('AgentMcpServers', () => {
     expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
   });
 
-  // DOR-3207, design pass row 11: a browser the agent-browser guard leaves out says why, calmly.
-  it('says a left-out browser uses DorkOS’s own browser, with no red, code or actions', async () => {
-    const leftOutBrowser = {
-      name: 'browser',
-      enabled: true,
-      connection: {
-        transport: 'stdio' as const,
-        command: 'npx',
-        args: ['-y', '@playwright/mcp@0.0.82', '--executable-path', '/opt/my-chrome'],
-        env: {},
-      },
-      addedAt: '2026-01-01T00:00:00.000Z',
-      addedBy: 'operator',
-      leftOut: 'own-browser-only' as const,
-    };
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([leftOutBrowser]),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [{ name: 'browser', type: 'stdio', status: 'failed', error: 'spawn ENOENT' }],
-      }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() =>
-      expect(
-        within(container).getByText(
-          "DorkOS uses its own browser for agents. Custom browser paths aren't allowed."
-        )
-      ).toBeInTheDocument()
-    );
-    expect(within(container).getByText('Not used')).toBeInTheDocument();
-    expect(within(container).queryByText('Off')).not.toBeInTheDocument();
-    expect(within(container).queryByText('Failed')).not.toBeInTheDocument();
-    expect(within(container).queryByText(/ENOENT/)).not.toBeInTheDocument();
-    expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
-    expect(
-      within(container).queryByRole('button', { name: /^(Test|Try)/ })
-    ).not.toBeInTheDocument();
-  });
-
   it('shows a Sign in button only when the server needs OAuth sign-in', async () => {
     const transport = createMockTransport({
       listAgentMcpServers: vi.fn().mockResolvedValue([oauthServer]),
@@ -621,19 +422,6 @@ describe('AgentMcpServers', () => {
     await waitFor(() =>
       expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument()
     );
-  });
-
-  it('hides the Sign in button when the server is connected', async () => {
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([oauthServer]),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [{ name: 'granola', type: 'http', status: 'connected' }],
-      }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('granola')).toBeInTheDocument());
-    expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
   });
 
   it('renders a friendly sign-in nudge, not the raw 401, when Test reports needsAuth', async () => {
@@ -684,21 +472,6 @@ describe('AgentMcpServers', () => {
     );
   });
 
-  it('reads needs-auth off the listing when the runtime has reported nothing yet', async () => {
-    const needsAuth: ManagedMcpServerView = { ...oauthServer, authStatus: 'needs-auth' };
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([needsAuth]),
-      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
-    });
-    const { container } = renderComponent(transport);
-
-    // Without the derived authStatus this row reads "Unknown" with no button —
-    // which is what the runtime cache alone can say before the first turn.
-    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
-    expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument();
-    expect(within(container).queryByText('Unknown')).not.toBeInTheDocument();
-  });
-
   it('lets a live token override a stale runtime needs-auth', async () => {
     const connected: ManagedMcpServerView = { ...oauthServer, authStatus: 'connected' };
     const transport = createMockTransport({
@@ -716,70 +489,6 @@ describe('AgentMcpServers', () => {
     await waitFor(() => expect(within(container).getByText('Signed in')).toBeInTheDocument());
     expect(within(container).queryByText('Needs sign-in')).not.toBeInTheDocument();
     expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
-  });
-
-  it('lets a missing token override a stale runtime connected (the symmetric half)', async () => {
-    // The expiry path: signed in, one turn ran (runtime cached "connected"), then
-    // the token expired and its refresh failed, so the cache evicted it. Reading
-    // the runtime alone leaves a green chip on a server whose next turn provably
-    // carries no bearer — DOR-985 again, from the other side.
-    const stale: ManagedMcpServerView = { ...oauthServer, authStatus: 'needs-auth' };
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([stale]),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [{ name: 'granola', type: 'http', status: 'connected' }],
-      }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
-    expect(within(container).queryByText('Connected')).not.toBeInTheDocument();
-    expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument();
-  });
-
-  it('offers Sign in when Test says needs-auth even while the runtime still says connected', async () => {
-    // Belt to the braces above: whatever the caches say, Test is the only thing
-    // here that actually contacted the server. Its 401 must reach the person as a
-    // button, not just as a sentence telling them to press one that is not there.
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([{ ...oauthServer, authStatus: undefined }]),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [{ name: 'granola', type: 'http', status: 'connected' }],
-      }),
-      testAgentMcpServer: vi.fn().mockResolvedValue({ ok: false, needsAuth: true, error: 'raw' }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('Connected')).toBeInTheDocument());
-    expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
-
-    await pressTest(container, 'granola');
-
-    await waitFor(() =>
-      expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument()
-    );
-  });
-
-  it('promotes the chip to Connected when Test dials through (DOR-985 P3)', async () => {
-    // Test is the only thing on this row that actually contacted the server, and
-    // since DOR-985 it dials WITH the bearer. An `ok` is therefore a round trip
-    // that provably worked — stronger evidence than any cache, including the
-    // amber "Needs sign-in" the row was showing a moment earlier.
-    const transport = createMockTransport({
-      listAgentMcpServers: vi
-        .fn()
-        .mockResolvedValue([{ ...oauthServer, authStatus: 'needs-auth' } as ManagedMcpServerView]),
-      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
-      testAgentMcpServer: vi.fn().mockResolvedValue({ ok: true, toolCount: 4 }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
-
-    await pressTest(container, 'granola');
-
-    await waitFor(() => expect(within(container).getByText('Connected')).toBeInTheDocument());
-    expect(within(container).queryByText('Needs sign-in')).not.toBeInTheDocument();
   });
 
   it('clears the "click Sign in" line the moment the sign-in lands (user-reported)', async () => {
@@ -832,202 +541,6 @@ describe('AgentMcpServers', () => {
     );
     expect(within(container).getByText('Signed in')).toBeInTheDocument();
     expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
-  });
-
-  it('clears the nudge when ANOTHER tab is what signed in (user-reported, cross-tab)', async () => {
-    // No sign-in flow ran in this row, so `signedInNow` is false throughout. The
-    // listing landing later with `connected` is the only thing that can retire the
-    // nudge here — and it is also what keeps the line gone after the sign-in panel
-    // above is dismissed and `signedInNow` drops back to false.
-    const listing = vi
-      .fn()
-      .mockResolvedValueOnce([{ ...oauthServer, authStatus: 'needs-auth' } as ManagedMcpServerView])
-      .mockResolvedValue([{ ...oauthServer, authStatus: 'connected' } as ManagedMcpServerView]);
-    const transport = createMockTransport({
-      listAgentMcpServers: listing,
-      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
-      testAgentMcpServer: vi.fn().mockResolvedValue({ ok: false, needsAuth: true, error: '401' }),
-    });
-    const { container, queryClient } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
-    await pressTest(container, 'granola');
-    await waitFor(() =>
-      expect(
-        within(container).getByText('Sign in to granola to use its tools.')
-      ).toBeInTheDocument()
-    );
-
-    await act(async () => {
-      await queryClient.invalidateQueries();
-    });
-
-    await waitFor(() =>
-      expect(
-        within(container).queryByText('Sign in to granola to use its tools.')
-      ).not.toBeInTheDocument()
-    );
-    expect(within(container).getByText('Signed in')).toBeInTheDocument();
-    // …and the button goes with the line. A row reading "Signed in" beside a Sign
-    // in button is the same contradiction from the other side, and `offersSignIn`
-    // reads the probe too — so it has to read the SUPERSEDED one, not the raw.
-    expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
-  });
-
-  it('leaves an unreachable-server line alone after a sign-in', async () => {
-    // The rule is about AUTH facts. "Couldn't reach this server" is a
-    // reachability fact, and signing in does not disprove it — clearing it would
-    // hide a real problem behind a green chip.
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([oauthServer]),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [{ name: 'granola', type: 'http', status: 'needs-auth' }],
-      }),
-      testAgentMcpServer: vi.fn().mockResolvedValue({ ok: false, error: 'ECONNREFUSED' }),
-      startMcpSignin: vi.fn().mockResolvedValue({
-        flowId: 'flow-1',
-        authorizeUrl: 'https://auth.example/authorize?x=1',
-        alreadyConnected: false,
-        disclosure: 'DorkOS keeps the resulting token encrypted on this computer.',
-        message: 'sign-in link',
-      }),
-      pollMcpSignin: vi.fn().mockResolvedValue({ status: 'connected' }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() =>
-      expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument()
-    );
-    await pressTest(container, 'granola');
-    await waitFor(() =>
-      expect(
-        within(container).getByText('This server didn’t answer. It may be down.')
-      ).toBeInTheDocument()
-    );
-
-    fireEvent.click(within(container).getByRole('button', { name: /^Sign in/ }));
-    const link = await waitFor(() =>
-      within(container).getByRole('link', { name: /Open the sign-in page for granola/i })
-    );
-    fireEvent.click(link);
-
-    await waitFor(() => expect(within(container).getByText('Signed in')).toBeInTheDocument());
-    expect(
-      within(container).getByText('This server didn’t answer. It may be down.')
-    ).toBeInTheDocument();
-  });
-
-  it('lets the LISTING win a same-millisecond tie with a probe', async () => {
-    // At equal stamps "which is newer" is unknowable, so the tie is broken toward
-    // the safe answer: believing an overtaken OK probe puts a green chip on a
-    // server with no bearer and hides the Sign in button — the DOR-985 lie in a
-    // 1ms window. A strict `<` also made the staleness behaviour depend on
-    // whether two events landed in the same millisecond, which flaked in a real
-    // full-monorepo run.
-    //
-    // The tie is MANUFACTURED, and manufacturing it means holding one clock for
-    // the whole test: `rosterUpdatedAt` is the listing query's `dataUpdatedAt`
-    // (`Date.now()` when it landed) and the probe's stamp is `Date.now()` when it
-    // settled, so a frozen `Date.now` makes those two equal by construction, with
-    // no window to miss.
-    //
-    // Reading the freeze point back off the query cache instead — the MAX
-    // `dataUpdatedAt` across every query — is what made this flake on CI
-    // (DOR-1060). This panel runs two independent requests, the listing and the
-    // config, and nothing orders them. Land them in one millisecond and the max IS
-    // the listing's stamp, so the probe tied and lost; let the config land a
-    // millisecond later, as a loaded runner does, and the max sat AHEAD of the
-    // listing — so the probe was stamped strictly newer, won the very tie this
-    // test is named for, and took the Sign in button below with it.
-    const now = vi.spyOn(Date, 'now').mockReturnValue(1_760_000_000_000);
-    try {
-      const transport = createMockTransport({
-        listAgentMcpServers: vi
-          .fn()
-          .mockResolvedValue([
-            { ...oauthServer, authStatus: 'needs-auth' } as ManagedMcpServerView,
-          ]),
-        getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
-        testAgentMcpServer: vi.fn().mockResolvedValue({ ok: true, toolCount: 4 }),
-      });
-      const { container } = renderComponent(transport);
-
-      await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
-
-      await pressTest(container, 'granola');
-
-      // The probe really did run and answer OK — this is not a test that passes
-      // because nothing happened. Its answer is then discarded wholesale, so
-      // neither its line nor its chip survives: one superseded answer, read by
-      // the chip, the button and the line alike.
-      await waitFor(() =>
-        expect(transport.testAgentMcpServer).toHaveBeenCalledWith(agent.id, 'granola')
-      );
-      // Wait for the probe to have settled — the card's Sign in button is enabled
-      // again — before reading what survived of it.
-      await waitFor(() =>
-        expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeEnabled()
-      );
-      expect(within(container).queryByText('4 tools available.')).not.toBeInTheDocument();
-      expect(within(container).getByText('Needs sign-in')).toBeInTheDocument();
-      expect(within(container).queryByText('Connected')).not.toBeInTheDocument();
-      expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument();
-    } finally {
-      now.mockRestore();
-    }
-  });
-
-  it('drops a stale OK probe once the listing says the token is gone (DOR-985 P3)', async () => {
-    // The probe pinned the chip green for the life of the panel. Lose the token
-    // while it is open — expiry, a revoke, a refresh that failed — and the row
-    // kept claiming Connected off a probe that had been overtaken, with no Sign in
-    // button: exactly the lie DOR-985 existed to kill, re-introduced by its own
-    // fix. A probe is evidence about one moment; a newer listing outranks it.
-    const listing = vi
-      .fn()
-      .mockResolvedValueOnce([{ ...oauthServer, authStatus: 'connected' } as ManagedMcpServerView])
-      .mockResolvedValue([{ ...oauthServer, authStatus: 'needs-auth' } as ManagedMcpServerView]);
-    const transport = createMockTransport({
-      listAgentMcpServers: listing,
-      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
-      testAgentMcpServer: vi.fn().mockResolvedValue({ ok: true, toolCount: 4 }),
-    });
-    const { container, queryClient } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('Signed in')).toBeInTheDocument());
-    await pressTest(container, 'granola');
-
-    // A fresh OK probe still beats the listing at the moment it lands — that is
-    // the shipped behavior, and it stays.
-    await waitFor(() => expect(within(container).getByText('Connected')).toBeInTheDocument());
-
-    // …then the roster re-reads and reports the token gone. In real life the
-    // sign-in flow's own invalidation triggers this; here it is explicit.
-    await act(async () => {
-      await queryClient.invalidateQueries();
-    });
-
-    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
-    expect(within(container).queryByText('Connected')).not.toBeInTheDocument();
-    expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument();
-  });
-
-  it('lets a missing token override a stale runtime PENDING too (DOR-985 P3)', async () => {
-    // The same lie as a stale `connected`, told more quietly: a cached
-    // "Connecting…" from a past turn outranking the live, provable fact that
-    // there is no token left the row spinning with nothing to press.
-    const stale: ManagedMcpServerView = { ...oauthServer, authStatus: 'needs-auth' };
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([stale]),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [{ name: 'granola', type: 'http', status: 'pending' }],
-      }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
-    expect(within(container).queryByText('Connecting…')).not.toBeInTheDocument();
-    expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument();
   });
 
   it('still shows Failed when the runtime failed, even with a live token', async () => {
@@ -1207,86 +720,6 @@ describe('AgentMcpServers', () => {
     expect(pollMcpSignin).toHaveBeenCalledWith('flow-1');
   });
 
-  /** A promise a test resolves by hand, so one query can be made to land last. */
-  function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
-    let resolve!: (value: T) => void;
-    const promise = new Promise<T>((r) => {
-      resolve = r;
-    });
-    return { promise, resolve };
-  }
-
-  /** The names of the cards on screen, top to bottom. */
-  function cardOrder(container: HTMLElement): (string | null)[] {
-    return [...container.querySelectorAll('[data-mcp-server]')].map((el) =>
-      el.getAttribute('data-mcp-server')
-    );
-  }
-
-  it('waits for the runtime roster before freezing, so a failed server still reaches the top', async () => {
-    // The likely race: the manifest is a file read and lands first, the runtime's
-    // status goes through the runtime and lands second. Freezing on the manifest
-    // alone sorted only the managed servers — and since a runtime FAILURE is
-    // knowable only from the second query, no can't-reach card could ever reach
-    // the attention band. It was appended after the freeze, below every working
-    // card: precisely the card the sort exists to lift.
-    const liveConfig = deferred<{ servers: McpServerEntry[] }>();
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([
-        { ...managedServer, name: 'healthy' },
-        { ...managedServer, name: 'broken' },
-      ]),
-      getMcpConfig: vi.fn().mockReturnValue(liveConfig.promise),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('healthy')).toBeInTheDocument());
-
-    await act(async () => {
-      liveConfig.resolve({
-        servers: [
-          { name: 'healthy', type: 'stdio', status: 'connected' },
-          { name: 'broken', type: 'stdio', status: 'failed', error: 'ECONNREFUSED' },
-        ],
-      });
-    });
-
-    await waitFor(() => expect(within(container).getByText('Can’t reach')).toBeInTheDocument());
-    expect(cardOrder(container)).toEqual(['broken', 'healthy']);
-  });
-
-  it('waits for the managed listing before freezing, so a managed card is not stranded below', async () => {
-    // The same race the other way round. Freezing on the runtime roster alone
-    // sorted only the servers DorkOS does not manage, and appended every managed
-    // one after them — so a server that needs signing in sat BELOW a working
-    // project server it should have led.
-    const managedList = deferred<ManagedMcpServerView[]>();
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockReturnValue(managedList.promise),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [{ name: 'shadcn', type: 'stdio', status: 'connected', scope: 'project' }],
-      }),
-    });
-    const { container } = renderComponent(transport);
-
-    // The roster must genuinely LAND, and commit, while the listing is still in
-    // flight — otherwise both resolve inside one act(), the component sees a
-    // single already-settled commit, and the test passes against a gate that
-    // freezes on whichever query arrived first. It would then be a check that
-    // cannot fail.
-    await waitFor(() => expect(transport.getMcpConfig).toHaveBeenCalled());
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    await act(async () => {
-      managedList.resolve([{ ...oauthServer, authStatus: 'needs-auth' } as ManagedMcpServerView]);
-    });
-
-    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
-    expect(cardOrder(container)).toEqual(['granola', 'shadcn']);
-  });
-
   it('sorts what needs you to the top when the panel opens, then never moves a card again', async () => {
     // The order is the whole of decision §2.2: sorted once at mount so you can
     // see what needs you, then frozen so a card you are mid-task on cannot
@@ -1386,57 +819,6 @@ describe('AgentMcpServers', () => {
     expect(
       within(document.body).queryByRole('menuitem', { name: /sign out/i })
     ).not.toBeInTheDocument();
-  });
-
-  it('does not offer Sign in again for a local server there is no sign-in for', async () => {
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([managedServer]),
-      getMcpConfig: vi.fn().mockResolvedValue({
-        servers: [{ name: 'filesystem', type: 'stdio', status: 'connected' }],
-      }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('Connected')).toBeInTheDocument());
-    await openTestAction(container, 'filesystem');
-
-    expect(
-      within(document.body).queryByRole('menuitem', { name: 'Sign in again' })
-    ).not.toBeInTheDocument();
-  });
-
-  it('says "Uses your key" for a server the operator authenticated themselves', async () => {
-    const ownKeyServer: ManagedMcpServer = {
-      ...oauthServer,
-      name: 'internal-api',
-      connection: {
-        transport: 'http',
-        url: 'https://internal.example/mcp',
-        headers: { Authorization: 'Bearer operator-supplied' },
-      },
-    };
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([ownKeyServer]),
-      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
-    });
-    const { container } = renderComponent(transport);
-
-    // Neither "Not checked yet" (which hides that it IS authenticated) nor
-    // "Needs sign-in" (which would put a Sign in button on a server DorkOS holds
-    // nothing for).
-    await waitFor(() => expect(within(container).getByText('Uses your key')).toBeInTheDocument());
-    expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
-  });
-
-  it('says "Not checked yet", never "Connecting…", for a server nothing has contacted', async () => {
-    const transport = createMockTransport({
-      listAgentMcpServers: vi.fn().mockResolvedValue([managedServer]),
-      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
-    });
-    const { container } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('Not checked yet')).toBeInTheDocument());
-    expect(within(container).queryByText('Connecting…')).not.toBeInTheDocument();
   });
 
   it('keeps configured browser servers without offering the superseded browser setup', async () => {

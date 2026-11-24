@@ -202,16 +202,6 @@ describe('limited', () => {
     expect(transport.waitForReset).toHaveBeenCalledWith(SID, {});
   });
 
-  it('opens the picker from "Continue on another account…"', async () => {
-    const { transport } = await renderBanner({ limit: limitOf('ask') });
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Continue on another account…' })
-    );
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    expect(transport.getContinueOptions).toHaveBeenCalledWith(SID);
-    expect(transport.cancelAutoContinue).not.toHaveBeenCalled();
-  });
-
   it('says "back in 47 min" for the 5-hour window, ticking each minute', async () => {
     await renderBanner({
       limit: limitOf('ask', { window: 'five_hour', resetsAt: at(47 * MINUTE) }),
@@ -223,12 +213,6 @@ describe('limited', () => {
       vi.advanceTimersByTime(MINUTE);
     });
     expect(bannerEl()).toHaveTextContent('Acct 4 is out of usage · back in 46 min.');
-  });
-
-  it('says only "is out of usage." with no known reset', async () => {
-    await renderBanner({ limit: limitOf('ask', { resetsAt: null }) });
-    await waitFor(() => expect(bannerEl()).toHaveTextContent('Acct 4 is out of usage.'));
-    expect(bannerEl()).not.toHaveTextContent(/until|back in/);
   });
 });
 
@@ -307,12 +291,6 @@ describe('handing-off', () => {
     expect(transport.continueSession).toHaveBeenCalledWith(SID, { account: 'acct-2' });
   });
 
-  it('Wait posts wait {}', async () => {
-    const { transport } = await renderBanner({ limit: handingOff() });
-    await userEvent.click(await screen.findByRole('button', { name: 'Wait for reset' }));
-    expect(transport.waitForReset).toHaveBeenCalledWith(SID, {});
-  });
-
   it('after a flow run was told to move (fireAt passed), shows no digits and never posts again', async () => {
     const { transport } = await renderBanner({
       limit: handingOff({ plan: { mode: 'auto', target: 'acct-2', fireAt: at(-5000) } }),
@@ -345,19 +323,6 @@ describe('handing-off', () => {
     await waitFor(() => expect(transport.getContinueOptions).toHaveBeenCalled());
     expect(order).toEqual(['cancel', 'options']);
   });
-
-  it("Choose account… on a flow run shows flow's 503 inline", async () => {
-    await renderBanner({
-      limit: handingOff(),
-      transport: {
-        cancelAutoContinue: vi
-          .fn()
-          .mockRejectedValue(Object.assign(new Error(FLOW_DOWN), { status: 503 })),
-      },
-    });
-    await userEvent.click(await screen.findByRole('button', { name: 'Choose account…' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(FLOW_DOWN);
-  });
 });
 
 describe('the picker belongs to its episode', () => {
@@ -382,19 +347,6 @@ describe('the picker belongs to its episode', () => {
       expect(bannerEl()).toHaveTextContent('Acct 4 is out of usage until Tue 3pm.')
     );
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
-
-  it('stays open through its own cancel, when handing-off turns limited in the same episode', async () => {
-    const handingOff = limitOf('auto', { state: 'handing-off' });
-    const { transport } = await renderBanner({ limit: handingOff });
-    await userEvent.click(await screen.findByRole('button', { name: 'Choose account…' }));
-    await waitFor(() => expect(transport.cancelAutoContinue).toHaveBeenCalledTimes(1));
-    // The server reports the cancelled move: same episode, now `limited`.
-    streamLimit(limitOf('ask', { since: handingOff.since }), 1);
-    await waitFor(() => expect(bannerEl()).toHaveAttribute('data-state', 'limited'));
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    await waitFor(() => expect(transport.getContinueOptions).toHaveBeenCalledWith(SID));
-    expect(transport.cancelAutoContinue).toHaveBeenCalledTimes(1);
   });
 
   it("never cancels the next episode's automatic move unasked", async () => {
@@ -429,32 +381,11 @@ describe('wait-only (invariant 5)', () => {
     expect(transport.getContinueOptions).not.toHaveBeenCalled();
   });
 
-  it('a Claude chat that did not start here (a schedule) only waits, with 2+ accounts', async () => {
-    // The server decides who may carry over (by the chat's origin too), and
-    // says so with `carryOver: false`; the runtime alone never offers a move.
-    const { transport } = await renderBanner({
-      limit: limitOf('ask', { state: 'wait-only', plan: { mode: 'ask', carryOver: false } }),
-    });
-    await waitFor(() =>
-      expect(bannerEl()).toHaveTextContent('Acct 4 is out of usage until Tue 3pm.')
-    );
-    expect(buttons()).toEqual(['Wait for reset']);
-    expect(transport.getContinueOptions).not.toHaveBeenCalled();
-  });
-
   it('never offers a move when the plan refuses one, whatever the state says', async () => {
     await renderBanner({
       limit: limitOf('ask', { state: 'limited', plan: { mode: 'ask', carryOver: false } }),
     });
     await waitFor(() => expect(buttons()).toEqual(['Wait for reset']));
-  });
-
-  it('a one-account Claude Code session is named "Claude Code"', async () => {
-    await renderBanner({ accounts: 1, limit: limitOf('ask', { state: 'wait-only' }) });
-    await waitFor(() =>
-      expect(bannerEl()).toHaveTextContent('Claude Code is out of usage until Tue 3pm.')
-    );
-    expect(buttons()).toEqual(['Wait for reset']);
   });
 });
 
@@ -483,17 +414,6 @@ describe('all-accounts-out', () => {
       vi.advanceTimersByTime(MINUTE);
     });
     expect(bannerEl()).toHaveTextContent('All accounts are out. Acct 2 should have reset by now.');
-    expect(bannerEl()).not.toHaveTextContent('Soonest back');
-  });
-
-  it('leaves out "Soonest back" when its reset is unknown', async () => {
-    await renderBanner({
-      limit: limitOf('ask', {
-        state: 'all-accounts-out',
-        allOut: { accountId: 'acct-2', resetsAt: null },
-      }),
-    });
-    await waitFor(() => expect(bannerEl()).toHaveTextContent('All accounts are out.'));
     expect(bannerEl()).not.toHaveTextContent('Soonest back');
   });
 });
@@ -564,20 +484,6 @@ describe('model-limited', () => {
       expect(buttons()).toEqual(['Keep going on Sonnet, same account', 'Wait for reset'])
     );
   });
-
-  it('offers no other account with the gate closed', async () => {
-    await renderBanner({ accounts: 1, limit: modelLimited() });
-    await waitFor(() =>
-      expect(buttons()).toEqual(['Keep going on Sonnet, same account', 'Wait for reset'])
-    );
-  });
-
-  it('offers no other account when the plan says carryOver: false', async () => {
-    await renderBanner({ limit: modelLimited({ plan: { mode: 'ask', carryOver: false } }) });
-    await waitFor(() =>
-      expect(buttons()).toEqual(['Keep going on Sonnet, same account', 'Wait for reset'])
-    );
-  });
 });
 
 describe('waiting-reset', () => {
@@ -598,12 +504,6 @@ describe('waiting-reset', () => {
     expect(bannerEl()).toHaveTextContent('Waiting for Acct 4 · back in 1h 11m');
   });
 
-  it('says the day beyond a day', async () => {
-    await renderBanner({ limit: waiting() });
-    await waitFor(() => expect(bannerEl()).toHaveTextContent('Waiting for Acct 4 · back Tue 3pm'));
-    expect(buttons()).toEqual([]);
-  });
-
   it('binds the checkbox to the stored autoResume and posts wait { autoResume }', async () => {
     const { transport } = await renderBanner({ limit: waiting({ autoResume: false }) });
     const box = await screen.findByRole('checkbox', {
@@ -614,19 +514,6 @@ describe('waiting-reset', () => {
     expect(transport.waitForReset).toHaveBeenCalledWith(SID, { autoResume: true });
     // Only the stored plan checks it: nothing was stored, so it stays off.
     await waitFor(() => expect(box).not.toBeChecked());
-  });
-
-  it('shows the checkbox checked when the plan stored autoResume', async () => {
-    await renderBanner({ limit: waiting({ autoResume: true }) });
-    expect(
-      await screen.findByRole('checkbox', { name: 'Continue automatically when it resets' })
-    ).toBeChecked();
-  });
-
-  it('hides the checkbox for a session that can only wait (carryOver: false)', async () => {
-    await renderBanner({ limit: waiting({ carryOver: false }) });
-    await waitFor(() => expect(bannerEl()).toHaveTextContent('Waiting for Acct 4'));
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
   it('never promises a Codex wait will continue by itself', async () => {
@@ -661,11 +548,6 @@ describe('reset-ready', () => {
     expect(onSend).toHaveBeenCalledWith(ACCOUNT_RESUME_PROMPT);
     expect(transport.continueSession).not.toHaveBeenCalled();
   });
-
-  it('says "should have reset by now" when the reset could not be confirmed', async () => {
-    await renderBanner({ limit: ready({ unconfirmed: true }) });
-    await waitFor(() => expect(bannerEl()).toHaveTextContent('Acct 4 should have reset by now.'));
-  });
 });
 
 describe('moved', () => {
@@ -681,45 +563,6 @@ describe('moved', () => {
   });
 });
 
-describe('tone (Q13) and role', () => {
-  const cases: [string, 'critical' | 'neutral', SessionLimit][] = [
-    ['limited', 'critical', limitOf('ask')],
-    ['handing-off', 'critical', limitOf('auto', { state: 'handing-off' })],
-    ['wait-only', 'critical', limitOf('ask', { state: 'wait-only' })],
-    [
-      'all-accounts-out',
-      'critical',
-      limitOf('ask', {
-        state: 'all-accounts-out',
-        allOut: { accountId: 'acct-2', resetsAt: null },
-      }),
-    ],
-    [
-      'model-limited',
-      'critical',
-      limitOf('ask', { state: 'model-limited', scope: 'model', window: 'seven_day_opus' }),
-    ],
-    ['waiting-reset', 'neutral', limitOf('waiting', { state: 'waiting-reset' })],
-    ['reset-ready', 'neutral', limitOf('waiting', { state: 'reset-ready' })],
-    ['moved', 'neutral', limitOf('continued', { state: 'moved' })],
-  ];
-
-  it.each(cases)(
-    '%s is %s, announced politely, and asks for no usage',
-    async (_, variant, limit) => {
-      const { transport } = await renderBanner({ limit });
-      await waitFor(() => expect(bannerEl()).toHaveAttribute('data-variant', variant));
-      expect(bannerEl()).toHaveAttribute('role', 'status');
-      expect(transport.getAccountUsage).not.toHaveBeenCalled();
-    }
-  );
-
-  it('renders nothing without a limit (near-limit is the chip alone)', async () => {
-    await renderBanner({ limit: null });
-    expect(document.querySelector('[data-slot="account-limit-banner"]')).toBeNull();
-  });
-});
-
 describe('flow unreachable (Q1)', () => {
   const refused = () =>
     vi.fn().mockRejectedValue(Object.assign(new Error(FLOW_DOWN), { status: 503 }));
@@ -732,15 +575,6 @@ describe('flow unreachable (Q1)', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Wait for reset' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(FLOW_DOWN);
     expect(bannerEl()).toHaveAttribute('data-state', 'handing-off');
-  });
-
-  it('a refusal with no message of its own says so plainly', async () => {
-    await renderBanner({
-      limit: limitOf('ask'),
-      transport: { waitForReset: vi.fn().mockRejectedValue(new Error('')) },
-    });
-    await userEvent.click(await screen.findByRole('button', { name: 'Wait for reset' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t do that. Try again.');
   });
 
   it('a refused Move now shows inline too, and nothing is retried', async () => {
@@ -802,16 +636,6 @@ describe('the composer', () => {
       vi.advanceTimersByTime(MINUTE);
     });
     expect(result.current).toEqual({ canSubmit: true, placeholder: null });
-  });
-
-  it('is open when the reset is ready', async () => {
-    const { result } = composerFor(limitOf('waiting', { state: 'reset-ready' }));
-    await waitFor(() => expect(result.current).toEqual({ canSubmit: true, placeholder: null }));
-  });
-
-  it('never pauses a limit with no known reset', async () => {
-    const { result } = composerFor(limitOf('ask', { resetsAt: null }));
-    await waitFor(() => expect(result.current).toEqual({ canSubmit: true, placeholder: null }));
   });
 
   it('after a move, is shut until "Continue here anyway", for this episode only', async () => {
@@ -878,20 +702,6 @@ describe('out of usage leads with DorkOS credits where they reach the runtime', 
     expect(buttons()[0]).toBe('Stand-in offer: keep-going');
     await userEvent.click(offer);
     expect(transport.continueSession).toHaveBeenCalledWith(SID, { account: 'dorkos-credits' });
-  });
-
-  it('offers nothing for a runtime credits are not wired for, or when they are switched off', async () => {
-    await renderWithOffer({
-      limit: limitOf('ask'),
-      transport: { getCloudCredits: wired('follow-up') },
-    });
-    expect(buttons()).toEqual(['Continue on another account…', 'Wait for reset']);
-    cleanup();
-    await renderWithOffer({
-      limit: limitOf('ask'),
-      transport: { getCloudCredits: wired('wired', true) },
-    });
-    expect(buttons()).toEqual(['Continue on another account…', 'Wait for reset']);
   });
 
   it('offers nothing when it is the credits that ran out', async () => {

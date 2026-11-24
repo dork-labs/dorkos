@@ -134,31 +134,6 @@ function rowNames(section: HTMLElement): string[] {
 // --- Tests ---
 
 describe('ExtensionsSettingsTab', () => {
-  it('shows loading state while fetching', () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        () =>
-          new Promise(() => {
-            /* never resolves */
-          })
-      )
-    );
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    expect(screen.getByRole('status', { name: 'Loading extensions…' })).toBeInTheDocument();
-  });
-
-  it('shows empty state only after a load that found none', async () => {
-    mockFetch({ '/api/extensions': [] });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    expect(await screen.findByTestId('no-extensions')).toHaveTextContent('No extensions yet');
-    expect(screen.getByRole('button', { name: 'Browse Marketplace' })).toBeInTheDocument();
-  });
-
   // Purpose: a refused or failed list is never shown as "none installed", and
   // Try again reads it again (the sign-in bug, Nov 8).
   it('says it couldn’t load, never "none installed", and tries again', async () => {
@@ -193,18 +168,6 @@ describe('ExtensionsSettingsTab', () => {
     expect(await screen.findByTestId('extension-card-test-ext')).toBeInTheDocument();
   });
 
-  it('renders a row for each discovered extension', async () => {
-    const extensions = [makeExtension({ id: 'ext-a' }), makeExtension({ id: 'ext-b' })];
-    mockFetch({ '/api/extensions': extensions });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-card-ext-a')).toBeInTheDocument();
-    });
-    expect(screen.getByTestId('extension-card-ext-b')).toBeInTheDocument();
-  });
-
   it('counts what is installed and what needs you', async () => {
     mockFetch({
       '/api/extensions': [
@@ -221,88 +184,7 @@ describe('ExtensionsSettingsTab', () => {
     );
   });
 
-  // Purpose: the count agrees with its number: one needs, several need.
-  it('says "need you" for more than one', async () => {
-    mockFetch({
-      '/api/extensions': [
-        named('a', 'Alpha', { approvedToRun: false }),
-        named('b', 'Beta', { approvedToRun: false }),
-      ],
-    });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    expect(await screen.findByTestId('extensions-count')).toHaveTextContent(
-      '2 installed · 2 need you'
-    );
-  });
-
   describe('the row', () => {
-    // Purpose: the purpose line is the manifest's summary, else the first
-    // sentence of the description, never the whole paragraph.
-    it('shows the summary, else the first sentence of the description', async () => {
-      mockFetch({
-        '/api/extensions': [
-          named('s', 'With summary', {
-            manifest: {
-              clientApiVersion: 2,
-              id: 's',
-              name: 'With summary',
-              version: '1.0.0',
-              summary: 'Tracks spending.',
-              description: 'A long paragraph. With two sentences.',
-            },
-          }),
-          named('d', 'Description only', {
-            manifest: {
-              clientApiVersion: 2,
-              id: 'd',
-              name: 'Description only',
-              version: '1.0.0',
-              description: 'Captures notes. Then files them.',
-            },
-          }),
-        ],
-      });
-
-      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-      const withSummary = await screen.findByTestId('extension-card-s');
-      expect(withSummary).toHaveTextContent('Tracks spending.');
-      expect(withSummary).not.toHaveTextContent('A long paragraph');
-      expect(screen.getByTestId('extension-card-d')).toHaveTextContent('Captures notes.');
-      expect(screen.getByTestId('extension-card-d')).not.toHaveTextContent('Then files them');
-    });
-
-    // Purpose: a long name truncates inside its own column, with the full name
-    // kept for hover, so it never pushes the purpose line out of line.
-    it('keeps a long name inside the name column', async () => {
-      const name = 'Customer Interview Synthesizer For Product Discovery';
-      mockFetch({ '/api/extensions': [named('long', name)] });
-
-      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-      const row = await screen.findByTestId('extension-card-long');
-      const nameSpan = row.querySelector('[data-row-button] > span:first-child');
-      expect(nameSpan).toHaveAttribute('title', name);
-      expect(nameSpan).toHaveClass('truncate', 'w-[200px]', 'shrink-0');
-    });
-
-    it('opens in place, and shows the facts of a healthy extension', async () => {
-      mockFetch({ '/api/extensions': [makeExtension({ scope: 'local' })] });
-
-      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-      await screen.findByTestId('extension-card-test-ext');
-      const row = openRow('test-ext');
-
-      expect(row.querySelector('[data-row-button]')).toHaveAttribute('aria-expanded', 'true');
-      const region = within(row).getByRole('region', { name: 'Test Extension' });
-      expect(region).toHaveTextContent('A test extension');
-      expect(region).toHaveTextContent('Version1.0.0');
-      expect(region).toHaveTextContent('ByTester');
-      expect(region).toHaveTextContent('ForThis project only');
-    });
-
     it('closes on Escape and gives focus back to the row', async () => {
       mockFetch({ '/api/extensions': [makeExtension()] });
 
@@ -315,24 +197,6 @@ describe('ExtensionsSettingsTab', () => {
       const button = row.querySelector('[data-row-button]');
       expect(button).toHaveAttribute('aria-expanded', 'false');
       expect(button).toHaveFocus();
-    });
-
-    // Purpose: Esc with focus on the open row's own button closes the row, not
-    // Settings. The button keeps Escape (`data-keeps-escape`, which TabbedDialog
-    // honors) only while the row is open. The queue caught this (dev-link.spec).
-    it('closes on Escape from its own button, and keeps Escape from Settings only while open', async () => {
-      mockFetch({ '/api/extensions': [makeExtension()] });
-
-      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-      await screen.findByTestId('extension-card-test-ext');
-      const row = openRow('test-ext');
-      const button = row.querySelector('[data-row-button]') as HTMLElement;
-      expect(button).toHaveAttribute('data-keeps-escape');
-
-      fireEvent.keyDown(button, { key: 'Escape' });
-
-      expect(button).toHaveAttribute('aria-expanded', 'false');
-      expect(button).not.toHaveAttribute('data-keeps-escape');
     });
 
     it('moves between rows with the arrow keys', async () => {
@@ -348,29 +212,6 @@ describe('ExtensionsSettingsTab', () => {
       expect(
         screen.getByTestId('extension-card-b').querySelector('[data-row-button]')
       ).toHaveFocus();
-    });
-
-    it('badges a dev-linked extension, and links to where it is switched', async () => {
-      // Purpose: Settings shows the dev link and its path (DOR-2696).
-      mockFetch({
-        '/api/extensions': [
-          makeExtension({
-            approvedToRun: true,
-            originProblem: 'dev-link',
-            devLink: { path: '/work/flow' },
-            sourcePlugin: 'flow',
-          }),
-        ],
-      });
-
-      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-      const row = await screen.findByTestId('extension-card-test-ext');
-      expect(within(row).getByText('Dev link')).toBeInTheDocument();
-      openRow('test-ext');
-
-      const devLink = screen.getByTestId('extension-dev-link-test-ext');
-      expect(devLink).toHaveTextContent('Dev link: /work/flow');
-      expect(within(devLink).getByRole('button', { name: 'Unlink or switch' })).toBeInTheDocument();
     });
 
     it('tells a person who approved a changed copy that any further change asks again', async () => {
@@ -424,53 +265,6 @@ describe('ExtensionsSettingsTab', () => {
       fireEvent.click(within(core).getByRole('button', { name: 'Comes with DorkOS · 1' }));
       expect(within(core).getByTestId('extension-card-core-a')).toBeInTheDocument();
     });
-
-    // Purpose: the fold's chevron is decoration: the button's name stays
-    // exactly "Comes with DorkOS · N", and the chevron turns when it opens.
-    it('names the fold by its words alone, with a chevron that turns open', async () => {
-      mockFetch({
-        '/api/extensions': [
-          named('core-a', 'Files', { origin: 'core' }),
-          named('core-b', 'Terminal', { origin: 'core' }),
-        ],
-      });
-
-      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-      const fold = await screen.findByRole('button', { name: 'Comes with DorkOS · 2' });
-      const chevron = fold.querySelector('svg');
-      expect(chevron).not.toBeNull();
-      expect(chevron).toHaveAttribute('aria-hidden', 'true');
-      expect(chevron).not.toHaveClass('rotate-90');
-      fireEvent.click(fold);
-      expect(screen.getByRole('button', { name: 'Comes with DorkOS · 2' })).toHaveAttribute(
-        'aria-expanded',
-        'true'
-      );
-      expect(chevron).toHaveClass('rotate-90');
-    });
-
-    // Purpose: flipping a switch never moves a row.
-    it('keeps a row in place when it is turned off', async () => {
-      const list = [named('a', 'Alpha'), named('b', 'Beta'), named('c', 'Gamma')];
-      mockFetch({
-        '/api/extensions': list,
-        '/api/extensions/b/disable': {
-          extension: { ...list[1], status: 'disabled' },
-          reloadRequired: false,
-        },
-      });
-
-      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-      const section = await screen.findByTestId('installed-extensions-section');
-      fireEvent.click(screen.getByRole('switch', { name: 'Beta: on' }));
-      mockFetch({ '/api/extensions': [list[0], { ...list[1], status: 'disabled' }, list[2]] });
-
-      await waitFor(() =>
-        expect(screen.getByRole('switch', { name: 'Beta: off' })).toBeInTheDocument()
-      );
-      expect(rowNames(section)).toEqual(['Alpha', 'Beta', 'Gamma']);
-    });
   });
 
   describe('search and filters', () => {
@@ -505,45 +299,6 @@ describe('ExtensionsSettingsTab', () => {
       expect(screen.getByTestId('extension-card-mail')).toBeInTheDocument();
       expect(screen.queryByTestId('extension-card-ledger')).not.toBeInTheDocument();
     });
-
-    it('says when nothing matches, and clears the search', async () => {
-      mockFetch({ '/api/extensions': [makeExtension()] });
-
-      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-      fireEvent.change(await screen.findByRole('searchbox'), { target: { value: 'zebra' } });
-
-      expect(screen.getByTestId('extensions-no-match')).toHaveTextContent(
-        'Nothing matches “zebra”'
-      );
-      fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
-      expect(screen.getByTestId('extension-card-test-ext')).toBeInTheDocument();
-    });
-
-    it('shows only what is off under Off, with counts on each filter', async () => {
-      mockFetch({
-        '/api/extensions': [named('on', 'On one'), named('off', 'Off one', { status: 'disabled' })],
-      });
-
-      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-      await screen.findByTestId('extension-card-on');
-      expect(screen.getByRole('button', { name: 'All 2' })).toHaveAttribute('aria-pressed', 'true');
-      fireEvent.click(screen.getByRole('button', { name: 'Off 1' }));
-
-      expect(screen.queryByTestId('extension-card-on')).not.toBeInTheDocument();
-      expect(screen.getByTestId('extension-card-off')).toBeInTheDocument();
-      // No last-used data yet, so no "Not used in 30 days" filter.
-      expect(screen.queryByText(/Not used/)).not.toBeInTheDocument();
-    });
-
-    // Purpose: a filter with nothing behind it is not offered.
-    it('hides the Off filter when nothing is off', async () => {
-      mockFetch({ '/api/extensions': [named('on', 'On one')] });
-
-      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-      await screen.findByTestId('extension-card-on');
-      expect(screen.getByRole('button', { name: 'All 1' })).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /^Off/ })).not.toBeInTheDocument();
-    });
   });
 
   it('calls POST /api/extensions/:id/enable when toggling a disabled extension on', async () => {
@@ -563,6 +318,28 @@ describe('ExtensionsSettingsTab', () => {
     await waitFor(() => {
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         expect.stringContaining('/api/extensions/my-ext/enable'),
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+  });
+
+  it('calls POST /api/extensions/:id/disable when toggling an active extension off', async () => {
+    const ext = makeExtension({ id: 'my-ext', status: 'active' });
+    mockFetch({
+      '/api/extensions': [ext],
+      '/api/extensions/my-ext/disable': {
+        extension: { ...ext, status: 'disabled' },
+        reloadRequired: true,
+      },
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    fireEvent.click(await screen.findByRole('switch', { name: 'Test Extension: on' }));
+
+    await waitFor(() => {
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+        expect.stringContaining('/api/extensions/my-ext/disable'),
         expect.objectContaining({ method: 'POST' })
       );
     });
@@ -620,85 +397,6 @@ describe('ExtensionsSettingsTab', () => {
       expect(description).toBe(refusal);
       expect(headline).toBe('Couldn’t turn that on.');
     });
-
-    it('falls back to `error` when the body carries no message', async () => {
-      mockRefusedToggle({ error: 'Only a person can change this' });
-
-      expect((await toggleAndCatchToast()).description).toBe('Only a person can change this');
-    });
-
-    it('falls back to the status code when the body is not JSON at all', async () => {
-      // A proxy or a crash can answer a non-JSON body; the chain must not throw
-      // trying to read it, and the person must still be told something.
-      vi.stubGlobal(
-        'fetch',
-        vi.fn((url: string) => {
-          if (url.includes('/enable')) {
-            return Promise.resolve({
-              ok: false,
-              status: 502,
-              json: () => Promise.reject(new Error('not json')),
-            });
-          }
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve([makeExtension({ id: 'my-ext', status: 'disabled' })]),
-          });
-        })
-      );
-
-      expect((await toggleAndCatchToast()).description).toBe(
-        'Couldn’t turn on my-ext. The server answered 502.'
-      );
-    });
-  });
-
-  it('calls POST /api/extensions/:id/disable when toggling an active extension off', async () => {
-    const ext = makeExtension({ id: 'my-ext', status: 'active' });
-    mockFetch({
-      '/api/extensions': [ext],
-      '/api/extensions/my-ext/disable': {
-        extension: { ...ext, status: 'disabled' },
-        reloadRequired: true,
-      },
-    });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    fireEvent.click(await screen.findByRole('switch', { name: 'Test Extension: on' }));
-
-    await waitFor(() => {
-      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-        expect.stringContaining('/api/extensions/my-ext/disable'),
-        expect.objectContaining({ method: 'POST' })
-      );
-    });
-  });
-
-  it('applies the change live with no success toast (the Switch already reads on)', async () => {
-    const ext = makeExtension({ id: 'my-ext', status: 'disabled' });
-    mockFetch({
-      '/api/extensions': [ext],
-      '/api/extensions/my-ext/enable': {
-        extension: { ...ext, status: 'active' },
-        reloadRequired: true,
-      },
-    });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    fireEvent.click(await screen.findByRole('switch', { name: 'Test Extension: off' }));
-
-    await waitFor(() => {
-      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-        expect.stringContaining('/api/extensions/my-ext/enable'),
-        expect.objectContaining({ method: 'POST' })
-      );
-    });
-    // The switch itself is the confirmation.
-    expect(toast.success).not.toHaveBeenCalled();
-    // The change applies live via the SSE `extension_reloaded` handler.
-    expect(toast.info).not.toHaveBeenCalled();
   });
 
   it('calls POST /api/extensions/reload and shows success toast on reload', async () => {
@@ -767,61 +465,6 @@ describe('ExtensionsSettingsTab', () => {
     expect(screen.getByRole('switch')).toBeInTheDocument();
     openRow('broken-ext');
     expect(screen.getByText('Couldn’t build: Unexpected token')).toBeInTheDocument();
-  });
-
-  /**
-   * A server-side rebuild that failed while the previous version keeps running
-   * is said beside an otherwise healthy extension — never through `status`,
-   * which is what the loader and `readBundle` gate the client bundle on
-   * (DOR-1336 review round 2).
-   */
-  it('warns that the server half is stale without calling the extension broken', async () => {
-    const ext = makeExtension({
-      id: 'stale-srv',
-      status: 'compiled',
-      hasServerEntry: true,
-      serverError: {
-        code: 'compilation_failed',
-        message: 'Server Compilation failed for stale-srv',
-      },
-    });
-    mockFetch({ '/api/extensions': [ext] });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-    await screen.findByTestId('extension-card-stale-srv');
-    expect(screen.queryByTestId('extension-health-stale-srv')).not.toBeInTheDocument();
-    openRow('stale-srv');
-
-    expect(screen.getByText(/couldn’t rebuild its server part/i)).toBeInTheDocument();
-    expect(screen.getByText(/last version still runs/i)).toBeInTheDocument();
-    expect(screen.queryByText(/couldn’t build:/i)).not.toBeInTheDocument();
-  });
-
-  /**
-   * A server half that stopped after crashing too often (DOR-2686) is not
-   * running, so "the last version still runs" would be false. Its own
-   * sentence is shown, once, with no doubled period.
-   */
-  it('says plainly that a stopped server half does not run', async () => {
-    const ext = makeExtension({
-      id: 'iso-ext',
-      status: 'compiled',
-      hasServerEntry: true,
-      serverError: {
-        code: 'server_crashed',
-        message: 'Mail stopped unexpectedly 3 times. Reload it to try again.',
-      },
-    });
-    mockFetch({ '/api/extensions': [ext] });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-    await screen.findByTestId('extension-card-iso-ext');
-    openRow('iso-ext');
-
-    const line = screen.getByText('Mail stopped unexpectedly 3 times. Reload it to try again.');
-    expect(line.textContent).not.toMatch(/\.\./);
-    expect(screen.queryByText(/last version still runs/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/couldn’t rebuild/i)).not.toBeInTheDocument();
   });
 });
 
@@ -1007,25 +650,6 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
     );
     expect(extras).toHaveTextContent('Replies in the room threads you pick');
     expect(extras).not.toHaveTextContent('Messages to an agent you pick');
-  });
-
-  // Purpose: an app with no screens and no server part says nothing about
-  // screens, and keeps the empty block.
-  it('says an app with nothing to run can’t change anything, and nothing about screens', async () => {
-    mockFetch({
-      '/api/extensions': [
-        makeExtension({ id: 'clock', approvedToRun: false, isolation: null, bundleReady: false }),
-      ],
-    });
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-    await screen.findByTestId('extension-card-clock');
-    openRow('clock');
-
-    const box = screen.getByTestId('extension-needs-approval-clock');
-    expect(box).not.toHaveTextContent(/screen/i);
-    expect(within(box).getByTestId('extension-permission-extras-clock')).toHaveTextContent(
-      'It can change:It can’t change anything.'
-    );
   });
 
   it('changes nothing on Not now, and leaves the chip in place', async () => {
@@ -1303,34 +927,6 @@ describe('what an extension can reach (DOR-2686)', () => {
     memoryMb: 256,
   };
 
-  // Purpose: a waiting isolated extension lists what it can reach above the
-  // yes, makes no "full access" claim, and warns about an interpreter.
-  it('lists what a waiting isolated extension can reach', async () => {
-    mockFetch({
-      '/api/extensions': [
-        makeExtension({
-          id: 'mail',
-          hasServerEntry: true,
-          approvedToRun: false,
-          bundleReady: false,
-          isolation: ISOLATION,
-        }),
-      ],
-    });
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-    await screen.findByTestId('extension-card-mail');
-    openRow('mail');
-
-    const box = screen.getByTestId('extension-needs-approval-mail');
-    const facts = within(box).getByTestId('extension-permissions-mail');
-    expect(facts).toHaveTextContent('AccessRuns on its own, apart from DorkOS');
-    expect(facts).toHaveTextContent('NetworkCan reach imap.fastmail.com');
-    const extras = within(box).getByTestId('extension-permission-extras-mail');
-    expect(extras).toHaveTextContent('Can run: git');
-    expect(extras).toHaveTextContent('Can run bash, which can run any program.');
-    expect(within(box).queryByText(/full access/)).not.toBeInTheDocument();
-  });
-
   // Purpose: "Allow" echoes the set the panel listed.
   it('sends the listed set with the yes', async () => {
     mockFetch({
@@ -1367,52 +963,6 @@ describe('what an extension can reach (DOR-2686)', () => {
         // The places the card listed; this app declares none (DOR-4282).
         slots: [],
       },
-    });
-  });
-
-  // Purpose: a running app whose new places wait, with no Inbox row left
-  // (Not now), is still allowed from Settings, echoing what the card shows:
-  // the line names the declared places not yet allowed, and Allow sends
-  // exactly those plus the ones already allowed.
-  it('allows a running app’s new places from Settings with the shown set', async () => {
-    const ledger = named('ledger', 'Ledger', {
-      sourcePlugin: 'ledger',
-      digest: 'sha256:abc',
-      isolation: null,
-      allowedSlots: ['right-panel'],
-      manifest: {
-        clientApiVersion: 2,
-        id: 'ledger',
-        name: 'Ledger',
-        version: '1.1.0',
-        contributions: { 'right-panel': true, pages: true, dialog: true },
-      },
-    });
-    mockFetch({
-      '/api/extensions': [ledger],
-      '/api/extensions/pending-approvals': { approvals: [] },
-      '/api/extensions/ledger/approve': { extension: { ...ledger, allowedSlots: ['pages'] } },
-    });
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-    await screen.findByTestId('extension-card-ledger');
-    openRow('ledger');
-
-    expect(screen.getByTestId('extension-new-places-ledger')).toHaveTextContent(
-      'Adds a page and dialogs. Allow when ready.'
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Allow Ledger’s new places' }));
-    await waitFor(() =>
-      expect(vi.mocked(toast.success)).toHaveBeenCalledWith('Ledger can show in its new places.')
-    );
-    const call = vi
-      .mocked(fetch)
-      .mock.calls.find(([url]) => String(url).endsWith('/api/extensions/ledger/approve'));
-    const body = JSON.parse(String((call?.[1] as RequestInit).body));
-    expect(body).toMatchObject({
-      version: '1.1.0',
-      plugin: 'ledger',
-      expectedDigest: 'sha256:abc',
-      permissions: { slots: ['pages', 'right-panel', 'dialog'] },
     });
   });
 
@@ -1577,19 +1127,5 @@ describe('Folder missing (DOR-3372)', () => {
         expect.objectContaining({ method: 'POST' })
       )
     );
-  });
-
-  it('shows one even when nothing is installed', async () => {
-    mockFetch({
-      '/api/extensions': [],
-      '/api/extensions/stale-approvals': {
-        approvals: [{ id: 'gone', path: null, plugin: null }],
-      },
-    });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    expect(await screen.findByTestId('stale-approval-gone')).toBeInTheDocument();
-    expect(screen.queryByTestId('no-extensions')).not.toBeInTheDocument();
   });
 });

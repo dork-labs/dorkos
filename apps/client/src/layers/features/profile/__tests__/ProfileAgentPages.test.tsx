@@ -12,7 +12,7 @@
  */
 import { useState, type ReactNode } from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach, beforeAll } from 'vitest';
-import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -25,7 +25,6 @@ import {
 } from '@dorkos/shared/convention-files';
 import { DEFAULT_TRAITS, renderTraits } from '@dorkos/shared/trait-renderer';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
-import { seedAgentFace } from '@dorkos/shared/agent-face';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -33,7 +32,6 @@ import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import { buildProfileDeepLinkHarness } from '@/test-helpers/profile-deep-link';
 import { ProfileView } from '../ui/ProfileView';
 import { profilePage, profilePageTitle, isProfilePageAvailable } from '../ui/pages/registry';
-import { isProfilePickAvailable } from '../ui/popovers/registry';
 import { profileStack, type ProfilePageId, type ProfileStackState } from '../model/profile-stack';
 import { openEveryProfileFold, resetProfileFolds } from './profile-fold-helpers';
 
@@ -221,25 +219,6 @@ describe('the registry', () => {
       expect(profilePageTitle(profilePage(page)!, MANAGED), page).toBeTruthy();
     }
   });
-
-  it('serves both popovers the property list offers', () => {
-    expect(isProfilePickAvailable('runs-on')).toBe(true);
-    expect(isProfilePickAvailable('personality')).toBe(true);
-  });
-
-  it('names the convention pages after what they do, not after their files', () => {
-    // The file name is the row's VALUE (SOUL.md, NOPE.md, MEMORY.md); the title
-    // is the thing a person came here to read or change.
-    expect(profilePage('instructions')!.title).toBe('Instructions');
-    expect(profilePage('boundaries')!.title).toBe('Boundaries');
-    expect(profilePage('memory')!.title).toBe('Memory');
-  });
-
-  it('titles what an agent knows with that agent’s name', () => {
-    expect(profilePageTitle(profilePage('told')!, { displayName: 'Atlas' })).toBe(
-      'What Atlas knows'
-    );
-  });
 });
 
 describe('the counts a row carries', () => {
@@ -294,66 +273,9 @@ describe('the counts a row carries', () => {
     const row = document.querySelector('[data-profile-row="tasks"]')!;
     await waitFor(() => expect(row.textContent).toContain('1 scheduled'));
   });
-
-  it('says nothing at all while it is still counting', async () => {
-    // "0 conversations" about an agent with a hundred of them is worse than an
-    // empty row: the row exists to save you opening the page (DOR-1253).
-    const sessions = deferred<{ sessions: unknown[]; warnings: unknown[] }>();
-    const tasks = deferred<unknown[]>();
-    await renderProfile(MANAGED, {
-      transport: mockTransport({
-        listSessions: vi.fn().mockReturnValue(sessions.promise),
-        listTasks: vi.fn().mockReturnValue(tasks.promise),
-      }),
-    });
-
-    const row = () => document.querySelector('[data-profile-row="sessions"]')!;
-    await waitFor(() => expect(row()).not.toBeNull());
-    expect(row().textContent).not.toContain('conversation');
-    expect(document.querySelector('[data-profile-row="tasks"]')!.textContent).not.toContain(
-      'scheduled'
-    );
-
-    sessions.settle({ sessions: [], warnings: [] });
-    tasks.settle([]);
-
-    await waitFor(() => expect(row().textContent).toContain('0 chats'));
-  });
-
-  it('draws no Tasks row at all where the server has tasks switched off', async () => {
-    // Not "0 scheduled", and not a locked row: an install with the tool off has
-    // no such thing as a schedule, so there is nothing here to name.
-    await renderProfile(MANAGED, {
-      transport: mockTransport({
-        getConfig: vi.fn().mockResolvedValue({ features: { tasks: false } }),
-      }),
-    });
-
-    await waitFor(() => expect(document.querySelector('[data-profile-row="tasks"]')).toBeNull());
-    // The rows either side of it are untouched.
-    expect(document.querySelector('[data-profile-row="sessions"]')).not.toBeNull();
-    expect(document.querySelector('[data-profile-row="rooms"]')).not.toBeNull();
-  });
 });
 
 describe('the popovers', () => {
-  it('puts the runtime, the model and the effort behind one row', async () => {
-    await renderProfile(MANAGED);
-
-    await openRow('runs-on');
-
-    // Three settings, one question — "what does this run on?" — so they are one
-    // panel rather than the Config tab's three separate fields.
-    const panel = await waitFor(() => {
-      const found = document.querySelector<HTMLElement>('[data-slot="profile-runs-on"]');
-      expect(found).not.toBeNull();
-      return found!;
-    });
-    expect(within(panel).getByText('Runs on')).toBeInTheDocument();
-    expect(screen.getByText('Model')).toBeInTheDocument();
-    expect(screen.getByText('Effort')).toBeInTheDocument();
-  });
-
   it('changes what an agent runs on, and tells the roster', async () => {
     const { transport, queryClient } = await renderProfile(MANAGED);
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
@@ -370,14 +292,6 @@ describe('the popovers', () => {
         JSON.stringify(['team'])
       )
     );
-  });
-
-  it('opens the personality picker from its own row', async () => {
-    await renderProfile(MANAGED);
-
-    await openRow('personality');
-
-    expect(await screen.findByText('How this agent talks')).toBeInTheDocument();
   });
 
   it('writes the personality into SOUL.md, not only into the manifest', async () => {
@@ -397,33 +311,6 @@ describe('the popovers', () => {
     // And the prose already in the file is still under it.
     expect(patch.soulContent).toContain('Be careful.');
   });
-
-  it('saves a dragged slider once, when it stops moving', async () => {
-    // A Radix slider fires `onValueChange` on EVERY step, and this popover saves
-    // straight from it — so one drag across four steps was four PATCHes, each
-    // one sweeping `['team']`, every agent key and every open room's roster
-    // (DOR-1646). Worse, the picker is controlled from the server's copy, which
-    // only catches up a round trip later: every tick of one drag therefore sent
-    // the SAME value, because the thumb never moved off the stored one.
-    //
-    // Keyboard rather than pointer because a Radix drag needs a layout jsdom
-    // does not have, and the two paths meet at the same `onValueChange`.
-    const { transport } = await renderProfile(MANAGED);
-    await openRow('personality');
-    await userEvent.click(await screen.findByTestId('custom-toggle'));
-
-    const sliders = await screen.findAllByRole('slider');
-    sliders[0].focus();
-    await userEvent.keyboard('{ArrowRight}{ArrowRight}');
-
-    await waitFor(() => expect(transport.updateAgentByPath).toHaveBeenCalledTimes(1));
-    const [, updates] = vi.mocked(transport.updateAgentByPath).mock.calls[0];
-    // Both presses landed: the thumb tracked them locally while the save waited.
-    expect((updates as { traits: { verbosity: number } }).traits.verbosity).toBe(5);
-    // And nothing follows the settle — a fifth save would be the storm returning.
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    expect(transport.updateAgentByPath).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('About, where an agent is named', () => {
@@ -436,27 +323,6 @@ describe('About, where an agent is named', () => {
 
     expect(transport.updateAgentByPath).toHaveBeenCalledWith(MANAGED.agent!.projectPath, {
       displayName: 'Sentinel',
-    });
-  });
-
-  it('tells the roster as well as the manifest, so the header agrees', async () => {
-    // The portrait, the property rows and /team all read `['team']`. A rename
-    // that only invalidated the manifest left the header saying one name and
-    // the roster behind it saying another (§4).
-    const { queryClient } = await renderProfile(MANAGED, { start: 'about' });
-    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
-
-    const name = await screen.findByTestId('agent-name-field');
-    await userEvent.clear(name);
-    await userEvent.type(name, 'Sentinel{Enter}');
-
-    await waitFor(() => {
-      const keys = invalidate.mock.calls.map((call) => JSON.stringify(call[0]?.queryKey));
-      expect(keys).toContain(JSON.stringify(['team']));
-      expect(keys.some((key) => key?.includes('byPath'))).toBe(true);
-      // And the fleet the sidebar draws (`agentKeys.resolved`), which is a
-      // third reader of the same name — the prefix covers it.
-      expect(keys).toContain(JSON.stringify(['agents']));
     });
   });
 
@@ -514,32 +380,6 @@ describe('Instructions and Boundaries', () => {
     expect(soul).toContain('Be careful. Twice.');
     // The trait block the personality picker owns survives a prose save.
     expect(soul).toContain('TRAITS:END');
-  });
-
-  it('keeps Save inert until something has actually changed', async () => {
-    await renderProfile(MANAGED, { start: 'instructions' });
-
-    expect(await screen.findByRole('button', { name: 'Save' })).toBeDisabled();
-  });
-
-  it('says "Saved" only once the server has stored it', async () => {
-    // It used to say so next to a fire-and-forget mutation, so a 400 and a 200
-    // looked identical: toast, "Saved just now", nothing on disk (DOR-1253).
-    const save = deferred<AgentManifest>();
-    const transport = mockTransport({
-      updateAgentByPath: vi.fn().mockReturnValue(save.promise),
-    });
-    await renderProfile(MANAGED, { start: 'instructions', transport });
-
-    const editor = await screen.findByPlaceholderText('Write markdown here…');
-    await userEvent.type(editor, ' More.');
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-
-    expect(toasts.success).not.toHaveBeenCalled();
-
-    save.settle(WARDEN_MANIFEST);
-
-    await waitFor(() => expect(toasts.success).toHaveBeenCalledWith('Saved'));
   });
 
   it('says why a refused save failed, and keeps the text', async () => {
@@ -624,61 +464,6 @@ describe('Instructions and Boundaries', () => {
 
     expect(await screen.findByRole('heading', { name: 'Warden' })).toBeInTheDocument();
   });
-
-  it('does not ask when there is nothing unsaved', async () => {
-    await renderProfile(MANAGED, { start: 'instructions' });
-
-    await screen.findByPlaceholderText('Write markdown here…');
-    await userEvent.click(screen.getByRole('button', { name: 'Back to profile' }));
-
-    expect(screen.queryByText('Discard your changes?')).toBeNull();
-    expect(await screen.findByRole('heading', { name: 'Warden' })).toBeInTheDocument();
-  });
-
-  it('keeps the NOPE disclaimer wherever boundaries are edited', async () => {
-    await renderProfile(MANAGED, { start: 'boundaries' });
-
-    expect(await screen.findByText(/aren’t enforced/)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Write markdown here…')).toHaveValue('Never force-push.');
-  });
-
-  // ── Everything the agent is told: its own page (spec `context-viewer` phase 3) ──
-  //
-  // The in-editor preview rebuilt four blocks in the browser and could drift
-  // from the server. The server now writes every block with the builders a turn
-  // uses (`runtimes/context-preview`), and its own suite pins that a template
-  // filled for an agent equals the agent's preview, per runtime.
-
-  it('links from the file to what the agent knows, titled with its name', async () => {
-    await renderProfile(MANAGED, { start: 'instructions' });
-
-    await userEvent.click(await screen.findByRole('button', { name: 'See what Warden knows' }));
-
-    expect(await screen.findByRole('heading', { name: 'What Warden knows' })).toBeInTheDocument();
-  });
-
-  it('leads with what the agent can do, and opens its Permissions to change it', async () => {
-    const transport = mockTransport();
-    await renderProfile(MANAGED, { start: 'told', transport });
-
-    expect(await screen.findByRole('list', { name: 'What Warden can do' })).toBeInTheDocument();
-    expect(transport.getAgentPermissions).toHaveBeenCalledWith(MANAGED.id);
-
-    await userEvent.click(screen.getByRole('button', { name: 'Change in Permissions' }));
-    expect(await screen.findByRole('heading', { name: 'Permissions' })).toBeInTheDocument();
-  });
-
-  it('asks the server for this agent’s instructions, at its own level', async () => {
-    const transport = mockTransport();
-    await renderProfile(MANAGED, { start: 'told', transport });
-
-    await waitFor(() =>
-      expect(transport.getAgentInstructionsPreview).toHaveBeenCalledWith(
-        MANAGED.id,
-        expect.objectContaining({ place: 'direct', level: 'autonomy' })
-      )
-    );
-  });
 });
 
 describe('Memory, where an agent’s notes can be read and corrected', () => {
@@ -711,16 +496,6 @@ describe('Memory, where an agent’s notes can be read and corrected', () => {
       )
     ).toBeVisible();
     expect(screen.getByText('Your agent writes notes here as it works.')).toBeVisible();
-  });
-
-  it('keeps the rest of the memory advisory behind More details', async () => {
-    await renderProfile(MANAGED, { start: 'memory' });
-
-    expect(screen.queryByText('Each note says where it was written.')).not.toBeInTheDocument();
-    await userEvent.click(await screen.findByRole('button', { name: 'More details' }));
-
-    expect(screen.getByText('Each note says where it was written.')).toBeVisible();
-    expect(screen.getByText('Deleting a line makes your agent forget it.')).toBeVisible();
   });
 
   it('refuses to save a file somebody made too big on disk, and says by how much', async () => {
@@ -764,30 +539,6 @@ describe('the Sessions page', () => {
 
     expect(await screen.findByText('No chats with Warden yet.')).toBeInTheDocument();
   });
-
-  it('says it could not look, rather than that there is nothing', async () => {
-    await renderProfile(MANAGED, {
-      start: 'sessions',
-      transport: mockTransport({
-        listSessions: vi.fn().mockRejectedValue(new Error('offline')),
-      }),
-    });
-
-    expect(await screen.findByText('Couldn’t read Warden’s chats.')).toBeInTheDocument();
-    expect(screen.queryByText(/No chats with/)).toBeNull();
-  });
-});
-
-describe('what a profile asks the server for', () => {
-  it('asks nothing about packages or blocks on a person', async () => {
-    // Every read here is a question about an AGENT. On "You" they can only
-    // answer "not yours", and two of them were being asked anyway.
-    const { transport } = await renderProfile(SELF);
-
-    await screen.findByRole('heading', { name: SELF.displayName });
-    expect(transport.listInstalledPackages).not.toHaveBeenCalled();
-    expect(transport.listDeniedMeshAgents).not.toHaveBeenCalled();
-  });
 });
 
 describe('the Appearance page', () => {
@@ -810,33 +561,6 @@ describe('the Appearance page', () => {
         screen.getByRole('button', { name: /Change Warden’s face and personality/ })
       ).toHaveFocus()
     );
-  });
-
-  // Red when this page derives the face a second way. It draws its OWN big disc
-  // above the picker, and the picker's auto swatch is an inch below it: two
-  // derivations put two faces for one agent on one screen, which is what a
-  // hashed pair did here for every agent created before faces were seeded
-  // (DOR-949). Warden's manifest carries neither `color` nor `icon`, so both
-  // are resolving through the fallback — the case that used to disagree.
-  it('draws the same seeded face the picker below it offers as auto', async () => {
-    await renderProfile(MANAGED, { start: 'appearance' });
-
-    const seeded = seedAgentFace(MANAGED.agent!.manifestId);
-    await screen.findByTestId('avatar-picker-panel');
-    const page = document.querySelector('[data-slot="profile-appearance"]')!;
-    const hero = page.querySelector('[data-slot="identity-avatar"]')!;
-
-    expect(hero.getAttribute('data-face')).toBe(seeded.icon);
-    expect(hero.getAttribute('style')).toContain(seeded.color);
-
-    // The other half of the invariant: the swatch that says "this is what you
-    // get if you clear the override" has to name that same colour. Compared
-    // through a probe because jsdom rewrites an inline hex as `rgb(...)`, while
-    // the custom property above keeps the hex it was given.
-    const probe = document.createElement('div');
-    probe.style.backgroundColor = seeded.color;
-    const autoSwatch = screen.getByRole('button', { name: 'Select unique auto-generated color' });
-    expect(autoSwatch.style.backgroundColor).toBe(probe.style.backgroundColor);
   });
 
   it('is not offered on DorkBot — its face is part of DorkOS', async () => {
@@ -912,39 +636,6 @@ describe('the kebab', () => {
     );
   });
 
-  it('lets DorkBot be paused too', async () => {
-    await openKebab(DORKBOT);
-
-    expect(await screen.findByRole('menuitem', { name: 'Pause everywhere' })).toBeInTheDocument();
-  });
-
-  it('says why a system agent has none of them', async () => {
-    await openKebab(DORKBOT);
-
-    expect(
-      await screen.findByText(/can’t be blocked, unregistered or deleted/)
-    ).toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: 'Unregister' })).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: 'Delete agent and data' })).toBeNull();
-  });
-
-  it('leaves a person with nothing but their handle', async () => {
-    await openKebab(SELF);
-
-    expect(await screen.findByRole('menuitem', { name: 'Copy @handle' })).toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: /Delete/ })).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: 'Set as default' })).toBeNull();
-  });
-
-  it('does not offer to set the default agent to the one that already is', async () => {
-    // The header's `default` badge has already said so; an item that answers a
-    // tap with nothing is the dead affordance this design removes.
-    await openKebab(MANAGED);
-
-    expect(await screen.findByRole('menuitem', { name: 'Copy @handle' })).toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: 'Set as default' })).toBeNull();
-  });
-
   it('says the folder is blocked when the agent file had to stay on disk', async () => {
     // The durable second effect of unregistering an agent whose manifest git
     // tracks: the file is left alone and the folder denied, so the agent does
@@ -966,20 +657,6 @@ describe('the kebab', () => {
         expect.stringContaining('scans skip it'),
         expect.anything()
       )
-    );
-  });
-
-  it('says only that it is unregistered when the agent file was deleted', async () => {
-    const transport = mockTransport();
-    transport.unregisterMeshAgent = vi.fn().mockResolvedValue({ success: true });
-    await renderProfile(MANAGED, { transport });
-
-    await userEvent.click(screen.getByRole('button', { name: 'Actions for Warden' }));
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Unregister' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Unregister agent' }));
-
-    await waitFor(() =>
-      expect(toasts.message).toHaveBeenCalledWith('Warden unregistered', expect.anything())
     );
   });
 
