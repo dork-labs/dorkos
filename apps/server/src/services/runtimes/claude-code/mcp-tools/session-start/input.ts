@@ -96,14 +96,18 @@ export const SessionStartInputShape = {
     .optional()
     .describe(
       'The work the new chat takes on, e.g. a ticket id (DOR-1234), "PR #42" or a branch. The ' +
-        'new chat claims it, so your other chats see it is taken. When another live chat of ' +
-        'yours already holds it, the start is refused and names that chat: leave the work to ' +
-        'it, or set `startAnyway` to start a second chat without the claim.'
+        'new chat claims it, so your other chats see it is taken. Left out, the one ticket or ' +
+        'PR the title or reason names (else the prompt) is claimed. When another live chat of ' +
+        'yours already holds it, nothing starts: you get that chat back (`status: ' +
+        '"already-running"`, even if its turn ended; message it instead), or a refusal when you ' +
+        'cannot read it. Set `startAnyway` to start a second chat without the claim.'
     ),
   startAnyway: z
     .boolean()
     .optional()
-    .describe('Start even though another chat of yours holds `claim`. That chat keeps the claim.'),
+    .describe(
+      'Start even though another chat of yours holds the claim. That chat keeps the claim.'
+    ),
 };
 
 /** Parsed `session_start` arguments. */
