@@ -13,8 +13,7 @@
     "contributing/ci.md",
     ".github/workflows/claude-code-review.yml",
     "REVIEW.md",
-    "scripts/should-arm-automerge.sh",
-    "scripts/should-arm-automerge-input.sh",
-    ".github/workflows/merge-tail.yml"
+    "scripts/should-redispatch-review.sh",
+    ".github/workflows/review-redispatch.yml"
   ]
 }

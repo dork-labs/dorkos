@@ -6,7 +6,7 @@ status: proposed
 actor: agent
 gates:
   - wf.claude-code-review.review
-  - wf.merge-tail.arm
+  - wf.review-redispatch.redispatch
 prs: []
 hypothesis:
   metric: review-completes
@@ -163,3 +163,5 @@ example is this change's own PR.
 - Review volume rising materially per merged PR (`tracked.review-runs-per-merged-pr`).
   The ladder's ceiling is 3 retries per head SHA and the review is one full pass;
   if that count climbs, the ladder is retrying something it cannot fix.
+
+On 2026-11-24 the re-dispatch moved from merge-tail.yml to review-redispatch.yml, unchanged (DOR-5124, ledger 261124-010000).
