@@ -1,7 +1,7 @@
 ---
 id: 260929-012844
 title: A host may replace a community owner only through a noticed, objectable, time-delayed claim
-status: proposed
+status: accepted
 created: 2026-09-28
 spec: community-owner-replacement
 superseded-by: null
@@ -11,6 +11,8 @@ amends: 260920-192429
 # 260929-012844. A host may replace a community owner only through a noticed, objectable, time-delayed claim
 
 ## Status
+
+Accepted (2026-11-24, on review: built; PRs #2402, #2406, #2416, #2428 and #2448, DOR-2539 to DOR-2542 and DOR-2252; `apps/server/src/services/spaces/routes/host/host-owner-replacements.ts`, migration `apps/space/migrations/0022_owner_replacements.sql`, browser test `apps/space/browser-tests/owner-replacement.spec.ts`).
 
 Proposed (from spec `community-owner-replacement`, DOR-2252). Amends `260920-192429` only in the sentence "lost-owner repair is offline unless a later break-glass contract is approved": this is that contract. Everything else in that ADR stands, including that host authority alone cannot read community content or mint membership in an existing community.
 

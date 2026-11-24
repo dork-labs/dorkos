@@ -1,15 +1,17 @@
 ---
 number: 17
 title: Standardize Subsystem Integration Pattern Following Pulse
-status: accepted
+status: superseded
 created: 2026-02-24
 spec: relay-server-client-integration
-superseded-by: null
+superseded-by: 261124-150519
 ---
 
 # 0017. Standardize Subsystem Integration Pattern Following Pulse
 
 ## Status
+
+Superseded by [261124-150519](261124-150519-what-may-go-in-the-core-mini-apps-and-one-wake.md) (accepted 2026-11-24): a new feature no longer joins the server by default. It passes the three-question core test, or it is a mini app. The history below is kept as written.
 
 Accepted
 

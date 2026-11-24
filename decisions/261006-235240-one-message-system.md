@@ -14,6 +14,8 @@ amends: [0013, 0034, 0170]
 
 Accepted (operator decision, 2026-10-06; Linear DOR-2735). Direction: the merge is after-launch work, so Relay's Maildir store and access rules are still in the code today.
 
+**Amended by** [261124-150515](261124-150515-sequence-work-for-the-best-product-not-toward-dates.md) (accepted 2026-11-24): "the merge is after-launch work" is retired as a reason for its place. The decision stands, and its place in the order is in `meta/ROADMAP.md`.
+
 **Amended by** [261017-211859](261017-211859-a-conversation-is-the-shared-log-a-session-is-private.md) (accepted 2026-11-24): the conversation log is the store this record names. The Maildir retirement below stands and gets an order: the words move into the log, Maildir then carries delivery only with nothing new stored in it, and then it retires. Relay stays as the delivery engine.
 
 **Amends** (each stays Accepted and keeps governing until the merge lands):

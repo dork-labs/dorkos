@@ -14,6 +14,8 @@ amends: null
 
 Accepted (2026-11-23: the PM signed off the method on 2026-11-22; the build is DOR-5062).
 
+**Amended by** [261124-150515](261124-150515-sequence-work-for-the-best-product-not-toward-dates.md) (accepted 2026-11-24): a project's target date is no longer a ranking key ("project status, priority, target date and relations" in the Decision, and "target dates" among the fields to keep). Projects rank by pin, priority, what they wait on, remaining work, age and name. An issue's due date stays a key, and may only hold a real outside deadline. The one function, the bands, pins and blocker inheritance stand.
+
 Proposed. Asked for by the operator on 2026-11-22 (#proj-dork-architecture, 09:54 CT) and designed in [research/20261122_work-sequencing.md](../research/20261122_work-sequencing.md). The PM, who owns priorities, signs off the method before anything in it writes to Linear.
 
 ## Context

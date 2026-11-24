@@ -25,7 +25,7 @@ The 2026-10 vision reset replaces this document's outputs again, without rerunni
 
 **Hero, headline rules and vocabulary:** the message stack is in [`VISION.md`](VISION.md#the-message-stack); headline rules, words to use and words never said (equal accounts included) are in [`VOICE.md`](VOICE.md). The 4A hero and the 3B headline bank below are history.
 
-**Launch centerpiece:** the official DorkOS Community Space, the one space open at launch, where everyone using DorkOS chats, shares tips and learns. It is **not built yet**: copy may say it is coming, never that it works, and never links to it. There is no Discord.
+**The centerpiece:** the official DorkOS Community Space, the first space to open, where everyone using DorkOS chats, shares tips and learns. It is **not built yet**: copy may say it is coming, never that it works, and never links to it. There is no Discord.
 
 **Retired pillars (v2):** "All your agents, one place" (the runtime trio is a docs fact now, not a pillar), "A team, not tabs", and "Yours, and safe to run". **Retired the same day (first v3 cut):** "One office for your people and agents" and "Colleagues, not babysitters" (now foundation, not pillars), "Agents that work your real tools" (folded into Built for founders), and "Yours, free, cloud optional" (now Ownership).
 

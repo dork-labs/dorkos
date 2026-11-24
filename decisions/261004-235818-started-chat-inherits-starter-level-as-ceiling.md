@@ -16,6 +16,8 @@ Accepted (implemented with `inherited-start-permission`, DOR-2714).
 
 Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): The acceptEdits cap for an /mcp caller whose agent token resolves to one of our registered agents, and the full-autonomy consent ritual, are retired. MCP_API_KEY, per-user keys held by outside clients, and A2A callers stay capped. "Never higher than the starter" stands, so an outsider-origin turn cannot launch a stronger child.
 
+**Amended by** [261124-150518](261124-150518-every-agent-can-be-messaged-directly-one-send-capability.md) (accepted 2026-11-24): the fixed cap on a caller with no chat (an outside program: today `MCP_API_KEY`, per-user keys held by outside clients and A2A callers, as the note above says) becomes the caller's own level, set by its owner, once the send-to-an-agent capability is built. Until its spec lands, the cap stands. "Never higher than the starter" stands.
+
 ## Context
 
 `session_start` lowered `bypassPermissions` to `acceptEdits` for every caller, the rule an agent-proposed schedule gets. A coordinator running at Full autonomy therefore got builders that stopped to ask, and a request for Full autonomy was silently lowered rather than answered. The operator's rule (2026-10-04): a chat may start chats at its own level or lower, never higher.

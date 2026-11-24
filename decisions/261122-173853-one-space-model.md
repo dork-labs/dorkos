@@ -14,6 +14,10 @@ amends: [261018-124422]
 
 Accepted (operator decision, 2026-11-22: "go with changes", on the adversarial review of the "one space core, two storage plugs" plan, then revised the same day after Dorian rejected "SQLite keeps agents, sessions, runtimes, connections, settings" as Mac-only data).
 
+**Amended by** [261124-150515](261124-150515-sequence-work-for-the-best-product-not-toward-dates.md) (accepted 2026-11-24): "after launch" is retired as the gate on the private space becoming a tenant ("We will carry out server-merge D8 after launch"). The order stands: the shared HTTP kit, the member checks, the PGlite measurement and its gates, then the move one area at a time, agents last. The freeze ("before the December 8 Community launch") now holds until the Community Space has opened and its opening checks are green, and then it ends.
+
+**Amended by** [261124-150516](261124-150516-space-side-and-computer-side-one-contract-two-entries.md) (accepted 2026-11-24): "Which servers register a runtime is a role setting read once (`lib/server-role.ts`)" becomes "which entries are on" (the space side, the computer side). The two kinds of state stand, and that record gives them a home in the code. Gate G4 (one role predicate) stands until the entries replace the scattered role checks.
+
 **Amends** (each stays Accepted):
 
 - [261018-124422](261018-124422-one-program-before-launch.md): its step 7 placement stands and is now the only placement. Its neutral note "a Mac hosting spaces (step 9, PGlite) stays after launch" gains a gate (a PGlite measurement on a real Mac) and a second use: the private space moves onto the same store. Everything else stands.

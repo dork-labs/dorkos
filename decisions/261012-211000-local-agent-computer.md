@@ -1,9 +1,22 @@
-# Local agent computers use a direct Linux VM and an isolated runtime
+---
+id: 261012-211000
+title: Local agent computers use a direct Linux VM and an isolated runtime
+status: accepted
+created: 2026-10-12
+spec: agent-computer-mvp
+superseded-by: null
+amends: null
+---
 
-Status: proposed
-Date: 2026-10-12
-Spec: agent-computer-mvp
-Issue: DOR-2748
+# 261012-211000. Local agent computers use a direct Linux VM and an isolated runtime
+
+## Status
+
+Accepted (2026-11-24, on review: built; PR #2845, `apps/server/src/services/computers/`, off by default behind `computers.enabled`). It is still the known exception to the shared runtime conformance suite until DOR-4902 lands.
+
+**Amended by** [261124-150516](261124-150516-space-side-and-computer-side-one-contract-two-entries.md) (accepted 2026-11-24): `computer-local` forwards OpenCode's own protocol for now, and moves onto the one contract between the space side and the computer side. The sealing rules stand as built: no host mounts, the guest firewall and the takeover lease.
+
+Proposed (2026-10-12; spec `agent-computer-mvp`, issue DOR-2748).
 
 ## Context
 
