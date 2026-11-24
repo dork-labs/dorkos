@@ -26040,9 +26040,9 @@
           "400": {
             "description": "The body is not valid",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -26050,9 +26050,9 @@
           "403": {
             "description": "Not a person",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -26060,9 +26060,9 @@
           "404": {
             "description": "There is no such registered account",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -26091,9 +26091,9 @@
           "500": {
             "description": "The change could not be saved",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
