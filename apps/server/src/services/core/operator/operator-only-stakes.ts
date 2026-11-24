@@ -195,6 +195,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // its own (re-seat). Which account the work runs on: an agent clearing it
       // would move itself onto an account a person kept it off.
       'runtimes.claudeCode.accounts[].noAutoMove',
+      // Whether an agent may start work on this account by naming it (DOR-5033):
+      // an agent setting it would open the account to its own spending.
+      'runtimes.claudeCode.accounts[].agentsMayPick',
       'runtimes.claudeCode.defaultAccountOnlyProjects',
       'runtimes.claudeCode.projectAccounts',
       // Company certificates the desktop app trusts (DOR-3361): key material

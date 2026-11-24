@@ -629,6 +629,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'PUT /api/runtimes/claude-code/project-accounts',
       'PUT /api/runtimes/doe/inference',
       'PUT /api/runtimes/claude-code/accounts/:id/no-auto-move',
+      'PUT /api/runtimes/claude-code/accounts/:id/agents-may-pick',
       'ALL /api/runtimes/claude-code/signins/*',
       'DELETE /api/runtimes/claude-code/signins/folders/:id',
       'DELETE /api/runtimes/claude-code/signins/organizations/:id',

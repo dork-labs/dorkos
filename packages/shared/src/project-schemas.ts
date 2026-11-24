@@ -223,6 +223,21 @@ export const NoAutoMoveSchema = z
 export type NoAutoMove = z.infer<typeof NoAutoMoveSchema>;
 
 /**
+ * Body of `PUT /api/runtimes/claude-code/accounts/:id/agents-may-pick`, and its
+ * response: whether agents may start chats on the account by naming it, while
+ * no mini app such as Flow decides (DOR-5033).
+ */
+export const AgentsMayPickSchema = z
+  .object({
+    /** `true` to let agents pick the account by name, `false` to refuse them. */
+    agentsMayPick: z.boolean(),
+  })
+  .openapi('AgentsMayPick');
+
+/** Body and response of `PUT /api/runtimes/claude-code/accounts/:id/agents-may-pick`. */
+export type AgentsMayPick = z.infer<typeof AgentsMayPickSchema>;
+
+/**
  * The machine-readable code of every account-eligibility refusal. A launch
  * refused this way answers HTTP `409` with `{ error, message, code, project,
  * accountId }` (spec `flow-multiproject` §8.3).

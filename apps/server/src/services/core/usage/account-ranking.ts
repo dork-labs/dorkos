@@ -5,9 +5,11 @@
  * {@link rankAccounts} asks the account advisor when one is registered and
  * validates its answer; without one, or when it fails, core's default ranks by
  * weekly headroom. {@link checkAccountLaunch} is the gate for an account an
- * AGENT or a RELAY message names: it needs an advisor, because routing policy
- * is the Flow extension's and nothing is spent until the operator opts in. A
- * person's own pick never goes through it.
+ * AGENT or a RELAY message names. With an advisor registered, the advisor
+ * decides. Without one, an agent's pick follows core's own opt-in rule (only an
+ * account a person let agents pick, DOR-5033), and a relay message's pick is
+ * refused, because anyone outside can write one. A person's own pick never
+ * goes through it.
  *
  * **Only accounts that may work in the project are ever ranked** (spec
  * `flow-multiproject` §8.4). The candidates are filtered by the account rules
@@ -18,6 +20,7 @@
  * @module services/core/usage/account-ranking
  */
 import {
+  CREDITS_ACCOUNT_ID,
   LEDGER_RUNTIMES,
   type AccountUsage,
   type LedgerRuntime,
@@ -45,7 +48,7 @@ import {
   type Ineligible,
 } from './account-eligibility.js';
 import { getAccountUsageStore } from './current-usage-store.js';
-import type { RuntimeAccount } from './runtime-accounts.js';
+import { isMainSignIn, type RuntimeAccount } from './runtime-accounts.js';
 import { mayAutoPickClaudeRoot } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
 import { isCreditsClaudeRoot } from '../../runtimes/claude-code/credits-root.js';
 import { accountSigninState } from '../../observability/account-signin-state.js';
@@ -113,9 +116,20 @@ export interface AccountLaunchRequest {
 /** The answer to {@link checkAccountLaunch}. */
 export type AccountLaunchDecision = { allowed: true } | { allowed: false; reason: string };
 
-/** Refusal when no advisor is registered (spec D5). */
-export const NO_ADVISOR_REASON =
-  'Agents can pick an account only after Flow is set up to say which accounts they may use.';
+/** Refusal of a relay message's account when no advisor is registered (spec D6). */
+export const NO_ADVISOR_REASON = 'A message can pick an account only when Flow allows it.';
+
+/** Refusal of the runtime's main sign-in for an agent, with no advisor registered (DOR-5033). */
+const MAIN_ACCOUNT_REASON = 'Agents can’t pick the main sign-in. Name another account.';
+
+/** Refusal of an account no person opened to agents (`agentsMayPick`), with no advisor registered. */
+const NOT_LET_REASON = 'A person hasn’t let agents pick this account. Ask them in Settings.';
+
+/** Refusal of an account a person kept agents off (`noAutoMove`), with no advisor registered. */
+const KEPT_OFF_REASON = 'A person kept agents off this account.';
+
+/** Refusal of DorkOS credits for an agent: only a person picks them. */
+const CREDITS_REASON = 'Only a person can pick DorkOS credits.';
 
 /** Refusal when the advisor throws, times out or answers nonsense (spec D5). */
 export const ADVISOR_FAILED_REASON = 'The account policy could not be checked.';
@@ -527,10 +541,11 @@ export function notAllowedReason(verdict: Ineligible, project: ProjectRef | null
 /**
  * Whether an agent (`session_start`) or a relay message may launch a session on
  * the account it names. Refused first when the account may not work in the
- * folder's project, with the plain sentence. Then refused with no advisor registered, refused when the
- * advisor fails, and otherwise allowed only when the advisor's `launch` ranking
- * marks the account eligible and it was not last seen signed out (refused with
- * its reason when not).
+ * folder's project, with the plain sentence. Then, with an advisor registered:
+ * refused when the advisor fails, and otherwise allowed only when the advisor's
+ * `launch` ranking marks the account eligible and it was not last seen signed
+ * out (refused with its reason when not). With no advisor registered: an
+ * agent's pick follows {@link coreAgentLaunch}; a relay message's is refused.
  *
  * @param request - The account named, where, on which runtime, and by whom.
  */
@@ -557,7 +572,13 @@ export async function checkAccountLaunch(
     },
     project
   );
-  if (advised === null) return { allowed: false, reason: NO_ADVISOR_REASON };
+  if (advised === null) {
+    // A relay payload can come from anyone outside (an A2A peer, a chat
+    // bridge), so only an advisor the operator set up may let it pick.
+    return request.caller === 'agent'
+      ? coreAgentLaunch(request.runtime, request.accountId, project)
+      : { allowed: false, reason: NO_ADVISOR_REASON };
+  }
   if (advised === 'failed') return { allowed: false, reason: ADVISOR_FAILED_REASON };
   const row = advised.accounts.find(
     (a) => a.runtime === request.runtime && a.id === request.accountId
@@ -565,5 +586,52 @@ export async function checkAccountLaunch(
   if (!row) return { allowed: false, reason: ACCOUNT_HIDDEN_REASON };
   // An agent or a relay message is not a person: a signed-out account is
   // refused with "Signed out", as any automatic pick skips it.
+  return mayAutoPick(row) ? { allowed: true } : { allowed: false, reason: row.reason };
+}
+
+/**
+ * Core's own answer to an agent naming an account when no advisor is
+ * registered (DOR-5033; spec `claude-account-fleet` D5, as amended). Opt-in:
+ * allowed only for an account a person let agents pick (its row's
+ * `agentsMayPick`, Settings' "Agents may pick this account" switch), on top of
+ * every refusal core's own automatic picks make. So it is refused when core does
+ * not rank it for the project, when it is the main sign-in (`default`, its alias
+ * row, or any row on Main's folder), DorkOS credits (by id, or a row on the
+ * credits folder or a link to it), kept off agents by a person (`noAutoMove`),
+ * or not one DorkOS may pick on its own now (out of usage, a sign-in that needs
+ * a look, last seen signed out). Never asks an extension, so a mini app that is
+ * off, broken or still loading cannot widen it.
+ *
+ * @param runtime - The session's runtime.
+ * @param accountId - The account the agent named.
+ * @param project - The folder's project (null for none), already allowed by the account rules.
+ */
+function coreAgentLaunch(
+  runtime: string,
+  accountId: string,
+  project: ProjectRef | null
+): AccountLaunchDecision {
+  if (accountId === CREDITS_ACCOUNT_ID) return { allowed: false, reason: CREDITS_REASON };
+  const row = coreRanking(runtime, project).find((a) => a.id === accountId);
+  if (!row) return { allowed: false, reason: ACCOUNT_HIDDEN_REASON };
+  const listed = isLedgerRuntime(runtime)
+    ? (getAccountUsageStore()?.listAccounts(runtime) ?? [])
+    : [];
+  const account = listed.find((a) => a.id === accountId && a.routable);
+  const folder = account ? signinRoot(account) : row.usage.path;
+  if (
+    row.isDefault === true ||
+    isMainSignIn(
+      account ?? { id: row.id, isDefault: false, path: folder, canonicalPath: null },
+      listed
+    )
+  ) {
+    return { allowed: false, reason: MAIN_ACCOUNT_REASON };
+  }
+  if (runtime === 'claude-code' && folder !== null && isCreditsClaudeRoot(folder)) {
+    return { allowed: false, reason: CREDITS_REASON };
+  }
+  if (account?.agentsMayPick !== true) return { allowed: false, reason: NOT_LET_REASON };
+  if (row.noAutoMove === true) return { allowed: false, reason: KEPT_OFF_REASON };
   return mayAutoPick(row) ? { allowed: true } : { allowed: false, reason: row.reason };
 }
