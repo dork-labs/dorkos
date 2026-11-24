@@ -38,6 +38,7 @@
  * @module services/runtimes/claude-code/messaging/launch-resolver
  */
 import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
+import { turnReferenceEnv } from '../../shared/references/turn-reference-env.js';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { ModelOption, StreamEvent } from '@dorkos/shared/types';
@@ -401,6 +402,9 @@ export async function resolveLaunch(args: {
       onCredits ? creditsEnv : undefined,
       runtimeEnvironment('claude-code', 'turn', {
         DORKOS_SESSION_ID: sessionId,
+        // The agent the token below is minted for, and this install's space,
+        // for signatures (provenance v2); left out when unknown.
+        ...(await turnReferenceEnv(resolveDorkHome(), meshAgent?.id)),
         CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
         // Keeps the task and todo tools on the model's surface. SDK 0.3.233 took
         // TodoWrite / TaskCreate / TaskUpdate / TaskGet / TaskList off the DEFAULT

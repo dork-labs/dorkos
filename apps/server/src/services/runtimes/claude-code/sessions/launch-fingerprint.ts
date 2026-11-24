@@ -98,6 +98,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { EffortLevel } from '@dorkos/shared/types';
 import { AGENT_TOKEN_ENV_VAR } from '../../../core/agent-identity/index.js';
+import { TURN_REFERENCE_ENV_NAMES } from '../../shared/references/turn-reference-env.js';
 import { directoryGrantsFingerprint } from '@dorkos/shared/directory-grants';
 import { grantsFromSettings } from '../messaging/directory-grants.js';
 import {
@@ -609,10 +610,14 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
   // partition is complete and each row is independently comparable.
   // `DORKOS_SESSION_ID` is left out too (DOR-4380): a chat rekey (DOR-1309) changes
   // the id the turn arrives under, but every id of the chat resolves to the same
-  // chat, so it must not cost the warm process.
+  // chat, so it must not cost the warm process. The agent and space references
+  // (`DORKOS_AGENT_ID`, `DORKOS_SPACE_ID`) are left out for the same kind of
+  // reason: which agent a launch runs as is already its own pin (`agentIdentity`),
+  // and the space id is written once per install, so neither may relaunch alone.
   const owned = new Set([
     'CLAUDE_CONFIG_DIR',
     'DORKOS_SESSION_ID',
+    ...TURN_REFERENCE_ENV_NAMES,
     AGENT_TOKEN_ENV_VAR,
     ...Object.keys(credentialEnv),
   ]);

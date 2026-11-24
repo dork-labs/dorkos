@@ -30,6 +30,8 @@ import {
 import { agentRunsOnCredits } from '../../core/cloud/credits-model-gate.js';
 import { creditsRefusalEvent } from '../../core/cloud/credits-protocols.js';
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
+import { turnReferenceEnv } from '../shared/references/turn-reference-env.js';
+import { resolveDorkHome } from '../../../lib/dork-home.js';
 import type { ConnectorTurnLeaseSupervisorHandle } from '../connectors/connector-turn-lease-supervisor.js';
 import { openConnectorTurn } from '../connectors/open-connector-turn.js';
 import type { ConnectorRuntimeTools, ConnectorRuntimeMcpInjection } from '../connector-tools.js';
@@ -290,9 +292,16 @@ export async function executeDoeTurn(
         ? {
             builderExecutionPolicy: {
               kind: 'unrestricted',
-              // Through the turn allow-list, which admits DORKOS_SESSION_ID; Dork's
-              // builder env exists only at Bypass, so only then does it carry the id.
-              environment: runtimeEnvironment('doe', 'turn', { DORKOS_SESSION_ID: id }),
+              // Through the turn allow-list, which admits DORKOS_SESSION_ID and the
+              // agent and space references; Dork's builder env exists only at
+              // Bypass, so only then does it carry them.
+              environment: runtimeEnvironment('doe', 'turn', {
+                DORKOS_SESSION_ID: id,
+                ...(await turnReferenceEnv(
+                  resolveDorkHome(),
+                  agentPath ? hostState.mesh?.getByPath(agentPath)?.id : undefined
+                )),
+              }),
             } as const,
           }
         : {}),

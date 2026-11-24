@@ -452,6 +452,33 @@ describe('the relaunch pins', () => {
     expect(decision.action).toBe('reuse');
   });
 
+  it('does not relaunch when only the chat, agent or space reference moved (DOR-4380, DOR-5138)', () => {
+    // Who the agent is already has its own pin (`agentIdentity`), the space id
+    // is written once per install, and a rekeyed chat is the same chat.
+    const withRefs = (chat: string, agent: string, space: string) =>
+      capture({
+        options: options({
+          env: {
+            PATH: '/usr/bin',
+            CLAUDE_CONFIG_DIR: CLIENT_ROOT,
+            DORKOS_SESSION_ID: chat,
+            DORKOS_AGENT_ID: agent,
+            DORKOS_SPACE_ID: space,
+          },
+        }),
+      });
+    const before = withRefs('chat-1', 'agent-1', 'space-1');
+    for (const after of [
+      withRefs('chat-2', 'agent-1', 'space-1'),
+      withRefs('chat-1', 'agent-2', 'space-1'),
+      withRefs('chat-1', 'agent-1', 'space-2'),
+      capture(),
+    ]) {
+      expect(after.pins.env).toBe(before.pins.env);
+      expect(compareLaunchFingerprints(before, after).action).toBe('reuse');
+    }
+  });
+
   it('relaunches when a launch that could not attribute itself is asked to attribute', () => {
     const decision = compareLaunchFingerprints(
       capture({ agentIdentity: { agentPath: '/repo', displayName: 'Scout', attributed: false } }),

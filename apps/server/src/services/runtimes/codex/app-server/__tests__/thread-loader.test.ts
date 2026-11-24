@@ -122,6 +122,15 @@ describe('the load table (§6)', () => {
     }
   );
 
+  it('DOR-5138: the shell env carries the chat’s agent and space beside the chat id', async () => {
+    const { loader, fake, input } = await setup();
+    const referenceEnv = { DORKOS_AGENT_ID: '01JAGENT0000000000000000', DORKOS_SPACE_ID: 'space' };
+    await loader.ensureLoaded(input({ tools: { ...NO_TOOLS, referenceEnv } }));
+    expect(
+      (fake.requestsOf('thread/start')[0]!.config as LoadConfig).shell_environment_policy
+    ).toEqual({ set: { ...referenceEnv, DORKOS_SESSION_ID: 's1' } });
+  });
+
   it.each(['thread/start', 'thread/resume', 'thread/fork'] as const)(
     'authenticates DorkOS discovery during %s with the open turn binding',
     async (method) => {

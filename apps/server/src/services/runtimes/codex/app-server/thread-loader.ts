@@ -48,6 +48,7 @@ import { credentialsOf } from './thread-credentials.js';
 import { approvalPolicyFor } from './turn-parts.js';
 import { isCodexRpcError } from './protocol/errors.js';
 import type { ThreadLoadOverrides } from './protocol/methods.js';
+import { codexShellEnv } from '../transport/shell-env.js';
 
 /** The copy a person reads when Codex lost the conversation (§6). */
 export const THREAD_STARTS_FRESH_NOTICE = 'Codex no longer has this chat, so it starts fresh.';
@@ -740,8 +741,7 @@ export function buildLoadOverrides(
   }
   if (Object.keys(servers).length > 0) config.mcp_servers = servers;
   // Vendor thread ids differ; shells always receive the server-owned DorkOS chat id.
-  const set = { ...input.tools.agentTokenEnv, DORKOS_SESSION_ID: input.sessionId };
-  config.shell_environment_policy = { set };
+  config.shell_environment_policy = { set: codexShellEnv(input.tools, input.sessionId) };
   if (secrets.trust !== undefined) {
     config.projects = { [secrets.realCwd]: { trust_level: secrets.trust } };
   }

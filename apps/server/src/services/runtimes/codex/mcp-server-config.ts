@@ -49,6 +49,8 @@ import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
 import { managedConfigHeld } from '../shared/policy/managed-config.js';
 import { RESERVED_MCP_SERVER_NAMES } from '@dorkos/shared/global-mcp-schemas';
 import { logger } from '../../../lib/logger.js';
+import { resolveDorkHome } from '../../../lib/dork-home.js';
+import { turnReferenceEnv } from '../shared/references/turn-reference-env.js';
 
 /**
  * One `mcp_servers.<name>` config entry. The SDK's `CodexConfigObject` is not
@@ -422,6 +424,7 @@ export async function resolveCodexLaunchTools(
   return {
     agentTokenEnv,
     ...(mintsOnLoad ? { mintAgentToken } : {}),
+    referenceEnv: await turnReferenceEnv(resolveDorkHome(), agent?.id),
     dorkosTools,
     connectorTools,
     managed: managedMcpServers,
