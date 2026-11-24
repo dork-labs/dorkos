@@ -1,7 +1,7 @@
 ---
 number: 141
 title: Use Shadcn Field for Form Layout Foundation
-status: proposed
+status: archived
 created: 2026-03-18
 spec: form-field-standardization
 superseded-by: null

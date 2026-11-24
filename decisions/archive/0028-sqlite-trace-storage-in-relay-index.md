@@ -1,7 +1,7 @@
 ---
 number: 28
 title: Store Message Traces in Existing Relay SQLite Index
-status: proposed
+status: archived
 created: 2026-02-25
 spec: relay-convergence
 superseded-by: null

@@ -1,7 +1,7 @@
 ---
 number: 140
 title: Progressive Disclosure Collapsible Block for Extended Thinking UI
-status: draft
+status: archived
 created: 2026-03-16
 spec: extended-thinking-visibility
 superseded-by: null

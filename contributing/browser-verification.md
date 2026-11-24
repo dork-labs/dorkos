@@ -36,7 +36,7 @@ These stacks coexist. Naming them does not retire a command, migrate a profile
 or make the private engine a supported route for live browser tasks. Canvas
 `browser_navigate` tools are another surface: they are not `local_browser_*`.
 
-The older sign-in flow does not explain its orange frame; that flow stays unchanged ahead of its planned retirement after November 17 (DOR-3771).
+The older sign-in flow does not explain its orange frame. That flow stays unchanged until its sign-in window is made plain (DOR-3771) or the older browser is retired (DOR-3770).
 
 ### Sharing a live page
 

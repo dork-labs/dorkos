@@ -1,7 +1,7 @@
 ---
 number: 194
 title: Display Version in Sidebar Footer, Not Status Bar
-status: draft
+status: archived
 created: 2026-03-24
 spec: sidebar-upgrade-notification
 superseded-by: null

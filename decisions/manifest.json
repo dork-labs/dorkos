@@ -50,7 +50,7 @@
       "id": "261118-135124",
       "slug": "releases-cut-from-a-release-branch-not-a-frozen-main",
       "title": "Releases are cut on a protected release/vX.Y.Z branch, so main keeps merging",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-11-18",
       "extractedFrom": null,
       "specSlug": null,
@@ -8127,7 +8127,7 @@
       "id": "261124-174220",
       "slug": "a-required-gate-that-leans-on-an-outside-account-names-its-second-path",
       "title": "A required gate that leans on one outside account names its second path",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-11-24",
       "extractedFrom": null,
       "specSlug": null,
@@ -8163,7 +8163,7 @@
       "id": "261124-174222",
       "slug": "a-number-is-assigned-where-no-two-branches-can-race",
       "title": "A number is assigned where no two branches can race: a timestamp, or by automation after merge",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-11-24",
       "extractedFrom": null,
       "specSlug": null,
@@ -8175,6 +8175,23 @@
         "packages/operating-skills/src/pack.ts",
         ".github/workflows/operating-skills-version-check.yml",
         ".claude/scripts/id.ts"
+      ]
+    },
+    {
+      "id": "261124-194115",
+      "slug": "your-mac-is-the-home-of-your-private-space",
+      "title": "If you have a computer of your own, it is the home of your private space; your DorkOS in the cloud is home only when you have none",
+      "status": "accepted",
+      "created": "2026-11-24",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": ["261015-042933"],
+      "affects": [
+        "apps/server/src/services/communities/local/**",
+        "apps/server/src/services/core/hub/**",
+        "apps/server/src/services/core/session-relay/**",
+        "packages/cloud-api/**"
       ]
     }
   ]

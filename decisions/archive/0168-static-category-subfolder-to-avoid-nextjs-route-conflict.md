@@ -1,7 +1,7 @@
 ---
 number: 168
 title: Use Static category/ Subfolder Prefix to Avoid Next.js Dynamic Route Conflict
-status: proposed
+status: archived
 created: 2026-03-21
 spec: site-feature-category-pages
 superseded-by: null

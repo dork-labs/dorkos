@@ -12,6 +12,8 @@ amends: null
 
 ## Status
 
+The operator confirmed the name "playbook" on 2026-11-24.
+
 Accepted as a direction (operator, 2026-11-24: he wants to set how agents communicate and where work happens, to switch between ways "fairly seamlessly", and for something to enforce the choice; the name and the rules below are the architect's, on his request to "use the best term" and "adjust whatever you need"). Nothing here is built. The shapes are settled in a spec before any of it is. Evidence: `research/20261124_architecture-direction-review.md`, "How agents work together".
 
 **Builds on:** [261124-150516](261124-150516-space-side-and-computer-side-one-contract-two-entries.md) (the space side decides, the computer side runs), [261124-150517](261124-150517-turns-survive-restarts-run-record-outbox-capped-recovery.md) (one turn port and the run record), [261124-150519](261124-150519-what-may-go-in-the-core-mini-apps-and-one-wake.md) (the core keeps the mechanism, a package carries the content), ADR 261017-211859 (every chat is a conversation) and ADR 260723-050219 (one registry of capabilities for every agent surface).

@@ -1,7 +1,7 @@
 ---
 number: 172
 title: Adopt SOUL.md and NOPE.md as Agent Convention Files
-status: proposed
+status: archived
 created: 2026-03-22
 spec: agent-personality-convention-files
 superseded-by: null

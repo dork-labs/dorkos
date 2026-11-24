@@ -119,6 +119,8 @@ flowchart TB
 
 **Decided by.** ADR `261124-150516` (two sides, one contract, two entries; amends `261015-042933`, whose three roles stand as three ways to run the one program, and `261122-173853`, whose "a role setting read once" becomes "which entries are on"), ADR `261122-173853` (the two kinds of state), ADR `261018-124422` (one program, one package).
 
+**Which one is home.** If a person has a computer of their own running DorkOS, it is the home of their private space, and their DorkOS in the cloud is a way in: it shows the space from anywhere, lists their computers and is where team spaces meet them. The cloud is the home only for a person with no computer (ADR `261124-194115`). Open: what a cloud agent computer does for a person whose home is a Mac that is off (the design of the contract over the wire (roadmap item 8, DOR-5163 to DOR-5170) must choose).
+
 ## 2. The contract between the two sides
 
 **Today.** The contract was designed for cloud agent computers and is only partly built.

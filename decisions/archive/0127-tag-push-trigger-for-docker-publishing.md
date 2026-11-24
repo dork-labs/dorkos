@@ -1,7 +1,7 @@
 ---
 number: 127
 title: Use Tag Push Trigger for Docker Image Publishing
-status: draft
+status: archived
 created: 2026-03-14
 spec: docker-image-publishing
 superseded-by: null

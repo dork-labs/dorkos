@@ -1,7 +1,7 @@
 ---
 number: 197
 title: Use UtilityProcess for Electron Server Isolation
-status: draft
+status: archived
 created: 2026-03-24
 spec: electron-desktop-app
 superseded-by: null

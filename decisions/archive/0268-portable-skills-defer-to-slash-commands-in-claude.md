@@ -1,7 +1,7 @@
 ---
 number: 268
 title: Portable Skill Twins Defer to Their Slash Command in Claude Code
-status: rejected
+status: archived
 created: 2026-06-13
 spec: null
 superseded-by: null

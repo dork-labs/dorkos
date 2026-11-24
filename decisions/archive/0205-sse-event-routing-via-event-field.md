@@ -1,7 +1,7 @@
 ---
 number: 205
 title: Use SSE event Field for Multiplexed Stream Routing
-status: draft
+status: archived
 created: 2026-03-27
 spec: sse-connection-optimization-01-consolidate
 superseded-by: null
