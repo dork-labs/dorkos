@@ -126,13 +126,14 @@ describe('chat domain', () => {
       }
     );
     // The chat it landed in comes back by name, with a link to use instead of
-    // the id (DOR-2824).
+    // the id (DOR-2824), and its reference for a `/r/` link (DOR-5046).
     expect(result).toEqual({
       ok: true,
       messageId: 'm1',
       chatId: 'b',
       chatTitle: 'Release notes',
       link: '[Release notes](/session?session=b)',
+      chatRef: 'dork:chat:b',
       status: 'queued',
     });
   });

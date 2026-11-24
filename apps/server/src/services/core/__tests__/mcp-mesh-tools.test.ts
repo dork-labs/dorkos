@@ -310,8 +310,8 @@ describe('Mesh MCP Tools', () => {
       const data = JSON.parse(result.content[0].text);
 
       expect(data.agents).toEqual([
-        { id: 'a1', name: 'alpha', relaySubject: 'relay.agent.ns.a1' },
-        { id: 'b2', name: 'beta', relaySubject: 'relay.agent.ns.b2' },
+        { id: 'a1', name: 'alpha', ref: null, relaySubject: 'relay.agent.ns.a1' },
+        { id: 'b2', name: 'beta', ref: null, relaySubject: 'relay.agent.ns.b2' },
       ]);
       // Never rebuilt from the manifest: only the un-stripped registry lookup
       // knows the namespace the endpoint and its rules were registered under.
@@ -330,6 +330,33 @@ describe('Mesh MCP Tools', () => {
         expect(text).toMatch(/only for message-bus and A2A integrations/);
         expect(text).not.toMatch(/Send to that exact/);
       }
+    });
+
+    // DOR-5046: every listed agent carries its `dork:agent:` reference, so a
+    // link to it is `[Name](/r/<ref>)`; an id no link opens carries null.
+    it('mesh_list and mesh_inspect name each agent by its dork: reference', async () => {
+      const id = '01KJXYKJYW4N8QGQ5W4GB6YM9J';
+      const deps = createMockDeps(true);
+      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      meshCore.list.mockReturnValue([
+        { id, name: 'lantern' },
+        { id: 'a1', name: 'alpha' },
+      ]);
+      const listed = JSON.parse((await createMeshListHandler(deps)({})).content[0].text);
+      expect(listed.agents.map((agent: { ref: string | null }) => agent.ref)).toEqual([
+        `dork:agent:${id}`,
+        null,
+      ]);
+
+      meshCore.inspect.mockReturnValue({
+        agent: { id, name: 'lantern' },
+        health: {},
+        relaySubject: null,
+      });
+      const inspected = JSON.parse(
+        (await createMeshInspectHandler(deps)({ agentId: id })).content[0].text
+      );
+      expect(inspected.agent.ref).toBe(`dork:agent:${id}`);
     });
 
     it('mesh_unregister rejects system agents with SYSTEM_AGENT error', async () => {

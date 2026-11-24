@@ -106717,6 +106717,12 @@
                                 "link": {
                                   "type": "string"
                                 },
+                                "ref": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
                                 "state": {
                                   "type": "string",
                                   "enum": [
@@ -106760,6 +106766,7 @@
                                 "id",
                                 "title",
                                 "link",
+                                "ref",
                                 "state",
                                 "spinOff",
                                 "startedBy"
@@ -106805,6 +106812,12 @@
                               "link": {
                                 "type": "string"
                               },
+                              "ref": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
                               "state": {
                                 "type": "string",
                                 "enum": [
@@ -106848,6 +106861,7 @@
                               "id",
                               "title",
                               "link",
+                              "ref",
                               "state",
                               "spinOff",
                               "startedBy"

@@ -4,6 +4,7 @@ import {
   DORK_KINDS,
   dorkLinkPath,
   dorkRef,
+  dorkReferenceOrNull,
   dorkUriFromLink,
   formatDorkReference,
   isDorkKind,
@@ -125,6 +126,28 @@ describe('dork: reference refusals', () => {
     expect(() => dorkRef('widget' as DorkKind, 'abc')).toThrow(TypeError);
     expect(() => formatDorkReference({ kind: 'Chat', id: 'abc' })).toThrow(TypeError);
     expect(() => formatDorkReference({ kind: 'chat', id: 'a'.repeat(65) })).toThrow(TypeError);
+  });
+});
+
+describe('dorkReferenceOrNull', () => {
+  it('spells the same string formatDorkReference does, for every kind', () => {
+    for (const kind of DORK_KINDS) {
+      expect(dorkReferenceOrNull(kind, SAMPLE_IDS[kind])).toBe(
+        formatDorkReference({ kind, id: SAMPLE_IDS[kind] })
+      );
+    }
+  });
+
+  it('answers null, never throws, for an id outside the grammar', () => {
+    expect(dorkReferenceOrNull('chat', '')).toBeNull();
+    expect(dorkReferenceOrNull('chat', 'has.dots')).toBeNull();
+    expect(dorkReferenceOrNull('room', 'a'.repeat(65))).toBeNull();
+    expect(dorkReferenceOrNull('agent', 'with space')).toBeNull();
+  });
+
+  it('answers null for an agent id that is no mesh ULID, since no link opens one', () => {
+    expect(dorkReferenceOrNull('agent', 'agent-warden')).toBeNull();
+    expect(dorkReferenceOrNull('agent', SAMPLE_IDS.agent.toLowerCase())).toBeNull();
   });
 });
 

@@ -12,6 +12,7 @@
 import type { ChatState, ChatMessageKind, ChatMessageSender } from '@dorkos/shared/chat-messages';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
+import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
 import { chatMarkdownLink } from '@dorkos/shared/session-link';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { defuseUntrustedText } from '../../runtimes/shared/untrusted-fence.js';
@@ -81,6 +82,8 @@ export interface ChatReadResult {
     title: string | null;
     /** A markdown link that opens the chat, to use instead of its id. */
     link: string;
+    /** Its `dork:chat:` reference, for a `/r/` link, or null when the id cannot be one. */
+    ref: string | null;
     agent: string | null;
     state: ChatState;
     /** Why the spin-off never opened its first turn, when its deadline passed. */
@@ -243,6 +246,7 @@ export async function readChat(
     id: input.chat,
     title: described.title,
     link: chatMarkdownLink(input.chat, described.title),
+    ref: dorkReferenceOrNull('chat', input.chat),
     agent: described.agent,
     state: startupFailure ? 'never-started' : chatStateOf(deps.status(input.chat)),
     ...(startupFailure ? { startupFailure } : {}),

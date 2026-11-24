@@ -140,6 +140,7 @@ interface ToolMatch {
 /** What one listed room looks like once the tool has projected it. */
 interface ToolRoom {
   roomId: string;
+  ref: string | null;
   kind: string;
   name: string;
   joined: string;
@@ -239,6 +240,8 @@ describe('list_member_rooms', () => {
     const listed = await listAs(ANA_IDENTITY);
 
     expect(listed.map((room) => room.roomId)).toEqual([mine.id]);
+    // Each with its reference, the target of a `/r/` link (DOR-5046).
+    expect(listed.map((room) => room.ref)).toEqual([`dork:room:${mine.id}`]);
     // The positive control on the same seeded rows: the room really exists and
     // really is listable — for the agent that is actually in it.
     expect((await listAs(BO_IDENTITY)).map((room) => room.roomId)).toEqual([theirs.id]);

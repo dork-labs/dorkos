@@ -4,12 +4,14 @@
  *
  * @module services/rooms/service/room-detail-projection
  */
+import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import type { RoomDetail, RoomService } from '../room-service.js';
 
 /**
  * One room in full, as `get_room` and `find_room` return it: the listing facts,
- * the topic, and the roster with every label sanitized.
+ * the topic, and the roster with every label sanitized. `ref` is the room's
+ * `dork:room:` reference, the target of a `[#name](/r/<ref>)` link (DOR-5046).
  *
  * The member rows deliberately carry `authorId` — it is what history entries
  * name their writer by, so an agent can join "who said this" to "who is this"
@@ -34,6 +36,7 @@ import type { RoomDetail, RoomService } from '../room-service.js';
 export function projectDetail(rooms: RoomService, detail: RoomDetail): Record<string, unknown> {
   return {
     roomId: detail.roomId,
+    ref: dorkReferenceOrNull('room', detail.roomId),
     kind: detail.kind,
     // `?? null` on every label, for the reason spelled out on the topic below:
     // a name written entirely in angle brackets sanitizes to nothing, and

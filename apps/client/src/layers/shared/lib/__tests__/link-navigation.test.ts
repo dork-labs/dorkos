@@ -443,6 +443,23 @@ describe('plainAppAddress — which agent-written links open without asking (DOR
     expect(plainAppAddress('/team', FROM)).toBe('/team');
   });
 
+  it('passes a /r/ link, which only names a thing (DOR-5046)', () => {
+    const chat = '/r/dork:chat:7c1e4b2a-9f3d-4e8b-a6c5-a1b2c3d4e5f6';
+    expect(plainAppAddress(chat, FROM)).toBe(chat);
+    expect(plainAppAddress(`${ORIGIN}/r/dork:agent:01KJXYKJYW4N8QGQ5W4GB6YM9J`, FROM)).toBe(
+      '/r/dork:agent:01KJXYKJYW4N8QGQ5W4GB6YM9J'
+    );
+  });
+
+  it.each([
+    ['a search param', '/r/dork:chat:abc?send=1'],
+    ['a prompt', '/r/dork:chat:abc?prompt=hi'],
+    ['another origin', 'https://evil.example/r/dork:chat:abc'],
+    ['no reference', '/r/not-a-ref'],
+  ])('refuses a /r/ link with %s', (_label, href) => {
+    expect(plainAppAddress(href, FROM)).toBeNull();
+  });
+
   it.each([
     ['an API path', '/api/sessions'],
     ['a path that normalises onto the API', '/session/../api/sessions'],

@@ -130,6 +130,7 @@ describe('listRunningChats', () => {
     expect(code.chats[0]).toMatchObject({
       title: 'Title of spin-1',
       link: '[Title of spin-1](/session?session=spin-1)',
+      ref: 'dork:chat:spin-1',
       startedBy: { id: 'parent', title: 'Title of parent' },
     });
 

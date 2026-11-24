@@ -8,15 +8,13 @@
  * - **Browser:** this page's own origin plus `/connections`, so a person on
  *   `localhost` or on their tunnel address returns to that same address.
  *
- * The server keeps the value only when it leads back to an address it serves,
- * so this is a request, not an instruction.
+ * The same split every shareable link makes (`shareableAppUrl`). The server
+ * keeps the value only when it leads back to an address it serves, so this is a
+ * request, not an instruction.
  *
  * @module entities/connectors/lib/connect-return-to
  */
-import { isDesktopShell } from '@/layers/shared/lib';
-
-/** The app route a finished connection returns to. */
-const CONNECTIONS_ROUTE = 'connections';
+import { shareableAppUrl } from '@/layers/shared/lib';
 
 /**
  * The link a connection start sends as its way back into the app.
@@ -24,6 +22,5 @@ const CONNECTIONS_ROUTE = 'connections';
  * @returns `dorkos://connections` in the desktop app, else this origin's Connections page.
  */
 export function connectReturnTo(): string {
-  if (isDesktopShell()) return `dorkos://${CONNECTIONS_ROUTE}`;
-  return `${window.location.origin}/${CONNECTIONS_ROUTE}`;
+  return shareableAppUrl('/connections');
 }

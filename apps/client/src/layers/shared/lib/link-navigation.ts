@@ -297,7 +297,9 @@ export const ADDRESS_SEARCH_PARAMS: ReadonlySet<string> = new Set([
  * of its own search params core cannot vouch for) carrying only
  * {@link ADDRESS_SEARCH_PARAMS}. One click on
  * `/session?agentId=…&prompt=…&send=1` would otherwise send words the person
- * never read, as them.
+ * never read, as them. A `/r/<dork-uri>` link (DOR-5046) passes with no search
+ * params at all: it only names a chat, room, message or agent, and its route
+ * opens it only for a caller who may see it.
  *
  * @param href - The link exactly as written.
  * @param from - Absolute URL to resolve against. Defaults to the current page.
@@ -307,6 +309,7 @@ export function plainAppAddress(href: string, from: string = currentHref()): str
   const link = classifyLink(href, from);
   if (link.kind !== 'internal') return null;
   const url = new URL(link.url);
+  if (dorkUriFromLink(url.pathname) !== null) return url.search === '' ? link.path : null;
   if (!APP_ROUTE_SET.has(normalizePathname(url.pathname))) return null;
   for (const key of url.searchParams.keys()) {
     if (!ADDRESS_SEARCH_PARAMS.has(key)) return null;
