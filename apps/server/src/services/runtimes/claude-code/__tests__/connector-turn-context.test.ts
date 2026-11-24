@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ServerPrincipalProof } from '../../../connectors/principal/server-principal.js';
-import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
+import {
+  ConnectorRuntimeAuthorityError,
+  type ConnectorRuntimePrincipalPort,
+} from '../../../connectors/runtime-principal-port.js';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
 import { ClaudeConnectorTurnContext } from '../connector-turn-context.js';
@@ -52,9 +55,14 @@ function port(): ConnectorRuntimePrincipalPort {
 describe('ClaudeConnectorTurnContext', () => {
   it('opens lazily with the SDK canonical id observed at tool-call time', async () => {
     const principals = port();
+    const createLeaseSupervisor = vi.fn(() => ({
+      state: 'active' as const,
+      stop: vi.fn(),
+      assertUsable: vi.fn(),
+    }));
     let canonicalSessionId = 'request-id';
     const context = new ClaudeConnectorTurnContext({
-      tools: tooling(principals),
+      tools: { ...tooling(principals), createLeaseSupervisor },
       canonicalSessionId: () => canonicalSessionId,
       agentPath: '/repo',
       cwd: '/repo',
@@ -81,6 +89,63 @@ describe('ClaudeConnectorTurnContext', () => {
       expectedRuntime: 'claude-code',
       expectedCanonicalCwd: '/repo',
     });
+    expect(createLeaseSupervisor).toHaveBeenCalledExactlyOnceWith({
+      principals,
+      bindingId: 'binding-1',
+      permit: expect.any(Object),
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      runtime: 'claude-code',
+      signal: vi.mocked(principals.openTurn).mock.calls[0]?.[0].signal,
+      onLost: expect.any(Function),
+    });
+    expect(principals.resolve).toHaveBeenCalledBefore(createLeaseSupervisor);
+    await context.revoke('turn_terminal');
+  });
+
+  it('leaves a turn without an agent record unbound without retrying', async () => {
+    const principals = port();
+    const createLeaseSupervisor =
+      vi.fn<NonNullable<ConnectorRuntimeTools['createLeaseSupervisor']>>();
+    vi.mocked(principals.openTurn).mockRejectedValue(
+      new ConnectorRuntimeAuthorityError('agent_unrecorded', 'No recorded agent')
+    );
+    const context = new ClaudeConnectorTurnContext({
+      tools: { ...tooling(principals), createLeaseSupervisor },
+      canonicalSessionId: () => 'canonical-session',
+      agentPath: '/repo',
+      cwd: '/repo',
+    });
+
+    await expect(context.resolvePrincipal()).rejects.toThrow(
+      'Runtime tools are unavailable for this Claude turn.'
+    );
+    await expect(context.resolvePrincipal()).rejects.toThrow(
+      'Runtime tools are unavailable for this Claude turn.'
+    );
+    await context.revoke('turn_terminal');
+
+    expect(principals.openTurn).toHaveBeenCalledOnce();
+    expect(principals.resolve).not.toHaveBeenCalled();
+    expect(createLeaseSupervisor).not.toHaveBeenCalled();
+    expect(principals.revoke).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    new ConnectorRuntimeAuthorityError('authority_refused', 'Canonical authority refused'),
+    new Error('A scripted storage failure'),
+  ])('preserves an unrelated binding error ($message)', async (error) => {
+    const principals = port();
+    vi.mocked(principals.openTurn).mockRejectedValue(error);
+    const context = new ClaudeConnectorTurnContext({
+      tools: tooling(principals),
+      canonicalSessionId: () => 'canonical-session',
+      agentPath: '/repo',
+      cwd: '/repo',
+    });
+
+    await expect(context.resolvePrincipal()).rejects.toBe(error);
+    expect(principals.resolve).not.toHaveBeenCalled();
+    expect(principals.revoke).not.toHaveBeenCalled();
   });
 
   it('uses the broker-owned exact capability predicate', () => {
