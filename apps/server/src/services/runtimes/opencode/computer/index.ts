@@ -2,6 +2,7 @@
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { SessionAttachmentStore } from '../../../session/attachments/index.js';
+import { CREDITS_PROVIDER_ID } from '../../shared/credits/environment.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
 import { ComputerClientProvider, type ComputerProviderOptions } from './provider.js';
 import { ComputerSessionMap } from './session-map.js';
@@ -21,7 +22,7 @@ function refuseCredits(value: unknown): void {
   if (
     isRecord(value) &&
     typeof value.model === 'string' &&
-    value.model.startsWith('dorkos-credits/')
+    value.model.startsWith(`${CREDITS_PROVIDER_ID}/`)
   ) {
     throw new Error('COMPUTER_CREDITS_REFUSED');
   }
@@ -94,7 +95,7 @@ export function createComputerRuntime(options: ComputerRuntimeOptions): {
           const result = await client.provider.list({ query: { directory: options.anchor } });
           if (!result.data) throw new Error('COMPUTER_SIGN_IN_REQUIRED');
           return projectModelOptions(result.data).filter(
-            (model) => !model.value.startsWith('dorkos-credits/')
+            (model) => !model.value.startsWith(`${CREDITS_PROVIDER_ID}/`)
           );
         };
       if (property === 'checkDependencies')

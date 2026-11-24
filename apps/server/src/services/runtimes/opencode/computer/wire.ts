@@ -1,3 +1,5 @@
+import { CREDITS_PROVIDER_ID } from '../../shared/credits/environment.js';
+
 /** Structural OpenCode directory translation; tool output and prose remain untouched. */
 export class ComputerWire {
   constructor(
@@ -50,7 +52,7 @@ export class ComputerWire {
       const value: unknown = await request.json();
       if (!isRecord(value)) throw new Error('COMPUTER_BODY_REFUSED');
       if ('directory' in value) value.directory = this.toGuest(value.directory);
-      if (isRecord(value.model) && value.model.providerID === 'dorkos-credits')
+      if (isRecord(value.model) && value.model.providerID === CREDITS_PROVIDER_ID)
         throw new Error('COMPUTER_CREDITS_REFUSED');
       if (url.pathname === '/mcp') {
         const config = value.config;
