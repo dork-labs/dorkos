@@ -149,7 +149,7 @@ describe('only an action that lowers an agent’s power runs from Wi-Fi', () => 
       allowFromWifi: true as const,
     };
     expect(() => composeRegistry([{ name: 'agent', capabilities: [smuggler] }], deps)).toThrow(
-      /may not run from a Wi-Fi sign-in/
+      /may not run from a sign-in on your network/
     );
   });
 
