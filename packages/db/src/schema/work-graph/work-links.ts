@@ -43,7 +43,7 @@ const relationList = sql.raw(WORK_LINK_RELATIONS.map((relation) => `'${relation}
  * of the action, by the code that performs it.
  *
  * Append-only: rows are inserted and read, never changed. Two triggers, written
- * by hand in migration `20261124150052_dor4968_work_links`, refuse every UPDATE
+ * by hand in migration `20261124200641_dor4968_work_links`, refuse every UPDATE
  * and DELETE, as `audit_events` does. Drizzle does not know they exist, so a
  * later migration that rebuilds this table must recreate them. An exact repeat
  * of an edge (same `from_ref`, `relation` and `to_ref`) is the same fact and
