@@ -85,7 +85,7 @@ To open DorkOS on another device on your network, you don't need a tunnel. That 
 - It takes effect right away, with no restart. Settings then shows this computer's address, like `http://studio.local:4242`, a QR code to scan, and its current IP address as a backup.
 - Turning it off closes the door at once.
 - The connection between the two devices is **not encrypted yet** (plain `http`). Someone else on the same network could read what passes between them, including your sign-in, and use it to get in. So use it on a network you trust, never on a café or hotel network. Encrypted connections are planned.
-- Only devices on the same networks as your computer get in, including a VPN it is connected to. A connection from anywhere else is turned away.
+- Only devices on the same networks as your computer get in, including a VPN it is connected to. On Tailscale, that means every device on your tailnet: open the address that starts with `100.` from the list in Settings. A connection from anywhere else is turned away.
 - If `DORKOS_HOST` or `DORKOS_ALLOW_INSECURE_BIND` is set, it decides where DorkOS listens, and the switch stays off.
 - The first time, your computer may ask whether DorkOS may accept incoming connections. Say yes.
 - A device signed in over your network can chat, read, and answer your agents' requests. It can't open the terminal, edit files directly, manage API keys, install packages, or change how DorkOS is reached. Do those on the computer itself.

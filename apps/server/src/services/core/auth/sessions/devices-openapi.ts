@@ -62,7 +62,7 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
       'Ends one sign-in, closes every stream, socket and terminal it had open, and stops ' +
       'the chats it started. Your own current sign-in from anywhere; any other only from ' +
       'the owner at the computer DorkOS runs on or signed in over https, never ' +
-      'plain-http network access.',
+      'from a plain-http network sign-in.',
     request: { params: z.object({ id: z.string() }) },
     responses: {
       204: { description: 'Signed out' },
@@ -80,7 +80,7 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
     description:
       'Ends every sign-in but the asking one (all of them when the asker has none) and closes ' +
       'what each had open. Only from the owner at the computer DorkOS runs on or signed in ' +
-      'over https, never plain-http network access.',
+      'over https, never from a plain-http network sign-in.',
     responses: {
       200: json(SignOutEverywhereElseResultSchema, 'How many sign-ins ended'),
       401: SIGNED_OUT,

@@ -322,7 +322,7 @@ export function AddMcpServerForm({
           <Notice tone="info" role="status" className="text-xs">
             <span className="flex items-center gap-1.5">
               <Lock className="size-3.5 shrink-0" aria-hidden />
-              Adding a server only works at this computer. This device is on your network.
+              Adding a server only works at this computer. You’re on another device.
             </span>
           </Notice>
         )}

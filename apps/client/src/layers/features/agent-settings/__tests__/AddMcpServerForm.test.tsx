@@ -140,7 +140,7 @@ describe('AddMcpServerForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /add server/i }));
     expect(
       await screen.findByText(
-        'Adding a server only works at this computer. This device is on your network.'
+        'Adding a server only works at this computer. You’re on another device.'
       )
     ).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'granola' } });

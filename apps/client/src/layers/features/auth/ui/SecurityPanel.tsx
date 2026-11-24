@@ -80,7 +80,7 @@ export function SecurityPanel() {
         <p className="text-muted-foreground text-sm">
           {isHub
             ? 'You sign in here with your DorkOS account.'
-            : 'Other devices need a password, or a network code. This computer can ask too.'}
+            : 'Other devices need a password, or a code on your network. This computer can too.'}
         </p>
       </div>
 

@@ -10,6 +10,32 @@ import { execFile } from 'node:child_process';
 import { BlockList, isIPv4, isIPv6 } from 'node:net';
 import os from 'node:os';
 
+/** The shared range Tailscale hands its IPv4 addresses out of, one per device. */
+const TAILNET_V4_START = '100.64.0.0';
+/** The prefix length of {@link TAILNET_V4_START}'s range, `100.64.0.0/10`. */
+const TAILNET_V4_PREFIX = 10;
+const TAILNET_V4 = new BlockList();
+TAILNET_V4.addSubnet(TAILNET_V4_START, TAILNET_V4_PREFIX, 'ipv4');
+/** Tailscale's own IPv6 prefix, which every Tailscale (and Headscale) device also holds. */
+const TAILNET_V6 = new BlockList();
+TAILNET_V6.addSubnet('fd7a:115c:a1e0::', 48, 'ipv6');
+
+/**
+ * Whether one interface is a Tailscale one: a single IPv4 address (a `/32`) in
+ * `100.64.0.0/10` beside an address in Tailscale's own IPv6 prefix. A cellular
+ * modem on carrier NAT or another VPN can hold a `/32` in that IPv4 range too,
+ * but not the IPv6 address, so its carrier's other subscribers stay out.
+ */
+function isTailnetInterface(entries: os.NetworkInterfaceInfo[]): boolean {
+  const v4 = entries.some(
+    (entry) =>
+      entry.family === 'IPv4' &&
+      entry.cidr?.endsWith('/32') === true &&
+      TAILNET_V4.check(entry.address, 'ipv4')
+  );
+  return v4 && entries.some((e) => e.family === 'IPv6' && TAILNET_V6.check(e.address, 'ipv6'));
+}
+
 /** One label of a host name: letters, digits and inner hyphens. */
 const HOST_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
@@ -87,9 +113,16 @@ export async function readLocalName(
  *
  * The listener binds every interface, which on a Mac with a public IPv6
  * address, a VPN, or a public IPv4 address includes the internet. "Devices on my
- * Wi-Fi" means a peer that shares a subnet with this computer, so anything else
+ * network" means a peer that shares a subnet with this computer, so anything else
  * is refused at the socket, before a byte of the sign-in page goes out over
  * plain `http`.
+ *
+ * Tailscale needs more than its own subnet (DOR-5135). It gives this computer
+ * a single address in `100.64.0.0/10` (a `/32`), and every other device on the
+ * tailnet has its own address in that same range. So on a Tailscale interface
+ * ({@link isTailnetInterface}) the whole range counts as its network. Tailscale
+ * routes that range into its own tunnel, so a reply to a 100.x peer that is not
+ * on the tailnet goes nowhere, and the range never routes on the internet.
  *
  * @param peer - `socket.remoteAddress`.
  * @param interfaces - The interface table; defaults to the live one.
@@ -111,6 +144,9 @@ export function isLocalNetworkPeer(
   local.addAddress('::1', 'ipv6');
   local.addSubnet('fe80::', 10, 'ipv6');
   for (const entries of Object.values(interfaces)) {
+    if (entries && isTailnetInterface(entries)) {
+      local.addSubnet(TAILNET_V4_START, TAILNET_V4_PREFIX, 'ipv4');
+    }
     for (const entry of entries ?? []) {
       const prefix = Number(entry.cidr?.split('/')[1]);
       // A subnet wider than a /8 (or an IPv6 /32) is no one's home network, and a

@@ -1,6 +1,6 @@
 flowchart LR
   accTitle: Ways in to your DorkOS from another device
-  accDescr: Four routes reach a person's own DorkOS server from elsewhere, and each is a different route: the Wi-Fi listener on the same network, the person's own tunnel, managed remote ingress, and the chat relay through a hub. A sign-in made on one route is refused on another. The relay carries chats only and dials the hub the computer pinned, not Cloud. The tunnel and the Wi-Fi listener are shipped; managed remote and the relay are built and off by default; the hub is built and not deployed.
+  accDescr: Four routes reach a person's own DorkOS server from elsewhere, and each is a different route: the network listener on the same network, the person's own tunnel, managed remote ingress, and the chat relay through a hub. A sign-in made on one route is refused on another. The relay carries chats only and dials the hub the computer pinned, not Cloud. The tunnel and the network listener are shipped; managed remote and the relay are built and off by default; the hub is built and not deployed.
 
   device["<b>Another device</b><br/><span class='d'>A phone or another browser</span>"]
   tunnelsvc["<b>Tunnel service</b><br/><span class='d'>Outside DorkOS</span>"]
@@ -8,7 +8,7 @@ flowchart LR
   cloud["<b>DorkOS Cloud · optional</b><br/><span class='d'>Hub assignment · managed command stream</span>"]
 
   subgraph mac["Your computer"]
-    wifi["<b>Wi-Fi listener</b><br/><span class='d'>Mac only · a lower sign-in level</span>"]
+    wifi["<b>Network listener</b><br/><span class='d'>Mac only · a lower sign-in level</span>"]
     tunnel["<b>Own tunnel</b><br/><span class='d'>Optional · outbound connection</span>"]
     remote["<b>Managed remote ingress</b><br/><span class='d'>Commands from Cloud · built, off until switched on</span>"]
     relay["<b>Chat relay</b><br/><span class='d'>Chats only · off until linked</span>"]
