@@ -166,6 +166,15 @@ describe('ConnectorAgentRequestService', () => {
       expect(h.db.select().from(connectionOperationGrants).all()).toEqual([]);
     });
 
+    it('still refuses a chat app and an app beyond the popular ones when nothing is set up', async () => {
+      expect(await refusal(h.service({ services: bareDirectory() }), 'telegram')).toContain(
+        'Telegram connects through Messaging'
+      );
+      expect(await refusal(h.service({ services: bareDirectory() }), 'acme-crm')).toContain(
+        'DorkOS is not set up to reach apps yet'
+      );
+    });
+
     it('answers at once with the choices to offer when no way reaches the app yet (FB-57)', async () => {
       const requests = h.service({ services: bareDirectory() });
 

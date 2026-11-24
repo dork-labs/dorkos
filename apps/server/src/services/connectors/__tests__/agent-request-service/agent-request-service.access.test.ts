@@ -360,7 +360,7 @@ describe('ConnectorAgentRequestService', () => {
       const requests = h.service();
       const created = await requests.create(principal(), INPUT);
       h.grantLive(['revision-read']);
-      const decision = CURRENT_ACCESS as const;
+      const decision = CURRENT_ACCESS;
 
       await requests.resolve(OWNER, created.requestId, decision);
       await expect(requests.resolve(OWNER, created.requestId, decision)).resolves.toMatchObject({

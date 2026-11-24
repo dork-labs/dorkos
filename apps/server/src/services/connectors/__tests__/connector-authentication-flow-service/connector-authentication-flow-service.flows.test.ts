@@ -100,6 +100,21 @@ describe('ConnectorAuthenticationFlowService', () => {
     });
   });
 
+  it('fails pre-upgrade pending flows without a snapshot before contacting the provider', async () => {
+    const pending = await h.service.start(OWNER, { ...GMAIL_START, idempotencyKey: 'legacy' });
+    h.db
+      .update(connectorAuthenticationFlows)
+      .set({ cleanupSnapshotJson: null })
+      .where(eq(connectorAuthenticationFlows.id, pending.flowId))
+      .run();
+    const poll = vi.spyOn(h.provider, 'pollConnect');
+    expect(await h.service.poll(OWNER, pending.flowId)).toMatchObject({
+      state: 'failed',
+      reason: expect.stringContaining('Start a new sign-in'),
+    });
+    expect(poll).not.toHaveBeenCalled();
+  });
+
   it('never replays a provider create whose outcome was ambiguous', async () => {
     const start = vi
       .spyOn(h.provider, 'startConnect')

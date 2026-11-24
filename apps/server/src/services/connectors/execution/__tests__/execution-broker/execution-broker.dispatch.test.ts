@@ -332,6 +332,59 @@ describe('ConnectorExecutionBroker', () => {
     expect(h.provider.commands).toEqual([]);
   });
 
+  it('never tells an agent to try again soon when the refusal is not retryable', async () => {
+    h.db
+      .update(connectorProviderInstances)
+      .set({ mode: 'managed' })
+      .where(eq(connectorProviderInstances.id, h.provider.instanceId))
+      .run();
+    h.db
+      .insert(connectorManagedAuthorityOutbox)
+      .values({
+        commandId: 'scope-applied',
+        connectionId: CONNECTION_ID,
+        providerInstanceId: h.provider.instanceId,
+        executionConfigGeneration: 1,
+        ownerKind: OWNER.kind,
+        ownerId: OWNER.installationId,
+        managedConnectionId: EXTERNAL_REF,
+        scopeKind: 'agent_grants',
+        subjectId: 'agent-a',
+        scopeVersion: 4,
+        requestHash: 'request-a',
+        requestJson: '{}',
+        state: 'applied',
+        safeReason: null,
+        attemptCount: 0,
+        nextAttemptAt: null,
+        leaseOwner: null,
+        leasedUntil: null,
+        createdAt: '2026-09-06T12:00:00.000Z',
+        updatedAt: '2026-09-06T12:00:00.000Z',
+        resolvedAt: '2026-09-06T12:00:00.000Z',
+        compactedAt: null,
+      })
+      .run();
+    // No managed execution context is wired, so the action can't run.
+    h.broker = new ConnectorExecutionBroker(
+      h.authorization,
+      new ConnectorUsageStore(h.db),
+      { revalidate: () => true },
+      () => new Date('2026-09-06T12:00:01.000Z')
+    );
+
+    const response = await h.execute();
+    // The provider result is not retryable; the words the agent reads agree.
+    expect(response.result).toEqual({
+      status: 'error',
+      code: 'MANAGED_EXECUTION_CONTEXT_UNAVAILABLE',
+      message:
+        'Access to this account through the person’s DorkOS account isn’t ready, so the action didn’t run. Tell the person: they can check it on the Connections page in the DorkOS app.',
+    });
+    expect(JSON.stringify(response.result)).not.toMatch(/try again/i);
+    expect(h.provider.commands).toEqual([]);
+  });
+
   it('refuses a durable runtime principal before dispatch when connector migration failed', async () => {
     const { runtimePrincipals, resolved } = await openRuntimeTurn(h.db, {
       makeBootEpoch: () => 'boot-migration-failure',

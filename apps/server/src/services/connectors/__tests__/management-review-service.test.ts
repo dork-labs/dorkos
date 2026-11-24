@@ -17,6 +17,7 @@ import {
 } from '@dorkos/shared/connector-schemas';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import {
+  ConnectorManagementReviewError,
   ConnectorManagementReviewService,
   type ConnectorManagementActionApplier,
 } from '../management-review-service.js';
@@ -135,7 +136,7 @@ describe('ConnectorManagementReviewService', () => {
   }
 
   it('shows live every-agent sharing on a pending review and keeps what approval saw', async () => {
-    const requester = PROGRAM_A as const;
+    const requester = PROGRAM_A;
     const removal = service.create(requester, {
       action: {
         version: 1,
@@ -191,8 +192,36 @@ describe('ConnectorManagementReviewService', () => {
     });
   });
 
+  it('returns the same unresolved review for an equivalent program idempotency key', () => {
+    const pause = { version: 1, kind: 'pause', connectionId: CONNECTION_ID } as const;
+    const first = service.create(PROGRAM_A, { action: pause, idempotencyKey: 'same-command' });
+    expect(service.create(PROGRAM_A, { action: pause, idempotencyKey: 'same-command' })).toEqual(
+      first
+    );
+
+    // The same key for a different change, or a grant of an action that isn't there, is refused.
+    expect(() =>
+      service.create(PROGRAM_A, {
+        action: { ...pause, kind: 'resume' },
+        idempotencyKey: 'same-command',
+      })
+    ).toThrowError(ConnectorManagementReviewError);
+    expect(() =>
+      service.create(PROGRAM_A, {
+        action: {
+          version: 1,
+          kind: 'set_agent_access',
+          connectionId: CONNECTION_ID,
+          agentId: 'agent-a',
+          operationRevisionIds: ['revision-missing'],
+        },
+        idempotencyKey: 'invalid-grant',
+      })
+    ).toThrowError(ConnectorManagementReviewError);
+  });
+
   it('returns only lifecycle state to the exact program requester', async () => {
-    const requester = PROGRAM_A as const;
+    const requester = PROGRAM_A;
     const review = service.create(requester, {
       action: { version: 1, kind: 'pause', connectionId: CONNECTION_ID },
       idempotencyKey: 'program-status',
@@ -230,7 +259,7 @@ describe('ConnectorManagementReviewService', () => {
   });
 
   it('projects a stale target as unavailable without exposing owner context', () => {
-    const requester = PROGRAM_A as const;
+    const requester = PROGRAM_A;
     const review = service.create(requester, {
       action: { version: 1, kind: 'pause', connectionId: CONNECTION_ID },
       idempotencyKey: 'stale-program-status',
@@ -421,7 +450,7 @@ describe('ConnectorManagementReviewService', () => {
   it('recovers a claimed authentication flow when the review outcome receipt is lost', async () => {
     const provider = registry.resolveProviderInstance(PROVIDER_ID)!;
     const start = vi.spyOn(provider, 'startConnect');
-    const requester = PROGRAM_A as const;
+    const requester = PROGRAM_A;
     const review = service.create(requester, {
       action: CONNECT_GMAIL,
       idempotencyKey: 'lost-review-receipt',
@@ -485,7 +514,7 @@ describe('ConnectorManagementReviewService', () => {
       },
     };
     service = makeService('boot-a');
-    const requester = PROGRAM_A as const;
+    const requester = PROGRAM_A;
     const review = service.create(requester, {
       action: { version: 1, kind: 'pause', connectionId: CONNECTION_ID },
       idempotencyKey: 'pause-receipt-race',

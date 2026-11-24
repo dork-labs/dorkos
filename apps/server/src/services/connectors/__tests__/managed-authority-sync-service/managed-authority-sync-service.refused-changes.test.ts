@@ -1,6 +1,7 @@
 import { connectorManagedAuthorityScopes } from '@dorkos/db';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  connectionOperationGrants,
   connectorManagedAuthorityOutbox,
   connectorProviderInstances,
   eq,
@@ -98,6 +99,34 @@ describe('ManagedAuthoritySyncService', () => {
       await expect(
         sync.restageAfterRelink(PROVIDER_ID, new AbortController().signal)
       ).resolves.toBe(0);
+    });
+
+    it('after a relink, sends what the agent holds now when its access changed since the refusal', async () => {
+      h.cloud.submitConnectorAuthorityCommand = vi.fn(async () => {
+        throw cloudError('unauthorized');
+      });
+      const sync = h.service();
+      await h.replace(sync);
+      // Later, the agent is deleted: its access here ends without a hosted change.
+      h.clock += 60_000;
+      h.db
+        .update(connectionOperationGrants)
+        .set({ revokedAt: new Date(h.clock).toISOString() })
+        .where(eq(connectionOperationGrants.agentId, 'agent-a'))
+        .run();
+      h.db
+        .update(connectorProviderInstances)
+        .set({ executionConfigGeneration: 2 })
+        .where(eq(connectorProviderInstances.id, PROVIDER_ID))
+        .run();
+      h.cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+        h.submitted.push(command);
+        return statusFor(command);
+      });
+      await sync.restageAfterRelink(PROVIDER_ID, new AbortController().signal);
+      // Never the old Send again: the deleted agent gets nothing back.
+      expect(h.submitted.at(-1)).toMatchObject({ kind: 'replace_agent_grants', revisions: [] });
+      expect(r.grants().every((grant) => grant.revokedAt !== null)).toBe(true);
     });
 
     it('never sends a change refused for another reason just because of a relink', async () => {

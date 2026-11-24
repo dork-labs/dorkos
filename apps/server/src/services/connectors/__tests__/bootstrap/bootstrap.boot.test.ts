@@ -133,6 +133,31 @@ describe('ConnectorProviderBootstrapper', () => {
         expect(toolkitOf(live.id)).toBe('gmail');
         expect(toolkitOf(disconnected.id)).toBe('gmail');
       });
+
+      it('still registers Nango when moving the accounts fails', async () => {
+        const { live } = saveUnderOldKey();
+        let reads = 0;
+
+        const status = await h
+          .makeBootstrapper({
+            nangoEnv,
+            nangoClient: {
+              ...fakeNangoClient(),
+              // The connection check reads once; the rename read fails.
+              listIntegrations: () =>
+                ++reads === 1
+                  ? Promise.resolve([{ uniqueKey: 'google-mail', provider: 'google-mail' }])
+                  : Promise.reject(new Error('Nango went away')),
+            },
+          })
+          .reload('nango');
+
+        // Registered and reported healthy: the move is retried next time.
+        expect(status.registered).toBe(true);
+        expect(status.error).toBeUndefined();
+        expect(h.registry.resolveProvider('nango')).toBeDefined();
+        expect(toolkitOf(live.id)).toBe('google-mail');
+      });
     });
 
     it('registers the hosted managed provider only while a linked key is configured', async () => {
@@ -198,6 +223,61 @@ describe('ConnectorProviderBootstrapper', () => {
       linked = false;
       await restarted.reloadManagedCloud();
       expect(restartedRegistry.resolveProviderInstance(managed.instanceId)).toBeUndefined();
+    });
+
+    it('keeps recovery absent when unlinked, unavailable, or the linked material changes in flight', async () => {
+      const instanceId = 'managed-provider' as never;
+      let linked = false;
+      let digest: string | undefined;
+      let createCount = 0;
+      let probeCount = 0;
+      let releaseProbe!: () => void;
+      const probeGate = new Promise<void>((resolve) => {
+        releaseProbe = resolve;
+      });
+      const managed = new FakeConnectorProvider({
+        instanceId,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      managed.listAccounts = async () => {
+        probeCount += 1;
+        await probeGate;
+        return [];
+      };
+      const bootstrapper = h.makeBootstrapper({
+        managedCloud: {
+          instanceId,
+          configured: () => linked,
+          executionConfigDigest: () => digest,
+          create: () => {
+            createCount += 1;
+            return managed;
+          },
+        },
+      });
+
+      await bootstrapper.registerBootProviders();
+      await bootstrapper.recoverManagedCloud();
+      expect(createCount).toBe(0);
+
+      linked = true;
+      digest = 'linked-material-a';
+      const recovery = bootstrapper.recoverManagedCloud();
+      await Promise.resolve();
+      expect(probeCount).toBe(1);
+      digest = 'linked-material-b';
+      releaseProbe();
+      await recovery;
+      expect(h.registry.resolveProviderInstance(instanceId)).toBeUndefined();
+
+      managed.listAccounts = async () => {
+        probeCount += 1;
+        throw new Error('hosted readiness is off');
+      };
+      await bootstrapper.recoverManagedCloud();
+      expect(h.registry.resolveProviderInstance(instanceId)).toBeUndefined();
+      expect(probeCount).toBe(2);
     });
 
     it('recovers one failed hosted boot through concurrent normal catalog reads without changing authority', async () => {

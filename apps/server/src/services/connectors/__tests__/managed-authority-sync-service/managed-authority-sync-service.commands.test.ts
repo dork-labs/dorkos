@@ -11,6 +11,7 @@ import type {
   ManagedConnectorAuthorityCommandStatus,
   ManagedConnectorAuthorityCommand,
 } from '@dorkos/shared/connector-managed-schemas';
+import { logger } from '../../../../lib/logger.js';
 import { ManagedAuthoritySyncService } from '../../resources/managed-authority-sync-service.js';
 import {
   OWNER,
@@ -275,6 +276,21 @@ describe('ManagedAuthoritySyncService', () => {
     function outbox() {
       return h.db.select().from(connectorManagedAuthorityOutbox).get()!;
     }
+
+    it('logs the class of a failure on this computer, never its message', async () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      h.cloud.submitConnectorAuthorityCommand = vi.fn(async () => {
+        throw new TypeError('private local detail');
+      });
+      await expect(disconnect()).resolves.toMatchObject({
+        authoritySync: {
+          status: 'pending',
+          reason: 'Something went wrong on this computer during the last try.',
+        },
+      });
+      expect(warn.mock.calls[0]![1]).toMatchObject({ code: 'local_error', errorName: 'TypeError' });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('private local detail');
+    });
 
     it.each(['background recovery', 'Finish disconnecting'] as const)(
       'sends the same command again through %s until an applied-but-pending cleanup completes',
