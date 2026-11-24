@@ -52,6 +52,8 @@ const NOTICE = 'API Error: upstream unavailable';
 interface BootOptions {
   /** The recovery candidate check throws, as a storage fault between claim and move would. */
   candidateThrows?: boolean;
+  /** Called each time the mover asks for a recovery candidate. */
+  onCandidate?: () => void;
 }
 
 /** Boot one server process over the database file; nothing in memory survives from the last. */
@@ -190,6 +192,7 @@ async function boot(p: Paths, ids: Ids, options: BootOptions = {}) {
   h.service.handoffs.initializeDurable(() => notices.flush());
   const mover: InstanceType<typeof RoomSeatMover> = new RoomSeatMover({
     recoveryCandidate: async (seat) => {
+      options.onCandidate?.();
       if (options.candidateThrows) throw new Error('fixture fault between claim and move');
       return failedSeatCandidate(seat);
     },
@@ -496,6 +499,8 @@ async function boot(p: Paths, ids: Ids, options: BootOptions = {}) {
     failPriorTurn,
     stop,
     candidate: () => failedSeatCandidate(seat()),
+    /** Take the account's usage away, as before the first read after boot, or give it back. */
+    usageRead: (read: boolean) => setAccountUsageStore(read ? usage : undefined),
     nativeOf: (id: string) => claudeTranscriptPath(p.root, p.home, id)!,
     requiredLaunches: () => runtimeRegistry.requiredLaunches(),
   };
@@ -709,6 +714,26 @@ it('never lets a restart unlock a chat its own process refused for a crash loop'
   const second = await boot(p, ids);
   expect(second.runtime.readFailedSeatAuthority(ids.prior)).toBeNull();
   await second.handOff();
+  expect(second.h.store.getRoomSession(ids.roomId!, ids.authorId!)).toBe(ids.prior);
+  await second.stop();
+}, 60000);
+
+it('waits for the account’s usage before spending the record', async () => {
+  const p = await paths();
+  const ids: Ids = { prior: randomUUID(), fresh: randomUUID() };
+  const first = await boot(p, ids);
+  await first.failPriorTurn();
+  await first.stop();
+
+  // Usage not read yet since boot: the record is not spent and no candidate is even asked for.
+  const asked: Array<number | null | undefined> = [];
+  const second = await boot(p, ids, {
+    onCandidate: () => asked.push(rowOf(second, ids.prior)?.consumedAt),
+  });
+  second.usageRead(false);
+  await second.handOff();
+  expect(asked).toEqual([]);
+  expect(rowOf(second, ids.prior)?.consumedAt).toBeNull();
   expect(second.h.store.getRoomSession(ids.roomId!, ids.authorId!)).toBe(ids.prior);
   await second.stop();
 }, 60000);

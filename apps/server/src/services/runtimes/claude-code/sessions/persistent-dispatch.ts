@@ -473,10 +473,14 @@ export class PersistentDispatch {
    * @param sessionId - The session being asked about, in any id it answers to
    */
   holdsBackgroundWork(sessionId: string): boolean {
+    return this.liveBundle(sessionId)?.heldWork === true;
+  }
+
+  /** The session's bundle while the registry still backs it with the same pump, else nothing. */
+  private liveBundle(sessionId: string): SessionBundle | undefined {
     const key = this.sessionKeyOf(sessionId);
     const bundle = this.bundles.get(key);
-    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return false;
-    return bundle.heldWork === true;
+    return bundle !== undefined && this.registry.peek(key) === bundle.pump ? bundle : undefined;
   }
 
   /**
@@ -487,9 +491,8 @@ export class PersistentDispatch {
    * restart never unlocks it.
    */
   failedSeatCrashAllows(sessionId: string): 'allows' | 'refuses' | 'cold' {
-    const key = this.sessionKeyOf(sessionId);
-    const bundle = this.bundles.get(key);
-    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return 'cold';
+    const bundle = this.liveBundle(sessionId);
+    if (bundle === undefined) return 'cold';
     return bundle.recovery.willAutoResume ? 'allows' : 'refuses';
   }
 
@@ -925,10 +928,7 @@ export class PersistentDispatch {
    * @returns True when a turn that never finished had to be abandoned
    */
   settleOpenTurn(sessionId: string): boolean {
-    const key = this.sessionKeyOf(sessionId);
-    const bundle = this.bundles.get(key);
-    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return false;
-    return bundle.windows.abandonOpenWindow();
+    return this.liveBundle(sessionId)?.windows.abandonOpenWindow() ?? false;
   }
 
   /**
@@ -1469,6 +1469,7 @@ export class PersistentDispatch {
 
     bundle.recovery = new SessionCrashRecovery({
       sessionId: key,
+      aliases: () => [session.sdkSessionId],
       pump: bundle.pump,
       windows: bundle.windows,
     });

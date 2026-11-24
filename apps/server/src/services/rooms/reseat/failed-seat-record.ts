@@ -47,32 +47,38 @@ const CRASH_REFUSED_MEMORY = 10_000;
  * Spend a chat's failed-turn record because its own process refuses it for a crash loop, and
  * write none for it until a turn completes there again, so a restart never unlocks what that
  * process refused (DOR-4626). Best effort: a write that fails leaves the record, which is still
- * bound by the latest-turn and current-guard checks. Keyed as the crash policy names the chat.
+ * bound by the latest-turn and current-guard checks.
  *
- * @param sessionId - The chat whose process keeps dying.
+ * Every id the chat answers to is named: the crash policy files a chat under the id its first
+ * turn was sent with, while the record is written under the id each turn is sent with, which is
+ * the SDK's re-minted id once the room rebinds to it.
+ *
+ * @param sessionIds - Every id the chat whose process keeps dying answers to.
  */
-export function refuseFailedSeat(sessionId: string): void {
-  crashRefused.delete(sessionId);
-  crashRefused.add(sessionId);
-  if (crashRefused.size > CRASH_REFUSED_MEMORY)
-    crashRefused.delete(crashRefused.values().next().value!);
-  try {
-    failedSeatLedger()?.consume(sessionId);
-  } catch (err) {
-    logger.warn('[rooms] could not spend a crash-looping room chat’s recovery record', {
-      sessionId,
-      error: err instanceof Error ? err.message : String(err),
-    });
+export function refuseFailedSeat(sessionIds: readonly string[]): void {
+  for (const sessionId of new Set(sessionIds)) {
+    crashRefused.delete(sessionId);
+    crashRefused.add(sessionId);
+    if (crashRefused.size > CRASH_REFUSED_MEMORY)
+      crashRefused.delete(crashRefused.values().next().value!);
+    try {
+      failedSeatLedger()?.consume(sessionId);
+    } catch (err) {
+      logger.warn('[rooms] could not spend a crash-looping room chat’s recovery record', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 }
 
 /**
  * A turn completed on the chat, so its crash policy no longer refuses it.
  *
- * @param sessionId - The chat, as its crash policy names it.
+ * @param sessionIds - Every id the chat answers to.
  */
-export function clearFailedSeatRefusal(sessionId: string): void {
-  crashRefused.delete(sessionId);
+export function clearFailedSeatRefusal(sessionIds: readonly string[]): void {
+  for (const sessionId of sessionIds) crashRefused.delete(sessionId);
 }
 
 /**

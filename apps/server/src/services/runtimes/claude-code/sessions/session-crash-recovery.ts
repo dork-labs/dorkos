@@ -145,6 +145,11 @@ export interface CrashRecoveryWindows {
 /** Everything the recovery needs to own one session's failover. */
 export interface SessionCrashRecoveryOptions {
   sessionId: string;
+  /**
+   * The other ids the same chat answers to (the SDK's re-minted id), so a crash-loop refusal
+   * reaches its room-recovery record whichever id it was written under (DOR-4626).
+   */
+  aliases?: () => readonly string[];
   /** The pump whose process may die. */
   pump: CrashRecoveryPump;
   /** The windower the crash is forwarded to, and dispatches go through. */
@@ -266,7 +271,7 @@ export class SessionCrashRecovery {
     this.latest = record;
     // A restart must not unlock what this process now refuses: spend the chat's room-recovery
     // record here (DOR-4626, `failed-seat-ledger.ts`).
-    if (!record.willAutoResume) refuseFailedSeat(record.sessionId);
+    if (!record.willAutoResume) refuseFailedSeat(this.idsOf(record.sessionId));
     logger.warn('[SessionCrashRecovery] a session lost its process', {
       sessionId: record.sessionId,
       stateAtCrash: record.stateAtCrash,
@@ -292,7 +297,7 @@ export class SessionCrashRecovery {
   noteStateChange(change: { from: PumpState; to: PumpState }): void {
     if (change.from !== 'running' || change.to !== 'warm') return;
     this.run = 0;
-    clearFailedSeatRefusal(this.opts.sessionId);
+    clearFailedSeatRefusal(this.idsOf(this.opts.sessionId));
   }
 
   /**
@@ -328,6 +333,15 @@ export class SessionCrashRecovery {
       throw new SessionCrashLoopError(this.opts.sessionId, this.latest);
     }
     return this.opts.windows.dispatch(batch, cwd);
+  }
+
+  /** Every id this chat answers to; a failing alias reader names the filed id alone. */
+  private idsOf(sessionId: string): string[] {
+    try {
+      return [sessionId, ...(this.opts.aliases?.() ?? [])];
+    } catch {
+      return [sessionId];
+    }
   }
 
   /** Tell the recorder, without letting its failure reach the read loop. */

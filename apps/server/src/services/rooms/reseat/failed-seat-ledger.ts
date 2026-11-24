@@ -25,8 +25,9 @@
  * ## One process per data folder
  *
  * "Another process" means "an earlier one" only because DorkOS holds an instance lock on the
- * data folder, so two servers never share this table at once. Without that lock, two live
- * servers would each read the other's rows as restorable.
+ * data folder (`lib/instance-lock.ts`), so two servers never share this table at once. The lock
+ * is off behind `DORKOS_SKIP_INSTANCE_LOCK` and inert under `NODE_ENV=test`; with it off, two
+ * live servers on one data folder would each read the other's rows as restorable.
  *
  * @module services/rooms/reseat/failed-seat-ledger
  */
