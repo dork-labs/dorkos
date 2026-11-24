@@ -28,6 +28,7 @@ export default defineConfig({
     './src/schema/session/session-draft-sources.ts',
     './src/schema/session/session-native-bindings.ts',
     './src/schema/session/session-touches.ts',
+    './src/schema/session/session-outside-words.ts',
     './src/schema/session/turn-context.ts',
     './src/schema/session/chat-messages.ts',
     './src/schema/session/work-claims.ts',

@@ -154,11 +154,12 @@ describe('a mini app post only in the ambient window the turn is shown (DOR-4587
   const shownPost = { id: 'entry-shown-mini-app', authorId: owner.id } as RoomEntry;
   const deps = {
     store: { listEntriesByIds: () => [shownPost] },
+    reactions: { listFor: () => new Map() },
     authors,
     isOwnerAuthor: isOwner,
   };
   // `pending` is the unread ambient window `room-context.ts` renders, from `ambientFrom` to the trigger.
-  const context = { pending: [{ id: shownPost.id }] } as unknown as RoomContextData;
+  const context = { pending: [{ id: shownPost.id }], ownRecent: [] } as unknown as RoomContextData;
 
   it('marks the turn with stranger marking off', () => {
     noteEntryMarks(shownPost.id, { outsider: true }, room);
