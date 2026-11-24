@@ -259,8 +259,11 @@ jobs:
           bash tools/scripts/daily-release.sh commits p "$PREVIOUS" "$P" >"$RUNNER_TEMP/commits.txt"
           out="$RUNNER_TEMP/release"
           # Commits through the Git Data API onto release-commit/vX.Y.Z, cut at P.
+          # --target and GH_TOKEN are the interface the release lead wires at
+          # go-live (t1g, Nov 24); until then `plan` never lets this job run.
           node tools/scripts/release/release-commit.ts --repo p --previous "$PREVIOUS" \
-            --date "$(date -u +%F)" --commits "$RUNNER_TEMP/commits.txt" --out "$out" --commit
+            --date "$(date -u +%F)" --commits "$RUNNER_TEMP/commits.txt" --out "$out" \
+            --target "release-commit/v$VERSION" --commit
           url=$(gh pr create --repo "$REPO" --base "release/v$VERSION" --head "release-commit/v$VERSION" \
             --title "chore(release): v$VERSION" --body-file "$out/pr-body.md" --label skip-changelog)
           echo "Opened $url"
