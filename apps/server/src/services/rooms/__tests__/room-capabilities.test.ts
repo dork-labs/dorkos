@@ -814,12 +814,19 @@ describe('the rooms capability domain', () => {
         authorId: human,
         text: 'ship it\u{E006F}\u{E006B}\u{E007F} today',
       });
+      service.post(channel.id, {
+        authorId: human,
+        text: 'pay\u{E0100}\u{E0101}\u2066\u3164 the invoice \u{1F468}\u200D\u{1F469}\u200D\u{1F467}',
+      });
 
       const result = (await call('rooms.read_history', { roomId: channel.id, limit: 10 })) as {
         entries: Array<{ text: string }>;
       };
 
-      expect(result.entries.map((entry) => entry.text)).toEqual(['ship it today']);
+      expect(result.entries.map((entry) => entry.text)).toEqual([
+        'pay the invoice \u{1F468}\u200D\u{1F469}\u200D\u{1F467}',
+        'ship it today',
+      ]);
     });
 
     it('names the operator as an agent should read them, never the registry`s "You"', async () => {
