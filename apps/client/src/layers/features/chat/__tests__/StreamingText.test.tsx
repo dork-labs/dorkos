@@ -25,8 +25,8 @@ afterEach(() => {
 describe('StreamingText', () => {
   it('passes content to Streamdown component', () => {
     render(<StreamingText content="# Hello" />);
-    expect(screen.getByTestId('streamdown')).toBeDefined();
-    expect(screen.getByText('# Hello')).toBeDefined();
+    expect(screen.getByTestId('streamdown')).toBeInTheDocument();
+    expect(screen.getByText('# Hello')).toBeInTheDocument();
   });
 
   it('labels the code block copy button "Copy code" (DOR-2871)', () => {
@@ -44,12 +44,12 @@ describe('StreamingText', () => {
   it('handles empty content', () => {
     const { container } = render(<StreamingText content="" />);
     expect(container).toBeDefined();
-    expect(screen.getByTestId('streamdown')).toBeDefined();
+    expect(screen.getByTestId('streamdown')).toBeInTheDocument();
   });
 
   it('passes markdown content through unchanged', () => {
     render(<StreamingText content="**bold** and `code`" />);
-    expect(screen.getByText('**bold** and `code`')).toBeDefined();
+    expect(screen.getByText('**bold** and `code`')).toBeInTheDocument();
   });
 
   it('adds streaming-cursor class when isStreaming is true', () => {
@@ -136,7 +136,7 @@ describe('StreamingText', () => {
       const content = 'Run `pnpm dev` to start';
       render(<StreamingText content={content} />);
       expect(screen.queryByTestId('streamdown')).toBeNull();
-      expect(screen.getByText(content)).toBeDefined();
+      expect(screen.getByText(content)).toBeInTheDocument();
     } finally {
       MockStreamdown.mockReset(); // restores the default render implementation
       errorSpy.mockRestore();

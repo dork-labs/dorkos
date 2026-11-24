@@ -37,7 +37,7 @@ afterEach(cleanup);
 describe('GitStatusItem', () => {
   it('renders branch name for clean repo', () => {
     render(<GitStatusItem data={cleanStatus} />);
-    expect(screen.getByText('main')).toBeDefined();
+    expect(screen.getByText('main')).toBeInTheDocument();
   });
 
   it('does not show change count for clean repo', () => {
@@ -47,22 +47,22 @@ describe('GitStatusItem', () => {
 
   it('renders change count when dirty', () => {
     render(<GitStatusItem data={dirtyStatus} />);
-    expect(screen.getByText(/6 changes/)).toBeDefined();
+    expect(screen.getByText(/6 changes/)).toBeInTheDocument();
   });
 
   it('renders singular "1 change" for single file', () => {
     render(<GitStatusItem data={{ ...cleanStatus, modified: 1, clean: false }} />);
-    expect(screen.getByText(/1 change$/)).toBeDefined();
+    expect(screen.getByText(/1 change$/)).toBeInTheDocument();
   });
 
   it('renders ahead indicator', () => {
     render(<GitStatusItem data={{ ...cleanStatus, ahead: 5 }} />);
-    expect(screen.getByText('5')).toBeDefined();
+    expect(screen.getByText('5')).toBeInTheDocument();
   });
 
   it('renders behind indicator', () => {
     render(<GitStatusItem data={{ ...cleanStatus, behind: 3 }} />);
-    expect(screen.getByText('3')).toBeDefined();
+    expect(screen.getByText('3')).toBeInTheDocument();
   });
 
   it('renders both ahead and behind', () => {
@@ -74,13 +74,13 @@ describe('GitStatusItem', () => {
       clean: false,
     };
     render(<GitStatusItem data={data} />);
-    expect(screen.getByText('4')).toBeDefined();
-    expect(screen.getByText('7')).toBeDefined();
+    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getByText('7')).toBeInTheDocument();
   });
 
   it('renders "No repo" in disabled state for error response', () => {
     render(<GitStatusItem data={errorStatus} />);
-    expect(screen.getByText('No repo')).toBeDefined();
+    expect(screen.getByText('No repo')).toBeInTheDocument();
   });
 
   it('does not render when data is undefined', () => {
@@ -125,23 +125,23 @@ describe('GitStatusItem — compact', () => {
     // and squeezed everything beside it (DOR-461). The count stays in the tooltip.
     render(<GitStatusItem data={dirtyStatus} compact />);
     expect(screen.queryByText(/changes?/)).toBeNull();
-    expect(screen.getByText('feature/my-b…')).toBeDefined();
+    expect(screen.getByText('feature/my-b…')).toBeInTheDocument();
   });
 
   it('keeps ahead and behind, which are why the item is news', () => {
     render(<GitStatusItem data={{ ...dirtyStatus, ahead: 4, behind: 7 }} compact />);
-    expect(screen.getByText('4')).toBeDefined();
-    expect(screen.getByText('7')).toBeDefined();
+    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getByText('7')).toBeInTheDocument();
   });
 
   it('bounds the branch to the same character count every other value is held to', () => {
     render(<GitStatusItem data={{ ...cleanStatus, branch: 'release/2026-07-canary' }} compact />);
-    expect(screen.getByText('release/2026…')).toBeDefined();
+    expect(screen.getByText('release/2026…')).toBeInTheDocument();
   });
 
   it('still says everything at the widest tier', () => {
     render(<GitStatusItem data={dirtyStatus} />);
-    expect(screen.getByText('feature/my-branch')).toBeDefined();
-    expect(screen.getByText(/6 changes/)).toBeDefined();
+    expect(screen.getByText('feature/my-branch')).toBeInTheDocument();
+    expect(screen.getByText(/6 changes/)).toBeInTheDocument();
   });
 });

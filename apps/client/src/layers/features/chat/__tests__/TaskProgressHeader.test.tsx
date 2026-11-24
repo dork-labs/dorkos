@@ -28,7 +28,7 @@ describe('TaskProgressHeader', () => {
         onToggleCollapse={() => {}}
       />
     );
-    expect(screen.getByText('3/7 tasks')).toBeDefined();
+    expect(screen.getByText('3/7 tasks')).toBeInTheDocument();
   });
 
   it('shows singular for 1 task', () => {
@@ -39,7 +39,7 @@ describe('TaskProgressHeader', () => {
         onToggleCollapse={() => {}}
       />
     );
-    expect(screen.getByText('0/1 task')).toBeDefined();
+    expect(screen.getByText('0/1 task')).toBeInTheDocument();
   });
 
   it('renders progress bar with correct width', () => {

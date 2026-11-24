@@ -18,7 +18,7 @@ const baseToolCall: ToolCallState = {
 describe('ToolCallCard', () => {
   it('renders tool name', () => {
     render(<ToolCallCard toolCall={baseToolCall} />);
-    expect(screen.getByText('Read test.ts')).toBeDefined();
+    expect(screen.getByText('Read test.ts')).toBeInTheDocument();
   });
 
   it('does not show input details initially (collapsed)', () => {
@@ -30,37 +30,37 @@ describe('ToolCallCard', () => {
     render(<ToolCallCard toolCall={baseToolCall} />);
     fireEvent.click(screen.getByText('Read test.ts'));
     // After expanding, should show the pretty-printed JSON key
-    expect(screen.getByText(/File path/)).toBeDefined();
+    expect(screen.getByText(/File path/)).toBeInTheDocument();
   });
 
   it('shows result when available and expanded', () => {
     render(<ToolCallCard toolCall={{ ...baseToolCall, result: 'file contents here' }} />);
     fireEvent.click(screen.getByText('Read test.ts'));
-    expect(screen.getByText('file contents here')).toBeDefined();
+    expect(screen.getByText('file contents here')).toBeInTheDocument();
   });
 
   it('collapses on second click', () => {
     render(<ToolCallCard toolCall={baseToolCall} />);
     const button = screen.getByText('Read test.ts');
     fireEvent.click(button);
-    expect(screen.getByText(/File path/)).toBeDefined();
+    expect(screen.getByText(/File path/)).toBeInTheDocument();
     fireEvent.click(button);
     expect(screen.queryByText(/File path/)).toBeNull();
   });
 
   it('renders pending status', () => {
     render(<ToolCallCard toolCall={{ ...baseToolCall, status: 'pending' }} />);
-    expect(screen.getByText('Read test.ts')).toBeDefined();
+    expect(screen.getByText('Read test.ts')).toBeInTheDocument();
   });
 
   it('renders error status', () => {
     render(<ToolCallCard toolCall={{ ...baseToolCall, status: 'error' }} />);
-    expect(screen.getByText('Read test.ts')).toBeDefined();
+    expect(screen.getByText('Read test.ts')).toBeInTheDocument();
   });
 
   it('handles non-JSON input gracefully', () => {
     render(<ToolCallCard toolCall={{ ...baseToolCall, input: 'raw text input' }} />);
     fireEvent.click(screen.getByText('Read'));
-    expect(screen.getByText('raw text input')).toBeDefined();
+    expect(screen.getByText('raw text input')).toBeInTheDocument();
   });
 });

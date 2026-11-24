@@ -281,7 +281,7 @@ describe('QuestionPrompt', () => {
       // After submission, the form should collapse
       expect(screen.queryByRole('radio')).toBeNull();
       // Single-question submitted shows "header: value" format on one line
-      expect(screen.getByText('Approach: Reschedule the internal meeting')).toBeDefined();
+      expect(screen.getByText('Approach: Reschedule the internal meeting')).toBeInTheDocument();
     });
 
     // Container uses neutral bg-muted/50 with shadow-msg-tool (ToolCallCard pattern)
@@ -306,7 +306,7 @@ describe('QuestionPrompt', () => {
     await waitFor(() => {
       // Should collapse to submitted state, not show an error
       expect(screen.queryByRole('radio')).toBeNull();
-      expect(screen.getByTestId('question-prompt-submitted')).toBeDefined();
+      expect(screen.getByTestId('question-prompt-submitted')).toBeInTheDocument();
     });
   });
 
@@ -320,7 +320,7 @@ describe('QuestionPrompt', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Send answer/ }));
 
     await waitFor(() => {
-      expect(screen.getByText('Network error')).toBeDefined();
+      expect(screen.getByText('Network error')).toBeInTheDocument();
     });
 
     // Form should still be visible (not collapsed)
@@ -366,13 +366,13 @@ describe('Multi-question Back/Next navigation', () => {
       <QuestionPrompt {...baseProps} questions={[singleSelectQuestion, multiSelectQuestion]} />
     );
     // First question visible
-    expect(screen.getByText(singleSelectQuestion.question)).toBeDefined();
+    expect(screen.getByText(singleSelectQuestion.question)).toBeInTheDocument();
     expect(screen.queryByText(multiSelectQuestion.question)).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /next/i }));
 
     // Second question now visible
-    expect(screen.getByText(multiSelectQuestion.question)).toBeDefined();
+    expect(screen.getByText(multiSelectQuestion.question)).toBeInTheDocument();
     expect(screen.queryByText(singleSelectQuestion.question)).toBeNull();
   });
 
@@ -434,7 +434,7 @@ describe('Answer summary layout', () => {
         answers={{ '0': 'Reschedule the internal meeting' }}
       />
     );
-    expect(screen.getByText('Reschedule the internal meeting')).toBeDefined();
+    expect(screen.getByText('Reschedule the internal meeting')).toBeInTheDocument();
   });
 
   // A single-select freeform answer that looks like JSON must display verbatim —
@@ -447,7 +447,7 @@ describe('Answer summary layout', () => {
         answers={{ '0': '[experimental]' }}
       />
     );
-    expect(screen.getByText('Approach: [experimental]')).toBeDefined();
+    expect(screen.getByText('Approach: [experimental]')).toBeInTheDocument();
   });
 });
 
@@ -534,7 +534,7 @@ describe('QuestionPrompt interactive UX (Phase 2)', () => {
       expect(ref.current!.getActiveTab()).toBe('1');
 
       // Should show second tab content now
-      expect(screen.getByText(multiSelectQuestion.question)).toBeDefined();
+      expect(screen.getByText(multiSelectQuestion.question)).toBeInTheDocument();
     });
 
     it('navigateQuestion does not go below 0', () => {
@@ -586,6 +586,6 @@ describe('QuestionPrompt interactive UX (Phase 2)', () => {
 describe('ARIA roles', () => {
   it('renders radiogroup role for single-select questions', () => {
     render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} />);
-    expect(screen.getByRole('radiogroup')).toBeDefined();
+    expect(screen.getByRole('radiogroup')).toBeInTheDocument();
   });
 });

@@ -260,7 +260,7 @@ describe('approval receipts', () => {
     render(<Lifecycle initialEvents={twoAsks} />);
 
     // The first ask owns the input zone; the second waits in the transcript.
-    expect(screen.getByText(/2 tools are waiting on you/)).toBeDefined();
+    expect(screen.getByText(/2 tools are waiting on you/)).toBeInTheDocument();
 
     // Only the input-zone card is the keyboard target, so only its Approve
     // carries the Enter hint — that is the ask the person is being shown.
@@ -270,11 +270,11 @@ describe('approval receipts', () => {
     fireEvent.click(inputZoneApprove!);
 
     await waitFor(() => {
-      expect(screen.getByTestId('approval-receipt')).toBeDefined();
+      expect(screen.getByTestId('approval-receipt')).toBeInTheDocument();
     });
     // The receipt names the answered ask; the survivor is still a live card.
     expect(screen.getByTestId('approval-receipt').textContent).toContain('Run "npm test"');
-    expect(screen.getByRole('button', { name: /^Don’t allow/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: /^Don’t allow/ })).toBeInTheDocument();
   });
 
   it('I-02: one batch answer reads as one line, with the individual asks behind an expander', async () => {
@@ -380,7 +380,7 @@ describe('approval receipts across the turn-end reconcile', () => {
     // ran. That is what this test has always been about.
     expect(screen.queryByTestId('tool-call-card')).toBeNull();
     // The sentence the model was handed still READS, quietly, under the receipt.
-    expect(screen.getByText(/User denied tool execution/)).toBeDefined();
+    expect(screen.getByText(/User denied tool execution/)).toBeInTheDocument();
   });
 });
 
@@ -477,7 +477,7 @@ describe('approval receipts on a cold open', () => {
     expect(screen.queryByTestId('tool-call-card')).toBeNull();
     // Kept readable rather than suppressed with the card — see the reconcile
     // suite's twin for why (DOR-1293).
-    expect(screen.getByText(/User denied tool execution/)).toBeDefined();
+    expect(screen.getByText(/User denied tool execution/)).toBeInTheDocument();
   });
 });
 
@@ -532,7 +532,7 @@ describe('approval receipts and MCP Apps', () => {
         approvalResolvedAt: 1_700_000_005_000,
       },
     ]);
-    expect(screen.getByTestId('approval-receipt')).toBeDefined();
+    expect(screen.getByTestId('approval-receipt')).toBeInTheDocument();
     const app = screen.getAllByTestId('mcp-app-block');
     expect(app).toHaveLength(1);
     expect(app[0].getAttribute('data-uri')).toBe('ui://acme/chart');

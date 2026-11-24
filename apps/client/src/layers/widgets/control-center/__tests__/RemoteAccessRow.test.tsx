@@ -232,7 +232,7 @@ describe('a start that failed', () => {
   it('leaves the switch off and usable, so pressing it retries', async () => {
     const { transport } = renderRow();
     await waitFor(() =>
-      expect(screen.getByRole('switch', { name: 'Remote access' })).toBeDefined()
+      expect(screen.getByRole('switch', { name: 'Remote access' })).toBeInTheDocument()
     );
     act(() => useRemoteAccessStore.getState().failStart('ngrok exploded'));
 
