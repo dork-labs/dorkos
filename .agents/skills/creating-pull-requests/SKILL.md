@@ -719,9 +719,9 @@ catch, which corrupts the numbers the pipeline is tuned by.
   and fix only if they fail. Once the evidence says it is not yours (the same job red
   on `main` or in other groups, or a flake or infra error in its log), re-queue it
   **once** with `gh pr merge --auto <n>` (the ejection cleared auto-merge). Green PR
-  checks are not that
-  evidence: the browser tests run only in the queue, so a PR that breaks one reads
-  green everywhere else.
+  checks are not that evidence: the queue tests the change on top of everything
+  ahead of it, which the PR never ran, so a PR that breaks only there reads green
+  everywhere else.
 - **`EJECTED_REPEAT(failed_checks,k)`: treat it as real.** If the **same check** failed
   again on the **same head commit**, it is a regression only the queue can see, not a
   flake. Do not re-queue. Find the job in each merge-group run
