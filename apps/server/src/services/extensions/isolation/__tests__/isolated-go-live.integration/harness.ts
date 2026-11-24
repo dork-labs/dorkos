@@ -57,22 +57,22 @@ vi.mock('../../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-export const stored = vi.hoisted(() => ({ value: {} as ExtensionsConfig }));
+const storedHoisted = vi.hoisted(() => ({ value: {} as ExtensionsConfig }));
 
 vi.mock('../../../../core/config-manager.js', () => ({
   configManager: {
-    get: (key: string) => (key === 'extensions' ? stored.value : undefined),
+    get: (key: string) => (key === 'extensions' ? storedHoisted.value : undefined),
     set: (key: string, value: unknown) => {
-      if (key === 'extensions') stored.value = value as ExtensionsConfig;
+      if (key === 'extensions') storedHoisted.value = value as ExtensionsConfig;
     },
   },
 }));
 
 // The agent that made it is at Full, so its edits run (`path-trust-edits.ts`).
-export const agentLevel = vi.hoisted(() => ({ mode: 'bypassPermissions' }));
+const agentLevelHoisted = vi.hoisted(() => ({ mode: 'bypassPermissions' }));
 
 vi.mock('../../../../session/resolution/agent-launch-level.js', () => ({
-  resolveAgentLaunchLevel: async () => ({ mode: agentLevel.mode }),
+  resolveAgentLaunchLevel: async () => ({ mode: agentLevelHoisted.mode }),
 }));
 
 vi.mock('../../../../core/runtime-registry.js', async (importOriginal) => {
@@ -323,7 +323,7 @@ beforeEach(async () => {
   runMigrations(db);
   st.notifications = new NotificationStore(db);
   setNotificationService(new NotificationService(st.notifications));
-  stored.value = {
+  storedHoisted.value = {
     enabled: [ID],
     disabled: [],
     approvedToRun: [ID],
@@ -402,3 +402,8 @@ afterEach(async () => {
   setNotificationService(null);
   await fs.rm(st.dorkHome, { recursive: true, force: true });
 });
+
+/** Exported view of the hoisted `stored` (vitest refuses to export a hoisted binding). */
+export const stored = storedHoisted;
+/** Exported view of the hoisted `agentLevel` (vitest refuses to export a hoisted binding). */
+export const agentLevel = agentLevelHoisted;

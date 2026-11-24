@@ -46,13 +46,13 @@ vi.mock('../../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-export const stored = vi.hoisted(() => ({ value: {} as ExtensionsConfig }));
+const storedHoisted = vi.hoisted(() => ({ value: {} as ExtensionsConfig }));
 
 vi.mock('../../../../core/config-manager.js', () => ({
   configManager: {
-    get: (key: string) => (key === 'extensions' ? stored.value : undefined),
+    get: (key: string) => (key === 'extensions' ? storedHoisted.value : undefined),
     set: (key: string, value: unknown) => {
-      if (key === 'extensions') stored.value = value as ExtensionsConfig;
+      if (key === 'extensions') storedHoisted.value = value as ExtensionsConfig;
     },
   },
 }));
@@ -260,7 +260,7 @@ export async function toolErrorOf(
 beforeEach(async () => {
   st.dorkHome = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dor-2686-tools-')));
   st.extDir = path.join(st.dorkHome, 'extensions', ID);
-  stored.value = {
+  storedHoisted.value = {
     enabled: [ID],
     disabled: [],
     approvedToRun: [ID],
@@ -306,3 +306,6 @@ afterEach(async () => {
   setExtensionInbox(null);
   await fs.rm(st.dorkHome, { recursive: true, force: true });
 });
+
+/** Exported view of the hoisted `stored` (vitest refuses to export a hoisted binding). */
+export const stored = storedHoisted;

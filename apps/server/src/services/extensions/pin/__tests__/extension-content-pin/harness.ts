@@ -15,17 +15,18 @@ import os from 'node:os';
 import path from 'node:path';
 import { type ExtensionManifest, type ExtensionRecord } from '@dorkos/extension-api';
 
-export const stored = vi.hoisted(() => ({
+const storedHoisted = vi.hoisted(() => ({
   extensions: {} as Record<string, unknown>,
   permissions: { preset: 'trusted' } as Record<string, unknown>,
   failWrite: false,
 }));
 vi.mock('../../../../core/config-manager.js', () => ({
   configManager: {
-    get: (key: string) => (key === 'permissions' ? stored.permissions : stored.extensions),
+    get: (key: string) =>
+      key === 'permissions' ? storedHoisted.permissions : storedHoisted.extensions,
     set: (key: string, value: unknown) => {
-      if (stored.failWrite) throw new Error('disk full');
-      if (key === 'extensions') stored.extensions = value as Record<string, unknown>;
+      if (storedHoisted.failWrite) throw new Error('disk full');
+      if (key === 'extensions') storedHoisted.extensions = value as Record<string, unknown>;
     },
   },
 }));
@@ -49,7 +50,7 @@ export const ISOLATED: ExtensionManifest = {
   name: 'Notes',
   version: '1.0.0',
   serverCapabilities: {
-    serverEntry: '../server.ts',
+    serverEntry: './server.ts',
     runtime: 'subprocess',
     allow: { net: ['api.example.com'], run: [], agents: false },
   },
@@ -58,7 +59,7 @@ export const IN_PROCESS: ExtensionManifest = {
   id: 'notes',
   name: 'Notes',
   version: '1.0.0',
-  serverCapabilities: { serverEntry: '../server.ts' },
+  serverCapabilities: { serverEntry: './server.ts' },
 };
 
 export const HOME = '/work/agent-a';
@@ -127,7 +128,7 @@ export function usePlacesFixture() {
     await fs.writeFile(path.join(p.dir, '.env.example'), 'KEY=');
   });
   afterEach(async () => {
-    stored.failWrite = false;
+    storedHoisted.failWrite = false;
     resetAuditTrail();
     await fs.rm(p.tmp, { recursive: true, force: true });
   });
@@ -137,7 +138,7 @@ export function usePlacesFixture() {
     const record = copy({ path: p.dir, realPath: p.dir, manifest: PANEL, hasServerEntry: true });
     const digest = (await liveDigestOf(record))!;
     expect(await ensureSnapshot(p.dorkHome, p.dir, digest)).not.toBeNull();
-    stored.extensions = {
+    storedHoisted.extensions = {
       enabled: ['notes'],
       disabled: [],
       approvedToRun: ['notes'],
@@ -161,7 +162,7 @@ export function usePlacesFixture() {
     return record;
   }
 
-  const approvals = () => stored.extensions as unknown as ExtensionApprovals;
+  const approvals = () => storedHoisted.extensions as unknown as ExtensionApprovals;
 
   async function expectNormalCard(record: ExtensionRecord) {
     const before = approvals();
@@ -173,3 +174,6 @@ export function usePlacesFixture() {
 
   return Object.assign(p, { approveNow, updatedTo, rescanned, approvals, expectNormalCard });
 }
+
+/** Exported view of the hoisted `stored` (vitest refuses to export a hoisted binding). */
+export const stored = storedHoisted;

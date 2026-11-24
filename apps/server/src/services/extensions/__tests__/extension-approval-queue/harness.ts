@@ -17,7 +17,7 @@ import { fileURLToPath } from 'url';
 import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 
 /** The stored config the mocked config manager reports. */
-export const state = vi.hoisted(() => ({
+const stateHoisted = vi.hoisted(() => ({
   extensions: {
     enabled: [] as string[],
     disabled: [] as string[],
@@ -34,9 +34,9 @@ vi.mock('../../../core/config-manager.js', () => ({
         ? { enabled: false }
         : key === 'runtimes'
           ? { defaultTrustStop: 'autonomy' }
-          : state.extensions,
+          : stateHoisted.extensions,
     set: (key: string, value: unknown) => {
-      if (key === 'extensions') state.extensions = value as typeof state.extensions;
+      if (key === 'extensions') stateHoisted.extensions = value as typeof stateHoisted.extensions;
     },
   },
 }));
@@ -184,7 +184,7 @@ export async function pending() {
 
 beforeEach(async () => {
   h.dorkHome = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dork-ext-approval-')));
-  state.extensions = {
+  stateHoisted.extensions = {
     enabled: [],
     disabled: [],
     approvedToRun: [],
@@ -224,3 +224,6 @@ afterEach(async () => {
   vi.restoreAllMocks();
   fs.rmSync(h.dorkHome, { recursive: true, force: true });
 });
+
+/** Exported view of the hoisted `state` (vitest refuses to export a hoisted binding). */
+export const state = stateHoisted;

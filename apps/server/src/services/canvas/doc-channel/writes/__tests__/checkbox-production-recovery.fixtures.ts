@@ -11,7 +11,7 @@ import { rawByteHash } from '../checkbox-bytes.js';
 import { afterEach, expect, it, vi } from 'vitest';
 import { fixture } from './checkbox-fixture.js';
 
-export const sourceReadHold = vi.hoisted(() => ({
+const sourceReadHoldHoisted = vi.hoisted(() => ({
   path: '',
   armed: false,
   afterStop: false,
@@ -25,12 +25,12 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return {
     ...actual,
     lstat: async (...args: Parameters<typeof actual.lstat>) => {
-      if (sourceReadHold.afterStop) sourceReadHold.lateReads++;
+      if (sourceReadHoldHoisted.afterStop) sourceReadHoldHoisted.lateReads++;
       const result = await actual.lstat(...args);
-      if (sourceReadHold.armed && String(args[0]) === sourceReadHold.path) {
-        sourceReadHold.armed = false;
-        sourceReadHold.entered();
-        await sourceReadHold.released;
+      if (sourceReadHoldHoisted.armed && String(args[0]) === sourceReadHoldHoisted.path) {
+        sourceReadHoldHoisted.armed = false;
+        sourceReadHoldHoisted.entered();
+        await sourceReadHoldHoisted.released;
       }
       return result;
     },
@@ -42,14 +42,14 @@ export function holdSourceRead(path: string) {
   const entered = new Promise<void>((resolve) => {
     enter = resolve;
   });
-  sourceReadHold.released = new Promise<void>((resolve) => {
+  sourceReadHoldHoisted.released = new Promise<void>((resolve) => {
     release = resolve;
   });
-  Object.assign(sourceReadHold, { path, armed: true, entered: enter });
+  Object.assign(sourceReadHoldHoisted, { path, armed: true, entered: enter });
   return {
     entered,
     release: () => {
-      sourceReadHold.armed = false;
+      sourceReadHoldHoisted.armed = false;
       release();
     },
   };
@@ -58,7 +58,7 @@ export function holdSourceRead(path: string) {
 export const cleanups: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
-  sourceReadHold.afterStop = false;
+  sourceReadHoldHoisted.afterStop = false;
   vi.restoreAllMocks();
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
@@ -177,3 +177,6 @@ for (const mode of ['skip', 'after-callback'] as const) {
     }
   });
 }
+
+/** Exported view of the hoisted `sourceReadHold` (vitest refuses to export a hoisted binding). */
+export const sourceReadHold = sourceReadHoldHoisted;

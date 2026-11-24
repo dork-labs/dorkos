@@ -254,8 +254,6 @@ describe('createDataProviderContext', () => {
     });
   });
 
-  describe('emit', () => {});
-
   describe('getScheduledCleanups', () => {
     beforeEach(() => {
       vi.useFakeTimers();

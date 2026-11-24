@@ -52,20 +52,20 @@ vi.mock('../../../../lib/logger.js', () => ({
 // `middleware/__tests__/extension-proxy-rate-limit.test.ts`. Here it stands in
 // as a spy so these tests can prove WHERE it is asked — ahead of the forwarder,
 // so a refusal costs no outbound request — without driving 120 requests.
-export const limiter = vi.hoisted(() => ({ hits: 0, refuse: false }));
+const limiterHoisted = vi.hoisted(() => ({ hits: 0, refuse: false }));
 
 vi.mock('../../../../middleware/extension-proxy-rate-limit.js', () => ({
   EXTENSION_PROXY_RATE_LIMIT_DEFAULT: 120,
   EXTENSION_PROXY_RATE_LIMITED_BODY: { error: 'Too many requests', code: 'PROXY_RATE_LIMITED' },
   buildExtensionProxyRateLimiter: () => () => {
-    limiter.hits += 1;
-    return { allowed: !limiter.refuse, headers: { 'RateLimit-Limit': '120' } };
+    limiterHoisted.hits += 1;
+    return { allowed: !limiterHoisted.refuse, headers: { 'RateLimit-Limit': '120' } };
   },
 }));
 
-export const role = vi.hoisted(() => ({ value: 'computer' as 'computer' | 'hub' }));
+const roleHoisted = vi.hoisted(() => ({ value: 'computer' as 'computer' | 'hub' }));
 
-vi.mock('../../../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
+vi.mock('../../../../lib/server-role.js', () => ({ currentServerRole: () => roleHoisted.value }));
 
 export const fixtureTarget = swappableServer();
 
@@ -188,11 +188,16 @@ export function proxyApp(config: DataProxyConfig = DEFAULT_CONFIG): RequestListe
 beforeEach(() => {
   vi.clearAllMocks();
   st.originalFetch = globalThis.fetch;
-  limiter.hits = 0;
-  limiter.refuse = false;
-  role.value = 'computer';
+  limiterHoisted.hits = 0;
+  limiterHoisted.refuse = false;
+  roleHoisted.value = 'computer';
 });
 
 afterEach(() => {
   globalThis.fetch = st.originalFetch;
 });
+
+/** Exported view of the hoisted `limiter` (vitest refuses to export a hoisted binding). */
+export const limiter = limiterHoisted;
+/** Exported view of the hoisted `role` (vitest refuses to export a hoisted binding). */
+export const role = roleHoisted;

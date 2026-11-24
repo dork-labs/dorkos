@@ -8,7 +8,7 @@
  *
  * This module holds the stand-in ctx and the dispatcher setup the suites share.
  */
-import { vi } from 'vitest';
+import { vi, type Mock } from 'vitest';
 import { type DataProviderContext } from '@dorkos/extension-api/server';
 
 import { CtxDispatcher } from '../../ctx-dispatcher.js';

@@ -9,7 +9,7 @@ import { bundleDigestOf, grantsDigestOf } from '../extension-path-trust.js';
 import { type ExtensionApprovals } from '../../extension-load-policy.js';
 import { installFolderDigest } from '../../../marketplace/lib/install-digest.js';
 
-export const stored = vi.hoisted(() => ({
+const storedHoisted = vi.hoisted(() => ({
   extensions: {} as Record<string, unknown>,
   permissions: { preset: 'trusted' } as Record<string, unknown>,
   marks: {} as Record<string, unknown>,
@@ -17,9 +17,10 @@ export const stored = vi.hoisted(() => ({
 
 vi.mock('../../../core/config-manager.js', () => ({
   configManager: {
-    get: (key: string) => (key === 'permissions' ? stored.permissions : stored.extensions),
+    get: (key: string) =>
+      key === 'permissions' ? storedHoisted.permissions : storedHoisted.extensions,
     set: (key: string, value: unknown) => {
-      if (key === 'extensions') stored.extensions = value as Record<string, unknown>;
+      if (key === 'extensions') storedHoisted.extensions = value as Record<string, unknown>;
     },
   },
 }));
@@ -32,10 +33,10 @@ vi.mock('../../../core/turn-power/turn-levels.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../core/turn-power/turn-levels.js')>()),
   // A marked turn's bound, as `create_extension` reads it (DOR-3068).
   markedBoundOf: vi.fn(() =>
-    Object.keys(stored.marks).length > 0 ? ('runtime-default' as never) : undefined
+    Object.keys(storedHoisted.marks).length > 0 ? ('runtime-default' as never) : undefined
   ),
   // The calling turn's marks, as `create_extension` reads them (DOR-3561).
-  marksOf: vi.fn(() => stored.marks),
+  marksOf: vi.fn(() => storedHoisted.marks),
 }));
 
 export const ISOLATED: ExtensionManifest = {
@@ -93,3 +94,6 @@ export async function scaffoldDigest(dir: string): Promise<string | null> {
   const found = await installFolderDigest(dir);
   return found.kind === 'digest' ? found.digest : null;
 }
+
+/** Exported view of the hoisted `stored` (vitest refuses to export a hoisted binding). */
+export const stored = storedHoisted;

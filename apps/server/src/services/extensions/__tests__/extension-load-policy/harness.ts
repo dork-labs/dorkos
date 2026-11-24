@@ -2,7 +2,7 @@
  * Shared setup for the extension-load-policy suites: everything the original file declared or
  * registered outside its tests.
  */
-import { it, beforeEach, vi } from 'vitest';
+import { beforeEach, vi, type Mock } from 'vitest';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 
 // Stand in for loading the compiled server entry, evaluating whatever
@@ -51,11 +51,11 @@ vi.mock('../../extension-discovery.js', () => ({
   }),
 }));
 
-export const mockCompile = vi.fn();
+export const mockCompile: Mock = vi.fn();
 
-export const mockCompileServer = vi.fn();
+export const mockCompileServer: Mock = vi.fn();
 
-export const mockReadBundle = vi.fn();
+export const mockReadBundle: Mock = vi.fn();
 
 vi.mock('../../extension-compiler.js', () => ({
   ExtensionCompiler: vi.fn().mockImplementation(function () {
@@ -73,10 +73,10 @@ export const D1 = `sha256:${'1'.repeat(64)}`;
 
 export const D2 = `sha256:${'2'.repeat(64)}`;
 
-export const folderDigest = vi.hoisted(() => ({ value: `sha256:${'1'.repeat(64)}` }));
+const folderDigestHoisted = vi.hoisted(() => ({ value: `sha256:${'1'.repeat(64)}` }));
 
 vi.mock('../../../marketplace/lib/install-digest.js', () => ({
-  installFolderDigest: async () => ({ kind: 'digest', digest: folderDigest.value }),
+  installFolderDigest: async () => ({ kind: 'digest', digest: folderDigestHoisted.value }),
   forgetFolderDigest: () => {},
 }));
 
@@ -104,7 +104,7 @@ export interface StoredExtensions {
   forwardAgents?: Record<string, string[]>;
 }
 
-export const stored = vi.hoisted(() => ({
+const storedHoisted = vi.hoisted(() => ({
   value: { enabled: [], disabled: [], approvedToRun: [] } as StoredExtensions,
 }));
 
@@ -112,21 +112,23 @@ export const stored = vi.hoisted(() => ({
 // the call would let `approveToRun` look like it worked while the gate kept
 // reading the old list — the test would pass and the feature would not.
 export const mockConfigSet = vi.fn((key: string, value: unknown) => {
-  if (key === 'extensions') stored.value = value as typeof stored.value;
+  if (key === 'extensions') storedHoisted.value = value as typeof storedHoisted.value;
 });
 
 vi.mock('../../../core/config-manager.js', () => ({
   configManager: {
-    get: () => stored.value,
+    get: () => storedHoisted.value,
     set: (...args: [string, unknown]) => mockConfigSet(...args),
   },
 }));
 
-export const mockMkdir = vi.fn().mockResolvedValue(undefined);
+export const mockMkdir: Mock = vi.fn().mockResolvedValue(undefined);
 
-export const mockWriteFile = vi.fn().mockImplementation(async (path: string, content: string) => {
-  if (typeof content === 'string' && path.endsWith('.js')) lastWrittenCodeRef.value = content;
-});
+export const mockWriteFile: Mock = vi
+  .fn()
+  .mockImplementation(async (path: string, content: string) => {
+    if (typeof content === 'string' && path.endsWith('.js')) lastWrittenCodeRef.value = content;
+  });
 
 vi.mock('fs/promises', () => ({
   default: {
@@ -142,7 +144,7 @@ vi.mock('fs/promises', () => ({
 
 // Every folder reads as the approved files unless a test edits them.
 beforeEach(() => {
-  folderDigest.value = D1;
+  folderDigestHoisted.value = D1;
 });
 
 export function makeRecord(id: string, overrides: Partial<ExtensionRecord> = {}): ExtensionRecord {
@@ -159,7 +161,7 @@ export function makeRecord(id: string, overrides: Partial<ExtensionRecord> = {})
     hasServerEntry: false,
     hasDataProxy: false,
     // What discovery reads from the folder (DOR-3068).
-    currentDigest: folderDigest.value,
+    currentDigest: folderDigestHoisted.value,
     ...overrides,
   };
 }
@@ -167,3 +169,8 @@ export function makeRecord(id: string, overrides: Partial<ExtensionRecord> = {})
 /** A bundle whose `activate()` would be observable if it were ever evaluated. */
 export const OBSERVABLE_BUNDLE =
   'var __dorkosExtension = { activate(api) { api.registerCommand("x", "X", () => {}); } };';
+
+/** Exported view of the hoisted `folderDigest` (vitest refuses to export a hoisted binding). */
+export const folderDigest = folderDigestHoisted;
+/** Exported view of the hoisted `stored` (vitest refuses to export a hoisted binding). */
+export const stored = storedHoisted;
