@@ -74,19 +74,19 @@ This is a Turborepo monorepo:
 
 ## Development Commands
 
-| Command               | Description                                                                                                                                  |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm dev`            | Start server + client dev servers                                                                                                            |
-| `pnpm test`           | Run all tests (Vitest)                                                                                                                       |
-| `pnpm test -- --run`  | Single test run (no watch mode)                                                                                                              |
-| `pnpm build`          | Build all packages                                                                                                                           |
-| `pnpm typecheck`      | Type-check all packages                                                                                                                      |
-| `pnpm lint`           | ESLint across all packages                                                                                                                   |
-| `pnpm lint -- --fix`  | Auto-fix ESLint issues                                                                                                                       |
-| `pnpm format`         | Prettier format all files                                                                                                                    |
-| `pnpm format:check`   | Check formatting without writing                                                                                                             |
-| `pnpm verify`         | The full check: script tests and root lint, then typecheck, lint and test over affected packages; needed before a PR that touches `.github/` |
-| `pnpm verify:preopen` | The pre-PR check: typecheck and lint over affected packages, the scripts suites, and lint of the changed files; no package tests             |
+| Command               | Description                                                                                                                            |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`            | Start server + client dev servers                                                                                                      |
+| `pnpm test`           | Run all tests (Vitest)                                                                                                                 |
+| `pnpm test -- --run`  | Single test run (no watch mode)                                                                                                        |
+| `pnpm build`          | Build all packages                                                                                                                     |
+| `pnpm typecheck`      | Type-check all packages                                                                                                                |
+| `pnpm lint`           | ESLint across all packages                                                                                                             |
+| `pnpm lint -- --fix`  | Auto-fix ESLint issues                                                                                                                 |
+| `pnpm format`         | Prettier format all files                                                                                                              |
+| `pnpm format:check`   | Check formatting without writing                                                                                                       |
+| `pnpm verify`         | The full check: script tests and root lint, then typecheck, lint and test over affected packages; optional, for debugging a failure    |
+| `pnpm verify:preopen` | Optional lighter check: typecheck and lint over affected packages, the scripts suites, and lint of the changed files; no package tests |
 
 ### Filtering Commands
 
@@ -269,7 +269,7 @@ patterns and exceptions, and `packages/eslint-config/base.js` for the enforced r
 2. **Create a feature branch** (`git checkout -b feat/my-feature`)
 3. **Make your changes**
 4. **Add a changelog fragment** in `changelog/unreleased/` — see [changelog/README.md](changelog/README.md). Docs-only changes skip this with the `skip-changelog` label
-5. **Run the checks**: `pnpm verify:preopen` on your final commit with a clean tree before you open the PR (`pnpm verify` adds the affected tests, and is required when you touch `.github/`; `pnpm format` fixes formatting)
+5. **Let CI run the checks**: locally only the pre-commit and pre-push hooks run, and the PR's CI runs typecheck, lint and tests. `pnpm verify:preopen` and `pnpm verify` are optional, for debugging a failure (`pnpm format` fixes formatting)
 6. **Open a pull request** with a clear description of your changes. Maintainers and agents working in this repo open theirs with `scripts/open-pr.sh`, which sets the review and changelog labels for you
 
 Nothing is pushed straight to `main`: repository rules refuse direct pushes, and every change lands through a pull request and the merge queue. The merge queue does the merging; nobody merges a PR by hand. The queue builds your branch on top of `main` plus whatever is ahead of it and runs the required checks against that combined tree, so a branch that has fallen behind `main` is fine and does not need updating.

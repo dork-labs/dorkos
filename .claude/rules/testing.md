@@ -355,10 +355,10 @@ Failures that blame the wrong thing, each measured on this machine:
   refused with exit 2 before any check runs. Forced forms that work:
   `turbo run typecheck lint --force` and `turbo run test --force -- --run`
   (they record no proof).
-- **Before you open a PR, run `pnpm verify:preopen`** on the final head with a
-  clean tree. Arming needs green required checks and all six test shards at the
-  exact head (or a full local `pnpm verify` proof). A PR that touches `.github/`
-  still needs a full `pnpm verify` or a PM waiver. A preopen proof never arms.
+- **No local check is a step before opening a PR.** When the work is done, open
+  it with `scripts/open-pr.sh`; CI runs the typecheck, lint and tests, and
+  auto-merge waits for every required check. `pnpm verify:preopen` and
+  `pnpm verify` are optional, for debugging a failure (`.github/` PRs included).
 - **Targeted server vitest runs read some `@dorkos/shared` subpaths from `dist`**
   (only aliased subpaths load from source), so a source-edited schema tests stale
   until `pnpm --filter @dorkos/shared build`. CI is safe via turbo `^build`;
