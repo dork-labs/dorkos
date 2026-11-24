@@ -1575,6 +1575,37 @@ describe('createSessionRoomTurnRunner', () => {
     );
   });
 
+  it('passes the durable seat generation on the launch-time runtime write', async () => {
+    const turn = request({ sessionId: 'new-room-session' });
+    const birth = { allocationCreatedAt: turn.room.createdAt, seatCreatedAt: turn.room.createdAt };
+    const roomSeatBirth = vi.fn().mockReturnValue(birth);
+    const runner = createSessionRoomTurnRunner({ roomSeatBirth });
+
+    await runner.run(turn);
+
+    expect(roomSeatBirth).toHaveBeenCalledWith(turn.room.id, turn.authorId, turn.sessionId);
+    expect(persistSessionRuntime).toHaveBeenNthCalledWith(
+      1,
+      turn.sessionId,
+      'claude-code',
+      roomOrigin(),
+      turn.agentPath,
+      {
+        kind: 'room-seat',
+        roomId: turn.room.id,
+        authorId: turn.authorId,
+        agentPath: turn.agentPath,
+        ...birth,
+      }
+    );
+    expect(persistSessionRuntime).toHaveBeenLastCalledWith(
+      turn.sessionId,
+      'claude-code',
+      roomOrigin(),
+      turn.agentPath
+    );
+  });
+
   it('answers on, and records ownership under, the id the runtime assigned', async () => {
     // Claude Code names the session itself on the first turn and files the
     // transcript under THAT id. The room asked with a placeholder; everything

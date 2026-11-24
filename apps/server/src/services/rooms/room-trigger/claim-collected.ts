@@ -244,11 +244,15 @@ export function claimCollected(
   // counterpart and inventing one for a path that only fires under database
   // contention would be more machinery than the fault is worth.
   try {
+    const existing = self.deps.store.getRoomSession(room.id, authorId);
+    // A person's first send to a direct chat has its own admission path.
+    const birth = existing === null && room.kind === 'channel' ? 'minted' : undefined;
     target.sessionId = self.deps.store.bindRoomSession(
       room.id,
       authorId,
-      self.deps.store.getRoomSession(room.id, authorId) ?? randomUUID(),
-      new Date().toISOString()
+      existing ?? randomUUID(),
+      new Date().toISOString(),
+      birth
     );
   } catch (err) {
     // Visible, not silent (DOR-1206): a dropped trigger with no room entry is
