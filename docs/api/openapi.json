@@ -26060,40 +26060,22 @@
             }
           },
           "428": {
-            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate.",
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Always `no-store`: the held action is for this request only.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "step_up_required"
-                      ]
-                    },
-                    "heldActionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "requestCode": {
-                      "type": "string",
-                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code",
-                    "heldActionId",
-                    "expiresAt"
-                  ]
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
