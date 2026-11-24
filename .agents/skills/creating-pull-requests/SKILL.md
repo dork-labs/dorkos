@@ -40,7 +40,7 @@ exists**. Opening the PR is the last step, not the first:
    automated review spends its single pass on final content.
 7. **If a check goes red, fix forward.** `gh pr checks <n>` names the failing check;
    `gh run view <run-id> --log-failed` shows why. Fix it on the branch and push: CI
-   runs again at the new head and auto-merge stays on. See "Watching an armed PR"
+   runs again at the new head and auto-merge stays on. See "Watching a PR with auto-merge on"
    below for telling your red from a standing one.
 
 **A pushed branch that will not become a PR is yours to delete.** GitHub removes a
@@ -568,9 +568,9 @@ forever too. The census now fails any required check whose workflow has a `paths
 filter or does not run on both `pull_request` and `merge_group` (the deadlock
 invariant in `contributing/ci.md`).
 
-### Watching an armed PR: watch the checks, not the merge state
+### Watching a PR with auto-merge on: watch the checks, not the merge state
 
-Another silent stall, and the easiest to inflict on yourself. Once a PR is armed
+Another silent stall, and the easiest to inflict on yourself. Once a PR has auto-merge on
 you will wait for it, and the obvious poll — "has it merged yet?" — is blind to the
 one outcome you most need to catch:
 
