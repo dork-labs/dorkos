@@ -24,6 +24,7 @@ import {
   type Db,
   type DbTransaction,
 } from '@dorkos/db';
+import { forgetRoomSeatBirths } from '../session-bindings/room-seat-birth.js';
 import { SessionEventStore } from '../../session/session-event-store.js';
 import { latestClaudeRoomServerFailure } from '../../session/history/latest-room-failure.js';
 import { FailedSeatLedger } from './failed-seat-ledger.js';
@@ -305,16 +306,16 @@ export class RequiredRoomLaunchStore {
           })
           .run()
       );
+      const seat = and(
+        eq(roomSessions.roomId, input.roomId),
+        eq(roomSessions.authorId, input.authorId),
+        eq(roomSessions.sessionId, input.sourceSessionId)
+      )!;
+      forgetRoomSeatBirths(tx, seat);
       const moved = tx
         .update(roomSessions)
         .set({ sessionId: input.destinationSessionId })
-        .where(
-          and(
-            eq(roomSessions.roomId, input.roomId),
-            eq(roomSessions.authorId, input.authorId),
-            eq(roomSessions.sessionId, input.sourceSessionId)
-          )
-        )
+        .where(seat)
         .run();
       if (moved.changes !== 1) throw new Error('The room seat moved before recovery.');
     });

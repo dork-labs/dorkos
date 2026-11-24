@@ -19,6 +19,7 @@ import { sessionMessageReceipt } from './session-message-receipt.js';
 import { recordAccepted } from './session-message-accepted.js';
 import {
   isPersonChatWriteRefusal,
+  observeOwnerRoomSeat,
   observePersonChat,
   preparePersonChat,
   personChatMissing,
@@ -115,6 +116,10 @@ export function mountSessionSendMessage(
     // From Wi-Fi, the turn runs at the runtime's default at most (DOR-3037).
     const facts = honoRequestFacts(c);
     const launch = httpLaunchOf(facts, sessionId);
+    const roomSeat =
+      !source && parsed.data.create === true && launch.launcher.kind === 'person'
+        ? observeOwnerRoomSeat(sessionId, facts, deps.roomSessionPlace)
+        : undefined;
     if (source && launch.launcher.kind !== 'person') return sendProblem(c, personChatMissing.body);
     const prepared =
       db && source
@@ -136,19 +141,20 @@ export function mountSessionSendMessage(
           }),
         }
       : parsed.data;
+    const chatBirthSource = prepared?.binding ?? (roomSeat ? { roomSeat } : undefined);
     const result = await dispatchSessionMessage({
       origin: httpTurnOrigin(launch.launcher.kind !== 'person'),
       ...launch,
       sessionId,
       request,
-      ...(prepared ? { personChatSource: prepared.binding } : {}),
+      ...(chatBirthSource && { chatBirthSource }),
       clientId,
       meshCore: deps.meshCore,
       roomSessionPlace: deps.roomSessionPlace,
       // Who is asking, for a new workspace a workspaceKey names (DOR-2335).
       workspaceCaller: workspaceCallerOf(facts),
     }).catch((error: unknown) => {
-      if (prepared && isPersonChatWriteRefusal(error)) return null;
+      if (chatBirthSource && isPersonChatWriteRefusal(error)) return null;
       throw error;
     });
     if (!result) return sendProblem(c, personChatMissing.body);

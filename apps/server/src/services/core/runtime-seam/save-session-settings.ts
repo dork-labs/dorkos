@@ -28,30 +28,38 @@ export function writeSessionSettings(
         prepared.assertCurrent
       );
     } else {
+      const source = prepared && 'birth' in prepared.target ? prepared.target.birth : birth;
+      const roomSeatSettings = prepared !== undefined && source?.kind === 'room-seat';
+      // The person's chosen mode and its marker are one write while the seat is pending.
+      if (roomSeatSettings && settings.permissionMode !== undefined)
+        patch.permissionModeByPerson = true;
       withSessionBirthWrite(
         db,
         sessionId,
-        prepared && 'birth' in prepared.target ? prepared.target.birth : birth,
+        source,
         (tx, insertBirth) => {
           prepared?.assertCurrent();
           if (readDraftSource(tx, sessionId)) throw new PreparedSettingsWriteError();
-          return (
-            tx
-              .insert(sessionMetadata)
-              .values({
-                sessionId,
-                // No owner: a preference chosen in a picker is not a binding.
-                runtime: null,
-                createdAt: new Date().toISOString(),
-                ...patch,
-                ...insertBirth,
-              })
-              // The UPDATE branch carries the patch alone — it must not disturb a
-              // binding, and there is nothing else here to write.
-              .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: patch })
-              .run()
-          );
-        }
+          const result = tx
+            .insert(sessionMetadata)
+            .values({
+              sessionId,
+              // No owner: a preference chosen in a picker is not a binding.
+              runtime: null,
+              createdAt: new Date().toISOString(),
+              ...patch,
+              ...insertBirth,
+            })
+            // Update only the explicitly selected settings.
+            .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: patch })
+            .run();
+          if (roomSeatSettings) {
+            if (result.changes !== 1) throw new PreparedSettingsWriteError();
+            prepared.assertCurrent();
+          }
+          return result;
+        },
+        roomSeatSettings ? 'room-seat-settings' : undefined
       );
     }
     prepared?.committed();

@@ -12,6 +12,7 @@ import type {
 } from '../../core/runtime-seam/person-draft-settings.js';
 import {
   SessionBirthWriteError,
+  type RoomSeatBirthWriteContext,
   type SessionBirthWriteContext,
 } from '../../core/runtime-seam/session-birth-write.js';
 import type { FreshDmBirth } from '../chat-messages/sending/chat-message-birth.js';
@@ -32,6 +33,8 @@ export interface ResolveChatPlaceInput {
   agentPath?: string;
   /** The room binding port available to this launch surface. */
   roomSessionPlace?: RoomSessionPlacePort;
+  /** The exact room that must supply place and agent when claiming a pending seat. */
+  expectedRoomId?: string;
   /** Whether an unbound launch will resolve its directory through the workspace-key branch. */
   workspaceKeyed?: boolean;
 }
@@ -70,7 +73,7 @@ export interface ResolveChatPlaceDeps {
   nativeSessionCwd(sessionId: string): string | null;
   /** Apply the agent/default cwd ladder and any room binding. */
   resolveWithRoom(
-    request: { cwd?: string; agentPath?: string; sessionId: string },
+    request: { cwd?: string; agentPath?: string; sessionId: string; expectedRoomId?: string },
     roomSessionPlace: RoomSessionPlacePort | undefined
   ): Promise<ResolvedSessionPlace>;
 }
@@ -117,9 +120,10 @@ export async function resolveChatPlace(
   }
 
   if (input.workspaceKeyed && !session.bound) {
+    const room = input.expectedRoomId ? input.roomSessionPlace?.roomFor(input.sessionId) : null;
     return {
       cwd: effectiveCwd,
-      forAgent: undefined,
+      forAgent: room?.roomId === input.expectedRoomId ? room?.agentPath : undefined,
       additionalDirectories: undefined,
       session,
     };
@@ -149,6 +153,7 @@ export async function resolveChatPlace(
       ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
       agentPath: input.agentPath,
       sessionId: input.sessionId,
+      ...(input.expectedRoomId !== undefined && { expectedRoomId: input.expectedRoomId }),
     },
     input.roomSessionPlace
   );
@@ -162,14 +167,18 @@ export async function resolveChatPlace(
   };
 }
 
-/** Match a saved folder to its directory and a registered agent to its verified owner.
+/** A first-write source observed by the ordinary authenticated message route. */
+export type ChatBirthSource = PersonChatBinding | { roomSeat: RoomSeatBirthWriteContext };
+
+/** Match a saved folder to its directory and an agent source to its verified owner.
  * A registered agent can use a different directory through ordinary workspace placement.
  */
-export function matchesPersonChatPlace(
-  source: PersonChatBinding,
+function matchesChatBirthPlace(
+  source: ChatBirthSource,
   place: ResolvedChatPlace,
   verifiedAgentPath: string | undefined
 ): boolean {
+  if ('roomSeat' in source) return place.forAgent === source.roomSeat.agentPath;
   const birth = 'birth' in source ? source.birth : undefined;
   const draft = 'draft' in source ? source.draft : undefined;
   const expectedAgentPath =
@@ -188,13 +197,14 @@ export function matchesPersonChatPlace(
 export function launchBindingSourceArgs(
   place: ResolvedChatPlace,
   verifiedAgentPath: string | undefined,
-  person: PersonChatBinding | undefined,
+  source: ChatBirthSource | undefined,
   freshDm: FreshDmBirth | undefined
 ): [SessionBirthWriteContext?, PersonDraftWitness?] {
-  if (person) {
-    if (freshDm || place.session.bound || !matchesPersonChatPlace(person, place, verifiedAgentPath))
+  if (source) {
+    if (freshDm || place.session.bound || !matchesChatBirthPlace(source, place, verifiedAgentPath))
       throw new SessionBirthWriteError('source');
-    return 'birth' in person ? [person.birth] : [undefined, person.draft];
+    if ('roomSeat' in source) return [source.roomSeat];
+    return 'birth' in source ? [source.birth] : [undefined, source.draft];
   }
   if (!freshDm) return [];
   if (place.session.bound || freshDm.targetAgent.path !== verifiedAgentPath)

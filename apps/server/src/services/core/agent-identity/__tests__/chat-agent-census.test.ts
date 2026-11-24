@@ -84,6 +84,10 @@ const ALLOWED: Record<string, { count: number; why: string }> = {
     count: 1,
     why: 'a room seat’s chat always records its agent; recovery compares two stored records',
   },
+  'services/core/runtime-seam/session-birth-write.ts': {
+    count: 1,
+    why: 'an unbound seat draft must have no recorded agent even inside a registered agent folder',
+  },
   'services/rooms/handoff/outbox/report-outbox-store.ts': {
     count: 1,
     why: 'a presence test: a report with no runtime and no agent is skipped',

@@ -37,7 +37,8 @@ function assertBindingSource(
     )
       throw new SessionBirthWriteError('source');
   } else if (birth.kind === 'room-seat') {
-    if (origin.kind !== 'room' || agentPath !== birth.agentPath)
+    const expectedOrigin = birth.delivery === 'owner-http' ? 'interactive' : 'room';
+    if (origin.kind !== expectedOrigin || agentPath !== birth.agentPath)
       throw new SessionBirthWriteError('source');
   } else if (
     origin.kind !== 'chat-message' ||

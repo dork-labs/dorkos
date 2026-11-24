@@ -13,7 +13,6 @@ import {
   rooms,
   roomMembers,
   roomSeatMoves,
-  roomSessions,
   roomDepartedSeats,
   eq,
   and,
@@ -21,6 +20,7 @@ import {
   isNull,
   type Db,
 } from '@dorkos/db';
+import { deleteRoomSeat } from '../session-bindings/room-seat-birth.js';
 
 /** One channel seat, by room and author. */
 export interface ChannelSeat {
@@ -104,9 +104,7 @@ export class DepartedSeatStore {
           tx.delete(roomMembers)
             .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.authorId, authorId)))
             .run();
-          tx.delete(roomSessions)
-            .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
-            .run();
+          deleteRoomSeat(tx, roomId, authorId);
           tx.delete(roomSeatMoves)
             .where(and(eq(roomSeatMoves.roomId, roomId), eq(roomSeatMoves.authorId, authorId)))
             .run();

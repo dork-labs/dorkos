@@ -26,7 +26,6 @@ import type { SendMessageRequest } from '@dorkos/shared/schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import type { PersonChatBinding } from '../../core/runtime-seam/person-draft-settings.js';
 import type { FreshDmBirth } from '../chat-messages/sending/chat-message-birth.js';
 import { configManager } from '../../core/config-manager.js';
 import {
@@ -59,7 +58,11 @@ import {
   type SessionLauncher,
 } from './launch-caller.js';
 import { auditLaunched, auditRefusedLaunch } from './launch-audit.js';
-import { launchBindingSourceArgs, resolveChatPlace } from './resolve-chat-place.js';
+import {
+  launchBindingSourceArgs,
+  resolveChatPlace,
+  type ChatBirthSource,
+} from './resolve-chat-place.js';
 import { isRegisteredChatAgentPath } from './verify-chat-agent.js';
 import { recordedAgentOf, sessionToolWarnings } from './session-tool-warnings.js';
 import type { SessionLaunchWarning } from '@dorkos/shared/schemas';
@@ -81,8 +84,8 @@ export interface DispatchSessionMessageOpts {
    * the power a new session row is born with (DOR-2105).
    */
   origin: TurnOrigin;
-  /** Exact source prepared by the person-authenticated route for an acknowledged chat. */
-  personChatSource?: PersonChatBinding;
+  /** Exact first-write source prepared by the authenticated message route. */
+  chatBirthSource?: ChatBirthSource;
   /** The original receipt for a direct chat newly reserved by its sender. */
   freshDmBirth?: FreshDmBirth;
   /**
@@ -497,11 +500,14 @@ async function launchSessionMessage(
   // (`cwd`) and runs the turn with `cwd = workspace.path` + its port block.
   // Additive + resilient: with no key (or a disabled/failing manager) the turn
   // proceeds with the original cwd, byte-for-byte unchanged.
+  const source = opts.chatBirthSource;
+  const roomSeat = source && 'roomSeat' in source ? source.roomSeat : undefined;
   const resolvedChatPlace = await resolveChatPlace({
     sessionId,
     ...(cwd !== undefined ? { cwd } : {}),
     ...(verifiedAgentPath !== undefined ? { agentPath: verifiedAgentPath } : {}),
     roomSessionPlace,
+    expectedRoomId: roomSeat?.roomId,
     workspaceKeyed: Boolean(workspaceKey),
   });
   if ('refusal' in resolvedChatPlace) {
@@ -515,7 +521,7 @@ async function launchSessionMessage(
   const sourceArgs = launchBindingSourceArgs(
     resolvedChatPlace,
     verifiedAgentPath,
-    opts.personChatSource,
+    source,
     opts.freshDmBirth
   );
   // A room-bound session's agent and grants, when the room answered for it
@@ -670,7 +676,7 @@ async function launchSessionMessage(
     sessionId,
     runtimeType,
     origin,
-    verifiedAgentPath,
+    roomSeat?.agentPath ?? verifiedAgentPath,
     ...sourceArgs
   );
   if (isNewSession && launchedBy !== undefined) {

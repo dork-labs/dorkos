@@ -50,6 +50,8 @@ import { ulid } from 'ulidx';
 import type { UiCommand } from '@dorkos/shared/schemas';
 import { getRoomAttachmentStore, getRoomService, tryGetRoomRepoService } from './index.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+import { recordRoomTurnOwner } from './session-bindings/room-turn-owner.js';
+import type { RoomSeatBirth } from './session-bindings/room-seat-birth.js';
 import { assertOwnDesk } from '../core/agent-identity/index.js';
 import { refusePausedRoomTurn } from './turn-guards/paused-turn.js';
 import { warnIfTurnCannotPost } from './turn-guards/turn-posting.js';
@@ -140,6 +142,12 @@ export interface RoomTurnRunnerOptions {
    * @param room - The room being answered.
    */
   roomConventions?: (room: Room) => Promise<string | null>;
+  /** The pending source held by this exact room, author and session. */
+  roomSeatBirth?: (
+    roomId: string,
+    authorId: string,
+    sessionId: string
+  ) => RoomSeatBirth | undefined;
 }
 
 /** The shipped wait, used when a caller supplies no reader. */
@@ -827,24 +835,6 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // Noted before the turn can read them; a clean turn clears it only once it is accepted, so
       // one refused as busy never wipes a marked turn still running (Security S1 on #3576).
       if (request.externalAuthor || request.outsideWords) noteRoomTurnWords(sessionId, true);
-      const recordSessionOwner = async (ownedId: string): Promise<boolean> => {
-        try {
-          return await runtimeRegistry.persistSessionRuntime(
-            ownedId,
-            runtimeType,
-            { kind: 'room', externalAuthor: request.externalAuthor },
-            request.agentPath
-          );
-        } catch (err) {
-          logger.warn('[rooms] could not record which runtime owns this session', {
-            sessionId: ownedId,
-            roomId: request.room.id,
-            runtimeType,
-            error: err instanceof Error ? err.message : String(err),
-          });
-          return false;
-        }
-      };
 
       // Taken back only for an id this run minted, and only while this process
       // lives: a server that dies between the launch-time write and the turn
@@ -897,7 +887,12 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // files as they are when it starts (I8).
         prepareLaunch: async () => {
           // Only a row for an id this run MINTED is ever taken back below.
-          mintedRowAtLaunch = (await recordSessionOwner(sessionId)) && boundSessionId === null;
+          const birth =
+            boundSessionId === null
+              ? undefined
+              : options.roomSeatBirth?.(request.room.id, request.authorId, boundSessionId);
+          const recorded = await recordRoomTurnOwner(request, sessionId, runtimeType, birth);
+          mintedRowAtLaunch = recorded && boundSessionId === null;
           if (request.prepareLaunch === undefined) return {};
           const launched = await request.prepareLaunch(sessionId);
           return launched.files ? { roomContext: { ...roomContext, files: launched.files } } : {};
@@ -1096,7 +1091,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // throw out of `run` must mean NOTHING RAN. Nothing that happens after the
       // model has spoken may throw past here. What is lost when this fails is one
       // runtime-attribution row, which the next turn on this session rewrites.
-      await recordSessionOwner(canonicalId);
+      await recordRoomTurnOwner(request, canonicalId, runtimeType);
 
       const reply = await collecting.beforeDeadline;
       if (!reply) {

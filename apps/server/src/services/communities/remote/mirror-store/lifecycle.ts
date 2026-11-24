@@ -23,6 +23,7 @@ import {
 } from '@dorkos/db';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import { deleteRoomNotifications } from '../../../notifications/room-entry-notifications.js';
+import { forgetRoomSeatBirths } from '../../../rooms/session-bindings/room-seat-birth.js';
 import { dedupeAccessors } from './rows.js';
 import type { MirrorPurge, MirrorRoomInput } from './types.js';
 
@@ -66,7 +67,9 @@ export function purgeContent(
     .where(inArray(roomMembers.roomId, localRoomIds))
     .all();
   tx.delete(roomMembers).where(inArray(roomMembers.roomId, localRoomIds)).run();
-  tx.delete(roomSessions).where(inArray(roomSessions.roomId, localRoomIds)).run();
+  const removedSeats = inArray(roomSessions.roomId, localRoomIds);
+  forgetRoomSeatBirths(tx, removedSeats);
+  tx.delete(roomSessions).where(removedSeats).run();
   tx.delete(readCursors)
     .where(and(eq(readCursors.threadKind, 'room'), inArray(readCursors.threadId, localRoomIds)))
     .run();

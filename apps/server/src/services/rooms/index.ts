@@ -590,6 +590,7 @@ export function createRoomSubsystem(opts: {
       createSessionRoomTurnRunner({
         waitMs: () => readRoomMinutesMs('replyWaitMinutes'),
         ceilingMs: () => readRoomMinutesMs('lateReplyCeilingMinutes'),
+        roomSeatBirth: store.roomSeatBirth.bind(store),
       }),
     // Read per turn, never captured: the manager is registered later in
     // bootstrap (it needs this very service's claim map), and an install with no

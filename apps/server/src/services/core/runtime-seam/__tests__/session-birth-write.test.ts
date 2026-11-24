@@ -13,14 +13,17 @@ import {
   type Db,
   type DbTransaction,
 } from '@dorkos/db';
+import { bindSessionWrite } from '../bind-session-write.js';
 import {
   SessionBirthWriteError,
   withinSessionBirthWrite,
   withSessionBirthWrite,
+  type RoomSeatBirthWriteContext,
   type SessionBirthWriteContext,
 } from '../session-birth-write.js';
 import { MessageQueueStore } from '../../../session/message-queue-store.js';
 import { chatClientId } from '../../../session/chat-messages/chat-client-id.js';
+import { RoomStore } from '../../../rooms/room-store.js';
 
 let db: Db;
 const stamp = '2026-11-19T00:00:00.000Z';
@@ -99,7 +102,7 @@ function receiptBirth(): SessionBirthWriteContext {
   };
 }
 
-function seatBirth(): SessionBirthWriteContext {
+function seatBirth(): RoomSeatBirthWriteContext {
   db.insert(authors)
     .values({
       id: 'author',
@@ -109,31 +112,16 @@ function seatBirth(): SessionBirthWriteContext {
       createdAt: stamp,
     })
     .run();
-  db.insert(roomSessions)
-    .values({ roomId: 'room', authorId: 'author', sessionId, createdAt: stamp })
-    .run();
-  db.insert(sessionBirthAllocations)
-    .values({
-      sessionId,
-      version: 1,
-      createdAt: stamp,
-      sourceKind: 'internal',
-      internalSource: {
-        kind: 'room-seat',
-        roomId: 'room',
-        authorId: 'author',
-        boundSessionId: sessionId,
-        seatCreatedAt: stamp,
-      },
-    })
-    .run();
+  const room = new RoomStore(db);
+  expect(room.bindRoomSession('room', 'author', sessionId, stamp, 'minted')).toBe(sessionId);
+  expect(room.bindRoomSession('room', 'author', 'other-chat', stamp, 'minted')).toBe(sessionId);
+  expect(allocations().map((row) => row.sessionId)).toEqual([sessionId]);
   return {
     kind: 'room-seat',
-    allocationCreatedAt: stamp,
     roomId: 'room',
     authorId: 'author',
     agentPath: '/agent',
-    seatCreatedAt: stamp,
+    ...new RoomStore(db).roomSeatBirth('room', 'author', sessionId)!,
   };
 }
 
@@ -190,7 +178,6 @@ describe('synchronous session birth transfer', () => {
   it.each([
     ['location', locationBirth],
     ['receipt', receiptBirth],
-    ['seat', seatBirth],
   ] as const)('transfers the actual %s source with the original settings', (_kind, arrange) => {
     const context = arrange();
     expect(withSessionBirthWrite(db, sessionId, context, insertMetadata)).toBe(1);
@@ -201,6 +188,85 @@ describe('synchronous session birth transfer', () => {
       runtime: null,
     });
     expect(allocations()).toEqual([]);
+  });
+
+  it('consumes a room seat birth through the room’s runtime bind', () => {
+    const context = seatBirth();
+    expect(() => withSessionBirthWrite(db, sessionId, context, insertMetadata)).toThrow(
+      SessionBirthWriteError
+    );
+    expect(metadata()).toBeUndefined();
+    expect(allocations()).toHaveLength(1);
+    expect(
+      bindSessionWrite(
+        db,
+        sessionId,
+        'opencode',
+        { kind: 'room', externalAuthor: false },
+        context.agentPath,
+        {},
+        {},
+        undefined,
+        context
+      )
+    ).toBe(true);
+    expect(metadata()).toMatchObject({
+      runtime: 'opencode',
+      agentPath: context.agentPath,
+      launchOrigin: 'room',
+      modelLaunchState: 'pending-v1',
+    });
+    expect(allocations()).toEqual([]);
+  });
+
+  it('keeps an existing runtime and leaves no new seat when its proposed id is already used', () => {
+    db.insert(sessionMetadata).values({ sessionId, runtime: 'doe', createdAt: stamp }).run();
+    const room = new RoomStore(db);
+    expect(() => room.bindRoomSession('room', 'author', sessionId, stamp, 'minted')).toThrow(
+      'Room seat ID is already in use.'
+    );
+    expect(room.getRoomSession('room', 'author')).toBeNull();
+    expect(metadata()?.runtime).toBe('doe');
+    expect(allocations()).toEqual([]);
+  });
+
+  it('rolls back the new seat if SQLite does not record its allocation', () => {
+    const room = new RoomStore(db);
+    db.$client
+      .exec(`CREATE TEMP TRIGGER ignore_seat_birth BEFORE INSERT ON session_birth_allocations
+      BEGIN SELECT RAISE(IGNORE); END`);
+    expect(() => room.bindRoomSession('room', 'author', sessionId, stamp, 'minted')).toThrow(
+      'Could not record the new room seat.'
+    );
+    expect(room.getRoomSession('room', 'author')).toBeNull();
+    expect(allocations()).toEqual([]);
+  });
+
+  it('removes the pending seat draft when adopting an already bound chat', () => {
+    const context = { ...seatBirth(), delivery: 'owner-http' } as const;
+    withSessionBirthWrite(db, sessionId, context, insertMetadata, 'room-seat-settings');
+    expect(metadata()).toMatchObject({ runtime: null, modelLaunchState: 'pending-v1' });
+    expect(allocations()).toHaveLength(1);
+    db.insert(sessionMetadata)
+      .values({
+        sessionId: 'existing-chat',
+        runtime: 'doe',
+        modelLaunchState: 'pending-v1',
+        createdAt: stamp,
+      })
+      .run();
+    const room = new RoomStore(db);
+    expect(room.rebindRoomSession('room', 'author', sessionId)).toBe(true);
+    expect(metadata()?.model).toBe('chosen');
+    expect(allocations()).toHaveLength(1);
+    expect(room.rebindRoomSession('room', 'author', 'existing-chat')).toBe(true);
+    expect(room.getRoomSession('room', 'author')).toBe('existing-chat');
+    expect(room.roomSeatBirth('room', 'author', 'existing-chat')).toBeUndefined();
+    expect(allocations()).toEqual([]);
+    expect(metadata()).toBeUndefined();
+    expect(db.select().from(sessionMetadata).all()).toMatchObject([
+      { sessionId: 'existing-chat', runtime: 'doe', modelLaunchState: 'pending-v1' },
+    ]);
   });
 
   it('requires context before calling the writer for an allocated id', () => {

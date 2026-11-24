@@ -232,6 +232,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'community-administer.ts': 'Space administration answers; no lasting grant here.',
   'debug.ts': 'Reads which owner-only views to show; no write route.',
   'team.ts': 'Reads the team; no write route.',
+  'session-person-birth.ts':
+    'Reads and validates an existing draft source; no mounted write route.',
   'session-workspace-caller.ts': 'Shared workspace check for a chat turn; no write route.',
   'marketplace/context.ts': 'Shared marketplace bars; its routes are classified here.',
   'harness.ts': 'Copies already-installed files into a project and moves a skill file (N).',

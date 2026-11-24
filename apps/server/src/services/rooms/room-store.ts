@@ -51,6 +51,13 @@ import type {
 } from '@dorkos/shared/room-schemas';
 import { logger } from '../../lib/logger.js';
 import { RoomSessionLedger } from './session-bindings/room-session-ledger.js';
+import {
+  bindRoomSeat,
+  deleteRoomSeat,
+  readRoomSeatBirth,
+  readRoomSeatSession,
+  replaceRoomSeat,
+} from './session-bindings/room-seat-birth.js';
 import { DepartedSeatStore } from './manage/departed-seat-store.js';
 import { RoomListReads } from './manage/room-list-reads.js';
 import {
@@ -773,10 +780,7 @@ export class RoomStore {
         .delete(roomMembers)
         .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.authorId, authorId)))
         .run();
-      exec
-        .delete(roomSessions)
-        .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
-        .run();
+      deleteRoomSeat(exec, roomId, authorId);
       this.syncDmMemberKey(roomId, exec);
     });
     return existed;
@@ -2075,12 +2079,7 @@ export class RoomStore {
    * @param authorId - The agent member.
    */
   getRoomSession(roomId: string, authorId: string): string | null {
-    const row = this.db
-      .select()
-      .from(roomSessions)
-      .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
-      .get();
-    return row?.sessionId ?? null;
+    return readRoomSeatSession(this.db, roomId, authorId);
   }
 
   /**
@@ -2164,15 +2163,22 @@ export class RoomStore {
    * @param authorId - The agent member.
    * @param sessionId - The session to bind.
    * @param createdAt - When the binding was made.
+   * @param birth - Set only by an owner that just minted this session id.
    * @returns The bound session id — the existing one when there already was one.
    */
-  bindRoomSession(roomId: string, authorId: string, sessionId: string, createdAt: string): string {
-    this.db
-      .insert(roomSessions)
-      .values({ roomId, authorId, sessionId, createdAt })
-      .onConflictDoNothing()
-      .run();
-    return this.getRoomSession(roomId, authorId) ?? sessionId;
+  bindRoomSession(
+    roomId: string,
+    authorId: string,
+    sessionId: string,
+    createdAt: string,
+    birth?: 'minted'
+  ): string {
+    return bindRoomSeat(this.db, { roomId, authorId, sessionId, createdAt }, birth);
+  }
+
+  /** Read the durable birth of the seat this turn is about to bind, when one was recorded. */
+  roomSeatBirth(roomId: string, authorId: string, sessionId: string) {
+    return readRoomSeatBirth(this.db, { roomId, authorId, sessionId });
   }
 
   /**
@@ -2236,12 +2242,7 @@ export class RoomStore {
     }
     // `false` for a seat that does not exist too: nothing moved, which a caller
     // that is about to tell the room the agent moved has to know.
-    const { changes } = this.db
-      .update(roomSessions)
-      .set({ sessionId })
-      .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
-      .run();
-    return changes > 0;
+    return replaceRoomSeat(this.db, { roomId, authorId, sessionId });
   }
 }
 
