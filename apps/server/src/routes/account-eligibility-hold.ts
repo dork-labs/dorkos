@@ -46,7 +46,6 @@ export const NO_AUTO_MOVE_BAR: PersonBarCopy = {
 
 /** What the person bar says when anything but a person flips an account's agents-may-pick switch. */
 export const AGENTS_MAY_PICK_BAR: PersonBarCopy = {
-  error: 'Only a person can choose which accounts agents may pick.',
   code: 'person_only',
   subject: 'which Claude accounts agents may pick',
   crossSite: (origin) =>

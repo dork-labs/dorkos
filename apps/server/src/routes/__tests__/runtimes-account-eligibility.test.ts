@@ -659,7 +659,7 @@ describe('PUT /api/runtimes/claude-code/accounts/:id/agents-may-pick (DOR-5033)'
       .send({ agentsMayPick: true });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('person_only');
-    expect(res.body.error).toBe('Only a person can choose which accounts agents may pick.');
+    expect(res.body.detail).toContain('only a person makes');
     expect(state.sets).toBe(0);
     expect(rows()[0]).not.toHaveProperty('agentsMayPick');
     expect(emit).not.toHaveBeenCalled();
