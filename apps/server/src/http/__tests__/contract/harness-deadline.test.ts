@@ -134,4 +134,47 @@ describe('the contract boot deadline', () => {
       'every server started is stopped'
     ).toEqual([true, true]);
   });
+
+  it.each([
+    { status: 'SIGABRT', exit: { signalCode: 'SIGABRT' } },
+    { status: '0', exit: { exitCode: 0 } },
+  ])(
+    'reports exit $status and startup output before the health deadline',
+    async ({ status, exit }) => {
+      const server = fakeServer(0);
+      vi.spyOn(server, 'log').mockReturnValue('Fixture startup diagnostic');
+      setTimeout(() => Object.assign(server.child, exit), 1_000);
+      const start = vi.fn(async () => server);
+      const verdict = await bootUntilHookTimeout({
+        runsFromBuild: async () => true,
+        build: async () => BUILT,
+        start,
+      });
+
+      expect(verdict?.error.message).toBe(
+        `The server exited (${status}) before it answered:\nFixture startup diagnostic`
+      );
+      expect(verdict!.atMs).toBeLessThanOrEqual(1_100);
+      expect(start).toHaveBeenCalledOnce();
+      expect(server.closed).toBe(true);
+    }
+  );
+
+  it('returns the healthy child when its expected version answers', async () => {
+    const server = fakeServer(0);
+    const fetchHealth = vi.fn(async () => Response.json({ version: server.version }));
+    vi.stubGlobal('fetch', fetchHealth);
+    const ready = await bootWithEdges(
+      { runsFromBuild: async () => true, build: async () => BUILT, start: async () => server },
+      {},
+      ENTRY,
+      {}
+    );
+
+    expect(fetchHealth).toHaveBeenCalledExactlyOnceWith(`${server.baseUrl}/api/health`);
+    expect(ready.baseUrl).toBe(server.baseUrl);
+    expect(server.closed).toBe(false);
+    await ready.close();
+    expect(server.closed).toBe(true);
+  });
 });
