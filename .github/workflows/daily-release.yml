@@ -1,0 +1,322 @@
+name: daily-release
+
+# One release a day with no approval click (DOR-5123, design
+# docs/design-daily-release.md in ci-steward's folder; Dorian, Nov 23: release
+# fast, fix forward). A state machine: every run reads GitHub's state with
+# scripts/daily-release.sh and takes at most one step, so it resumes after any
+# failure:
+#   cut        no release in flight: pick P (the newest main commit of the last
+#              48 h whose full browser run on main is green and that
+#              scripts/release-gate.sh ships: on main, not reverted, every
+#              required check green in the merge queue), compute the version
+#              with scripts/release/release-commit.ts, cut release/vX.Y.Z at P
+#              and open the release PR;
+#   tag        release PR merged: tag the tip and start the native artifact;
+#   publish    artifact green, not on npm: dispatch release-publish.yml;
+#   surfaces / backmerge: not wired yet (build order rows 10 to 12).
+#
+# DRY RUN BY DEFAULT. Every write sits in the `cut` or `advance` job, which run
+# only when the repository variable DAILY_RELEASE_LIVE is `on` (it is not set).
+# Until then the `plan` job, with a read-only token, writes to the step summary
+# exactly what it would do, and stops. Going live also needs the release commit
+# wired (release-commit.ts --commit); `plan` fails while it is not, rather than
+# cut a branch it cannot finish.
+#
+# Writes use the dorkos-merge-tail app token (Dorian, Nov 24: reuse it), so the
+# release PR's checks and the tag's workflows run. Dispatches use GITHUB_TOKEN.
+# This file never edits release-publish.yml; it only dispatches it on main,
+# where its own proofs and gates run.
+
+on:
+  schedule:
+    # The cut slot. GitHub may start it late; P is picked when it runs.
+    - cron: '0 15 * * *'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'cut (the daily step), advance (only move a release in flight), or rollback'
+        required: true
+        default: cut
+        type: choice
+        options: [cut, advance, rollback]
+      bad_version:
+        description: 'rollback only: the version to roll back from, X.Y.Z'
+        required: false
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: daily-release
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  plan:
+    # Main's copy only: a dispatch on another ref would run that ref's file.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
+    outputs:
+      step: ${{ steps.plan.outputs.step }}
+      version: ${{ steps.plan.outputs.version }}
+      p: ${{ steps.plan.outputs.p }}
+      previous: ${{ steps.plan.outputs.previous }}
+      live: ${{ steps.plan.outputs.live }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: tools
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/daily-release.sh
+            scripts/release-gate.sh
+            scripts/release
+            packages/cli/scripts/release-branch
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      - name: Read the state and decide the next step
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ACTION: ${{ inputs.action || 'cut' }}
+          DAILY_RELEASE_HOLD: ${{ vars.DAILY_RELEASE_HOLD }}
+        run: |
+          set -euo pipefail
+          bash tools/scripts/daily-release.sh facts >"$RUNNER_TEMP/facts.json"
+          cat "$RUNNER_TEMP/facts.json"
+          decision=$(bash tools/scripts/daily-release.sh decide "$RUNNER_TEMP/facts.json")
+          echo "Decision: $decision"
+          [[ "$decision" == REFUSE* ]] && echo "::warning::daily-release: $decision"
+          echo "decision=$decision" >>"$GITHUB_OUTPUT"
+          echo "previous=$(jq -r .previous "$RUNNER_TEMP/facts.json")" >>"$GITHUB_OUTPUT"
+
+      - name: Pick the release point P
+        id: pick
+        if: steps.decide.outputs.decision == 'CUT'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PREVIOUS: ${{ steps.decide.outputs.previous }}
+        run: |
+          set -euo pipefail
+          pick=$(bash tools/scripts/daily-release.sh pick "$PREVIOUS")
+          echo "Pick: $pick"
+          echo "pick=$pick" >>"$GITHUB_OUTPUT"
+          p=''
+          [[ "$pick" =~ ^P\ ([0-9a-f]{40})$ ]] && p=${BASH_REMATCH[1]}
+          echo "p=$p" >>"$GITHUB_OUTPUT"
+
+      - name: Check out P as data
+        if: steps.pick.outputs.p != ''
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.pick.outputs.p }}
+          path: p
+          persist-credentials: false
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Plan the release commit (dry run)
+        id: version
+        if: steps.pick.outputs.p != ''
+        env:
+          PREVIOUS: ${{ steps.decide.outputs.previous }}
+          P: ${{ steps.pick.outputs.p }}
+        run: |
+          set -uo pipefail
+          # Main's tools, P's files as data: nothing from P is installed or run.
+          if bash tools/scripts/daily-release.sh commits p "$PREVIOUS" "$P" \
+            >"$RUNNER_TEMP/commits.txt" 2>"$RUNNER_TEMP/plan.err"; then
+            node tools/scripts/release/release-commit.ts --repo p --previous "$PREVIOUS" \
+              --date "$(date -u +%F)" --commits "$RUNNER_TEMP/commits.txt" --json \
+              >"$RUNNER_TEMP/plan.json" 2>"$RUNNER_TEMP/plan.err"
+            rc=$?
+          else
+            rc=2
+          fi
+          cat "$RUNNER_TEMP/plan.err"
+          echo "exit=$rc" >>"$GITHUB_OUTPUT"
+          [ "$rc" -eq 0 ] && echo "version=$(jq -r .version "$RUNNER_TEMP/plan.json")" >>"$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Write the step summary
+        id: plan
+        env:
+          DECISION: ${{ steps.decide.outputs.decision }}
+          PICK: ${{ steps.pick.outputs.pick }}
+          P: ${{ steps.pick.outputs.p }}
+          PLAN_EXIT: ${{ steps.version.outputs.exit }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PREVIOUS: ${{ steps.decide.outputs.previous }}
+          LIVE_VAR: ${{ vars.DAILY_RELEASE_LIVE }}
+        run: |
+          set -euo pipefail
+          live=false
+          if [ "$LIVE_VAR" = on ]; then
+            # Refuse to go live before the release commit can be written.
+            probe=$(node tools/scripts/release/release-commit.ts --commit 2>&1 || true)
+            if grep -q 'not wired' <<<"$probe"; then
+              echo "::error::DAILY_RELEASE_LIVE is on, but release-commit.ts --commit is not wired yet. Nothing was written."
+              exit 1
+            fi
+            live=true
+          fi
+          plan=null
+          [ "${PLAN_EXIT:-}" = 0 ] && plan=$(cat "$RUNNER_TEMP/plan.json")
+          err=''
+          [ -f "$RUNNER_TEMP/plan.err" ] && err=$(head -c 500 "$RUNNER_TEMP/plan.err")
+          jq -n --argjson live "$live" --arg decision "$DECISION" --arg pick "${PICK:-}" \
+            --argjson plan "$plan" --arg exit "${PLAN_EXIT:-}" --arg err "$err" \
+            '{live: $live, decision: $decision, pick: $pick, plan: $plan,
+              planExit: (if $exit == "" then null else ($exit | tonumber) end), planError: $err}' \
+            >"$RUNNER_TEMP/state.json"
+          bash tools/scripts/daily-release.sh summary "$RUNNER_TEMP/state.json" | tee -a "$GITHUB_STEP_SUMMARY"
+          step=$(tr '[:upper:]' '[:lower:]' <<<"${DECISION%% *}")
+          version=${DECISION#* }
+          if [ "$step" = cut ]; then
+            [ "${PLAN_EXIT:-}" = 0 ] && [ -n "$P" ] || step=none
+            version=${VERSION:-}
+          fi
+          case "$step" in cut | tag | publish | surfaces | backmerge) ;; *) step=none version='' ;; esac
+          {
+            echo "step=$step"
+            echo "version=$version"
+            echo "p=${P:-}"
+            echo "previous=$PREVIOUS"
+            echo "live=$live"
+          } >>"$GITHUB_OUTPUT"
+
+  cut:
+    needs: plan
+    if: needs.plan.outputs.live == 'true' && needs.plan.outputs.step == 'cut'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      REPO: ${{ github.repository }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      P: ${{ needs.plan.outputs.p }}
+      PREVIOUS: ${{ needs.plan.outputs.previous }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: tools
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/daily-release.sh
+            scripts/release
+            packages/cli/scripts/release-branch
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.p }}
+          path: p
+          persist-credentials: false
+          fetch-depth: 0
+          filter: blob:none
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      - name: Mint the merge-tail app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
+
+      - name: Cut release/vX.Y.Z at P
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] && [[ "$P" =~ ^[0-9a-f]{40}$ ]]
+          gh api --method POST "repos/$REPO/git/refs" -f ref="refs/heads/release/v$VERSION" -f sha="$P" >/dev/null
+
+      - name: Commit the release commit and open the release PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          bash tools/scripts/daily-release.sh commits p "$PREVIOUS" "$P" >"$RUNNER_TEMP/commits.txt"
+          out="$RUNNER_TEMP/release"
+          # Commits through the Git Data API onto release-commit/vX.Y.Z, cut at P.
+          # --target and GH_TOKEN are the interface the release lead wires at
+          # go-live (t1g, Nov 24); until then `plan` never lets this job run.
+          node tools/scripts/release/release-commit.ts --repo p --previous "$PREVIOUS" \
+            --date "$(date -u +%F)" --commits "$RUNNER_TEMP/commits.txt" --out "$out" \
+            --target "release-commit/v$VERSION" --commit
+          url=$(gh pr create --repo "$REPO" --base "release/v$VERSION" --head "release-commit/v$VERSION" \
+            --title "chore(release): v$VERSION" --body-file "$out/pr-body.md" --label skip-changelog)
+          echo "Opened $url"
+          gh pr merge "$url" --repo "$REPO" --auto --rebase
+
+  advance:
+    needs: plan
+    if: >-
+      needs.plan.outputs.live == 'true' &&
+      contains(fromJSON('["tag","publish","surfaces","backmerge"]'), needs.plan.outputs.step)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Dispatches only: the native artifact build and Release Publish.
+      actions: write
+    env:
+      REPO: ${{ github.repository }}
+      STEP: ${{ needs.plan.outputs.step }}
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - name: Mint the merge-tail app token
+        id: app-token
+        if: needs.plan.outputs.step == 'tag'
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
+
+      - name: Take the step
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          tip=$(gh api "repos/$REPO/git/ref/heads/release/v$VERSION" --jq .object.sha)
+          [[ "$tip" =~ ^[0-9a-f]{40}$ ]]
+          case "$STEP" in
+            tag)
+              # The app token, so the tag's own workflows start.
+              GH_TOKEN=$APP_TOKEN gh api --method POST "repos/$REPO/git/refs" \
+                -f ref="refs/tags/v$VERSION" -f sha="$tip" >/dev/null
+              gh workflow run browser-native-release-artifact.yml --repo "$REPO" --ref "v$VERSION"
+              ;;
+            publish)
+              base=$(gh api "repos/$REPO/compare/main...$tip" --jq .merge_base_commit.sha)
+              [[ "$base" =~ ^[0-9a-f]{40}$ ]]
+              gh workflow run release-publish.yml --repo "$REPO" --ref main -f version="$VERSION" \
+                -f expected_sha="$tip" -f mode=routine -f base="$base"
+              ;;
+            *)
+              echo "::error::$STEP is not wired yet (design build order rows 10 to 12)."
+              exit 1
+              ;;
+          esac

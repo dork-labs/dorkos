@@ -138,11 +138,18 @@ export const ALLOWED_VERBS: readonly string[] = [
 export const ALLOWED_VERB_PATHS: readonly string[] = ['/api/capabilities/{id}/invoke'];
 
 /**
- * Error schemas a 4xx or 5xx body may reference: the RFC 9457 `Problem` every
- * switched route answers with (DOR-4979), and the older `ErrorResponse` the
- * routes not yet switched still send.
+ * Schemas a 4xx or 5xx body may reference: the RFC 9457 `Problem` every
+ * switched route answers with (DOR-4979), the older `ErrorResponse` the routes
+ * not yet switched still send, and the two 428 "confirm first" answers, which
+ * are shared, deliberate shapes rather than error one-offs: `StepUpRequired` on
+ * every held write and `PasskeyCheckRequired` on the passkey-checked device writes.
  */
-export const SHARED_ERROR_SCHEMAS: readonly string[] = ['Problem', 'ErrorResponse'];
+export const SHARED_ERROR_SCHEMAS: readonly string[] = [
+  'Problem',
+  'ErrorResponse',
+  'StepUpRequired',
+  'PasskeyCheckRequired',
+];
 
 /** The paths whose `registerPath(` calls count as hand registrations. */
 const HAND_REGISTRY_FILE =

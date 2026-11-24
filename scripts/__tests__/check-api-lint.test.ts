@@ -214,6 +214,21 @@ describe('error-shape', () => {
     });
     expect(errorShapeItems(d)).toEqual({ x: ['GET /api/x 500'] });
   });
+
+  it('passes a $ref to the step-up 428 component but still counts an inline copy of it', () => {
+    const stepUp = {
+      type: 'object',
+      properties: { error: { type: 'string' }, code: { type: 'string' } },
+    };
+    const held = (schema: object) =>
+      op({ responses: { '428': { content: { 'application/json': { schema } } } } });
+    const d = doc({
+      '/api/shared': { post: held({ $ref: '#/components/schemas/StepUpRequired' }) },
+      '/api/passkey': { post: held({ $ref: '#/components/schemas/PasskeyCheckRequired' }) },
+      '/api/inline': { post: held(stepUp) },
+    });
+    expect(errorShapeItems(d)).toEqual({ inline: ['POST /api/inline 428'] });
+  });
 });
 
 describe('list-paging', () => {

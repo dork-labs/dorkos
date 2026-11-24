@@ -75,6 +75,7 @@ bash scripts/test-no-code-scope.sh
 bash scripts/test-pr-related.sh
 bash scripts/test-auto-revert.sh
 bash scripts/test-daily-sweep.sh
+bash scripts/test-daily-release.sh
 bash scripts/test-after-merge-alert.sh
 bash scripts/test-browser-smoke-scope.sh
 bash scripts/test-release-branch-contents.sh
