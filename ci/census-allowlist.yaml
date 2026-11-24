@@ -163,7 +163,7 @@ entries:
     job: test-shard
     step: Keep only this run's build entries in the turbo cache
     kind: step-if
-    reason: Runs only on the main canary (refs/heads/main) because only main's cache scope is readable by later queue builds and pull requests (DOR-4190, ledger 261115-201939). It asserts nothing; it trims turbo's cache to build entries before the save, after every gating step has already passed.
+    reason: Runs only on the main canary (refs/heads/main, not the rolling push run, whose builds build-cache.yml already saves, DOR-5130) because only main's cache scope is readable by later queue builds and pull requests (DOR-4190, ledger 261115-201939). It asserts nothing; it trims turbo's cache to build entries before the save, after every gating step has already passed.
   - workflow: test.yml
     job: test-shard
     step: Save the builds for the queue and pull requests

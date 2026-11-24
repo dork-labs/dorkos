@@ -326,7 +326,7 @@ gates:
     purpose: Runs the community service's tests against a real Postgres and a real browser.
   - id: wf.test.community-packaged
     source: .github/workflows/test.yml
-    purpose: Proves the packaged local-agent community journey with no public network, on every queue build and canary run, and on pull requests whose diff touches the community slice (scripts/community-packaged-scope.sh).
+    purpose: Proves the packaged local-agent community journey with no public network, on every push to main (the rolling run, DOR-5130) and canary run, and on pull requests whose diff touches the community slice (scripts/community-packaged-scope.sh); a merge queue build reports green without it.
   - id: wf.test.test-shard-count
     source: .github/workflows/test.yml
     purpose: Picks how many test shards a run gets; six in the queue, on the canary and on a pull request that changes apps/server or packages/shared, two on other pull requests, and six whenever the diff cannot be read. On a pull request it also picks which suites run, by turbo task hash (scripts/pr-test-plan.sh), and picks every suite on any doubt or on a change to how tests are chosen or run. It also decides, from scripts/no-code-scope.sh on its depth-2 checkout, whether a pull request changes anything but changelog, docs or version lines, and hands test-shard and test-binary that answer. It also decides, from scripts/text-only-scope.mjs on the base commit, whether a pull request only rewrites strings, comments and Markdown, which cuts that pull request's run to one shard of `vitest related` (DOR-4834); a merge queue build always answers no without running the classifier and keeps every shard.
