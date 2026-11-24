@@ -9,7 +9,10 @@
  *
  *   - every `if:` in test.yml and browser-test.yml that used to say "full on
  *     every event but a pull request" also says "or a pull request into
- *     release/", and the scoped PR legs say the negation;
+ *     release/", and the scoped PR legs say the negation (browser-test.yml's
+ *     full side also leaves out the merge queue, which runs the smoke since
+ *     DOR-5130, so its spelling is "neither a pull request nor a merge group,
+ *     or a pull request into release/");
  *   - every non-canary `EVENT:` in test.yml and docs-openapi-check.yml maps such
  *     a pull request to `release_pull_request`, and the canary guards keep the
  *     plain event name (they are byte-identical by their own test);
@@ -28,6 +31,12 @@ const root = join(import.meta.dirname, '../..');
 const read = (name: string) => readFileSync(join(root, '.github/workflows', name), 'utf8');
 
 const RELEASE = "startsWith(github.base_ref, 'release/')";
+/** Each file's full-sweep condition, before `|| RELEASE`. */
+const FULL: Record<string, string> = {
+  'test.yml': "github.event_name != 'pull_request'",
+  // DOR-5130: the full browser suite runs on main after merge, not in the queue.
+  'browser-test.yml': "(github.event_name != 'pull_request' && github.event_name != 'merge_group')",
+};
 const MAPPED =
   "EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}";
 
@@ -44,16 +53,14 @@ describe.each(['test.yml', 'browser-test.yml'])(
         (l) => /^\s*if:/.test(l) && l.includes("github.event_name != 'pull_request'")
       );
       expect(full.length).toBeGreaterThan(0);
-      for (const line of full)
-        expect(line).toContain(`github.event_name != 'pull_request' || ${RELEASE}`);
+      for (const line of full) expect(line).toContain(`${FULL[file]} || ${RELEASE}`);
     });
 
     it('every scoped pull-request condition excludes a pull request into release/', () => {
+      // A pull request as one conjunct of a condition is a scoped PR leg; a
+      // condition that only ORs pull_request with merge_group is not.
       const scoped = lines.filter(
-        (l) =>
-          /^\s*if:/.test(l) &&
-          l.includes("github.event_name == 'pull_request'") &&
-          !l.includes("github.event_name == 'merge_group'")
+        (l) => /^\s*if:/.test(l) && l.includes("github.event_name == 'pull_request' &&")
       );
       expect(scoped.length).toBeGreaterThan(0);
       for (const line of scoped)
