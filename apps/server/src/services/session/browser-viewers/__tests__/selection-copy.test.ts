@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { readViewerSelection } from '../selection-copy.js';
+import { readViewerSelection, selectionExpression } from '../selection-copy.js';
 import { runInNewContext } from 'node:vm';
 
 // Protocol unit tests; assertPersonControl must be wired to the real reviewed broker.
 function fixture() {
-  const readFixedExpression = vi.fn(async (_params: Record<string, unknown>): Promise<unknown> => ({
+  const readFixedExpression = vi.fn(async (_contextId: number): Promise<unknown> => ({
     result: { value: { text: 'MADE_UP_SELECTION_CANARY', password: false } },
   }));
   const assertPersonControl = vi.fn(() => undefined);
@@ -40,10 +40,10 @@ describe('person-only selection copy (P1/P5)', () => {
       getSelection: () => 'PASSWORD_CANARY',
       activeElement: { type: 'text', value: 'PASSWORD_CANARY' },
     };
-    const readFixedExpression = vi.fn(async (params: Record<string, unknown>) => {
+    const readFixedExpression = vi.fn(async (contextId: number) => {
       const value =
-        params.contextId === 73
-          ? runInNewContext(String(params.expression), {
+        contextId === 73
+          ? runInNewContext(selectionExpression, {
               Document: UtilityDocument,
               document: new UtilityDocument(),
               Window: UtilityWindow,
@@ -60,7 +60,7 @@ describe('person-only selection copy (P1/P5)', () => {
     await expect(
       readViewerSelection({ contextId: 73, readFixedExpression, assertPersonControl() {} })
     ).rejects.toThrow('viewer_denied');
-    expect(readFixedExpression).toHaveBeenCalledWith(expect.objectContaining({ contextId: 73 }));
+    expect(readFixedExpression).toHaveBeenCalledWith(73);
   });
 
   it('cuts multi-byte text inside the isolated realm before transfer', async () => {
@@ -73,8 +73,8 @@ describe('person-only selection copy (P1/P5)', () => {
       }
     }
     let transferred = '';
-    const readFixedExpression = vi.fn(async (params: Record<string, unknown>) => {
-      const value = runInNewContext(String(params.expression), {
+    const readFixedExpression = vi.fn(async (_contextId: number) => {
+      const value = runInNewContext(selectionExpression, {
         Document: UtilityDocument,
         document: new UtilityDocument(),
         Window: UtilityWindow,
@@ -110,12 +110,8 @@ describe('person-only selection copy (P1/P5)', () => {
     const f = fixture();
     expect(await readViewerSelection(f)).toBe('MADE_UP_SELECTION_CANARY');
     expect(f.readFixedExpression).toHaveBeenCalledTimes(1);
-    const params = f.readFixedExpression.mock.calls[0]?.[0] as {
-      expression: string;
-      returnByValue: boolean;
-    };
-    expect(params.returnByValue).toBe(true);
-    expect(params.expression).not.toContain('MADE_UP_SELECTION_CANARY');
+    expect(f.readFixedExpression).toHaveBeenCalledExactlyOnceWith(1);
+    expect(selectionExpression).not.toContain('MADE_UP_SELECTION_CANARY');
     expect(f.assertPersonControl).toHaveBeenCalledTimes(2);
   });
 

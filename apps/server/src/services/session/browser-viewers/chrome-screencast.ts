@@ -1,21 +1,32 @@
 import type { BrowserViewerPageHandle } from '../local-browser/leases/broker-contract.js';
 import { BrowserViewerError, VIEWER_LIMITS, type ViewerFrame } from './viewer-contract.js';
 import { jpegSize } from './jpeg-size.js';
+import { viewerViewportSchema } from '@dorkos/shared/browser-viewer-control';
 import { responseDeadline } from '../local-browser/lifecycle.js';
+
+let viewportSerial = 0;
 
 /** Consume only the broker's typed screencast port; never acquire a Page or CDP target. */
 export async function startChromeScreencast(
   handle: BrowserViewerPageHandle,
   receive: (frame: ViewerFrame) => void
 ): Promise<() => Promise<void>> {
+  const facts = handle.facts();
   const stream = await handle.openScreencast();
   let closed = false;
   let stopping: Promise<void> | undefined;
   let sequence = 0;
   let lastSent = -Infinity;
-  const generation = handle.facts().navigationGeneration + 1;
+  let viewportKey = '';
+  let viewportGeneration = 0;
   const off = stream.onFrame((event) => {
     if (closed) return;
+    const current = handle.facts();
+    if (
+      current.navigationGeneration !== facts.navigationGeneration ||
+      current.controlEpoch !== facts.controlEpoch
+    )
+      return;
     // Protocol ACKs never wait for an HTTP paint receipt.
     void stream.acknowledge(event.sessionId).catch(() => void stop());
     if (
@@ -38,8 +49,36 @@ export async function startChromeScreencast(
       size.height > VIEWER_LIMITS.height
     )
       return;
+    const m = event.metadata;
+    if (!m || typeof m !== 'object') return;
+    const transform = viewerViewportSchema.safeParse({
+      generation: 1,
+      width: m.deviceWidth / m.pageScaleFactor,
+      height: (m.deviceHeight - m.offsetTop) / m.pageScaleFactor,
+      offsetTop: m.offsetTop,
+      scale: m.pageScaleFactor,
+    });
+    if (!transform.success) return;
+    const key = JSON.stringify([
+      size.width,
+      size.height,
+      ...Object.values(transform.data).slice(1),
+    ]);
+    if (key !== viewportKey) {
+      viewportKey = key;
+      viewportGeneration = ++viewportSerial;
+    }
     lastSent = now;
-    receive({ ...size, bytes, generation, sequence: ++sequence });
+    const viewport = { ...transform.data, generation: viewportGeneration };
+    receive({
+      ...size,
+      bytes,
+      generation: viewportGeneration,
+      viewport,
+      navigationGeneration: facts.navigationGeneration,
+      controlEpoch: facts.controlEpoch,
+      sequence: ++sequence,
+    });
   });
   const stop = (): Promise<void> => {
     if (stopping) return stopping;

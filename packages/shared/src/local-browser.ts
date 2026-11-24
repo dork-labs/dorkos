@@ -137,6 +137,8 @@ export interface LocalBrowserState {
 }
 /** What a person's controls see: the browser plus its handoff and sign-in. Never sent to an agent. */
 export interface LocalBrowserPersonState extends LocalBrowserState {
+  /** Only the proven viewer requesting this person address snapshot receives its paint-pairing receipt. */
+  viewerAddress?: { receipt: string; navigationGeneration: number };
   handoff: LocalBrowserHandoff | null;
   signIn: LocalBrowserSignIn | null;
   /**
@@ -161,6 +163,7 @@ export interface LocalBrowserObservation {
 export interface LocalBrowserCapabilities {
   /** Whether the owner-only local watch stream is enabled at server boot. */
   watchStream?: boolean;
+  watchInput?: boolean;
   platform: string;
   managedChromiumVersion: string;
   unavailableReasons: Partial<Record<LocalBrowserMode, string>>;
@@ -287,6 +290,13 @@ export const LocalBrowserAskPersonSchema = z
 
 /** The person's view of the browser; see {@link LocalBrowserPersonState}. */
 export const LocalBrowserPersonStateSchema = LocalBrowserStateSchema.extend({
+  viewerAddress: z
+    .object({
+      receipt: z.string().regex(/^[\w-]{43}$/),
+      navigationGeneration: z.number().int().nonnegative(),
+    })
+    .strict()
+    .optional(),
   handoff: LocalBrowserHandoffSchema.nullable(),
   signIn: LocalBrowserSignInSchema.nullable(),
   takenOver: z.boolean(),
@@ -325,6 +335,7 @@ export const LocalBrowserObservationSchema = z.object({
 export const LocalBrowserCapabilitiesSchema = z.object({
   /** Local owner-only viewing is opt-in at server boot; older servers omit this hint. */
   watchStream: z.boolean().optional(),
+  watchInput: z.boolean().optional(),
   platform: z.string().min(1),
   managedChromiumVersion: z.string(),
   unavailableReasons: z.object({

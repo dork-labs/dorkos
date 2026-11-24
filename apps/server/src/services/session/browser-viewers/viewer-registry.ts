@@ -1,3 +1,12 @@
+import type { LocalBrowserPersonState } from '@dorkos/shared/local-browser';
+import {
+  viewerViewportSchema,
+  type BrowserViewerMetadata,
+  type BrowserViewerPaint,
+  type BrowserViewerViewport,
+} from '@dorkos/shared/browser-viewer-control';
+import { ViewerControls } from './viewer-controls.js';
+import { ViewerControlQueue } from './control-queue.js';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { registerLiveConnection } from '../../core/auth/sessions/live-connections.js';
 import {
@@ -12,6 +21,8 @@ import {
 } from './viewer-contract.js';
 
 interface Producer {
+  queue: ViewerControlQueue;
+  latest?: ViewerFrame;
   key: string;
   closing: boolean;
   page: ViewerPage;
@@ -27,6 +38,11 @@ interface Viewer {
   principal: ViewerPrincipal;
   page: ViewerPage;
   cleanup?: Promise<void>;
+  controls: ViewerControls;
+  offChange: () => void;
+  address?: { receipt: string; navigation: number };
+  delivered?: DeliveredViewerFrame;
+  painted?: Pick<ViewerFrame, 'navigationGeneration' | 'controlEpoch' | 'viewport'>;
   producer: Producer;
   expiresAt: number;
   idle: ReturnType<typeof setTimeout>;
@@ -81,7 +97,11 @@ export class BrowserViewerRegistry {
     VIEWER_LIMITS.installBytesPerSecond
   );
 
-  constructor(private readonly resolve: ResolveViewerPage) {}
+  private readonly uploads = new Map<string, number>();
+  constructor(
+    private readonly resolve: ResolveViewerPage,
+    private readonly inputEnabled: () => boolean = () => false
+  ) {}
 
   /** Subscribe only to the server's existing page for this chat. */
   async subscribe(
@@ -91,6 +111,7 @@ export class BrowserViewerRegistry {
     viewerId: string;
     nonce: string;
     binding: ViewerPageIdentity;
+    metadata: BrowserViewerMetadata;
   }> {
     if (this.closed) throw new BrowserViewerError('viewer_unavailable');
     const id = opaque();
@@ -118,6 +139,7 @@ export class BrowserViewerRegistry {
     }
     if (!producer) {
       const owned: Producer = {
+        queue: new ViewerControlQueue(),
         key,
         closing: false,
         page,
@@ -133,8 +155,9 @@ export class BrowserViewerRegistry {
       page.signal.addEventListener('abort', owned.revoke, { once: true });
       // Registration precedes the await, so simultaneous subscribers share one producer.
     }
-    const viewer: Viewer = {
+    const viewer = {
       id,
+      offChange: () => undefined,
       nonce: opaque(),
       principal: { ...principal },
       page,
@@ -143,7 +166,24 @@ export class BrowserViewerRegistry {
       idle: setTimeout(() => void this.remove(viewer), VIEWER_LIMITS.idleMs),
       busy: false,
       budget: new ByteBudget(VIEWER_LIMITS.viewerBytesPerSecond, VIEWER_LIMITS.viewerBurstBytes),
-    };
+    } as Viewer;
+    viewer.controls = new ViewerControls({
+      page,
+      queue: producer.queue,
+      owner: principal.ownerId,
+      uploads: this.uploads,
+      enabled: this.inputEnabled,
+      admit: () => this.assertLive(principal, id, viewer.nonce),
+      wake: () => viewer.wake?.(),
+      viewport: () => this.viewport(viewer),
+    });
+    viewer.offChange = page.onChange(() => {
+      // Navigation/control changes clear old image/address authority before the next await.
+      const facts = page.facts();
+      if (viewer.address?.navigation !== facts.navigationGeneration) viewer.address = undefined;
+      if (viewer.pending && !matchesFacts(viewer.pending, facts)) viewer.pending = undefined;
+      viewer.wake?.();
+    });
     viewer.idle.unref?.();
     this.viewers.set(id, viewer);
     producer.viewers.add(viewer);
@@ -158,7 +198,12 @@ export class BrowserViewerRegistry {
       await producer.stop;
       if (page.signal.aborted) throw new BrowserViewerError('viewer_unavailable');
       await this.current(viewer);
-      return { viewerId: id, nonce: viewer.nonce, binding: { ...page.identity } };
+      return {
+        viewerId: id,
+        nonce: viewer.nonce,
+        binding: { ...page.identity },
+        metadata: this.metadata(principal, id, viewer.nonce),
+      };
     } catch {
       await this.remove(viewer);
       throw new BrowserViewerError('viewer_unavailable');
@@ -171,7 +216,8 @@ export class BrowserViewerRegistry {
     id: string,
     nonce: string,
     receipt?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    paint?: BrowserViewerPaint
   ): Promise<DeliveredViewerFrame | null> {
     const viewer = this.find(principal, id, nonce);
     if (viewer.busy) throw new BrowserViewerError('viewer_busy');
@@ -179,7 +225,30 @@ export class BrowserViewerRegistry {
     viewer.busy = true;
     try {
       await this.current(viewer);
+      if (receipt && viewer.delivered) {
+        const { navigationGeneration, controlEpoch, viewport } = viewer.delivered;
+        viewer.painted = { navigationGeneration, controlEpoch, viewport };
+      }
+      const painted = viewer.painted;
+      if (
+        paint &&
+        painted &&
+        viewer.address &&
+        viewer.address.receipt === paint.addressReceipt &&
+        painted.viewport.generation === paint.viewportGeneration &&
+        this.viewport(viewer)?.generation === paint.viewportGeneration &&
+        matchesFacts(painted, viewer.page.facts()) &&
+        viewer.address.navigation === painted.navigationGeneration
+      ) {
+        viewer.controls.paint({
+          navigationGeneration: painted.navigationGeneration,
+          addressGeneration: viewer.address.navigation,
+          viewportGeneration: paint.viewportGeneration,
+          controlEpoch: painted.controlEpoch,
+        });
+      }
       viewer.receipt = undefined;
+      viewer.delivered = undefined;
       this.touch(viewer);
       if (!viewer.pending) await this.wait(viewer, signal);
       await this.current(viewer);
@@ -194,10 +263,86 @@ export class BrowserViewerRegistry {
       viewer.budget.spend(bytes);
       this.budget.spend(bytes);
       viewer.receipt = opaque();
-      return { ...frame, receipt: viewer.receipt };
+      viewer.delivered = { ...frame, receipt: viewer.receipt };
+      return viewer.delivered;
     } finally {
       viewer.busy = false;
     }
+  }
+
+  /** Bounded URL-free metadata accompanies subscription, JPEG and idle replies. */
+  metadata(principal: ViewerPrincipal, id: string, nonce: string): BrowserViewerMetadata {
+    this.assertLive(principal, id, nonce);
+    const viewer = this.find(principal, id, nonce);
+    if (!this.inputEnabled()) viewer.controls.disable();
+    return {
+      ...viewer.page.facts(),
+      viewport: this.viewport(viewer),
+      ...viewer.controls.snapshot(),
+    };
+  }
+  control(principal: ViewerPrincipal, id: string, nonce: string): ViewerControls {
+    this.assertLive(principal, id, nonce);
+    const viewer = this.find(principal, id, nonce);
+    if (!this.inputEnabled()) {
+      viewer.controls.disable();
+      throw new BrowserViewerError('viewer_denied');
+    }
+    this.touch(viewer);
+    return viewer.controls;
+  }
+  disableInput(): void {
+    for (const viewer of this.viewers.values()) viewer.controls.disable();
+  }
+  /** Final synchronous image fence after awaited live-session admission. */
+  deliveryCurrent(
+    principal: ViewerPrincipal,
+    id: string,
+    nonce: string,
+    frame: DeliveredViewerFrame
+  ): boolean {
+    this.assertLive(principal, id, nonce);
+    const viewer = this.find(principal, id, nonce);
+    if (
+      matchesFacts(frame, viewer.page.facts()) &&
+      this.viewport(viewer)?.generation === frame.viewport.generation
+    )
+      return true;
+    if (viewer.delivered?.receipt === frame.receipt) {
+      viewer.receipt = undefined;
+      viewer.delivered = undefined;
+    }
+    return false;
+  }
+  /** Stamp the existing person URL response only across an unchanged captured Page generation. */
+  async address(
+    principal: ViewerPrincipal,
+    id: string,
+    nonce: string,
+    chatId: string | null,
+    read: () => Promise<LocalBrowserPersonState>
+  ): Promise<LocalBrowserPersonState> {
+    const viewer = this.find(principal, id, nonce);
+    if (viewer.page.identity.chatId !== chatId) throw new BrowserViewerError('viewer_denied');
+    const generation = viewer.page.facts().navigationGeneration;
+    await this.current(viewer);
+    const state = await read();
+    await this.current(viewer);
+    if (
+      viewer.page.facts().navigationGeneration !== generation ||
+      state.connectionId !== viewer.page.identity.connectionId ||
+      state.selectedTabId !== viewer.page.identity.tabId ||
+      state.sessionId !== chatId ||
+      state.status !== 'connected'
+    )
+      return state;
+    const receipt = opaque();
+    viewer.address = { receipt, navigation: generation };
+    return { ...state, viewerAddress: { receipt, navigationGeneration: generation } };
+  }
+  private viewport(viewer: Viewer): BrowserViewerViewport | null {
+    const frame = viewer.producer.latest;
+    return frame && matchesFacts(frame, viewer.page.facts()) ? frame.viewport : null;
   }
 
   /** No await may separate this fence from the response's construction. */
@@ -270,6 +415,12 @@ export class BrowserViewerRegistry {
       frame.sequence <= producer.sequence ||
       !Number.isSafeInteger(frame.generation) ||
       frame.generation < 1 ||
+      !Number.isSafeInteger(frame.navigationGeneration) ||
+      frame.navigationGeneration < 0 ||
+      !Number.isSafeInteger(frame.controlEpoch) ||
+      frame.controlEpoch < 0 ||
+      !viewerViewportSchema.safeParse(frame.viewport).success ||
+      frame.generation !== frame.viewport.generation ||
       !Buffer.isBuffer(frame.bytes) ||
       frame.bytes.length === 0 ||
       frame.bytes.length > VIEWER_LIMITS.frameBytes ||
@@ -282,6 +433,7 @@ export class BrowserViewerRegistry {
     )
       return;
     producer.sequence = frame.sequence;
+    producer.latest = frame;
     for (const viewer of producer.viewers) {
       viewer.pending = frame;
       viewer.wake?.();
@@ -308,6 +460,11 @@ export class BrowserViewerRegistry {
     if (viewer.cleanup) return viewer.cleanup;
     if (!this.viewers.delete(viewer.id)) return Promise.resolve();
     clearTimeout(viewer.idle);
+    viewer.offChange();
+    viewer.controls.disable(false);
+    viewer.address = undefined;
+    viewer.delivered = undefined;
+    viewer.painted = undefined;
     viewer.unregisterSession?.();
     viewer.unregisterSession = undefined;
     viewer.pending = undefined;
@@ -355,4 +512,14 @@ function bindingKey(page: ViewerPage): string {
     b.leaseId,
     b.tabId,
   ]);
+}
+
+function matchesFacts(
+  frame: Pick<ViewerFrame, 'navigationGeneration' | 'controlEpoch'>,
+  facts: { navigationGeneration: number; controlEpoch: number }
+): boolean {
+  return (
+    frame.navigationGeneration === facts.navigationGeneration &&
+    frame.controlEpoch === facts.controlEpoch
+  );
 }

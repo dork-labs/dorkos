@@ -1,5 +1,5 @@
-// This expression is constant. It executes only in a broker-created isolated world.
-const selectionExpression = `(() => {
+/** Fixed selection read, executed only in the person broker’s isolated world. */
+export const selectionExpression = `(() => {
   const active = Object.getOwnPropertyDescriptor(Document.prototype, 'activeElement').get.call(document);
   let text;
   if (!active || active instanceof HTMLIFrameElement || active.shadowRoot) return { password: null };
@@ -24,18 +24,12 @@ const selectionExpression = `(() => {
 /** No agent observation API or cache participates in this person-only read. */
 export async function readViewerSelection(port: {
   contextId: number;
-  readFixedExpression(params: Record<string, unknown>): Promise<unknown>;
+  readFixedExpression(contextId: number): Promise<unknown>;
   assertPersonControl(): void;
 }): Promise<string> {
   port.assertPersonControl();
   if (!Number.isSafeInteger(port.contextId) || port.contextId <= 0) throw Error('viewer_denied');
-  const result = (await port.readFixedExpression({
-    expression: selectionExpression,
-    contextId: port.contextId,
-    returnByValue: true,
-    awaitPromise: false,
-    disableBreaks: true,
-  })) as {
+  const result = (await port.readFixedExpression(port.contextId)) as {
     result?: { value?: { text?: unknown; password?: unknown } };
     exceptionDetails?: unknown;
   };

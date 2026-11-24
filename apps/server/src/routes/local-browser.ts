@@ -1,4 +1,8 @@
 /** Human browser setup and controls. Agent actions travel through the capability gate. */
+import type { BrowserViewerRegistry } from '../services/session/browser-viewers/viewer-registry.js';
+import { BrowserViewerError } from '../services/session/browser-viewers/viewer-contract.js';
+import { viewerSecretSchema } from '@dorkos/shared/browser-viewer-control';
+import { browserViewerPrincipal } from '../services/session/browser-viewers/viewer-person.js';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 import {
@@ -16,6 +20,7 @@ import {
   LocalBrowserError,
   type LocalBrowserService,
 } from '../services/session/local-browser/service.js';
+import { decideSessionGate } from '../services/core/auth/session-gate.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { mountLocalBrowserProfileRemoval } from './local-browser-profile-removal.js';
 import {
@@ -33,7 +38,8 @@ const personOnly: MiddlewareHandler<ApiEnv> = async (c, next) => {
 /** Mount owner-only human controls under /api/local-browser. */
 export function createLocalBrowserRoutes(
   service: LocalBrowserService,
-  profiles?: LocalBrowserProfileRouteDeps
+  profiles?: LocalBrowserProfileRouteDeps,
+  viewers?: BrowserViewerRegistry
 ): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
   router.use('*', async (c, next) => {
@@ -51,6 +57,8 @@ export function createLocalBrowserRoutes(
     return next();
   });
   router.onError((error, c) => {
+    if (error instanceof BrowserViewerError)
+      return c.json({ code: 'viewer_denied', error: 'Open the browser view again.' }, 403);
     if (error instanceof LocalBrowserError)
       return c.json({ error: error.message, code: error.code }, 409);
     if (error instanceof z.ZodError)
@@ -65,7 +73,36 @@ export function createLocalBrowserRoutes(
   const selected = (c: Context<ApiEnv>) => service.personSession(selector(c)).handover;
   router.get('/handoff/state', async (c) => c.json(await service.handover.state()));
   router.get('/capabilities', (c) => c.json(service.capabilities()));
-  router.get('/state', async (c) => c.json(await service.personState(selector(c))));
+  router.get('/state', async (c) => {
+    const id = c.req.header('x-viewer-id'),
+      nonce = c.req.header('x-viewer-nonce');
+    if (!id && !nonce) return c.json(await service.personState(selector(c)));
+    const facts = honoRequestFacts(c);
+    const person = browserViewerPrincipal(facts, requirePersonAtThisComputer(facts) === undefined);
+    if (
+      !viewers ||
+      !person ||
+      !viewerSecretSchema.safeParse(id).success ||
+      !viewerSecretSchema.safeParse(nonce).success ||
+      !id ||
+      !nonce
+    )
+      return c.json({ code: 'viewer_denied', error: 'Open the browser view again.' }, 403);
+    const selected = selector(c);
+    const state = await viewers.address(person, id, nonce, selected, () =>
+      service.personState(selected)
+    );
+    const decision = await decideSessionGate('GET', c.req.path, honoRequestFacts(c));
+    if (!decision.allowed) throw new BrowserViewerError('viewer_denied');
+    const fresh = { ...honoRequestFacts(c), user: decision.user };
+    const still =
+      decision.allowed &&
+      browserViewerPrincipal(fresh, requirePersonAtThisComputer(fresh) === undefined);
+    if (!still || still.ownerId !== person.ownerId || still.sessionId !== person.sessionId)
+      throw new BrowserViewerError('viewer_denied');
+    viewers.assertLive(person, id, nonce);
+    return c.json(state);
+  });
   // Opening and resuming end a handoff and lift a Stop task, so they take a person too.
   router.post('/open', personOnly, async (c) =>
     c.json(await service.handover.open(LocalBrowserOpenSchema.parse(readJsonBody(c))))

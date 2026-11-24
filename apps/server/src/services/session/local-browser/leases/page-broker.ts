@@ -1,3 +1,4 @@
+import { schemefulSiteKey } from '@dorkos/shared/site-name';
 import type { BrowserPageCustody } from './page-custody.js';
 import type { BrowserBrokerSource } from './broker-source.js';
 import type {
@@ -28,6 +29,8 @@ export class BrowserPageBroker {
   ): Promise<BrowserViewerPageHandle> {
     const source = this.resolve(sessionId);
     assertSource(source);
+    const committed = source.committed();
+    const site = schemefulSiteKey(committed.url);
     await source.authorize();
     assertSource(source);
     let closed = false;
@@ -37,15 +40,23 @@ export class BrowserPageBroker {
     const admit = () => {
       if (!current()) throw stale();
     };
+    const watch = () => {
+      admit();
+      source.assertWatchAllowed();
+      const now = source.committed();
+      // Retaining a stream is confined to its originally captured schemeful site.
+      if (
+        now.generation !== committed.generation &&
+        (site === null || schemefulSiteKey(now.url) !== site)
+      )
+        throw stale();
+    };
     const viewer: BrowserViewerPageHandle = Object.freeze({
       binding: source.binding,
       identity: Object.freeze({ ...identity }),
       isCurrent: current,
       assertCurrent: admit,
-      assertWatchAllowed: () => {
-        admit();
-        source.assertWatchAllowed();
-      },
+      assertWatchAllowed: watch,
       facts() {
         admit();
         return source.facts();
@@ -90,10 +101,7 @@ export class BrowserPageBroker {
         admit();
         await source.authorize();
         admit();
-        const stream = await openPageScreencast(source, () => {
-          admit();
-          source.assertWatchAllowed();
-        });
+        const stream = await openPageScreencast(source, watch);
         try {
           admit();
         } catch (error) {

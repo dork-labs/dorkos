@@ -1,4 +1,11 @@
 import type {
+  BrowserViewerInput,
+  BrowserViewerMetadata,
+  BrowserViewerOperation,
+  BrowserViewerOutcome,
+  BrowserViewerPaint,
+} from './browser-viewer-control.js';
+import type {
   LocalBrowserCapabilities,
   LocalBrowserHistoryDirection,
   LocalBrowserOpen,
@@ -10,6 +17,7 @@ import type {
 
 /** One volatile subscription, usable only beside its original authenticated app session. */
 export interface BrowserViewerSubscription {
+  metadata: BrowserViewerMetadata;
   viewerId: string;
   nonce: string;
   binding: { chatId: string; profileId: string | null; connectionId: string; tabId: string };
@@ -24,9 +32,15 @@ export interface BrowserViewerFrame {
   byteLength: number;
   receipt: string;
   bytes: Uint8Array;
+  view: BrowserViewerMetadata;
 }
 
-/** Person-only viewing; this port has no page input or browser acquisition. */
+export interface BrowserViewerControlResult {
+  metadata: BrowserViewerMetadata;
+  outcome?: BrowserViewerOutcome;
+  text?: string;
+}
+/** Finite person-only inputs; no browser acquisition or arbitrary document reads. */
 export interface BrowserViewerTransport {
   /** Subscribe to the server-resolved existing page for a chat. */
   subscribeBrowserViewer(chatId: string, signal?: AbortSignal): Promise<BrowserViewerSubscription>;
@@ -34,8 +48,49 @@ export interface BrowserViewerTransport {
   nextBrowserViewerFrame(
     viewer: BrowserViewerSubscription,
     receipt?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    paint?: BrowserViewerPaint
   ): Promise<BrowserViewerFrame | null>;
+  takeBrowserViewerControl(
+    viewer: BrowserViewerSubscription,
+    signal?: AbortSignal
+  ): Promise<BrowserViewerControlResult>;
+  sendBrowserViewerInput(
+    viewer: BrowserViewerSubscription,
+    operation: BrowserViewerOperation,
+    input: BrowserViewerInput,
+    signal?: AbortSignal
+  ): Promise<BrowserViewerControlResult>;
+  endBrowserViewerControl(
+    viewer: BrowserViewerSubscription,
+    controllerId: string,
+    controlEpoch: number,
+    action: 'resume' | 'abandon'
+  ): Promise<BrowserViewerControlResult>;
+  copyBrowserViewerSelection(
+    viewer: BrowserViewerSubscription,
+    operation: BrowserViewerOperation,
+    signal?: AbortSignal
+  ): Promise<BrowserViewerControlResult>;
+  pasteBrowserViewerText(
+    viewer: BrowserViewerSubscription,
+    operation: BrowserViewerOperation,
+    text: string,
+    signal?: AbortSignal
+  ): Promise<BrowserViewerControlResult>;
+  uploadBrowserViewerFiles(
+    viewer: BrowserViewerSubscription,
+    operation: BrowserViewerOperation,
+    ticketId: string,
+    files: readonly File[],
+    signal?: AbortSignal
+  ): Promise<BrowserViewerControlResult>;
+  cancelBrowserViewerFiles(
+    viewer: BrowserViewerSubscription,
+    controllerId: string,
+    controlEpoch: number,
+    ticketId: string
+  ): Promise<BrowserViewerControlResult>;
   /** Release only this subscription, without closing its browser page. */
   closeBrowserViewer(viewer: BrowserViewerSubscription): Promise<void>;
 }
@@ -44,7 +99,10 @@ export interface BrowserViewerTransport {
 export interface LocalBrowserTransport extends BrowserViewerTransport {
   /** Scan profile metadata only after a person taps Find my browsers. Never cache the response. */
   scanYourBrowsers(): Promise<import('./your-browser.js').YourBrowserScan>;
-  getLocalBrowserState(sessionId?: string | null): Promise<LocalBrowserPersonState>;
+  getLocalBrowserState(
+    sessionId?: string | null,
+    viewer?: BrowserViewerSubscription
+  ): Promise<LocalBrowserPersonState>;
   /** The install’s current handoff card, independent of the selected page. */
   getLocalBrowserHandoffState(): Promise<LocalBrowserPersonState>;
   getLocalBrowserCapabilities(): Promise<LocalBrowserCapabilities>;
