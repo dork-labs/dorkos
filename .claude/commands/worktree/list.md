@@ -20,7 +20,7 @@ This gives each worktree's path, HEAD, and checked-out branch.
 
 ### Step 2: Read Port Assignments
 
-Ports live in each worktree's `.env` (`DORKOS_PORT` = Express, `VITE_PORT` = Vite), written at creation by `.claude/scripts/worktree-setup.sh`. You cannot read `.env` files directly (the file-guard hook denies them), and recomputing the hash would lie when the setup script has probed past a collision. Use the helper, which extracts only the two port values:
+Ports live in each worktree's `.env` (`DORKOS_PORT` = the API server, `VITE_PORT` = Vite), written at creation by `.claude/scripts/worktree-setup.sh`. You cannot read `.env` files directly (the file-guard hook denies them), and recomputing the hash would lie when the setup script has probed past a collision. Use the helper, which extracts only the two port values:
 
 ```bash
 .claude/scripts/worktree-ports.sh

@@ -1,6 +1,6 @@
 ---
 description: Inspect database and state files to debug data issues
-argument-hint: '[table-or-query] [--relay] [--pulse] [--mesh]'
+argument-hint: '[table-or-query] [--relay] [--tasks] [--mesh]'
 allowed-tools: Read, Grep, Glob, Bash, TodoWrite, AskUserQuestion
 ---
 
@@ -11,7 +11,7 @@ Inspect and verify database state and subsystem data files directly. Use this co
 - View SQLite database tables and data
 - Inspect relay state files (adapters, bindings, sessions, mailboxes)
 - Debug "data not showing" issues
-- Verify pulse schedule and run state
+- Verify task schedule and run state (tables keep the `pulse_` prefix)
 - Check mesh agent registry
 
 ## Data Architecture
@@ -47,7 +47,7 @@ Parse `$ARGUMENTS`:
 - If a table name is provided, query that SQLite table
 - If a SQL query is provided, execute it
 - If `--relay` flag, inspect relay state files
-- If `--pulse` flag, inspect pulse schedules and runs
+- If `--tasks` flag, inspect task schedules and runs (`pulse_schedules`, `pulse_runs`)
 - If `--mesh` flag, inspect mesh agent registry
 - If empty, show overview and prompt for action
 
@@ -79,7 +79,7 @@ AskUserQuestion:
   header: "Action"
   options:
     - label: "SQLite database"
-      description: "Query pulse, relay, or mesh tables in dork.db"
+      description: "Query task, relay, or mesh tables in dork.db"
     - label: "Relay state files"
       description: "Inspect adapters, bindings, sessions, mailboxes"
     - label: "Server configuration"
@@ -109,7 +109,7 @@ The consolidated database (`dork.db`) contains these tables:
 DORK_HOME="apps/server/.temp/.dork"
 DB="$DORK_HOME/dork.db"
 
-# --- Pulse ---
+# --- Tasks (tables keep the pulse_ prefix) ---
 
 # List all schedules
 sqlite3 -header -column "$DB" "SELECT id, name, cron, status, enabled FROM pulse_schedules;"
@@ -254,7 +254,7 @@ there is no `subscriptions.json`. Inspect live subscriptions via the API.
    SELECT * FROM pulse_runs WHERE schedule_id = 'SCHEDULE_ID' ORDER BY started_at DESC LIMIT 5;
    ```
 
-3. Check server config has pulse enabled:
+3. Check the server config for the task scheduler:
    ```bash
    cat "$DORK_HOME/config.json" | python3 -c "import sys, json; print(json.load(sys.stdin).get('scheduler', {}))"
    ```
@@ -328,7 +328,7 @@ sqlite3 -csv -header "$DB" "SELECT * FROM pulse_runs;" > runs.csv
 | File                      | Format       | Purpose                                                |
 | ------------------------- | ------------ | ------------------------------------------------------ |
 | `config.json`             | JSON         | Server configuration (port, features, tunnel, logging) |
-| `dork.db`                 | SQLite (WAL) | Pulse schedules/runs, relay index/traces, mesh agents  |
+| `dork.db`                 | SQLite (WAL) | Task schedules/runs, relay index/traces, mesh agents   |
 | `relay/adapters.json`     | JSON         | Adapter type, config (tokens masked), enabled state    |
 | `relay/bindings.json`     | JSON         | Adapter-to-agent routing with session strategy         |
 | `relay/sessions.json`     | JSON         | Active session ID mappings for binding-router          |
