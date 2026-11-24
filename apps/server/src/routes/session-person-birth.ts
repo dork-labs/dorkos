@@ -147,7 +147,9 @@ export async function preparePersonChat(
       // A fixed sentence: the boundary's own message can name the path.
       const body =
         error.code === 'NULL_BYTE'
-          ? problemBody('invalid_request', { detail: 'That path has a character paths can’t hold.' })
+          ? problemBody('invalid_request', {
+              detail: 'That path has a character paths can’t hold.',
+            })
           : problemBody('outside_boundary', {
               detail: 'Pick a folder inside the ones DorkOS may use.',
             });
