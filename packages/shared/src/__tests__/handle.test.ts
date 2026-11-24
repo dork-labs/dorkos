@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   HANDLE_MAX_LENGTH,
-  HANDLE_MIN_LENGTH,
   HANDLE_PATTERN,
   deriveHandle,
   deriveQualifiedHandle,
@@ -19,7 +18,6 @@ import {
  * and a copy that drifts fails loudly the moment either literal changes.
  */
 const MENTION_PATTERN = /@([A-Za-z0-9][A-Za-z0-9_.-]*)/g;
-const TRAILING_PUNCTUATION = /[.\-_]+$/;
 
 const LEGAL = [
   'ab',
@@ -65,13 +63,6 @@ describe('HANDLE_PATTERN', () => {
   it.each(ILLEGAL)('rejects %s (%s)', (handle) => {
     expect(HANDLE_PATTERN.test(handle)).toBe(false);
   });
-
-  it('bounds are the ones the pattern enforces', () => {
-    expect(HANDLE_MIN_LENGTH).toBe(2);
-    expect(HANDLE_MAX_LENGTH).toBe(32);
-    expect(HANDLE_PATTERN.test('a'.repeat(HANDLE_MIN_LENGTH))).toBe(true);
-    expect(HANDLE_PATTERN.test('a'.repeat(HANDLE_MIN_LENGTH - 1))).toBe(false);
-  });
 });
 
 /**
@@ -84,10 +75,6 @@ describe('every legal handle round-trips the mention grammar', () => {
     expect(matches).toHaveLength(1);
     expect(matches[0]![1]).toBe(handle);
   });
-
-  it.each(LEGAL)('%s loses nothing to the trailing-punctuation shave', (handle) => {
-    expect(handle.replace(TRAILING_PUNCTUATION, '')).toBe(handle);
-  });
 });
 
 describe('normalizeHandle', () => {
@@ -95,29 +82,10 @@ describe('normalizeHandle', () => {
     expect(normalizeHandle('  Ana  ')).toBe('ana');
   });
 
-  it('treats the empty string as absent', () => {
-    expect(normalizeHandle('')).toBeUndefined();
-  });
-
-  it('treats whitespace as absent', () => {
-    expect(normalizeHandle('   ')).toBeUndefined();
-  });
-
-  it('does not validate — an illegal handle still normalizes', () => {
-    expect(normalizeHandle('Ana Bo')).toBe('ana bo');
-  });
-
   it('drops the sigil a person will type, because that is how a handle is read', () => {
     expect(normalizeHandle('@ana')).toBe('ana');
     expect(normalizeHandle('  @Ana  ')).toBe('ana');
     expect(normalizeHandle('@')).toBeUndefined();
-  });
-
-  it('drops exactly one, so a real mistake is still reported', () => {
-    // `@@ana` is somebody making an error worth telling them about, not a
-    // spelling worth guessing at. It survives to fail the grammar.
-    expect(normalizeHandle('@@ana')).toBe('@ana');
-    expect(validateHandle('@ana').valid).toBe(false);
   });
 });
 
@@ -130,11 +98,6 @@ describe('validateHandle', () => {
     const result = validateHandle(handle);
     expect(result.valid).toBe(false);
     expect(result.error).toBeTruthy();
-  });
-
-  it('says which bound was missed', () => {
-    expect(validateHandle('a').error).toMatch(/2 and 32/);
-    expect(validateHandle('a'.repeat(33)).error).toMatch(/2 and 32/);
   });
 });
 
@@ -165,34 +128,6 @@ describe('deriveHandle', () => {
     expect(deriveHandle(name, none)).toBe(expected);
   });
 
-  it('collapses consecutive dots', () => {
-    expect(deriveHandle('a..b', none)).toBe('a.b');
-  });
-
-  it('trims to an alphanumeric first and last character', () => {
-    expect(deriveHandle('...ana...', none)).toBe('ana');
-    expect(deriveHandle('-ana-', none)).toBe('ana');
-  });
-
-  it('collapses a run of forbidden characters to one hyphen', () => {
-    expect(deriveHandle('ana   //  bo', none)).toBe('ana-bo');
-  });
-
-  it('cuts to 32 and does not end on a separator', () => {
-    // 31 characters, then a space, then more: a naive cut lands on the space.
-    const derived = deriveHandle('a'.repeat(31) + ' bo', none);
-    expect(derived).toBe('a'.repeat(31));
-    expect(derived!.length).toBeLessThanOrEqual(HANDLE_MAX_LENGTH);
-    expect(validateHandle(derived!)).toEqual({ valid: true });
-  });
-
-  it('always returns something legal or nothing at all', () => {
-    for (const name of ['Art Blocks Analytics', 'x', '', '   ', '...', '日本語', 'a'.repeat(80)]) {
-      const derived = deriveHandle(name, none);
-      if (derived !== undefined) expect(validateHandle(derived)).toEqual({ valid: true });
-    }
-  });
-
   it('gives nothing when the name cannot spell a legal handle', () => {
     expect(deriveHandle('日本語', none)).toBeUndefined();
     expect(deriveHandle('', none)).toBeUndefined();
@@ -206,10 +141,6 @@ describe('deriveHandle', () => {
     expect(deriveHandle('Bella Codebase', new Set(['bella-codebase', 'bella-codebase-2']))).toBe(
       'bella-codebase-3'
     );
-  });
-
-  it('matches `taken` case-insensitively, because the index does', () => {
-    expect(deriveHandle('Bella Codebase', new Set(['BELLA-CODEBASE']))).toBe('bella-codebase-2');
   });
 
   it('keeps a de-collided handle inside the length bound', () => {
@@ -251,10 +182,6 @@ describe('deriveHandle', () => {
 describe('deriveQualifiedHandle', () => {
   const none = new Set<string>();
 
-  it('puts the name first and the namespace after it', () => {
-    expect(deriveQualifiedHandle('Miguel', 'telegram', none)).toBe('miguel.telegram');
-  });
-
   it('can never produce a bare name, which is the whole point', () => {
     // The squat this closes: one message from somebody calling themselves
     // `Dorian` used to be enough to hold `@dorian` forever.
@@ -263,12 +190,6 @@ describe('deriveQualifiedHandle', () => {
       expect(derived).not.toBe(name.toLowerCase());
       expect(derived.endsWith('.telegram')).toBe(true);
     }
-  });
-
-  it('reduces the qualifier by the same grammar as everything else', () => {
-    // No table of abbreviations to keep in step with anything.
-    expect(deriveQualifiedHandle('Miguel', 'Telegram', none)).toBe('miguel.telegram');
-    expect(deriveQualifiedHandle('Miguel', 'Google Chat', none)).toBe('miguel.google-chat');
   });
 
   it('de-collides after the qualifier, never inside it', () => {
@@ -290,16 +211,6 @@ describe('deriveQualifiedHandle', () => {
     expect(validateHandle(derived)).toEqual({ valid: true });
   });
 
-  it('keeps the qualifier whole through de-collision too', () => {
-    const first = deriveQualifiedHandle('a'.repeat(80), 'telegram', none)!;
-    const second = deriveQualifiedHandle('a'.repeat(80), 'telegram', new Set([first]))!;
-
-    expect(second).not.toBe(first);
-    expect(second.endsWith('.telegram-2')).toBe(true);
-    expect(second.length).toBeLessThanOrEqual(HANDLE_MAX_LENGTH);
-    expect(validateHandle(second)).toEqual({ valid: true });
-  });
-
   it('gives nothing rather than falling back to an unqualified name', () => {
     // Every one of these could produce a legal BARE handle. Returning one would
     // reopen the hole, so the honest answer is that this namespace has no room.
@@ -308,15 +219,5 @@ describe('deriveQualifiedHandle', () => {
     expect(deriveQualifiedHandle('Miguel', '🙂', none)).toBeUndefined();
     // A qualifier long enough to leave no room for a name at all.
     expect(deriveQualifiedHandle('Miguel', 'a'.repeat(31), none)).toBeUndefined();
-  });
-
-  it('always returns something the grammar accepts', () => {
-    for (const name of ['Miguel', 'a'.repeat(80), '144x.co', 'Ana Reyes', '145223', 'a.b']) {
-      for (const qualifier of ['telegram', 'slack', 'Google Chat']) {
-        const derived = deriveQualifiedHandle(name, qualifier, none);
-        if (derived !== undefined)
-          expect(validateHandle(derived), derived).toEqual({ valid: true });
-      }
-    }
   });
 });

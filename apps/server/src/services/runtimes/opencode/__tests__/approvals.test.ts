@@ -51,6 +51,36 @@ describe('PendingApprovalStore expiry marking', () => {
     expect(store.consumeExpired('s1', 'per_1')).toBe(false);
   });
 
+  it('expires a live replacement only at its own deadline', () => {
+    vi.useFakeTimers();
+    const store = new PendingApprovalStore();
+    const ceilingMs = 4 * 60 * 60 * 1000;
+    const originalTimeout = vi.fn();
+    const replacementTimeout = vi.fn();
+    store.register('s1', 'per_1', ENTRY, originalTimeout);
+
+    vi.advanceTimersByTime(ceilingMs - 1);
+    expect(originalTimeout).not.toHaveBeenCalled();
+    expect(store.consumeExpired('s1', 'per_1')).toBe(false);
+
+    store.register('s1', 'per_1', ENTRY, replacementTimeout);
+    vi.advanceTimersByTime(1);
+    expect(originalTimeout).not.toHaveBeenCalled();
+    expect(replacementTimeout).not.toHaveBeenCalled();
+    expect(store.consumeExpired('s1', 'per_1')).toBe(false);
+
+    vi.advanceTimersByTime(ceilingMs - 2);
+    expect(replacementTimeout).not.toHaveBeenCalled();
+    expect(store.consumeExpired('s1', 'per_1')).toBe(false);
+
+    vi.advanceTimersByTime(1);
+    expect(originalTimeout).not.toHaveBeenCalled();
+    expect(replacementTimeout).toHaveBeenCalledOnce();
+    expect(store.take('s1', 'per_1')).toBeNull();
+    expect(store.consumeExpired('s1', 'per_1')).toBe(true);
+    expect(store.consumeExpired('s1', 'per_1')).toBe(false);
+  });
+
   it('forgets an expiry when the same permission is asked again', () => {
     // A re-published permission is a live question again. Carrying the old mark
     // would stamp `timeout` on the echo of the person's real answer and file

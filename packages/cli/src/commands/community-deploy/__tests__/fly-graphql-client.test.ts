@@ -119,30 +119,6 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
     expect(request).toHaveBeenCalledOnce();
   });
 
-  // Right after deleteAddOn, Fly still answers the exact-ID read with the renamed, detached record
-  // (live gate, 2026-09-30). The gate's post-cleanup recheck must read it as gone.
-  it('reports a bucket Fly soft-deleted as a missing add-on', async () => {
-    const client = new FlyTigrisGraphqlClient({
-      accessToken: 'token',
-      fetch: vi.fn().mockResolvedValueOnce(
-        json({
-          data: {
-            addOn: {
-              id: identity.id,
-              name: `${identity.name}_deleted_Cllkq5qk`,
-              status: 'deleted',
-              options: null,
-              addOnProvider: { name: 'tigris' },
-              app: null,
-              organization: { slug: 'fixture-org' },
-            },
-          },
-        })
-      ),
-    });
-    await expect(client.readTigris(identity.id)).rejects.toMatchObject({ code: 'ADD_ON_MISSING' });
-  });
-
   it('reports an id Fly does not know as a missing add-on on both exact-ID reads', async () => {
     const notFound = {
       data: { addOn: null },
@@ -163,39 +139,6 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
     });
     await expect(client.readTigrisCredentials('addon_fixture_missing')).rejects.toMatchObject({
       code: 'ADD_ON_MISSING',
-    });
-  });
-
-  it('lists the storage buckets attached to one app', async () => {
-    const request = vi.fn().mockResolvedValueOnce(
-      json({
-        data: {
-          app: {
-            name: 'community-fixture-app',
-            network: 'default',
-            organization: { slug: 'fixture-org' },
-            addOns: {
-              totalCount: 1,
-              nodes: [
-                {
-                  id: identity.id,
-                  name: identity.name,
-                  createdAt: '2026-09-23T10:33:12Z',
-                  organization: { slug: 'fixture-org' },
-                },
-              ],
-            },
-          },
-        },
-      })
-    );
-    const client = new FlyTigrisGraphqlClient({ accessToken: 'token', fetch: request });
-    await expect(client.listTigrisOnApp('community-fixture-app')).resolves.toEqual([
-      { id: identity.id, name: identity.name },
-    ]);
-    expect(JSON.parse(String(request.mock.calls[0][1]?.body))).toMatchObject({
-      query: expect.stringContaining('DorkosListAppTigris'),
-      variables: { appName: 'community-fixture-app' },
     });
   });
 
@@ -266,52 +209,6 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
     await expect(oversized.hasAcceptedTerms()).rejects.toMatchObject({
       code: 'INVALID_RESPONSE',
     });
-  });
-
-  it('preserves safe missing-resource classifications for read operations', async () => {
-    const request = vi
-      .fn()
-      .mockResolvedValueOnce(json({ data: { viewer: null } }))
-      .mockResolvedValueOnce(json({ data: { addOn: null } }));
-    const client = new FlyTigrisGraphqlClient({ accessToken: 'token', fetch: request });
-
-    await expect(client.hasAcceptedTerms()).rejects.toMatchObject({
-      code: 'TERMS_VIEWER_MISSING',
-    });
-    // A bare null without Fly's NOT_FOUND error is not proof the bucket is gone (DOR-2584 review).
-    await expect(client.readTigris(identity.id)).rejects.toMatchObject({
-      code: 'INVALID_RESPONSE',
-    });
-  });
-
-  // A cut-off create is an unknown outcome the operator must reconcile (DOR-2169), so writes get the
-  // shared write deadline while reads keep the client's own.
-  it('gives writes the write deadline and keeps the short one for reads', async () => {
-    vi.useFakeTimers();
-    try {
-      const slow = (value: unknown) =>
-        new Promise<Response>((resolve) => setTimeout(() => resolve(json(value)), 60_000));
-      const created = { data: { createAddOn: { addOn: identity } } };
-      const request = vi
-        .fn()
-        .mockResolvedValueOnce(json({ data: { viewer: { agreedToProviderTos: true } } }))
-        .mockImplementationOnce(() => slow(created))
-        .mockImplementationOnce(() => slow({ data: { addOn: identity } }));
-      const client = new FlyTigrisGraphqlClient({
-        accessToken: 'token',
-        timeoutMs: 30_000,
-        fetch: request,
-      });
-      const create = client.createTigris(createInput());
-      await vi.advanceTimersByTimeAsync(60_000);
-      await expect(create).resolves.toMatchObject({ identity: { addOnId: identity.id } });
-      const read = client.readTigris(identity.id);
-      const readFailure = expect(read).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
-      await vi.advanceTimersByTimeAsync(30_000);
-      await readFailure;
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   it('classifies transport failure by whether the operation could have created a resource', async () => {

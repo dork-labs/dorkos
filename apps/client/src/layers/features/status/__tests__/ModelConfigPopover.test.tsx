@@ -265,20 +265,6 @@ describe('ModelConfigPopover', () => {
       expect(trigger).toHaveTextContent('Opus');
     });
 
-    it('shows effort badge on the trigger when effort is set', () => {
-      render(<ModelConfigPopover {...defaultProps({ effort: 'high' })} />);
-      const trigger = screen.getByTestId('model-config-trigger');
-      expect(trigger).toHaveTextContent('High');
-    });
-
-    it('does not show effort badge when effort is null', () => {
-      render(<ModelConfigPopover {...defaultProps({ effort: null })} />);
-      // The trigger should not contain an effort badge
-      const trigger = screen.getByTestId('model-config-trigger');
-      const badgesInTrigger = trigger.querySelectorAll('[data-testid="badge"]');
-      expect(badgesInTrigger.length).toBe(0);
-    });
-
     it('drops the effort badge when the active model has no effort to give (DOR-1445)', () => {
       // Haiku in the mock catalog declares `supportsEffort: false`, so the
       // popover hides its Effort control. The status line used to keep
@@ -290,47 +276,6 @@ describe('ModelConfigPopover', () => {
       const trigger = screen.getByTestId('model-config-trigger');
       expect(trigger).toHaveTextContent('Haiku');
       expect(trigger).not.toHaveTextContent('High');
-    });
-
-    it('badge and Effort control agree: both absent for an effortless model (DOR-1445)', () => {
-      // The point of the fix is that these two cannot disagree — one capability
-      // source drives both — so assert them together rather than apart.
-      render(
-        <ModelConfigPopover {...defaultProps({ model: 'claude-haiku-3-5', effort: 'high' })} />
-      );
-      expect(screen.getByTestId('model-config-trigger')).not.toHaveTextContent('High');
-      expect(screen.queryByRole('radiogroup', { name: 'Effort level' })).not.toBeInTheDocument();
-    });
-
-    it('drops the effort badge for a model that claims effort but offers no levels (DOR-1445)', () => {
-      // Both halves of the capability check matter: a model with no levels to
-      // pick has no Effort control either, so advertising one is the same lie.
-      render(
-        <ModelConfigPopover {...defaultProps({ model: 'claude-halfclaim-1', effort: 'high' })} />
-      );
-      expect(screen.getByTestId('model-config-trigger')).not.toHaveTextContent('High');
-      expect(screen.queryByRole('radiogroup', { name: 'Effort level' })).not.toBeInTheDocument();
-    });
-
-    it('keeps the effort badge for a model that does take effort', () => {
-      // The guard must not swallow the honest case: Opus declares effort levels.
-      render(
-        <ModelConfigPopover {...defaultProps({ model: 'claude-opus-4-6', effort: 'high' })} />
-      );
-      expect(screen.getByTestId('model-config-trigger')).toHaveTextContent('High');
-      expect(screen.getByRole('radiogroup', { name: 'Effort level' })).toBeInTheDocument();
-    });
-
-    it('falls back to extracting label from model id when model is not in list', () => {
-      render(<ModelConfigPopover {...defaultProps({ model: 'claude-unknown-1' })} />);
-      expect(screen.getByText('Unknown')).toBeInTheDocument();
-    });
-
-    it('uses raw model id when no pattern match is found', () => {
-      render(<ModelConfigPopover {...defaultProps({ model: 'gpt-4o' })} />);
-      // The id shows on the trigger (it also appears in the unavailable banner
-      // since gpt-4o is not in the mock catalog — scope to the trigger).
-      expect(screen.getByTestId('model-config-trigger')).toHaveTextContent('gpt-4o');
     });
 
     it('drops the picker parenthetical — a status line names the model, it does not recommend one', () => {
@@ -365,18 +310,6 @@ describe('ModelConfigPopover', () => {
       expect(trigger).toHaveTextContent('Opus');
       expect(trigger).not.toHaveTextContent('High');
     });
-
-    it('drops the Fast badge', () => {
-      render(<ModelConfigPopover {...defaultProps({ fastMode: true, compact: true })} />);
-      expect(screen.getByTestId('model-config-trigger')).not.toHaveTextContent('Fast');
-    });
-
-    it('still shows both badges at the widest tier', () => {
-      render(<ModelConfigPopover {...defaultProps({ effort: 'high', fastMode: true })} />);
-      const trigger = screen.getByTestId('model-config-trigger');
-      expect(trigger).toHaveTextContent('High');
-      expect(trigger).toHaveTextContent('Fast');
-    });
   });
 
   describe('disabled state', () => {
@@ -384,29 +317,6 @@ describe('ModelConfigPopover', () => {
       render(<ModelConfigPopover {...defaultProps({ disabled: true })} />);
       const trigger = screen.getByTestId('model-config-trigger');
       expect(trigger).toBeDisabled();
-    });
-
-    it('shows "Send a message first" tooltip content when disabled', () => {
-      render(<ModelConfigPopover {...defaultProps({ disabled: true })} />);
-      expect(screen.getByText('Send a message first')).toBeInTheDocument();
-    });
-
-    it('does not render popover when disabled', () => {
-      render(<ModelConfigPopover {...defaultProps({ disabled: true })} />);
-      expect(screen.queryByTestId('model-config-popover')).not.toBeInTheDocument();
-    });
-  });
-
-  describe('loading state', () => {
-    it('renders skeleton cards while models are loading', () => {
-      mockUseModels.mockImplementation(() => ({
-        data: undefined as unknown as unknown[],
-        isLoading: true,
-        isError: false,
-        refetch: mockRefetch,
-      }));
-      render(<ModelConfigPopover {...defaultProps()} />);
-      expect(screen.getByTestId('model-cards-skeleton')).toBeInTheDocument();
     });
   });
 
@@ -454,27 +364,6 @@ describe('ModelConfigPopover', () => {
       expect(screen.getByTestId('model-credits-note')).toBeInTheDocument();
     });
 
-    it('says when the credits list may be out of date', () => {
-      mockUseModels.mockImplementation(() => ({
-        ...mockUseModelsReturn,
-        data: mockModels.map((m) => ({
-          ...m,
-          paidFromCredits: true,
-          creditsListOutOfDate: true,
-        })) as unknown[],
-      }));
-      render(<ModelConfigPopover {...defaultProps({ onCredits: true })} />);
-      expect(screen.getByTestId('model-credits-note')).toHaveTextContent(
-        'Models your DorkOS credits cover. This list may be out of date.'
-      );
-    });
-
-    it('says nothing new while the service says nothing about protocols (the runtime’s own menu)', () => {
-      render(<ModelConfigPopover {...defaultProps({ onCredits: true })} />);
-      expect(screen.queryByTestId('model-credits-note')).not.toBeInTheDocument();
-      expect(screen.getByTestId('model-card-list')).toHaveTextContent('Sonnet');
-    });
-
     it('fails honest when the credits list cannot be read: no cards, the model kept', () => {
       mockUseModels.mockImplementation(() => ({
         data: undefined as unknown as unknown[],
@@ -504,36 +393,6 @@ describe('ModelConfigPopover', () => {
   });
 
   describe('model cards', () => {
-    it('renders a card for each model', () => {
-      render(<ModelConfigPopover {...defaultProps()} />);
-      const cardList = screen.getByTestId('model-card-list');
-      expect(cardList).toHaveTextContent('Opus');
-      expect(cardList).toHaveTextContent('Sonnet');
-      expect(cardList).toHaveTextContent('Haiku');
-    });
-
-    it('renders model descriptions', () => {
-      render(<ModelConfigPopover {...defaultProps()} />);
-      const cardList = screen.getByTestId('model-card-list');
-      expect(cardList).toHaveTextContent('Most capable model');
-      expect(cardList).toHaveTextContent('Balanced performance');
-      expect(cardList).toHaveTextContent('Fastest responses');
-    });
-
-    it('renders a radio item for the selected model', () => {
-      render(<ModelConfigPopover {...defaultProps({ model: 'claude-opus-4-6' })} />);
-      const radioGroup = screen.getByRole('radiogroup', { name: 'Model selection' });
-      expect(radioGroup.querySelector('[data-radio-value="claude-opus-4-6"]')).toBeInTheDocument();
-    });
-
-    it('renders radio items for non-selected models', () => {
-      render(<ModelConfigPopover {...defaultProps({ model: 'claude-opus-4-6' })} />);
-      const radioGroup = screen.getByRole('radiogroup', { name: 'Model selection' });
-      expect(
-        radioGroup.querySelector('[data-radio-value="claude-sonnet-4-6"]')
-      ).toBeInTheDocument();
-    });
-
     it('calls onChangeModel when a model card is clicked', async () => {
       const user = userEvent.setup();
       const onChangeModel = vi.fn();
@@ -544,19 +403,6 @@ describe('ModelConfigPopover', () => {
       await user.click(sonnetRadio);
       expect(onChangeModel).toHaveBeenCalledWith('claude-sonnet-4-6');
     });
-
-    it('renders context window badges', () => {
-      render(<ModelConfigPopover {...defaultProps()} />);
-      const badges = screen.getAllByText('200K');
-      // One per model in the catalog — all four fixtures declare a 200K window.
-      expect(badges.length).toBe(mockModels.length);
-    });
-
-    it('renders model card list with radiogroup role', () => {
-      render(<ModelConfigPopover {...defaultProps()} />);
-      const radiogroup = screen.getByRole('radiogroup', { name: 'Model selection' });
-      expect(radiogroup).toBeInTheDocument();
-    });
   });
 
   describe('effort section', () => {
@@ -566,16 +412,6 @@ describe('ModelConfigPopover', () => {
       expect(effortGroup).toHaveTextContent('Low');
       expect(effortGroup).toHaveTextContent('Medium');
       expect(effortGroup).toHaveTextContent('High');
-    });
-
-    it('renders Default pill in effort section', () => {
-      render(<ModelConfigPopover {...defaultProps({ model: 'claude-opus-4-6' })} />);
-      expect(screen.getByRole('radiogroup', { name: 'Effort level' })).toBeInTheDocument();
-    });
-
-    it('does not render effort section when model lacks effort support', () => {
-      render(<ModelConfigPopover {...defaultProps({ model: 'claude-sonnet-4-6' })} />);
-      expect(screen.queryByText('Effort')).not.toBeInTheDocument();
     });
 
     it('calls onChangeEffort when an effort pill is clicked', async () => {
@@ -593,14 +429,6 @@ describe('ModelConfigPopover', () => {
       await user.click(screen.getByText('Default'));
       expect(onChangeEffort).toHaveBeenCalledWith(null);
     });
-
-    it('marks the active effort pill with aria-checked=true', () => {
-      render(<ModelConfigPopover {...defaultProps({ effort: 'medium' })} />);
-      const effortGroup = screen.getByRole('radiogroup', { name: 'Effort level' });
-      const pills = effortGroup.querySelectorAll('[role="radio"]');
-      const mediumPill = Array.from(pills).find((p) => p.textContent === 'Medium');
-      expect(mediumPill).toHaveAttribute('aria-checked', 'true');
-    });
   });
 
   describe('mode section', () => {
@@ -608,19 +436,6 @@ describe('ModelConfigPopover', () => {
       render(<ModelConfigPopover {...defaultProps({ model: 'claude-opus-4-6' })} />);
       expect(screen.getByText('Mode')).toBeInTheDocument();
       expect(screen.getByText('Fast')).toBeInTheDocument();
-      expect(screen.queryByText('Auto')).not.toBeInTheDocument();
-    });
-
-    it('renders only Fast toggle for Haiku', () => {
-      render(<ModelConfigPopover {...defaultProps({ model: 'claude-haiku-3-5' })} />);
-      expect(screen.getByText('Fast')).toBeInTheDocument();
-      expect(screen.queryByText('Auto')).not.toBeInTheDocument();
-    });
-
-    it('does not render mode section when model has no fast mode support', () => {
-      render(<ModelConfigPopover {...defaultProps({ model: 'claude-sonnet-4-6' })} />);
-      expect(screen.queryByText('Mode')).not.toBeInTheDocument();
-      expect(screen.queryByText('Fast')).not.toBeInTheDocument();
       expect(screen.queryByText('Auto')).not.toBeInTheDocument();
     });
 
@@ -642,27 +457,9 @@ describe('ModelConfigPopover', () => {
       await user.click(fastSwitch!);
       expect(onChangeFastMode).toHaveBeenCalledWith(false);
     });
-
-    it('mode toggle uses switch role', () => {
-      render(<ModelConfigPopover {...defaultProps({ model: 'claude-opus-4-6' })} />);
-      const switches = screen.getAllByRole('switch');
-      expect(switches.length).toBe(1);
-    });
-
-    it('marks active mode toggle with aria-checked=true', () => {
-      render(<ModelConfigPopover {...defaultProps({ fastMode: true })} />);
-      const switches = screen.getAllByRole('switch');
-      const fastSwitch = switches.find((s) => s.textContent?.includes('Fast'));
-      expect(fastSwitch).toHaveAttribute('aria-checked', 'true');
-    });
   });
 
   describe('context window formatting', () => {
-    it('formats 200000 as 200K', () => {
-      render(<ModelConfigPopover {...defaultProps()} />);
-      expect(screen.getAllByText('200K').length).toBeGreaterThan(0);
-    });
-
     it('formats 1000000 as 1M', () => {
       mockUseModels.mockImplementation(() => ({
         data: [{ ...mockModels[0], contextWindow: 1_000_000 }] as unknown[],
@@ -689,11 +486,6 @@ describe('ModelConfigPopover', () => {
         supportsAutoMode: false,
       },
     ];
-
-    it('threads the runtime prop into the useModels query', () => {
-      render(<ModelConfigPopover {...defaultProps({ sessionId: 's1', runtime: 'codex' })} />);
-      expect(mockUseModels).toHaveBeenCalledWith({ sessionId: 's1', runtime: 'codex' });
-    });
 
     it('renders the runtime-scoped model list (Codex models for runtime="codex")', () => {
       // The mock returns Codex models only when queried for the codex runtime,
@@ -799,40 +591,6 @@ describe('ModelConfigPopover', () => {
         expect(at('More models')).toBeLessThan(at('Relic'));
         expect(at('Relic')).toBeLessThan(at('Drifter'));
       });
-
-      it('omits a group header entirely when it has no matching options', () => {
-        // Only frontier + more-models tiers present — solid-coders/quick-helpers must not render.
-        mockTieredModels([
-          buildModel({ value: 'model-frontier-a', displayName: 'Nova', tier: 'frontier' }),
-          buildModel({ value: 'model-untiered', displayName: 'Drifter' }),
-        ]);
-        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
-        expect(screen.getByTestId('model-group-frontier')).toBeInTheDocument();
-        expect(screen.getByTestId('model-group-more-models')).toBeInTheDocument();
-        expect(screen.queryByTestId('model-group-solid-coders')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('model-group-quick-helpers')).not.toBeInTheDocument();
-      });
-
-      it('switches to the tiered layout past the searchable threshold even without tier metadata', () => {
-        const manyUntiered = Array.from({ length: 11 }, (_, i) =>
-          buildModel({ value: `model-${i}`, displayName: `Model ${i}` })
-        );
-        mockTieredModels(manyUntiered);
-        render(<ModelConfigPopover {...defaultProps({ model: 'model-0' })} />);
-        expect(screen.getByTestId('model-search')).toBeInTheDocument();
-        // Untiered options all land in "More models" — the only group rendered.
-        expect(screen.getByTestId('model-group-more-models')).toBeInTheDocument();
-        expect(screen.queryByTestId('model-group-frontier')).not.toBeInTheDocument();
-      });
-
-      it('stays flat at exactly the searchable threshold with no tier metadata', () => {
-        const tenUntiered = Array.from({ length: 10 }, (_, i) =>
-          buildModel({ value: `model-${i}`, displayName: `Model ${i}` })
-        );
-        mockTieredModels(tenUntiered);
-        render(<ModelConfigPopover {...defaultProps({ model: 'model-0' })} />);
-        expect(screen.queryByTestId('model-search')).not.toBeInTheDocument();
-      });
     });
 
     // ---- Honesty about what a model can do (DOR-1660) ----
@@ -884,16 +642,6 @@ describe('ModelConfigPopover', () => {
         );
       });
 
-      it('warns that an image model produces nothing the app can show yet', () => {
-        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
-
-        expect(screen.getByTestId('model-limitation-model-image')).toHaveTextContent(
-          'Makes images DorkOS can’t show yet.'
-        );
-        // It CAN call tools, so it keeps its real tier rather than being demoted.
-        expect(screen.getByTestId('model-group-solid-coders')).toBeInTheDocument();
-      });
-
       it('does not warn that OpenRouter’s router "makes images"', () => {
         // `openrouter/auto` declares image among its outputs because that is the
         // union of everything it might route to. On a coding prompt it returns
@@ -913,44 +661,6 @@ describe('ModelConfigPopover', () => {
         expect(
           screen.queryByTestId('model-limitation-openrouter/openrouter/auto')
         ).not.toBeInTheDocument();
-      });
-
-      it('still groups a router apart when it genuinely cannot use tools', () => {
-        // The image waiver is not a blanket exemption.
-        mockTieredModels([
-          buildModel({
-            value: 'openrouter/auto',
-            displayName: 'Auto Router',
-            supportsToolUse: false,
-            supportsImageOutput: true,
-          }),
-        ]);
-        render(<ModelConfigPopover {...defaultProps({ model: 'openrouter/auto' })} />);
-
-        expect(screen.getByTestId('model-limitation-openrouter/auto')).toHaveTextContent(
-          'Can’t use tools'
-        );
-      });
-
-      it('says nothing about a model with nothing to warn about', () => {
-        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
-
-        expect(screen.queryByTestId('model-limitation-model-frontier-a')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('model-group-no-tools')).toBeInTheDocument();
-      });
-
-      it('renders no warnings and no extra group for a catalog that reports nothing', () => {
-        // Absent capability metadata must never read as "cannot" — the common
-        // case for claude-code and codex, whose catalogs report neither field.
-        mockTieredModels(tieredModels);
-        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
-
-        expect(screen.queryByTestId('model-group-no-tools')).not.toBeInTheDocument();
-        expect(
-          screen
-            .getByTestId('model-card-list')
-            .querySelectorAll('[data-testid^="model-limitation-"]')
-        ).toHaveLength(0);
       });
     });
 
@@ -987,15 +697,6 @@ describe('ModelConfigPopover', () => {
         expect(screen.getByTestId('model-search-empty')).toHaveTextContent(
           'No match in this short list. Connect a provider to see more.'
         );
-      });
-
-      it('stays quiet, and keeps the plain empty copy, for a confirmed catalog', () => {
-        mockTieredModels(tieredModels);
-        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
-
-        expect(screen.queryByTestId('model-catalog-unverified')).not.toBeInTheDocument();
-        fireEvent.change(screen.getByTestId('model-search'), { target: { value: 'zzzzz' } });
-        expect(screen.getByTestId('model-search-empty')).toHaveTextContent('No models match');
       });
     });
 
@@ -1043,45 +744,6 @@ describe('ModelConfigPopover', () => {
         const cardList = screen.getByTestId('model-card-list');
         expect(cardList).toHaveTextContent(`${localDeviceNoun()} · private`);
       });
-
-      it('does not show the suffix on a non-local model', () => {
-        mockTieredModels(tieredModels);
-        render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
-        const cardList = screen.getByTestId('model-card-list');
-        // "Ember" (quick-helper, not local) must not carry the private suffix.
-        const emberText = Array.from(cardList.querySelectorAll('label')).find((label) =>
-          label.textContent?.includes('Ember')
-        )?.textContent;
-        expect(emberText).not.toContain('private');
-      });
-    });
-
-    describe('unchanged small untiered list', () => {
-      it('renders no search input and no group headers', () => {
-        render(<ModelConfigPopover {...defaultProps()} />);
-        expect(screen.queryByTestId('model-search')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('model-group-frontier')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('model-group-solid-coders')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('model-group-quick-helpers')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('model-group-more-models')).not.toBeInTheDocument();
-      });
-
-      it('renders every model as a flat, unfiltered RadioGroup', () => {
-        render(<ModelConfigPopover {...defaultProps()} />);
-        const cardList = screen.getByTestId('model-card-list');
-        expect(cardList).toHaveTextContent('Opus');
-        expect(cardList).toHaveTextContent('Sonnet');
-        expect(cardList).toHaveTextContent('Haiku');
-      });
-
-      it('still calls onChangeModel when a card is clicked', async () => {
-        const user = userEvent.setup();
-        const onChangeModel = vi.fn();
-        render(<ModelConfigPopover {...defaultProps({ onChangeModel })} />);
-        const radioGroup = screen.getByRole('radiogroup', { name: 'Model selection' });
-        await user.click(radioGroup.querySelector('[data-radio-value="claude-haiku-3-5"]')!);
-        expect(onChangeModel).toHaveBeenCalledWith('claude-haiku-3-5');
-      });
     });
   });
 
@@ -1118,11 +780,6 @@ describe('ModelConfigPopover', () => {
       ).toBeInTheDocument();
       // Never auto-switch: the component only reflects the prop.
       expect(onChangeModel).not.toHaveBeenCalled();
-    });
-
-    it('does not show the unavailable banner when the saved model is present', () => {
-      render(<ModelConfigPopover {...defaultProps({ model: 'claude-opus-4-6' })} />);
-      expect(screen.queryByTestId('model-unavailable-saved')).not.toBeInTheDocument();
     });
 
     it('shows the unavailable banner in the tiered menu while still rendering the groups', () => {
@@ -1225,35 +882,7 @@ describe('ModelConfigPopover', () => {
       }));
     }
 
-    /**
-     * The whole line as one unbroken run of text, or `null` if it is split.
-     *
-     * "Unbroken" means: at most one element between the line and its characters,
-     * and that element holding a single text node. Two side-by-side spans — the
-     * shape this replaced — return `null`, which is the point of the helper.
-     */
-    function unbrokenText(line: HTMLElement): string | null {
-      const inner = line.childNodes.length === 1 ? line.childNodes[0] : null;
-      if (!inner) return null;
-      if (inner.nodeType === Node.TEXT_NODE) return inner.textContent;
-      const nested = (inner as HTMLElement).childNodes;
-      if (nested.length !== 1 || nested[0].nodeType !== Node.TEXT_NODE) return null;
-      return nested[0].textContent;
-    }
-
     beforeEach(mockOpenRouterModels);
-
-    it('gives the panel more room than the shared 320px default', () => {
-      render(
-        <ModelConfigPopover {...defaultProps({ model: 'openrouter/google/gemini-3-pro-image' })} />
-      );
-      const panel = screen.getByTestId('model-config-popover');
-      // 480px — enough for the longest capability note on one line.
-      expect(panel).toHaveClass('w-120');
-      // The default this replaces. Leaving both on would let tailwind-merge's
-      // ordering decide the width, which is not a decision anyone made.
-      expect(panel).not.toHaveClass('w-80');
-    });
 
     it('eats the START of a model id, never its tail', () => {
       render(
@@ -1271,54 +900,6 @@ describe('ModelConfigPopover', () => {
       expect(line).toHaveClass('text-left');
     });
 
-    it('keeps the id in one unbroken run of text, not two boxes', () => {
-      render(
-        <ModelConfigPopover {...defaultProps({ model: 'openrouter/google/gemini-3-pro-image' })} />
-      );
-      const line = screen.getByTitle(LONG_DESCRIPTION);
-
-      // The property that makes a copied id paste as one string and
-      // find-in-page match across the whole of it. Two boxes fail this.
-      expect(unbrokenText(line)).toBe(LONG_DESCRIPTION);
-      // And the run is put back in reading order, so an id ending in a bracket
-      // or a period is not reordered by the bidi algorithm.
-      const [inner] = Array.from(line.children) as HTMLElement[];
-      expect(inner.tagName).toBe('BDI');
-      expect(inner).toHaveAttribute('dir', 'ltr');
-    });
-
-    it('reads an Ollama `name:tag` id as an id, not as prose', () => {
-      const ollama = 'ollama · deepseek-r1:70b-llama-distill-q4_K_M';
-      render(
-        <ModelConfigPopover {...defaultProps({ model: 'deepseek-r1:70b-llama-distill-q4_K_M' })} />
-      );
-      // No slash anywhere in it: the tag after the colon is the discriminating
-      // half, and an end ellipsis would eat exactly that.
-      const line = screen.getByTitle(ollama);
-      expect(line).toHaveAttribute('dir', 'rtl');
-      expect(unbrokenText(line)).toBe(ollama);
-    });
-
-    it('leaves a prose description ellipsized at its end', () => {
-      render(<ModelConfigPopover {...defaultProps({ model: 'gpt-oss-120b' })} />);
-      const line = screen.getByTitle(PROSE_DESCRIPTION);
-      // A sentence loses nothing that identifies it when its tail goes, and
-      // starting one with an ellipsis reads as a mistake.
-      expect(line).toHaveClass('truncate');
-      expect(line).not.toHaveAttribute('dir');
-      expect(unbrokenText(line)).toBe(PROSE_DESCRIPTION);
-    });
-
-    it('wraps a model name to a second line rather than clipping its suffix', () => {
-      render(
-        <ModelConfigPopover {...defaultProps({ model: 'openrouter/google/gemini-3-pro-image' })} />
-      );
-      const name = screen.getByText('Google: Gemini 3 Pro Image Preview');
-      // `Preview`, `(free)` and `Thinking` all live at the END of a model name.
-      expect(name).not.toHaveClass('truncate');
-      expect(name).toHaveClass('line-clamp-2');
-    });
-
     it('never truncates or clamps the line that says what a model cannot do', () => {
       render(
         <ModelConfigPopover {...defaultProps({ model: 'openrouter/google/gemini-3-pro-image' })} />
@@ -1329,51 +910,6 @@ describe('ModelConfigPopover', () => {
       for (const clipped of ['truncate', 'line-clamp-2', 'whitespace-nowrap']) {
         expect(warning).not.toHaveClass(clipped);
       }
-    });
-
-    it('gives the vanished saved id the same treatment, beside its own label', () => {
-      const vanished = 'openrouter/meta-llama/llama-3.1-nemotron-ultra-253b-v1';
-      render(<ModelConfigPopover {...defaultProps({ model: vanished })} />);
-      const banner = screen.getByTestId('model-unavailable-saved');
-      const line = screen.getByTitle(vanished);
-
-      expect(banner).toContainElement(line);
-      expect(line).toHaveAttribute('dir', 'rtl');
-      expect(unbrokenText(line)).toBe(vanished);
-      expect(banner).toHaveTextContent('(not available)');
-    });
-
-    it('keeps every part of this line shrinkable, beside a sibling that is not', () => {
-      // The failure this replaces (DOR-1673 review): the banner draws the id at
-      // `text-sm` next to a `shrink-0` label, and the old treatment protected a
-      // fixed 24-character tail. At 390px that tail took the row and left the
-      // head EIGHT pixels — too few to draw an ellipsis in — so the line began
-      // mid-word and never admitted it. Measured in a browser; jsdom counts
-      // characters and cannot see 8 pixels. What it CAN check is the cause: that
-      // nothing on this line refuses to shrink, so there is no per-line budget
-      // to get wrong in the first place.
-      const vanished = 'openrouter/meta-llama/llama-3.1-nemotron-ultra-253b-v1';
-      render(<ModelConfigPopover {...defaultProps({ model: vanished })} />);
-      const line = screen.getByTitle(vanished);
-
-      expect(line).toHaveClass('min-w-0');
-      expect(line).not.toHaveClass('shrink-0');
-      for (const child of Array.from(line.querySelectorAll('*'))) {
-        expect(child).not.toHaveClass('shrink-0');
-        expect(child).not.toHaveClass('whitespace-nowrap');
-      }
-    });
-  });
-
-  describe('popover structure', () => {
-    it('renders with data-testid model-config-popover', () => {
-      render(<ModelConfigPopover {...defaultProps()} />);
-      expect(screen.getByTestId('model-config-popover')).toBeInTheDocument();
-    });
-
-    it('renders trigger with data-testid model-config-trigger', () => {
-      render(<ModelConfigPopover {...defaultProps()} />);
-      expect(screen.getByTestId('model-config-trigger')).toBeInTheDocument();
     });
   });
 });

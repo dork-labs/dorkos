@@ -26,7 +26,18 @@ name: auto-revert
 
 on:
   workflow_run:
-    workflows: [scripts-test, CLI Smoke Test, Desktop Smoke, db-check, browser-test, test]
+    workflows:
+      [
+        scripts-test,
+        CLI Smoke Test,
+        Desktop Smoke,
+        db-check,
+        browser-test,
+        lint,
+        credential-free-build,
+        docs-openapi-check,
+        test,
+      ]
     types: [completed]
 
 permissions:

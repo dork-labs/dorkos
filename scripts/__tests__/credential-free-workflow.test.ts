@@ -60,7 +60,14 @@ const APP_FRAME_WORKFLOW_REL = '.github/workflows/app-frame-browser.yml';
 const HARNESS_WINDOWS_WORKFLOW_REL = '.github/workflows/harness-windows.yml';
 const WORKFLOWS_DIR_REL = '.github/workflows';
 
-const workflow = readFileSync(path.join(repoRoot, WORKFLOW_REL), 'utf8');
+const workflowFile = readFileSync(path.join(repoRoot, WORKFLOW_REL), 'utf8');
+// The pins below are about the build job. Since DOR-5130 the file also holds a
+// small `attest` job for the merge queue, which needs a GitHub token to read the
+// PR's check runs and so must NOT run through the scrub; it is pinned by
+// scripts/test-attest-pr-check.sh and the census. Triggers are read from the
+// whole file (`onBlock` below), everything else from the build job only.
+const BUILD_JOB_START = workflowFile.indexOf('\n  credential-free-build:\n');
+const workflow = BUILD_JOB_START === -1 ? workflowFile : workflowFile.slice(BUILD_JOB_START);
 
 /**
  * The scrub's variable-name patterns, read from `CLOUD_ENV_PATTERNS` in
@@ -92,7 +99,7 @@ describe('credential-free-build workflow', () => {
   it('declares both the pull_request and merge_group triggers', () => {
     // Matched against the `on:` block specifically, so a `merge_group` word
     // appearing in the header prose cannot satisfy this.
-    const onBlock = workflow.match(/^on:\n((?:[ \t]+.*\n|\n)*)/m)?.[1] ?? '';
+    const onBlock = workflowFile.match(/^on:\n((?:[ \t]+.*\n|\n)*)/m)?.[1] ?? '';
     expect(
       onBlock,
       `${WORKFLOW_REL} has no parseable \`on:\` block — this guard cannot check its triggers.`
@@ -128,9 +135,9 @@ describe('credential-free-build workflow', () => {
     // green. Change it deliberately when you add or remove a step.
     expect(
       commands.length,
-      `${WORKFLOW_REL} has ${commands.length} \`run:\` steps, expected 8. If you added or ` +
+      `${WORKFLOW_REL} has ${commands.length} \`run:\` steps, expected 9. If you added or ` +
         `removed one on purpose, update this number; if you did not, a step went missing.`
-    ).toBe(8);
+    ).toBe(9);
     const unscrubbed = commands.filter((c) => !c.startsWith(`bash ${SCRUB_REL}`));
     expect(
       unscrubbed,
@@ -287,7 +294,7 @@ describe('credential-free-build workflow', () => {
   });
 
   it('never cancels a merge-group run in progress', () => {
-    const block = workflow.match(/^concurrency:\n((?:[ \t]+.*\n)+)/m)?.[1] ?? '';
+    const block = workflowFile.match(/^concurrency:\n((?:[ \t]+.*\n)+)/m)?.[1] ?? '';
     expect(
       block,
       `${WORKFLOW_REL} has no parseable \`concurrency:\` block — this guard cannot check it.`

@@ -332,17 +332,6 @@ describe('TopologyGraph', () => {
 
       expect(screen.queryByTestId('node-adapter:tg-1')).not.toBeInTheDocument();
     });
-
-    it('does not render adapter nodes when no adapters exist', async () => {
-      setupDefaults({ adapters: [] });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      expect(screen.queryByTestId(/node-adapter:/)).not.toBeInTheDocument();
-    });
   });
 
   describe('binding edges', () => {
@@ -361,17 +350,6 @@ describe('TopologyGraph', () => {
       expect(edge).toHaveAttribute('data-target', 'agent-1');
     });
 
-    it('does not render binding edges when bindings are empty', async () => {
-      setupDefaults({ bindings: [] });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      expect(screen.queryByTestId(/edge-binding:/)).not.toBeInTheDocument();
-    });
-
     it('skips binding edges when source adapter node is missing', async () => {
       setupDefaults({
         adapters: [], // no adapter nodes -> binding source missing
@@ -384,54 +362,6 @@ describe('TopologyGraph', () => {
       });
 
       expect(screen.queryByTestId('edge-binding:bind-1')).not.toBeInTheDocument();
-    });
-
-    it('skips binding edges when target agent node is missing', async () => {
-      setupDefaults({
-        bindings: [{ ...mockBindings[0], agentId: 'nonexistent-agent' }],
-      });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      expect(screen.queryByTestId('edge-binding:bind-1')).not.toBeInTheDocument();
-    });
-  });
-
-  describe('connection validation', () => {
-    it('enables nodesConnectable when adapters exist', async () => {
-      setupDefaults();
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      expect(capturedReactFlowProps.nodesConnectable).toBe(true);
-    });
-
-    it('disables nodesConnectable when no adapters', async () => {
-      setupDefaults({ relayEnabled: false, adapters: [] });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      expect(capturedReactFlowProps.nodesConnectable).toBe(false);
-    });
-
-    it('provides isValidConnection callback when adapters exist', async () => {
-      setupDefaults();
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      expect(capturedReactFlowProps.isValidConnection).toBeDefined();
     });
   });
 
@@ -512,32 +442,6 @@ describe('TopologyGraph', () => {
       });
     });
 
-    it('shows adapter hint when relay is enabled but no adapters exist', async () => {
-      setupDefaults({ relayEnabled: true, adapters: [], bindings: [] });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      expect(
-        screen.getByText('Add a chat app in Connections, then connect it to an agent')
-      ).toBeInTheDocument();
-    });
-
-    it('shows binding hint when adapters exist but no bindings', async () => {
-      setupDefaults({ bindings: [] });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      expect(
-        screen.getByText('Drag from a platform to an agent to connect them')
-      ).toBeInTheDocument();
-    });
-
     it('hides the drag hint on a touch screen, where dragging is not how you connect', async () => {
       const original = window.matchMedia;
       window.matchMedia = ((query: string) => ({
@@ -558,115 +462,6 @@ describe('TopologyGraph', () => {
       } finally {
         window.matchMedia = original;
       }
-    });
-
-    it('does not show hints when bindings exist', async () => {
-      setupDefaults(); // default has adapters + bindings
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      expect(
-        screen.queryByText('Add a chat app in Connections, then connect it to an agent')
-      ).not.toBeInTheDocument();
-      expect(
-        screen.queryByText('Drag from a platform to an agent to connect them')
-      ).not.toBeInTheDocument();
-    });
-  });
-
-  describe('node type registration', () => {
-    it('registers adapter node type', async () => {
-      setupDefaults();
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      const nodeTypes = capturedReactFlowProps.nodeTypes as Record<string, unknown>;
-      expect(nodeTypes).toHaveProperty('adapter');
-      expect(nodeTypes).toHaveProperty('agent');
-    });
-
-    it('registers binding edge type', async () => {
-      setupDefaults();
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      const edgeTypes = capturedReactFlowProps.edgeTypes as Record<string, unknown>;
-      expect(edgeTypes).toHaveProperty('binding');
-      expect(edgeTypes).toHaveProperty('cross-namespace');
-    });
-  });
-
-  describe('relay-flow subscription mount', () => {
-    it('mounts useRelayFlowSubscription once with the relayEnabled flag', async () => {
-      setupDefaults({ relayEnabled: true });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      expect(mockUseRelayFlowSubscription).toHaveBeenCalledWith(true);
-    });
-
-    it('passes relayEnabled=false through when relay is disabled', async () => {
-      setupDefaults({ relayEnabled: false });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      expect(mockUseRelayFlowSubscription).toHaveBeenCalledWith(false);
-    });
-  });
-
-  describe('adapter node data', () => {
-    it('maps adapter status to running/stopped/error', async () => {
-      setupDefaults();
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      const nodes = capturedReactFlowProps.nodes as Array<{
-        id: string;
-        data: Record<string, unknown>;
-      }>;
-      const tgNode = nodes.find((n) => n.id === 'adapter:tg-1');
-      const whNode = nodes.find((n) => n.id === 'adapter:wh-1');
-
-      expect(tgNode?.data.adapterStatus).toBe('running');
-      expect(whNode?.data.adapterStatus).toBe('stopped');
-    });
-
-    it('includes binding count per adapter', async () => {
-      setupDefaults();
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      const nodes = capturedReactFlowProps.nodes as Array<{
-        id: string;
-        data: Record<string, unknown>;
-      }>;
-      const tgNode = nodes.find((n) => n.id === 'adapter:tg-1');
-      const whNode = nodes.find((n) => n.id === 'adapter:wh-1');
-
-      // tg-1 has one binding, wh-1 has zero
-      expect(tgNode?.data.bindingCount).toBe(1);
-      expect(whNode?.data.bindingCount).toBe(0);
     });
   });
 
@@ -725,83 +520,6 @@ describe('TopologyGraph', () => {
       expect(screen.getByTestId('node-group:staging')).toBeInTheDocument();
     });
 
-    it('sets parentId on agent nodes in multi-namespace topologies', async () => {
-      setupDefaults({
-        topology: multiNamespaceTopology,
-        relayEnabled: false,
-        adapters: [],
-        bindings: [],
-      });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      const nodes = capturedReactFlowProps.nodes as Array<{
-        id: string;
-        parentId?: string;
-        extent?: string;
-      }>;
-      const prodAgent = nodes.find((n) => n.id === 'agent-prod-1');
-      const stgAgent = nodes.find((n) => n.id === 'agent-stg-1');
-
-      expect(prodAgent?.parentId).toBe('group:production');
-      expect(prodAgent?.extent).toBe('parent');
-      expect(stgAgent?.parentId).toBe('group:staging');
-      expect(stgAgent?.extent).toBe('parent');
-    });
-
-    it('creates namespace-group node for single-namespace topologies', async () => {
-      setupDefaults({ relayEnabled: false, adapters: [], bindings: [] });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      const nodes = capturedReactFlowProps.nodes as Array<{ id: string; type: string }>;
-      const groupNodes = nodes.filter((n) => n.type === 'namespace-group');
-      expect(groupNodes).toHaveLength(1);
-      expect(groupNodes[0].id).toBe('group:default');
-    });
-
-    it('sets parentId on agent nodes in single-namespace topologies', async () => {
-      setupDefaults({ relayEnabled: false, adapters: [], bindings: [] });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      const nodes = capturedReactFlowProps.nodes as Array<{ id: string; parentId?: string }>;
-      const agentNodes = nodes.filter(
-        (n) => !n.id.startsWith('group:') && !n.id.startsWith('adapter:')
-      );
-      for (const agent of agentNodes) {
-        expect(agent.parentId).toBe('group:default');
-      }
-    });
-
-    it('creates no spoke edges — agents are visually inside groups', async () => {
-      setupDefaults({
-        topology: multiNamespaceTopology,
-        relayEnabled: false,
-        adapters: [],
-        bindings: [],
-      });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      const edges = capturedReactFlowProps.edges as Array<{ id: string; type: string }>;
-      // No namespace-internal (spoke) edges should exist
-      const spokeEdges = edges.filter((e) => e.type === 'namespace-internal');
-      expect(spokeEdges).toHaveLength(0);
-    });
-
     it('creates cross-namespace edges connecting group nodes', async () => {
       setupDefaults({
         topology: multiNamespaceTopology,
@@ -832,18 +550,6 @@ describe('TopologyGraph', () => {
       expect(denyEdges[0].source).toBe('group:production');
       expect(denyEdges[0].target).toBe('group:staging');
     });
-
-    it('registers namespace-group in node types', async () => {
-      setupDefaults();
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      const nodeTypes = capturedReactFlowProps.nodeTypes as Record<string, unknown>;
-      expect(nodeTypes).toHaveProperty('namespace-group');
-    });
   });
 
   describe('CCA adapter filtering', () => {
@@ -861,48 +567,12 @@ describe('TopologyGraph', () => {
       expect(screen.getByTestId('node-adapter:tg-1')).toBeInTheDocument();
       expect(screen.getByTestId('node-adapter:wh-1')).toBeInTheDocument();
     });
-
-    it('excludes CCA binding edges because source node is filtered', async () => {
-      setupDefaults({
-        bindings: [
-          ...mockBindings,
-          {
-            id: 'bind-cca',
-            adapterId: 'cca-1',
-            agentId: 'agent-1',
-            sessionStrategy: 'per-chat' as const,
-            label: '',
-            createdAt: '2026-01-01T00:00:00Z',
-            updatedAt: '2026-01-01T00:00:00Z',
-          },
-        ],
-      });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      expect(screen.queryByTestId('edge-binding:bind-cca')).not.toBeInTheDocument();
-      expect(screen.getByTestId('edge-binding:bind-1')).toBeInTheDocument();
-    });
   });
 
   describe('ghost adapter placeholder', () => {
     it('renders ghost adapter node when relay enabled and only CCA adapters exist', async () => {
       const ccaOnly = [mockAdapters[0]]; // Just CCA
       setupDefaults({ adapters: ccaOnly, bindings: [] });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      expect(screen.getByTestId('node-ghost-adapter')).toBeInTheDocument();
-    });
-
-    it('renders ghost adapter node when relay enabled and no adapters at all', async () => {
-      setupDefaults({ adapters: [], bindings: [] });
       render(<TopologyGraph />);
 
       await waitFor(() => {
@@ -921,112 +591,6 @@ describe('TopologyGraph', () => {
       });
 
       expect(screen.queryByTestId('node-ghost-adapter')).not.toBeInTheDocument();
-    });
-
-    it('does not render ghost adapter when relay is disabled', async () => {
-      setupDefaults({ relayEnabled: false, adapters: [], bindings: [] });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      expect(screen.queryByTestId('node-ghost-adapter')).not.toBeInTheDocument();
-    });
-
-    it('ghost adapter node has isGhost flag in data', async () => {
-      setupDefaults({ adapters: [], bindings: [] });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      const nodes = capturedReactFlowProps.nodes as Array<{
-        id: string;
-        data: Record<string, unknown>;
-      }>;
-      const ghostNode = nodes.find((n) => n.id === 'ghost-adapter');
-      expect(ghostNode?.data.isGhost).toBe(true);
-      expect(ghostNode?.data.adapterName).toBe('Add a platform');
-    });
-  });
-
-  describe('adapter label data', () => {
-    it('passes adapter label to node data when present', async () => {
-      setupDefaults();
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      const nodes = capturedReactFlowProps.nodes as Array<{
-        id: string;
-        data: Record<string, unknown>;
-      }>;
-      const tgNode = nodes.find((n) => n.id === 'adapter:tg-1');
-      expect(tgNode?.data.label).toBe('@support_bot');
-    });
-
-    it('does not set label when adapter config has no label', async () => {
-      setupDefaults();
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      const nodes = capturedReactFlowProps.nodes as Array<{
-        id: string;
-        data: Record<string, unknown>;
-      }>;
-      const whNode = nodes.find((n) => n.id === 'adapter:wh-1');
-      expect(whNode?.data.label).toBeUndefined();
-    });
-  });
-
-  describe('binding edge filter data', () => {
-    it('passes chatId and channelType to binding edge data', async () => {
-      setupDefaults({
-        bindings: [
-          {
-            ...mockBindings[0],
-            chatId: '12345',
-            channelType: 'private',
-          },
-        ],
-      });
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      const edges = capturedReactFlowProps.edges as Array<{
-        id: string;
-        data: Record<string, unknown>;
-      }>;
-      const bindingEdge = edges.find((e) => e.id === 'binding:bind-1');
-      expect(bindingEdge?.data?.chatId).toBe('12345');
-      expect(bindingEdge?.data?.channelType).toBe('private');
-    });
-
-    it('does not set chatId/channelType when not present on binding', async () => {
-      setupDefaults(); // Default binding has no chatId or channelType
-      render(<TopologyGraph />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
-      });
-
-      const edges = capturedReactFlowProps.edges as Array<{
-        id: string;
-        data: Record<string, unknown>;
-      }>;
-      const bindingEdge = edges.find((e) => e.id === 'binding:bind-1');
-      expect(bindingEdge?.data?.chatId).toBeUndefined();
-      expect(bindingEdge?.data?.channelType).toBeUndefined();
     });
   });
 

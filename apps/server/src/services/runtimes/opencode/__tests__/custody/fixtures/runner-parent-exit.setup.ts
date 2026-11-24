@@ -5,7 +5,10 @@ import { dirname, join } from 'node:path';
 import type { TestProject } from 'vitest/node';
 import { openPosixGuardian, validateDarwinObserver } from '@dorkos/test-utils/run-custody/posix';
 import { createCustodySetup } from '../global-setup.js';
+export type RunnerExitMode = 'self-exit' | 'silent-worker';
+
 export interface RunnerExitFixture {
+  mode: RunnerExitMode;
   root: string;
   deadline: number;
   mainPid: number;
@@ -24,11 +27,16 @@ export default async function setup(project: TestProject) {
     throw new Error('Fixture root is not owned and private');
   const bytes = await readFile(join(root, 'context.json'));
   if (bytes.length > 1024) throw new Error('Fixture context exceeds bound');
-  const context = JSON.parse(bytes.toString()) as { deadline: number; socketDirectory: string };
+  const context = JSON.parse(bytes.toString()) as {
+    deadline: number;
+    socketDirectory: string;
+    mode: RunnerExitMode;
+  };
   if (
     !Number.isFinite(context.deadline) ||
     context.deadline <= Date.now() ||
-    dirname(context.socketDirectory) !== root
+    dirname(context.socketDirectory) !== root ||
+    (context.mode !== 'self-exit' && context.mode !== 'silent-worker')
   )
     throw new Error('Invalid fixture context');
   // Outer fixture owns this single private allocation and output descriptor.
@@ -57,13 +65,18 @@ export default async function setup(project: TestProject) {
       connection: { ...handle.connection, transport: 'posix', directory: context.socketDirectory },
     };
   }, root)(project);
-  project.provide('runnerExitFixture', { root, deadline: context.deadline, mainPid: process.pid });
+  project.provide('runnerExitFixture', {
+    root,
+    mode: context.mode,
+    deadline: context.deadline,
+    mainPid: process.pid,
+  });
   let checking = false;
   const timer = setInterval(() => {
     if (checking) return;
     checking = true;
     void readFile(join(root, 'pinned-ready.json'))
-      .then((ready) => {
+      .then(async (ready) => {
         if (ready.length > 4096) throw new Error('Ready receipt exceeds bound');
         const record = JSON.parse(ready.toString());
         if (record.mainPid !== process.pid || record.starts !== 1 || record.ready !== true)
@@ -75,11 +88,24 @@ export default async function setup(project: TestProject) {
           record.workerPid === process.pid
         )
           throw new Error('Readiness is not from this runner worker');
+        if (context.mode === 'silent-worker') {
+          const accepted = await readFile(join(root, 'outer-authorized.json'));
+          if (accepted.length > 1024) throw new Error('Outer observation exceeds bound');
+          const authorization = JSON.parse(accepted.toString());
+          if (
+            authorization.mainPid !== process.pid ||
+            authorization.workerPid !== record.workerPid ||
+            authorization.targetPid !== record.target?.pid
+          )
+            throw new Error('Outer observation does not match the owned fixture subjects');
+          if (Date.now() >= context.deadline - 6000)
+            throw new Error('Outer observation arrived after the fixture transition budget');
+        }
         if (fstatSync(3).size !== 0) throw new Error('Cleanup preceded the fixture transition');
         writeFileSync(
           join(root, 'runner-transition.json'),
           JSON.stringify({
-            kind: 'self-exit',
+            kind: context.mode,
             code: 23,
             mainPid: process.pid,
             workerPid: record.workerPid,

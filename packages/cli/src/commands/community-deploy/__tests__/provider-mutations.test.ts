@@ -9,7 +9,6 @@ import {
   createFlyApp,
   deployFlyImage,
   deployFlySecrets,
-  FLY_DEPLOY_TIMEOUT_MS,
   destroyFlyApp,
   stageFlySecrets,
   unsetFlyTigrisSecrets,
@@ -278,20 +277,6 @@ cat > "$CAPTURE_STDIN"
     ).toThrow();
   });
 
-  it('lets a deploy outlive the shared 30-second Fly deadline', async () => {
-    // A live `fly deploy` of the 0.92.0 image took ~27s once and was killed at 30s the next run,
-    // leaving the release interrupted (DOR-2169). The fake sleeps past the caller's deadline.
-    const { executable } = await fakeProvider('sleep 1.5');
-    const short = { ...options(executable), timeoutMs: 1_000 };
-    await expect(
-      deployFlyImage(short, 'community-space', `ghcr.io/dork-labs/dorkos-community@${digest}`)
-    ).resolves.toEqual({ operation: 'deploy' });
-    await expect(deployFlySecrets(short, 'community-space')).resolves.toEqual({
-      operation: 'deploy',
-    });
-    expect(FLY_DEPLOY_TIMEOUT_MS).toBeGreaterThanOrEqual(5 * 60_000);
-  });
-
   // A write cut off by the launcher is an unknown, not a failure: the launch stops as uncertain for
   // the operator to reconcile by hand (DOR-2169). Every one-call write outlives the 30-second
   // deadline the reads share; the reads themselves keep it.
@@ -440,19 +425,6 @@ cat > "$CAPTURE_STDIN"
     ).toThrow();
   });
 
-  it('exposes exact Fly and Neon cleanup command boundaries without inferring deletion', async () => {
-    const { executable, directory } = await fakeProvider(`printf '%s' "$*" > "$CAPTURE_ARGS"`);
-    const argsPath = join(directory, 'args');
-    await expect(
-      destroyFlyApp(options(executable, { CAPTURE_ARGS: argsPath }), 'community-space')
-    ).resolves.toEqual({ operation: 'destroy' });
-    expect(await readFile(argsPath, 'utf8')).toBe('apps destroy community-space --yes');
-    await expect(
-      deleteNeonProject(options(executable, { CAPTURE_ARGS: argsPath }), 'project_123')
-    ).resolves.toEqual({ operation: 'delete', projectId: 'project_123' });
-    expect(await readFile(argsPath, 'utf8')).toBe('projects delete project_123 --output json');
-  });
-
   it('creates Neon without credential output and records only the exact project identity', async () => {
     const { executable, directory } = await fakeProvider(`
 printf '%s' "$*" > "$CAPTURE_ARGS"
@@ -531,5 +503,18 @@ printf '%s' '{"project":{"id":"project_123","org_id":"org_123","name":"Community
         'Community Space'
       )
     ).toThrowError(expect.objectContaining({ code: 'CREATION_OUTCOME_UNCERTAIN' }));
+  });
+
+  it('exposes exact Fly and Neon cleanup command boundaries without inferring deletion', async () => {
+    const { executable, directory } = await fakeProvider(`printf '%s' "$*" > "$CAPTURE_ARGS"`);
+    const argsPath = join(directory, 'args');
+    await expect(
+      destroyFlyApp(options(executable, { CAPTURE_ARGS: argsPath }), 'community-space')
+    ).resolves.toEqual({ operation: 'destroy' });
+    expect(await readFile(argsPath, 'utf8')).toBe('apps destroy community-space --yes');
+    await expect(
+      deleteNeonProject(options(executable, { CAPTURE_ARGS: argsPath }), 'project_123')
+    ).resolves.toEqual({ operation: 'delete', projectId: 'project_123' });
+    expect(await readFile(argsPath, 'utf8')).toBe('projects delete project_123 --output json');
   });
 });

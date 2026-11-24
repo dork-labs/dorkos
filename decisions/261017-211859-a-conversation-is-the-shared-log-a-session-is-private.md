@@ -1,7 +1,7 @@
 ---
 id: 261017-211859
 title: A conversation is the shared log; a session is one agent's private context seated behind it
-status: proposed
+status: accepted
 created: 2026-10-17
 spec: conversation-model
 superseded-by: null
@@ -12,15 +12,17 @@ amends: [261006-235240, 261009-171114]
 
 ## Status
 
-Proposed (operator direction 2026-10-17, relayed by the designer agent; spec `specs/conversation-model/`). Becomes Accepted when Dorian approves the spec.
+Accepted (operator decision, 2026-11-24), with one change from the proposed text: Relay's Maildir is not kept for good. It carries delivery only, nothing new is stored in it, and it retires (see Decision, "Maildir is on its way out"). This settles the model only. The build steps in spec `specs/conversation-model/` are not approved or scheduled by this decision; each is decided on its own.
 
-**Amended (proposed) by** [261122-124821](261122-124821-one-dork-reference-ids-for-machines-addresses-for-people.md): the decision bullet "One address points at one conversation. `{handle}[+{name}]@{space}` renders the canonical `dork://{space}/{handle}/{conversation}`" is retired in favour of two `dork:` shapes, a reference by id and an address by name. The display form stands, with `@{space}` optional inside your own space, and every other clause stands. Takes effect when that record is accepted.
+Proposed 2026-10-17 (operator direction, relayed by the designer agent; spec `specs/conversation-model/`).
+
+**Amended by** [261122-124821](261122-124821-one-dork-reference-ids-for-machines-addresses-for-people.md): the decision bullet "One address points at one conversation. `{handle}[+{name}]@{space}` renders the canonical `dork://{space}/{handle}/{conversation}`" is retired in favour of two `dork:` shapes, a reference by id and an address by name. The display form stands, with `@{space}` optional inside your own space, and every other clause stands. That record was accepted on 2026-11-23.
 
 **Extends** [260726-170125](260726-170125-a-room-is-a-membership-scoped-durable-stream.md) (a room is a membership-scoped durable stream, not a session) from rooms to every chat. That ADR's decision is unchanged; this one says it now holds everywhere.
 
 **Amends:**
 
-- [261006-235240](261006-235240-one-message-system.md) (one message system): its "messages will live in the conversation store" stands and this record names that store. Its retirement of Relay's Maildir does not: Maildir stays as the internal delivery bus. Once user-visible words live in the log, no new words a person reads live only in Maildir; its old `relay_send`-era rows are archived as they are, not imported.
+- [261006-235240](261006-235240-one-message-system.md) (one message system): its "messages will live in the conversation store" stands and this record names that store. Its retirement of Relay's Maildir stands too, and this record gives it an order: first the words move into the log, then Maildir carries delivery only, then it retires. Once user-visible words live in the log, no new words a person reads live only in Maildir; its old `relay_send`-era rows are archived as they are, not imported. (The proposed text of this record kept Maildir as the internal delivery bus with no end; the operator changed that on 2026-11-24.)
 - [261009-171114](261009-171114-chat-message-origin-and-delivery-rules.md) (chat-message origin and delivery rules): every rule stands (stamped sender, nonce fence, downstream power, queue by default, the person first, no loop guard). What changes is where the words live: a chat message becomes an entry in the receiving conversation's log, and `chat_messages` folds into it.
 
 ## Context
@@ -40,7 +42,8 @@ DorkOS keeps what was said in at least six places: Claude Code transcripts, `ses
 - **Every reply links to its turn.** An entry an agent writes records the session and turn that produced it (a dispatch id plus a runtime anchor, because no runtime-neutral turn id exists).
 - **The chat-message rules carry over.** Power flows downstream (a turn runs no looser than the tightest chat-message entry it shows), the person first, and no loop guard or turn cap on agent DMs until DOR-2745 decides.
 - **One address points at one conversation.** `{handle}[+{name}]@{space}` renders the canonical `dork://{space}/{handle}/{conversation}`.
-- **Kept beside the log, as helpers:** `session_message_queue`, `room_bridge_messages`, Relay's Maildir, and the message search index (re-pointed at the log). Notifications, commitments and the audit trail stay their own stores.
+- **Kept beside the log, as helpers:** `session_message_queue`, `room_bridge_messages`, and the message search index (re-pointed at the log). Notifications, commitments and the audit trail stay their own stores.
+- **Maildir is on its way out.** Relay stays as the delivery engine of conversations (261006-235240). Its Maildir store does not stay: until it retires it carries delivery only, and nothing new is stored in it. It retires when the log's delivery records and the session queue cover what it holds today: messages waiting for an agent that survive a restart, retries, and dead letters with the inbox that shows them. There is one message system at the end, not two (DOR-2744).
 - **Remote spaces keep their own truth.** A conversation in a space whose server is elsewhere stays authoritative there (260916-210002); the local rows are a mirror cache keyed to the same conversation id.
 
 ## Consequences
@@ -59,10 +62,12 @@ DorkOS keeps what was said in at least six places: Claude Code transcripts, `ses
 - **A 1:1 needs a new conversation kind.** A DM is one per member pair; a person has many chats with one agent, so 1:1s are a `chat` kind.
 - **A real migration.** `chat_messages`, Telegram and Slack chats in the default mode, `extension_agent_sends` and old agent DMs must be backfilled or retired without losing history, in four steps over several releases.
 - **Handles are unique per install today.** Addresses across spaces need per-space handles, which this record leaves open.
+- **Two delivery paths live side by side until Maildir retires.** The rule that nothing new is stored in Maildir has to be held by review until a check holds it.
 - **The log grows faster.** Every 1:1 turn adds entries. The log is never trimmed, so its size is now a product concern.
 
 ## Alternatives considered
 
 - **Make the session the conversation everywhere** (multiplex members inside a session). Rejected for the reason 260726-170125 gives: a session is bound to one runtime at first write, so a mixed-runtime conversation has no session that could own it.
 - **Keep per-surface stores and add a unified read view over them.** Rejected: it hides the drift instead of removing it. Receipts would still be written in one store and the words in another, which is how DOR-2994 happened.
-- **Retire Relay's Maildir now, as 261006-235240 planned.** Not now: it is the internal bus and it works. Once user-visible words live in the log, Maildir carries only delivery, so nothing has to be imported out of it.
+- **Retire Relay's Maildir before the words move.** Rejected: it is the internal bus and it works. Once user-visible words live in the log, Maildir carries only delivery, so nothing has to be imported out of it.
+- **Keep Maildir for good as the internal delivery bus** (this record's proposed text). Rejected on 2026-11-24: it leaves two delivery stores forever, Relay's Maildir and the log's own delivery records, against the one message system the vision and 261006-235240 decided.

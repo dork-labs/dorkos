@@ -12,7 +12,7 @@ import {
   createInSessionContextResolver,
   resolveAgentHome,
 } from '../../../core/agent-identity/index.js';
-import { SESSIONS } from '../../../../config/constants.js';
+import { PENDING_APPROVAL_TIMING } from '../../shared/timing/pending-approval-timing.js';
 import { logger } from '../../../../lib/logger.js';
 import { logRefusal } from '../../../observability/refusals.js';
 import { NEVER_ASK_REASON_TYPE, NO_APPROVAL_SURFACE } from '@dorkos/shared/run-refusals';
@@ -219,7 +219,7 @@ export function handleAskUserQuestion(
       // normalizer's `?? Date.now()`, one prompt would be anchored where it was
       // raised and another where it happened to be normalized.
       startedAt,
-      timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
+      timeoutMs: PENDING_APPROVAL_TIMING.attended.countdownMs,
     },
   });
   session.eventQueueNotify?.();
@@ -233,7 +233,7 @@ export function handleAskUserQuestion(
     };
     signal?.addEventListener('abort', onAbort, { once: true });
 
-    const waitedMs = SESSIONS.INTERACTION_PARK_CEILING_MS;
+    const waitedMs = PENDING_APPROVAL_TIMING.attended.expiresAfterMs;
     const timeout = armInteractionWait(
       session,
       toolUseId,
@@ -321,7 +321,7 @@ export function handleElicitation(
       // was anchored where it was RAISED, and the two disagreed about when the
       // clock started (DOR-1442).
       startedAt,
-      timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
+      timeoutMs: PENDING_APPROVAL_TIMING.attended.countdownMs,
     },
   });
   session.eventQueueNotify?.();
@@ -345,7 +345,7 @@ export function handleElicitation(
         parked: elicitationParkedNotice(request.serverName),
         expired: elicitationTimeoutNotice(
           request.serverName,
-          describeWaited(SESSIONS.INTERACTION_PARK_CEILING_MS)
+          describeWaited(PENDING_APPROVAL_TIMING.attended.expiresAfterMs)
         ),
       },
       { kind: 'elicitation' },
@@ -703,7 +703,7 @@ export function handleToolApproval(
       toolCallId: toolUseId,
       toolName,
       input: JSON.stringify(input),
-      timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
+      timeoutMs: PENDING_APPROVAL_TIMING.attended.countdownMs,
       startedAt,
       // SDK-provided rich context for the approval UI
       title: context.title,
@@ -731,7 +731,7 @@ export function handleToolApproval(
     context.signal.addEventListener('abort', onAbort, { once: true });
 
     const toolLabel = toolLabelFor(context.displayName, toolName);
-    const waitedMs = SESSIONS.INTERACTION_PARK_CEILING_MS;
+    const waitedMs = PENDING_APPROVAL_TIMING.attended.expiresAfterMs;
     const timeout = armInteractionWait(
       session,
       toolUseId,

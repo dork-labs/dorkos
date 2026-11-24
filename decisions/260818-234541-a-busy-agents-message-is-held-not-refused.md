@@ -15,6 +15,8 @@ amends: 260726-170125
 Accepted, and shipped on `main` (DOR-1345, 2026-08-19). **Amends [260726-170125](260726-170125-a-room-is-a-membership-scoped-durable-stream.md)**
 (A room is a membership-scoped durable stream, not a session), which stays `accepted`.
 
+**Amended by** [261124-150517](261124-150517-turns-survive-restarts-run-record-outbox-capped-recovery.md) (accepted 2026-11-24): "We will keep the hold in process memory" is retired. A held room trigger becomes saved outbox work. Hold, don't refuse; first in, first out; and no ghost prompt in a composer all stand.
+
 **Exactly one reading is retired:** that "**Rooms carry addressing and atomicity, never a concurrency
 primitive**" forbids a room holding a message for an agent that is mid-turn in a _different_ room.
 The clause's own words — no room-scoped write lock, no room turn policy, write coordination keyed on

@@ -69,7 +69,7 @@ export default async function PackageDetailPage(props: { params: Promise<{ slug:
   const { slug } = await props.params;
   // When the registry is unreachable (e.g. before the dorkos-community repo
   // is published), surface a 404 rather than a 500. The browse page renders
-  // a "launching soon" empty state for the same condition.
+  // a "coming soon" empty state for the same condition.
   const marketplace = await fetchMarketplaceJson().catch(() => null);
   const pkg = marketplace?.plugins.find((p) => p.name === slug);
   if (!pkg || !marketplace) notFound();

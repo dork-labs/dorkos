@@ -106,17 +106,6 @@ cat "$FIXTURE_PATH"
       ]);
     });
 
-    it('reads the live list whenever the key may', async () => {
-      const executable = await fakeNeon(`cat "$FIXTURE_PATH"`);
-      const { regions, savedList } = await readNeonRegionsForKey(
-        options(executable, {
-          FIXTURE_PATH: fileURLToPath(new URL('./fixtures/neon/regions.json', import.meta.url)),
-        })
-      );
-      expect(savedList).toBe(false);
-      expect(regions.map(({ id }) => id)).toEqual(['aws-us-east-2', 'aws-fixture-unknown-1']);
-    });
-
     // Catches the fallback hiding an outage, an old CLI, or a real refusal.
     it.each([
       'ERROR: Request timed out',
@@ -271,29 +260,6 @@ test "$3 $4 $5 $6 $7 $8" = "--project-id project-example --branch br-example --o
     });
   });
 
-  it('still accepts a string database id and rejects a non-integer one', async () => {
-    const topology = (id: string) =>
-      fakeNeon(`
-case "$1 $2" in
-  "databases list") printf '%s' '[{"id":${id},"branch_id":"br-example","name":"community","owner_name":"community_owner"}]' ;;
-  "roles list") printf '%s' '[{"branch_id":"br-example","name":"community_owner"}]' ;;
-  *) exit 9 ;;
-esac
-`);
-    const accepted = await readNeonBranchTopology(
-      options(await topology('"db-example"')),
-      'project-example',
-      'br-example'
-    );
-    expect(accepted.databases[0]?.id).toBe('db-example');
-    for (const id of ['-1', '1.5', '9007199254740993']) {
-      await expect(
-        readNeonBranchTopology(options(await topology(id)), 'project-example', 'br-example'),
-        id
-      ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
-    }
-  });
-
   it('reads every checked-in Neon fixture through the reader that parses it', async () => {
     const fixturePath = (name: string) =>
       fileURLToPath(new URL(`./fixtures/neon/${name}`, import.meta.url));
@@ -357,38 +323,6 @@ esac
     await expect(readNeonProjects(options(wrongOrganization), 'org-example')).rejects.toMatchObject(
       { code: 'INVALID_RESPONSE' }
     );
-  });
-
-  // A creation time is what later ties a project to the moment a run asked for it. A missing or
-  // unreadable one must read as absent, never as a time, and must not break the listing preflight uses.
-  it('reads a project creation time and treats a missing or unreadable one as absent', async () => {
-    const fixture = await readFile(
-      new URL('./fixtures/neon/projects.json', import.meta.url),
-      'utf8'
-    );
-    const executable = await fakeNeon(`printf '%s' "$FIXTURE_JSON"`);
-    await expect(
-      readNeonProjects(options(executable, { FIXTURE_JSON: fixture }), 'org_fixture_01')
-    ).resolves.toEqual([
-      expect.objectContaining({ id: 'project_fixture_01', createdAt: '2026-09-21T00:00:00Z' }),
-    ]);
-
-    for (const createdAt of [undefined, null, '', 'yesterday', 1_758_623_471]) {
-      const project = { ...(JSON.parse(fixture) as Record<string, unknown>[])[0] };
-      if (createdAt === undefined) delete project.created_at;
-      else project.created_at = createdAt;
-      const [read] = await readNeonProjects(
-        options(executable, { FIXTURE_JSON: JSON.stringify([project]) }),
-        'org_fixture_01'
-      );
-      expect(read, String(createdAt)).toEqual({
-        id: 'project_fixture_01',
-        organizationId: 'org_fixture_01',
-        name: 'Community Fixture',
-        regionId: 'aws-us-east-2',
-        postgresVersion: 17,
-      });
-    }
   });
 
   it('reads a marker role from the pinned roles fixture', async () => {

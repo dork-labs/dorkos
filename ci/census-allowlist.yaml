@@ -27,6 +27,22 @@
 # Conditions true on both events on a green run (e.g. `!cancelled()`) need no
 # entry. Schema: AllowlistSchema in packages/ci-steward/src/schemas.ts.
 entries:
+  - workflow: lint.yml
+    job: lint
+    kind: job-if
+    reason: "DOR-5130 attested queue exit. `!cancelled() && needs.attest.outputs.attested != 'true'` is true on pull_request (attest is skipped there, so its output is empty) and on merge_group unless scripts/attest-pr-check.sh proved the same context succeeded on the entry PR's current head; the job's first step fails it if attest failed. The skip is the point: the check already ran on the PR, and the push-to-main run plus after-merge-alert are the backstop."
+  - workflow: credential-free-build.yml
+    job: credential-free-build
+    kind: job-if
+    reason: "DOR-5130 attested queue exit. `!cancelled() && needs.attest.outputs.attested != 'true'` is true on pull_request (attest is skipped there, so its output is empty) and on merge_group unless scripts/attest-pr-check.sh proved the same context succeeded on the entry PR's current head; the job's first step fails it if attest failed. The skip is the point: the check already ran on the PR, and the push-to-main run plus after-merge-alert are the backstop."
+  - workflow: docs-openapi-check.yml
+    job: openapi-fresh
+    kind: job-if
+    reason: "DOR-5130 attested queue exit. `!cancelled() && needs.attest.outputs.attested != 'true'` is true on pull_request (attest is skipped there, so its output is empty) and on merge_group unless scripts/attest-pr-check.sh proved the same context succeeded on the entry PR's current head; the job's first step fails it if attest failed. The skip is the point: the check already ran on the PR, and the push-to-main run plus after-merge-alert are the backstop."
+  - workflow: scripts-test.yml
+    job: fixtures
+    kind: job-if
+    reason: "DOR-5130 attested queue exit. `!cancelled() && needs.attest.outputs.attested != 'true'` is true on pull_request (attest is skipped there, so its output is empty) and on merge_group unless scripts/attest-pr-check.sh proved the same context succeeded on the entry PR's current head; the job's first step fails it if attest failed. The skip is the point: the check already ran on the PR, and the push-to-main run plus after-merge-alert are the backstop."
   # --- typecheck.yml ---
   - workflow: typecheck.yml
     job: typecheck

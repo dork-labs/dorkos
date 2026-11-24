@@ -9,11 +9,9 @@
  * sentences, and the two log lines.
  *
  * **The wait is two stages, and only the second one refuses.** A prompt counts
- * down for {@link SESSIONS.INTERACTION_TIMEOUT_MS} exactly as it always has. Past
- * that it PARKS: the promise stays unresolved, the tool call stays held, the SDK
- * holds its loop open (`CanUseTool`, whose own doc says permission prompts have no park deadline), and the person is told the agent is
- * waiting. Only at {@link SESSIONS.INTERACTION_PARK_CEILING_MS} is the model
- * handed a refusal.
+ * down for the shared attended countdown. It then parks: the promise stays
+ * unresolved, the tool call stays held, and the person is told the agent is
+ * waiting. The SDK keeps its loop open until the terminal timer refuses the call.
  *
  * ## One wait, because a session with nobody to answer never gets here (2026-09-12)
  *
@@ -46,7 +44,7 @@ import type {
 } from '@dorkos/shared/types';
 import { logRefusal } from '../../../observability/refusals.js';
 import { logger } from '../../../../lib/logger.js';
-import { SESSIONS } from '../../../../config/constants.js';
+import { PENDING_APPROVAL_TIMING } from '../../shared/timing/pending-approval-timing.js';
 import { describeWaited } from '../sessions/tool-result-outcome.js';
 
 // ---------------------------------------------------------------------------
@@ -341,7 +339,7 @@ function logInteractionParked(
     toolName: interaction.toolName,
     ...(session.sdkSessionId !== undefined ? { sessionId: session.sdkSessionId } : {}),
     // The whole wait, measured from `startedAt` — not what is left of it.
-    waitsForMs: SESSIONS.INTERACTION_PARK_CEILING_MS,
+    waitsForMs: PENDING_APPROVAL_TIMING.attended.expiresAfterMs,
   });
 }
 
@@ -370,7 +368,9 @@ export function notifyInteractionCancelled(
  * the wait (e.g. "waited 10 minutes"), derived from the same constant the
  * timeout itself uses so the two can never drift apart.
  */
-const INTERACTION_TIMEOUT_MINUTES = Math.ceil(SESSIONS.INTERACTION_TIMEOUT_MS / 60_000);
+const INTERACTION_TIMEOUT_MINUTES = Math.ceil(
+  PENDING_APPROVAL_TIMING.attended.countdownMs / 60_000
+);
 
 /** Shorten a snippet of user-facing prose to roughly `maxLength` characters. */
 function truncateForNotice(text: string, maxLength: number): string {
@@ -468,9 +468,7 @@ export function elicitationTimeoutNotice(serverName: string, waited: string): st
 }
 
 /**
- * Arm the two-stage wait for one prompt: park at
- * {@link SESSIONS.INTERACTION_TIMEOUT_MS}, refuse at
- * {@link SESSIONS.INTERACTION_PARK_CEILING_MS}.
+ * Arm the two-stage wait for one prompt using the shared attended profile.
  *
  * Parking is not a resolution. Nothing is handed to the model, the tool call
  * stays held, and the SDK holds its loop open for as long as the promise stays
@@ -499,12 +497,13 @@ export function armInteractionWait(
   log: { kind: 'approval' | 'question' | 'elicitation'; toolName?: string },
   refuse: () => void
 ): ReturnType<typeof setTimeout> {
+  const { countdownMs, expiresAfterMs } = PENDING_APPROVAL_TIMING.attended;
   const expire = (): void => {
     session.pendingInteractions.delete(interactionId);
     logInteractionTimeout(session, {
       id: interactionId,
       ...log,
-      waitedMs: SESSIONS.INTERACTION_PARK_CEILING_MS,
+      waitedMs: expiresAfterMs,
     });
     notifyInteractionCancelled(session, interactionId, 'timeout');
     notifyInteractionTimeoutNotice(session, notices.expired);
@@ -518,21 +517,15 @@ export function armInteractionWait(
     if (entry === undefined) return;
     logInteractionParked(session, { id: interactionId, ...log });
     notifyInteractionTimeoutNotice(session, notices.parked);
-    // The REMAINDER, not a fresh ceiling, so the deadline is
-    // `startedAt + INTERACTION_PARK_CEILING_MS` — the same instant
-    // `listPendingInteractions` measures against, which is what stops the card
-    // and the server disagreeing about when the wait ends.
-    const ceiling = setTimeout(
-      expire,
-      SESSIONS.INTERACTION_PARK_CEILING_MS - SESSIONS.INTERACTION_TIMEOUT_MS
-    );
+    // Both timer delays together span the shared terminal budget.
+    const ceiling = setTimeout(expire, expiresAfterMs - countdownMs);
     ceiling.unref?.();
     entry.timeout = ceiling;
     // No `interaction_cancelled`, no resolution, no deny: the entry stays in
     // `session.pendingInteractions` and the promise stays unresolved.
   };
 
-  const countdown = setTimeout(park, SESSIONS.INTERACTION_TIMEOUT_MS);
+  const countdown = setTimeout(park, countdownMs);
   // A wait must never hold the event loop open, the reason `PendingApprovalStore`
   // already gives for its own timer.
   countdown.unref?.();

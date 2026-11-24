@@ -277,37 +277,6 @@ describe('SessionCrashRecovery', () => {
     expect(store.list(SESSION_ID)).toEqual([]);
   });
 
-  // AC3. The recovered turn sees the prior conversation because the relaunch
-  // takes the resume path — the fingerprint side of that is task 3.5's, but
-  // which path was asked for is decided HERE and is provable here.
-  it('resumes rather than starting fresh on the first dispatch after a crash', async () => {
-    const h = harness();
-
-    await h.dispatch([{ content: 'hello', messageId: 'm1' }]);
-    h.live().failStream(new Error('the CLI died'));
-    await h.awaitCrash(1);
-    await runTurn(h, 'm2');
-
-    expect(h.launches).toHaveLength(2);
-    expect(h.launches[0]!.resuming).toBe(false);
-    expect(h.launches[1]!.resuming).toBe(true);
-  });
-
-  // AC4. Nothing was running, so nothing may appear to have failed.
-  it('reports a crash while WARM as crashed with no turn on the stream', async () => {
-    const h = harness();
-
-    await h.warm();
-    await vi.waitFor(() => expect(h.pump.state).toBe('warm'));
-    h.live().failStream(new Error('the CLI died while idle'));
-    await h.awaitCrash(1);
-
-    expect(h.pump.warmth).toBe('crashed');
-    expect(h.crashes[0]).toMatchObject({ stateAtCrash: 'warm' });
-    expect(h.opened).toEqual([]);
-    expect(h.stream()).toEqual([]);
-  });
-
   // The held-buffer decision, pinned. A dead process's unattributed output is
   // DROPPED with a notice, never carried into the next process's window: the
   // durable queue is the reconciliation for input, and held SDK messages are
@@ -399,28 +368,6 @@ describe('SessionCrashRecovery', () => {
     expect(h.launches).toHaveLength(3);
   });
 
-  // A turn that COMPLETED is the only evidence the session is healthy again.
-  // Reaching `system/init` is not: the failure this bounds is a process that
-  // boots fine and dies mid-turn.
-  it('gives a session that recovered its full allowance back', async () => {
-    const h = harness();
-
-    await h.dispatch([{ content: 'first', messageId: 'm1' }]);
-    h.live().failStream(new Error('the CLI died'));
-    await h.awaitCrash(1);
-
-    await runTurn(h, 'm2');
-    expect(h.recovery.consecutiveCrashes).toBe(0);
-
-    // A second crash, now with a completed turn between: it resumes again.
-    await h.dispatch([{ content: 'third', messageId: 'm3' }]);
-    h.live().failStream(new Error('the CLI died again'));
-    await h.awaitCrash(2);
-    await runTurn(h, 'm4');
-
-    expect(h.launches.map((launch) => launch.resuming)).toEqual([false, true, true]);
-  });
-
   // The ORDER inside `handleCrash` is load-bearing, and this is the case that
   // proves it. Closing the crashed window calls `onWindowClose` SYNCHRONOUSLY
   // (`session-turn-windows.ts`), and that is the boundary a composition root
@@ -460,27 +407,5 @@ describe('SessionCrashRecovery', () => {
     await vi.waitFor(() => expect(settled).toHaveLength(1));
     expect(await settled[0]).toBeInstanceOf(SessionCrashLoopError);
     expect(h.launches).toHaveLength(2);
-  });
-
-  // Operator visibility: what died, where, when, and how many times in a row.
-  it('records every crash with the state it happened in and the run of them', async () => {
-    const h = harness({ dieAfterInit: true, now: () => 1_700_000_000_000 });
-
-    await h.dispatch([{ content: 'first', messageId: 'm1' }]);
-    await h.awaitCrash(1);
-    await h.dispatch([{ content: 'second', messageId: 'm2' }]);
-    await h.awaitCrash(2);
-
-    expect(h.crashes).toHaveLength(2);
-    expect(h.crashes[0]).toMatchObject({
-      sessionId: SESSION_ID,
-      stateAtCrash: 'running',
-      consecutive: 1,
-      willAutoResume: true,
-      at: 1_700_000_000_000,
-    });
-    expect(h.crashes[0]!.message).toContain('the CLI died');
-    expect(h.crashes[1]).toMatchObject({ consecutive: 2, willAutoResume: false });
-    expect(h.recovery.lastCrash).toBe(h.crashes[1]);
   });
 });

@@ -16,7 +16,10 @@ import type {
   RuntimeToolCaller,
   RuntimeToolTurnFacts,
 } from '../runtime-principal-port.js';
-import { RuntimeToolContextUnavailableError } from '../runtime-principal-port.js';
+import {
+  ConnectorRuntimeAuthorityError,
+  RuntimeToolContextUnavailableError,
+} from '../runtime-principal-port.js';
 import { homeOf, resolveAgentHome } from '../../core/agent-identity/index.js';
 import {
   createServerPrincipal,
@@ -43,28 +46,6 @@ export interface ConnectorRuntimeAuthorityResolver {
   authorizeTurn(input: OpenConnectorTurnInput): Promise<ConnectorRuntimeAuthority>;
   /** Recheck the exact stored claims before every connector projection call. */
   revalidateTurn(claims: Extract<ServerPrincipalClaims, { kind: 'runtime' }>): Promise<boolean>;
-}
-
-/** Typed setup refusal mapped by the runtime boundary without exposing private claims. */
-export class ConnectorRuntimeAuthorityError extends Error {
-  /**
-   * Stable internal refusal code. `agent_unrecorded` is the one refusal a turn
-   * may run on without connected apps: the chat has no recorded agent, so there
-   * is nothing to grant (DOR-2752). Every other refusal fails the turn.
-   */
-  readonly code: 'boot_not_initialized' | 'authority_refused' | 'agent_unrecorded';
-
-  /**
-   * Construct a safe runtime authority error.
-   *
-   * @param code - Stable setup refusal category.
-   * @param message - Secret-free diagnostic.
-   */
-  constructor(code: ConnectorRuntimeAuthorityError['code'], message: string) {
-    super(message);
-    this.name = 'ConnectorRuntimeAuthorityError';
-    this.code = code;
-  }
 }
 
 /** Construction options for the durable runtime principal service. */

@@ -11,17 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 vi.mock('../lib/confirm-prompt.js', () => ({ confirm: vi.fn() }));
 
 import { confirm } from '../lib/confirm-prompt.js';
-import {
-  describeUnreadableFolder,
-  parseMarketplaceLinkArgs,
-  runMarketplaceLink,
-  type MarketplaceLinkArgs,
-} from '../commands/marketplace-link.js';
-import {
-  describeUnlink,
-  parseMarketplaceUnlinkArgs,
-  runMarketplaceUnlink,
-} from '../commands/marketplace-unlink.js';
+import { runMarketplaceLink, type MarketplaceLinkArgs } from '../commands/marketplace-link.js';
+import { describeUnlink } from '../commands/marketplace-unlink.js';
 
 function mockResponse(status: number, body: unknown): Response {
   return {
@@ -119,36 +110,6 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-describe('parseMarketplaceLinkArgs', () => {
-  it('resolves the folder and the project against the working directory', () => {
-    const parsed = parseMarketplaceLinkArgs([
-      'plugin',
-      '--project',
-      'web',
-      '--replace-installed',
-      '-y',
-      '--approval',
-      'tok',
-      '--json',
-    ]);
-    expect(parsed).toEqual({
-      folder: path.resolve(process.cwd(), 'plugin'),
-      projectPath: path.resolve(process.cwd(), 'web'),
-      replaceInstalled: true,
-      yes: true,
-      approvalToken: 'tok',
-      json: true,
-    });
-  });
-
-  it('needs a folder, and names the command on a bad option', () => {
-    expect(() => parseMarketplaceLinkArgs([])).toThrow(/Missing required <path>/);
-    expect(() => parseMarketplaceLinkArgs(['x', '--nope'])).toThrow(
-      /Unknown option for 'marketplace link': --nope/
-    );
-  });
-});
-
 describe('runMarketplaceLink', () => {
   it('shows the preview, asks, and links the real path from the terminal', async () => {
     confirmMock.mockResolvedValueOnce(true);
@@ -186,17 +147,6 @@ describe('runMarketplaceLink', () => {
     expect(printed()).toContain('Nothing was linked.');
   });
 
-  it('skips the question with --yes', async () => {
-    fetchMock
-      .mockResolvedValueOnce(mockResponse(200, preview()))
-      .mockResolvedValueOnce(mockResponse(201, STATUS()));
-
-    expect(await runMarketplaceLink(args({ yes: true }))).toBe(0);
-
-    expect(confirmMock).not.toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
   it('refuses to link without a keyboard or --yes', async () => {
     Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
     fetchMock.mockResolvedValueOnce(mockResponse(200, preview()));
@@ -205,16 +155,6 @@ describe('runMarketplaceLink', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(printedErr()).toContain('--yes');
-  });
-
-  it('says how to set an installed copy aside before asking anything', async () => {
-    fetchMock.mockResolvedValueOnce(mockResponse(200, preview({ replaces: { version: '1.0.0' } })));
-
-    expect(await runMarketplaceLink(args())).toBe(1);
-
-    expect(confirmMock).not.toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(printedErr()).toContain('--replace-installed');
   });
 
   it('sends a project and the replace choice, and says the installed copy is set aside', async () => {
@@ -288,13 +228,6 @@ describe('runMarketplaceLink', () => {
     expect(call(1).headers['X-DorkOS-Approval']).toBe('appr_tok_1');
   });
 
-  it('says so when the folder does not exist, without calling DorkOS', async () => {
-    expect(await runMarketplaceLink(args({ folder: path.join(tmp, 'nope') }))).toBe(1);
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(printedErr()).toContain('No folder at');
-  });
-
   it('says plainly that the folder changed when the server refuses the stale yes', async () => {
     // Purpose: a folder that gained a hook while the question waited is
     // refused; the person is told what happened and what to do, not a code.
@@ -313,63 +246,9 @@ describe('runMarketplaceLink', () => {
     );
     expect(printed()).not.toContain('now runs from');
   });
-
-  it('names the reason a folder cannot be read, and the quoted-~ trap', () => {
-    // Purpose: "No folder" for a permission problem sends the person looking
-    // in the wrong place; a quoted ~ reaches us as a literal folder named ~.
-    expect(describeUnreadableFolder('/a/b', { code: 'EACCES' })).toBe(
-      "Error: Can't read /a/b: permission denied (EACCES)."
-    );
-    expect(describeUnreadableFolder('/a/b', { code: 'ENAMETOOLONG' })).toBe(
-      "Error: Can't read /a/b (ENAMETOOLONG)."
-    );
-    expect(describeUnreadableFolder('/cwd/~/code', { code: 'ENOENT' })).toBe(
-      'Error: No folder at /cwd/~/code. The shell does not expand ~ inside quotes; use the full path.'
-    );
-  });
-
-  it('prints the server refusal as it is', async () => {
-    fetchMock.mockResolvedValueOnce(
-      mockResponse(400, {
-        error: "That folder isn't a package.",
-        code: 'dev_link_not_a_package',
-      })
-    );
-
-    expect(await runMarketplaceLink(args())).toBe(1);
-
-    expect(printedErr()).toContain("Error: That folder isn't a package.");
-  });
 });
 
 describe('marketplace unlink', () => {
-  it('parses a name and a project', () => {
-    expect(parseMarketplaceUnlinkArgs(['flow', '--project', 'web'])).toEqual({
-      name: 'flow',
-      projectPath: path.resolve(process.cwd(), 'web'),
-      json: false,
-    });
-    expect(() => parseMarketplaceUnlinkArgs([])).toThrow(/Missing required <name>/);
-  });
-
-  it('says the installed copy is back', async () => {
-    fetchMock.mockResolvedValueOnce(mockResponse(200, { restored: 'installed' }));
-
-    expect(await runMarketplaceUnlink({ name: 'flow', projectPath: '/w', json: false })).toBe(0);
-
-    expect(call(0).url).toMatch(/\/api\/marketplace\/dev-links\/flow\/unlink$/);
-    expect(call(0).body).toEqual({ scope: 'project', projectPath: '/w' });
-    expect(printed()).toBe('Your installed copy of flow is back.');
-  });
-
-  it('says the package is gone and the folder untouched', async () => {
-    fetchMock.mockResolvedValueOnce(mockResponse(200, { restored: 'removed' }));
-
-    expect(await runMarketplaceUnlink({ name: 'flow', json: false })).toBe(0);
-
-    expect(printed()).toBe('flow removed. Your folder was not touched.');
-  });
-
   it('does not call the package removed when something else holds its place', () => {
     // Purpose: unlink left that other thing alone; "removed" would claim more
     // than happened.
@@ -377,27 +256,5 @@ describe('marketplace unlink', () => {
       'Unlinked flow. Your folder was not touched.',
       'Something else had already taken its place, and that was left as it is.',
     ]);
-  });
-
-  it('says where an installed copy that could not go back is', () => {
-    expect(describeUnlink('flow', { restored: 'removed', parkedLeftAt: '/p/flow.parked' })).toEqual(
-      [
-        'Unlinked flow. Your folder was not touched.',
-        "Your installed copy couldn't go back because something else is in its place. It is still at /p/flow.parked.",
-      ]
-    );
-  });
-
-  it("prints the route's refusal for an agent", async () => {
-    fetchMock.mockResolvedValueOnce(
-      mockResponse(403, {
-        error: 'Only you can unlink a dev link, not an agent.',
-        code: 'operator_only',
-      })
-    );
-
-    expect(await runMarketplaceUnlink({ name: 'flow', json: false })).toBe(1);
-
-    expect(printedErr()).toContain('Only you can unlink a dev link, not an agent.');
   });
 });

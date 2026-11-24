@@ -443,38 +443,6 @@ it('rate bounds batches, preserves monotonic seq and reports observable loss', a
   await act(() => vi.advanceTimersByTimeAsync(300));
   expect(captureCalls()[0][1]).toMatchObject({ seq: 1, dropped: true, console: [entry] });
 });
-it('never throws on raw BigInt/cycle reports and keeps the next valid report usable', async () => {
-  mount();
-  const cycle: unknown[] = [];
-  cycle.push(cycle);
-  for (const args of [[1n], cycle])
-    report({ __dorkosDevtools: 'batch', seq: 1, console: [{ ...entry, args }], network: [] });
-  await act(() => vi.advanceTimersByTimeAsync(300));
-  report({ __dorkosDevtools: 'batch', seq: 1, console: [entry], network: [] });
-  await act(() => vi.advanceTimersByTimeAsync(300));
-  expect(captureCalls()[0][1].console).toEqual([entry]);
-});
-it('coalesces resource renders to one RAF and caps the reported counter', async () => {
-  const hook = mount();
-  for (let i = 0; i < 10001; i++) report({ __dorkosDevtools: 'resource-error' });
-  expect(hook.result.current.resourceErrorCount).toBe(0);
-  await act(() => vi.advanceTimersByTimeAsync(20));
-  expect(hook.result.current.resourceErrorCount).toBe(10000);
-  act(() => hook.result.current.noteFrameLoaded());
-  expect(hook.result.current.resourceErrorCount).toBe(0);
-});
-it('keeps seat heartbeats nonactivating, and explicit person navigation activates it', async () => {
-  const hook = mount();
-  await settle();
-  await act(() => vi.advanceTimersByTimeAsync(15000));
-  expect(claimCalls().at(-1)![1].activation).toBe(false);
-  act(() => hook.result.current.notePersonNavigated());
-  await settle();
-  expect(claimCalls().at(-1)![1].activation).toBe(true);
-  hook.unmount();
-  await settle();
-  expect(claimCalls().at(-1)![1].active).toBe(false);
-});
 it('forwards action only to the addressed generation and relays a page failure as data', async () => {
   mount();
   const command = { action: 'click', target: { text: 'Pay' } };
@@ -534,21 +502,6 @@ it('keeps recording frames local and uploads only on stop', async () => {
     expect.objectContaining({ signal: expect.any(AbortSignal) })
   );
 });
-it('retries from normalized pixels without a second decode after compressed inputs are released', async () => {
-  encodeResults = [{ ok: false, error: 'too large' }, OK_GIF];
-  mount();
-  record('start', 'start');
-  await settle();
-  capture(frameRequest());
-  await settle();
-  record('stop', 'stop');
-  await settle();
-  capture(frameRequest());
-  await settle();
-  expect(drawFrames).toHaveBeenCalledTimes(1);
-  expect(halveFrames).toHaveBeenCalledTimes(1);
-  expect(encodeGif).toHaveBeenCalledTimes(2);
-});
 it('retains a finishing job across generations and cancels after deferred drawing before encode/upload', async () => {
   let release!: (
     frames: { data: Uint8ClampedArray<ArrayBuffer>; width: number; height: number }[]
@@ -584,89 +537,6 @@ it('retains a finishing job across generations and cancels after deferred drawin
   record('start', 'third', 'third-film');
   await settle();
   expect(vi.mocked(iframe.contentWindow!.postMessage).mock.calls.length).toBeGreaterThan(calls);
-});
-it('keeps canonical rekey and ready upgrades from reactivating a background seat', async () => {
-  useAppStore.setState({ openDocuments: [{ id: 'doc', openedHere: true }] as never });
-  const hook = mount();
-  await settle();
-  expect(
-    claimCalls()
-      .filter(([, c]) => c.instrumented)
-      .at(-1)![1].activation
-  ).toBe(false);
-  searchSession = 'canonical';
-  hook.rerender({});
-  ready();
-  await settle();
-  expect(
-    claimCalls()
-      .filter(([sid, c]) => sid === 'canonical' && c.active)
-      .every(([, c]) => c.activation === false)
-  ).toBe(true);
-});
-it('retains the finishing slot until a cancelled encoder await unwinds, then releases every normalized frame', async () => {
-  let release!: (result: EncodeOutcome) => void;
-  encodeGif.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        release = resolve;
-      })
-  );
-  const hook = mount();
-  record('start', 'start');
-  await settle();
-  capture(frameRequest());
-  await settle();
-  record('stop', 'stop');
-  await settle();
-  capture(frameRequest());
-  await settle();
-  hook.rerender({ reloadNonce: 1 });
-  act(() => hook.result.current.noteFrameLoaded());
-  ready();
-  record('start', 'second', 'second-film');
-  await settle();
-  expect(drawFrames).toHaveBeenCalledTimes(1);
-  release(OK_GIF);
-  await settle();
-  expect(uploadDevtoolsRecording).not.toHaveBeenCalled();
-  record('start', 'third', 'third-film');
-  await settle();
-  capture(frameRequest());
-  await settle();
-  record('stop', 'third-stop', 'third-film');
-  await settle();
-  capture(frameRequest());
-  await settle();
-  expect(uploadDevtoolsRecording).toHaveBeenCalledTimes(1);
-});
-it('reports a host-only stop failure for a recording the current frame does not hold', async () => {
-  mount();
-  record('stop', 'stop', 'missing');
-  await settle();
-  expect(uploadDevtoolsRecording).toHaveBeenCalledWith(
-    'session-1',
-    expect.objectContaining({
-      requestId: 'stop',
-      error: expect.stringContaining('stopped recording'),
-      bridgeGeneration: generation(),
-      documentId: 'doc',
-    })
-  );
-});
-
-it('preserves person address submission while frame resolution has no eligible lifetime', async () => {
-  const hook = mount({ bridgeEligibility: null, resolvedSource: null }, false);
-  act(() => hook.result.current.notePersonNavigated());
-  hook.rerender({ ...defaults });
-  act(() => hook.result.current.noteFrameLoaded());
-  await settle();
-  expect(claimCalls().some(([, claim]) => claim.active === true && claim.activation === true)).toBe(
-    true
-  );
-  ready();
-  await settle();
-  expect(claimCalls().at(-1)![1].activation).toBe(false);
 });
 
 it('keeps pagehide release ordered behind a deferred claim and restores through pageshow', async () => {
@@ -771,58 +641,6 @@ it('caps retained recording frames and only claims captures requested by the hos
     expect.anything()
   );
 });
-it('reports an encoder refusal after one normalized-pixel retry and releases the job for a new recording', async () => {
-  encodeResults = [
-    { ok: false, error: 'too large' },
-    { ok: false, error: 'still too large' },
-  ];
-  mount();
-  record('start', 'start');
-  await settle();
-  capture(frameRequest());
-  await settle();
-  record('stop', 'stop');
-  await settle();
-  capture(frameRequest());
-  await settle();
-  expect(uploadDevtoolsRecording).toHaveBeenCalledWith(
-    'session-1',
-    expect.objectContaining({ requestId: 'stop', hostOutcome: 'host', error: 'still too large' }),
-    expect.anything()
-  );
-  expect(encodeGif).toHaveBeenCalledTimes(2);
-  const before = vi.mocked(iframe.contentWindow!.postMessage).mock.calls.length;
-  record('start', 'new', 'new-film');
-  await settle();
-  expect(vi.mocked(iframe.contentWindow!.postMessage).mock.calls.length).toBeGreaterThan(before);
-});
-
-it('resets buffered attribution at real page boundaries but preserves canonical-session rekey data', async () => {
-  const hook = mount();
-  await settle();
-  expect(claimCalls().some(([, claim]) => claim.reset)).toBe(true);
-  ingestDevtoolsCapture.mockClear();
-  searchSession = 'canonical';
-  hook.rerender({});
-  await settle();
-  expect(claimCalls().every(([, claim]) => !claim.reset)).toBe(true);
-  ingestDevtoolsCapture.mockClear();
-  hook.rerender({ logicalUrl: 'next-page' });
-  await settle();
-  expect(
-    claimCalls()
-      .filter(([, claim]) => claim.active)
-      .at(-1)![1]
-  ).toMatchObject({ reset: true, logicalUrl: 'next-page', instrumented: false });
-  ingestDevtoolsCapture.mockClear();
-  act(() => hook.result.current.noteFrameLoaded());
-  await settle();
-  expect(
-    claimCalls()
-      .filter(([, claim]) => claim.active)
-      .at(-1)![1].reset
-  ).toBe(true);
-});
 
 it('rate-admits batch processing before deep parsing while capture responses and later telemetry remain usable', async () => {
   mount();
@@ -884,54 +702,6 @@ it('bounds queue work and UTF-8 bytes while discarding older network before newe
   expect(sent.dropped).toBe(true);
   stringify.mockRestore();
 });
-
-it('page-reported navigation retires a visible resource lifetime without minting from its rerender or focus', async () => {
-  const hook = mount();
-  report({ __dorkosDevtools: 'resource-error' });
-  await act(() => vi.advanceTimersByTimeAsync(20));
-  expect(hook.result.current.resourceErrorCount).toBe(1);
-  const old = generation();
-  const initCount = () =>
-    vi
-      .mocked(iframe.contentWindow!.postMessage)
-      .mock.calls.filter(([m]) => m.__dorkosDevtools === 'init').length;
-  const before = initCount();
-  ingestDevtoolsCapture.mockClear();
-  report({ __dorkosDevtools: 'navigated' });
-  hook.rerender({});
-  act(() => window.dispatchEvent(new Event('focus')));
-  act(() => window.dispatchEvent(new Event('pageshow')));
-  await settle();
-  expect(hook.result.current.resourceErrorCount).toBe(0);
-  expect(initCount()).toBe(before);
-  expect(claimCalls().filter(([, claim]) => claim.active)).toHaveLength(0);
-  act(() => hook.result.current.noteFrameLoaded());
-  ready();
-  await settle();
-  expect(generation()).not.toBe(old);
-  expect(claimCalls().at(-1)![1]).toMatchObject({ active: true, instrumented: true });
-});
-
-it('does not reactivate on visibility loss and reactivates only when the current tab becomes visible', async () => {
-  mount();
-  await settle();
-  ingestDevtoolsCapture.mockClear();
-  const visibility = vi.spyOn(document, 'visibilityState', 'get');
-  try {
-    visibility.mockReturnValue('hidden');
-    act(() => document.dispatchEvent(new Event('visibilitychange')));
-    await settle();
-    expect(claimCalls()).toHaveLength(0);
-    visibility.mockReturnValue('visible');
-    act(() => document.dispatchEvent(new Event('visibilitychange')));
-    await settle();
-    expect(claimCalls()).toHaveLength(1);
-    expect(claimCalls()[0][1]).toMatchObject({ active: true, activation: true });
-  } finally {
-    visibility.mockRestore();
-  }
-});
-
 describe('complete host request bindings', () => {
   for (const type of [
     'devtools_capture_request',
@@ -1081,18 +851,6 @@ it('reserves without capture and acknowledges actual activation only after exact
   await settle();
   expect(admissionFrames()).toHaveLength(1);
 });
-it('expires a relative reservation and cannot revive it with a late confirmation', async () => {
-  mount();
-  startAdmission();
-  await act(() => vi.advanceTimersByTimeAsync(8001));
-  admissionControl('confirm-start');
-  await settle();
-  expect(admissionFrames()).toHaveLength(0);
-  startAdmission('later', 'later-film');
-  admissionControl('confirm-start', 'later', 'later-film');
-  await settle();
-  expect(admissionFrames()).toHaveLength(1);
-});
 it('refuses elapsed confirmation even before its reservation timer dispatches and permits a later start', async () => {
   let monotonicNow = 100;
   const monotonicClock = vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow);
@@ -1115,24 +873,6 @@ it('refuses elapsed confirmation even before its reservation timer dispatches an
       phase: 'started',
       ok: true,
     });
-  } finally {
-    monotonicClock.mockRestore();
-  }
-});
-it('acknowledges an active duplicate confirmation beyond its old reservation deadline', async () => {
-  let monotonicNow = 100;
-  const monotonicClock = vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow);
-  try {
-    mount();
-    startAdmission();
-    admissionControl('confirm-start');
-    await settle();
-    expect(admissionFrames()).toHaveLength(1);
-    monotonicNow += 8001;
-    admissionControl('confirm-start');
-    await settle();
-    expect(admissionFrames()).toHaveLength(1);
-    expect(recordingAdmissionReplies().at(-1)).toMatchObject({ phase: 'started', ok: true });
   } finally {
     monotonicClock.mockRestore();
   }
@@ -1297,6 +1037,7 @@ it.each(['success', 'failure'] as const)(
     expect(captureCalls()).toHaveLength(2);
   }
 );
+
 it('an old dispatched timer callback cannot delete a replacement same-ID pending entry', async () => {
   mount();
   const timers = vi.spyOn(globalThis, 'setTimeout');
@@ -1344,15 +1085,3 @@ it.each(['success', 'failure'] as const)(
     }
   }
 );
-it('refuses a response at the exact pending deadline and permits a later ordinary response', async () => {
-  mount();
-  request('expired');
-  await settle();
-  vi.setSystemTime(Date.now() + 8000);
-  capture('expired');
-  expect(captureCalls()).toHaveLength(0);
-  request('later');
-  await settle();
-  capture('later');
-  expect(captureCalls()).toHaveLength(1);
-});

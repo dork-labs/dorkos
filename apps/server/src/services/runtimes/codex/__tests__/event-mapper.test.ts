@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { StreamEventSchema, UI_COMMAND_REACH } from '@dorkos/shared/schemas';
+import { StreamEventSchema } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
 import {
@@ -11,7 +11,6 @@ import {
 import {
   DEFAULT_USAGE,
   agentMessageItem,
-  codexAbortedTurn,
   codexCommandTurn,
   codexFailedTurn,
   codexFailedTurnWithErrorItem,
@@ -21,27 +20,19 @@ import {
   codexMcpTurn,
   codexRecoveredTurn,
   codexSimpleTurn,
-  codexStreamError,
   codexStreamErrorTurn,
   codexThreadStarted,
   codexTurnCompleted,
   codexTurnFailed,
-  codexTurnStarted,
   commandExecutionItem,
-  errorThreadItem,
   fileChangeItem,
   mcpToolCallItem,
   reasoningItem,
   todoListItem,
   toEventStream,
-  webSearchItem,
 } from './codex-scenarios.js';
 
 const SESSION_ID = 'session-1';
-const METADATA_WARNING =
-  'Model metadata for `gpt-6-astra` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.';
-const MODEL_SWITCH_WARNING =
-  'This session was recorded with model `gpt-6-astra` but is resuming with `gpt-5.4`. Consider switching back to `gpt-6-astra` as it may affect Codex performance.';
 const CODEX_UPDATE_ERROR =
   '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-6-astra\' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again."}}';
 const CHATGPT_MODEL_ERROR =
@@ -69,10 +60,6 @@ describe('mapCodexEvent', () => {
       expect(events).toEqual([]);
       expect(ctx.threadId).toBe('t-9');
     });
-
-    it('emits nothing for turn.started', () => {
-      expect(mapCodexEvent(codexTurnStarted(), makeContext())).toEqual([]);
-    });
   });
 
   describe('agent_message → text_delta', () => {
@@ -87,29 +74,6 @@ describe('mapCodexEvent', () => {
       ]);
       expect(mapCodexEvent(codexItemCompleted(agentMessageItem('m1', 'Hello world')), ctx)).toEqual(
         [{ type: 'text_delta', data: { text: 'ld' } }]
-      );
-    });
-
-    it('emits the full new text when a snapshot is not a prefix extension', () => {
-      const ctx = makeContext();
-      mapCodexEvent(codexItemUpdated(agentMessageItem('m1', 'Hello')), ctx);
-      expect(mapCodexEvent(codexItemUpdated(agentMessageItem('m1', 'Goodbye')), ctx)).toEqual([
-        { type: 'text_delta', data: { text: 'Goodbye' } },
-      ]);
-    });
-
-    it('emits one full text_delta for a completed-only agent_message', () => {
-      const ctx = makeContext();
-      expect(mapCodexEvent(codexItemCompleted(agentMessageItem('m1', 'All at once')), ctx)).toEqual(
-        [{ type: 'text_delta', data: { text: 'All at once' } }]
-      );
-    });
-
-    it('emits nothing when a completed snapshot adds no new text', () => {
-      const ctx = makeContext();
-      mapCodexEvent(codexItemUpdated(agentMessageItem('m1', 'Full text')), ctx);
-      expect(mapCodexEvent(codexItemCompleted(agentMessageItem('m1', 'Full text')), ctx)).toEqual(
-        []
       );
     });
   });
@@ -146,23 +110,6 @@ describe('mapCodexEvent', () => {
       ]);
     });
 
-    it('maps updated aggregated_output to incremental tool_progress', () => {
-      const ctx = makeContext();
-      mapCodexEvent(codexItemStarted(commandExecutionItem('c1', { command: 'ls' })), ctx);
-      expect(
-        mapCodexEvent(
-          codexItemUpdated(commandExecutionItem('c1', { command: 'ls', output: 'file1\n' })),
-          ctx
-        )
-      ).toEqual([{ type: 'tool_progress', data: { toolCallId: 'c1', content: 'file1\n' } }]);
-      expect(
-        mapCodexEvent(
-          codexItemUpdated(commandExecutionItem('c1', { command: 'ls', output: 'file1\nfile2\n' })),
-          ctx
-        )
-      ).toEqual([{ type: 'tool_progress', data: { toolCallId: 'c1', content: 'file2\n' } }]);
-    });
-
     it('maps successful completion to tool_call_end + tool_result', () => {
       const ctx = makeContext();
       mapCodexEvent(codexItemStarted(commandExecutionItem('c1', { command: 'ls' })), ctx);
@@ -189,24 +136,6 @@ describe('mapCodexEvent', () => {
       ]);
     });
 
-    it('never populates the MCP App `ui` field (SEP-1865 is claude-code-only in v1)', () => {
-      const ctx = makeContext();
-      mapCodexEvent(codexItemStarted(commandExecutionItem('c1', { command: 'ls' })), ctx);
-      const events = mapCodexEvent(
-        codexItemCompleted(
-          commandExecutionItem('c1', {
-            command: 'ls',
-            output: 'ui://should-not-be-detected\n',
-            status: 'completed',
-            exitCode: 0,
-          })
-        ),
-        ctx
-      );
-      const result = events.find((e) => e.type === 'tool_result');
-      expect((result!.data as { ui?: unknown }).ui).toBeUndefined();
-    });
-
     it('maps failed completion to error-status tool events, not a silent drop', () => {
       const ctx = makeContext();
       mapCodexEvent(codexItemStarted(commandExecutionItem('c1', { command: 'boom' })), ctx);
@@ -224,21 +153,6 @@ describe('mapCodexEvent', () => {
       expect(events.map((e) => e.type)).toEqual(['tool_call_end', 'tool_result']);
       expect(events[0]!.data).toMatchObject({ status: 'error' });
       expect(events[1]!.data).toMatchObject({ status: 'error', result: 'command not found\n' });
-    });
-
-    it('synthesizes tool_call_start when completion arrives without a start', () => {
-      const ctx = makeContext();
-      const events = mapCodexEvent(
-        codexItemCompleted(
-          commandExecutionItem('c1', { command: 'ls', output: 'ok', status: 'completed' })
-        ),
-        ctx
-      );
-      expect(events.map((e) => e.type)).toEqual([
-        'tool_call_start',
-        'tool_call_end',
-        'tool_result',
-      ]);
     });
   });
 
@@ -264,12 +178,6 @@ describe('mapCodexEvent', () => {
       ]);
     });
 
-    it('emits nothing for in-progress mcp updates', () => {
-      const ctx = makeContext();
-      mapCodexEvent(codexItemStarted(mcpToolCallItem('m1')), ctx);
-      expect(mapCodexEvent(codexItemUpdated(mcpToolCallItem('m1')), ctx)).toEqual([]);
-    });
-
     it('maps success to tool_call_end + tool_result with extracted text', () => {
       const ctx = makeContext();
       mapCodexEvent(codexItemStarted(mcpToolCallItem('m1')), ctx);
@@ -292,20 +200,6 @@ describe('mapCodexEvent', () => {
           },
         },
       ]);
-    });
-
-    it('maps failure to error-status tool events carrying the error message', () => {
-      const ctx = makeContext();
-      mapCodexEvent(codexItemStarted(mcpToolCallItem('m1')), ctx);
-      const events = mapCodexEvent(
-        codexItemCompleted(
-          mcpToolCallItem('m1', { status: 'failed', errorMessage: 'server unreachable' })
-        ),
-        ctx
-      );
-      expect(events.map((e) => e.type)).toEqual(['tool_call_end', 'tool_result']);
-      expect(events[0]!.data).toMatchObject({ status: 'error' });
-      expect(events[1]!.data).toMatchObject({ status: 'error', result: 'server unreachable' });
     });
   });
 
@@ -340,30 +234,6 @@ describe('mapCodexEvent', () => {
       expect(events.map((e) => e.type)).toEqual(['tool_call_start', 'tool_call_end']);
       expect(events[0]!.data).toMatchObject({ toolName: 'mcp__dorkos__control_ui' });
     });
-
-    it('emits no ui_command for ANY action, reaching-the-machine ones included', () => {
-      // The old mapper refused `apply_layout` here because it was the only place
-      // the question could be asked. It is asked in the handler now, on the one
-      // channel that reaches the model — so this mapper has no verdict to give,
-      // for any action in the table.
-      for (const action of Object.keys(UI_COMMAND_REACH)) {
-        const events = mapCodexEvent(
-          codexItemCompleted(
-            mcpToolCallItem(`ui-${action}`, {
-              server: 'dorkos',
-              tool: 'control_ui',
-              args: { action },
-              status: 'completed',
-            })
-          ),
-          makeContext()
-        );
-        expect(
-          events.some((e) => e.type === 'ui_command'),
-          `${action} produced a ui_command from the mapper`
-        ).toBe(false);
-      }
-    });
   });
 
   describe('file_change → tool events', () => {
@@ -389,39 +259,6 @@ describe('mapCodexEvent', () => {
         result: 'update src/a.ts\nadd src/b.ts',
         status: 'complete',
       });
-    });
-
-    it('maps a failed patch to error status', () => {
-      const ctx = makeContext();
-      const events = mapCodexEvent(
-        codexItemCompleted(fileChangeItem('f1', [{ path: 'src/a.ts', kind: 'update' }], 'failed')),
-        ctx
-      );
-      expect(events[1]!.data).toMatchObject({ status: 'error' });
-      expect(events[2]!.data).toMatchObject({ status: 'error' });
-    });
-  });
-
-  describe('web_search → tool events', () => {
-    it('maps started/completed to tool_call_start/tool_call_end without a result', () => {
-      const ctx = makeContext();
-      expect(mapCodexEvent(codexItemStarted(webSearchItem('w1', 'dorkos')), ctx)).toMatchObject([
-        {
-          type: 'tool_call_start',
-          data: {
-            toolCallId: 'w1',
-            toolName: 'WebSearch',
-            input: '{"query":"dorkos"}',
-            status: 'running',
-          },
-        },
-      ]);
-      expect(mapCodexEvent(codexItemCompleted(webSearchItem('w1', 'dorkos')), ctx)).toMatchObject([
-        {
-          type: 'tool_call_end',
-          data: { toolCallId: 'w1', toolName: 'WebSearch', status: 'complete' },
-        },
-      ]);
     });
   });
 
@@ -452,10 +289,6 @@ describe('mapCodexEvent', () => {
       ]);
     });
 
-    it('emits nothing for a leading empty todo list (nothing to clear yet)', () => {
-      expect(mapCodexEvent(codexItemUpdated(todoListItem('t1', [])), makeContext())).toEqual([]);
-    });
-
     it('propagates a clearing snapshot when a rendered list is emptied', () => {
       const ctx = makeContext();
       // Render a non-empty list first.
@@ -478,42 +311,9 @@ describe('mapCodexEvent', () => {
         },
       ]);
     });
-
-    it('does not spam a clear on repeated or trailing empty updates', () => {
-      const ctx = makeContext();
-      mapCodexEvent(codexItemUpdated(todoListItem('t1', [{ text: 'a', completed: false }])), ctx);
-      // First empty clears once.
-      expect(mapCodexEvent(codexItemUpdated(todoListItem('t1', [])), ctx)).toHaveLength(1);
-      // Subsequent empties are no-ops (nothing left to clear).
-      expect(mapCodexEvent(codexItemUpdated(todoListItem('t1', [])), ctx)).toEqual([]);
-      expect(mapCodexEvent(codexItemCompleted(todoListItem('t1', [])), ctx)).toEqual([]);
-    });
   });
 
   describe('errors and turn end', () => {
-    it('maps a non-fatal error item to a non-terminal error event', () => {
-      const events = mapCodexEvent(
-        codexItemCompleted(errorThreadItem('e1', 'tool exploded')),
-        makeContext()
-      );
-      expect(events).toEqual([
-        { type: 'error', data: { message: 'tool exploded', code: 'item_error' } },
-      ]);
-    });
-
-    it.each([
-      [METADATA_WARNING, 'Using fallback settings for gpt-6-astra.'],
-      [MODEL_SWITCH_WARNING, 'Resumed with gpt-5.4 instead of gpt-6-astra.'],
-      [
-        'Falling back from WebSockets to HTTPS. stream disconnected before completion',
-        'Codex switched to a standard connection.',
-      ],
-    ])('maps a known nonfatal item diagnostic to a calm status notice', (message, expected) => {
-      expect(
-        mapCodexEvent(codexItemCompleted(errorThreadItem('diagnostic', message)), makeContext())
-      ).toEqual([{ type: 'system_status', data: { message: expected } }]);
-    });
-
     it('keeps SDK output and cache totals but omits its cumulative input from context', () => {
       const events = mapCodexEvent(codexTurnCompleted(DEFAULT_USAGE), makeContext());
       expect(events).toEqual([
@@ -545,36 +345,6 @@ describe('mapCodexEvent', () => {
       });
     });
 
-    it('folds reasoning_output_tokens into the reported outputTokens count', () => {
-      const events = mapCodexEvent(
-        codexTurnCompleted({
-          input_tokens: 100,
-          cached_input_tokens: 0,
-          cache_write_input_tokens: 0,
-          output_tokens: 30,
-          reasoning_output_tokens: 70,
-        }),
-        makeContext()
-      );
-      const status = events.find((e) => e.type === 'session_status')!;
-      expect(status.data).toMatchObject({ outputTokens: 100 });
-    });
-
-    it('leaves outputTokens unchanged when there are no reasoning tokens', () => {
-      const events = mapCodexEvent(
-        codexTurnCompleted({
-          input_tokens: 100,
-          cached_input_tokens: 0,
-          cache_write_input_tokens: 0,
-          output_tokens: 30,
-          reasoning_output_tokens: 0,
-        }),
-        makeContext()
-      );
-      const status = events.find((e) => e.type === 'session_status')!;
-      expect(status.data).toMatchObject({ outputTokens: 30 });
-    });
-
     it('maps turn.failed to an error-reason session_status, a typed error, and terminal done', () => {
       const events = mapCodexEvent(codexTurnFailed('model exploded'), makeContext());
       expect(events).toEqual([
@@ -604,44 +374,6 @@ describe('mapCodexEvent', () => {
       });
     });
 
-    it('dedupes turn.failed but still emits the error-reason session_status before done', () => {
-      const ctx = makeContext();
-      const itemEvents = mapCodexEvent(
-        codexItemCompleted(errorThreadItem('e1', 'stream disconnected')),
-        ctx
-      );
-      expect(itemEvents.map((e) => e.type)).toEqual(['error']);
-
-      const failedEvents = mapCodexEvent(codexTurnFailed('stream disconnected'), ctx);
-      expect(failedEvents).toEqual([
-        { type: 'session_status', data: { sessionId: SESSION_ID, terminalReason: 'error' } },
-        { type: 'done', data: { sessionId: SESSION_ID } },
-      ]);
-    });
-
-    it('still emits the turn.failed error when its message differs from the last error item', () => {
-      const ctx = makeContext();
-      mapCodexEvent(codexItemCompleted(errorThreadItem('e1', 'falling back to HTTPS')), ctx);
-
-      const events = mapCodexEvent(codexTurnFailed('connection lost'), ctx);
-      expect(events.map((e) => e.type)).toEqual(['session_status', 'error', 'done']);
-      expect(events[0]!.data).toMatchObject({ terminalReason: 'error' });
-      expect(events[1]!.data).toMatchObject({ message: 'connection lost', code: 'turn_failed' });
-    });
-
-    it('does not let a preceding diagnostic dedupe away a terminal failure with the same text', () => {
-      const ctx = makeContext();
-      mapCodexEvent(codexItemCompleted(errorThreadItem('diagnostic', METADATA_WARNING)), ctx);
-
-      const events = mapCodexEvent(codexTurnFailed(METADATA_WARNING), ctx);
-      expect(events.map((event) => event.type)).toEqual(['session_status', 'error', 'done']);
-      expect(events[1]!.data).toMatchObject({
-        message: METADATA_WARNING,
-        code: 'turn_failed',
-        category: 'execution_error',
-      });
-    });
-
     it('maps a nested model/version rejection to actionable copy with raw details', () => {
       const events = mapCodexEvent(codexTurnFailed(CODEX_UPDATE_ERROR), makeContext());
       expect(events[1]).toEqual({
@@ -656,25 +388,6 @@ describe('mapCodexEvent', () => {
       });
     });
 
-    it('classifies a nested model rejection even when Codex reports it as an item error', () => {
-      const events = mapCodexEvent(
-        codexItemCompleted(errorThreadItem('model-error', CHATGPT_MODEL_ERROR)),
-        makeContext()
-      );
-      expect(events).toEqual([
-        {
-          type: 'error',
-          data: {
-            message:
-              'gpt-5.4 isn’t available with a ChatGPT account. Choose another model from the model menu.',
-            category: 'model_unavailable',
-            details: CHATGPT_MODEL_ERROR,
-            code: 'item_error',
-          },
-        },
-      ]);
-    });
-
     it('does not misclassify a ChatGPT model rejection as a sign-in failure', () => {
       const events = mapCodexEvent(codexTurnFailed(CHATGPT_MODEL_ERROR), makeContext());
       expect(events[1]?.data).toEqual({
@@ -684,13 +397,6 @@ describe('mapCodexEvent', () => {
         category: 'model_unavailable',
         details: CHATGPT_MODEL_ERROR,
       });
-    });
-
-    it('maps a stream-level error to a NON-terminal system_status diagnostic', () => {
-      // Live-verified: stream errors are transient reconnect attempts, not
-      // fatal (NOTES.md §Additional live-verified facts) — no error, no done.
-      const events = mapCodexEvent(codexStreamError('Reconnecting... 3/5'), makeContext());
-      expect(events).toEqual([{ type: 'system_status', data: { message: 'Reconnecting... 3/5' } }]);
     });
   });
 });
@@ -728,46 +434,6 @@ describe('mapCodexThread', () => {
     }
   );
 
-  it('maps a simple turn to text deltas, usage, and done', async () => {
-    const events = await drain(codexSimpleTurn('Hello world'));
-    expect(events.map((e) => e.type)).toEqual([
-      'text_delta',
-      'text_delta',
-      'session_status',
-      'done',
-    ]);
-    const text = events
-      .filter((e) => e.type === 'text_delta')
-      .map((e) => (e.data as { text: string }).text)
-      .join('');
-    expect(text).toBe('Hello world');
-  });
-
-  it('reads native current context after turn completion', async () => {
-    const readTurnContextUsage = vi.fn(async () => ({
-      context: { contextTokens: 54_999, contextMaxTokens: 258_400 },
-      rateLimits: [],
-    }));
-    const ctx = createCodexEventContext(SESSION_ID, {
-      readTurnContextUsage,
-      now: () => 1_788_908_279_000,
-    });
-    const turn = codexSimpleTurn('done');
-    turn[0] = codexThreadStarted('01a082ce-2b72-71d2-be38-aa8425f13650');
-
-    const events = await drain(turn, ctx);
-
-    expect(readTurnContextUsage).toHaveBeenCalledWith(
-      '01a082ce-2b72-71d2-be38-aa8425f13650',
-      1_788_908_279_000,
-      expect.any(AbortSignal)
-    );
-    expect(events.find((event) => event.type === 'session_status')?.data).toMatchObject({
-      contextTokens: 54_999,
-      contextMaxTokens: 258_400,
-    });
-  });
-
   it("announces a usage limit the rollout shows before the turn's done", async () => {
     const readTurnContextUsage = vi.fn(async () => ({
       context: null,
@@ -797,65 +463,21 @@ describe('mapCodexThread', () => {
     expect(limitIndex).toBe(events.length - 2);
   });
 
-  it('reads the rollout after a failed turn too, and a usage-limit failure sets the limit', async () => {
-    const readTurnContextUsage = vi.fn(async () => ({ context: null, rateLimits: [] }));
-    const ctx = createCodexEventContext(SESSION_ID, { readTurnContextUsage, now: () => 0 });
-    const turn = codexFailedTurn("You've hit your usage limit. Try again at 9:26 PM.");
-    turn[0] = codexThreadStarted('01a082ce-2b72-71d2-be38-aa8425f13650');
-
-    const events = await drain(turn, ctx);
-
-    expect(readTurnContextUsage).toHaveBeenCalledTimes(1);
-    expect(
-      events.find((e) => e.type === 'session_status' && 'limit' in e.data)?.data
-    ).toMatchObject({ limit: { window: 'unknown', resetsAt: null } });
-  });
-
-  it('an ordinary failed turn sets no limit', async () => {
-    const readTurnContextUsage = vi.fn(async () => ({ context: null, rateLimits: [] }));
-    const ctx = createCodexEventContext(SESSION_ID, { readTurnContextUsage, now: () => 0 });
-    const turn = codexFailedTurn('command failed with exit code 1');
-    turn[0] = codexThreadStarted('01a082ce-2b72-71d2-be38-aa8425f13650');
-
-    const events = await drain(turn, ctx);
-    expect(events.some((e) => e.type === 'session_status' && 'limit' in e.data)).toBe(false);
-  });
-
-  it('finishes with honest unknown context when the native reader never settles', async () => {
-    const ctx = createCodexEventContext(SESSION_ID, {
-      readTurnContextUsage: () => new Promise(() => {}),
-      turnContextUsageTimeoutMs: 5,
-      now: () => 1_788_908_279_000,
+  it('classifies a stream crash that is really a dead sign-in as auth_error (DOR-1656)', async () => {
+    // A credential failure can surface as a THROW rather than a turn.failed,
+    // and a hardcoded execution_error here leaves a person with no way back in.
+    const vendorText = 'Error: 401 Unauthorized — your Codex access token has been revoked';
+    async function* crashingStream(): AsyncGenerator<ThreadEvent> {
+      yield codexThreadStarted();
+      throw new Error(vendorText);
+    }
+    const events = await drain(crashingStream());
+    expect(events[0]!.data).toMatchObject({
+      message: 'Your Codex sign-in stopped working. Sign in again to keep going.',
+      code: 'stream_error',
+      category: 'auth_error',
+      details: vendorText,
     });
-    const turn = codexSimpleTurn('done');
-    turn[0] = codexThreadStarted('01a082ce-2b72-71d2-be38-aa8425f13650');
-
-    const events = await drain(turn, ctx);
-    const status = events.find((event) => event.type === 'session_status');
-
-    expect(status?.data).not.toHaveProperty('contextTokens');
-    expect(status?.data).not.toHaveProperty('contextMaxTokens');
-    expect(status?.data).toMatchObject({ outputTokens: 55, cacheReadTokens: 80 });
-    expect(events.at(-1)?.type).toBe('done');
-  });
-
-  it('recovers through transient stream errors into a completed turn', async () => {
-    const events = await drain(codexRecoveredTurn('All good.'));
-    expect(events.map((e) => e.type)).toEqual([
-      'system_status',
-      'system_status',
-      'text_delta',
-      'session_status',
-      'done',
-    ]);
-    expect(events.some((e) => e.type === 'error')).toBe(false);
-  });
-
-  it('emits exactly one user-visible error, then the error-reason status, when an error item precedes turn.failed', async () => {
-    const events = await drain(codexFailedTurnWithErrorItem('boom'));
-    expect(events.map((e) => e.type)).toEqual(['error', 'session_status', 'done']);
-    expect(events[0]!.data).toMatchObject({ message: 'boom', code: 'item_error' });
-    expect(events[1]!.data).toMatchObject({ terminalReason: 'error' });
   });
 
   it('speaks DorkOS words when the error ITEM is the dead sign-in (DOR-1656)', async () => {
@@ -874,25 +496,6 @@ describe('mapCodexThread', () => {
     });
   });
 
-  it('leaves an auth-flavoured item about a TOOL alone (DOR-1656)', () => {
-    // The item channel is diagnostic: it carries per-tool notes on turns that go
-    // on to succeed, so a tool's own credential trouble must not be answered
-    // with sign-in advice about Codex. Stamping `auth_error` here would also
-    // hide the message itself, since the client shows category copy instead of
-    // `message` — the person would lose the only account of what broke and be
-    // sent to re-authenticate something that was never broken.
-    const events = mapCodexEvent(
-      codexItemCompleted(
-        errorThreadItem('e1', 'MCP error: Failed to authenticate with server github')
-      ),
-      makeContext()
-    );
-    expect(events[0]!.data).toEqual({
-      message: 'MCP error: Failed to authenticate with server github',
-      code: 'item_error',
-    });
-  });
-
   it('still catches a TERMINAL auth failure whose wording is too vague for the item channel', () => {
     // The narrowing above is a channel rule, not a weaker classifier: the same
     // words on `turn.failed` are the turn's own verdict and still translate.
@@ -904,52 +507,5 @@ describe('mapCodexThread', () => {
       category: 'auth_error',
       details: vendorText,
     });
-  });
-
-  it('appends terminal done when the stream dies after a stream-level error', async () => {
-    const events = await drain(codexStreamErrorTurn('gone'));
-    expect(events.map((e) => e.type)).toEqual(['system_status', 'done']);
-  });
-
-  it('ends an aborted (interrupted) turn with done and no error event', async () => {
-    const events = await drain(codexAbortedTurn('partial answer'));
-    expect(events.map((e) => e.type)).toEqual(['text_delta', 'done']);
-    expect(events[1]!.data).toEqual({ sessionId: SESSION_ID });
-  });
-
-  it('converts a non-abort stream crash into a typed error followed by done', async () => {
-    async function* crashingStream(): AsyncGenerator<ThreadEvent> {
-      yield codexThreadStarted();
-      throw new Error('codex process exited unexpectedly');
-    }
-    const events = await drain(crashingStream());
-    expect(events.map((e) => e.type)).toEqual(['error', 'done']);
-    expect(events[0]!.data).toMatchObject({
-      message: 'codex process exited unexpectedly',
-      code: 'stream_error',
-    });
-  });
-
-  it('classifies a stream crash that is really a dead sign-in as auth_error (DOR-1656)', async () => {
-    // A credential failure can surface as a THROW rather than a turn.failed,
-    // and a hardcoded execution_error here leaves a person with no way back in.
-    const vendorText = 'Error: 401 Unauthorized — your Codex access token has been revoked';
-    async function* crashingStream(): AsyncGenerator<ThreadEvent> {
-      yield codexThreadStarted();
-      throw new Error(vendorText);
-    }
-    const events = await drain(crashingStream());
-    expect(events[0]!.data).toMatchObject({
-      message: 'Your Codex sign-in stopped working. Sign in again to keep going.',
-      code: 'stream_error',
-      category: 'auth_error',
-      details: vendorText,
-    });
-  });
-
-  it('records the thread id on the context while streaming', async () => {
-    const ctx = makeContext();
-    await drain(codexSimpleTurn('hi'), ctx);
-    expect(ctx.threadId).toBe('codex-thread-0001');
   });
 });

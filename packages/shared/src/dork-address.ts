@@ -51,10 +51,19 @@ const CHANNEL_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,79}$/;
 export const EMAIL_PAIR_MAX_LENGTH = 40;
 
 /**
+ * The words that name a kind of reference, so no address may use one as its
+ * space: every {@link DORK_KINDS} word, plus `project`, held for the kind a
+ * project gets once it has an opaque id. With them refused, `dork:chat/owl`
+ * can never be read as an org called "chat". The provenance reader refuses
+ * exactly these as a space (`./provenance`), as the flow plugin's reader does.
+ */
+export const ADDRESS_SPACE_KIND_WORDS = [...DORK_KINDS, 'project'] as const;
+
+/**
  * Words no address may use as its space or its handle: RFC 2142's role
  * mailboxes, the usual mail and admin words, DorkOS's own names, the local
- * handle reservations (`./handle`), and every reference kind (so
- * `dork:chat/...` can never be read as an org called "chat").
+ * handle reservations (`./handle`), and every
+ * {@link ADDRESS_SPACE_KIND_WORDS} word.
  *
  * Matched on a skeleton with `-` and `_` removed ({@link isReservedAddressWord}),
  * so `no-reply`, `no_reply` and `noreply` are one word and the list names each
@@ -74,9 +83,7 @@ export const RESERVED_ADDRESS_WORDS: readonly string[] = [
   'dork',
   SYSTEM_HANDLE,
   ...BROADCAST_RESERVATIONS,
-  ...DORK_KINDS,
-  // Not a kind yet: reserved for the kind a project gets once it has an opaque id.
-  'project',
+  ...ADDRESS_SPACE_KIND_WORDS,
 ];
 
 /** A word with its separators dropped, so `no_reply` and `noreply` compare equal. */

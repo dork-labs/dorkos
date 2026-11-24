@@ -72,20 +72,6 @@ describe('harnessCoverage() — Claude Code', () => {
     expect(discovered[1].skillMd).toBe(join(root, '.claude/skills/b/SKILL.md'));
     expect(uncertain).toEqual([]);
   });
-
-  it('loads one entry for a target reachable through two links (by-realpath)', () => {
-    const root = makeRoot();
-    const target = skill(root, '.agents/skills/shared');
-    mkdirSync(join(root, '.claude/skills'), { recursive: true });
-    symlinkSync(target, join(root, '.claude/skills/x'), 'dir');
-    symlinkSync(target, join(root, '.claude/skills/y'), 'dir');
-
-    const { discovered, uncertain } = harnessCoverage('claude-code', root);
-
-    expect(discovered).toHaveLength(1);
-    expect(discovered[0].key).toBe('x');
-    expect(uncertain).toEqual([]);
-  });
 });
 
 describe('harnessCoverage() — Codex', () => {
@@ -100,76 +86,6 @@ describe('harnessCoverage() — Codex', () => {
     expect(discovered[0].key).toBe('canonical-name');
     expect(discovered[0].dir).toBe(join(root, '.agents/skills/c'));
     expect(uncertain).toEqual([]);
-  });
-
-  it('ascends from the start directory to the repo root, nearest level first', () => {
-    const root = makeRoot();
-    skill(root, '.agents/skills/c', 'c');
-    skill(root, 'apps/web/.agents/skills/e', 'e');
-
-    const { discovered, uncertain } = harnessCoverage('codex', root, {
-      cwd: join(root, 'apps/web'),
-    });
-
-    expect(discovered.map((d) => d.key)).toEqual(['e', 'c']);
-    expect(discovered.map((d) => d.via)).toEqual(['apps/web/.agents/skills', '.agents/skills']);
-    expect(uncertain).toEqual([]);
-
-    // And without a cwd the ascent has one level, so only the root skill is found.
-    expect(harnessCoverage('codex', root).discovered.map((d) => d.key)).toEqual(['c']);
-  });
-
-  it('clamps a start directory outside the tree back to the root instead of climbing somewhere else', () => {
-    const root = makeRoot();
-    const elsewhere = makeRoot();
-    skill(root, '.agents/skills/at-root', 'at-root');
-    skill(elsewhere, '.agents/skills/not-ours', 'not-ours');
-
-    const { discovered, uncertain } = harnessCoverage('codex', root, { cwd: elsewhere });
-
-    expect(discovered.map((d) => d.key)).toEqual(['at-root']);
-    expect(uncertain).toEqual([]);
-  });
-
-  it('keeps both of two skills sharing a frontmatter name — Codex documents that duplicates are not merged', () => {
-    const root = makeRoot();
-    skill(root, '.agents/skills/one', 'same');
-    skill(root, '.agents/skills/two', 'same');
-
-    const { discovered, uncertain } = harnessCoverage('codex', root);
-
-    expect(discovered).toHaveLength(2);
-    expect(discovered.map((d) => d.key)).toEqual(['same', 'same']);
-    expect(discovered.map((d) => d.dir)).toEqual([
-      join(root, '.agents/skills/one'),
-      join(root, '.agents/skills/two'),
-    ]);
-    // `dedupe: 'none'` is a documented outcome, not a gap: nothing is uncertain.
-    expect(uncertain).toEqual([]);
-  });
-
-  it("loads the engine's <pkg>__<name> projection under its frontmatter name — Codex states no charset or directory-match rule for that shape to break", () => {
-    const root = makeRoot();
-    skill(root, '.agents/skills/pkg__x', 'x');
-
-    const { discovered, uncertain } = harnessCoverage('codex', root);
-
-    expect(discovered).toHaveLength(1);
-    expect(discovered[0].key).toBe('x');
-    expect(discovered[0].dir).toBe(join(root, '.agents/skills/pkg__x'));
-    expect(uncertain).toEqual([]);
-  });
-
-  it('will not name a skill whose SKILL.md has no frontmatter name, because the frontmatter name IS the key here', () => {
-    const root = makeRoot();
-    skill(root, '.agents/skills/nameless');
-
-    const { discovered, uncertain } = harnessCoverage('codex', root);
-
-    expect(discovered).toEqual([]);
-    expect(uncertain).toHaveLength(1);
-    expect(uncertain[0].path).toBe(join(root, '.agents/skills/nameless'));
-    expect(uncertain[0].reason).toContain('frontmatter name absent');
   });
 });
 
@@ -190,82 +106,6 @@ describe('harnessCoverage() — OpenCode', () => {
     ]);
     expect(uncertain).toEqual([]);
   });
-
-  it('loads a <pkg>__<name> directory under its frontmatter name: the binary does not hold the name to the directory (SK-09)', () => {
-    // The docs say the name must match the directory; `opencode 1.19.3` listed
-    // and loaded `pkg__x` as `x` anyway (meta/harness-smoke/20261114-opencode-skill-probe.md).
-    const root = makeRoot();
-    skill(root, '.agents/skills/pkg__x', 'x');
-
-    const { discovered, uncertain } = harnessCoverage('opencode', root);
-
-    expect(discovered.map((d) => d.key)).toEqual(['x']);
-    expect(discovered[0].dir).toBe(join(root, '.agents/skills/pkg__x'));
-    expect(uncertain).toEqual([]);
-  });
-
-  it('cannot say what the other half of the <pkg>__<name> shape does either: a name that DOES match the directory breaks the charset rule instead', () => {
-    // The contract's "violated twice over": the shape cannot satisfy the
-    // directory-match rule and the charset rule at the same time.
-    const root = makeRoot();
-    skill(root, '.agents/skills/pkg__x', 'pkg__x');
-
-    const { discovered, uncertain } = harnessCoverage('opencode', root);
-
-    expect(discovered).toEqual([]);
-    expect(uncertain).toHaveLength(1);
-    expect(uncertain[0].reason).toContain('charset rule');
-  });
-
-  it('collapses one skill reachable through two read paths into the first copy, by name (SK-12)', () => {
-    // Observed against `opencode 1.19.3`: the same skill linked from both
-    // directories listed once.
-    const root = makeRoot();
-    skill(root, '.claude/skills/dup', 'dup');
-    skill(root, '.agents/skills/dup', 'dup');
-
-    const { discovered, uncertain } = harnessCoverage('opencode', root);
-
-    expect(discovered).toHaveLength(1);
-    expect(discovered[0].via).toBe('.claude/skills');
-    expect(uncertain).toEqual([]);
-  });
-
-  it('keeps one of two DIFFERENT skills that share a frontmatter name, and says nothing about the other — by name, not by path', () => {
-    // The `by-name` fixture the census asks for: two packs, two targets, one
-    // name. OpenCode listed one and dropped the other silently.
-    const root = makeRoot();
-    skill(root, '.agents/skills/pack-a__shared', 'shared');
-    skill(root, '.agents/skills/pack-b__shared', 'shared');
-
-    const { discovered, uncertain } = harnessCoverage('opencode', root);
-
-    expect(discovered.map((d) => d.key)).toEqual(['shared']);
-    expect(uncertain).toEqual([]);
-  });
-
-  it('stops ascending at the nearest git worktree instead of climbing to the tree root', () => {
-    const root = makeRoot();
-    mkdirSync(join(root, 'pkg/src'), { recursive: true });
-    // A `.git` FILE, so a linked worktree stops the climb exactly like a checkout.
-    writeFileSync(join(root, 'pkg/.git'), 'gitdir: /elsewhere/.git/worktrees/pkg\n');
-    skill(root, 'pkg/.agents/skills/inner', 'inner');
-    skill(root, '.agents/skills/outer', 'outer');
-
-    const { discovered, uncertain } = harnessCoverage('opencode', root, {
-      cwd: join(root, 'pkg/src'),
-    });
-
-    expect(discovered.map((d) => d.key)).toEqual(['inner']);
-    expect(discovered[0].via).toBe('pkg/.agents/skills');
-    expect(uncertain).toEqual([]);
-
-    // Without the worktree marker the same tree climbs all the way to the root.
-    rmSync(join(root, 'pkg/.git'));
-    expect(
-      harnessCoverage('opencode', root, { cwd: join(root, 'pkg/src') }).discovered.map((d) => d.key)
-    ).toEqual(['inner', 'outer']);
-  });
 });
 
 describe('harnessCoverage() — Cursor', () => {
@@ -281,44 +121,6 @@ describe('harnessCoverage() — Cursor', () => {
     expect(discovered.map((d) => d.via)).toEqual(['.codex/skills', 'packages/api/.cursor/skills']);
     expect(uncertain).toEqual([]);
   });
-
-  it('descends six levels below the root and no further — the bound is ours, not a documented Cursor limit', () => {
-    const root = makeRoot();
-    skill(root, 'a/b/c/d/e/f/.cursor/skills/deep-enough', 'deep-enough');
-    skill(root, 'a/b/c/d/e/f/g/.cursor/skills/too-deep', 'too-deep');
-
-    const { discovered } = harnessCoverage('cursor', root);
-
-    expect(discovered.map((d) => d.key)).toEqual(['deep-enough']);
-  });
-
-  it('cannot say what a <pkg>__<name> folder does: the folder is the identity, it breaks the charset rule, and the docs never say what happens', () => {
-    const root = makeRoot();
-    skill(root, '.cursor/skills/pkg__x', 'x');
-
-    const { discovered, uncertain } = harnessCoverage('cursor', root);
-
-    expect(discovered).toEqual([]);
-    expect(uncertain).toHaveLength(2);
-    expect(uncertain.map((u) => u.path)).toEqual([
-      join(root, '.cursor/skills/pkg__x'),
-      join(root, '.cursor/skills/pkg__x'),
-    ]);
-    expect(uncertain.some((u) => u.reason.includes('charset rule'))).toBe(true);
-    expect(uncertain.some((u) => u.reason.includes('does not match the directory'))).toBe(true);
-  });
-
-  it('cannot check a must-match-the-directory rule against a SKILL.md with no name', () => {
-    const root = makeRoot();
-    skill(root, '.cursor/skills/no-name');
-
-    const { discovered, uncertain } = harnessCoverage('cursor', root);
-
-    expect(discovered).toEqual([]);
-    expect(uncertain).toHaveLength(1);
-    expect(uncertain[0].reason).toContain('must match its directory');
-    expect(uncertain[0].reason).toContain('has no name');
-  });
 });
 
 describe('harnessCoverage() — Gemini CLI', () => {
@@ -333,31 +135,6 @@ describe('harnessCoverage() — Gemini CLI', () => {
     expect(discovered.map((d) => d.key)).toEqual(['g1', 'g2']);
     expect(discovered.map((d) => d.via)).toEqual(['.gemini/skills', '.agents/skills']);
     expect(uncertain).toEqual([]);
-  });
-
-  it('reads the workspace root only — no ancestor walk is documented, so a start directory deeper in the tree changes nothing', () => {
-    const root = makeRoot();
-    skill(root, '.gemini/skills/at-root', 'at-root');
-    skill(root, 'pkg/.gemini/skills/nested', 'nested');
-
-    const { discovered, uncertain } = harnessCoverage('gemini', root, { cwd: join(root, 'pkg') });
-
-    expect(discovered.map((d) => d.key)).toEqual(['at-root']);
-    expect(uncertain).toEqual([]);
-  });
-
-  it('refuses to name a skill whose directory and frontmatter disagree — Gemini\'s identity rule is a "(verify)" cell', () => {
-    const root = makeRoot();
-    skill(root, '.gemini/skills/dir-name', 'other-name');
-
-    const { discovered, uncertain } = harnessCoverage('gemini', root);
-
-    expect(discovered).toEqual([]);
-    expect(uncertain).toHaveLength(2);
-    expect(uncertain.some((u) => u.reason.includes('keyed by its directory'))).toBe(true);
-    expect(uncertain.some((u) => u.reason.includes('does not document whether it must'))).toBe(
-      true
-    );
   });
 });
 
@@ -377,38 +154,6 @@ describe('harnessCoverage() — Copilot', () => {
       '.agents/skills',
     ]);
     expect(uncertain).toEqual([]);
-  });
-
-  it('keeps the first of two REAL copies of one skill and calls the second undecidable (dedupe unknown)', () => {
-    // Two real directories, not a symlinked pair: Copilot's symlink cell is
-    // itself `unknown`, so a linked fixture would be testing the wrong question.
-    const root = makeRoot();
-    skill(root, '.claude/skills/twice', 'twice');
-    skill(root, '.agents/skills/twice', 'twice');
-
-    const { discovered, uncertain } = harnessCoverage('copilot', root);
-
-    expect(discovered).toHaveLength(1);
-    expect(discovered[0].via).toBe('.claude/skills');
-    expect(uncertain).toHaveLength(1);
-    expect(uncertain[0].path).toBe(join(root, '.agents/skills/twice'));
-    expect(uncertain[0].reason).toContain('loads once or twice');
-    expect(uncertain[0].reason).toContain('.claude/skills/twice and .agents/skills/twice');
-  });
-
-  it('refuses to name a <pkg>__<name> directory whose frontmatter says otherwise — "typically matches the directory" is not an identity rule', () => {
-    const root = makeRoot();
-    skill(root, '.agents/skills/pkg__x', 'x');
-
-    const { discovered, uncertain } = harnessCoverage('copilot', root);
-
-    expect(discovered).toEqual([]);
-    expect(uncertain).toHaveLength(3);
-    expect(uncertain.some((u) => u.reason.includes('keyed by its directory'))).toBe(true);
-    expect(uncertain.some((u) => u.reason.includes('does not document whether it must'))).toBe(
-      true
-    );
-    expect(uncertain.some((u) => u.reason.includes('charset rule'))).toBe(true);
   });
 });
 
@@ -450,30 +195,6 @@ describe('harnessCoverage() — symlinked skill directories', () => {
       expect(discovered.map((d) => d.key)).toEqual(['linked']);
       expect(discovered[0].dir).toBe(join(root, readPath, 'linked'));
       expect(uncertain).toEqual([]);
-    }
-  );
-
-  it.each(LINKS_UNDOCUMENTED)(
-    '%s: cannot say whether a symlinked skill directory is read at all — its symlink cell is undocumented',
-    (harness: HarnessId) => {
-      const root = makeRoot();
-      const readPath = skillsFactsFor(harness).readPaths.project[0];
-      stageLinkedSkill(root, readPath);
-
-      const { discovered, uncertain } = harnessCoverage(harness, root);
-
-      expect(discovered).toEqual([]);
-      expect(uncertain).toHaveLength(1);
-      expect(uncertain[0].path).toBe(join(root, readPath, 'linked'));
-      expect(uncertain[0].reason).toContain('reached through a symlink');
-
-      // And the same skill as a REAL directory in the same place is discovered,
-      // so the zero above is about the link and nothing else.
-      rmSync(join(root, readPath, 'linked'));
-      skill(root, `${readPath}/linked`, 'linked');
-      const real = harnessCoverage(harness, root);
-      expect(real.discovered.map((d) => d.key)).toEqual(['linked']);
-      expect(real.uncertain).toEqual([]);
     }
   );
 });

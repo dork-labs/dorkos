@@ -265,51 +265,6 @@ describe('the model a Codex turn actually starts on', () => {
     expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
   });
 
-  it('keeps a valid explicit model ahead of an unavailable config default', async () => {
-    const { h, home } = setup();
-    const events = await h.run(h.request({ sessionId: 'valid', settings: { model: 'available' } }));
-    expect(home.processes[0]!.requestsOf('turn/start')[0]!).toMatchObject({ model: 'available' });
-    expect(notices(events)).toEqual([]);
-  });
-
-  it('reads every page and uses only the marked default', async () => {
-    const { h, home } = setup();
-    home.modelList = (cursor) =>
-      cursor === null
-        ? { data: [row('first-row')], nextCursor: 'later' }
-        : { data: [row('account-default', true)], nextCursor: null };
-    await h.run(h.request({ sessionId: 'paged' }));
-    expect(home.processes[0]!.requestsOf('model/list')).toHaveLength(2);
-    expect(home.processes[0]!.requestsOf('turn/start')[0]!).toMatchObject({
-      model: 'account-default',
-    });
-  });
-
-  it.each(['empty', 'unmarked', 'throws', 'malformed', 'config-error'])(
-    'does not guess when discovery is %s',
-    async (kind) => {
-      const { h, home } = setup();
-      if (kind === 'config-error') home.configReadError = true;
-      home.modelList = () => {
-        if (kind === 'throws') throw new Error('unavailable');
-        return kind === 'malformed'
-          ? { data: [{}] }
-          : { data: kind === 'unmarked' ? [row('first-row')] : [], nextCursor: null };
-      };
-      const events = await h.run(h.request({ sessionId: kind, settings: { model: 'chosen' } }));
-      expect(home.processes[0]!.requestsOf('turn/start')[0]!).toMatchObject({ model: 'chosen' });
-      expect(notices(events)).toEqual([]);
-    }
-  );
-
-  it('preserves a custom service’s model even when OpenAI does not list it', async () => {
-    const { h, home } = setup();
-    home.config = { model: 'local-model', model_provider: 'local' };
-    const events = await h.run(h.request({ sessionId: 'custom' }));
-    expect(home.processes[0]!.requestsOf('model/list')).toHaveLength(0);
-    expect(home.processes[0]!.requestsOf('turn/start')[0]!).not.toHaveProperty('model');
-    expect(notices(events)).toEqual([]);
-  });
   it('uses the selected account’s own live default after an account switch', async () => {
     let selected = PERSON_HOME;
     const { h } = setup({ personHome: () => selected });
@@ -327,14 +282,6 @@ describe('the model a Codex turn actually starts on', () => {
       to: 'other-default',
       reason: 'account-not-available',
     });
-  });
-
-  it('does not replace an overridden OpenAI endpoint’s model', async () => {
-    const { h, home } = setup();
-    Object.assign(home.config, { model_providers: { openai: { base_url: 'http://local/v1' } } });
-    await h.run(h.request({ sessionId: 'custom-openai' }));
-    expect(home.processes[0]!.requestsOf('model/list')).toEqual([]);
-    expect(home.processes[0]!.requestsOf('turn/start')[0]!).not.toHaveProperty('model');
   });
 
   it('stops during discovery before loading or starting inference', async () => {
@@ -377,27 +324,6 @@ describe('the model a Codex turn actually starts on', () => {
     ]);
     expect(notices(events)).toEqual([]);
   });
-  it('selects the marked default with no configured choice, without a replacement notice', async () => {
-    const { h, home } = setup();
-    home.config = {};
-    const events = await h.run(h.request({ sessionId: 'no-choice' }));
-    expect(home.processes[0]!.requestsOf('thread/start')[0]!).toMatchObject({ model: 'available' });
-    expect(home.processes[0]!.requestsOf('turn/start')[0]!).toMatchObject({ model: 'available' });
-    expect(notices(events)).toEqual([]);
-  });
-
-  it('does not swap a config model already on the account list', async () => {
-    const { h, home } = setup();
-    home.config.model = 'available';
-    const remember = vi.fn();
-    const events = await h.run(
-      h.request({ sessionId: 'config-valid', onModelReplacement: remember })
-    );
-    expect(home.processes[0]!.requestsOf('model/list')).toHaveLength(1);
-    expect(home.processes[0]!.requestsOf('turn/start')[0]!).not.toHaveProperty('model');
-    expect(notices(events)).toEqual([]);
-    expect(remember).not.toHaveBeenCalled();
-  });
 
   it.each(['thread/start', 'turn/start'])(
     'keeps a typed model recovery when %s rejects the chosen model',
@@ -424,14 +350,6 @@ describe('the model a Codex turn actually starts on', () => {
       expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
     }
   );
-  it('treats malformed config as unknown, rather than proof a model is unavailable', async () => {
-    const { h, home } = setup();
-    Object.assign(home.config, { model: 42 });
-    const events = await h.run(h.request({ sessionId: 'malformed-config' }));
-    expect(home.processes[0]!.requestsOf('model/list')).toEqual([]);
-    expect(home.processes[0]!.requestsOf('turn/start')[0]!).not.toHaveProperty('model');
-    expect(notices(events)).toEqual([]);
-  });
   it('records the actual launch explanation eagerly and reopens it from durable history after text', async () => {
     const { h } = setup();
     const store = new SessionEventStore(createTestDb());

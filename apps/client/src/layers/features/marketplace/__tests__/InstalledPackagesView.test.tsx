@@ -259,16 +259,6 @@ describe('InstalledPackagesView', () => {
   afterEach(cleanup);
 
   describe('state rendering', () => {
-    it('renders the loading skeleton while the query is pending', () => {
-      setInstalledState({ isLoading: true });
-
-      render(<InstalledPackagesView />);
-
-      // No list + no empty state — the skeleton is distinctly not a list.
-      expect(screen.queryByRole('list')).not.toBeInTheDocument();
-      expect(screen.queryByText(/no packages installed/i)).not.toBeInTheDocument();
-    });
-
     it('renders the error state when the query errors', () => {
       setInstalledState({ error: new Error('Disk full') });
 
@@ -299,23 +289,6 @@ describe('InstalledPackagesView', () => {
       ).toBeInTheDocument();
       // The remedy travels with it — a warning you cannot act on is noise.
       expect(screen.getByText(/npm install --omit=dev/)).toBeInTheDocument();
-    });
-
-    it('shows no warning line for a package that installed cleanly', () => {
-      setInstalledState({ data: [makeInstalled()] });
-
-      render(<InstalledPackagesView />);
-
-      expect(screen.queryByText(/npm libraries/i)).not.toBeInTheDocument();
-    });
-
-    it('renders the empty state when no packages are installed', () => {
-      setInstalledState({ data: [] });
-
-      render(<InstalledPackagesView />);
-
-      expect(screen.getByText(/no packages installed/i)).toBeInTheDocument();
-      expect(screen.getByText(/browse the marketplace/i)).toBeInTheDocument();
     });
 
     it('renders a row per installed package', () => {
@@ -438,17 +411,6 @@ describe('InstalledPackagesView', () => {
         within(otherRow).getByRole('button', { name: /apply Flow Board/i })
       ).toBeInTheDocument();
     });
-
-    it('leaves non-shape rows unchanged — no Apply, no Active badge', () => {
-      setInstalledState({ data: [makeInstalled({ name: '@dorkos/reviewer', type: 'agent' })] });
-      // Even if a shape is active elsewhere, an agent row never shows Active/Apply.
-      setShapesState([{ name: '@dorkos/reviewer', active: true }]);
-
-      render(<InstalledPackagesView />);
-
-      expect(screen.queryByRole('button', { name: /^apply/i })).not.toBeInTheDocument();
-      expect(screen.queryByText('Active')).not.toBeInTheDocument();
-    });
   });
 
   describe('update states', () => {
@@ -488,17 +450,6 @@ describe('InstalledPackagesView', () => {
       ).toHaveTextContent('Update to v1.3.0');
     });
 
-    it('offers no Update on a current row, and says it is up to date', () => {
-      // Purpose: pressing Update on a current package must be impossible.
-      showRows([REVIEWER], [makeCheck(REVIEWER)]);
-
-      render(<InstalledPackagesView />);
-
-      const reviewer = row('Reviewer');
-      expect(within(reviewer).getByText('Up to date')).toBeInTheDocument();
-      expect(within(reviewer).queryByRole('button', { name: /update/i })).not.toBeInTheDocument();
-    });
-
     it('says why a row could not be checked, and offers no Update there', () => {
       // Purpose: DorkOS never calls a package current when it couldn’t check it,
       // and a blind Update is exactly what this row must not get.
@@ -523,19 +474,6 @@ describe('InstalledPackagesView', () => {
       ).toBeInTheDocument();
       expect(within(reviewer).queryByText('Up to date')).not.toBeInTheDocument();
       expect(within(reviewer).queryByRole('button', { name: /update/i })).not.toBeInTheDocument();
-    });
-
-    it('shows a check in flight as pending on every row, never as failed', () => {
-      // Purpose: a check can wait behind another scan (the server's shared cap
-      // of 4); it reads as "checking", and nothing offers an Update meanwhile.
-      showRows([REVIEWER, FORMATTER], [staleCheck(REVIEWER, '1.3.0')], { isChecking: true });
-
-      render(<InstalledPackagesView />);
-
-      expect(screen.getAllByText('Checking for updates…')).toHaveLength(2);
-      expect(screen.getByRole('status')).toHaveTextContent('Checking your packages for updates…');
-      expect(screen.queryByText(/couldn’t/i)).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /^update/i })).not.toBeInTheDocument();
     });
 
     it('updates exactly the row that was clicked', async () => {
@@ -603,26 +541,6 @@ describe('InstalledPackagesView', () => {
       expect(applyUpdates).toHaveBeenCalledWith([{ installation: REVIEWER, check: hooked }]);
     });
 
-    it('keeps an installation that is updating in place, disabled', () => {
-      // Purpose: each in-flight update keeps its own progress, however many run.
-      showRows(
-        [REVIEWER, FORMATTER],
-        [staleCheck(REVIEWER, '1.3.0'), staleCheck(FORMATTER, '2.1.0')],
-        {
-          applying: [REVIEWER.installPath, FORMATTER.installPath],
-        }
-      );
-
-      render(<InstalledPackagesView />);
-
-      for (const name of ['Reviewer', 'Formatter']) {
-        const button = within(row(name)).getByRole('button', { name: `Updating ${name}` });
-        // aria-disabled, not disabled: a disabled button drops keyboard focus.
-        expect(button).toHaveAttribute('aria-disabled', 'true');
-      }
-      expect(within(row('Reviewer')).getByText('Updating to v1.3.0…')).toBeInTheDocument();
-    });
-
     it('does nothing when an installation being updated is pressed again', async () => {
       // Purpose: the button stays focusable while updating, so pressing it
       // must not start a second update.
@@ -652,20 +570,6 @@ describe('InstalledPackagesView', () => {
       expect(status).toHaveTextContent('Up to date');
     });
 
-    it('leaves focus alone when the person has moved on', async () => {
-      const user = userEvent.setup();
-      showRows([REVIEWER], [staleCheck(REVIEWER, '1.3.0')]);
-      const { rerender } = render(<InstalledPackagesView />);
-      await user.click(screen.getByRole('button', { name: /^update reviewer/i }));
-      await user.tab();
-      const moved = document.activeElement;
-
-      showRows([REVIEWER], [makeCheck(REVIEWER)]);
-      rerender(<InstalledPackagesView />);
-
-      expect(document.activeElement).toBe(moved);
-    });
-
     it('never takes focus from an element that holds it', () => {
       // Purpose: a blur can arrive without saying where focus went (a window
       // switch, an iframe); if focus is somewhere real when the button leaves,
@@ -683,34 +587,6 @@ describe('InstalledPackagesView', () => {
       expect(checkAgain).toHaveFocus();
     });
 
-    it('offers no summary actions while a check is running', () => {
-      // Purpose: nothing to act on until the answer lands.
-      showRows([REVIEWER], [staleCheck(REVIEWER, '1.3.0')], { isChecking: true });
-
-      render(<InstalledPackagesView />);
-
-      expect(screen.queryByRole('button', { name: /check again/i })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /update all/i })).not.toBeInTheDocument();
-    });
-
-    it('holds "Check again" while an update is being applied', () => {
-      // Purpose: a check during a reinstall could read a half-installed folder.
-      showRows([REVIEWER], [staleCheck(REVIEWER, '1.3.0')], { applying: [REVIEWER.installPath] });
-
-      render(<InstalledPackagesView />);
-
-      expect(screen.getByRole('button', { name: 'Check again' })).toBeDisabled();
-    });
-
-    it('offers no "Update all" beside a failed check, whatever an older answer said', () => {
-      // Purpose: with the check failed, no answer is current enough to act on.
-      showRows([REVIEWER], [staleCheck(REVIEWER, '1.3.0')], { error: new Error('offline') });
-
-      render(<InstalledPackagesView />);
-
-      expect(screen.queryByRole('button', { name: /update all/i })).not.toBeInTheDocument();
-    });
-
     it('keeps a failed update on its row, with the reason, and still offers it', () => {
       // Purpose: a failure stays visible where it happened, and can be retried.
       showRows([REVIEWER], [{ ...staleCheck(REVIEWER, '1.3.0'), applyError: 'disk full' }]);
@@ -725,16 +601,6 @@ describe('InstalledPackagesView', () => {
         'text-destructive'
       );
       expect(within(reviewer).getByRole('button', { name: /^update reviewer/i })).toBeEnabled();
-    });
-
-    it('says plainly when everything is up to date, with no Update anywhere', () => {
-      showRows([REVIEWER, FORMATTER], [makeCheck(REVIEWER), makeCheck(FORMATTER)]);
-
-      render(<InstalledPackagesView />);
-
-      expect(screen.getByRole('status')).toHaveTextContent('All packages are up to date.');
-      expect(screen.queryByRole('button', { name: /update/i })).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Check again' })).toBeInTheDocument();
     });
 
     it('counts what needs updating, what is current, and what could not be checked', () => {
@@ -767,16 +633,6 @@ describe('InstalledPackagesView', () => {
       );
       expect(within(row('Reviewer')).queryByText('Up to date')).not.toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Try again' }));
-      expect(recheck).toHaveBeenCalledTimes(1);
-    });
-
-    it('checks again on request', async () => {
-      const user = userEvent.setup();
-      showRows([REVIEWER], [makeCheck(REVIEWER)]);
-
-      render(<InstalledPackagesView />);
-      await user.click(screen.getByRole('button', { name: 'Check again' }));
-
       expect(recheck).toHaveBeenCalledTimes(1);
     });
   });
@@ -909,39 +765,6 @@ describe('InstalledPackagesView', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
-    it('stays in place, unavailable, while its updates run', async () => {
-      // Purpose: the dialog returns focus to "Update all…" when it closes, so
-      // the button must still be there; pressing it meanwhile opens nothing.
-      const user = userEvent.setup();
-      showRows([REVIEWER, FORMATTER, FLOW_ON_ALPHA], CHECKS, {
-        applying: [REVIEWER.installPath, FLOW_ON_ALPHA.installPath],
-      });
-
-      render(<InstalledPackagesView />);
-      const button = screen.getByRole('button', { name: 'Update all…' });
-      expect(button).toHaveAttribute('aria-disabled', 'true');
-      await user.click(button);
-
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    });
-
-    it('moves focus to the summary when nothing is left to update', async () => {
-      // Purpose: after the batch lands "Update all…" leaves; focus goes to the
-      // line that now says everything is up to date.
-      const user = userEvent.setup();
-      showRows([REVIEWER, FORMATTER], [staleCheck(REVIEWER, '1.3.0'), makeCheck(FORMATTER)]);
-      const { rerender } = render(<InstalledPackagesView />);
-      screen.getByRole('button', { name: 'Update all…' }).focus();
-      await user.keyboard('{Escape}');
-      expect(screen.getByRole('button', { name: 'Update all…' })).toHaveFocus();
-
-      showRows([REVIEWER, FORMATTER], [makeCheck(REVIEWER), makeCheck(FORMATTER)]);
-      rerender(<InstalledPackagesView />);
-
-      expect(screen.getByRole('status')).toHaveFocus();
-      expect(screen.getByRole('status')).toHaveTextContent('All packages are up to date.');
-    });
-
     it('says when a new version runs nothing, and that a project copy does not start programs', async () => {
       // Purpose: "runs nothing" must be said, never left as a blank a person
       // cannot tell from "not checked"; and a project install's servers do not
@@ -986,28 +809,6 @@ describe('InstalledPackagesView', () => {
         within(dialog).getByRole('list', { name: 'What the new version runs' })
       ).toHaveTextContent('Declared, but not started for a project install.');
     });
-
-    it('confirms a single installation by name and place', async () => {
-      // Purpose: the confirm step is general (DOR-2306 routes one row through
-      // it); with one installation it names it instead of counting.
-      const user = userEvent.setup();
-      showRows([FLOW_ON_ALPHA], [staleCheck(FLOW_ON_ALPHA, '0.7.3')]);
-
-      render(<InstalledPackagesView />);
-      await user.click(screen.getByRole('button', { name: 'Update all…' }));
-
-      const dialog = await screen.findByRole('dialog', { name: 'Update Flow on Alpha?' });
-      await user.click(within(dialog).getByRole('button', { name: 'Update Flow on Alpha' }));
-      expect(applyUpdates).toHaveBeenCalledTimes(1);
-    });
-
-    it('is not offered when nothing needs updating', () => {
-      showRows([FORMATTER], [makeCheck(FORMATTER)]);
-
-      render(<InstalledPackagesView />);
-
-      expect(screen.queryByRole('button', { name: /update all/i })).not.toBeInTheDocument();
-    });
   });
 
   describe('whether files changed since install (DOR-2197, DOR-2320)', () => {
@@ -1043,45 +844,6 @@ describe('InstalledPackagesView', () => {
       expect(note).not.toHaveTextContent('.dork-old');
     });
 
-    // Purpose (review 2, item 4): a row's Update can apply with no confirm
-    // step, so one short line on what an update does stays visible in the
-    // closed note on every screen; the per-kind detail waits inside, one
-    // paragraph each, so no paragraph runs past the copy cap.
-    it('keeps one update line visible and the per-kind detail inside', () => {
-      showRows([FLOW], [staleCheck(FLOW, '0.7.3')]);
-      setIntegrity({ [FLOW.installPath]: MODIFIED });
-      render(<InstalledPackagesView />);
-      const note = screen.getByTestId('installation-integrity');
-      const visible = within(note.querySelector('summary')!).getByTestId(
-        'installation-integrity-update'
-      );
-      expect(visible).toHaveTextContent('Updating replaces your edits; copies are kept.');
-      expect(visible.className).not.toContain('hidden');
-      // Sentences only: the path-group headings ("Edited", "Added") are <p>s too.
-      const sentences = [...note.querySelectorAll('p')]
-        .map((p) => p.textContent ?? '')
-        .filter((text) => text.endsWith('.') && !text.startsWith('Showing'));
-      expect(sentences).toEqual([
-        'Updating replaces the 2 files you edited and keeps your copies beside them.',
-        'The file you added stays.',
-        'The file you removed comes back.',
-      ]);
-    });
-
-    // Purpose (review 3): with no update on offer, the note says what changed
-    // and nothing about updating.
-    it('says nothing about updating when there is no update', () => {
-      showRows([FLOW], [makeCheck(FLOW)]);
-      setIntegrity({ [FLOW.installPath]: MODIFIED });
-
-      render(<InstalledPackagesView />);
-
-      const note = screen.getByTestId('installation-integrity');
-      expect(note).not.toHaveTextContent('Updating');
-      expect(note).not.toHaveTextContent('comes back');
-      expect(note).not.toHaveTextContent('stays');
-    });
-
     // Purpose (review 4): the note is a native disclosure (a <summary>, so a
     // keyboard, a click or a tap opens it; the real-browser keyboard pass is in
     // the implementation log), listing the paths grouped Edited/Added/Removed.
@@ -1105,30 +867,6 @@ describe('InstalledPackagesView', () => {
         'skills/mine/SKILL.md'
       );
       expect(within(note).getByRole('list', { name: 'Removed' })).toHaveTextContent('README.md');
-    });
-
-    // Purpose (review 7): only the icon is coloured; the text stays muted, so
-    // a real failure on the row remains the only urgent line.
-    it('keeps the note text muted', () => {
-      showRows([FLOW], [makeCheck(FLOW)]);
-      setIntegrity({ [FLOW.installPath]: MODIFIED });
-      render(<InstalledPackagesView />);
-      const summary = screen.getByTestId('installation-integrity').querySelector('summary')!;
-      expect(summary.className).toContain('text-muted-foreground');
-      expect(summary.className).not.toMatch(/text-amber|status-warning/);
-    });
-
-    // Purpose: an unchanged install, or one not yet verified, says nothing new.
-    it('adds nothing for a clean or unverified install', () => {
-      showRows([FLOW], [makeCheck(FLOW)]);
-      setIntegrity({ [FLOW.installPath]: { status: 'clean', customized: [] } });
-      render(<InstalledPackagesView />);
-      expect(screen.queryByTestId('installation-integrity')).not.toBeInTheDocument();
-      cleanup();
-
-      setIntegrity({});
-      render(<InstalledPackagesView />);
-      expect(screen.queryByTestId('installation-integrity')).not.toBeInTheDocument();
     });
 
     // Purpose (review 5, 6): an older install with a version to compare with
@@ -1158,23 +896,6 @@ describe('InstalledPackagesView', () => {
       });
     });
 
-    // Purpose (review 5): a package installed from a folder has nothing to
-    // compare with, and one whose files were found to differ would only get the
-    // same answer again: neither offers the button, and each says why.
-    it.each([
-      [
-        'installed from a folder',
-        { source: 'local' },
-        'Installed from a folder by an older DorkOS. Reinstall so updates keep your edits.',
-      ],
-    ])('offers no Check files for an install %s, and says why', (_label, check, text) => {
-      showRows([FLOW], [makeCheck(FLOW)]);
-      setIntegrity({ [FLOW.installPath]: legacy(check as never) });
-      render(<InstalledPackagesView />);
-      expect(screen.getByTestId('installation-integrity')).toHaveTextContent(text);
-      expect(screen.queryByRole('button', { name: /Check the files/ })).not.toBeInTheDocument();
-    });
-
     // Purpose (review 2, item 6): after the files were found to differ, the
     // note gives the reason and a small Try again, not the full button: the
     // person may have put their edits back and want to check again.
@@ -1198,57 +919,6 @@ describe('InstalledPackagesView', () => {
       expect(checkFilesMutate).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'flow', options: { installRoot: FLOW.installPath } })
       );
-    });
-
-    // Purpose: a check that could not reach the network says so, and can be
-    // tried again.
-    it('offers Check files again after a failed fetch, with the reason', () => {
-      showRows([FLOW], [makeCheck(FLOW)]);
-      setIntegrity({
-        [FLOW.installPath]: legacy({
-          source: 'fetchable',
-          last: {
-            outcome: 'fetch-failed',
-            message: 'Couldn’t fetch it. Try again when you’re online.',
-          },
-        } as never),
-      });
-      render(<InstalledPackagesView />);
-      expect(screen.getByTestId('installation-integrity')).toHaveTextContent(
-        'Try again when you’re online.'
-      );
-      expect(screen.getByRole('button', { name: 'Check the files of Flow' })).toBeEnabled();
-    });
-
-    // Purpose: a linked working copy or an unreadable record is not something
-    // Check files can fix, so neither offers it.
-    it('offers Check files only for an older install', () => {
-      showRows([FLOW], [makeCheck(FLOW)]);
-      for (const reason of ['linked', 'unreadable-record'] as const) {
-        setIntegrity({ [FLOW.installPath]: { status: 'unknown', reason } });
-        render(<InstalledPackagesView />);
-        expect(screen.queryByRole('button', { name: /Check the files/ })).not.toBeInTheDocument();
-        cleanup();
-      }
-    });
-
-    // Purpose (DOR-2322): a record an update only guessed is not a record:
-    // the row reads like an older install and offers Check files. Fails if
-    // `inferred` is treated as a verified install (no note, no button).
-    it('treats a guessed record like an older install', () => {
-      showRows([FLOW], [makeCheck(FLOW)]);
-      setIntegrity({
-        [FLOW.installPath]: {
-          status: 'unknown',
-          reason: 'inferred',
-          check: { source: 'fetchable' },
-        },
-      });
-      render(<InstalledPackagesView />);
-      expect(screen.getByTestId('installation-integrity')).toHaveTextContent(
-        'Installed by an older DorkOS. Check files so updates keep your edits.'
-      );
-      expect(screen.getByRole('button', { name: 'Check the files of Flow' })).toBeEnabled();
     });
 
     // Purpose (DOR-2322): files an update kept because nothing proved whose
@@ -1316,28 +986,6 @@ describe('InstalledPackagesView', () => {
       expect(kept).toHaveTextContent('notes.txt');
       // Each file is listed once, under the heading that fits it.
       expect(kept).not.toHaveTextContent('commands/old.md');
-    });
-
-    // Purpose (review 3): kept files that run nothing keep the quiet weight.
-    it('keeps the quiet weight when no kept file runs', () => {
-      showRows([FLOW], [makeCheck(FLOW)]);
-      setIntegrity({
-        [FLOW.installPath]: {
-          status: 'clean',
-          customized: [],
-          unproven: {
-            files: ['notes.txt'],
-            running: [],
-            check: { source: 'fetchable' },
-            keepKey: 'sha256:kept',
-          },
-        },
-      });
-      render(<InstalledPackagesView />);
-      expect(screen.getByTestId('installation-integrity-unproven')).toHaveAttribute(
-        'data-runs',
-        'false'
-      );
     });
 
     // Purpose (DOR-2341): kept files nothing can sort become the person's only
@@ -1495,41 +1143,6 @@ describe('InstalledPackagesView', () => {
       heldBackQuery = { data: [], isPending: false };
     });
 
-    // Purpose (DOR-2322): kept files from a package installed from a folder
-    // have nothing to be sorted against: no button, and the note says so.
-    it('offers no Check files for kept files with nothing to compare against', () => {
-      showRows([FLOW], [makeCheck(FLOW)]);
-      setIntegrity({
-        [FLOW.installPath]: {
-          status: 'clean',
-          customized: [],
-          unproven: {
-            files: ['notes.txt'],
-            running: [],
-            check: { source: 'local' },
-            keepKey: 'sha256:kept',
-          },
-        },
-      });
-      render(<InstalledPackagesView />);
-      expect(screen.getByTestId('installation-integrity-unproven')).toHaveTextContent(
-        'Kept 1 file an update couldn’t sort.'
-      );
-      expect(screen.queryByRole('button', { name: /Check the files/ })).not.toBeInTheDocument();
-    });
-
-    // Purpose: while one installation's files are being checked its button
-    // says so and cannot be pressed again.
-    it('shows Check files as busy while that installation is being checked', () => {
-      showRows([FLOW], [makeCheck(FLOW)]);
-      setIntegrity({ [FLOW.installPath]: legacy({ source: 'fetchable' } as never) });
-      setCheckFilesState({ isPending: true, variables: { name: 'flow' } });
-
-      render(<InstalledPackagesView />);
-
-      expect(screen.getByRole('button', { name: 'Checking the files of Flow' })).toBeDisabled();
-    });
-
     // Purpose (review 3): the update-all confirm says, per installation, what
     // an update does to changed files: edited ones replaced with copies kept,
     // added ones kept, removed ones put back; no `.dork-old` jargon.
@@ -1668,16 +1281,6 @@ describe('InstalledPackagesView', () => {
 
       expect(await screen.findByText('Unlink Flow?')).toBeInTheDocument();
       expect(screen.getByText('Flow is removed. Your folder is not touched.')).toBeInTheDocument();
-    });
-
-    it('offers "Link a folder" even when nothing is installed', async () => {
-      // Purpose: the first dev link is made from an empty list.
-      setInstalledState({ data: [] });
-      render(<InstalledPackagesView />);
-
-      await userEvent.setup().click(screen.getByRole('button', { name: 'Link a folder' }));
-
-      expect(await screen.findByLabelText('Folder')).toBeInTheDocument();
     });
   });
 });

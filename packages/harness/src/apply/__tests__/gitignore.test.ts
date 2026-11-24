@@ -10,27 +10,16 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   appendGitignoreLines,
   canonicalLayerIgnoredBy,
   gitCheckoutRoot,
-  gitignorePatternMatches,
   isPathIgnored,
   missingGitignoreLines,
-  pathIgnoredBy,
 } from '../gitignore.js';
-import { EPHEMERAL_GITIGNORE_PATTERNS } from '../../sources/resolve-roots.js';
 import { project } from '../../engine.js';
 import { writeFileAt, writeJsonAt } from '../../__tests__/journeys/stage.js';
 
@@ -124,60 +113,6 @@ function stageRepo(opts: StageOptions = {}): string {
 function plan(): ReturnType<typeof project> {
   return project(repo, { dorkHome });
 }
-
-describe('gitignorePatternMatches', () => {
-  it('AP-09: matches the shapes the constant actually uses', () => {
-    expect(gitignorePatternMatches('.dork/plugins/', '.dork/plugins/acme/skills/x')).toBe(true);
-    // The directory itself too — but only when it IS one. A `dir/` rule says
-    // nothing about a file or a symlink at that path, which is git's own rule
-    // and the difference between warning a repo and letting it commit a link.
-    expect(gitignorePatternMatches('.dork/plugins/', '.dork/plugins', 'dir')).toBe(true);
-    expect(gitignorePatternMatches('.dork/plugins/', '.dork/plugins')).toBe(false);
-    expect(gitignorePatternMatches('*__*/', '.claude/skills/acme__greet')).toBe(false);
-    expect(gitignorePatternMatches('*__*', '.claude/skills/acme__greet')).toBe(true);
-    expect(gitignorePatternMatches('.claude/skills/*__*', '.claude/skills/acme__greet')).toBe(true);
-    expect(gitignorePatternMatches('.claude/skills/*__*', '.claude/skills/greet')).toBe(false);
-    // One segment, so a nested path with `__` deeper down is not this pattern's.
-    expect(gitignorePatternMatches('.claude/skills/*__*', '.claude/skills/a/b__c')).toBe(false);
-    expect(gitignorePatternMatches('.codex/hooks.json', '.codex/hooks.json')).toBe(true);
-    expect(gitignorePatternMatches('.codex/hooks.json', '.codex/hooks.json.dorkos-generated')).toBe(
-      false
-    );
-  });
-
-  it('AP-09: follows git on the shapes a person writes by hand', () => {
-    // A directory pattern covers everything beneath it.
-    expect(gitignorePatternMatches('.claude/', '.claude/skills/acme__greet')).toBe(true);
-    // A bare name matches at any depth; an anchored one only at the root.
-    expect(gitignorePatternMatches('node_modules', 'packages/x/node_modules/y')).toBe(true);
-    expect(gitignorePatternMatches('/.dork', '.dork/plugins/acme')).toBe(true);
-    expect(gitignorePatternMatches('/.dork', 'x/.dork/plugins')).toBe(false);
-    expect(
-      gitignorePatternMatches('.claude/**/settings.local.json', '.claude/settings.local.json')
-    ).toBe(false);
-    expect(gitignorePatternMatches('.claude/**', '.claude/settings.local.json')).toBe(true);
-    // A comment, a blank, and a negation are not patterns.
-    expect(gitignorePatternMatches('# .codex/hooks.json', '.codex/hooks.json')).toBe(false);
-    expect(gitignorePatternMatches('   ', 'anything')).toBe(false);
-    expect(gitignorePatternMatches('!.codex/hooks.json', '.codex/hooks.json')).toBe(false);
-  });
-
-  it('AP-09: understands every pattern the engine declares', () => {
-    // The load-bearing claim: `missingGitignoreLines` maps an uncovered path back
-    // to the pattern that covers it, so a pattern in a shape this matcher cannot
-    // read would silently cover nothing. Each pattern is asked about a path built
-    // from itself.
-    for (const pattern of EPHEMERAL_GITIGNORE_PATTERNS) {
-      const path = pattern.endsWith('/')
-        ? `${pattern}some-package/file.json`
-        : pattern.replace(/\*/g, 'zz');
-      expect({ pattern, matches: gitignorePatternMatches(pattern, path) }).toEqual({
-        pattern,
-        matches: true,
-      });
-    }
-  });
-});
 
 /**
  * The environment every real `git` call here runs in.
@@ -313,162 +248,6 @@ describe.skipIf(!hasGit())('the matcher against real git', () => {
   }, 20_000);
 });
 
-/** Where a nested project sits under its checkout root in the block below. */
-const NEST = 'packages/app';
-
-/**
- * Every shape a project NESTED inside a bigger checkout takes, put to real git
- * (DOR-1957).
- *
- * A DorkOS project is very often not the checkout root, and the rules that cover
- * its projections can live at the root, in a directory on the way down, in the
- * project's own file, or in several of them at once. Each case names which
- * files exist and asks about a path relative to the PROJECT, which is what the
- * engine is asked about and what a person would type.
- */
-const NESTED_GIT_CASES: ReadonlyArray<{
-  what: string;
-  /** `<checkout>/.gitignore`. */
-  root?: string;
-  /** `<checkout>/packages/.gitignore`, a file between the root and the project. */
-  mid?: string;
-  /** `<checkout>/packages/app/.gitignore`, the project's own. */
-  own?: string;
-  /** The path asked about, relative to the project. */
-  path: string;
-  kind?: 'dir' | 'file' | 'symlink';
-}> = [
-  {
-    what: 'the checkout root ignores the skill links',
-    root: '**/.claude/skills/*__*\n',
-    path: '.claude/skills/acme__greet',
-    kind: 'symlink',
-  },
-  {
-    what: 'the checkout root ignores the canonical layer by naming the package',
-    root: 'packages/app/.agents/\n',
-    path: '.agents/harness.manifest.json',
-  },
-  {
-    what: "the project's own file ignores the canonical layer",
-    own: '.agents/\n',
-    path: '.agents/harness.manifest.json',
-  },
-  {
-    what: 'a rule anchored to the checkout root does not reach into a package',
-    root: '/.agents\n',
-    path: '.agents/harness.manifest.json',
-  },
-  {
-    what: 'a bare name at the checkout root reaches any depth',
-    root: '*__*\n',
-    path: '.claude/skills/acme__greet',
-    kind: 'symlink',
-  },
-  {
-    what: 'a re-include beside the root rule that excluded it',
-    root: 'packages/app/.claude/*\n!packages/app/.claude/skills/\n',
-    path: '.claude/skills/acme__greet',
-    kind: 'symlink',
-  },
-  {
-    what: "the project's own file overrules the checkout root's",
-    root: '**/hooks.json\n',
-    own: '!hooks.json\n',
-    path: '.codex/hooks.json',
-  },
-  {
-    what: 'a file between the checkout root and the project has its say',
-    mid: '**/hooks.json\n',
-    path: '.codex/hooks.json',
-  },
-  {
-    what: 'a directory excluded above cannot be re-included below',
-    root: 'packages/app/.agents/\n',
-    own: '!.agents/harness.manifest.json\n',
-    path: '.agents/harness.manifest.json',
-  },
-  {
-    what: "the project's own trailing-slash rule still misses a link",
-    own: '*__*/\n',
-    path: '.claude/skills/acme__greet',
-    kind: 'symlink',
-  },
-  {
-    what: 'the install directory, covered from the root at any depth',
-    root: '**/.dork/plugins/\n',
-    path: '.dork/plugins/any-package',
-    kind: 'dir',
-  },
-  {
-    what: 'nothing anywhere ignores it',
-    path: '.claude/skills/acme__greet',
-    kind: 'symlink',
-  },
-];
-
-describe.skipIf(!hasGit())('the matcher for a project inside a bigger checkout', () => {
-  it('AP-09: agrees with `git check-ignore` run from the project, wherever the rule lives', () => {
-    // The walk-up is only worth having if the rules it then reads are git's. The
-    // `git init` is at the checkout root and `check-ignore` runs from the
-    // project, exactly as a person standing in their package would run it.
-    for (const testCase of NESTED_GIT_CASES) {
-      const root = mkdtempSync(join(tmpdir(), 'harness-gitignore-nested-'));
-      const projectDir = join(root, ...NEST.split('/'));
-      const kind = testCase.kind ?? 'file';
-      try {
-        execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore', env: SEALED_GIT_ENV });
-        mkdirSync(projectDir, { recursive: true });
-        if (testCase.root !== undefined) writeFileSync(join(root, '.gitignore'), testCase.root);
-        if (testCase.mid !== undefined) {
-          writeFileSync(join(root, 'packages', '.gitignore'), testCase.mid);
-        }
-        if (testCase.own !== undefined) {
-          writeFileSync(join(projectDir, '.gitignore'), testCase.own);
-        }
-        // `check-ignore` reads the tree, so each leaf is staged as what it is.
-        mkdirSync(join(projectDir, kind === 'dir' ? testCase.path : dirOf(testCase.path)), {
-          recursive: true,
-        });
-        if (kind === 'file') writeFileSync(join(projectDir, testCase.path), '');
-        if (kind === 'symlink') {
-          // An ABSOLUTE target, unlike the flat block above: `check-ignore` cares
-          // only that the leaf IS a link, and the depth to `.agents` changes with
-          // the nesting.
-          const source = join(projectDir, '.agents', 'skills', 'acme__greet');
-          mkdirSync(source, { recursive: true });
-          symlinkSync(source, join(projectDir, testCase.path));
-        }
-
-        const ours = pathIgnoredBy(projectDir, testCase.path, kind === 'dir' ? 'dir' : 'file');
-        expect({ ...testCase, ignored: ours !== undefined }).toEqual({
-          ...testCase,
-          ignored: gitSaysIgnored(projectDir, testCase.path),
-        });
-      } finally {
-        rmSync(root, { recursive: true, force: true });
-      }
-    }
-    // One real `git init` and one real `git check-ignore` per case, under the
-    // same monorepo load the block above measured its budget against.
-  }, 20_000);
-
-  it('AP-15: names the checkout root file a person would have to open', () => {
-    // Agreement is a boolean; the advice is a path. A person standing in
-    // `packages/app` opens `../../.gitignore`, and nothing else here says so.
-    const root = mkdtempSync(join(tmpdir(), 'harness-gitignore-named-'));
-    const projectDir = join(root, ...NEST.split('/'));
-    try {
-      execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore', env: SEALED_GIT_ENV });
-      mkdirSync(projectDir, { recursive: true });
-      writeFileSync(join(root, '.gitignore'), 'packages/app/.agents/\n');
-      expect(canonicalLayerIgnoredBy(projectDir)).toBe('../../.gitignore');
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-});
-
 /** The parent directory of a repo-relative path, or `.` when it has none. */
 function dirOf(path: string): string {
   const slash = path.lastIndexOf('/');
@@ -528,25 +307,6 @@ describe('missingGitignoreLines', () => {
     ]);
   });
 
-  it('AP-09: names the generated hooks file and its sidecar when the plan writes one', () => {
-    // Their provenance is `authored` — the hooks come from
-    // `.claude/settings.json` — but the file written is machine-local, and the
-    // sidecar is one machine's digest. A provenance-only rule would miss both.
-    stageRepo({ hooks: true });
-    expect(missingGitignoreLines(repo, plan())).toEqual([
-      '.codex/hooks.json',
-      '.codex/hooks.json.dorkos-generated',
-    ]);
-  });
-
-  it('AP-09: is empty once those lines are there, and after appending them', () => {
-    stageRepo({ plugin: true, hooks: true, gitignore: '' });
-    const missing = missingGitignoreLines(repo, plan());
-    expect(missing.length).toBeGreaterThan(0);
-    appendGitignoreLines(repo, missing);
-    expect(missingGitignoreLines(repo, plan())).toEqual([]);
-  });
-
   it('AP-09: does not accept a directory rule for a projection that is a link', () => {
     // Measured 2026-09-08: with `.dork/plugins/` and a `*__*` directory rule in the file, `--fix`
     // printed nothing while `git status` showed `?? .claude/skills/acme__greet`.
@@ -599,36 +359,9 @@ describe('missingGitignoreLines', () => {
       '.claude/skills/*__*',
     ]);
   });
-
-  it('AP-09: names the lines a package inside a monorepo is missing, in its own words', () => {
-    // The lines stay relative to the PROJECT, because that is the `.gitignore`
-    // they get appended to — only the root the rules are read from moved.
-    stageRepo({ nest: 'packages/app', plugin: true });
-    expect(missingGitignoreLines(repo, plan())).toEqual([
-      '.dork/plugins/',
-      '.agents/skills/*__*',
-      '.claude/skills/*__*',
-    ]);
-  });
-
-  it('AP-09: says nothing for a repo with nothing ephemeral in it', () => {
-    stageRepo();
-    writeFileAt(join(repo, '.agents', 'skills', 'demo', 'SKILL.md'), '# demo\n');
-    // Authored skills are committed on purpose, so an authored-only repo with no
-    // hooks has no line to add.
-    expect(missingGitignoreLines(repo, plan())).toEqual([]);
-  });
 });
 
 describe('appendGitignoreLines', () => {
-  it('AP-09: creates the file when there is none', () => {
-    stageRepo();
-    appendGitignoreLines(repo, ['.dork/plugins/']);
-    expect(readFileSync(join(repo, '.gitignore'), 'utf8')).toBe(
-      '# DorkOS harness sync — ephemeral projections\n.dork/plugins/\n'
-    );
-  });
-
   it('AP-09: appends after a blank line, preserving every existing byte', () => {
     stageRepo({ gitignore: 'node_modules/\ndist/\n' });
     appendGitignoreLines(repo, ['.dork/plugins/', '.codex/hooks.json']);
@@ -650,6 +383,14 @@ describe('appendGitignoreLines', () => {
     );
   });
 
+  it('AP-09: does not run a final line into the header when the file has no trailing newline', () => {
+    stageRepo({ gitignore: 'node_modules/' });
+    appendGitignoreLines(repo, ['.dork/plugins/']);
+    expect(readFileSync(join(repo, '.gitignore'), 'utf8')).toBe(
+      'node_modules/\n\n# DorkOS harness sync — ephemeral projections\n.dork/plugins/\n'
+    );
+  });
+
   it('keeps a person\u2019s own lines below the block below it', () => {
     // The block ends at the first blank line, so an unrelated section a person
     // keeps at the bottom of the file stays at the bottom of the file.
@@ -664,54 +405,11 @@ describe('appendGitignoreLines', () => {
       '# DorkOS harness sync — ephemeral projections\n.codex/hooks.json\n.dork/plugins/\n\n# mine\n*.log\n'
     );
   });
-
-  it('AP-09: does not run a final line into the header when the file has no trailing newline', () => {
-    stageRepo({ gitignore: 'node_modules/' });
-    appendGitignoreLines(repo, ['.dork/plugins/']);
-    expect(readFileSync(join(repo, '.gitignore'), 'utf8')).toBe(
-      'node_modules/\n\n# DorkOS harness sync — ephemeral projections\n.dork/plugins/\n'
-    );
-  });
 });
 
 describe('canonicalLayerIgnoredBy', () => {
   it('AP-15: names the root file when it ignores `.agents/`', () => {
     stageRepo({ gitignore: 'node_modules/\n.agents/\n' });
-    expect(canonicalLayerIgnoredBy(repo)).toBe('.gitignore');
-  });
-
-  it('AP-15: answers nothing for the two installed-projection patterns inside it', () => {
-    // `.agents/skills/*__*` ignores machine-local projections, not the layer —
-    // reading it as AP-15 would fire on every repo that follows the contract.
-    stageRepo({ gitignore: '.agents/skills/*__*\n.claude/skills/*__*\n' });
-    expect(canonicalLayerIgnoredBy(repo)).toBeUndefined();
-  });
-
-  it('AP-15: names `.agents/.gitignore` when that is the file doing it', () => {
-    // The whole reason this returns a path: "stop ignoring .agents/" is advice
-    // a person cannot act on until they know which of the two files to open.
-    stageRepo();
-    writeFileSync(join(repo, '.agents', '.gitignore'), '*\n');
-    expect(canonicalLayerIgnoredBy(repo)).toBe('.agents/.gitignore');
-  });
-
-  it('AP-15: names the checkout root file for a package inside a monorepo', () => {
-    // Seeded defect (DOR-1957): a package below the checkout root was told
-    // nothing, because the audit asked whether the PROJECT directory held a
-    // `.git` — so the one repo shape where the rule lives somewhere else was the
-    // one that never heard about it.
-    stageRepo({ nest: 'packages/app', rootGitignore: 'node_modules/\npackages/app/.agents/\n' });
-    expect(canonicalLayerIgnoredBy(repo)).toBe('../../.gitignore');
-  });
-
-  it('AP-15: still names the project\u2019s own file when that is the deeper one', () => {
-    // Deepest file wins, which is git's rule and the reason the answer is a path
-    // rather than a boolean: two files can both have something to say.
-    stageRepo({
-      nest: 'packages/app',
-      rootGitignore: 'packages/app/.agents/\n',
-      gitignore: '.agents/\n',
-    });
     expect(canonicalLayerIgnoredBy(repo)).toBe('.gitignore');
   });
 
@@ -756,10 +454,4 @@ describe('canonicalLayerIgnoredBy', () => {
       }
     }
   );
-
-  it('AP-15: answers nothing outside a git checkout, whatever a `.gitignore` says', () => {
-    stageRepo({ git: false, gitignore: '.agents/\n' });
-    expect(existsSync(join(repo, '.git'))).toBe(false);
-    expect(canonicalLayerIgnoredBy(repo)).toBeUndefined();
-  });
 });

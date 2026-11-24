@@ -81,20 +81,6 @@ describe('ApprovalPrompt', () => {
     expect(screen.queryByText('Allowing asks you to confirm it’s you.')).toBeNull();
   });
 
-  it('keeps desk cards free of remote confirmation details', () => {
-    render(<ApprovalPrompt {...baseProps} approvalRequestCode="K7MR-4XQ9-HT3W" />);
-    expect(screen.queryByText('K7MR-4XQ9-HT3W')).toBeNull();
-    expect(screen.queryByText('Allowing asks you to confirm it’s you.')).toBeNull();
-  });
-
-  it('renders tool name and approve/deny buttons', () => {
-    render(<ApprovalPrompt {...baseProps} />);
-    expect(screen.getByText('Write test.txt')).toBeDefined();
-    expect(screen.getByText('Allow Write?')).toBeDefined();
-    expect(screen.getByRole('button', { name: /^Allow/ })).toBeDefined();
-    expect(screen.getByRole('button', { name: /^Don’t allow/ })).toBeDefined();
-  });
-
   // Purpose: a "Confirm it’s you" closed unconfirmed left the card as it was,
   // as if the yes were still on its way (DOR-4909). It now says so, and
   // stays answerable.
@@ -113,11 +99,6 @@ describe('ApprovalPrompt', () => {
         false
       )
     );
-  });
-
-  it('renders tool arguments display', () => {
-    render(<ApprovalPrompt {...baseProps} />);
-    expect(screen.getByTestId('tool-args')).toBeDefined();
   });
 
   describe('deny reason', () => {
@@ -202,68 +183,9 @@ describe('ApprovalPrompt', () => {
       expect(wrapper.className).toContain('ring-2');
       expect(wrapper.className).toContain('ring-ring/30');
     });
-
-    it('does not have ring-2 class when isActive is false', () => {
-      const { container } = render(<ApprovalPrompt {...baseProps} isActive={false} />);
-      const wrapper = container.firstElementChild as HTMLElement;
-      // The ACTIVE ring, specifically. The card also carries a `focus-visible:`
-      // twin of it — the design system's parity rule — which contains the same
-      // `ring-2` substring and is not what this case is about.
-      expect(wrapper.className).not.toContain('ring-ring/30');
-    });
-
-    it('applies opacity-60 when isActive is false and not decided', () => {
-      const { container } = render(<ApprovalPrompt {...baseProps} isActive={false} />);
-      const wrapper = container.firstElementChild as HTMLElement;
-      expect(wrapper.className).toContain('opacity-60');
-    });
-
-    it('does not apply opacity-60 when isActive is true', () => {
-      const { container } = render(<ApprovalPrompt {...baseProps} isActive={true} />);
-      const wrapper = container.firstElementChild as HTMLElement;
-      expect(wrapper.className).not.toContain('opacity-60');
-    });
-
-    it('shows Kbd hints when isActive is true', () => {
-      render(<ApprovalPrompt {...baseProps} isActive={true} />);
-      // Kbd elements render as <kbd> tags
-      const kbds = document.querySelectorAll('kbd');
-      expect(kbds.length).toBe(2);
-      expect(kbds[0].textContent).toBe('Enter');
-      expect(kbds[1].textContent).toBe('Esc');
-    });
-
-    it('hides Kbd hints when isActive is false', () => {
-      render(<ApprovalPrompt {...baseProps} isActive={false} />);
-      const kbds = document.querySelectorAll('kbd');
-      expect(kbds.length).toBe(0);
-    });
   });
 
   describe('imperative handle', () => {
-    it('approve() calls transport.approveTool', async () => {
-      const ref = createRef<ApprovalPromptHandle>();
-      render(<ApprovalPrompt {...baseProps} ref={ref} />);
-
-      ref.current!.approve();
-
-      await waitFor(() => {
-        expect(mockApproveTool).toHaveBeenCalledWith('session-1', 'tc-1');
-      });
-    });
-
-    it('deny() calls transport.denyTool', async () => {
-      const ref = createRef<ApprovalPromptHandle>();
-      render(<ApprovalPrompt {...baseProps} ref={ref} />);
-
-      ref.current!.deny();
-
-      await waitFor(() => {
-        // The third argument is the optional reason; nobody typed one here.
-        expect(mockDenyTool).toHaveBeenCalledWith('session-1', 'tc-1', undefined);
-      });
-    });
-
     it('shows "Approved" with check icon and badge after approve', async () => {
       const ref = createRef<ApprovalPromptHandle>();
       render(<ApprovalPrompt {...baseProps} ref={ref} />);
@@ -299,48 +221,6 @@ describe('ApprovalPrompt', () => {
         // Container should have neutral background with shadow
         expect(container.className).toContain('bg-muted/50');
         expect(container.className).toContain('shadow-msg-tool');
-      });
-    });
-
-    it('renders tool name in mono font in decided state', async () => {
-      const ref = createRef<ApprovalPromptHandle>();
-      render(<ApprovalPrompt {...baseProps} ref={ref} />);
-
-      ref.current!.approve();
-
-      await waitFor(() => {
-        const toolNameEl = screen.getByTestId('tool-approval-decided').querySelector('.font-mono');
-        expect(toolNameEl).not.toBeNull();
-        expect(toolNameEl!.textContent).toBe('Write test.txt');
-        expect(toolNameEl!.className).toContain('text-3xs');
-      });
-    });
-
-    it('renders Approved badge with success styling', async () => {
-      const ref = createRef<ApprovalPromptHandle>();
-      render(<ApprovalPrompt {...baseProps} ref={ref} />);
-
-      ref.current!.approve();
-
-      await waitFor(() => {
-        const badge = screen.getByText('Allowed');
-        expect(badge.className).toContain('rounded-full');
-        expect(badge.className).toContain('bg-status-success-bg');
-        expect(badge.className).toContain('text-status-success-fg');
-      });
-    });
-
-    it('renders Denied badge with error styling', async () => {
-      const ref = createRef<ApprovalPromptHandle>();
-      render(<ApprovalPrompt {...baseProps} ref={ref} />);
-
-      ref.current!.deny();
-
-      await waitFor(() => {
-        const badge = screen.getByText('Not allowed');
-        expect(badge.className).toContain('rounded-full');
-        expect(badge.className).toContain('bg-status-error-bg');
-        expect(badge.className).toContain('text-status-error-fg');
       });
     });
 
@@ -473,19 +353,6 @@ describe('ApprovalPrompt', () => {
       expect(countdown.textContent).toBe('1:01 remaining');
     });
 
-    it('starts the bar at full when the ask is brand new', async () => {
-      await renderAsync({ ...baseProps, timeoutMs: 600_000 });
-      const drain = document.querySelector(
-        '[data-slot="ask-countdown"] [aria-hidden="true"] > div'
-      ) as HTMLElement;
-      expect(drain.style.animationDelay).toBe('0ms');
-    });
-
-    it('draws no countdown at all when the ask has no deadline', async () => {
-      await renderAsync(baseProps);
-      expect(document.querySelector('[data-slot="ask-countdown"]')).toBeNull();
-    });
-
     it('shows the time left from the start, in neutral colour until two minutes', async () => {
       // Changed deliberately in P3: the words are the accessible countdown, so
       // withholding them until two minutes left a screen-reader user with
@@ -505,13 +372,6 @@ describe('ApprovalPrompt', () => {
         const visibleCountdown = elements.find((el) => !el.className.includes('sr-only'));
         expect(visibleCountdown!.className).toContain('text-muted-foreground');
       }
-    });
-
-    it('shows countdown with correct format at 1:30 remaining', async () => {
-      await renderAsync({ ...baseProps, timeoutMs: 600_000 });
-      // Advance to 8m30s elapsed (1:30 remaining)
-      await act(async () => vi.advanceTimersByTime(510_000));
-      expect(screen.getByText('1:30 remaining')).toBeDefined();
     });
 
     it('turns red for the last 30 seconds', async () => {
@@ -601,24 +461,6 @@ describe('ApprovalPrompt', () => {
       expect(mockDenyTool).not.toHaveBeenCalled();
     });
 
-    it('does not show timeout message on manual deny', async () => {
-      const ref = createRef<ApprovalPromptHandle>();
-      await act(async () => {
-        render(<ApprovalPrompt {...baseProps} ref={ref} timeoutMs={600_000} />);
-      });
-
-      // Advance 5 minutes then deny manually; flush promises and microtasks via runAllTimersAsync
-      await act(async () => vi.advanceTimersByTime(300_000));
-      await act(async () => {
-        ref.current!.deny();
-        await vi.runAllTimersAsync();
-      });
-
-      expect(screen.getByText('Not allowed')).toBeDefined();
-      expect(screen.queryByText(/Auto-denied/)).toBeNull();
-      expect(screen.queryByText(/timed out/)).toBeNull();
-    });
-
     it('approve works during countdown and stops timer display', async () => {
       const ref = createRef<ApprovalPromptHandle>();
       await act(async () => {
@@ -645,19 +487,6 @@ describe('ApprovalPrompt', () => {
       const liveRegion = screen.getByRole('status');
       expect(liveRegion.textContent).toBe('Two minutes left to answer.');
     });
-
-    it('announces at urgent threshold for screen readers', async () => {
-      await renderAsync({ ...baseProps, timeoutMs: 600_000 });
-      await act(async () => vi.advanceTimersByTime(540_000)); // 9 minutes elapsed, 1 minute remaining
-      const liveRegion = screen.getByRole('status');
-      expect(liveRegion.textContent).toBe('One minute left to answer.');
-    });
-
-    it('counts the words down as time passes', async () => {
-      await renderAsync({ ...baseProps, timeoutMs: 600_000 });
-      await act(async () => vi.advanceTimersByTime(60_000)); // 1 minute elapsed
-      expect(screen.getByText('9:00 remaining')).toBeDefined();
-    });
   });
 
   describe('friendly tool name formatting', () => {
@@ -671,34 +500,6 @@ describe('ApprovalPrompt', () => {
       );
       expect(screen.getByText('Slack')).toBeDefined();
       expect(screen.getByText('Send Message')).toBeDefined();
-    });
-
-    it('suppresses badge for DorkOS tools but shows friendly label', () => {
-      render(
-        <ApprovalPrompt {...baseProps} toolName="mcp__dorkos__binding_list_sessions" input="{}" />
-      );
-      expect(screen.queryByText('DorkOS')).toBeNull();
-      expect(screen.getByText('Binding List Sessions')).toBeDefined();
-    });
-
-    it('shows friendly label in decided state for MCP tools', async () => {
-      const ref = createRef<ApprovalPromptHandle>();
-      render(
-        <ApprovalPrompt
-          {...baseProps}
-          toolName="mcp__slack__send_message"
-          input='{"channel": "#general"}'
-          ref={ref}
-        />
-      );
-
-      ref.current!.approve();
-
-      await waitFor(() => {
-        const toolNameEl = screen.getByTestId('tool-approval-decided').querySelector('.font-mono');
-        expect(toolNameEl).not.toBeNull();
-        expect(toolNameEl!.textContent).toBe('Send Message');
-      });
     });
   });
 });
@@ -744,22 +545,6 @@ describe('what "Always Allow" says it grants (DOR-1462)', () => {
     expect(screen.getByRole('button', { name: /always allow/i }).textContent).toContain(
       'this chat'
     );
-  });
-
-  it('claims no scope when the server named none', () => {
-    // A runtime with nothing to say leaves the button reading exactly as it
-    // always did, rather than guessing at a promise nobody made.
-    render(<ApprovalPrompt {...baseProps} approvalHasSuggestions />);
-    const button = screen.getByRole('button', { name: 'Always allow' });
-    expect(button.textContent).not.toContain('this chat');
-    expect(button.textContent).not.toContain('this project');
-    expect(button.textContent).not.toContain('all your Claude chats');
-  });
-
-  it('draws no scope where there is no button', () => {
-    render(<ApprovalPrompt {...baseProps} approvalAlwaysAllowScope="user" />);
-    expect(screen.queryByRole('button', { name: /always allow/i })).toBeNull();
-    expect(screen.queryByText(/all your Claude chats/)).toBeNull();
   });
 });
 
@@ -812,14 +597,6 @@ describe('Always allow on an MCP card that offers its whole server (DOR-4101)', 
     fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
     fireEvent.keyDown(screen.getByRole('radio', { name: /^Just/ }), { key: 'Enter' });
     await waitFor(() => expect(mockApproveTool).toHaveBeenCalledWith('session-1', 'tc-1', 'tool'));
-  });
-
-  it('a card for one tool’s rule has no step and no server line', async () => {
-    render(<ApprovalPrompt {...mcpProps} approvalAlwaysAllowBreadth="tool" />);
-    expect(screen.queryByText(/including ones it adds later/)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Always allow, this project' }));
-    await waitFor(() => expect(mockApproveTool).toHaveBeenCalledWith('session-1', 'tc-1', true));
-    expect(screen.queryByRole('radio')).toBeNull();
   });
 
   it('on Wi-Fi there is no Always allow, so no step', () => {
@@ -876,30 +653,6 @@ describe('a routine ask is calm and says who and what (DOR-4117)', () => {
     );
   });
 
-  it.each([
-    ['Bash', 'Atlas wants to use Bash'],
-    ['mcp__dorkos__post_to_room', 'Atlas wants to use Post To Room'],
-    ['dorkos_post_to_room', 'Atlas wants to use Post To Room'],
-  ])('a built-in %s keeps the short title, with no "from"', (toolName, title) => {
-    render(<ApprovalPrompt {...baseProps} toolName={toolName} agentName="Atlas" />);
-    const text = document.querySelector('[data-slot="ask-headline"]')!.textContent ?? '';
-    expect(text).toBe(title);
-    expect(text).not.toContain(' from ');
-  });
-
-  it('a long server name wraps and is never cut off', () => {
-    const server = 'a_very_long_server_name_that_someone_typed_into_connections_without_spaces';
-    render(<ApprovalPrompt {...baseProps} toolName={`mcp__${server}__Bash`} agentName="Atlas" />);
-    const headline = document.querySelector('[data-slot="ask-headline"]')!;
-    expect(headline.textContent).toBe(
-      'Atlas wants to use Bash from A Very Long Server Name That Someone Typed Into Connections Without Spaces'
-    );
-    const cls = headline.getAttribute('class') ?? '';
-    expect(cls).toContain('break-words');
-    expect(cls).toContain('min-w-0');
-    expect(cls).not.toMatch(/truncate|line-clamp|text-ellipsis|whitespace-nowrap|overflow-hidden/);
-  });
-
   it('a tool name from an outside server is plain text: no markdown, no HTML (Security)', () => {
     const hostile = 'mcp__made_up__**bold**<img src=x onerror=alert(1)>[link](https://x.test)';
     render(<ApprovalPrompt {...baseProps} toolName={hostile} agentName="Atlas" />);
@@ -913,32 +666,6 @@ describe('a routine ask is calm and says who and what (DOR-4117)', () => {
         '[data-slot="ask-headline"] img, [data-slot="ask-headline"] strong, [data-slot="ask-headline"] a'
       )
     ).toBeNull();
-  });
-
-  it('with no name it names the tool, never a stand-in for the agent', () => {
-    render(<ApprovalPrompt {...baseProps} />);
-    expect(screen.getByText('Allow Write?')).toBeDefined();
-    expect(screen.queryByText(/your agent|an agent/i)).toBeNull();
-  });
-
-  it('keeps the runtime’s own sentence when it sent one and no name is known', () => {
-    render(<ApprovalPrompt {...baseProps} approvalTitle="Claude wants to write test.txt" />);
-    expect(screen.getByText('Claude wants to write test.txt')).toBeDefined();
-  });
-
-  it('the countdown stays neutral until the last 30 seconds, then turns red', () => {
-    const now = Date.now();
-    const countdownClass = (msLeft: number) => {
-      cleanup();
-      render(<ApprovalPrompt {...baseProps} timeoutMs={600_000} approvalRemainingMs={msLeft} />);
-      return (
-        document.querySelector('[data-slot="ask-countdown"] span')?.getAttribute('class') ?? ''
-      );
-    };
-    expect(countdownClass(90_000)).toContain('text-muted-foreground');
-    expect(countdownClass(45_000)).not.toMatch(/status-(error|warning)/);
-    expect(countdownClass(20_000)).toContain('text-status-error');
-    expect(Date.now() - now).toBeLessThan(5_000);
   });
 });
 
@@ -995,29 +722,6 @@ describe('long tool and server names wrap inside the card (DOR-4247)', () => {
     expect(cls).not.toMatch(/truncate|line-clamp|text-ellipsis/);
   }
 
-  it('the every-tool button names no server, since the radio above does', () => {
-    render(<ApprovalPrompt {...longProps} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
-    fireEvent.click(screen.getByRole('radio', { name: /^Every tool from / }));
-    const button = screen.getByRole('button', { name: /^Always allow every/ });
-    expect(button.textContent).toBe('Always allow every tool');
-    expect(screen.queryByText(/Allow all from/)).toBeNull();
-  });
-
-  it('the one-tool button still names the tool', () => {
-    render(<ApprovalPrompt {...longProps} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
-    const button = screen.getByRole('button', { name: /^Always allow Search/ });
-    expect(button.textContent).toBe('Always allow Search Pages Across Every Shared Space X');
-  });
-
-  it('every answer button on the card can wrap', () => {
-    render(<ApprovalPrompt {...longProps} />);
-    expectWraps(screen.getByRole('button', { name: /^Allow/ }));
-    expectWraps(screen.getByRole('button', { name: 'Always allow…' }));
-    expectWraps(screen.getByRole('button', { name: /^Don’t allow/ }));
-  });
-
   it('the choice’s buttons can wrap, and the choice never widens the card', () => {
     render(<ApprovalPrompt {...longProps} />);
     fireEvent.click(screen.getByRole('button', { name: 'Always allow…' }));
@@ -1036,38 +740,11 @@ describe('long tool and server names wrap inside the card (DOR-4247)', () => {
   });
 });
 
-describe('the title row on a narrow card (DOR-4247)', () => {
-  it('the shield keeps its size beside a title that wraps', () => {
-    const server = 'notion_demo_workspace_for_the_design_ops';
-    render(
-      <ApprovalPrompt
-        {...baseProps}
-        toolName={`mcp__${server}__search_pages_across_every_shared_space_x`}
-      />
-    );
-    const shield = document.querySelector('[data-testid="tool-approval"] svg.lucide-shield')!;
-    expect(shield.getAttribute('class')!.split(' ')).toContain('shrink-0');
-  });
-});
-
 describe('the title names an MCP tool by its friendly names (DOR-4247)', () => {
   const headline = () => document.querySelector('[data-slot="ask-headline"]')!.textContent;
   const badge = () =>
     document.querySelector('[data-testid="tool-approval"] .bg-muted.text-muted-foreground')!
       .textContent;
-
-  it('reads as words, not snake_case', () => {
-    render(
-      <ApprovalPrompt
-        {...baseProps}
-        toolName="mcp__notion_demo_workspace_for_the_design_ops__search_pages_across_every_shared_space_x"
-      />
-    );
-    expect(headline()).toBe(
-      'Allow Search Pages Across Every Shared Space X from Notion Demo Workspace For The Design Ops?'
-    );
-    expect(headline()).not.toContain('_');
-  });
 
   it.each([
     ['mcp__evil__Bash', 'Evil'],

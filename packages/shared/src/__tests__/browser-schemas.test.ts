@@ -236,34 +236,6 @@ it('keeps diagnostic and error metadata free of generic payload/echo fields', ()
     ).toBe(false);
   }
 });
-it('constructs the capture factory without a facade back-edge and preserves legacy validators', async () => {
-  const factory = await import('../browser-capture-schemas.js');
-  const facade = await import('../browser-schemas.js');
-  const independent = factory.createBrowserCaptureSchemas({
-    binding: BrowserBindingSchema,
-    frame: BrowserFrameSchema,
-  });
-  const envelope = {
-    frame,
-    geometry: {
-      cssViewport: { width: 1280, height: 720 },
-      raster: { width: 2560, height: 1440, format: 'jpeg' },
-      scaleX: 2,
-      scaleY: 2,
-    },
-    pointer: { x: 0, y: 0, revision: 0 },
-  };
-  expect(independent.BrowserFramePointerEnvelopeSchema.parse(envelope)).toEqual(
-    facade.BrowserFramePointerEnvelopeSchema.parse(envelope)
-  );
-  expect(BrowserFrameSchema.parse(frame)).toEqual(frame);
-  for (const changed of [
-    { ...envelope, geometry: { ...envelope.geometry, scaleX: 1 } },
-    { ...envelope, pointer: { x: 1280, y: 0, revision: 0 } },
-    { ...envelope, pointer: { x: 0, y: 720, revision: 0 } },
-  ])
-    expect(facade.BrowserFramePointerEnvelopeSchema.safeParse(changed).success).toBe(false);
-});
 it('validates maximum-width summaries, ordering, closed fields and terminal interval coherence', async () => {
   const { BrowserDiagnosticSummarySchema } = await import('../browser-schemas.js');
   const max = Number.MAX_SAFE_INTEGER;

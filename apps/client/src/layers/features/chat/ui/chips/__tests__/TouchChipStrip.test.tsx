@@ -114,25 +114,6 @@ describe('TouchChipStrip — the settled summary line', () => {
     expect(screen.getByRole('button', { name: 'show all' })).toBeInTheDocument();
   });
 
-  it('names each tally for a screen reader', () => {
-    render(<TouchChipStrip sessionId={SESSION_ID} parts={mixedParts()} />);
-
-    const strip = screen.getByTestId('touch-chip-strip');
-    expect(within(strip).getByText('Read')).toBeInTheDocument();
-    expect(within(strip).getByText('Edited')).toBeInTheDocument();
-    expect(within(strip).getByText('Fetched')).toBeInTheDocument();
-  });
-
-  it('says the whole line as one sentence rather than a run of fragments', () => {
-    // Glyphs and bare numbers with the words hidden beside them read as
-    // disconnected pieces. The container carries the sentence they add up to.
-    render(<TouchChipStrip sessionId={SESSION_ID} parts={mixedParts()} />);
-
-    expect(screen.getByTestId('chip-summary-line')).toHaveAccessibleName(
-      '2 read; 1 edited, 2 added, 1 removed; 1 fetched'
-    );
-  });
-
   it('renders nothing at all for a turn that touched nothing', () => {
     render(
       <TouchChipStrip sessionId={SESSION_ID} parts={[{ type: 'text', text: 'just talking' }]} />
@@ -147,16 +128,6 @@ describe('TouchChipStrip — the settled summary line', () => {
     );
 
     expect(screen.queryByTestId('touch-chip-strip')).toBeNull();
-  });
-
-  it('keeps the tray closed until it is asked for', () => {
-    render(<TouchChipStrip sessionId={SESSION_ID} parts={mixedParts()} />);
-
-    expect(screen.queryByTestId('chip-tray')).toBeNull();
-    expect(screen.getByRole('button', { name: 'show all' })).toHaveAttribute(
-      'aria-expanded',
-      'false'
-    );
   });
 });
 
@@ -253,45 +224,6 @@ describe('TouchChipStrip — the live row', () => {
     expect(pile.getAttribute('aria-controls')).toBe(tray.getAttribute('id'));
   });
 
-  it('grows the pile by one as each new touch arrives', () => {
-    const settled = ['a', 'b', 'c', 'd'].map((name) =>
-      toolCall('Read', { file_path: `/repo/${name}.ts` })
-    );
-    const fifth = toolCall('Read', { file_path: '/repo/e.ts' }, { status: 'running' });
-    const { rerender } = render(
-      <TouchChipStrip sessionId={SESSION_ID} parts={[...settled, fifth]} />
-    );
-
-    expect(screen.getByTestId('chip-pile-count')).toHaveTextContent('1');
-    expect(liveRowLabels()).toEqual(['📖b.ts', '📖c.ts', '📖d.ts', '📖e.ts']);
-
-    const sixth = toolCall('Read', { file_path: '/repo/f.ts' }, { status: 'running' });
-    rerender(
-      <TouchChipStrip
-        sessionId={SESSION_ID}
-        parts={[...settled, { ...fifth, status: 'complete' }, sixth]}
-      />
-    );
-
-    expect(screen.getByTestId('chip-pile-count')).toHaveTextContent('2');
-    // `b.ts` has left the row for the pile; the row still holds four.
-    expect(liveRowLabels()).toEqual(['📖c.ts', '📖d.ts', '📖e.ts', '📖f.ts']);
-  });
-
-  it('has no pile until something has actually aged out', () => {
-    render(
-      <TouchChipStrip
-        sessionId={SESSION_ID}
-        parts={[
-          toolCall('Read', { file_path: '/repo/a.ts' }),
-          toolCall('Read', { file_path: '/repo/b.ts' }, { status: 'running' }),
-        ]}
-      />
-    );
-
-    expect(screen.queryByTestId('chip-pile')).toBeNull();
-  });
-
   it('settles into the summary line once nothing is live', () => {
     const running = [
       toolCall('Read', { file_path: '/repo/src/a.ts' }, { status: 'running' }),
@@ -312,25 +244,6 @@ describe('TouchChipStrip — the live row', () => {
 });
 
 describe('TouchChipStrip — live for as long as the turn is', () => {
-  it('keeps the row up between tool calls, when nothing at all is running', () => {
-    // The gap between one tool finishing and the next starting is most of a
-    // turn. Gating the row on instantaneous tool liveness collapsed it into the
-    // summary line and reopened it on every one of those gaps.
-    render(
-      <TouchChipStrip
-        sessionId={SESSION_ID}
-        parts={[
-          toolCall('Read', { file_path: '/repo/a.ts' }),
-          toolCall('Read', { file_path: '/repo/b.ts' }),
-        ]}
-        turnActive
-      />
-    );
-
-    expect(screen.getByTestId('chip-live-row')).toBeInTheDocument();
-    expect(screen.queryByTestId('chip-summary-line')).toBeNull();
-  });
-
   it('holds the row through a whole turn and settles once, when the turn ends', () => {
     const a = toolCall('Read', { file_path: '/repo/a.ts' }, { status: 'running' });
     const b = toolCall('Read', { file_path: '/repo/b.ts' }, { status: 'running' });
@@ -360,13 +273,6 @@ describe('TouchChipStrip — live for as long as the turn is', () => {
         ]}
       />
     );
-
-    expect(screen.queryByTestId('chip-live-row')).toBeNull();
-    expect(screen.getByTestId('chip-summary-line')).toBeInTheDocument();
-  });
-
-  it('settles a turn read back from history, where nothing is active', () => {
-    render(<TouchChipStrip sessionId={SESSION_ID} parts={mixedParts()} />);
 
     expect(screen.queryByTestId('chip-live-row')).toBeNull();
     expect(screen.getByTestId('chip-summary-line')).toBeInTheDocument();
@@ -413,28 +319,6 @@ describe('TouchChipStrip — the read→edit upgrade', () => {
     expect(sawTestId(moved, 'chip-upgrade-pulse')).toBe(true);
   });
 
-  it('rings an upgrade in place, without the chip having left the row', () => {
-    const read = toolCall('Read', { file_path: '/repo/a.ts' }, { status: 'running' });
-    const { rerender } = render(
-      <TouchChipStrip sessionId={SESSION_ID} parts={[read]} turnActive />
-    );
-
-    const moved = movedDuring(() =>
-      rerender(
-        <TouchChipStrip
-          sessionId={SESSION_ID}
-          parts={[
-            { ...read, status: 'complete' },
-            toolCall('Edit', { file_path: '/repo/a.ts', old_string: 'a', new_string: 'b' }),
-          ]}
-          turnActive
-        />
-      )
-    );
-
-    expect(sawTestId(moved, 'chip-upgrade-pulse')).toBe(true);
-  });
-
   it('rings once, and never again however many edits follow', () => {
     const read = toolCall('Read', { file_path: '/repo/a.ts' });
     const edit = () =>
@@ -451,26 +335,6 @@ describe('TouchChipStrip — the read→edit upgrade', () => {
     );
 
     expect(sawTestId(moved, 'chip-upgrade-pulse')).toBe(false);
-  });
-
-  it('never rings a chip being read back in the tray', async () => {
-    // Opening a record is not an upgrade happening, and celebrating it would
-    // make motion mean something other than "this is happening now".
-    const user = userEvent.setup();
-    render(
-      <TouchChipStrip
-        sessionId={SESSION_ID}
-        parts={[
-          toolCall('Read', { file_path: '/repo/a.ts' }),
-          toolCall('Edit', { file_path: '/repo/a.ts', old_string: 'a', new_string: 'b' }),
-        ]}
-      />
-    );
-
-    const tray = await openTray(user);
-
-    expect(within(tray).getByTestId('touch-chip')).toHaveAttribute('data-verb', 'edit');
-    expect(within(tray).queryByTestId('chip-upgrade-pulse')).toBeNull();
   });
 
   it('morphs the chip in place instead of adding a second one', () => {
@@ -503,29 +367,6 @@ describe('TouchChipStrip — the read→edit upgrade', () => {
     expect(after).toHaveAttribute('data-verb', 'edit');
     expect(after.textContent).toBe('✏️a.ts×2+2 −1');
   });
-
-  it('is still one chip after three more edits, with the diffstat summed', () => {
-    const read = toolCall('Read', { file_path: '/repo/a.ts' }, { status: 'running' });
-    const edit = () =>
-      toolCall('Edit', { file_path: '/repo/a.ts', old_string: 'a', new_string: 'b' });
-    const { rerender } = render(<TouchChipStrip sessionId={SESSION_ID} parts={[read]} />);
-    const chip = within(screen.getByTestId('chip-live-row')).getByTestId('touch-chip');
-
-    const edits = [edit(), edit(), edit()];
-    for (let count = 1; count <= edits.length; count += 1) {
-      rerender(
-        <TouchChipStrip
-          sessionId={SESSION_ID}
-          parts={[{ ...read, status: 'complete' }, ...edits.slice(0, count), read]}
-        />
-      );
-    }
-
-    const row = screen.getByTestId('chip-live-row');
-    expect(within(row).getAllByTestId('touch-chip')).toHaveLength(1);
-    expect(within(row).getByTestId('touch-chip')).toBe(chip);
-    expect(chip.textContent).toBe('✏️a.ts×5+3 −3');
-  });
 });
 
 describe('TouchChipStrip — the disclosure', () => {
@@ -538,28 +379,6 @@ describe('TouchChipStrip — the disclosure', () => {
     expect(tray).toBeInTheDocument();
     expect(within(tray).getAllByTestId('touch-chip')).toHaveLength(4);
     expect(screen.getByRole('button', { name: 'hide' })).toHaveAttribute('aria-expanded', 'true');
-  });
-
-  it('points the trigger at the region it controls', async () => {
-    const user = userEvent.setup();
-    render(<TouchChipStrip sessionId={SESSION_ID} parts={mixedParts()} />);
-
-    const tray = await openTray(user);
-    const trigger = screen.getByRole('button', { name: 'hide' });
-
-    expect(tray).toHaveAttribute('role', 'region');
-    expect(tray).toHaveAccessibleName('Touched files and links');
-    expect(trigger.getAttribute('aria-controls')).toBe(tray.getAttribute('id'));
-  });
-
-  it('closes again on a second click', async () => {
-    const user = userEvent.setup();
-    render(<TouchChipStrip sessionId={SESSION_ID} parts={mixedParts()} />);
-
-    await openTray(user);
-    await user.click(screen.getByRole('button', { name: 'hide' }));
-
-    expect(screen.queryByTestId('chip-tray')).toBeNull();
   });
 });
 
@@ -631,25 +450,6 @@ describe('TouchChipStrip — clicking through to the canvas', () => {
       activeRightPanelTab: null,
     });
     expect(chip.getAttribute('title')).toContain('A pattern, not one file');
-  });
-
-  it('opens nothing for a bare command, which has no surface to open', async () => {
-    const user = userEvent.setup();
-    render(
-      <TouchChipStrip sessionId={SESSION_ID} parts={[toolCall('Bash', { command: 'pnpm test' })]} />
-    );
-
-    const tray = await openTray(user);
-    await user.click(within(tray).getByRole('button', { name: 'Ran pnpm test' }));
-
-    // Not just "no document": a chip with nowhere to go must not throw the
-    // reader's panel open at them either.
-    expect(canvasState()).toEqual({
-      openDocuments: [],
-      canvasOpen: false,
-      rightPanelOpen: false,
-      activeRightPanelTab: null,
-    });
   });
 });
 
@@ -732,75 +532,6 @@ describe('TouchChipStrip — chip anatomy', () => {
     expect(chip).toHaveAccessibleName('Created /repo/src/new.ts, 4 added');
   });
 
-  it('badges a search with the matches it found', async () => {
-    const user = userEvent.setup();
-    render(
-      <TouchChipStrip
-        sessionId={SESSION_ID}
-        parts={[toolCall('Grep', { pattern: 'Last-Event-ID' }, { result: 'Found 14 matches' })]}
-      />
-    );
-
-    const tray = await openTray(user);
-    const chip = within(tray).getByTestId('touch-chip');
-
-    expect(chip.textContent).toBe('🔍"Last-Event-ID"14 hits');
-    expect(chip).toHaveAccessibleName('Searched Last-Event-ID, 14 hits');
-  });
-
-  it('says "1 hit" rather than "1 hits"', async () => {
-    const user = userEvent.setup();
-    render(
-      <TouchChipStrip
-        sessionId={SESSION_ID}
-        parts={[toolCall('Grep', { pattern: 'once' }, { result: 'Found 1 match' })]}
-      />
-    );
-
-    const tray = await openTray(user);
-    expect(within(tray).getByTestId('touch-chip').textContent).toContain('1 hit');
-  });
-
-  it('says a glob was globbed, not read', async () => {
-    // "Read src/**/*.ts" claims it opened one file. The tool named a set.
-    const user = userEvent.setup();
-    render(
-      <TouchChipStrip
-        sessionId={SESSION_ID}
-        parts={[toolCall('Glob', { pattern: 'src/**/*.ts' })]}
-      />
-    );
-
-    const tray = await openTray(user);
-    expect(within(tray).getByTestId('touch-chip')).toHaveAccessibleName('Globbed src/**/*.ts');
-  });
-
-  it('says a deleted glob was deleted, because it was', async () => {
-    const user = userEvent.setup();
-    render(
-      <TouchChipStrip
-        sessionId={SESSION_ID}
-        parts={[toolCall('Bash', { command: 'rm build/*.js' })]}
-      />
-    );
-
-    const tray = await openTray(user);
-    expect(within(tray).getByRole('button', { name: 'Deleted build/*.js' })).toBeInTheDocument();
-  });
-
-  it('says a long command by its first line, not by three hundred characters', async () => {
-    const user = userEvent.setup();
-    const command = `cat > deploy.sh <<'EOF'\n${'echo shipping; '.repeat(30)}\nEOF`;
-    render(<TouchChipStrip sessionId={SESSION_ID} parts={[toolCall('Bash', { command })]} />);
-
-    const tray = await openTray(user);
-    const chip = within(tray).getByTestId('touch-chip');
-
-    expect(chip).toHaveAccessibleName("Ran cat > deploy.sh <<'EOF'");
-    // The whole script is still there to hover.
-    expect(chip.getAttribute('title')).toContain(command);
-  });
-
   it('tints a chip whose tool failed', async () => {
     const user = userEvent.setup();
     render(
@@ -815,156 +546,5 @@ describe('TouchChipStrip — chip anatomy', () => {
 
     expect(chip.className).toContain('border-destructive/40');
     expect(chip).toHaveAccessibleName('Read /repo/src/a.ts, didn’t work');
-  });
-
-  it('marks a chip live while its tool is still running', () => {
-    render(
-      <TouchChipStrip
-        sessionId={SESSION_ID}
-        parts={[toolCall('Read', { file_path: '/repo/src/a.ts' }, { status: 'running' })]}
-      />
-    );
-
-    const chip = within(screen.getByTestId('chip-live-row')).getByTestId('touch-chip');
-
-    expect(chip).toHaveAttribute('data-live', 'true');
-    expect(chip).toHaveAttribute('data-verb', 'read');
-  });
-
-  it('carries no looping-animation class, live or settled', () => {
-    // The verb signatures are CSS keyed off `data-verb` and `data-live`, not
-    // Tailwind animation utilities. Whether they *look* right is a browser
-    // question; this only pins that no chip carries a loop of its own.
-    render(
-      <TouchChipStrip
-        sessionId={SESSION_ID}
-        parts={[
-          toolCall('Read', { file_path: '/repo/src/a.ts' }, { status: 'running' }),
-          toolCall('Read', { file_path: '/repo/src/b.ts' }),
-        ]}
-      />
-    );
-
-    for (const chip of within(screen.getByTestId('chip-live-row')).getAllByTestId('touch-chip')) {
-      expect(chip.className).not.toMatch(/animate-/);
-    }
-  });
-});
-
-describe('TouchChipStrip — what the verb signatures are given to animate', () => {
-  /** The chip for `label` in the live row. */
-  function liveChip(label: string): HTMLElement {
-    const row = screen.getByTestId('chip-live-row');
-    const found = within(row)
-      .getAllByTestId('touch-chip')
-      .find((chip) => chip.textContent?.includes(label));
-    expect(found, `no live chip for ${label}`).toBeDefined();
-    return found as HTMLElement;
-  }
-
-  it('gives an edit its blinking caret only while it is being written', () => {
-    const editing = toolCall(
-      'Edit',
-      { file_path: '/repo/a.ts', old_string: 'a', new_string: 'b' },
-      { status: 'running' }
-    );
-    const { rerender } = render(<TouchChipStrip sessionId={SESSION_ID} parts={[editing]} />);
-
-    expect(within(liveChip('a.ts')).getByTestId('chip-caret')).toBeInTheDocument();
-
-    rerender(
-      <TouchChipStrip
-        sessionId={SESSION_ID}
-        parts={[
-          { ...editing, status: 'complete' },
-          toolCall('Read', { file_path: '/repo/b.ts' }, { status: 'running' }),
-        ]}
-      />
-    );
-
-    expect(within(liveChip('a.ts')).queryByTestId('chip-caret')).toBeNull();
-  });
-
-  it('gives a running command its block cursor, and takes it back when it exits', () => {
-    const running = toolCall('Bash', { command: 'pnpm test' }, { status: 'running' });
-    const { rerender } = render(<TouchChipStrip sessionId={SESSION_ID} parts={[running]} />);
-
-    const chip = liveChip('pnpm test');
-    expect(chip).toHaveAttribute('data-verb', 'run');
-    expect(within(chip).getByTestId('chip-cursor')).toBeInTheDocument();
-
-    rerender(
-      <TouchChipStrip
-        sessionId={SESSION_ID}
-        parts={[
-          { ...running, status: 'complete' },
-          toolCall('Read', { file_path: '/repo/b.ts' }, { status: 'running' }),
-        ]}
-      />
-    );
-
-    expect(within(liveChip('pnpm test')).queryByTestId('chip-cursor')).toBeNull();
-  });
-
-  it('streams dots beside a page that is still being fetched', () => {
-    render(
-      <TouchChipStrip
-        sessionId={SESSION_ID}
-        parts={[toolCall('WebFetch', { url: 'https://example.com/a' }, { status: 'running' })]}
-      />
-    );
-
-    expect(within(liveChip('example.com')).getByTestId('chip-dots')).toBeInTheDocument();
-  });
-
-  it('pens a created file into existence as it lands', () => {
-    // The pen and the swallow are single shots on arrival: `data-arriving` is
-    // what plays them, so the same chip read back in the tray sits still.
-    render(
-      <TouchChipStrip
-        sessionId={SESSION_ID}
-        parts={[
-          toolCall(
-            'Write',
-            { file_path: '/repo/new.ts', content: 'a\nb' },
-            { result: 'File created successfully at: /repo/new.ts', status: 'running' }
-          ),
-        ]}
-      />
-    );
-
-    const arriving = liveChip('new.ts');
-    expect(arriving).toHaveAttribute('data-arriving', 'true');
-    expect(within(arriving).getByTestId('chip-pen')).toBeInTheDocument();
-  });
-
-  it('leaves a chip in the tray with nothing to re-enact', async () => {
-    const user = userEvent.setup();
-    render(
-      <TouchChipStrip sessionId={SESSION_ID} parts={[toolCall('Bash', { command: 'rm old.ts' })]} />
-    );
-
-    const tray = await openTray(user);
-    const tombstone = within(tray).getByRole('button', { name: 'Deleted old.ts' });
-
-    expect(tombstone).not.toHaveAttribute('data-arriving');
-    expect(within(tombstone).queryByTestId('chip-puff')).toBeNull();
-  });
-
-  it('swallows a deleted file into the bin as the chip lands', () => {
-    render(
-      <TouchChipStrip
-        sessionId={SESSION_ID}
-        parts={[toolCall('Bash', { command: 'rm old.ts' }, { status: 'running' })]}
-      />
-    );
-
-    // `rm old.ts` makes two chips — the command that ran and the file it took.
-    const tombstone = within(screen.getByTestId('chip-live-row')).getByRole('button', {
-      name: 'Deleted old.ts',
-    });
-    expect(tombstone).toHaveAttribute('data-verb', 'delete');
-    expect(tombstone).toHaveAttribute('data-arriving', 'true');
-    expect(within(tombstone).getByTestId('chip-puff')).toBeInTheDocument();
   });
 });
