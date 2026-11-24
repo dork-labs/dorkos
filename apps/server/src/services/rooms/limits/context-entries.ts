@@ -96,10 +96,12 @@ type AnsweredEntry = Pick<RoomEntry, 'id' | 'authorId'> & Pick<ReadEntry, 'body'
  *
  * Both read the messages {@link contextEntryIds} names, so neither counts the agent's own recent
  * posts, and both read who reacted to those posts ({@link shownReactors}): a stranger's reaction
- * shown as an acknowledgment counts as a stranger's line does (DOR-4144). The note also leaves out any shown message the turn's own agent wrote, which today can
- * only be the opener of a thread it started: a noted chat's posts are kept with the outsider mark,
- * so counting its own post would keep the chat noted by what it wrote itself, turn after turn,
- * for as long as the thread is in use. The mark still counts that opener (DOR-4453).
+ * shown as an acknowledgment counts as a stranger's line does (DOR-4144).
+ *
+ * The note also leaves out any shown message the turn's own agent wrote, which today can only be
+ * the opener of a thread it started: a noted chat's posts are kept with the outsider mark, so
+ * counting its own post would keep the chat noted by what it wrote itself, turn after turn, for as
+ * long as the thread is in use. The mark still counts that opener (DOR-4453).
  *
  * @param enabled - Whether `DORKOS_MARK_STRANGER_TURNS` is on.
  * @param deps - See {@link ShownMarkDeps}.

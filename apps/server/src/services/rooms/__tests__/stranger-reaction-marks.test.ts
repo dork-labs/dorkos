@@ -25,8 +25,11 @@ const record = (id: string, kind: AuthorRecord['kind'], naturalKey: string): Aut
 
 const owner = record('owner', 'human', 'user:owner-account');
 const agent = record('agent', 'agent', '/agents/bolt');
+// An agent author with a key from somewhere else: its reaction would mark a turn it is shown, so
+// only leaving the turn's own agent out keeps that agent's turn clean.
+const outsideAgent = record('outside-agent', 'agent', 'platform:a2a:peer-example:bolt');
 const stranger = record('stranger', 'human', 'platform:telegram:bot-example:visitor-9');
-const records = new Map([owner, agent, stranger].map((one) => [one.id, one]));
+const records = new Map([owner, agent, outsideAgent, stranger].map((one) => [one.id, one]));
 const authors = {
   getMany: (ids: readonly string[]) =>
     new Map(ids.flatMap((id) => (records.has(id) ? [[id, records.get(id)!]] : []))),
@@ -69,10 +72,20 @@ describe('reactions a room turn is shown (DOR-4144)', () => {
     });
   });
 
-  it("marks nothing for the owner's reaction or the agent's own", () => {
+  it("marks nothing for the owner's reaction or another local agent's", () => {
     expect(
-      marksForShown(true, depsWith(owner.id, agent.id), ROOM, answered, context, agent.id)
+      marksForShown(true, depsWith(owner.id, agent.id), ROOM, answered, context, 'some-other-agent')
     ).toEqual({});
+  });
+
+  it("marks nothing for the turn's own agent's reaction, wherever its key is from", () => {
+    expect(
+      marksForShown(true, depsWith(outsideAgent.id), ROOM, answered, context, outsideAgent.id)
+    ).toEqual({});
+    // The control: the same reaction, shown to another agent's turn, marks it.
+    expect(
+      marksForShown(false, depsWith(outsideAgent.id), ROOM, answered, context, agent.id)
+    ).toEqual({ outsideWords: true });
   });
 
   it('marks nothing when nothing was reacted to', () => {

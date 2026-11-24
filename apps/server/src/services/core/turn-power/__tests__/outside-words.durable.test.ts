@@ -16,6 +16,14 @@ import {
 import { chatReadOutsideWords } from '../chat-outside-words.js';
 import { aliasTurnLevel, carryTurnLevel } from '../turn-levels.js';
 import { runtimeRegistry } from '../../runtime-registry.js';
+import { holdBlocksSteer } from '../../../session/chat-messages/chat-message-ceiling.js';
+import { persistSdkSessionRebind } from '../../../runtimes/claude-code/sessions/identity/sdk-session-rebind.js';
+import { discardUnstartedSession } from '../../../runtimes/claude-code/mcp-tools/session-start-setup.js';
+
+/** The table the note is saved in, as its migration creates it. */
+const CREATE_TABLE =
+  'CREATE TABLE `session_outside_words` ' +
+  '(`session_id` text PRIMARY KEY NOT NULL, `noted_at` text NOT NULL)';
 
 afterEach(() => {
   setOutsideWordsDb(undefined);
@@ -69,6 +77,72 @@ describe('the outside-words note across a restart', () => {
     setOutsideWordsDb(db);
     expect(roomTurnReadOutsideWords('new-seat')).toBe(true);
     expect(roomTurnReadOutsideWords('canonical-id')).toBe(true);
+  });
+
+  it('reads clean after a restart once a clean turn followed the noted one', () => {
+    const db = createTestDb();
+    setOutsideWordsDb(db);
+    noteRoomTurnWords('survivor', true);
+    setOutsideWordsDb(db);
+    expect(roomTurnReadOutsideWords('survivor')).toBe(true);
+    noteRoomTurnWords('survivor', false);
+
+    setOutsideWordsDb(db);
+
+    expect(roomTurnReadOutsideWords('survivor')).toBe(false);
+  });
+
+  it('tries the save again on the next note when the first one failed', () => {
+    const db = createTestDb();
+    setOutsideWordsDb(db);
+    db.$client.exec('DROP TABLE session_outside_words');
+    noteRoomTurnWords('retried', true);
+    // Still noted in this process, though nothing was saved.
+    expect(roomTurnReadOutsideWords('retried')).toBe(true);
+    db.$client.exec(CREATE_TABLE);
+    noteRoomTurnWords('retried', true);
+
+    setOutsideWordsDb(db);
+
+    expect(roomTurnReadOutsideWords('retried')).toBe(true);
+  });
+
+  it('keeps a noted sender out of a running turn whose own note cannot be read', () => {
+    interactiveOrigins();
+    const db = createTestDb();
+    setOutsideWordsDb(db);
+    noteRoomTurnWords('noted-sender', true);
+    noteRoomTurnWords('clean-target', false);
+    expect(holdBlocksSteer('noted-sender', 'clean-target')).toBe(true);
+
+    setOutsideWordsDb(db);
+    noteRoomTurnWords('noted-sender', true);
+    db.$client.exec('DROP TABLE session_outside_words');
+
+    expect(holdBlocksSteer('noted-sender', 'unreadable-target')).toBe(true);
+  });
+
+  it('goes with a chat whose runtime id rotates after a restart', async () => {
+    const db = createTestDb();
+    setOutsideWordsDb(db);
+    noteRoomTurnWords('sdk-before', true);
+
+    setOutsideWordsDb(db);
+    await persistSdkSessionRebind(undefined, 'sdk-before', 'sdk-after');
+
+    setOutsideWordsDb(db);
+    expect(roomTurnReadOutsideWords('sdk-after')).toBe(true);
+  });
+
+  it('drops the note of a started chat whose launch never ran', async () => {
+    vi.spyOn(runtimeRegistry, 'discardSessionSettings').mockResolvedValue();
+    const db = createTestDb();
+    setOutsideWordsDb(db);
+    noteRoomTurnWords('never-started', true);
+    await discardUnstartedSession('never-started');
+
+    setOutsideWordsDb(db);
+    expect(roomTurnReadOutsideWords('never-started')).toBe(false);
   });
 
   it('counts a saved note that cannot be read as noted', () => {

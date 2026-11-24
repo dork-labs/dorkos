@@ -1,6 +1,7 @@
 /** The first message's sender stamp, using the same store as later chat messages. */
 import { logError, logger } from '../../../../lib/logger.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { forgetRoomTurnWords } from '../../../core/turn-power/outside-words.js';
 import type { ChatCaller } from '../../../session/chat-messages/chat-message-service.js';
 import { getChatMessageService } from '../../../session/chat-messages/chat-message-current.js';
 import { getWorkClaims } from '../../../session/claims/work-claim-current.js';
@@ -31,6 +32,8 @@ export async function stampStartMessage(
 export async function discardUnstartedSession(sessionId: string): Promise<void> {
   // Work it claimed goes back, so the agent's other chats can take it (DOR-4019).
   getWorkClaims()?.releaseSession(sessionId, 'the chat never started');
+  // The outside-words note `session_start` wrote before the launch, which nothing will read again.
+  forgetRoomTurnWords(sessionId);
   try {
     await runtimeRegistry.discardSessionSettings(sessionId);
   } catch (err) {
