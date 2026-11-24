@@ -79,10 +79,10 @@ The receipt is checked in two steps, and only the second one decides whether a p
 
 > a canonical A connection link extracts A's UUID without listing B, while an origin-only request fails once both exist; redirects, DNS changes, encoded-path variants, credentials, and unexpected path segments remain rejected.
 
-- `apps/server/src/services/communities/remote/__tests__/pairing-service.test.ts` — creates distinct local connections for two canonical tenants at one origin
-- `apps/server/src/services/communities/remote/__tests__/pairing-service.test.ts` — requires a canonical tenant link when singleton discovery is ambiguous
-- `apps/server/src/services/communities/remote/__tests__/pairing-service.test.ts` — rejects private targets and refuses a cross-host redirect without following it
-- `apps/server/src/services/communities/remote/__tests__/pairing-service.test.ts` — separates a canonical tenant link from its pinned socket origin
+- `apps/server/src/services/communities/remote/__tests__/pairing-service/pairing.test.ts` — creates distinct local connections for two canonical tenants at one origin
+- `apps/server/src/services/communities/remote/__tests__/pairing-service/pairing.test.ts` — requires a canonical tenant link when singleton discovery is ambiguous
+- `apps/server/src/services/communities/remote/__tests__/pairing-service/pairing.test.ts` — rejects private targets and refuses a cross-host redirect without following it
+- `apps/server/src/services/communities/remote/__tests__/pairing-service/pairing.test.ts` — separates a canonical tenant link from its pinned socket origin
 - `apps/server/src/services/communities/remote/__tests__/canonical-link-isolation.test.ts` — extracts the tenant from an exact link and refuses credentials and every other shape
 - `apps/server/src/services/communities/remote/__tests__/canonical-link-isolation.test.ts` — opens the socket on the one checked DNS answer, never a second lookup
 - `apps/server/src/services/communities/remote/__tests__/canonical-link-isolation.test.ts` — rechecks every resolution, so an answer that changes to a private address is refused
@@ -170,7 +170,7 @@ Scope: the public origin is deployment configuration (`COMMUNITY_PUBLIC_URL`), n
 
 - `apps/server/src/services/spaces/__tests__/migrate.integration.test.ts` — serves a populated version-four community through the current HTTP contract after upgrade
 - `apps/server/src/services/spaces/__tests__/foundation.integration.test.ts` — uses canonical tenant routes and fails closed when the singleton alias is ambiguous
-- `apps/server/src/services/communities/remote/__tests__/pairing-service.test.ts` — requires a canonical tenant link when singleton discovery is ambiguous
+- `apps/server/src/services/communities/remote/__tests__/pairing-service/pairing.test.ts` — requires a canonical tenant link when singleton discovery is ambiguous
 - `apps/client/src/space/api.test.ts` — keeps the singleton compatibility API at the host root
 
 ### U4

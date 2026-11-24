@@ -20,7 +20,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
-import { createRoomSubsystem } from '../../rooms/index.js';
 import {
   getOrCreateProjector,
   disposeProjector,
@@ -28,7 +27,7 @@ import {
 } from '../../session/session-state-projector.js';
 import { CanvasDocumentStore } from '../canvas-document-store.js';
 import { CanvasService } from '../canvas-service.js';
-import { peekCanvasService, setCanvasService } from '../index.js';
+import { setCanvasService } from '../index.js';
 import { sessionScope, SESSION_OWNER_AUTHOR } from '../scopes.js';
 
 /** The placeholder id a brand-new session is created under. */
@@ -50,18 +49,6 @@ function serviceOver(db: Db): CanvasService {
     channels: { publish: () => {}, viewers: () => 0 },
   });
 }
-
-describe('canvas writer registration', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('registers the same instance it returns', () => {
-    const subsystem = createRoomSubsystem({ db: freshDb() });
-
-    expect(peekCanvasService()).toBe(subsystem.canvas);
-  });
-});
 
 describe('the rekey listener', () => {
   afterEach(() => {

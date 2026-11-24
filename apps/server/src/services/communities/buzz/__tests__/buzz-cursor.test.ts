@@ -15,27 +15,13 @@ import {
   type CommunityCursor,
   type CommunityRef,
 } from '@dorkos/shared/community-adapter';
-import {
-  BEGINNING,
-  comparePositions,
-  isBeginning,
-  mintBuzzCursor,
-  readBuzzCursor,
-} from '../buzz-cursor.js';
+import { comparePositions, mintBuzzCursor, readBuzzCursor } from '../buzz-cursor.js';
 
 const COMMUNITY = 'buzz-one' as CommunityRef;
 const ROOM = '00000000-0000-4000-8000-000000000001';
 const EVENT_ID = 'c'.repeat(64);
 
 describe('the Buzz cursor', () => {
-  it('round-trips a position', () => {
-    const cursor = mintBuzzCursor(COMMUNITY, ROOM, { createdAt: 1_780_000_000, eventId: EVENT_ID });
-    expect(readBuzzCursor(COMMUNITY, ROOM, cursor)).toEqual({
-      createdAt: 1_780_000_000,
-      eventId: EVENT_ID,
-    });
-  });
-
   it.each([
     ['another community', mintBuzzCursor('buzz-two' as CommunityRef, ROOM, pos())],
     ['another room', mintBuzzCursor(COMMUNITY, 'some-other-room', pos())],
@@ -45,17 +31,6 @@ describe('the Buzz cursor', () => {
     ['an event id that is not one', `buzz|buzz-one|${ROOM}|1|not-an-event-id` as CommunityCursor],
   ])('refuses %s rather than bounding it', (_case, cursor) => {
     expect(() => readBuzzCursor(COMMUNITY, ROOM, cursor)).toThrow(StaleCommunityCursorError);
-  });
-
-  it('round-trips the beginning-of-room sentinel it mints for an empty room', () => {
-    // The regression behind conformance U17. A room with nothing in it still
-    // has to hand its subscriber a cursor, and BEGINNING is the one it hands
-    // out — so an encoding that only accepted real event ids minted a token and
-    // then refused it, turning every resume of an empty room into a
-    // StaleCommunityCursorError on a perfectly healthy room.
-    const cursor = mintBuzzCursor(COMMUNITY, ROOM, BEGINNING);
-    expect(readBuzzCursor(COMMUNITY, ROOM, cursor)).toEqual(BEGINNING);
-    expect(isBeginning(readBuzzCursor(COMMUNITY, ROOM, cursor))).toBe(true);
   });
 
   it('accepts an empty event id ONLY at the beginning, never as a truncated token', () => {

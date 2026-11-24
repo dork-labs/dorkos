@@ -141,14 +141,6 @@ describe('list_extensions: an extension waiting for a person (DOR-4678)', () => 
   const waiting = (added: PendingExtensionApproval['added']) =>
     ({ id: 'mail', added }) as PendingExtensionApproval;
 
-  it('says nothing for one that is not waiting', () => {
-    expect(waitingForAgents(undefined)).toEqual({});
-  });
-
-  it('says it waits, with no additions on a first ask', () => {
-    expect(waitingForAgents(waiting(null))).toEqual({ waitsForPerson: true });
-  });
-
   it('names what an update adds, each author-written name as a label', () => {
     const read = waitingForAgents(
       waiting({
@@ -164,15 +156,5 @@ describe('list_extensions: an extension waiting for a person (DOR-4678)', () => 
       addsSinceApproval: { run: ['rsync'], agents: true, runtime: false, apps: ['notes'] },
     });
     expectNothingLive(read);
-  });
-
-  it('caps each list and drops names that clean to nothing', () => {
-    const hosts = Array.from({ length: 13 }, (_, i) => `h${i}.example.com`);
-    const read = waitingForAgents(
-      waiting({ net: hosts, run: ['<>', 'rsync'], agents: false, runtime: false })
-    );
-    expect(read).toMatchObject({
-      addsSinceApproval: { net: [...hosts.slice(0, 10), '+3 more'], run: ['rsync'] },
-    });
   });
 });

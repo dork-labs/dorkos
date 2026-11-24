@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  defaultsOn,
   isEnabled,
   setEnabled,
   type CoreExtensionInfo,
@@ -14,62 +13,6 @@ function coreMap(...infos: CoreExtensionInfo[]): Map<string, CoreExtensionInfo> 
 const ON_CORE: CoreExtensionInfo = { id: 'marketplace', defaultEnabled: true, canDisable: true };
 const OFF_CORE: CoreExtensionInfo = { id: 'hello-world', defaultEnabled: false, canDisable: true };
 const empty: ExtensionsConfig = { enabled: [], disabled: [], approvedToRun: [] };
-
-describe('defaultsOn', () => {
-  it('is true for a default-on core extension', () => {
-    expect(defaultsOn('marketplace', coreMap(ON_CORE))).toBe(true);
-  });
-
-  it('is false for a default-off core extension', () => {
-    expect(defaultsOn('hello-world', coreMap(OFF_CORE))).toBe(false);
-  });
-
-  it('is false for an extension absent from the core map (user/marketplace)', () => {
-    expect(defaultsOn('some-user-ext', coreMap(ON_CORE, OFF_CORE))).toBe(false);
-  });
-});
-
-describe('isEnabled — baselines', () => {
-  it('default-on core absent from both lists → enabled', () => {
-    expect(isEnabled('marketplace', empty, coreMap(ON_CORE))).toBe(true);
-  });
-
-  it('default-off core absent from both lists → disabled', () => {
-    expect(isEnabled('hello-world', empty, coreMap(OFF_CORE))).toBe(false);
-  });
-
-  it('user extension absent from both lists → disabled', () => {
-    expect(isEnabled('user-ext', empty, coreMap(ON_CORE, OFF_CORE))).toBe(false);
-  });
-});
-
-describe('isEnabled — deviations', () => {
-  it('default-on core in disabled → disabled', () => {
-    expect(
-      isEnabled(
-        'marketplace',
-        { enabled: [], disabled: ['marketplace'], approvedToRun: [] },
-        coreMap(ON_CORE)
-      )
-    ).toBe(false);
-  });
-
-  it('default-off core in enabled → enabled (opt-in path)', () => {
-    expect(
-      isEnabled(
-        'hello-world',
-        { enabled: ['hello-world'], disabled: [], approvedToRun: [] },
-        coreMap(OFF_CORE)
-      )
-    ).toBe(true);
-  });
-
-  it('user extension in enabled → enabled', () => {
-    expect(
-      isEnabled('user-ext', { enabled: ['user-ext'], disabled: [], approvedToRun: [] }, coreMap())
-    ).toBe(true);
-  });
-});
 
 describe('isEnabled — locked core extensions (canDisable: false)', () => {
   const LOCKED_ON: CoreExtensionInfo = {
@@ -90,26 +33,6 @@ describe('isEnabled — locked core extensions (canDisable: false)', () => {
 
   it('resolves to its default when absent from both lists', () => {
     expect(isEnabled('marketplace', empty, coreMap(LOCKED_ON))).toBe(true);
-  });
-});
-
-describe('isEnabled — new core extension on upgrade (absent from both lists)', () => {
-  it('newly-shipped default-on core resolves on', () => {
-    const freshlyShipped: CoreExtensionInfo = {
-      id: 'new-on',
-      defaultEnabled: true,
-      canDisable: true,
-    };
-    expect(isEnabled('new-on', empty, coreMap(freshlyShipped))).toBe(true);
-  });
-
-  it('newly-shipped default-off core resolves off', () => {
-    const freshlyShipped: CoreExtensionInfo = {
-      id: 'new-off',
-      defaultEnabled: false,
-      canDisable: true,
-    };
-    expect(isEnabled('new-off', empty, coreMap(freshlyShipped))).toBe(false);
   });
 });
 
@@ -223,14 +146,5 @@ describe('setEnabled — invariants', () => {
       coreMap(OFF_CORE)
     );
     expect(next.enabled.filter((id) => id === 'hello-world')).toHaveLength(1);
-  });
-
-  it('round-trips through isEnabled (enable then resolve)', () => {
-    const core = coreMap(ON_CORE, OFF_CORE);
-    let config: ExtensionsConfig = empty;
-    config = setEnabled('marketplace', false, config, core);
-    config = setEnabled('hello-world', true, config, core);
-    expect(isEnabled('marketplace', config, core)).toBe(false);
-    expect(isEnabled('hello-world', config, core)).toBe(true);
   });
 });

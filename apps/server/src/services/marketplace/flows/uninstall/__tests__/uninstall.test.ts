@@ -725,7 +725,7 @@ describe('UninstallFlow', () => {
     // Plugin B carries `foo`, but the live `foo` is plugin A's. B's copy was
     // never the one running, so removing B must not turn the id off. It still
     // asks the manager to forget any approval recorded for B's own copy; the
-    // manager keeps an approval recorded for A's (extension-load-policy.test.ts).
+    // manager keeps an approval recorded for A's (the extension-load-policy/ tests).
     const deps = await buildDeps();
     cleanupDirs.push(deps.dorkHome);
     const installRoot = path.join(deps.dorkHome, 'plugins', 'plugin-b');

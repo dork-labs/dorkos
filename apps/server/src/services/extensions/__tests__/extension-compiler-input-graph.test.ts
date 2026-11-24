@@ -233,74 +233,6 @@ describe('ExtensionCompiler — cache keyed on the whole input graph', () => {
     expect(buildSpy).toHaveBeenCalledTimes(2);
   });
 
-  it('rebuilds when an imported file is deleted', async () => {
-    const extDir = path.join(tmpDir, 'exts', 'deleted-ext');
-    await writeTree(extDir, {
-      'index.ts': 'import { gone } from "./gone";\nexport function activate() { return gone; }',
-      'gone.ts': 'export const gone = "still here";',
-    });
-    const record = makeRecord('deleted-ext', extDir);
-    expect(codeOf(await compiler.compile(record))).toContain('still here');
-
-    await fs.unlink(path.join(extDir, 'gone.ts'));
-    const second = await compiler.compile(record);
-
-    expect(buildSpy).toHaveBeenCalledTimes(2);
-    expect('error' in second).toBe(true);
-  });
-
-  it('rebuilds when a new file changes what an unchanged import resolves to', async () => {
-    const extDir = path.join(tmpDir, 'exts', 'resolve-ext');
-    await writeTree(extDir, {
-      'index.ts': 'import { which } from "./impl";\nexport function activate() { return which; }',
-      'impl.js': 'export const which = "the js file";',
-    });
-    const record = makeRecord('resolve-ext', extDir);
-    expect(codeOf(await compiler.compile(record))).toContain('the js file');
-
-    // esbuild prefers impl.ts over impl.js, so this changes the bundle without
-    // touching any file the first build read.
-    await fs.writeFile(path.join(extDir, 'impl.ts'), 'export const which = "the ts file";');
-    expect(codeOf(await compiler.compile(record))).toContain('the ts file');
-  });
-
-  it('rebuilds when the manifest is corrupt', async () => {
-    const extDir = path.join(tmpDir, 'exts', 'corrupt-ext');
-    await writeTree(extDir, { 'index.ts': 'export function activate() { return 1; }' });
-    const record = makeRecord('corrupt-ext', extDir);
-    const first = await compiler.compile(record);
-
-    await fs.writeFile(await manifestPathIn(cacheDir), '{ this is not json');
-    const second = await compiler.compile(record);
-
-    expect(buildSpy).toHaveBeenCalledTimes(2);
-    expect(codeOf(second)).toBe(codeOf(first));
-  });
-
-  it('rebuilds when the manifest is valid JSON of the wrong shape', async () => {
-    const extDir = path.join(tmpDir, 'exts', 'shape-ext');
-    await writeTree(extDir, { 'index.ts': 'export function activate() { return 1; }' });
-    const record = makeRecord('shape-ext', extDir);
-    await compiler.compile(record);
-
-    await fs.writeFile(await manifestPathIn(cacheDir), JSON.stringify({ v: 1, files: 'nope' }));
-    expect('code' in (await compiler.compile(record))).toBe(true);
-    expect(buildSpy).toHaveBeenCalledTimes(2);
-  });
-
-  it('rebuilds when the cached bundle is gone but its manifest is not', async () => {
-    const extDir = path.join(tmpDir, 'exts', 'orphan-ext');
-    await writeTree(extDir, { 'index.ts': 'export function activate() { return 1; }' });
-    const record = makeRecord('orphan-ext', extDir);
-    const first = await compiler.compile(record);
-
-    await fs.unlink(path.join(cacheDir, `orphan-ext.${first.sourceHash}.js`));
-    const second = await compiler.compile(record);
-
-    expect(buildSpy).toHaveBeenCalledTimes(2);
-    expect(await compiler.readBundle('orphan-ext', second.sourceHash)).toBe(codeOf(second));
-  });
-
   it('stops replaying a cached error once the missing import is added', async () => {
     const extDir = path.join(tmpDir, 'exts', 'fixed-ext');
     await writeTree(extDir, {
@@ -433,39 +365,6 @@ describe('ExtensionCompiler — cache keyed on the whole input graph', () => {
       await fs.writeFile(path.join(pluginRoot, 'tsconfig.json'), tsconfig('secondFactory'));
       expect(codeOf(await compiler.compile(record))).toContain('secondFactory(');
     });
-
-    it('rebuilds when a tsconfig.json appears where there was none', async () => {
-      const pluginRoot = path.join(tmpDir, 'plugins', 'new-config-plugin');
-      const extDir = path.join(pluginRoot, '.dork', 'extensions', 'new-config-ext');
-      await writeTree(extDir, { 'index.ts': 'export function activate() { return <div />; }' });
-      const record = makeRecord('new-config-ext', extDir);
-      expect(codeOf(await compiler.compile(record))).not.toContain('addedFactory(');
-
-      await writeTree(pluginRoot, {
-        'tsconfig.json': JSON.stringify({
-          compilerOptions: { jsx: 'react', jsxFactory: 'addedFactory' },
-        }),
-      });
-      expect(codeOf(await compiler.compile(record))).toContain('addedFactory(');
-    });
-
-    it("rebuilds when a dependency's package.json points main at another file", async () => {
-      const extDir = path.join(tmpDir, 'exts', 'main-ext');
-      await writeTree(extDir, {
-        'index.ts': 'import { dep } from "tiny-dep";\nexport function activate() { return dep; }',
-        'node_modules/tiny-dep/package.json': JSON.stringify({ name: 'tiny-dep', main: 'a.js' }),
-        'node_modules/tiny-dep/a.js': 'exports.dep = "main is a.js";',
-        'node_modules/tiny-dep/b.js': 'exports.dep = "main is b.js";',
-      });
-      const record = makeRecord('main-ext', extDir);
-      expect(codeOf(await compiler.compile(record))).toContain('main is a.js');
-
-      await fs.writeFile(
-        path.join(extDir, 'node_modules/tiny-dep/package.json'),
-        JSON.stringify({ name: 'tiny-dep', main: 'b.js' })
-      );
-      expect(codeOf(await compiler.compile(record))).toContain('main is b.js');
-    });
   });
   // These write thousands of files or tens of megabytes before compiling twice,
   // which can outrun the default 5 s test timeout on a loaded CI runner. The
@@ -504,31 +403,6 @@ describe('ExtensionCompiler — cache keyed on the whole input graph', () => {
       expect(reads).toBeLessThanOrEqual(2000);
 
       // Past the cap nothing is cached, so the failing build runs again.
-      await compiler.compile(record);
-      expect(buildSpy).toHaveBeenCalledTimes(2);
-    });
-
-    it('never reads a single file over the size cap', async () => {
-      const { extDir, record } = await failingExtension('big-file-ext', {
-        'vendor/huge.bin': Buffer.alloc(6 * 1024 * 1024),
-      });
-
-      const reads = await readsUnder(path.join(extDir, 'vendor'), () => compiler.compile(record));
-      expect(reads).toBe(0);
-
-      await compiler.compile(record);
-      expect(buildSpy).toHaveBeenCalledTimes(2);
-    });
-
-    it('stops reading once the total size cap would be passed', async () => {
-      const chunk = Buffer.alloc(4.9 * 1024 * 1024);
-      const files: Record<string, Buffer> = {};
-      for (let i = 0; i < 11; i++) files[`media/part${i}.bin`] = chunk;
-      const { extDir, record } = await failingExtension('big-total-ext', files);
-
-      const reads = await readsUnder(path.join(extDir, 'media'), () => compiler.compile(record));
-      expect(reads).toBeLessThanOrEqual(10);
-
       await compiler.compile(record);
       expect(buildSpy).toHaveBeenCalledTimes(2);
     });

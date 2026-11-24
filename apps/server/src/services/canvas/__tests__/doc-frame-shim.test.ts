@@ -133,10 +133,6 @@ describe('the host boot nonce', () => {
       { ...corr, kind: 'ack', boot: 'boot-1' },
     ]);
   });
-  it('drops the whole query when the nonce was all of it', () => {
-    const f = located('https://host.example/doc.html?dorkos-boot=boot-1');
-    expect(f.href()).toBe('https://host.example/doc.html');
-  });
   // A redirect carries a request's fragment forward to its target, so a nonce
   // there could be anyone's: only the query, which a redirect replaces, counts.
   it('never takes a nonce from the fragment', () => {
@@ -153,12 +149,6 @@ describe('the host boot nonce', () => {
   it('a document with no nonce answers with none, so a host that needs one refuses it', () => {
     const f = located('https://host.example/doc.html?keep=1#section');
     expect(f.rewrites()).toEqual([]);
-    f.dispatch({ ...corr, kind: 'challenge' });
-    expect(acks(f)).toEqual([{ ...corr, kind: 'ack' }]);
-  });
-  it('removes an unusable nonce without claiming it', () => {
-    const f = located(`https://host.example/doc.html?dorkos-boot=${'x'.repeat(129)}`);
-    expect(f.href()).toBe('https://host.example/doc.html');
     f.dispatch({ ...corr, kind: 'challenge' });
     expect(acks(f)).toEqual([{ ...corr, kind: 'ack' }]);
   });

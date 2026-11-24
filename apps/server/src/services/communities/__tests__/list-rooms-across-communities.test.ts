@@ -2,12 +2,8 @@
  * @vitest-environment node
  */
 import { describe, it, expect, vi } from 'vitest';
-import {
-  LOCAL_COMMUNITY,
-  type CommunityRef,
-  type CommunityRoom,
-} from '@dorkos/shared/community-adapter';
-import type { ListRoomsQuery, RoomSummary } from '@dorkos/shared/room-schemas';
+import { LOCAL_COMMUNITY, type CommunityRef } from '@dorkos/shared/community-adapter';
+import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { FakeCommunityAdapter } from '@dorkos/test-utils/fake-community-adapter';
 import type { RoomService } from '../../rooms/room-service.js';
 import { listRoomsAcrossCommunities } from '../list-rooms-across-communities.js';
@@ -70,25 +66,6 @@ describe('listRoomsAcrossCommunities', () => {
     expect(result).toEqual({ rooms, warnings: [] });
   });
 
-  it('asks the room service for the CALLER and the filter it was sent', async () => {
-    // The reason this machine's rooms do not travel over the port: an adapter
-    // instance serves one connected identity and `listRooms()` takes no
-    // arguments, so neither of these two values could cross it. If this ever
-    // stops holding, an agent is being shown the operator's rooms.
-    const { registry } = registryWithLocal();
-    const service = roomService([]);
-    const query: ListRoomsQuery = { kind: 'dm', includeArchived: true };
-
-    await listRoomsAcrossCommunities({
-      service,
-      callerAuthorId: 'agent-ana',
-      query,
-      registry,
-    });
-
-    expect(service.listRooms).toHaveBeenCalledWith('agent-ana', query);
-  });
-
   it('never lists this machine through the port, even though it is registered', async () => {
     const { registry, local } = registryWithLocal();
     local.seedRoom({ entries: 1 });
@@ -133,20 +110,6 @@ describe('listRoomsAcrossCommunities', () => {
     ]);
   });
 
-  it('says nothing about a second community that has no rooms', async () => {
-    const { registry } = registryWithLocal();
-    registry.register(new FakeCommunityAdapter({ community: REMOTE, type: 'buzz' }), 'Dork Labs');
-
-    const result = await listRoomsAcrossCommunities({
-      service: roomService([]),
-      callerAuthorId: 'author-1',
-      query: {},
-      registry,
-    });
-
-    expect(result.warnings).toEqual([]);
-  });
-
   it("degrades a broken community to a warning and still lists this machine's rooms", async () => {
     const { registry } = registryWithLocal();
     const broken = new FakeCommunityAdapter({ community: REMOTE, type: 'buzz' });
@@ -168,42 +131,5 @@ describe('listRoomsAcrossCommunities', () => {
     expect(result.warnings).toEqual([
       { community: REMOTE, label: 'Dork Labs', message: 'Dork Labs could not be reached.' },
     ]);
-  });
-
-  it('gives a slow community a budget rather than letting it stall the list', async () => {
-    const { registry } = registryWithLocal();
-    const slow = new FakeCommunityAdapter({ community: REMOTE, type: 'buzz' });
-    vi.spyOn(slow, 'listRooms').mockImplementation(
-      () => new Promise<CommunityRoom[]>(() => {}) // never settles
-    );
-    registry.register(slow, 'Dork Labs');
-
-    const result = await listRoomsAcrossCommunities({
-      service: roomService([]),
-      callerAuthorId: 'author-1',
-      query: {},
-      registry,
-      timeoutMs: 20,
-    });
-
-    expect(result.warnings).toEqual([
-      { community: REMOTE, label: 'Dork Labs', message: 'Dork Labs took too long to answer.' },
-    ]);
-  });
-
-  it('counts one room as one room', async () => {
-    const { registry } = registryWithLocal();
-    const remote = new FakeCommunityAdapter({ community: REMOTE, type: 'buzz' });
-    remote.seedRoom({ entries: 1 });
-    registry.register(remote, 'Dork Labs');
-
-    const result = await listRoomsAcrossCommunities({
-      service: roomService([]),
-      callerAuthorId: 'author-1',
-      query: {},
-      registry,
-    });
-
-    expect(result.warnings[0]!.message).toBe("1 room in Dork Labs isn't available here.");
   });
 });

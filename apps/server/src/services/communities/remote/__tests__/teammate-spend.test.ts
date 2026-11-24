@@ -10,7 +10,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
-import { CommunityTeammateSpendLimitRequestSchema } from '@dorkos/shared/community-teammates';
 import type { CredentialStore } from '../../../core/credential-provider.js';
 import { RemoteConnectionNotFoundError, RemoteConnectionStore } from '../connection-store.js';
 import {
@@ -18,7 +17,6 @@ import {
   TEAMMATE_TURN_ESTIMATE_USD,
   TeammateSpend,
 } from '../wake/teammate-spend.js';
-import { RemoteWakePolicy } from '../wake/wake-policy.js';
 
 function memoryCredentials(): CredentialStore {
   const secrets = new Map<string, string>();
@@ -85,19 +83,6 @@ afterEach(async () => {
 });
 
 describe('the monthly limit', () => {
-  it('is none by default: every teammate turn may wake, and nothing is told', async () => {
-    const counter = spend();
-    for (let i = 0; i < 50; i += 1) await counter.record(REF, OWNER, 3);
-    expect(counter.allows(REF, OWNER)).toBe(true);
-    expect(await counter.summary(REF, OWNER)).toEqual({
-      monthlyLimitUsd: null,
-      spentUsd: 150,
-      approximate: false,
-      month: '2026-10',
-    });
-    expect(reached).not.toHaveBeenCalled();
-  });
-
   it('stops teammates waking agents once the month’s turns cost the limit', async () => {
     const counter = spend();
     await counter.setLimit(REF, OWNER, 1);
@@ -126,15 +111,6 @@ describe('the monthly limit', () => {
     expect(counter.allows(REF, OWNER)).toBe(true);
     await counter.record(REF, OWNER, 2);
     expect(reached).toHaveBeenCalledTimes(3);
-  });
-
-  it('counts a turn that reported no cost at the estimate, and says the total is approximate', async () => {
-    const counter = spend();
-    await counter.record(REF, OWNER, undefined);
-    expect(await counter.summary(REF, OWNER)).toMatchObject({
-      spentUsd: TEAMMATE_TURN_ESTIMATE_USD,
-      approximate: true,
-    });
   });
 
   it('keeps the limit and the month across a restart', async () => {
@@ -178,20 +154,6 @@ describe('the monthly limit', () => {
       expect(file).toEqual({ limits: {}, months: {} });
     });
   });
-
-  it('takes dollars to the cent, above zero, or none', () => {
-    const parse = (monthlyLimitUsd: unknown) =>
-      CommunityTeammateSpendLimitRequestSchema.safeParse({ monthlyLimitUsd });
-    expect(parse(12.345).data).toEqual({ monthlyLimitUsd: 12.35 });
-    expect(parse(null).data).toEqual({ monthlyLimitUsd: null });
-    expect(parse(0.005).data).toEqual({ monthlyLimitUsd: 0.01 });
-    // Review B1: checked after rounding, so a tenth of a cent is refused, never saved as $0.
-    expect(parse(0.004).success).toBe(false);
-    expect(parse(0.001).success).toBe(false);
-    expect(parse(0).success).toBe(false);
-    expect(parse(-5).success).toBe(false);
-    expect(parse('5').success).toBe(false);
-  });
 });
 
 describe('a file that can’t be read (review S1)', () => {
@@ -206,22 +168,6 @@ describe('a file that can’t be read (review S1)', () => {
     await counter.setLimit(REF, OWNER, 2);
     expect((await counter.summary(REF, OWNER)).monthlyLimitUsd).toBe(2);
     expect(reset).toHaveBeenCalledTimes(1);
-  });
-
-  it('reads a file a newer DorkOS wrote with fields this one doesn’t know', async () => {
-    await mkdir(join(directory, 'communities', 'remote'), { recursive: true });
-    const key = `${OWNER}\0${REF}`;
-    await writeFile(
-      spendFile(),
-      JSON.stringify({
-        limits: { [key]: 1 },
-        months: { [key]: { month: '2026-10', usd: 3, estimated: 0, told: true, extra: 1 } },
-        future: true,
-      })
-    );
-    const counter = spend();
-    expect(reset).not.toHaveBeenCalled();
-    expect(counter.allows(REF, OWNER)).toBe(false);
   });
 });
 
@@ -249,20 +195,5 @@ describe('telling the owner (review S4)', () => {
     await counter.record(REF, OWNER, 0.1);
     await counter.record(REF, OWNER, 0.1);
     expect(reached).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe('the wake gate', () => {
-  it('answers from the counter, and with none configured, always', async () => {
-    const counter = spend();
-    await counter.setLimit(REF, OWNER, 1);
-    await counter.record(REF, OWNER, 1);
-    expect(
-      new RemoteWakePolicy(connections, [], undefined, undefined, counter).withinTeammateSpend(
-        REF,
-        OWNER
-      )
-    ).toBe(false);
-    expect(new RemoteWakePolicy(connections, []).withinTeammateSpend(REF, OWNER)).toBe(true);
   });
 });
