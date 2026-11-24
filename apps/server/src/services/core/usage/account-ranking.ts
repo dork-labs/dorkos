@@ -21,7 +21,6 @@
  */
 import {
   CREDITS_ACCOUNT_ID,
-  IMPLICIT_ACCOUNT_ID,
   LEDGER_RUNTIMES,
   type AccountUsage,
   type LedgerRuntime,
@@ -49,7 +48,7 @@ import {
   type Ineligible,
 } from './account-eligibility.js';
 import { getAccountUsageStore } from './current-usage-store.js';
-import type { RuntimeAccount } from './runtime-accounts.js';
+import { isMainSignIn, type RuntimeAccount } from './runtime-accounts.js';
 import { mayAutoPickClaudeRoot } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
 import { isCreditsClaudeRoot } from '../../runtimes/claude-code/credits-root.js';
 import { accountSigninState } from '../../observability/account-signin-state.js';
@@ -620,12 +619,12 @@ function coreAgentLaunch(
     : [];
   const account = listed.find((a) => a.id === accountId && a.routable);
   const folder = account ? signinRoot(account) : row.usage.path;
-  const main = listed.find((a) => a.isDefault);
-  const mainFolder = main ? signinRoot(main) : null;
   if (
     row.isDefault === true ||
-    row.id === IMPLICIT_ACCOUNT_ID ||
-    (folder !== null && mainFolder !== null && folder === mainFolder)
+    isMainSignIn(
+      account ?? { id: row.id, isDefault: false, path: folder, canonicalPath: null },
+      listed
+    )
   ) {
     return { allowed: false, reason: MAIN_ACCOUNT_REASON };
   }

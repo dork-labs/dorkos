@@ -11,8 +11,9 @@
  * `runtimes-account-eligibility.ts`). Opening an account to agents widens what
  * they may spend, so it waits for the owner to confirm it's them (DOR-4355);
  * closing it stays immediate. Each change records an Activity entry naming who
- * made it. Main (`default`) has no registry row, so it answers `404`: an agent
- * never picks the main sign-in.
+ * made it. Main standing alone (`default`) has no registry row, so it answers
+ * `404`. A row Main aliases can carry the flag, but core's rule refuses Main
+ * whatever it says, and Settings shows that row's switch off and disabled.
  *
  * @module routes/runtimes-account-agents-may-pick
  */

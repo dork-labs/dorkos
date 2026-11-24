@@ -948,7 +948,7 @@ await ctx.accounts.markContinued(sourceSessionId, { sessionId, runtime, accountI
 - **After shutdown or reload the old `ctx.accounts` is closed.** `onUsage` and `registerAdvisor` throw and register nothing, and `markContinued` rejects, so a late `.then(() => ctx.accounts.registerAdvisor(…))` from a previous instance cannot replace the new instance's advisor. `list` and `usage` keep answering.
 - **`markContinued`** tells DorkOS that your extension moved a session it claimed (see `claims` below) to a new session, so the source session points at where its work went. It rejects a malformed call, and rejects while this server tracks no session limits.
 
-**The account advisor.** `ctx.accounts.registerAdvisor(advisor)` lets an extension decide which accounts work may go to. Core never reads any routing policy itself; it asks the advisor.
+**The account advisor.** `ctx.accounts.registerAdvisor(advisor)` lets an extension decide which accounts work may go to. Core never reads your routing policy; it asks the advisor. With no advisor registered, core falls back to its own defaults, including one opt-in rule for an agent's named account (DOR-5033, below).
 
 ```typescript
 const unregister = ctx.accounts.registerAdvisor({

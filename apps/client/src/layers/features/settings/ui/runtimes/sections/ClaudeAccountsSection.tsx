@@ -488,6 +488,7 @@ export function ClaudeAccountsSection() {
                   onlyProjects: account.onlyProjects ?? null,
                   noAutoMove: account.noAutoMove === true,
                   agentsMayPick: account.agentsMayPick === true,
+                  isMain: account.isDefault === true,
                 }
               : null
           }

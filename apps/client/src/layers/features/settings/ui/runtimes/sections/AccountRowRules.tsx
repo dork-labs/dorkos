@@ -38,6 +38,11 @@ export interface AccountRule {
    * an account with no registry row, which agents never pick.
    */
   agentsMayPick?: boolean;
+  /**
+   * `true` for this computer's main sign-in (the row `default` names, as the
+   * server reports it): agents never pick it, so its switch stays off.
+   */
+  isMain?: boolean;
 }
 
 /**
@@ -73,21 +78,25 @@ function useSetAccountAgentsMayPick(accountId: string) {
 
 /**
  * "Agents may pick this account": off until a person opens it. Core's own rule
- * reads it while no mini app such as Flow decides (DOR-5033).
+ * reads it while no mini app such as Flow decides (DOR-5033). On Main's own row
+ * it stays off and disabled, and says why: core never lets an agent pick Main.
  */
 function AgentsMayPickSwitch({
   accountId,
   agentsMayPick,
+  isMain,
   disabled,
 }: {
   accountId: string;
   agentsMayPick: boolean;
+  isMain: boolean;
   disabled: boolean;
 }) {
   const id = useId();
   const save = useSetAccountAgentsMayPick(accountId);
   // While a change is saving, show where it is going rather than where it was.
-  const on = save.isPending ? save.variables === true : agentsMayPick;
+  // Main reads off whatever is stored: the server refuses agents there anyway.
+  const on = !isMain && (save.isPending ? save.variables === true : agentsMayPick);
   return (
     <div className="mt-1 space-y-1">
       <div className="flex items-start gap-2">
@@ -97,14 +106,18 @@ function AgentsMayPickSwitch({
           className="mt-0.5"
           checked={on}
           onCheckedChange={(next) => save.mutate(next)}
-          disabled={disabled || save.isPending}
+          disabled={disabled || isMain || save.isPending}
           data-testid="claude-account-agents-may-pick"
         />
         <div className="min-w-0">
           <Label htmlFor={id} className="text-xs font-normal">
             Agents may pick this account
           </Label>
-          <p className="text-muted-foreground text-xs">Used when Flow is off.</p>
+          <p className="text-muted-foreground text-xs">
+            {isMain
+              ? 'Agents never pick the main sign-in.'
+              : 'Used when Flow is off or still loading.'}
+          </p>
         </div>
       </div>
       {save.error && (
@@ -217,6 +230,7 @@ export function AccountRowRules({
         <AgentsMayPickSwitch
           accountId={rule.accountId}
           agentsMayPick={rule.agentsMayPick}
+          isMain={rule.isMain === true}
           disabled={disabled}
         />
       )}

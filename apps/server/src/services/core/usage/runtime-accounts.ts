@@ -414,6 +414,27 @@ function implicitAccount(
 }
 
 /**
+ * Whether an account is the runtime's main sign-in (DOR-5033): the account
+ * `<runtime>:default` names (the standalone default or its alias row), the id
+ * `default`, or any other row on the default's folder. Agents never pick it on
+ * their own, and Settings never offers to let them. Folders compare in their
+ * comparable form, else as written.
+ *
+ * @param account - The account to judge.
+ * @param accounts - The runtime's accounts, from {@link resolveRuntimeAccounts}.
+ */
+export function isMainSignIn(
+  account: Pick<RuntimeAccount, 'id' | 'isDefault' | 'path' | 'canonicalPath'>,
+  accounts: readonly Pick<RuntimeAccount, 'isDefault' | 'path' | 'canonicalPath'>[]
+): boolean {
+  if (account.isDefault || account.id === IMPLICIT_ACCOUNT_ID) return true;
+  const main = accounts.find((a) => a.isDefault);
+  const mainFolder = main ? (main.canonicalPath ?? main.path) : null;
+  const folder = account.canonicalPath ?? account.path;
+  return folder !== null && mainFolder !== null && folder === mainFolder;
+}
+
+/**
  * The account an id names in one runtime: `default` resolves to whichever
  * account `isDefault` marks (its alias row, when it has one); any other id to
  * the registered row with that id.

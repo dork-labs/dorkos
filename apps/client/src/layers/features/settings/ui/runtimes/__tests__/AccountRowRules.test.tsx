@@ -95,7 +95,7 @@ describe('AccountRowRules — agents may pick this account (DOR-5033)', () => {
     });
     const toggle = screen.getByRole('switch', PICK_SWITCH);
     expect(toggle).not.toBeChecked();
-    expect(screen.getByText('Used when Flow is off.')).toBeInTheDocument();
+    expect(screen.getByText('Used when Flow is off or still loading.')).toBeInTheDocument();
 
     await userEvent.click(toggle);
 
@@ -120,6 +120,26 @@ describe('AccountRowRules — agents may pick this account (DOR-5033)', () => {
     await waitFor(() =>
       expect(transport.setAccountAgentsMayPick).toHaveBeenCalledWith('work', false)
     );
+  });
+
+  // Purpose: on the row Main aliases, core always refuses agents, so the switch
+  // reads off, cannot be turned on, and says why.
+  it("shows the switch off and disabled on Main's own row, with the reason", async () => {
+    const transport = renderRules({
+      accountId: 'work',
+      onlyProjects: null,
+      noAutoMove: false,
+      agentsMayPick: true,
+      isMain: true,
+    });
+    const toggle = screen.getByRole('switch', PICK_SWITCH);
+    expect(toggle).not.toBeChecked();
+    expect(toggle).toBeDisabled();
+    expect(screen.getByText('Agents never pick the main sign-in.')).toBeInTheDocument();
+    expect(screen.queryByText('Used when Flow is off or still loading.')).not.toBeInTheDocument();
+
+    await userEvent.click(toggle);
+    expect(transport.setAccountAgentsMayPick).not.toHaveBeenCalled();
   });
 
   // Purpose: Main with no registry row is never picked by an agent, so it has no switch.

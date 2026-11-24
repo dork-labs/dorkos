@@ -5014,6 +5014,10 @@ export const ServerConfigSchema = z
                 description:
                   'True when a person let agents start chats on this account by naming it, while no mini app such as Flow decides (DOR-5033). Absent otherwise, and on a server too old to report it. Change it with PUT /api/runtimes/claude-code/accounts/:id/agents-may-pick',
               }),
+              isDefault: z.boolean().optional().openapi({
+                description:
+                  "True for this computer's main sign-in: the row `default` names, or another row on its folder. Agents never pick it, whatever `agentsMayPick` says (DOR-5033). Absent otherwise",
+              }),
             })
           )
           .openapi({ description: 'The Claude accounts the operator has registered' }),

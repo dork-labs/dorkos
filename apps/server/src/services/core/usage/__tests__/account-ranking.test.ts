@@ -425,6 +425,18 @@ describe('checkAccountLaunch', () => {
     });
   });
 
+  it('refuses an account the advisor marks ineligible, even one a person let agents pick', async () => {
+    installStore([{ id: 'client', weekly: 30, agentsMayPick: true }]);
+    advise(() => ({
+      accounts: [{ id: 'client', eligible: false, reason: 'Kept for client work only' }],
+      recommendedId: null,
+    }));
+    expect(await checkAccountLaunch(request)).toEqual({
+      allowed: false,
+      reason: 'Kept for client work only',
+    });
+  });
+
   it("allows an account the advisor allows, even one core's own rule would refuse", async () => {
     installStore([{ id: 'client', weekly: 30, noAutoMove: true }]);
     advise(() => ({

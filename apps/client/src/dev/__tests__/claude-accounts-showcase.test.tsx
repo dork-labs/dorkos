@@ -129,13 +129,14 @@ describe('Claude accounts showcase states', () => {
     // The unlabeled account falls back to its folder name.
     expect(screen.getByText('.claude3')).toBeInTheDocument();
     expect(screen.getByTestId('claude-account-not-ready')).toBeInTheDocument();
-    // Every registered row has the switch; only the one a person opened reads on (DOR-5033).
+    // Every registered row has the switch; only the one a person opened reads on,
+    // and Main's own row (Acme Corp, the default) can never be turned on (DOR-5033).
     const picks = screen.getAllByRole('switch', { name: 'Agents may pick this account' });
-    expect(picks.map((s) => s.getAttribute('aria-checked'))).toEqual([
-      'false',
-      'true',
-      'false',
-      'false',
+    expect(picks.map((s) => [s.getAttribute('aria-checked'), s.hasAttribute('disabled')])).toEqual([
+      ['true', false],
+      ['false', true],
+      ['false', false],
+      ['false', false],
     ]);
   });
 
