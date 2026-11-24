@@ -259,7 +259,7 @@ gates:
   # --- security-verdict.yml ---
   - id: wf.security-verdict.security-verdict
     source: .github/workflows/security-verdict.yml
-    purpose: After each Claude review run, posts a security-verdict commit status that is success only when the review's Security lens posted a pass for that exact head (DOR-5099), then re-runs that head's pr-gates after a pass (DOR-5119).
+    purpose: After each Claude review run, posts a security-verdict commit status that is success only when the review's Security lens posted a pass for that exact head (DOR-5099), then re-runs that head's finished, unpassed pr-gates runs after a pass (DOR-5119).
 
   # --- after-merge-alert.yml ---
   - id: wf.after-merge-alert.alert
