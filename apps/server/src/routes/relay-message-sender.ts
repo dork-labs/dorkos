@@ -40,8 +40,7 @@ export const PERSON_SENDER_REFUSAL =
 export type AgentSubjectLookup = (agentPath: string) => string | undefined;
 
 /** What the route sends: who from, and the payload, or why it refuses. */
-export type RelayMessageSend =
-  { refused: { detail: string } } | { from: string; payload: unknown };
+export type RelayMessageSend = { refused: { detail: string } } | { from: string; payload: unknown };
 
 /** Whether a value is a plain JSON object. */
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -134,14 +134,12 @@ describe('Undo on an agent’s access change', () => {
   it('refused because access changed since: says so where Undo was, and keeps focus there', async () => {
     renderRow({
       getAccessChange: vi.fn().mockResolvedValue(change('Not used.')),
-      undoAccessChange: vi
-        .fn()
-        .mockRejectedValue(
-          Object.assign(new Error('Access changed since then. Set it on the Connections page.'), {
-            status: 412,
-            code: 'precondition_failed',
-          })
-        ),
+      undoAccessChange: vi.fn().mockRejectedValue(
+        Object.assign(new Error('Access changed since then. Set it on the Connections page.'), {
+          status: 412,
+          code: 'precondition_failed',
+        })
+      ),
     });
 
     const undoButton = screen.getByRole('button', { name: 'Undo' });
