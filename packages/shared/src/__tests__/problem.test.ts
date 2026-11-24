@@ -30,12 +30,85 @@ describe('PROBLEM_CODE_LIST', () => {
     }
   });
 
+  it.each([
+    ['method_not_allowed', 405],
+    ['declined', 403],
+    ['upstream_unavailable', 502],
+    ['outside_turn', 403],
+    ['precondition_failed', 412],
+    ['already_resolved', 409],
+    ['needs_review', 409],
+    ['not_running', 409],
+    ['no_agent', 409],
+    ['room_not_allowed', 403],
+    ['caller_token_invalid', 403],
+    ['secret_left', 500],
+    ['signing_in', 409],
+    ['history_refused', 409],
+  ] as const)('sends %s with status %i by default', (code, status) => {
+    expect(PROBLEM_CODES[code].status).toBe(status);
+  });
+
   it('indexes every code, and the schema accepts exactly the list', () => {
     expect(Object.keys(PROBLEM_CODES).sort()).toEqual(
       PROBLEM_CODE_LIST.map((entry) => entry.code).sort()
     );
     expect(ProblemCodeSchema.options.length).toBe(PROBLEM_CODE_LIST.length);
     expect(ProblemCodeSchema.safeParse('NOT_FOUND').success).toBe(false);
+  });
+
+  it('holds the codes chats, agents, rooms and work branch on, at their statuses', () => {
+    const expected: ReadonlyArray<readonly [string, number]> = [
+      ['agent_paused', 409],
+      ['room_session_moved', 409],
+      ['desk_not_own', 409],
+      ['protected_folder', 403],
+      ['queued_message_not_found', 404],
+      ['queued_message_launching', 409],
+      ['task_not_running', 409],
+      ['not_supported', 501],
+      ['account_not_allowed_here', 409],
+      ['expired', 410],
+      ['room_not_found', 404],
+      ['room_archived', 409],
+      ['slug_taken', 409],
+      ['handle_taken', 409],
+      ['handle_reserved', 409],
+      ['handle_lookalike', 409],
+      ['invalid_handle', 400],
+      ['identity_not_external', 400],
+      ['chat_already_bound', 409],
+      ['avatar_missing', 400],
+      ['avatar_type_unsupported', 415],
+      ['attachment_not_found', 404],
+      ['room_repo_exists', 409],
+      ['room_repos_disabled', 409],
+      ['room_repo_git_unavailable', 409],
+      ['room_has_no_repo', 409],
+      ['room_file_path_invalid', 400],
+      ['room_file_not_found', 404],
+      ['room_file_not_readable', 400],
+      ['room_file_not_text', 400],
+      ['room_file_exists', 409],
+      ['room_upload_too_many_files', 400],
+      ['file_changed', 409],
+      ['main_checkout_dirty', 409],
+      ['room_repo_config_unsafe', 409],
+      ['file_too_large', 409],
+      ['repo_cap_exceeded', 409],
+      ['merge_in_flight', 429],
+      ['declined', 403],
+      ['reports_to_cycle', 400],
+      ['terminal_limit', 429],
+      ['too_large', 413],
+      ['not_a_file', 400],
+      ['binary_file', 415],
+      ['schedule_package_owned', 409],
+      ['past_due', 400],
+    ];
+    for (const [code, status] of expected) {
+      expect(PROBLEM_CODES[code as keyof typeof PROBLEM_CODES]?.status, code).toBe(status);
+    }
   });
 });
 
@@ -132,6 +205,15 @@ describe('readErrorBody', () => {
     expect(
       readErrorBody({ title: 'Not found.', status: 404, code: 'not_found' }, 'HTTP 404')
     ).toEqual({ code: 'not_found', message: 'Not found.', status: 404 });
+  });
+
+  it('reads the code alone: a problem names its refusal in `code`, never a second member', () => {
+    const changed = { title: 'Changed.', status: 412, code: 'precondition_failed' };
+    expect(readErrorBody({ ...changed, reason: 'stale_approval' }, 'HTTP 412')).toEqual({
+      code: 'precondition_failed',
+      message: 'Changed.',
+      status: 412,
+    });
   });
 
   it('carries a problem’s issues and retry delay', () => {

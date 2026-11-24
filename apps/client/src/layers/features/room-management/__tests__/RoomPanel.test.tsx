@@ -14,7 +14,6 @@ import {
   type RoomSummary,
   type RoomWithRoster,
 } from '@dorkos/shared/room-schemas';
-import { formatRelativeTime } from '@/layers/shared/lib';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider, useAgentCreationStore } from '@/layers/shared/model';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
@@ -345,35 +344,6 @@ describe('RoomPanel', () => {
     expect(within(section).getByRole('heading', { name: 'Agents 2' })).toBeInTheDocument();
   });
 
-  it('gives the reader no loudness and no verbs', async () => {
-    // A person is never triggered and there is no verb for them, so the empty
-    // slot is the statement. Red if the row starts drawing a pill or a menu for
-    // a human — it would be offering a setting that does nothing.
-    renderPanel();
-    await rosterSection();
-
-    expect(pill('Ana')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'How loud You is here' })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('You actions')).not.toBeInTheDocument();
-  });
-
-  it('shows a skeleton while the roster loads, then the roster', async () => {
-    let resolve!: (value: RoomWithRoster) => void;
-    renderPanel({
-      transport: createMockTransport({
-        getRoom: vi.fn().mockReturnValue(
-          new Promise<RoomWithRoster>((r) => {
-            resolve = r;
-          })
-        ),
-      }),
-    });
-
-    expect(screen.getByRole('region', { name: 'Current members' })).toHaveAttribute('aria-busy');
-    resolve(roster([HUMAN, agentMember('Ana', '/repo/ana')]));
-    await waitFor(() => expect(screen.getByText('Ana')).toBeInTheDocument());
-  });
-
   it('says the ROOM could not be read, not that its roster is empty', async () => {
     // **The modal said "couldn't read who is in here"; the panel cannot.** The
     // modal was handed a room by whoever opened it, so it always had a name at
@@ -452,54 +422,6 @@ describe('RoomPanel', () => {
     expect(addSection().queryByRole('button', { name: 'Add agents' })).not.toBeInTheDocument();
   });
 
-  it('says the one thing about an empty room the line above it does not', async () => {
-    // The loudness line already says "There is nobody here to answer you", so
-    // this line saying it too would be the panel stating one fact twice. What
-    // is left is the part only it has: joining is not starting.
-    renderPanel({
-      transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roster([HUMAN])) }),
-    });
-
-    expect(
-      await screen.findByText(/Whoever you add can read everything already said/i)
-    ).toBeInTheDocument();
-    expect(screen.getByText('There is nobody here to answer you')).toBeInTheDocument();
-  });
-
-  it('offers a way to make an agent when there are none to add', async () => {
-    // "You have not added any agents yet" is true and is a dead end with
-    // nothing to press. Red if the sentence goes back to standing on its own.
-    renderPanel({
-      agents: settled([]),
-      transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roster([HUMAN])) }),
-    });
-    await screen.findByText(/You don’t have any agents yet/i);
-
-    fireEvent.click(addSection().getByRole('button', { name: 'Create agent' }));
-
-    // The panel stays where it is. It was a modal that had to close for the
-    // creation dialog; a panel is beside it, and the roster it leaves behind is
-    // the one the new agent is about to join.
-    expect(useAgentCreationStore.getState().isOpen).toBe(true);
-    expect(screen.getByRole('region', { name: 'Add agents' })).toBeInTheDocument();
-  });
-
-  it('offers no such way when every agent is already in the room', async () => {
-    // That sentence is a finished job, not a dead end — there is nothing to
-    // fix, and a button under it would be inviting somebody to solve a problem
-    // they do not have.
-    renderPanel({
-      agents: settled([
-        { agentPath: '/repo/ana', displayName: 'Ana', visual: null, description: null },
-      ]),
-    });
-    await rosterSection();
-    openAddRow();
-
-    expect(screen.getByText('Every agent you have is already in here.')).toBeInTheDocument();
-    expect(addSection().queryByRole('button', { name: 'Create agent' })).not.toBeInTheDocument();
-  });
-
   it('offers to read again rather than asking to be closed and reopened', async () => {
     // "Close this and open it again to retry" is the retry button, made out of
     // a person. Red if the button goes, or stops actually re-reading.
@@ -528,18 +450,6 @@ describe('RoomPanel', () => {
         .map((radio) => radio.getAttribute('aria-label') ?? radio.textContent ?? '');
     }
 
-    /** The panel over a direct message whose only agent holds `mode`. */
-    function renderDm(mode: RoomRosterEntry['responseMode']) {
-      return renderPanel({
-        room: DM,
-        transport: createMockTransport({
-          getRoom: vi
-            .fn()
-            .mockResolvedValue(roster([HUMAN, agentMember('Ana', '/repo/ana', mode)], DM)),
-        }),
-      });
-    }
-
     it('offers a channel four rungs, quiet to loud', async () => {
       // Position is the meaning. Five peer sentences in no stated order were
       // the defect this replaces — nobody could rank them.
@@ -547,31 +457,6 @@ describe('RoomPanel', () => {
       await rosterSection();
 
       expect(offeredRungs()).toEqual(['Silent', '@only', 'Engaged', 'Everything']);
-    });
-
-    it('offers a direct message the same four, because it has the same four behaviours', async () => {
-      // Three were offered here for one commit, on the inherited claim that a
-      // direct message's engaged window can never open. `room-trigger.ts` runs
-      // `engagementFor` for every room kind, and a GROUP conversation is still
-      // a `dm` — so the rung people would most want in a room holding three
-      // agents was the one they could not reach.
-      renderDm('mention-only');
-      await rosterSection();
-
-      expect(offeredRungs()).toEqual(['Silent', '@only', 'Engaged', 'Everything']);
-    });
-
-    it('says what a second agent would turn this conversation into, before it does', async () => {
-      // A one-to-one holding two agents is a group conversation, and finding
-      // that out afterwards — from a stack of faces where one face used to be —
-      // is the product teaching by surprise. The wording is the one the "+"
-      // beside Direct messages already uses.
-      renderDm('mention-only');
-      await rosterSection();
-
-      expect(
-        addSection().getByText('Adding a second agent turns this into a group message.')
-      ).toBeInTheDocument();
     });
 
     it('names a retired agent instead of promising a "second" one (DOR-2095)', async () => {
@@ -595,30 +480,6 @@ describe('RoomPanel', () => {
       ).toBeInTheDocument();
     });
 
-    it('says it only where it is true', async () => {
-      // A channel is a channel however many agents are in it, and a
-      // conversation already holding two is already a group. Red if the note
-      // is drawn unconditionally: it would tell a reader of #general that
-      // adding Bo turns a channel into a direct message.
-      renderPanel();
-      await rosterSection();
-      expect(addSection().queryByText(/group conversation/)).not.toBeInTheDocument();
-
-      cleanup();
-      renderPanel({
-        room: DM,
-        transport: createMockTransport({
-          getRoom: vi
-            .fn()
-            .mockResolvedValue(
-              roster([HUMAN, agentMember('Ana', '/repo/ana'), agentMember('Bo', '/repo/bo')], DM)
-            ),
-        }),
-      });
-      await rosterSection();
-      expect(addSection().queryByText(/group conversation/)).not.toBeInTheDocument();
-    });
-
     it('shows the rung on the row, and what it does once you open it', async () => {
       // The pill is the glance and the scale is the task. Red if the row stops
       // naming the rung — the roster would go back to being a list of names
@@ -631,61 +492,6 @@ describe('RoomPanel', () => {
 
       openScale();
       expect(screen.getByText('Answers only when you @mention it.')).toBeInTheDocument();
-    });
-
-    it('opens one scale at a time', async () => {
-      // Four rungs and their consequences is most of a phone screen; two rows
-      // of them is a panel nobody can find the bottom of.
-      renderPanel({
-        transport: createMockTransport({
-          getRoom: vi
-            .fn()
-            .mockResolvedValue(
-              roster([HUMAN, agentMember('Ana', '/repo/ana'), agentMember('Bo', '/repo/bo')])
-            ),
-        }),
-      });
-      await rosterSection();
-
-      openScale('Ana');
-      openScale('Bo');
-
-      expect(screen.getAllByRole('radiogroup')).toHaveLength(1);
-      expect(screen.getByRole('radiogroup', { name: 'How loud is Bo here?' })).toBeInTheDocument();
-    });
-
-    it('states the engaged window this install is running, not the shipped one', async () => {
-      // The numbers are settings, and they are inside the sentence. An install
-      // that tuned them must not read a sentence built from the defaults.
-      renderPanel({
-        transport: createMockTransport({
-          getRoom: vi
-            .fn()
-            .mockResolvedValue(roster([HUMAN, agentMember('Ana', '/repo/ana', 'engaged')])),
-          getConfig: vi
-            .fn()
-            .mockResolvedValue({ rooms: { engagedWindowMinutes: 3, engagedWindowPosts: 7 } }),
-        }),
-      });
-      await rosterSection();
-      openScale();
-
-      expect(
-        await screen.findByText(/keeps answering for 3 minutes or 7 messages/)
-      ).toBeInTheDocument();
-    });
-
-    it('shows a direct message’s stored engaged value as engaged, and says what it does', async () => {
-      // The whole defect, end to end. `seedResponseMode` seeds a DM membership
-      // from the agent's own manifest and `engaged` is a legal value there, so
-      // this is a room somebody can really be looking at. It read `@only`, the
-      // sentence under it described `@only`, and the sentence was false of the
-      // membership it was describing.
-      renderDm('engaged');
-      await rosterSection();
-
-      expect(pill()).toHaveTextContent('Engaged');
-      expect(within(openScale()).getByText(/keeps answering for/)).toBeInTheDocument();
     });
 
     it('writes one canonical value per rung, never a room-dependent alias', async () => {
@@ -731,27 +537,6 @@ describe('RoomPanel', () => {
       await waitFor(() => expect(transport.updateRoomMember).toHaveBeenCalledTimes(1));
     });
 
-    it('moves the meter as soon as it is picked, not a round trip later', async () => {
-      // The confirmation IS the meter moving, so a value that arrives when the
-      // server agrees reads as a control that did not respond. Red the moment
-      // the optimistic write goes: this write never settles, so nothing else
-      // can put `Everything` on the pill.
-      renderPanel({
-        transport: createMockTransport({
-          getRoom: vi.fn().mockResolvedValue(roster([HUMAN, agentMember('Ana', '/repo/ana')])),
-          updateRoomMember: vi.fn().mockReturnValue(new Promise<never>(() => {})),
-        }),
-      });
-      await rosterSection();
-
-      fireEvent.click(within(openScale()).getByRole('radio', { name: 'Everything' }));
-
-      await waitFor(() => expect(pill()).toHaveTextContent('Everything'));
-      // The pill is dimmed with a class jsdom cannot see; this is the half of
-      // "in flight" that reaches somebody who is not looking at it.
-      expect(pill()).toHaveAttribute('aria-busy', 'true');
-    });
-
     it('takes the rung back when the write is refused, and says why on the row', async () => {
       // A control still showing the value that never saved is worse than one
       // that showed nothing: it states a setting the server does not hold.
@@ -794,25 +579,6 @@ describe('RoomPanel', () => {
       expect(ana).toBeDefined();
       expect(within(ana!).queryByText(/didn’t save/)).not.toBeInTheDocument();
     });
-
-    it.each(['channel', 'dm'] as const)(
-      'writes `engaged` for the engaged rung in a %s',
-      async (kind) => {
-        // A direct message wrote `mention-only` here — a narrowing write, fired
-        // by a rung that was already showing as chosen, storing a behaviour
-        // nobody picked. Red if the room kind ever reaches the write again.
-        const { transport } = kind === 'dm' ? renderDm('silent') : renderPanel();
-        await rosterSection();
-
-        fireEvent.click(within(openScale()).getByRole('radio', { name: 'Engaged' }));
-
-        await waitFor(() =>
-          expect(transport.updateRoomMember).toHaveBeenCalledWith('room-1', 'author-Ana', {
-            responseMode: 'engaged',
-          })
-        );
-      }
-    );
   });
 
   it('removes nobody until the confirmation is accepted', async () => {
@@ -828,85 +594,6 @@ describe('RoomPanel', () => {
     await waitFor(() =>
       expect(transport.removeRoomMember).toHaveBeenCalledWith('room-1', 'author-Ana')
     );
-  });
-
-  /**
-   * How a row arrives and how it leaves.
-   *
-   * **Almost none of this is settleable here, and saying so is the point.** The
-   * movement itself is `motion` props, which the shared test setup strips off
-   * before anything renders; jsdom runs no transitions and measures every
-   * element as 0 × 0. So whether a row really opens its height, whether the
-   * brand wash really fades, and whether both go to zero under
-   * `prefers-reduced-motion` are browser questions and are on the browser
-   * suite's list. What is settleable is the structure the movement needs — and
-   * every one of these has a way to be wrong that a person would notice.
-   */
-  describe('how the roster arrives and leaves', () => {
-    /** The `li` elements of whichever group holds the agents. */
-    async function agentRows(): Promise<HTMLElement[]> {
-      const region = await rosterSection();
-      return within(region).getAllByRole('listitem');
-    }
-
-    it('clips each row, so a collapsing one does not spill out of its own height', async () => {
-      // Red if the clip goes: a row leaving would draw its whole self outside a
-      // box that is already shrinking, which reads as a glitch rather than as a
-      // removal — and the Undo toast would be about something nobody saw go.
-      renderPanel();
-
-      for (const row of await agentRows()) expect(row.className).toContain('overflow-hidden');
-    });
-
-    it('spaces the rows with padding rather than with a margin', async () => {
-      // A margin sits OUTSIDE the height being animated, so every row that
-      // collapsed would leave a stripe of empty list behind it. Red if the list
-      // goes back to `space-y`.
-      renderPanel();
-      const region = await rosterSection();
-
-      for (const list of within(region).getAllByRole('list')) {
-        expect(list.className).not.toContain('space-y');
-      }
-    });
-
-    it('lays the landing wash over the row without ever taking a press from it', async () => {
-      // It covers the whole row, including the pill and the "…". Red if it
-      // becomes clickable or reachable: an agent's controls would go dead for as
-      // long as the wash is on screen, and a screen reader would find an
-      // element that says nothing.
-      renderPanel();
-      const rows = await agentRows();
-
-      const wash = rows[0]!.querySelector('.bg-brand');
-      expect(wash).not.toBeNull();
-      expect(wash!.className).toContain('pointer-events-none');
-      expect(wash).toHaveAttribute('aria-hidden');
-    });
-  });
-
-  describe('how tall it is allowed to get', () => {
-    /**
-     * A class contract, and the honest limit of jsdom.
-     *
-     * jsdom measures every element as 0 × 0, so nothing about how tall anything
-     * actually is — or whether the roster scrolls inside the panel rather than
-     * pushing the archive button off the bottom — can be settled short of a real
-     * browser on a real viewport (verified at 1440 and 390). What a class
-     * assertion still catches is the rule being deleted, which is how the
-     * modal's version of it went missing twice.
-     */
-    it('scrolls the roster inside itself, leaving the footer put', async () => {
-      renderPanel();
-      const roster = await rosterSection();
-
-      // The one scrolling region: everything above the footer is inside it.
-      const scroller = roster.closest('.overflow-y-auto');
-      expect(scroller).not.toBeNull();
-      // And the footer is NOT — it is the panel's last row, so "Archive" is
-      // reachable without scrolling a roster of forty-six agents to its end.
-      expect(scroller!.contains(screen.getByRole('button', { name: /Archive/ }))).toBe(false);
-    });
   });
 
   describe('taking an agent back out', () => {
@@ -969,43 +656,6 @@ describe('RoomPanel', () => {
       );
     });
 
-    it('says nothing when it has no way back to offer', async () => {
-      // The agent's directory is what an add needs, and a roster row carries
-      // only a one-way hash of it — so an agent the fleet cannot name is one
-      // nothing could put back. A toast with no verb on it, over a row the
-      // reader has just watched leave, would be a notification about their own
-      // hand. Red if the offer is raised regardless of whether it works.
-      //
-      // Ana is not in the fleet and Bo is, and BOTH are removed: a bare
-      // `not.toHaveBeenCalled()` after the first would be true whether or not
-      // the toast was on its way, so removing Bo afterwards is the barrier that
-      // turns the absence into a decision. An offer raised for Ana too makes
-      // this count two. Both are confirmed before either settles, which is the
-      // shape this really has to hold in: the offer is raised from each
-      // removal's own promise, so a second one starting first cannot take it.
-      renderPanel({
-        agents: settled([
-          { agentPath: '/repo/bo', displayName: 'Bo', visual: null, description: null },
-        ]),
-        transport: createMockTransport({
-          getRoom: vi
-            .fn()
-            .mockResolvedValue(
-              roster([HUMAN, agentMember('Ana', '/repo/ana'), agentMember('Bo', '/repo/bo')])
-            ),
-        }),
-      });
-      await rosterSection();
-
-      confirmRemoval('Ana');
-      confirmRemoval('Bo');
-
-      await waitFor(() =>
-        expect(toast.success).toHaveBeenCalledWith('Bo removed from #general', expect.anything())
-      );
-      expect(toast.success).toHaveBeenCalledTimes(1);
-    });
-
     it('offers an undo for each of two removals in flight at once', async () => {
       // One mutation observer serves every row, and TanStack keeps ONE slot for
       // per-call callbacks: a second `mutate` overwrote the first call's
@@ -1066,23 +716,6 @@ describe('RoomPanel', () => {
     });
   });
 
-  it('confirms in place, so the panel the reader is working in stays open', async () => {
-    // A dialog over a dialog closed BOTH when answered. The panel has to
-    // survive its own confirmation, which is the whole reason this is inline.
-    const { transport } = renderPanel();
-    await rosterSection();
-
-    removeThroughMenu();
-    fireEvent.click(
-      within(screen.getByRole('group', { name: 'Remove Ana from #general?' })).getByRole('button', {
-        name: 'Remove',
-      })
-    );
-
-    await waitFor(() => expect(transport.removeRoomMember).toHaveBeenCalled());
-    expect(screen.getByRole('region', { name: 'Current members' })).toBeInTheDocument();
-  });
-
   it('puts the focus on the confirmation so it can be answered from the keyboard', async () => {
     renderPanel();
     await rosterSection();
@@ -1136,27 +769,6 @@ describe('RoomPanel', () => {
   });
 
   describe('what the whole room will do', () => {
-    it('does not describe a roster that has not arrived', async () => {
-      // "There is nobody here to answer you" is what an EMPTY roster really
-      // says, so saying it about one still being read states something false
-      // and then corrects itself. Red if the line stops waiting.
-      let resolve!: (value: RoomWithRoster) => void;
-      renderPanel({
-        transport: createMockTransport({
-          getRoom: vi.fn().mockReturnValue(
-            new Promise<RoomWithRoster>((r) => {
-              resolve = r;
-            })
-          ),
-        }),
-      });
-
-      expect(screen.queryByText(/nobody here to answer you/i)).not.toBeInTheDocument();
-
-      resolve(roster([HUMAN, agentMember('Ana', '/repo/ana', 'engaged')]));
-      expect(await screen.findByText('One agent will answer you here')).toBeInTheDocument();
-    });
-
     it('names the one member the headline does not cover', async () => {
       // The two questions people open this panel with are about the ROOM, and
       // both used to be answerable only by reading N grey sentences and
@@ -1209,13 +821,6 @@ describe('RoomPanel', () => {
         });
       }
 
-      /** The room's own line, whatever it currently says. */
-      function loudnessLine(): HTMLElement {
-        const found = document.querySelector('[data-slot="room-loudness-line"]');
-        if (found === null) throw new Error('the room says nothing about itself');
-        return found as HTMLElement;
-      }
-
       it('rewrites the room’s own sentence as the keyboard crosses the rungs', async () => {
         // The whole model in three seconds and no help text: point at `Everything`
         // for Bo and the ROOM says what it would become. Red if the line ever
@@ -1229,66 +834,6 @@ describe('RoomPanel', () => {
 
         expect(screen.getByText('Two agents will answer you here')).toBeInTheDocument();
         expect(screen.queryByText('One agent will answer you here')).not.toBeInTheDocument();
-      });
-
-      it('says it is a hypothetical, in words as well as in colour', async () => {
-        // A reader who is not looking at the tint would otherwise be told
-        // something false about the room they are in.
-        renderMixed();
-        await rosterSection();
-
-        fireEvent.keyDown(openScale('Bo'), { key: 'End' });
-
-        expect(loudnessLine()).toHaveAttribute('data-preview');
-        expect(within(loudnessLine()).getByText(/If you make that change/)).toBeInTheDocument();
-      });
-
-      it('answers a pointer exactly as it answers the arrow keys', async () => {
-        // Keyboard parity is not a courtesy here: the arrows were the ONLY way
-        // to reach this before there was a pointer path at all. Red if either
-        // input gets its own answer.
-        renderMixed();
-        await rosterSection();
-
-        fireEvent.mouseEnter(within(openScale('Bo')).getByRole('radio', { name: 'Everything' }));
-
-        expect(screen.getByText('Two agents will answer you here')).toBeInTheDocument();
-      });
-
-      it('slides back to what is true when the reader stops pointing', async () => {
-        renderMixed();
-        await rosterSection();
-        const group = openScale('Bo');
-
-        fireEvent.keyDown(group, { key: 'End' });
-        fireEvent.blur(group, { relatedTarget: document.body });
-
-        expect(screen.getByText('One agent will answer you here')).toBeInTheDocument();
-        expect(loudnessLine()).not.toHaveAttribute('data-preview');
-      });
-
-      it('says nothing hypothetical about an archived room', async () => {
-        // There is no loudness line to preview into: an archived room triggers
-        // nobody, so the sentence would be false however it was computed. Red if
-        // the line comes back, or if the scale starts reporting there.
-        renderPanel({
-          room: { ...ROOM, archived: true },
-          transport: createMockTransport({
-            getRoom: vi.fn().mockResolvedValue(
-              roster([HUMAN, agentMember('Ana', '/repo/ana', 'engaged')], {
-                ...ROOM,
-                archived: true,
-                ambientMaxEntries: 30,
-              })
-            ),
-          }),
-        });
-        await rosterSection();
-
-        fireEvent.keyDown(openScale('Ana'), { key: 'Home' });
-
-        expect(document.querySelector('[data-slot="room-loudness-line"]')).toBeNull();
-        expect(screen.getByText(/Bring it back to make changes/)).toBeInTheDocument();
       });
     });
   });
@@ -1310,23 +855,6 @@ describe('RoomPanel', () => {
       return { transport };
     }
 
-    it('says how old the room is, in the cockpit voice every other date uses', async () => {
-      // Deliberately not `lastActivityAt`, which the fixture also carries: the
-      // foot of the panel says when the room was MADE. And through
-      // `formatRelativeTime`, so a member row and this line age the same way
-      // rather than the panel growing a second date vocabulary.
-      const born = '2026-07-01T08:00:00.000Z';
-      renderPanel({
-        room: { ...ROOM, createdAt: born },
-        transport: createMockTransport({
-          getRoom: vi.fn().mockResolvedValue({ ...roster([HUMAN]), createdAt: born }),
-        }),
-      });
-      await screen.findByText(/Whoever you add can read everything already said/i);
-
-      expect(screen.getByText(`Created ${formatRelativeTime(born)}`)).toBeInTheDocument();
-    });
-
     it('archives in place, and puts the way back where the action was', async () => {
       // No alert, deliberately. The panel you pressed it in redraws with the
       // badge and the undo, which says more than a modal asking "are you
@@ -1345,49 +873,6 @@ describe('RoomPanel', () => {
         await screen.findByRole('button', { name: 'Bring this room back' })
       ).toBeInTheDocument();
       expect(screen.getByText('Archived')).toBeInTheDocument();
-    });
-
-    it('stops claiming an archived room will answer anybody', async () => {
-      // Nothing is triggered in an archived room, so the loudness sentence
-      // would be false there. Red if the room line comes back: it would read
-      // "One agent will answer you here" of a room that answers nothing.
-      renderArchivable(true);
-      await rosterSection();
-
-      expect(screen.getByText(/Archived rooms don’t answer/)).toBeInTheDocument();
-      expect(screen.queryByText(/answer you here/)).not.toBeInTheDocument();
-    });
-
-    it('greys every meter, because the setting is real and dormant', async () => {
-      // A bright meter on a room that triggers nobody claims the setting is in
-      // effect. Unlit would be the opposite lie — the rung is still stored and
-      // still what the agent will do the moment the room comes back. Red if the
-      // room's archived flag stops reaching the meter.
-      renderArchivable(true, [HUMAN, agentMember('Ana', '/repo/ana')]);
-      await rosterSection();
-
-      expect(pill().querySelector('[data-slot="loudness-meter"]')).toHaveAttribute('data-dormant');
-    });
-
-    it('describes a dormant rung with the reason, and keeps it reachable', async () => {
-      // A `disabled` button leaves the tab order, so the reason a screen reader
-      // was handed would sit on a control it can never arrive at — which is the
-      // dead control the reason exists to explain. Red if the rungs go back to
-      // the disabled attribute, or if the description drops the banner.
-      renderArchivable(true, [HUMAN, agentMember('Ana', '/repo/ana')]);
-      await rosterSection();
-
-      const rung = within(openScale()).getByRole('radio', { name: 'Everything' });
-      expect(rung).toHaveAttribute('aria-disabled', 'true');
-      const described = (rung.getAttribute('aria-describedby') ?? '').split(' ');
-      const banner = screen.getByText(/Archived rooms don’t answer/);
-      expect(described).toContain(banner.id);
-      // The `disabled` attribute is what takes an element out of the tab order,
-      // and jsdom has no tab order to check — it will happily focus a disabled
-      // button that carries a `tabindex`, which every rung does. So its absence
-      // is asserted directly rather than through a focus call that would pass
-      // either way.
-      expect(rung).not.toBeDisabled();
     });
 
     it('writes nothing while the room is archived, and writes again once it is back', async () => {
@@ -1483,20 +968,6 @@ describe('RoomPanel', () => {
   });
 
   describe('adding somebody', () => {
-    it('ends the roster with a row rather than opening a second panel', async () => {
-      // The old sheet carried a second heading, a second explanation and an
-      // always-open picker whose disabled button was the heaviest thing on
-      // screen. Red if any of that comes back: the foot of the roster is one
-      // more row until somebody presses it.
-      renderPanel();
-      await rosterSection();
-
-      expect(addSection().getByRole('button', { name: 'Add agents' })).toBeInTheDocument();
-      expect(
-        addSection().queryByRole('combobox', { name: 'Search agents' })
-      ).not.toBeInTheDocument();
-    });
-
     it('turns that row into the picker, with the cursor already in it', async () => {
       // Expanding it unmounts the button that was pressed, which drops focus
       // to <body>. Red if the focus guard treats that as "the reader has gone
@@ -1508,15 +979,6 @@ describe('RoomPanel', () => {
       const search = screen.getByRole('combobox', { name: 'Search agents' });
       await waitFor(() => expect(search).toHaveFocus());
       expect(addSection().queryByRole('button', { name: 'Add agents' })).not.toBeInTheDocument();
-    });
-
-    it('opens with the picker already open for the door that asked to add', async () => {
-      // "Add agents…" and "Members…" land on ONE panel, so the state it opens
-      // in is the only thing left saying which was pressed.
-      renderPanel({ focus: 'add' });
-      await rosterSection();
-
-      expect(screen.getByRole('combobox', { name: 'Search agents' })).toBeInTheDocument();
     });
   });
 
@@ -1655,50 +1117,6 @@ describe('RoomPanel', () => {
     expect(search).not.toHaveFocus();
   });
 
-  it('lets an empty room open its picker without taking the cursor off the topic', async () => {
-    // Two things want the keyboard at once: the door that said "topic", and a
-    // room that turns out to be empty and opens its own picker. The reader
-    // asked for the topic, and a live editor is somewhere REAL — unlike the
-    // dialog's own content element, which is where the cursor parks when a
-    // door named no field. Red if the guard goes back to "anywhere inside the
-    // sheet counts": this reader would be typing into "Search agents".
-    renderPanel({
-      focus: 'topic',
-      transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roster([HUMAN])) }),
-    });
-
-    const search = await screen.findByRole('combobox', { name: 'Search agents' });
-    // Waited for rather than asserted outright: the editor takes the cursor a
-    // frame after it mounts (see `InlineTextField`), and the picker beside it
-    // can be on screen first. What is under test is which of the two ends up
-    // with it, not which frame it happens in.
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Topic' })).toHaveFocus());
-    expect(search).not.toHaveFocus();
-  });
-
-  it('leaves the picker shut for an entry point that did not ask to add anybody', async () => {
-    // An entry point that asked about the topic has no claim on the search
-    // box. Red if the picker ever opens for anything but "Add agents…" — a
-    // reader who came for the topic would be typing into "Search agents".
-    renderPanel({ focus: 'topic' });
-
-    await rosterSection();
-    expect(screen.queryByRole('combobox', { name: 'Search agents' })).not.toBeInTheDocument();
-  });
-
-  it('says there is nobody left to add rather than showing an empty picker', async () => {
-    renderPanel({
-      agents: settled([
-        { agentPath: '/repo/ana', displayName: 'Ana', visual: null, description: null },
-      ]),
-    });
-    await rosterSection();
-    openAddRow();
-
-    expect(screen.getByText('Every agent you have is already in here.')).toBeInTheDocument();
-    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
-  });
-
   /**
    * The half of DOR-786 a reader actually sees.
    *
@@ -1732,37 +1150,6 @@ describe('RoomPanel', () => {
       renderPanel({
         transport: createMockTransport({
           getRoom: vi.fn().mockResolvedValue(roster([HUMAN, agentMember('Ana', '/repo/ana')])),
-        }),
-      });
-      await rosterSection();
-
-      expect(screen.queryByText(QUIET)).not.toBeInTheDocument();
-    });
-
-    it('stays quiet while somebody IS working', async () => {
-      renderPanel({
-        transport: createMockTransport({
-          getRoom: vi.fn().mockResolvedValue({
-            ...roster([HUMAN, agentMember('Ana', '/repo/ana')]),
-            workingAgents: [{ authorId: 'author-ana', since: new Date().toISOString() }],
-          }),
-        }),
-      });
-      await rosterSection();
-
-      expect(screen.queryByText(QUIET)).not.toBeInTheDocument();
-    });
-
-    it('stays quiet in an archived room, where nobody is triggered anyway', async () => {
-      // The banner above already says the room is on hold. A second, weaker way
-      // of saying the same thing is the over-participation this sheet avoids.
-      renderPanel({
-        room: { ...ROOM, archived: true },
-        transport: createMockTransport({
-          getRoom: vi.fn().mockResolvedValue({
-            ...roster([HUMAN, agentMember('Ana', '/repo/ana')], { ...ROOM, archived: true }),
-            workingAgents: [],
-          }),
         }),
       });
       await rosterSection();

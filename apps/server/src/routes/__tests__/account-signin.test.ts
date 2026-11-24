@@ -114,6 +114,10 @@ describe('the sign-in routes take the person bar', () => {
           accountId: 'five',
         });
         expect(res.status).toBe(403);
+        expect(res.headers.get('content-type')).toMatch(/^application\/problem\+json/);
+        const body = (await res.json()) as { code: string; detail: string };
+        expect(body.code).toBe(actor === 'teammate' ? 'owner_only' : 'person_only');
+        expect(body.detail).toBe('Only you can change Claude sign-ins, in the app.');
       }
       expect((await call(actor, '/folders/five', {}, 'DELETE')).status).toBe(403);
       expect((await call(actor, `/organizations/${DENIED}`, {}, 'DELETE')).status).toBe(403);

@@ -1,5 +1,5 @@
 /**
- * `roomErrorReply` — what a refusal says to whom (DOR-2457).
+ * `roomErrorProblem` — what a refusal says to whom (DOR-2457, DOR-4979).
  *
  * The one refusal worded per caller is a room whose git settings name a
  * program: the operator gets the settings file, the keys and a command; anybody
@@ -20,7 +20,13 @@ vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
   },
 }));
 
-import { isOwnerCaller, roomErrorReply } from '../room-error-response.js';
+import {
+  isOwnerCaller,
+  PROBLEM_BY_CODE,
+  roomErrorProblem,
+  roomErrorStatus,
+} from '../room-error-response.js';
+import { PROBLEM_CODES, type ProblemCode } from '@dorkos/shared/problem';
 import {
   ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
   RoomError,
@@ -29,9 +35,9 @@ import {
 
 const CONFIG = '/home/operator/.dork/rooms/r1/repo/.git/config';
 
-/** The reply a route sends for `err`, asking whether `caller` is the owner as a route does. */
+/** The problem a route sends for `err`, asking whether `caller` is the owner as a route does. */
 function reply(err: unknown, caller?: AuthorRecord) {
-  return roomErrorReply(err, 'test', () => isOwnerCaller(caller));
+  return roomErrorProblem(err, 'test', () => isOwnerCaller(caller));
 }
 
 /** An author row of the given kind and natural key. */
@@ -45,31 +51,36 @@ beforeEach(() => {
   owner.fails = false;
 });
 
-describe('roomErrorReply', () => {
+describe('roomErrorProblem', () => {
   const unsafe = () => new RoomRepoConfigUnsafeError(CONFIG, ['filter.x.smudge']);
 
   it('tells a caller nobody resolved only that the files are paused', () => {
-    expect(reply(unsafe())).toEqual({
+    const answer = reply(unsafe());
+    expect(answer).toMatchObject({
       status: 409,
-      body: { code: 'ROOM_REPO_CONFIG_UNSAFE', error: ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE },
+      code: 'room_repo_config_unsafe',
+      detail: ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
     });
+    expect(answer).not.toHaveProperty('command');
   });
 
   it('tells an agent and another person the same plain line', () => {
     owner.ownerId = 'owner-account';
     for (const caller of [author('agent', '/agents/ana'), author('human', 'user:priya')]) {
-      expect(reply(unsafe(), caller).body).toEqual({
-        code: 'ROOM_REPO_CONFIG_UNSAFE',
-        error: ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
+      const answer = reply(unsafe(), caller);
+      expect(answer).toMatchObject({
+        code: 'room_repo_config_unsafe',
+        detail: ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
       });
+      expect(answer).not.toHaveProperty('command');
     }
   });
 
   it('tells the owner the file and the key, with the command in its own field', () => {
     owner.ownerId = 'owner-account';
-    expect(reply(unsafe(), author('human', 'user:owner-account')).body).toEqual({
-      code: 'ROOM_REPO_CONFIG_UNSAFE',
-      error: expect.stringContaining(CONFIG),
+    expect(reply(unsafe(), author('human', 'user:owner-account'))).toMatchObject({
+      code: 'room_repo_config_unsafe',
+      detail: expect.stringContaining(CONFIG),
       command: `git config --file '${CONFIG}' --unset-all 'filter.x.smudge'`,
     });
   });
@@ -78,15 +89,39 @@ describe('roomErrorReply', () => {
     owner.fails = true;
     expect(
       reply(new RoomError('ROOM_NOT_FOUND', 'No such room'), author('human', 'user:owner-account'))
-    ).toEqual({ status: 404, body: { code: 'ROOM_NOT_FOUND', error: 'No such room' } });
+    ).toMatchObject({ status: 404, code: 'room_not_found', detail: 'No such room' });
     expect(owner.reads).toBe(0);
   });
 
   it('still answers, with the plain line, when the owner account cannot be read', () => {
     owner.fails = true;
-    expect(reply(unsafe(), author('human', 'user:owner-account'))).toEqual({
+    expect(reply(unsafe(), author('human', 'user:owner-account'))).toMatchObject({
       status: 409,
-      body: { code: 'ROOM_REPO_CONFIG_UNSAFE', error: ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE },
+      code: 'room_repo_config_unsafe',
+      detail: ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
     });
+  });
+
+  it('answers anything that is not a room refusal with a bare internal_error', () => {
+    expect(reply(new Error('/secret/path broke'))).toEqual(
+      expect.objectContaining({ status: 500, code: 'internal_error' })
+    );
+    expect(reply(new Error('/secret/path broke'))).not.toHaveProperty('detail');
+  });
+});
+
+describe('PROBLEM_BY_CODE', () => {
+  it('maps every room code onto a problem code the list holds', () => {
+    for (const [roomCode, mapped] of Object.entries(PROBLEM_BY_CODE)) {
+      expect(PROBLEM_CODES[mapped.code as ProblemCode], roomCode).toBeDefined();
+    }
+  });
+
+  it('keeps the status each refusal answered with before the problem shape', () => {
+    expect(roomErrorStatus('ROOM_NOT_FOUND')).toBe(404);
+    expect(roomErrorStatus('PEOPLE_ONLY')).toBe(403);
+    expect(roomErrorStatus('MERGE_IN_FLIGHT')).toBe(429);
+    expect(roomErrorStatus('CANVAS_UNAVAILABLE')).toBe(503);
+    expect(roomErrorStatus('AGENT_IDENTITY_UNVERIFIED')).toBe(401);
   });
 });

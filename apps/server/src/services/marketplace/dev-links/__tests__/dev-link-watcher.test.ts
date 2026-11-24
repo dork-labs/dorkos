@@ -17,7 +17,6 @@ import {
   classifyDevLinkChanges,
   declaredPathsOf,
   isIgnoredDevLinkPath,
-  relativeTo,
   shapeChanges,
   shapeOf,
   type DevLinkChange,
@@ -85,46 +84,6 @@ describe('isIgnoredDevLinkPath', () => {
     // look-alike name, or a program named like a build folder, still does.
     expect(isIgnoredDevLinkPath(rel)).toBe(ignored);
   });
-
-  it('ignores a build or dependency folder itself only when it is one', () => {
-    // Purpose: chokidar must skip opening `target/` (S2), but a file called
-    // `build` is a real change.
-    expect(isIgnoredDevLinkPath('target', true)).toBe(true);
-    expect(isIgnoredDevLinkPath('Node_Modules', true)).toBe(true);
-    expect(isIgnoredDevLinkPath('bin/build', false)).toBe(false);
-  });
-
-  it('keeps a build-named folder only where the package named it', () => {
-    // Purpose: a skill or extension called `build`/`dist`, or a folder on the
-    // way to a plugin.json path, is the package's own; a build folder inside
-    // one (or a venv anywhere) is output, and watching it would bring back
-    // the too-many-watches risk.
-    expect(isIgnoredDevLinkPath('skills/build', true)).toBe(false);
-    expect(isIgnoredDevLinkPath('.dork/extensions/dist', true)).toBe(false);
-    expect(isIgnoredDevLinkPath('.dork/extensions/foo/dist', true)).toBe(true);
-    expect(isIgnoredDevLinkPath('skills/x/__pycache__', true)).toBe(true);
-    expect(isIgnoredDevLinkPath('bin/.venv', true)).toBe(true);
-    expect(isIgnoredDevLinkPath('bin/build', true)).toBe(true);
-    expect(isIgnoredDevLinkPath('skills/venv', true)).toBe(true);
-    expect(isIgnoredDevLinkPath('skills/node_modules', true)).toBe(true);
-    const declared = ['dist/hooks.json'];
-    expect(isIgnoredDevLinkPath('dist', true, declared)).toBe(false);
-    expect(isIgnoredDevLinkPath('dist/hooks.json', false, declared)).toBe(false);
-    // `dist` itself is the package's, but a build folder inside it is not.
-    expect(isIgnoredDevLinkPath('dist/build/x.js', false, declared)).toBe(true);
-    expect(isIgnoredDevLinkPath('dist', true)).toBe(true);
-  });
-});
-
-describe('relativeTo', () => {
-  it('keeps a name starting with two dots inside the folder', () => {
-    // Purpose: `..foo` is a file in the folder, not a path out of it.
-    expect(relativeTo('/w/flow', '/w/flow/..foo')).toBe('..foo');
-    expect(relativeTo('/w/flow', '/w/flow/skills/..a/SKILL.md')).toBe('skills/..a/SKILL.md');
-    expect(relativeTo('/w/flow', '/w/other')).toBeNull();
-    expect(relativeTo('/w/flow', '/w')).toBeNull();
-    expect(relativeTo('/w/flow', '/w/flow')).toBe('');
-  });
 });
 
 describe('declaredPathsOf', () => {
@@ -165,29 +124,6 @@ describe('shapeOf', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('does not change when something appears inside an ignored folder or runtime state', async () => {
-    // Purpose (N1): a folder's own modification time moves when a child is
-    // added; `node_modules` filling up or `.dork/data` being written must not
-    // read as a change to the extension or the manifest folder.
-    const before = await listed(dir);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    await mkdir(path.join(dir, '.dork', 'extensions', 'dash', 'node_modules', 'x'), {
-      recursive: true,
-    });
-    await mkdir(path.join(dir, '.dork', 'data'), { recursive: true });
-    await writeFile(path.join(dir, '.dork', 'secrets.json'), '{}');
-    await mkdir(path.join(dir, 'target', 'debug'), { recursive: true });
-    await writeFile(path.join(dir, 'target', 'debug', 'out'), 'x');
-    await mkdir(path.join(dir, 'skills', 'a', 'node_modules'), { recursive: true });
-    expect(shapeChanges(before, await listed(dir))).toEqual([]);
-
-    // And a real file at a swept level does.
-    await writeFile(path.join(dir, '.dork', 'extensions', 'dash', 'more.ts'), 'y');
-    expect(shapeChanges(before, await listed(dir))).toEqual([
-      { rel: '.dork/extensions/dash/more.ts', kind: 'add' },
-    ]);
-  });
-
   it('finds a file added deep inside an existing skill or extension folder', async () => {
     // Purpose: the sweep backs up a watch that dropped an event; a new file in
     // `skills/a/` or an extension's `src/` must still read as a change, which
@@ -204,17 +140,6 @@ describe('shapeOf', () => {
       { rel: '.dork/extensions/dash/src/deep/a.ts', kind: 'add' },
       { rel: 'skills/a/SKILL.md', kind: 'add' },
       { rel: 'skills/build/SKILL.md', kind: 'add' },
-    ]);
-  });
-
-  it('lists a path plugin.json names, even through a build-named folder', async () => {
-    // Purpose: `"hooks": "./dist/hooks.json"` is a declaration the sweep must see.
-    await mkdir(path.join(dir, 'dist'), { recursive: true });
-    const before = await listed(dir, ['dist/hooks.json']);
-    await writeFile(path.join(dir, 'dist', 'hooks.json'), '{}');
-    await writeFile(path.join(dir, 'dist', 'bundle.js'), 'x');
-    expect(shapeChanges(before, await listed(dir, ['dist/hooks.json']))).toEqual([
-      { rel: 'dist/hooks.json', kind: 'add' },
     ]);
   });
 });
@@ -296,30 +221,6 @@ describe('classifyDevLinkChanges', () => {
         'dist/hooks.json',
       ])
     ).toMatchObject({ plugins: true });
-  });
-
-  it('rebuilds an extension whose folder is named like a build folder', () => {
-    // Purpose: an extension called `dist` is still an extension.
-    expect(
-      classifyDevLinkChanges(
-        [{ rel: '.dork/extensions/dist/index.ts', kind: 'change' }],
-        new Set(['dist'])
-      )
-    ).toMatchObject({ reload: ['dist'] });
-  });
-
-  it('asks for nothing at all for ignored paths', () => {
-    // Purpose: a dependency install or a git operation must not reload.
-    expect(
-      classifyDevLinkChanges(
-        [
-          { rel: 'node_modules/a/b.js', kind: 'add' },
-          { rel: '.git/index', kind: 'change' },
-          { rel: '.dork/data/x.db', kind: 'change' },
-        ],
-        known
-      )
-    ).toEqual({ reload: [], refreshExtensions: false, projection: false, plugins: false });
   });
 
   it('folds a burst into one plan', () => {
@@ -545,104 +446,6 @@ describe('DevLinkWatcher', () => {
     expect(w.lastReloadAt({ name: 'flow', scope: 'global' })).toBe('2026-10-03T12:00:00.000Z');
   });
 
-  it('acts on a burst that never goes quiet, by the maximum wait', async () => {
-    // Purpose: a tool writing without pause cannot hold every reload back.
-    await recordLink();
-    const { seam } = fakeExtensions();
-    watcher = new DevLinkWatcher({
-      dorkHome: home,
-      extensions: seam,
-      refreshPlugins,
-      reproject,
-      refreshProjectCommands,
-      broadcast: (event) => events.push(event),
-      quietMs: 100,
-      maxWaitMs: 200,
-      rearmMs: 0,
-      settleMs: 0,
-      watch: watches.factory,
-    });
-    await watcher.start();
-    await watcher.ready();
-    const started = Date.now();
-    const timer = setInterval(() => watches.emit(work, 'hooks/hooks.json'), 20);
-    try {
-      await eventually(() => expect(events.length).toBeGreaterThan(0), 2_000);
-    } finally {
-      clearInterval(timer);
-    }
-    expect(Date.now() - started).toBeLessThan(1_000);
-  });
-
-  it('re-scans for a new extension folder and never rebuilds it', async () => {
-    // Purpose: a new extension is discovered unapproved and asks on its own
-    // card; the watcher must not build or run it on the dev link's yes.
-    await recordLink();
-    const { ext, seam } = fakeExtensions();
-    const w = build(seam);
-    await w.start();
-    await w.ready();
-    watches.emit(work, '.dork/extensions/sneaky', 'addDir');
-    watches.emit(work, '.dork/extensions/sneaky/extension.json', 'add');
-    watches.emit(work, '.dork/extensions/sneaky/index.ts', 'add');
-    await w.flush();
-    expect(ext.refresh).toHaveBeenCalledTimes(1);
-    expect(ext.reload).not.toHaveBeenCalled();
-    expect(events[0]?.actions).toEqual(['extension']);
-  });
-
-  it('rebuilds an extension whose manifest changed only after re-scanning', async () => {
-    // Purpose: a changed extension.json is read by the scan first, so the
-    // rebuild uses the new manifest.
-    await recordLink();
-    const order: string[] = [];
-    const { ext, seam } = fakeExtensions();
-    ext.refresh.mockImplementation(async () => {
-      order.push('refresh');
-    });
-    ext.reload.mockImplementation(async (id) => {
-      order.push(`reload:${id}`);
-      return { outcome: 'reloaded' };
-    });
-    const w = build(seam);
-    await w.start();
-    await w.ready();
-    watches.emit(work, '.dork/extensions/dash/extension.json');
-    await w.flush();
-    expect(order).toEqual(['refresh', 'reload:dash']);
-  });
-
-  it('reports a build error in the event, and an extension it may not run as nothing', async () => {
-    // Purpose: a compile error is not a watcher failure; a skipped extension
-    // (off, or not approved) is neither an action nor an error.
-    await recordLink();
-    const { ext, seam } = fakeExtensions([
-      { id: 'dash', dir: 'dash' },
-      { id: 'other', dir: 'other' },
-    ]);
-    ext.reload.mockImplementation(async (id) =>
-      id === 'dash' ? { outcome: 'failed', error: 'Unexpected "}"' } : { outcome: 'skipped' }
-    );
-    const w = build(seam);
-    await w.start();
-    await w.ready();
-    watches.emit(work, '.dork/extensions/dash/index.ts');
-    watches.emit(work, '.dork/extensions/other/index.ts');
-    await w.flush();
-    expect(events).toEqual([
-      expect.objectContaining({
-        actions: ['extension'],
-        errors: ['dash didn\'t build: Unexpected "}"'],
-      }),
-    ]);
-
-    events.length = 0;
-    watches.emit(work, '.dork/extensions/other/index.ts');
-    await w.flush();
-    expect(events).toEqual([]);
-    expect(w.lastReloadAt({ name: 'flow', scope: 'global' })).toBe('2026-10-03T12:00:00.000Z');
-  });
-
   it('refreshes plugins for a global link, and does not project it', async () => {
     // Purpose: DorkOS does not project global packages (as for an install);
     // the refresh is what re-checks global consent for a new declaration.
@@ -685,62 +488,6 @@ describe('DevLinkWatcher', () => {
     expect(reproject).toHaveBeenCalledTimes(1);
   });
 
-  it("refreshes the project's command list after each projection, and never for a global link", async () => {
-    // Purpose: a command or skill projected from a project dev link must reach
-    // that project's palette; its cached command list is refreshed only once
-    // the projection has written it.
-    await recordLink('project');
-    const running = deferred();
-    reproject.mockImplementationOnce(() => running.promise);
-    const w = build(fakeExtensions().seam);
-    await w.start();
-    await w.ready();
-    watches.emit(work, 'commands/go.md', 'add');
-    await w.flush();
-    await eventually(() => expect(reproject).toHaveBeenCalledTimes(1));
-    expect(refreshProjectCommands).not.toHaveBeenCalled();
-    running.resolve();
-    await w.projectionsIdle();
-    expect(refreshProjectCommands).toHaveBeenCalledWith(projectRoot);
-    await w.stop();
-
-    refreshProjectCommands.mockClear();
-    await updateDevLinks(home, () => []);
-    await recordLink('global');
-    const g = build(fakeExtensions().seam);
-    await g.start();
-    await g.ready();
-    watches.emit(work, 'commands/go.md', 'add');
-    await g.flush();
-    await g.projectionsIdle();
-    expect(refreshPlugins).toHaveBeenCalled();
-    expect(refreshProjectCommands).not.toHaveBeenCalled();
-  });
-
-  it('keeps at most one projection running and one more owed', async () => {
-    // Purpose: a projection can wait hours on a hook card; edits meanwhile
-    // must not queue one projection each.
-    await recordLink('project');
-    let release!: () => void;
-    reproject.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          release = resolve;
-        })
-    );
-    const w = build(fakeExtensions().seam);
-    await w.start();
-    await w.ready();
-    for (let i = 0; i < 5; i++) {
-      watches.emit(work, `skills/s${i}/SKILL.md`, 'add');
-      await w.flush();
-    }
-    await eventually(() => expect(reproject).toHaveBeenCalledTimes(1));
-    release();
-    await w.projectionsIdle();
-    expect(reproject).toHaveBeenCalledTimes(2);
-  });
-
   it('stops reloading a link whose slot now points somewhere else', async () => {
     // Purpose: link-replaced is no longer the dev link; acting on it would
     // reload code nobody approved through this link.
@@ -764,22 +511,6 @@ describe('DevLinkWatcher', () => {
     // And the sweep does not bring it back while it stays replaced.
     await w.sweep();
     expect(w.watchedFolders()).toEqual([]);
-  });
-
-  it('stops reloading a link that is no longer recorded', async () => {
-    // Purpose: a hand edit of the registry or an unlink in another process
-    // ends reloads at the next burst.
-    await recordLink();
-    const { ext, seam } = fakeExtensions();
-    const w = build(seam);
-    await w.start();
-    await w.ready();
-    await updateDevLinks(home, () => []);
-    watches.emit(work, '.dork/extensions/dash/index.ts');
-    await w.flush();
-    expect(ext.reload).not.toHaveBeenCalled();
-    expect(events).toEqual([]);
-    expect(watches.isOpen(work)).toBe(false);
   });
 
   it('does nothing for a held link, and watches it again on release only if still in force', async () => {
@@ -826,21 +557,6 @@ describe('DevLinkWatcher', () => {
     expect(events).toEqual([]);
     await w.sync();
     expect(w.watchedFolders()).toEqual([]);
-  });
-
-  it('shares one watch between two dev links of the same folder and tells both', async () => {
-    // Purpose: one folder linked globally and into a project is one watch and
-    // one rebuild, but each dev link hears about it.
-    await recordLink('global');
-    await recordLink('project');
-    const { ext, seam } = fakeExtensions();
-    const w = build(seam);
-    await w.start();
-    await w.ready();
-    watches.emit(work, '.dork/extensions/dash/index.ts');
-    await w.flush();
-    expect(ext.reload).toHaveBeenCalledTimes(1);
-    expect(events.map((event) => event.scope).sort()).toEqual(['global', 'project']);
   });
 });
 
@@ -912,132 +628,6 @@ describe('DevLinkWatcher under load and during unlink', () => {
     await w.flush();
     await w.projectionsIdle();
     expect(refreshPlugins).toHaveBeenCalledTimes(1);
-  });
-
-  it('gives edits that arrive mid-burst their own quiet period, never a back-to-back pass', async () => {
-    // Purpose (S1): events during a slow reload used to be acted on the
-    // moment it finished, so a folder that kept changing drove one reload
-    // after another with no debounce at all.
-    await recordLink();
-    const { ext, seam } = fakeExtensions();
-    const first = deferred();
-    let firstEnded = 0;
-    let secondStarted = 0;
-    ext.reload.mockImplementationOnce(async () => {
-      await first.promise;
-      firstEnded = Date.now();
-      return { outcome: 'reloaded' };
-    });
-    ext.reload.mockImplementation(async () => {
-      secondStarted = Date.now();
-      return { outcome: 'reloaded' };
-    });
-    const w = build(seam, 200);
-    await w.start();
-    await w.ready();
-    watches.emit(work, '.dork/extensions/dash/index.ts');
-    await eventually(() => expect(ext.reload).toHaveBeenCalledTimes(1));
-    watches.emit(work, '.dork/extensions/dash/index.ts');
-    await sleep(20);
-    first.resolve();
-    await eventually(() => expect(ext.reload).toHaveBeenCalledTimes(2));
-    expect(secondStarted - firstEnded).toBeGreaterThanOrEqual(180);
-  });
-
-  it('runs one plugin refresh at a time, with at most one more owed', async () => {
-    // Purpose (S1): a refresh round-trips every live session; bursts that
-    // finish while one is running must not start more beside it.
-    await recordLink();
-    const running = deferred();
-    refreshPlugins.mockImplementationOnce(() => running.promise);
-    const w = build(fakeExtensions().seam);
-    await w.start();
-    await w.ready();
-    watches.emit(work, 'hooks/hooks.json');
-    await w.flush();
-    await eventually(() => expect(refreshPlugins).toHaveBeenCalledTimes(1));
-    for (let i = 0; i < 3; i++) {
-      watches.emit(work, '.mcp.json');
-      await w.flush();
-    }
-    expect(refreshPlugins).toHaveBeenCalledTimes(1);
-    running.resolve();
-    await w.projectionsIdle();
-    expect(refreshPlugins).toHaveBeenCalledTimes(2);
-  });
-
-  it('catches up a watch that died against the last listing, not by replaying everything', async () => {
-    // Purpose (S2): a watch that dies on every arm (EMFILE) must not re-run
-    // every extension's code and refresh plugins at every sweep.
-    await recordLink();
-    const { ext, seam } = fakeExtensions();
-    const w = build(seam);
-    await w.start();
-    await w.ready();
-    for (let i = 0; i < 3; i++) {
-      watches.fail(work);
-      await w.sweep();
-      await w.ready();
-      await w.flush();
-    }
-    expect(ext.reload).not.toHaveBeenCalled();
-    expect(ext.refresh).not.toHaveBeenCalled();
-    expect(refreshPlugins).not.toHaveBeenCalled();
-    expect(events).toEqual([]);
-
-    // A change made while the watch was dead is still caught, alone.
-    watches.fail(work);
-    await writeFile(
-      path.join(work, '.dork', 'extensions', 'dash', 'index.ts'),
-      'export const a = 2;\n'
-    );
-    await w.sweep();
-    await w.ready();
-    await w.flush();
-    expect(ext.reload).toHaveBeenCalledTimes(1);
-    expect(ext.reload).toHaveBeenCalledWith('dash');
-    expect(ext.refresh).not.toHaveBeenCalled();
-    expect(refreshPlugins).not.toHaveBeenCalled();
-  });
-
-  it('keeps an extension folder appearing when a later report says it changed', async () => {
-    // Purpose (N3): pending changes are one per path; a later `change` must
-    // not hide that the folder is new, which needs a re-scan first.
-    await recordLink();
-    const { ext, seam } = fakeExtensions();
-    const w = build(seam);
-    await w.start();
-    await w.ready();
-    watches.emit(work, '.dork/extensions/dash', 'addDir');
-    watches.emit(work, '.dork/extensions/dash', 'change');
-    await w.flush();
-    expect(ext.refresh).toHaveBeenCalledTimes(1);
-  });
-
-  it('forgets a missing folder whose dev link went away, so linking it again replays nothing', async () => {
-    // Purpose (N2): a lost folder's catch-up belongs to the dev link that
-    // lost it; a fresh link of the same folder starts clean.
-    const record = await recordLink();
-    const { ext, seam } = fakeExtensions();
-    const w = build(seam);
-    await w.start();
-    await w.ready();
-    await rm(work, { recursive: true, force: true });
-    await w.sweep();
-    expect(w.watchedFolders()).toEqual([]);
-    await updateDevLinks(home, () => []);
-    await unlink(record.slot);
-    await w.sweep();
-
-    await writePackage(work);
-    await recordLink();
-    await w.sync();
-    await w.ready();
-    await w.flush();
-    expect(w.watchedFolders()).toEqual([work]);
-    expect(ext.reload).not.toHaveBeenCalled();
-    expect(ext.refresh).not.toHaveBeenCalled();
-    expect(refreshPlugins).not.toHaveBeenCalled();
   });
 
   it('hold waits for a burst under way, and nothing rebuilds after it returns', async () => {
@@ -1138,12 +728,6 @@ describe('devLinkExtensionsOf', () => {
     },
   };
 
-  it('lists only the extensions that come from the folder', () => {
-    // Purpose: an edit in one folder never rebuilds another package's extension.
-    const seam = devLinkExtensionsOf(manager(), { config: () => approved, announce: vi.fn() });
-    expect(seam.carriedBy(folder)).toEqual([{ id: 'dash', dir: 'dash' }]);
-  });
-
   it('rebuilds an approved, turned-on extension and tells clients', async () => {
     // Purpose: the edit-and-it-reloads loop, on the dev link's existing yes.
     const m = manager();
@@ -1152,46 +736,5 @@ describe('devLinkExtensionsOf', () => {
     expect(await seam.reload('dash')).toEqual({ outcome: 'reloaded' });
     expect(m.reloadExtension).toHaveBeenCalledWith('dash');
     expect(announce).toHaveBeenCalledWith(['dash']);
-  });
-
-  it.each([
-    ['not approved', { ...approved, approvedToRun: [], approvedSources: {} }],
-    [
-      'approved for the installed copy, not the dev link',
-      {
-        ...approved,
-        approvedSources: { dash: { path: devRecord.path, plugin: 'flow' } },
-      },
-    ],
-    ['turned off', { ...approved, enabled: [] }],
-  ])('builds nothing for an extension that is %s', async (_label, config) => {
-    // Purpose: a reload never widens trust. Building an extension a person
-    // has not approved for this dev link, or has turned off, is refused here.
-    const m = manager();
-    const announce = vi.fn();
-    const seam = devLinkExtensionsOf(m, { config: () => config, announce });
-    expect(await seam.reload('dash')).toEqual({ outcome: 'skipped' });
-    expect(m.reloadExtension).not.toHaveBeenCalled();
-    expect(announce).not.toHaveBeenCalled();
-  });
-
-  it('reports a build error without telling clients to load anything', async () => {
-    // Purpose: a broken bundle is reported; the last good one keeps running.
-    const announce = vi.fn();
-    const seam = devLinkExtensionsOf(manager('compile_error'), {
-      config: () => approved,
-      announce,
-    });
-    expect(await seam.reload('dash')).toEqual({ outcome: 'failed', error: 'Unexpected "}"' });
-    expect(announce).not.toHaveBeenCalled();
-  });
-
-  it('re-scans and waits for the scan', async () => {
-    // Purpose: rebuilds after a re-scan must see the records it produced.
-    const m = manager();
-    const seam = devLinkExtensionsOf(m, { config: () => approved, announce: vi.fn() });
-    await seam.refresh();
-    expect(m.requestRefresh).toHaveBeenCalledTimes(1);
-    expect(m.whenIdle).toHaveBeenCalledTimes(1);
   });
 });

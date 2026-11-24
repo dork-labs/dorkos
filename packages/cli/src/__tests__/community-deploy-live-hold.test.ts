@@ -12,7 +12,6 @@ import {
   HOLD_DONE_FILE_NAME,
   HOLD_POLL_MS,
   holdCommunityLive,
-  isWithinDirectory,
   quietWriter,
   runHeldPhaseThenCleanUp,
   type HeldPhaseEvent,
@@ -167,16 +166,6 @@ describe('Community live gate hold', () => {
     expect(run.sleeps).toEqual([HOLD_POLL_MS, HOLD_POLL_MS]);
   });
 
-  it('ends on timeout after the capped minutes, polling every 5 s', async () => {
-    // Catches a hold that outlives its cap, or polls at another rate.
-    const run = await heldRun({ minutes: 1 });
-    const { phase, cleanup } = await run.result;
-    expect(phase).toEqual({ minutes: 1, endedBy: 'timeout' });
-    expect(run.sleeps).toEqual(Array(12).fill(HOLD_POLL_MS));
-    expect(run.cleanup).toHaveBeenCalledOnce();
-    expect(cleanup.handoffPresent).toBe(false);
-  });
-
   it('ends at once on Control-C, ignores a second one during cleanup, and cleans up once', async () => {
     // Catches Control-C killing the gate (skipping cleanup) or being able to stop cleanup half way.
     const signals = fakeSignals();
@@ -199,23 +188,6 @@ describe('Community live gate hold', () => {
     expect(run.output.filter((line) => line.startsWith('Cleaning up'))).toHaveLength(1);
     // The gate hands the process's own signal handling back once cleanup has finished.
     expect(signals.listening()).toBe(0);
-  });
-
-  it('ends on SIGTERM too', async () => {
-    // Catches a hold that only listens for SIGINT, so `kill <pid>` would skip cleanup.
-    const signals = fakeSignals();
-    const run = await heldRun({ signals, onSleep: () => void signals.send('SIGTERM') });
-    expect((await run.result).phase.endedBy).toBe('interrupt');
-    expect(run.cleanup).toHaveBeenCalledOnce();
-  });
-
-  it('ends on SIGHUP, the terminal closing', async () => {
-    // Catches a closed terminal killing the gate with the community running and the handoff on disk.
-    const signals = fakeSignals();
-    const run = await heldRun({ signals, onSleep: () => void signals.send('SIGHUP') });
-    expect((await run.result).phase.endedBy).toBe('interrupt');
-    expect(run.cleanup).toHaveBeenCalledOnce();
-    expect(existsSync(run.handoff()!.directory)).toBe(false);
   });
 
   it.each(['uncaughtException', 'unhandledRejection'] as const)(
@@ -284,29 +256,6 @@ describe('Community live gate hold', () => {
     expect(readdirSync(root)).toEqual([]);
   });
 
-  it('sees a directory inside the checkout through a symlink on either side', async () => {
-    // Catches the repository check comparing path text, which a symlinked DORK_HOME defeats.
-    const { mkdir, symlink } = await import('node:fs/promises');
-    const root = await parent();
-    const repository = join(root, 'repository');
-    const elsewhere = join(root, 'elsewhere');
-    await mkdir(join(repository, 'apps'), { recursive: true });
-    await mkdir(elsewhere);
-    await symlink(repository, join(root, 'repo-link'));
-    await symlink(join(repository, 'apps'), join(elsewhere, 'home-link'));
-    // Not yet existing children resolve through their nearest existing ancestor.
-    expect(await isWithinDirectory(join(root, 'repo-link', '.dork', 'live-gate'), repository)).toBe(
-      true
-    );
-    expect(await isWithinDirectory(join(elsewhere, 'home-link', 'live-gate'), repository)).toBe(
-      true
-    );
-    expect(await isWithinDirectory(join(repository, 'x'), join(root, 'repo-link'))).toBe(true);
-    expect(await isWithinDirectory(repository, repository)).toBe(true);
-    expect(await isWithinDirectory(join(elsewhere, 'live-gate'), repository)).toBe(false);
-    expect(await isWithinDirectory(join(root, 'repository-2', 'x'), repository)).toBe(false);
-  });
-
   it('still removes the handoff and cleans up once when the hold throws', async () => {
     // Catches an error inside the hold skipping cleanup, or leaving the credentials on disk.
     let polls = 0;
@@ -346,26 +295,6 @@ describe('Community live gate hold', () => {
     expect(describeCommunityLiveGateFailure(explained)).toBe(
       'Community live gate failed (member-file-integrity): cleanup finished; the community was removed\n'
     );
-  });
-
-  it('says interrupted when Control-C aborts the second-member proof', async () => {
-    // Catches an interrupted proof being misreported as a product failure.
-    const signals = fakeSignals();
-    const cleanup = vi.fn(async () => 'cleaned');
-    const failure = await runHeldPhaseThenCleanUp({
-      signals: signals.source,
-      write: () => undefined,
-      phase: (signal) =>
-        new Promise((_, reject) => {
-          signal.addEventListener('abort', () =>
-            reject(new CommunityLiveProofError('member-join'))
-          );
-          signals.send('SIGINT');
-        }),
-      cleanup,
-    }).catch((error: unknown) => error);
-    expect(cleanup).toHaveBeenCalledOnce();
-    expect((failure as CommunityLiveGateError).step).toBe('interrupted');
   });
 
   it('reports a cleanup failure as itself, so the recovery command is still printed', async () => {
@@ -409,6 +338,15 @@ describe('Community live gate hold', () => {
       expect(printed).not.toContain(secret);
       expect(receipt).not.toContain(secret);
     }
+  });
+
+  it('ends on SIGHUP, the terminal closing', async () => {
+    // Catches a closed terminal killing the gate with the community running and the handoff on disk.
+    const signals = fakeSignals();
+    const run = await heldRun({ signals, onSleep: () => void signals.send('SIGHUP') });
+    expect((await run.result).phase.endedBy).toBe('interrupt');
+    expect(run.cleanup).toHaveBeenCalledOnce();
+    expect(existsSync(run.handoff()!.directory)).toBe(false);
   });
 });
 

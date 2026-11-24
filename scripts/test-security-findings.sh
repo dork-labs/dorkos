@@ -67,14 +67,19 @@ jq -r "$filter" <<<"$data"
 EOF
 
 # Stub `age`. Encrypting logs its argv and writes fixed armour that carries
-# nothing of the input. Decrypting checks it got that armour back.
+# nothing of the input. Decrypting checks it got armour back and prints
+# "stub plaintext" plus the armour's one body line, so a test can tell blocks
+# apart and see their order; a body line of `bG9ja2Vk` stands for a block this
+# identity cannot open.
 cat >"$tmp/age" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$AGE_LOG"
 [ -n "${AGE_FAIL:-}" ] && { echo "age: error: stub failure" >&2; exit 1; }
 if [ "$1" = -d ]; then
-  [ "$(cat "$4")" = "$(printf '%s\n' '-----BEGIN AGE ENCRYPTED FILE-----' 'c3R1Yi1jaXBoZXJ0ZXh0' '-----END AGE ENCRYPTED FILE-----')" ] || { echo "age: error: bad armour" >&2; exit 1; }
-  echo "stub plaintext"
+  mid=$(sed -n 2p "$4")
+  [ "$(cat "$4")" = "$(printf '%s\n' '-----BEGIN AGE ENCRYPTED FILE-----' "$mid" '-----END AGE ENCRYPTED FILE-----')" ] || { echo "age: error: bad armour" >&2; exit 1; }
+  [ "$mid" = bG9ja2Vk ] && { echo "age: error: no identity matched" >&2; exit 1; }
+  if [ "$mid" = c3R1Yi1jaXBoZXJ0ZXh0 ]; then echo "stub plaintext"; else echo "stub plaintext $mid"; fi
   exit 0
 fi
 out=
@@ -255,8 +260,8 @@ rc=$?
 check 'helper: refused when the findings directory is not absolute' 2 "$rc"
 
 # ── list and decrypt (Security's side) ───────────────────────────────────────
-block() { # head
-  printf '<!-- dorkos-security-findings v1 pr=%s head=%s\\n-----BEGIN AGE ENCRYPTED FILE-----\\nc3R1Yi1jaXBoZXJ0ZXh0\\n-----END AGE ENCRYPTED FILE-----\\n-->' "${2:-12}" "$1"
+block() { # head [pr] [armour body line]
+  printf '<!-- dorkos-security-findings v1 pr=%s head=%s\\n-----BEGIN AGE ENCRYPTED FILE-----\\n%s\\n-----END AGE ENCRYPTED FILE-----\\n-->' "${2:-12}" "$1" "${3:-c3R1Yi1jaXBoZXJ0ZXh0}"
 }
 cm() { # login type time body [pr]
   printf '{"user":{"login":"%s","type":"%s"},"created_at":"%s","issue_url":"https://api.github.com/repos/made-up/repo/issues/%s","body":"%s"}' \
@@ -302,6 +307,44 @@ FAKE_COMMENTS="[$(cm "$GA" Bot 2026-11-24T10:00:00Z "$(block $OLD)")]" \
   FAKE_PULL="{\"head\":{\"sha\":\"$H\"}}" AGE=$tmp/age run decrypt 12 "$idf"
 check 'decrypt: an older head still decrypts' 0 "$rc"
 check 'decrypt: but is flagged as not current' yes "$(has "$out" 'NOT the current head')"
+
+# Every block for the current head, oldest first, each under its own header.
+# The comments arrive newest first here, so the order is the script's doing.
+FAKE_COMMENTS="[$(cm "$GA" Bot 2026-11-24T12:00:00Z "$(block $H 12 c2Vjb25k)"),$(cm "$GA" Bot 2026-11-24T10:00:00Z "$(block $H 12 Zmlyc3Q=)")]" \
+  FAKE_PULL="{\"head\":{\"sha\":\"$H\"}}" AGE=$tmp/age run decrypt 12 "$idf"
+check 'decrypt: two blocks for the current head: exit 0' 0 "$rc"
+check 'decrypt: both are shown, oldest first' \
+  "stub plaintext Zmlyc3Q=|stub plaintext c2Vjb25k" "$(grep '^stub plaintext' <<<"$out" | paste -sd '|' -)"
+check 'decrypt: each has a header with its time, head and place' \
+  "--- #12 block 1 of 2: posted 2026-11-24T10:00:00Z at aaaaaaa (the current head).|--- #12 block 2 of 2: posted 2026-11-24T12:00:00Z at aaaaaaa (the current head)." \
+  "$(grep '^--- ' <<<"$out" | paste -sd '|' -)"
+check 'decrypt: the headers are on stderr, the plaintext on stdout' \
+  "stub plaintext Zmlyc3Q=|stub plaintext c2Vjb25k" \
+  "$(FAKE_COMMENTS="[$(cm "$GA" Bot 2026-11-24T12:00:00Z "$(block $H 12 c2Vjb25k)"),$(cm "$GA" Bot 2026-11-24T10:00:00Z "$(block $H 12 Zmlyc3Q=)")]" \
+    FAKE_PULL="{\"head\":{\"sha\":\"$H\"}}" AGE=$tmp/age "$SCRIPT" decrypt 12 "$idf" 2>/dev/null | paste -sd '|' -)"
+
+FAKE_COMMENTS="[$(cm "$GA" Bot 2026-11-24T09:00:00Z "$(block $OLD 12 b2xk)"),$(cm "$GA" Bot 2026-11-24T10:00:00Z "$(block $H 12 bmV3)")]" \
+  FAKE_PULL="{\"head\":{\"sha\":\"$H\"}}" AGE=$tmp/age run decrypt 12 "$idf"
+check 'decrypt: an older head and the current one: exit 0' 0 "$rc"
+check 'decrypt: only the current head is shown' "stub plaintext bmV3" "$(grep '^stub plaintext' <<<"$out" | paste -sd '|' -)"
+check 'decrypt: as block 1 of 1' yes "$(has "$out" 'block 1 of 1: posted 2026-11-24T10:00:00Z at aaaaaaa (the current head)')"
+
+FAKE_COMMENTS="[$(cm "$GA" Bot 2026-11-24T09:00:00Z "$(block $OLD 12 b2xk)"),$(cm "$GA" Bot 2026-11-24T10:00:00Z "$(block $OLD 12 b2xkZXI=)")]" \
+  FAKE_PULL="{\"head\":{\"sha\":\"$H\"}}" AGE=$tmp/age run decrypt 12 "$idf"
+check 'decrypt: only older heads: exit 0' 0 "$rc"
+check 'decrypt: falls back to the newest block at all' "stub plaintext b2xkZXI=" "$(grep '^stub plaintext' <<<"$out" | paste -sd '|' -)"
+check 'decrypt: flagged as NOT the current head' yes "$(has "$out" 'at bbbbbbb. NOT the current head (aaaaaaa)')"
+
+FAKE_COMMENTS="[$(cm "$GA" Bot 2026-11-24T10:00:00Z "$(block $H 12 bG9ja2Vk)"),$(cm "$GA" Bot 2026-11-24T11:00:00Z "$(block $H 12 b3Blbg==)")]" \
+  FAKE_PULL="{\"head\":{\"sha\":\"$H\"}}" AGE=$tmp/age run decrypt 12 "$idf"
+check 'decrypt: one block the identity cannot open, one it can: exit 0' 0 "$rc"
+check 'decrypt: reports the one it could not open' yes "$(has "$out" 'could not decrypt block 1 of 2')"
+check 'decrypt: and still shows the other' "stub plaintext b3Blbg==" "$(grep '^stub plaintext' <<<"$out" | paste -sd '|' -)"
+
+FAKE_COMMENTS="[$(cm "$GA" Bot 2026-11-24T10:00:00Z "$(block $H 12 bG9ja2Vk)"),$(cm "$GA" Bot 2026-11-24T11:00:00Z "$(block $H 12 bG9ja2Vk)")]" \
+  FAKE_PULL="{\"head\":{\"sha\":\"$H\"}}" AGE=$tmp/age run decrypt 12 "$idf"
+check 'decrypt: no block opens: exit 1' 1 "$rc"
+check 'decrypt: both were tried' 2 "$(grep -c -- '^-d -i' "$AGE_LOG")"
 
 FAKE_COMMENTS="[$(cm someone User 2026-11-24T10:00:00Z "$(block $H)"),$(cm 'claude[bot]' Bot 2026-11-24T10:00:00Z "$(block $H)")]" \
   FAKE_PULL="{\"head\":{\"sha\":\"$H\"}}" AGE=$tmp/age run decrypt 12 "$idf"

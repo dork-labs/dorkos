@@ -14,6 +14,8 @@
 import type { IncomingHttpHeaders } from 'node:http';
 import type { DataProxyConfig } from '@dorkos/extension-api';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
+import { PROBLEM_CONTENT_TYPE, type Problem } from '@dorkos/shared/problem';
+import { problemBody } from '@dorkos/http-kit';
 import { logger } from '../../../lib/logger.js';
 import { honoRequestFacts } from '../../../http/request-facts.js';
 import {
@@ -129,8 +131,8 @@ export interface ProxyAnswer {
   readonly status: number;
   /** Headers to set. */
   readonly headers: Readonly<Record<string, string>>;
-  /** A JSON body DorkOS wrote (a refusal or a failure). */
-  readonly json?: unknown;
+  /** A refusal or a failure DorkOS wrote, as a problem document. */
+  readonly problem?: Problem;
   /** The upstream's body, as text. */
   readonly text?: string;
 }
@@ -219,14 +221,12 @@ export function createProxyForwarder(
       logger.warn(
         `[ext:${extensionId}] Refused a proxy target outside ${base.origin}${base.pathname} (after ${stage}): ${call.method} ${call.url}`
       );
-      return {
-        status: 400,
-        headers: {},
-        json: {
-          error: 'Proxy path is outside the extension upstream',
-          code: 'PROXY_PATH_NOT_ALLOWED',
-        },
-      };
+      return refusal(
+        problemBody('outside_boundary', {
+          status: 400,
+          detail: 'That path is outside what this extension may reach.',
+        })
+      );
     };
 
     // Confine the caller's sub-path to the upstream the manifest named, BEFORE
@@ -270,14 +270,11 @@ export function createProxyForwarder(
     // Retrieve auth secret
     const secret = await secrets.get(config.authSecret);
     if (!secret) {
-      return {
-        status: 503,
-        headers: {},
-        json: {
-          error: `Secret '${config.authSecret}' not configured for extension '${extensionId}'`,
-          hint: `Set the secret via PUT /api/extensions/${extensionId}/secrets/${config.authSecret}`,
-        },
-      };
+      return refusal(
+        problemBody('temporarily_unavailable', {
+          detail: `Set the ${config.authSecret} secret for this extension in Settings.`,
+        })
+      );
     }
 
     const authValue = formatAuthValue(config.authType, secret);
@@ -322,24 +319,26 @@ export function createProxyForwarder(
       return { status: upstreamRes.status, headers, text: await upstreamRes.text() };
     } catch (err) {
       logger.error(`[ext:${extensionId}] Proxy error for ${call.method} ${targetUrl}:`, err);
-      return {
-        status: 502,
-        headers: {},
-        json: {
-          error: 'Proxy request failed',
-          details: err instanceof Error ? err.message : String(err),
-        },
-      };
+      return refusal(
+        problemBody('upstream_unavailable', {
+          detail: 'The extension’s service didn’t answer. Try again.',
+        })
+      );
     }
   };
+}
+
+/** An answer DorkOS wrote itself: a problem document, at its own status. */
+function refusal(problem: Problem): ProxyAnswer {
+  return { status: problem.status, headers: {}, problem };
 }
 
 /** Statuses whose response may not carry a body. */
 const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
 
 /**
- * The response Express's `res.json` and `res.send` wrote for an answer: JSON
- * as `application/json; charset=utf-8`, and text with `charset=utf-8` set on
+ * The response Express's `res.json` and `res.send` wrote for an answer: a problem
+ * as `application/problem+json`, and text with `charset=utf-8` set on
  * whatever type it carries (`text/html` when it carries none). Every answer
  * also carries {@link OUTBOUND_FORCED}, as a fetch handler's does, so an
  * upstream's HTML opened as a page runs nothing on DorkOS's origin.
@@ -350,9 +349,9 @@ const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
 export function proxyResponse(answer: ProxyAnswer, extra: Record<string, string> = {}): Response {
   const headers = new Headers({ ...extra, ...answer.headers, ...OUTBOUND_FORCED });
   let body: string;
-  if (answer.json !== undefined) {
-    body = JSON.stringify(answer.json);
-    headers.set('Content-Type', 'application/json; charset=utf-8');
+  if (answer.problem !== undefined) {
+    body = JSON.stringify(answer.problem);
+    headers.set('Content-Type', PROBLEM_CONTENT_TYPE);
   } else {
     body = answer.text ?? '';
     const type = headers.get('Content-Type') ?? 'text/html';
@@ -389,10 +388,7 @@ export function createProxyHandler(
     if (!segments) return null;
     const verdict = limit(honoRequestFacts(c));
     if (!verdict.allowed) {
-      return proxyResponse(
-        { status: 429, headers: {}, json: EXTENSION_PROXY_RATE_LIMITED_BODY },
-        verdict.headers
-      );
+      return proxyResponse(refusal(EXTENSION_PROXY_RATE_LIMITED_BODY), verdict.headers);
     }
     const query = new URL(c.req.url).search;
     const answer = await forward({

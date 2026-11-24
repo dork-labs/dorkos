@@ -26,6 +26,7 @@ import {
 } from '@dorkos/db';
 import { SessionEventStore } from '../../session/session-event-store.js';
 import { latestClaudeRoomServerFailure } from '../../session/history/latest-room-failure.js';
+import { FailedSeatLedger } from './failed-seat-ledger.js';
 
 const authoritySchema = z
   .object({
@@ -68,8 +69,12 @@ type RecoveryReplacement = {
 /** Atomic publication, strict reads and ownership for this recovery path only. */
 export class RequiredRoomLaunchStore {
   private readonly owners = new Map<string, { token: symbol; dispatchId: string }>();
+  /** The source half: failed room chats a later process may still recover once (DOR-4626). */
+  readonly failures: FailedSeatLedger;
   /** Bind this store to the app database; a new instance has no pending attempt ownership. */
-  constructor(private readonly db: Db | DbTransaction) {}
+  constructor(private readonly db: Db | DbTransaction) {
+    this.failures = new FailedSeatLedger(db);
+  }
 
   /** Strict bidirectional lookup. Aliased old metadata retains the same immutable reference. */
   forSession(sessionId: string): RequiredRoomLaunch | null {

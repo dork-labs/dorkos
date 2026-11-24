@@ -102,7 +102,7 @@ describe('the warning', () => {
     transport.readRoomRepoStatus = vi
       .fn()
       .mockRejectedValue(
-        Object.assign(new Error('no git here'), { code: 'ROOM_REPO_GIT_UNAVAILABLE', status: 409 })
+        Object.assign(new Error('no git here'), { code: 'room_repo_git_unavailable', status: 409 })
       );
     renderWarning(transport);
 
@@ -231,7 +231,7 @@ describe('the two ways out', () => {
     transport.repairRoomMain = vi
       .fn()
       .mockRejectedValue(
-        Object.assign(new Error('Only you can decide'), { code: 'OPERATOR_ONLY', status: 403 })
+        Object.assign(new Error('Only you can decide'), { code: 'operator_only', status: 403 })
       );
     renderWarning(transport);
 

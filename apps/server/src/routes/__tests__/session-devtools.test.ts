@@ -73,7 +73,7 @@ describe('POST /api/sessions/:id/devtools/ingest', () => {
   it('rejects a malformed batch with 400', async () => {
     const res = await ingest({ seq: 'not-a-number', console: [], network: [] });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('VALIDATION_ERROR');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('rejects an over-cap batch with 413 (distinct from a malformed 400)', async () => {
@@ -84,7 +84,7 @@ describe('POST /api/sessions/:id/devtools/ingest', () => {
     }));
     const res = await ingest({ seq: 1, console, network: [] });
     expect(res.status).toBe(413);
-    expect(res.body.code).toBe('BATCH_TOO_LARGE');
+    expect(res.body.code).toBe('request_too_large');
   });
 
   it('rejects an entry whose serialized args exceed the size cap with 413', async () => {
@@ -107,7 +107,7 @@ describe('POST /api/sessions/:id/devtools/ingest', () => {
       id
     );
     expect(res.status).toBe(413);
-    expect(res.body.code).toBe('BATCH_TOO_LARGE');
+    expect(res.body.code).toBe('request_too_large');
     // Nothing lands in the buffer for a rejected batch.
     expect(devtoolsCaptureStore.read(id)).toBeUndefined();
   });
@@ -148,7 +148,7 @@ describe('POST /api/sessions/:id/devtools/ingest', () => {
       id
     );
     expect(res.status).toBe(413);
-    expect(res.body.code).toBe('BATCH_TOO_LARGE');
+    expect(res.body.code).toBe('request_too_large');
     expect(devtoolsCaptureStore.read(id)).toBeUndefined();
   });
 });

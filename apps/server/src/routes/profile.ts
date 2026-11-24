@@ -20,7 +20,6 @@
  */
 import { Readable } from 'node:stream';
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { DisplayNameSource } from '@dorkos/shared/config-schema';
 import {
   ProfileUpdateRequestSchema,
@@ -28,14 +27,14 @@ import {
   type ProfileUpdateResponse,
 } from '@dorkos/shared/team-schemas';
 import { logError, logger } from '../lib/logger.js';
-import { discardStream, errorBody } from '../lib/route-utils.js';
+import { discardStream } from '../lib/route-utils.js';
 import type { AuthorRecord, AuthorRegistry } from '../services/rooms/author-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { parseUploads, UploadLimitError, type UploadedFile } from '../http/uploads.js';
-import { isOwnerCaller, roomErrorReply } from './room-error-response.js';
+import { isOwnerCaller, sendRoomError } from './room-error-response.js';
 import { callerAccessOf, type CallerAccess } from './caller-access.js';
 import { OPERATOR_SAVE_SOURCE } from '../services/identity/display-name-provenance.js';
 import {
@@ -160,12 +159,11 @@ export function createProfileRouter(deps: ProfileRouterDeps): Hono<ApiEnv> {
       // `read-cursors.ts` shares it: a refusal that reads one way on a room
       // route and another here would be two answers to one question. No
       // caller was resolved, so nobody is the owner asking.
-      const reply = roomErrorReply(err, 'profile caller', () => false);
-      return { refusal: c.json(reply.body, reply.status as ContentfulStatusCode) };
+      return { refusal: sendRoomError(c, err, 'profile caller', () => false) };
     }
     if (caller.kind !== 'human') {
-      const body = errorBody(`Only a person can change a profile ${subject}.`, 'OPERATOR_ONLY');
-      return { refusal: c.json(body, 403) };
+      const detail = `Only a person can change a profile ${subject}.`;
+      return { refusal: problem(c, 'operator_only', { detail }) };
     }
     return { caller };
   }
@@ -189,11 +187,8 @@ export function createProfileRouter(deps: ProfileRouterDeps): Hono<ApiEnv> {
     // `null` is a real answer, not a missing one: with no account the `'local'`
     // sentinel IS the owner, which is what keeps the default install working.
     if (!deps.authors.isOwner(operator.caller.id, deps.ownerAccount()?.id ?? null)) {
-      const body = errorBody(
-        `Only the person who owns this install can change this ${subject}.`,
-        'OPERATOR_ONLY'
-      );
-      return { refusal: c.json(body, 403) };
+      const detail = `Only the person who owns this install can change this ${subject}.`;
+      return { refusal: problem(c, 'operator_only', { detail }) };
     }
     return operator;
   }
@@ -231,10 +226,7 @@ export function createProfileRouter(deps: ProfileRouterDeps): Hono<ApiEnv> {
       deps.authors.linkToOwner(c.req.param('authorId'), deps.ownerAccount()?.id ?? null);
       return c.body(null, 204);
     } catch (err) {
-      const reply = roomErrorReply(err, 'POST /identities/:authorId', () =>
-        isOwnerCaller(owner.caller)
-      );
-      return c.json(reply.body, reply.status as ContentfulStatusCode);
+      return sendRoomError(c, err, 'POST /identities/:authorId', () => isOwnerCaller(owner.caller));
     }
   });
 
@@ -252,10 +244,9 @@ export function createProfileRouter(deps: ProfileRouterDeps): Hono<ApiEnv> {
       deps.authors.unlinkFromOwner(c.req.param('authorId'));
       return c.body(null, 204);
     } catch (err) {
-      const reply = roomErrorReply(err, 'DELETE /identities/:authorId', () =>
+      return sendRoomError(c, err, 'DELETE /identities/:authorId', () =>
         isOwnerCaller(owner.caller)
       );
-      return c.json(reply.body, reply.status as ContentfulStatusCode);
     }
   });
 
@@ -353,8 +344,9 @@ export function createProfileRouter(deps: ProfileRouterDeps): Hono<ApiEnv> {
       return uploadRefusal(c, err);
     }
     if (!file?.buffer) {
-      const body = errorBody(`Attach the image as the '${AVATAR_FIELD}' field.`, 'AVATAR_MISSING');
-      return c.json(body, 400);
+      return problem(c, 'avatar_missing', {
+        detail: `Attach the image as the '${AVATAR_FIELD}' field.`,
+      });
     }
 
     // The bytes decide, never the filename or the Content-Type the client
@@ -364,11 +356,9 @@ export function createProfileRouter(deps: ProfileRouterDeps): Hono<ApiEnv> {
     const sniffed = sniffAvatarContentType(file.buffer);
     const contentType = isAvatarContentType(sniffed) ? sniffed : null;
     if (!contentType) {
-      const body = errorBody(
-        'That file is not a PNG, JPEG, or WebP image.',
-        'AVATAR_TYPE_UNSUPPORTED'
-      );
-      return c.json(body, 415);
+      return problem(c, 'avatar_type_unsupported', {
+        detail: 'That file is not a PNG, JPEG, or WebP image.',
+      });
     }
 
     try {
@@ -413,7 +403,7 @@ export function createProfileRouter(deps: ProfileRouterDeps): Hono<ApiEnv> {
       return storeRefusal(c, err, 'GET /avatar/:id');
     }
     if (!stored) {
-      return c.json(errorBody('No photo for that identity.', 'AVATAR_NOT_FOUND'), 404);
+      return problem(c, 'not_found', { detail: 'No photo for that identity.' });
     }
 
     c.header('Content-Type', stored.contentType);
@@ -476,10 +466,10 @@ function uploadRefusal(c: Context<ApiEnv>, err: unknown): Response {
 /** Turn a store failure into a status. An unusable id is the caller's fault. */
 function storeRefusal(c: Context<ApiEnv>, err: unknown, where: string): Response {
   if (err instanceof InvalidAvatarIdError) {
-    return c.json(errorBody('That is not a usable identity id.', 'AVATAR_ID_INVALID'), 400);
+    return problem(c, 'invalid_request', { detail: 'That is not a usable identity id.' });
   }
   logger.error(`[Profile] ${where} failed`, logError(err));
-  return c.json(errorBody('Could not store that photo.', 'AVATAR_STORE_FAILED'), 500);
+  return problem(c, 'internal_error', { detail: 'Couldn’t store that photo. Try again.' });
 }
 
 /**

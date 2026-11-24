@@ -183,7 +183,7 @@ describe('POST /api/agents/create', () => {
       .send({ name: 'my-agent', model: 'opus' });
 
     expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ code: 'UNSUPPORTED_MODEL' });
+    expect(res.body).toMatchObject({ code: 'invalid_request' });
     expect(mockWriteManifest).not.toHaveBeenCalled();
   });
 
@@ -252,21 +252,22 @@ describe('POST /api/agents/create', () => {
       .send({ name: 'existing-agent' });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toContain('DorkOS project');
+    expect(res.body.code).toBe('conflict');
+    expect(res.body.detail).toContain('DorkOS project');
   });
 
   it('returns 400 for invalid agent name', async () => {
     const res = await request(testServer).post('/api/agents/create').send({ name: 'INVALID_NAME' });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Validation failed');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('returns 400 for missing name', async () => {
     const res = await request(testServer).post('/api/agents/create').send({});
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Validation failed');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('rolls back on scaffold failure — directory cleaned up', async () => {
@@ -421,6 +422,6 @@ describe('POST /api/agents/create', () => {
       .send({ name: 'my-agent', directory: '/etc/evil' });
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
   });
 });

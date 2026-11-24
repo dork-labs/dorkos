@@ -4,7 +4,6 @@
  * @module routes/marketplace/package-actions
  */
 import { z } from 'zod';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { PackageType } from '@dorkos/marketplace';
 import { logger } from '../../lib/logger.js';
 import {
@@ -24,7 +23,7 @@ import { locateInstallRoot } from '../../services/marketplace/lib/locate-install
 import { scanInstallationRecords } from '../../services/marketplace/installed-scanner.js';
 import { trustedCaller } from '../../services/core/capabilities/index.js';
 import { resolveDecisionAuthority } from '../../services/core/approvals/index.js';
-import { OPERATOR_COOKIE_REQUIRED_CODE, readCallerAuthority } from '../../lib/caller-authority.js';
+import { readCallerAuthority } from '../../lib/caller-authority.js';
 import {
   KeptFilesChangedError,
   keepPackageFiles,
@@ -35,13 +34,13 @@ import {
 } from '../../services/marketplace/lib/integrity/strict-record.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceContext, MarketplaceRouteContext } from './context.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, sendProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../../http/request-facts.js';
 import { runFrontDoorWrite } from '../front-door-step-up.js';
 import {
   errorResponse,
   InstallRequestBodySchema,
-  mapErrorToStatus,
+  mapErrorToProblem,
   outdatedClientResponse,
   validationFailed,
 } from './shared.js';
@@ -91,13 +90,16 @@ const KeepFilesRequestBodySchema = z
 /** Answer a keep-files that failed: files that changed since they were shown, or the mapped error. */
 function keepFilesFailed(c: MarketplaceContext, name: string, err: unknown): Response {
   if (err instanceof KeptFilesChangedError) {
-    return c.json({ error: err.message, code: 'kept_files_changed' }, 409);
+    logger.info(`[Marketplace] Kept files of ${name} changed`, { error: err.message });
+    return problem(c, 'precondition_failed', {
+      detail: 'The kept files changed since you looked. Nothing was changed.',
+    });
   }
-  const mapped = mapErrorToStatus(err);
+  const mapped = mapErrorToProblem(err);
   if (mapped.status >= 500) {
     logger.error(`[Marketplace] Failed to keep the files of ${name}`, err);
   }
-  return c.json(mapped.body, mapped.status as ContentfulStatusCode);
+  return sendProblem(c, mapped);
 }
 
 /**
@@ -312,11 +314,11 @@ export function mountPackageActionRoutes(
         message: describeStrictRebuild(name, result),
       });
     } catch (err) {
-      const mapped = mapErrorToStatus(err);
+      const mapped = mapErrorToProblem(err);
       if (mapped.status >= 500) {
         logger.error(`[Marketplace] Failed to check the files of ${name}`, err);
       }
-      return c.json(mapped.body, mapped.status as ContentfulStatusCode);
+      return sendProblem(c, mapped);
     }
   });
 
@@ -330,20 +332,14 @@ export function mountPackageActionRoutes(
     const authority = readCallerAuthority(honoRequestFacts(c));
     if (!trustedCaller(authority)) {
       if (!resolveDecisionAuthority(authority).allowed) {
-        return c.json(
-          { error: 'Only you can keep these files as yours, not an agent.', code: 'operator_only' },
-          403
-        );
+        return problem(c, 'operator_only', {
+          detail: 'Only you can keep these files as yours, not an agent.',
+        });
       }
-      return c.json(
-        {
-          error:
-            'DorkOS requires sign-in, so a person signed in to the app has to do this. Open ' +
-            'DorkOS, go to Marketplace, then Installed, and press Keep these as mine on the package.',
-          code: OPERATOR_COOKIE_REQUIRED_CODE,
-        },
-        403
-      );
+      return problem(c, 'person_only', {
+        detail:
+          'DorkOS requires sign-in. In the app, open Marketplace, Installed, then press Keep these as mine.',
+      });
     }
     const parsed = KeepFilesRequestBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) return validationFailed(c, parsed.error);

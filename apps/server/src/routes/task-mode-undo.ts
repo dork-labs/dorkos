@@ -32,6 +32,7 @@ import {
 import { storedNotificationPayload } from '../services/notifications/notification-service.js';
 import type { ScheduleArmedPayload } from '../services/notifications/schedule-armed-copy.js';
 import { readJsonBody } from '@dorkos/http-kit';
+import { taskProblem } from './task-problem.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { operatorOnlyTaskRefusal } from './task-route-answers.js';
 import { wifiScheduleRefusal } from './task-wifi-guard.js';
@@ -95,19 +96,19 @@ export function mountTaskModeUndo(router: Hono<ApiEnv>, deps: TaskModeUndoDeps):
     const caller = honoRequestFacts(c);
     // The same refusal, word for word, as an agent naming permissionMode on PATCH.
     const refusal = operatorOnlyTaskRefusal({ permissionMode: true }, clearsTheAgentBar(caller));
-    if (refusal) return c.json(refusal, 403);
+    if (refusal) return taskProblem(c, refusal, 403);
     const existing = deps.store.getTask(c.req.param('id'));
     const previous = existing?.agentModeRecord?.previousMode;
     const wifiRefusal = previous
       ? wifiScheduleRefusal(caller, { permissionMode: previous }, existing)
       : undefined;
-    if (wifiRefusal) return c.json(wifiRefusal, 403);
+    if (wifiRefusal) return taskProblem(c, wifiRefusal, 403);
 
     const named = namedChangeOf(readJsonBody(c), c.req.param('id'));
-    if (!named) return c.json(UNDO_NEEDS_ITS_NOTICE, 400);
+    if (!named) return taskProblem(c, UNDO_NEEDS_ITS_NOTICE, 400);
     const run = async (who: RequestFacts) => {
       const outcome = await undoAgentModeChange(deps, c.req.param('id'), named, true);
-      if (!outcome.ok) return c.json(outcome.body, outcome.status);
+      if (!outcome.ok) return taskProblem(c, outcome.body, outcome.status);
       const { task } = outcome;
       deps.registrar.syncTask(task.id);
       broadcastTasksChanged();

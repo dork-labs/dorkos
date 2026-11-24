@@ -164,8 +164,8 @@ describe('useCompactionChip', () => {
     resolveDispatch({ sessionId: 's1' });
   });
 
-  it('re-enables the chip and toasts on a failed dispatch (e.g. SESSION_LOCKED)', async () => {
-    vi.mocked(transport.runCommandIntent).mockRejectedValue({ code: 'SESSION_LOCKED' });
+  it('re-enables the chip and toasts on a failed dispatch (e.g. session_locked)', async () => {
+    vi.mocked(transport.runCommandIntent).mockRejectedValue({ code: 'session_locked' });
     const { result } = renderHook(
       () =>
         useCompactionChip({

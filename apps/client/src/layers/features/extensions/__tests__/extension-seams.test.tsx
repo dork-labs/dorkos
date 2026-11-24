@@ -36,7 +36,7 @@ import {
   selectPromotedItems,
   type StatusPromotionContext,
 } from '@/layers/features/status';
-import { createAppRouter } from '@/router';
+import { createAppRouterWithoutPages } from '@/test-helpers/app-router-without-pages';
 import { createExtensionAPI } from '../model/extension-api-factory';
 import type { ExtensionAPIDeps } from '../model/types';
 import { EXTENSION_CONTRIBUTION_KEYS } from '@dorkos/extension-api';
@@ -147,7 +147,7 @@ describe('navigate (§6.5, D4, invariant 11)', () => {
   // The app's own router, as `main.tsx` builds it: the query rules that decide
   // whether `?page=3` survives live in its configuration, not in a test double.
   function appRouter() {
-    return createAppRouter(new QueryClient(), createMockTransport() as Transport);
+    return createAppRouterWithoutPages(new QueryClient(), createMockTransport() as Transport);
   }
 
   it('reaches the real router with an own page, its query text unchanged', async () => {

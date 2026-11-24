@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted.
 
+**Amended by** [260929-012844](260929-012844-host-owner-replacement-is-noticed-objectable-and-time-delayed.md) (accepted 2026-11-24): the sentence "lost-owner repair is offline unless a later break-glass contract is approved" is retired, because that record is the contract: a host may replace an owner only through a noticed, objectable, time-delayed claim. Everything else stands, including that operational authority alone cannot read community content or mint membership in an existing community.
+
 ## Context
 
 The Community service currently has host-level Better Auth accounts but permits one community and one membership per account. Most domain rows already carry or derive a community UUID. Serving several communities from one independent host needs a stable tenant boundary without making DorkOS Cloud an identity dependency or forcing one database per community.

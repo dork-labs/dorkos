@@ -73,4 +73,27 @@ describe('runCommandIntent', () => {
     await setup().runCommandIntent('s1', 'compact');
     expect(lastInit().body).toBeUndefined();
   });
+
+  it('reads a busy chat from the problem document, with who holds it', async () => {
+    const body = {
+      type: 'urn:dorkos:problem:session_locked',
+      title: 'This chat is busy with another reply.',
+      status: 409,
+      code: 'session_locked',
+      detail: 'Wait for the reply to finish, then try again.',
+      lockedBy: 'client-2',
+      lockedAt: '2026-11-23T10:00:00.000Z',
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 409, json: () => Promise.resolve(body) })
+    );
+    await expect(setup().runCommandIntent('s1', 'compact')).rejects.toMatchObject({
+      code: 'session_locked',
+      status: 409,
+      message: 'Wait for the reply to finish, then try again.',
+      lockedBy: 'client-2',
+      lockedAt: '2026-11-23T10:00:00.000Z',
+    });
+  });
 });

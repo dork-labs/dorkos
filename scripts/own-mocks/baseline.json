@@ -3,7 +3,7 @@
   "packages": {
     "apps/client": 1509,
     "apps/desktop": 42,
-    "apps/server": 2584,
+    "apps/server": 2575,
     "apps/site": 109,
     "packages/browser": 32,
     "packages/cli": 52,

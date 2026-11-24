@@ -3,6 +3,7 @@
  *
  * @module routes/marketplace/installed
  */
+import { problem } from '@dorkos/http-kit';
 import { logger } from '../../lib/logger.js';
 import { globalPackageDir } from '../../services/marketplace/consent/global-plugin-consent.js';
 import { listHeldBackPackages } from '../../services/marketplace/consent/ask-withheld-global-plugins.js';
@@ -74,7 +75,9 @@ export function mountInstalledRoutes(
       return c.json({ packages: wantsVerify(c) ? await withIntegrity(packages) : packages });
     } catch (err) {
       logger.error('[Marketplace] Failed to list installed packages', err);
-      return c.json({ error: 'Failed to list installed packages' }, 500);
+      return problem(c, 'internal_error', {
+        detail: "Couldn't list installed packages. Try again.",
+      });
     }
   });
 
@@ -89,7 +92,7 @@ export function mountInstalledRoutes(
       const all = await scanInstallationsAcrossScopes(dorkHome, listAgentScopes?.() ?? []);
       const matches = all.filter((p) => p.name === name);
       if (matches.length === 0) {
-        return c.json({ error: `Installed package '${name}' not found` }, 404);
+        return problem(c, 'not_found', { detail: "That package isn't installed here." });
       }
       const installations = await Promise.all(
         matches.map(async (match) => ({
@@ -102,7 +105,9 @@ export function mountInstalledRoutes(
       });
     } catch (err) {
       logger.error(`[Marketplace] Failed to get installed package ${name}`, err);
-      return c.json({ error: 'Failed to get installed package' }, 500);
+      return problem(c, 'internal_error', {
+        detail: "Couldn't read that installed package. Try again.",
+      });
     }
   });
 }

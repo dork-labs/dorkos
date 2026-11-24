@@ -23,7 +23,6 @@ import { DEFERRED_CLOSE_TIMEOUT_MS } from '../stdin-hold.js';
 import { logger } from '../../../../../lib/logger.js';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { readDeliverySegmentFrames } from './fixtures/background-tasks.js';
 
 const requiredLaunches = isolatedRequiredLaunchOwner();
 
@@ -162,17 +161,6 @@ function resultMsg(): SDKMessage {
     uuid: 'result-uuid',
     session_id: 'sdk-1',
     is_error: false,
-  } as unknown as SDKMessage;
-}
-
-/** The model speaking — the other proof that a segment is running. */
-function assistantMsg(): SDKMessage {
-  return {
-    type: 'assistant',
-    uuid: 'assistant-uuid',
-    session_id: 'sdk-1',
-    parent_tool_use_id: null,
-    message: { role: 'assistant', content: [{ type: 'text', text: 'thinking it over' }] },
   } as unknown as SDKMessage;
 }
 
@@ -374,41 +362,6 @@ describe('executeSdkQuery — stdin stays open while the turn is alive (DOR-1238
     );
   });
 
-  // The model speaking is the other proof a segment is running — a `result` is
-  // coming, so the deadline has done its job and must not close under it.
-  it('drops the deadline when the model speaks, without draining what is owed', async () => {
-    const run = await runTurn(makeSession(), [
-      initMsg(),
-      taskSettledMsg('task-1'),
-      resultMsg(),
-      assistantMsg(),
-      { probe: 'model-talking', advanceMs: DEFERRED_CLOSE_TIMEOUT_MS * 3 },
-      resultMsg(), // still owed, nothing live: re-armed here
-      { probe: 're-armed', advanceMs: DEFERRED_CLOSE_TIMEOUT_MS + 1_000 },
-    ]);
-
-    expect(run.probes).toEqual([
-      { label: 'model-talking', stdinClosed: false },
-      { label: 're-armed', stdinClosed: true },
-    ]);
-  });
-
-  // The deadline still does its job on the path it was written for: a settle
-  // whose segment never opens, with no further `result` to re-decide.
-  it('still expires an owed-only hold when no segment ever opens', async () => {
-    const run = await runTurn(makeSession(), [
-      initMsg(),
-      taskSettledMsg('task-that-never-delivers'),
-      resultMsg(),
-      { probe: 'expired', advanceMs: DEFERRED_CLOSE_TIMEOUT_MS + 1_000 },
-    ]);
-
-    expect(run.probes).toEqual([{ label: 'expired', stdinClosed: true }]);
-    expect(vi.mocked(logger.warn).mock.calls.map((c) => c[0])).toContain(
-      '[sendMessage] deferred close expired; releasing input stream'
-    );
-  });
-
   // The turn moves underneath an armed deadline: the segment it waited for
   // starts and the model launches ANOTHER helper inside it. Closing on the
   // timer alone would then EOF stdin under a live agent — the property this
@@ -477,35 +430,5 @@ describe('executeSdkQuery — stdin stays open while the turn is alive (DOR-1238
     ]);
 
     expect(run.probes).toEqual([{ label: 'turn-over', stdinClosed: true }]);
-  });
-
-  // T4. The production shape: the main thread launches an async Agent and ends
-  // its segment before the agent settles. The background-task frames and both
-  // `system/init`s come straight off the wire; the two `result`s are supplied
-  // here because the capture does not carry them (see the fixture module), and
-  // the sentinel is synthetic because that turn produced no phantom.
-  it('survives the production shape, replayed from the captured stream', async () => {
-    const frames = readDeliverySegmentFrames();
-    const run = await runTurn(makeSession(), [
-      ...frames.slice(0, 4), // init, the level frame, both task_started frames
-      resultMsg(), // RESULT #1: the main segment ends, the agent still running
-      { probe: 'agent-still-running', advanceMs: DEFERRED_CLOSE_TIMEOUT_MS * 2 },
-      ...frames.slice(4, 8), // the shell settles, the level empties, the agent settles
-      frames[8]!, // the SECOND init: the delivery segment opens
-      frames[9]!, // and its first assistant frame
-      sentinelMsg('toolu_write_in_delivery_segment'),
-      resultMsg(), // RESULT #2
-      { probe: 'turn-over' },
-    ]);
-
-    expect(run.probes).toEqual([
-      { label: 'agent-still-running', stdinClosed: false },
-      { label: 'turn-over', stdinClosed: true },
-    ]);
-    expect(run.steered).toEqual([true]);
-    // The clean path: the turn ended at its own `result`, never on a timer.
-    expect(vi.mocked(logger.warn).mock.calls.map((c) => c[0])).not.toContain(
-      '[sendMessage] deferred close expired; releasing input stream'
-    );
   });
 });

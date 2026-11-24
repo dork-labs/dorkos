@@ -259,14 +259,12 @@ async function applyUpdates(args: UpdateArgs): Promise<number> {
     );
   } catch (err) {
     if (!(err instanceof ApiError)) throw err;
-    if (err.status === 409) {
-      // A new version changed what it runs after the check printed above.
-      console.error(`Nothing was updated. ${err.message}`);
-      return 1;
-    }
-    const reason = (err.body as { reason?: unknown }).reason;
-    if (err.status === 403 && typeof reason === 'string') {
-      console.error(`Nothing was updated: ${reason}`);
+    // A new version changed what it runs after the check printed above
+    // (`precondition_failed`), or a person said no (`declined`): the problem's
+    // `detail` says which, in words for a person.
+    if (err.body.code === 'precondition_failed' || err.body.code === 'declined') {
+      const detail = typeof err.body.detail === 'string' ? err.body.detail : err.message;
+      console.error(`Nothing was updated. ${detail}`);
       return 1;
     }
     throw err;

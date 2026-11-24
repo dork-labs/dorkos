@@ -27,6 +27,8 @@ Accepted — implemented by spec `persistent-session-runtime` phase P3 (PRs #975
 
 **Everything else here stands and is still the governing decision:** one persistent `query()` per active session; `WARM` as a real state; resume as the recovery path; the per-session opt-in; the two timers and their owners; separate warm and session ceilings; the exhaustive pin list and each pin's relaunch-or-live disposition; the account pin as a security control, compared first and unconditionally; the DOR-1309 amendment and the DOR-1291 note. **That is why this ADR stays `accepted` rather than `superseded`.**
 
+**Amended by** [261124-150517](261124-150517-turns-survive-restarts-run-record-outbox-capped-recovery.md) (accepted 2026-11-24): "**The persistent process does not survive a DorkOS restart.** This is deliberate and inherited" is retired as a design choice. Resume as the path taken after a crash, a restart or a cold start stands, and that record relies on it.
+
 This is the process-model half of the persistent-session work. Its companion is [ADR 260811-184735](260811-184735-server-owned-durable-message-queue.md) (the server-owned durable message queue, "ADR-c"), which owns the queue that survives the reap this ADR introduces. Read together: the queue makes a message durable, and this ADR makes the process that consumes it warm. Neither is safe without the other — a warm process that dropped queued work on a reap, or a durable queue feeding a cold subprocess every turn, would each miss the point.
 
 ## Context

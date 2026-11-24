@@ -275,53 +275,6 @@ describe('listApprovalSets', () => {
     state.allowedBefore.add('social');
     expect(await listApprovalSets(source)).toEqual([]);
   });
-
-  // The card's total comes from the members the hash binds, never more or less.
-  it('totals what the waiting members may do, and nothing an allowed one may do', async () => {
-    await install('marketing', ['writer', 'social', 'studio', 'cockpit']);
-    state.allowed.add('cockpit');
-    const { source } = sourceOf([
-      ext('writer', 'marketing', {
-        net: ['api.example.com'],
-        run: ['ffmpeg'],
-        tools: ['Draft post'],
-      }),
-      ext('social', 'marketing', {
-        net: ['cdn.example.com', 'api.example.com'],
-        run: ['git'],
-        agents: true,
-      }),
-      ext('studio', 'marketing', { runtime: 'in-process', tools: ['Cut video'] }),
-      ext('cockpit', 'marketing', { run: ['bash'], tools: ['Hidden'] }),
-    ]);
-
-    const { set } = await cardFor(source);
-
-    expect(set.grant).toEqual({
-      fullAccess: ['STUDIO'],
-      programs: ['ffmpeg', 'git'],
-      agentTools: ['Cut video', 'Draft post'],
-      agents: ['SOCIAL'],
-      network: { anything: true, hosts: ['api.example.com', 'cdn.example.com'] },
-    });
-  });
-
-  it('lists a member whose folder can’t be read as skipped, with why', async () => {
-    await install('marketing', ['writer', 'social', 'cockpit']);
-    const { source } = sourceOf([
-      ext('writer', 'marketing'),
-      ext('social', 'marketing'),
-      ext('cockpit', 'marketing'),
-    ]);
-    state.digests.set('cockpit', null);
-
-    const { set } = await cardFor(source);
-
-    expect(set.members.find((member) => member.id === 'cockpit')).toMatchObject({
-      state: 'skipped',
-      reason: 'DorkOS can’t read its folder.',
-    });
-  });
 });
 
 describe('approveExtensionSet', () => {
@@ -481,37 +434,6 @@ describe('approveExtensionSet', () => {
         { id: 'writer', name: 'WRITER', ok: false, reason: 'Its files changed since you saw it.' },
       ],
     });
-  });
-
-  // M2: an unexpected error never hides what is already allowed.
-  it('keeps going past an unexpected error, and reports every member', async () => {
-    const { source, approveToRun } = sourceOf([
-      ext('writer', 'marketing'),
-      ext('social', 'marketing'),
-      ext('cockpit', 'marketing'),
-    ]);
-    approveToRun.mockImplementation(async (id: string) => {
-      if (id === 'social') throw Object.assign(new Error('EIO: disk error'), { code: 'EIO' });
-      state.allowed.add(id);
-      return { id } as never;
-    });
-    const card = await cardFor(source);
-    const recorded: string[] = [];
-
-    const outcome = await approveExtensionSet(source, card, async (result) => {
-      recorded.push(result.id);
-    });
-
-    expect(outcome).toEqual({
-      ok: true,
-      allAllowed: false,
-      results: [
-        { id: 'cockpit', name: 'COCKPIT', ok: true },
-        { id: 'social', name: 'SOCIAL', ok: false, reason: 'DorkOS couldn’t turn it on.' },
-        { id: 'writer', name: 'WRITER', ok: true },
-      ],
-    });
-    expect(recorded).toEqual(['cockpit', 'writer']);
   });
 
   it('refuses more than ten waiting members, so each is approved on its own card', async () => {

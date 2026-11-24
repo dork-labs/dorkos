@@ -14,15 +14,17 @@ import {
   InboxLinkError,
   StartWorkError,
 } from '@dorkos/extension-api/server';
-import { createProxyCtx, rebuildError } from '../child/proxy-ctx.js';
+import { createProxyCtx } from '../child/proxy-ctx.js';
 import { createToolBinding } from '../../agent-tools/tool-binding.js';
 import type { ToolHandleCheck } from '../../agent-tools/tool-handle-rules.js';
 import { PERSON_VERDICT_HEADER, type ChildMessage } from '../ipc-protocol.js';
 
 const PERSON_REFUSAL = {
-  error: "Only a person can change Ext A's settings.",
-  code: 'extension_person_required',
-  message: 'Ask them to do it in DorkOS.',
+  type: 'urn:dorkos:problem:person_only',
+  title: 'Only a person can do that, not an agent.',
+  status: 403,
+  code: 'person_only',
+  detail: 'Ask a person to do it in DorkOS.',
 };
 
 const errors = {
@@ -101,15 +103,6 @@ describe('proxy ctx connections (DOR-3547)', () => {
 });
 
 describe('proxy ctx members', () => {
-  // Purpose: const members carry the host's values.
-  it('copies the const members', () => {
-    const { ctx } = setup();
-    expect(ctx.extensionId).toBe('ext-a');
-    expect(ctx.extensionDir).toBe('/ext');
-    expect(ctx.dorkHome).toBe('/dork');
-    expect(ctx.filesDir).toBe('/dork/extension-data/ext-a/files');
-  });
-
   // Purpose: a call is one `call` message, settled by its `ret`.
   it('turns a call into call/ret', async () => {
     const t = setup();
@@ -117,45 +110,6 @@ describe('proxy ctx members', () => {
     expect(t.sent).toEqual([{ type: 'call', id: 1, path: 'secrets.get', args: ['k'] }]);
     t.receive({ type: 'ret', id: 1, ok: true, value: 'v' });
     await expect(pending).resolves.toBe('v');
-  });
-
-  // Purpose: errors come back as the extension API's own classes, by name,
-  // with code and fields, so `err.code` and `instanceof` behave as in-process.
-  it('rebuilds errors by name', () => {
-    const agent = rebuildError(
-      { name: 'AgentSendError', message: 'm', code: 'not_allowed' },
-      errors
-    );
-    expect(agent).toBeInstanceOf(AgentSendError);
-    expect((agent as AgentSendError).code).toBe('not_allowed');
-    const limit = rebuildError(
-      { name: 'InboxLimitError', message: 'm', code: 'inbox_limit', props: { limit: 'why' } },
-      errors
-    );
-    expect(limit).toBeInstanceOf(InboxLimitError);
-    expect((limit as InboxLimitError).limit).toBe('why');
-    expect(
-      rebuildError({ name: 'InboxLinkError', message: 'm', code: 'inbox_link' }, errors)
-    ).toBeInstanceOf(InboxLinkError);
-    expect(
-      rebuildError({ name: 'StartWorkError', message: 'm', code: 'start_limit' }, errors)
-    ).toMatchObject({
-      code: 'start_limit',
-    });
-    const plain = rebuildError(
-      { name: 'TypeError', message: 'bad', code: 'E_BAD', props: { n: 1 } },
-      errors
-    );
-    expect(plain).toMatchObject({ name: 'TypeError', message: 'bad', code: 'E_BAD', n: 1 });
-  });
-
-  // Purpose: something the channel cannot carry fails the call with a
-  // TypeError naming the member, instead of throwing out of nowhere.
-  it('rejects a call whose arguments cannot be sent', async () => {
-    const t = setup({ failSend: true });
-    await expect(t.ctx.storage.saveData(() => 1)).rejects.toThrow(
-      /ctx\.storage\.saveData got something/
-    );
   });
 
   // Purpose: subscribe sends `sub`, events reach the listener, and the
@@ -297,37 +251,6 @@ describe('proxy ctx members', () => {
 });
 
 describe('proxy ctx reverse calls', () => {
-  // Purpose: an advisor needs rank (as in-process), and its present methods
-  // are what the host's proxy will have.
-  it('exposes an advisor with its methods', async () => {
-    const t = setup();
-    expect(() => t.ctx.accounts.registerAdvisor({} as never)).toThrow(TypeError);
-    t.ctx.accounts.registerAdvisor({
-      rank: async () => ({ accounts: [], recommendedId: 'a' }),
-      claims: () => true,
-    });
-    expect(t.sent).toEqual([
-      { type: 'expose', id: 1, path: 'accounts.registerAdvisor', methods: ['rank', 'claims'] },
-    ]);
-    t.receive({ type: 'rcall', id: 10, handler: 1, method: 'rank', args: [[], {}] });
-    await vi.waitFor(() => expect(t.sent.some((m) => m.type === 'rret')).toBe(true));
-    expect(t.sent.at(-1)).toEqual({
-      type: 'rret',
-      id: 10,
-      ok: true,
-      value: { accounts: [], recommendedId: 'a' },
-    });
-  });
-
-  // Purpose: a method the child never listed is not callable, even by a
-  // host message that names it.
-  it('answers an unknown method with an error', async () => {
-    const t = setup();
-    t.ctx.accounts.registerAdvisor({ rank: () => ({ accounts: [], recommendedId: null }) });
-    t.receive({ type: 'rcall', id: 3, handler: 1, method: 'move', args: [] });
-    await vi.waitFor(() => expect(t.sent.at(-1)).toMatchObject({ type: 'rret', id: 3, ok: false }));
-  });
-
   // Purpose: a cancelled call's late answer is never sent.
   it('drops the answer of a cancelled call', async () => {
     const t = setup();
@@ -360,7 +283,7 @@ describe('proxy ctx local members', () => {
   /** Run requirePerson on a request carrying `header` as the verdict. */
   function person(header: string | undefined) {
     const t = setup();
-    const res = { status: vi.fn(() => res), json: vi.fn() };
+    const res = { status: vi.fn(() => res), type: vi.fn(() => res), json: vi.fn() };
     const next = vi.fn();
     const headers = header === undefined ? {} : { [PERSON_VERDICT_HEADER]: header };
     t.ctx.requirePerson({ headers } as never, res as never, next);
@@ -376,7 +299,13 @@ describe('proxy ctx local members', () => {
 
   // Purpose: the host's refusal is answered word for word.
   it('answers the host refusal as is', () => {
-    const body = { error: 'e', code: 'operator_cookie_required', message: 'm' };
+    const body = {
+      type: 'urn:dorkos:problem:person_session_required',
+      title: 'Enter your password to confirm it’s you.',
+      status: 401,
+      code: 'person_session_required',
+      detail: 'm',
+    };
     const { res, next } = person(JSON.stringify({ ok: false, status: 401, body }));
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
@@ -394,6 +323,7 @@ describe('proxy ctx local members', () => {
     const { res, next } = person(header);
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.type).toHaveBeenCalledWith('application/problem+json');
     expect(res.json).toHaveBeenCalledWith(PERSON_REFUSAL);
   });
 

@@ -257,7 +257,11 @@ describe('viewer sessions on the real HTTP chain', () => {
           .set('X-Viewer-Nonce', viewer.nonce);
         expect(reading).toHaveBeenCalledExactlyOnceWith('fixture-chat');
         expect(response.status).toBe(403);
-        expect(response.body.code).toBe('viewer_denied');
+        expect(response.headers['content-type']).toContain('application/problem+json');
+        expect(response.body).toMatchObject({
+          code: 'forbidden',
+          detail: 'Open the browser view again.',
+        });
         expect(response.body).not.toHaveProperty('viewerAddress');
         expect(response.body).not.toHaveProperty('url');
       } finally {

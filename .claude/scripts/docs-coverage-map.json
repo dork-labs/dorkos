@@ -63,7 +63,7 @@
     },
     {
       "guide": "system-architecture.md",
-      "description": "Deployment boundaries, server roles, protocols, ports, Projects/extensions, account eligibility, main request admission, Spaces recovery, heartbeats and the audit record, Cloud and marketplace; diagrams",
+      "description": "Deployment boundaries, today's server roles and the pointer to the target, protocols, ports, Projects/extensions, account eligibility, main request admission, Spaces recovery, heartbeats and the audit record, Cloud and marketplace; diagrams",
       "patterns": [
         "apps/server/src/services/projects/",
         "apps/server/src/services/extensions/",
@@ -100,6 +100,16 @@
         "packages/shared/src/agent-runtime",
         "packages/shared/src/memory-provider",
         "apps/desktop/src/main/"
+      ]
+    },
+    {
+      "guide": "architecture-target.md",
+      "description": "The living target architecture: space side and computer side, one contract, two entries, turns, ways in, mini apps and the core test, the process rule, the build order and what is retired",
+      "patterns": [
+        "decisions/",
+        "research/20261124_architecture-direction-review",
+        "packages/shared/src/session-relay-agent-computer",
+        "apps/server/src/lib/server-role"
       ]
     },
     {
@@ -484,7 +494,7 @@
     },
     {
       "guide": "official-community-operations.md",
-      "description": "Official Community Space soft-launch runbook: alerts from `/metrics` and `/health/ready`, daily soft-launch checks, the D14 launch bar, the upgrade freeze around launch, and incident steps",
+      "description": "Official Community Space opening runbook: alerts from `/metrics` and `/health/ready`, daily checks for the first two weeks, the D14 opening checks, the change freeze while it opens, and incident steps",
       "patterns": [
         "apps/server/src/services/spaces/live/monitoring.ts",
         "apps/space/load/",

@@ -224,8 +224,8 @@ describe('POST /:id/messages — the billing-account launch hint', () => {
       .send({ content: 'hi', account: 'dorkos-credits' });
 
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({
-      error: 'Only you can run a chat on your DorkOS credits, from the DorkOS app.',
+    expect(res.body).toMatchObject({
+      detail: 'Only you can run a chat on your DorkOS credits, from the DorkOS app.',
       code: 'person_only',
     });
     expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();

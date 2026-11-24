@@ -104,7 +104,8 @@ describe('private browser package boundaries', () => {
     expect(native.test.include).toEqual(['src/**/__tests__/**/*.fixture.test.ts']);
     expect(native.test.fileParallelism).toBe(false);
     expect(native.test.retry).toBe(0);
-    const actual = readdirSync(path.join(packageRoot, 'src/__tests__'))
+    const actual = readdirSync(path.join(packageRoot, 'src/__tests__'), { recursive: true })
+      .map(String)
       .filter((name) => name.endsWith('.fixture.test.ts'))
       .sort();
     expect(actual).toEqual([
@@ -115,8 +116,10 @@ describe('private browser package boundaries', () => {
       'lifecycle-negative.fixture.test.ts',
       'lifecycle.fixture.test.ts',
       'private-proxy-auth.fixture.test.ts',
-      'retained-stores.fixture.test.ts',
-      'supervisor-crash-recovery.fixture.test.ts',
+      'retained-stores/retained-stores.restarts.fixture.test.ts',
+      'retained-stores/retained-stores.workers.fixture.test.ts',
+      'supervisor-crash-recovery/supervisor-crash-recovery.crash.fixture.test.ts',
+      'supervisor-crash-recovery/supervisor-crash-recovery.manager-death.fixture.test.ts',
     ]);
     const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
     expect(manifest.scripts['test:fixture']).toBe(

@@ -31,7 +31,6 @@ import {
 import { grantsPower } from '../services/core/approvals/model/approval-answer-policy.js';
 import type { StepUpCommitResult } from '../services/core/auth/step-up/step-up-holds.js';
 import type { Hono } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   DecisionActionRequestSchema,
   ProjectSettingsQuerySchema,
@@ -47,22 +46,23 @@ import { projectRegistry } from '../services/projects/project-registry.js';
 import { logger } from '../lib/logger.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { DECISION_BAR, recordSettingsChange } from './extension-decisions.js';
+import { answerOutcome, decisionRefusal } from './extension-decision-problems.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+
+/** What a caller is told while the inbox is not up. */
+const INBOX_NOT_READY = 'The inbox isn’t ready yet. Try again in a moment.';
 
 /** What the settings route says when the bar refuses it. */
 const SETTINGS_BAR: PersonBarCopy = {
-  error: 'Only a person can change these settings.',
-  code: 'extension_person_required',
+  code: 'person_only',
   subject: "an extension's project settings",
   crossSite: (origin) =>
-    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
-    `Only a person using DorkOS can change these settings.`,
-  agent:
-    'DorkOS changed nothing. Only a person can change these settings. Ask them to change it in DorkOS.',
+    `DorkOS changed nothing. ${origin} isn’t DorkOS. Change these settings in DorkOS itself.`,
+  agent: 'DorkOS changed nothing. Only a person can change these settings, in DorkOS.',
 };
 
 /**
@@ -83,32 +83,34 @@ export function registerExtensionInboxRoutes(
 ): void {
   router.get('/:id/decisions', (c) => {
     const id = c.req.param('id');
-    if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+    if (!safeExtId.test(id))
+      return problem(c, 'invalid_request', { detail: 'Use a valid extension ID.' });
     const inbox = getExtensionInbox();
-    if (!inbox) return c.json({ error: 'The inbox is not available yet.' }, 503);
+    if (!inbox) return problem(c, 'temporarily_unavailable', { detail: INBOX_NOT_READY });
     return c.json({ decisions: inbox.listOpen(id), offers: [] });
   });
 
   router.post('/:id/decisions/:decisionId/action', async (c) => {
     try {
       const { id, decisionId } = c.req.param();
-      if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+      if (!safeExtId.test(id))
+        return problem(c, 'invalid_request', { detail: 'Use a valid extension ID.' });
       const refused = refusedNotAPerson(c, DECISION_BAR);
       if (refused) return refused;
       const body = DecisionActionRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
       if (!body.success) {
-        return c.json({ error: 'Send an action, and keep notes under 2000 characters.' }, 400);
+        return validationProblem(c, body.error, {
+          detail: 'Send an action, and keep notes under 2000 characters.',
+        });
       }
       const inbox = getExtensionInbox();
-      if (!inbox) return c.json({ error: 'The inbox is not available yet.' }, 503);
+      if (!inbox) return problem(c, 'temporarily_unavailable', { detail: INBOX_NOT_READY });
       const run = async (): Promise<StepUpCommitResult> => {
         const outcome = await inbox.answer(decisionId, body.data, {
           kind: 'extension',
           extensionId: id,
         });
-        return outcome.ok
-          ? { status: 200, body: outcome.response }
-          : { status: outcome.status, body: { error: outcome.message, code: outcome.code } };
+        return outcome.ok ? { status: 200, body: outcome.response } : decisionRefusal(outcome);
       };
       if (grantsPower({ kind: body.data.action === 'reject' ? 'reject' : 'extension-answer' })) {
         const held = holdRemoteExtensionAnswer(
@@ -119,22 +121,26 @@ export function registerExtensionInboxRoutes(
         if (held) return held;
       }
       const outcome = await run();
-      return c.json(outcome.body as never, outcome.status as ContentfulStatusCode);
+      return answerOutcome(c, outcome);
     } catch (err) {
       logger.error('[Extensions] Failed to answer a decision from an extension page', err);
-      return c.json({ error: 'Failed to answer the decision' }, 500);
+      return problem(c, 'internal_error', { detail: 'The answer wasn’t saved. Try again.' });
     }
   });
 
   router.get('/:id/project-settings', async (c) => {
     try {
       const id = c.req.param('id');
-      if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+      if (!safeExtId.test(id))
+        return problem(c, 'invalid_request', { detail: 'Use a valid extension ID.' });
       const query = ProjectSettingsQuerySchema.safeParse(readQuery(c));
-      if (!query.success) return c.json({ error: 'Send ?project=<folder>' }, 400);
+      if (!query.success)
+        return validationProblem(c, query.error, { detail: 'Send ?project=<folder>.' });
       const resolved = await projectRegistry.resolveWithin(query.data.project, id);
       if (resolved === 'outside')
-        return c.json({ error: 'That folder is outside what DorkOS may read.' }, 403);
+        return problem(c, 'outside_boundary', {
+          detail: 'Pick a folder DorkOS may read.',
+        });
       if (!resolved) return c.json({ value: null, updatedAt: null, updatedBy: null });
       const stored = await projectSettingsStore(dorkHome).read(id, resolved.root);
       return c.json({
@@ -144,33 +150,36 @@ export function registerExtensionInboxRoutes(
       });
     } catch (err) {
       logger.error('[Extensions] Failed to read project settings', err);
-      return c.json({ error: 'Failed to read project settings' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t read project settings. Try again.' });
     }
   });
 
   router.put('/:id/project-settings', async (c) => {
     try {
       const id = c.req.param('id');
-      if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+      if (!safeExtId.test(id))
+        return problem(c, 'invalid_request', { detail: 'Use a valid extension ID.' });
       const refused = refusedNotAPerson(c, SETTINGS_BAR);
       if (refused) return refused;
       const body = PutProjectSettingsRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
       if (!body.success || body.data.value === undefined) {
-        return c.json({ error: 'Send { project, value }.' }, 400);
+        return problem(c, 'invalid_request', { detail: 'Send { project, value }.' });
       }
       const record = extensionManager.get(id);
-      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
+      if (!record) return problem(c, 'not_found', { detail: `No extension named ${id}.` });
       const resolved = await projectRegistry.resolveWithin(body.data.project, id);
       const allowed =
         resolved && resolved !== 'outside' ? await projectRegistry.listForExtension(id) : [];
       if (!resolved || resolved === 'outside' || !allowed.some((p) => p.root === resolved.root)) {
-        return c.json({ error: `${record.manifest.name} is not set up in that project.` }, 404);
+        return problem(c, 'not_found', {
+          detail: `${record.manifest.name} is not set up in that project.`,
+        });
       }
       const run = async (facts: RequestFacts): Promise<Response> => {
         const current = extensionManager.get(id);
         const projects = await projectRegistry.listForExtension(id);
         if (!current || !projects.some((p) => p.root === resolved.root))
-          return c.json({ error: 'That project is no longer available.' }, 404);
+          return problem(c, 'not_found', { detail: 'That project is no longer available.' });
         try {
           await projectSettingsStore(dorkHome).write(
             id,
@@ -180,10 +189,12 @@ export function registerExtensionInboxRoutes(
           );
         } catch (err) {
           if (err instanceof ProjectSettingsError)
-            return c.json(
-              { error: err.message, code: err.code },
-              err.code === 'too_large' ? 413 : 400
-            );
+            return problem(c, err.code === 'too_large' ? 'request_too_large' : 'invalid_request', {
+              detail:
+                err.code === 'too_large'
+                  ? 'Keep project settings under 16 KB.'
+                  : 'Send project settings as plain JSON.',
+            });
           throw err;
         }
         await recordSettingsChange(activity, facts, {
@@ -210,7 +221,7 @@ export function registerExtensionInboxRoutes(
       return held ?? (await run(honoRequestFacts(c)));
     } catch (err) {
       logger.error('[Extensions] Failed to write project settings', err);
-      return c.json({ error: 'Failed to write project settings' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t save project settings. Try again.' });
     }
   });
 }

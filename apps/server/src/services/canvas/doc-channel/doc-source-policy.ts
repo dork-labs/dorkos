@@ -198,10 +198,10 @@ export function readSessionDocSourceDescriptor(
     // save into: no path, no agent and no recorded folder, or no root (DOR-4442).
     // Both callers run after the owner's own access passed, so the reason is safe.
     if (error instanceof DocRouteGrantError)
-      throw new DocChannelNotFoundError({ cause: error, reason: 'NO_RECORDED_FOLDER' });
+      throw new DocChannelNotFoundError({ cause: error, reason: 'no_recorded_folder' });
     throw error;
   }
   if (parseScope(source.scope).kind !== 'session')
-    throw new DocChannelNotFoundError({ reason: 'NOT_SESSION' });
+    throw new DocChannelNotFoundError({ reason: 'not_session' });
   return source;
 }

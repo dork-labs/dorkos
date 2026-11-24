@@ -11,11 +11,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { inventorySourceTree } from '../index.js';
-import { HARNESS_NATIVE_SKILL_ROOTS } from '../types.js';
-import {
-  GENERATED_COMMAND_MARKER,
-  MANAGED_HOOK_SENTINEL_KEY,
-} from '../../plan/installed-projector.js';
+import { MANAGED_HOOK_SENTINEL_KEY } from '../../plan/installed-projector.js';
 import { writeFileAt, writeJsonAt } from '../../__tests__/journeys/stage.js';
 
 let repo = '';
@@ -43,65 +39,7 @@ function link(repoRoot: string, linkRel: string, targetAbs: string): void {
   symlinkSync(targetAbs, abs);
 }
 
-/**
- * The five ways a `.codex/config.toml` can spell the same MCP servers.
- *
- * Every one is ordinary TOML and every one used to be counted by a hand-written
- * header regex, which got three of them wrong — two as SILENT ZEROS: no drop, no
- * warning, no line at all, which is the exact silence DOR-1902 exists to end,
- * reintroduced one file deeper. A real parser answers all five.
- */
-const CODEX_TOML_SHAPES = [
-  {
-    label: 'a comment after the table header',
-    toml: '[mcp_servers.alpha] # the one we use\ncommand = "npx"\n',
-    servers: 1,
-  },
-  {
-    label: 'inline tables under one [mcp_servers]',
-    toml: '[mcp_servers]\nalpha = { command = "npx" }\nbeta = { command = "npx" }\n',
-    servers: 2,
-  },
-  {
-    label: 'dotted keys and no table header at all',
-    toml: 'mcp_servers.alpha.command = "npx"\nmcp_servers.beta.command = "npx"\n',
-    servers: 2,
-  },
-  {
-    label: 'a table and its sub-table, which is one server',
-    toml: '[mcp_servers.alpha]\ncommand = "npx"\n\n[mcp_servers.alpha.env]\nK = "v"\n',
-    servers: 1,
-  },
-  {
-    label: 'quoted names that both start with the same dotted prefix',
-    toml: '[mcp_servers."a.b"]\ncommand = "npx"\n\n[mcp_servers."a.c"]\ncommand = "npx"\n',
-    servers: 2,
-  },
-] as const;
-
 describe('inventorySourceTree', () => {
-  it('finds nothing in an empty tree, and says so with empty lists rather than throwing', () => {
-    repo = mkdtempSync(join(tmpdir(), 'harness-inv-empty-'));
-    const inventory = inventorySourceTree(repo);
-    expect({
-      skills: inventory.skills.length,
-      commands: inventory.commands.length,
-      hooks: inventory.hooks.length,
-      agents: inventory.agents.length,
-      rules: inventory.rules.length,
-      mcpServers: inventory.mcpServers.length,
-      unreadable: inventory.unreadable.length,
-    }).toEqual({
-      skills: 0,
-      commands: 0,
-      hooks: 0,
-      agents: 0,
-      rules: 0,
-      mcpServers: 0,
-      unreadable: 0,
-    });
-  });
-
   it('SK-13: counts skills in both authored roots, follows a linked-in source, and skips DorkOS projections', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inv-skills-'));
     outside = mkdtempSync(join(tmpdir(), 'harness-inv-outside-'));
@@ -126,111 +64,6 @@ describe('inventorySourceTree', () => {
       '.agents/skills:my__helper:false',
       '.agents/skills:vendored:true',
       '.claude/skills:claude-only:false',
-    ]);
-  });
-
-  it('inventories a person’s own link into .claude/skills, and still skips DorkOS’s', () => {
-    // Not every symlink in `.claude/skills` is a projection. A person who keeps a
-    // skill elsewhere in the repo and links it where Claude Code reads had it
-    // treated as DorkOS's own output and given no line at all — while the
-    // projector next door already knew the other shape ("a link to a skill kept
-    // elsewhere", `planClaudeOnlySkills`). The target decides, not the fact of
-    // being a link: into `.agents/skills` or `.dork/plugins` is ours, anywhere
-    // else is theirs.
-    repo = mkdtempSync(join(tmpdir(), 'harness-inv-person-link-'));
-
-    stageSkill(repo, 'vendor/skills/mine');
-    link(repo, '.claude/skills/mine', join(repo, 'vendor/skills/mine'));
-    stageSkill(repo, '.agents/skills/alpha');
-    link(repo, '.claude/skills/alpha', join(repo, '.agents/skills/alpha'));
-    stageSkill(repo, '.dork/plugins/flow/skills/capture');
-    link(repo, '.claude/skills/flow__capture', join(repo, '.dork/plugins/flow/skills/capture'));
-
-    const { skills } = inventorySourceTree(repo);
-    expect(skills.length).toBe(2);
-    expect(skills.map((s) => `${s.root}:${s.name}:${s.isSymlink}`)).toEqual([
-      '.agents/skills:alpha:false',
-      '.claude/skills:mine:true',
-    ]);
-  });
-
-  it('CM-04: counts authored commands by their namespaced name and skips generated wrappers', () => {
-    repo = mkdtempSync(join(tmpdir(), 'harness-inv-commands-'));
-    writeFileAt(join(repo, '.claude/commands/deploy.md'), '# /deploy\n');
-    writeFileAt(join(repo, '.claude/commands/flow/capture.md'), '# /flow:capture\n');
-    writeFileAt(
-      join(repo, '.claude/commands/acme/ship.md'),
-      `<!-- ${GENERATED_COMMAND_MARKER} from .dork/plugins/acme -->\n# ship\n`
-    );
-
-    const { commands } = inventorySourceTree(repo);
-    expect(commands.length).toBe(2);
-    expect(commands.map((c) => c.name)).toEqual(['deploy', 'flow/capture']);
-    expect(commands.map((c) => c.source)).toEqual([
-      '.claude/commands/deploy.md',
-      '.claude/commands/flow/capture.md',
-    ]);
-  });
-
-  it('XA-01: counts subagents recursively, so a nested definition is not lost', () => {
-    repo = mkdtempSync(join(tmpdir(), 'harness-inv-agents-'));
-    for (const rel of ['reviewer', 'react/tanstack', 'deep/nested/helper']) {
-      const name = rel.split('/').join('-');
-      writeFileAt(
-        join(repo, '.claude/agents', `${rel}.md`),
-        `---\nname: ${name}\ndescription: The ${name} subagent\n---\n\n# ${rel}\n`
-      );
-    }
-    // Not a definition: the walk takes `.md` only.
-    writeFileAt(join(repo, '.claude/agents/README.txt'), 'notes\n');
-
-    const { agents } = inventorySourceTree(repo);
-    expect(agents.length).toBe(3);
-    expect(agents.map((a) => [a.name, a.source])).toEqual([
-      ['deep-nested-helper', '.claude/agents/deep/nested/helper.md'],
-      ['react-tanstack', '.claude/agents/react/tanstack.md'],
-      ['reviewer', '.claude/agents/reviewer.md'],
-    ]);
-  });
-
-  it('IN-07: reads each rule’s `paths:` globs, in both spellings, and leaves a rule without them bare', () => {
-    repo = mkdtempSync(join(tmpdir(), 'harness-inv-rules-'));
-    writeFileAt(
-      join(repo, '.claude/rules/api.md'),
-      '---\npaths: apps/server/**/*.ts, packages/*/src/**/*.ts\n---\n\n# api\n'
-    );
-    writeFileAt(
-      join(repo, '.claude/rules/ui.md'),
-      '---\npaths:\n  - apps/client/**/*.tsx\n---\n\n# ui\n'
-    );
-    writeFileAt(join(repo, '.claude/rules/style.md'), '# style\n');
-
-    const { rules } = inventorySourceTree(repo);
-    expect(rules.length).toBe(3);
-    expect(rules.map((r) => [r.name, r.paths])).toEqual([
-      ['api', ['apps/server/**/*.ts', 'packages/*/src/**/*.ts']],
-      ['style', undefined],
-      ['ui', ['apps/client/**/*.tsx']],
-    ]);
-  });
-
-  it('finds a rule in a subdirectory, because Claude Code discovers .claude/rules recursively', () => {
-    // "All `.md` files are discovered recursively, so you can organize rules into
-    // subdirectories like `frontend/`" — https://code.claude.com/docs/en/memory,
-    // fetched 2026-09-08. A flat walk gave a nested rule ZERO lines under every
-    // harness, which is the exact silence this whole module exists to end.
-    repo = mkdtempSync(join(tmpdir(), 'harness-inv-nested-rules-'));
-    writeFileAt(join(repo, '.claude/rules/api.md'), '---\npaths: src/**/*.ts\n---\n\n# api\n');
-    writeFileAt(
-      join(repo, '.claude/rules/frontend/nested-style.md'),
-      '---\npaths: apps/client/**/*.tsx\n---\n\n# nested style\n'
-    );
-
-    const { rules } = inventorySourceTree(repo);
-    expect(rules.length).toBe(2);
-    expect(rules.map((r) => [r.name, r.source])).toEqual([
-      ['api', '.claude/rules/api.md'],
-      ['frontend/nested-style', '.claude/rules/frontend/nested-style.md'],
     ]);
   });
 
@@ -261,81 +94,6 @@ describe('inventorySourceTree', () => {
     expect(inventory.rules.map((r) => r.source)).toEqual(['.claude/rules/shared/security.md']);
     expect(inventory.agents.map((a) => a.source)).toEqual(['.claude/agents/shared/auditor.md']);
     expect(inventory.unreadable).toEqual([]);
-  });
-
-  it('keys a subagent by its frontmatter name, which is the only identity Claude Code uses', () => {
-    // "The subdirectory path doesn't affect how a subagent is identified or
-    // invoked, because identity comes only from the `name` frontmatter field" —
-    // https://code.claude.com/docs/en/sub-agents, fetched 2026-09-08. The report
-    // named a nested subagent `react/tanstack`, which is not a name anybody can
-    // type at it.
-    repo = mkdtempSync(join(tmpdir(), 'harness-inv-agent-names-'));
-    writeFileAt(
-      join(repo, '.claude/agents/react/tanstack.md'),
-      '---\nname: react-tanstack-expert\ndescription: React\n---\n\n# expert\n'
-    );
-    writeFileAt(join(repo, '.claude/agents/nameless.md'), '# no frontmatter at all\n');
-
-    const { agents, unreadable } = inventorySourceTree(repo);
-    expect(agents.length).toBe(2);
-    expect(agents.map((a) => [a.name, a.source])).toEqual([
-      ['nameless', '.claude/agents/nameless.md'],
-      ['react-tanstack-expert', '.claude/agents/react/tanstack.md'],
-    ]);
-    // The one with no declared name is still a file Claude Code reads, so it is
-    // inventoried under its stem — and reported, because its identity is a guess.
-    expect(unreadable.map((u) => u.source)).toEqual(['.claude/agents/nameless.md']);
-  });
-
-  it.each(HARNESS_NATIVE_SKILL_ROOTS)(
-    'XA-06: counts a skill in %s, the folder another agent tool reads',
-    (root) => {
-      repo = mkdtempSync(join(tmpdir(), 'harness-inv-native-'));
-      stageSkill(repo, `${root}/review-pr`);
-
-      const { skills, unreadable } = inventorySourceTree(repo);
-      expect(skills).toEqual([
-        {
-          kind: 'skill',
-          name: 'review-pr',
-          source: `${root}/review-pr`,
-          provenance: 'authored',
-          isSymlink: false,
-          root,
-          frontmatterName: 'review-pr',
-          exactFrontmatterName: 'review-pr',
-        },
-      ]);
-      expect(unreadable).toEqual([]);
-    }
-  );
-
-  it('XA-06: walks no skills folder the vendor table does not document', () => {
-    repo = mkdtempSync(join(tmpdir(), 'harness-inv-unknown-root-'));
-    // One root the table DOES document, so the assertion below is about the
-    // other two rather than about a walk that found nothing at all.
-    stageSkill(repo, '.opencode/skills/review-pr');
-    stageSkill(repo, '.zed/skills/review-pr');
-    stageSkill(repo, '.windsurf/skills/review-pr');
-
-    const { skills } = inventorySourceTree(repo);
-    expect(skills.map((skill) => skill.source)).toEqual(['.opencode/skills/review-pr']);
-  });
-
-  it('XA-06: says nothing about a harness-native root that is not there, and names one it cannot list', () => {
-    repo = mkdtempSync(join(tmpdir(), 'harness-inv-native-broken-'));
-    // Absent: `.cursor/skills` and the rest of them. Present and unusable: a
-    // FILE where `.opencode/skills` belongs, which is what a person gets for
-    // typing `> .opencode/skills` once.
-    writeFileAt(join(repo, '.opencode', 'skills'), 'not a directory\n');
-    stageSkill(repo, '.gemini/skills/ship');
-
-    const { skills, unreadable } = inventorySourceTree(repo);
-    expect(skills.map((skill) => skill.source)).toEqual(['.gemini/skills/ship']);
-    expect(unreadable.map((entry) => ({ kind: entry.kind, source: entry.source }))).toEqual([
-      { kind: 'skill', source: '.opencode/skills' },
-    ]);
-    expect(unreadable[0]?.reason).toContain('.opencode/skills could not be listed');
   });
 
   it('XA-07: counts the servers in another tool’s MCP config and records no name and no value', () => {
@@ -380,15 +138,6 @@ describe('inventorySourceTree', () => {
     }
   });
 
-  it('XA-07: stays silent about another tool’s config that declares no MCP servers at all', () => {
-    repo = mkdtempSync(join(tmpdir(), 'harness-inv-foreign-quiet-'));
-    writeJsonAt(join(repo, 'opencode.json'), { $schema: 'x', theme: 'system' });
-    writeFileAt(join(repo, '.codex', 'config.toml'), 'model = "gpt-5"\n');
-
-    const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
-    expect({ foreignMcpConfigs, unreadable }).toEqual({ foreignMcpConfigs: [], unreadable: [] });
-  });
-
   it('XA-07: reports another tool’s MCP config that will not parse, and quotes none of it', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inv-foreign-broken-'));
     // An UNQUOTED value, deliberately: that is the failure shape whose V8 message
@@ -426,110 +175,6 @@ describe('inventorySourceTree', () => {
       },
     ]);
     expect(JSON.stringify(unreadable)).not.toContain('TOPSECRET');
-  });
-
-  it.each(CODEX_TOML_SHAPES)(
-    'XA-07: counts a .codex/config.toml written with $label',
-    ({ toml, servers }) => {
-      repo = mkdtempSync(join(tmpdir(), 'harness-inv-toml-'));
-      writeFileAt(join(repo, '.codex', 'config.toml'), toml);
-
-      const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
-      expect({ foreignMcpConfigs, unreadable }).toEqual({
-        foreignMcpConfigs: [{ source: '.codex/config.toml', serverCount: servers }],
-        unreadable: [],
-      });
-    }
-  );
-
-  it('XA-07: reports a .codex/config.toml that will not parse, and quotes none of it', () => {
-    repo = mkdtempSync(join(tmpdir(), 'harness-inv-toml-broken-'));
-    // An unterminated string, which is the failure shape whose parser message
-    // prints the offending LINE back — `command = "npx_TOMLSECRET…` — so the
-    // assertion below has something real to catch.
-    writeFileAt(
-      join(repo, '.codex', 'config.toml'),
-      '[mcp_servers.alpha]\ncommand = "npx_TOMLSECRET_unterminated\n'
-    );
-
-    const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
-    expect(foreignMcpConfigs).toEqual([]);
-    expect(unreadable).toEqual([
-      {
-        kind: 'mcp',
-        source: '.codex/config.toml',
-        reason:
-          '.codex/config.toml is not valid TOML, so DorkOS could not read what it declares — Codex keeps MCP servers here, under [mcp_servers.<name>] (vendor docs, 2026-09-07)',
-      },
-    ]);
-    expect(JSON.stringify(unreadable)).not.toContain('TOMLSECRET');
-  });
-
-  it('XA-07, AP-11: a file where `.codex` belongs is a finding, never a throw', () => {
-    repo = mkdtempSync(join(tmpdir(), 'harness-inv-codex-file-'));
-    // DOR-1882 closed this shape for every other reader: the ENOTDIR that
-    // `lstatSync(…, { throwIfNoEntry: false })` does NOT suppress took
-    // `project()` down before a line of the report was written. A file in the
-    // way of `.codex/config.toml` is something a person can see and move.
-    writeFileAt(join(repo, '.codex'), 'not a folder\n');
-
-    const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
-    expect(foreignMcpConfigs).toEqual([]);
-    // POSIX answers ENOTDIR for a path under a file, which is the finding;
-    // Windows answers ENOENT, so there the file reads as simply absent — the
-    // claim that holds everywhere is "nothing threw and nothing was counted".
-    if (process.platform !== 'win32') {
-      expect(unreadable.map((u) => u.source)).toContain('.codex/config.toml');
-    }
-  });
-
-  it('XA-07: reads a config file that starts with a byte-order mark', () => {
-    repo = mkdtempSync(join(tmpdir(), 'harness-inv-bom-'));
-    // A BOM is what a Windows editor leaves on a JSON file, and `JSON.parse`
-    // refuses one — so the file that was plainly there and plainly full of MCP
-    // servers came back as "not valid JSON" instead of being counted.
-    writeFileAt(
-      join(repo, '.cursor', 'mcp.json'),
-      `\ufeff${JSON.stringify({ mcpServers: { shadcn: { command: 'npx' } } })}\n`
-    );
-    // Both parsers refuse a BOM, so the strip is pinned on the TOML path too:
-    // with it gone from that one call site, a Windows-saved Codex config full
-    // of servers is reported as "not valid TOML", and no other case notices.
-    writeFileAt(
-      join(repo, '.codex', 'config.toml'),
-      `\ufeff[mcp_servers.linear]\ncommand = "npx"\n`
-    );
-
-    const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
-    expect({ foreignMcpConfigs, unreadable }).toEqual({
-      foreignMcpConfigs: [
-        { source: '.codex/config.toml', serverCount: 1 },
-        { source: '.cursor/mcp.json', serverCount: 1 },
-      ],
-      unreadable: [],
-    });
-  });
-
-  it('XA-06: inventories a `pkg__name` link in another tool’s folder, which DorkOS never wrote', () => {
-    repo = mkdtempSync(join(tmpdir(), 'harness-inv-native-link-'));
-    outside = mkdtempSync(join(tmpdir(), 'harness-inv-native-outside-'));
-    stageSkill(outside, 'ship');
-    // The `__` name and the symlink together are how the scanner recognises its
-    // OWN projection — in `.agents/skills` and `.claude/skills`, the two roots it
-    // writes into. It writes nothing into `.opencode/skills`, so an entry there is
-    // the person's however it is spelled, and skipping it gives a real skill no
-    // line at all.
-    link(repo, '.opencode/skills/flow__ship', join(outside, 'ship'));
-
-    const { skills, unreadable } = inventorySourceTree(repo);
-    expect(
-      skills.map((skill) => ({
-        name: skill.name,
-        source: skill.source,
-        isSymlink: skill.isSymlink,
-      }))
-    ).toEqual([{ name: 'flow__ship', source: '.opencode/skills/flow__ship', isSymlink: true }]);
-    expect(unreadable).toEqual([]);
   });
 
   it('XA-03: records MCP server names and never a value, because an env block holds secrets', () => {

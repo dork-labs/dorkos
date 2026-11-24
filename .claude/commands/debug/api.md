@@ -34,7 +34,7 @@ Debug data-related issues by systematically tracing through the project's data f
 - **No server actions** — All mutations go through the server's REST endpoints (Hono)
 - **Transport abstraction** — Client uses `Transport` interface, not direct fetch
 - **SDK transcripts** — Sessions are derived from JSONL files on disk, not a database
-- **Feature-flag guarded** — Relay/Mesh/Pulse endpoints return 503 when disabled
+- **Mounted only when on**: Relay's routes exist only while Relay is on; with it off, `/api/relay/*` answers 404
 
 ## Arguments
 
@@ -153,7 +153,7 @@ Key route files:
 | `routes/sessions.ts` | Session CRUD, SSE streaming, messages |
 | `routes/relay.ts`    | Relay messaging, adapters, bindings   |
 | `routes/mesh.ts`     | Mesh discovery, agents, topology      |
-| `routes/pulse.ts`    | Schedules, runs, triggers             |
+| `routes/tasks.ts`    | Tasks and schedules, runs, triggers   |
 | `routes/agents.ts`   | Agent identity CRUD                   |
 | `routes/config.ts`   | Server configuration                  |
 
@@ -208,7 +208,7 @@ Debugging checklist:
 1. [ ] Check network tab for request (is it being made?)
 2. [ ] Check server logs for errors (NDJSON in `.dork/logs/`)
 3. [ ] Verify the Hono route exists and handles the request method (`apps/server/src/http/__tests__/route-census.baseline.json` lists every route)
-4. [ ] Check feature flag is enabled (relay, mesh, pulse)
+4. [ ] Check the feature is on (Relay)
 5. [ ] Verify service returns data
 6. [ ] Check TanStack Query is enabled
 
@@ -222,20 +222,18 @@ Debugging checklist:
 4. [ ] Look for `onSuccess` callbacks that invalidate related queries
 5. [ ] Check if data is cached in Zustand store instead of TanStack Query
 
-### 4.3 Feature Returns 503
+### 4.3 Relay Returns 404
 
-This means the feature flag is disabled:
+Relay's routes are mounted only while Relay is on (`http/hono-api.ts`):
 
 ```bash
 DORK_HOME="apps/server/.temp/.dork"
 
-# Check which features are enabled
+# Check whether Relay is enabled
 cat "$DORK_HOME/config.json" | python3 -c "
 import sys, json
 cfg = json.load(sys.stdin)
 print(f\"Relay: {cfg.get('relay', {}).get('enabled', False)}\")
-print(f\"Pulse: {cfg.get('scheduler', {}).get('enabled', False)}\")
-print(f\"Mesh: {cfg.get('mesh', {}).get('enabled', False)}\")
 "
 ```
 
@@ -340,8 +338,8 @@ if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
 const refusal = await boundaryRefusal(parsed.data.path);
 if (refusal) return c.json(refusal, 403);
 
-// Feature flag guard
-if (!isRelayEnabled()) return c.json({ error: 'Relay is not enabled' }, 503);
+// Refuse with a problem document (`problem` from @dorkos/http-kit; codes from PROBLEM_CODE_LIST)
+if (!ready) return problem(c, 'temporarily_unavailable', { detail: 'Not ready yet.' });
 
 // Who is calling (person, agent, owner): read the facts the chain resolved
 const caller = honoRequestFacts(c);

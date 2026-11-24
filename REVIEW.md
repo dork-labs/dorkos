@@ -110,12 +110,8 @@ secrets, or violate a non-negotiable architectural rule:
     `@anthropic-ai/claude-agent-sdk` → `claude-code/`, `@openai/codex-sdk` →
     `codex/`, `@opencode-ai/sdk` → `opencode/`.
   - **`os.homedir()` ban** — server code resolves the data dir via
-    `lib/dork-home.ts`, never `os.homedir()`. Six carve-outs are declared and
-    are NOT findings: `lib/dork-home.ts`, `lib/boundary.ts` (two inline-disabled
-    call sites), `claude-code/claude-config-dir.ts`, `codex/codex-home.ts`,
-    `opencode/opencode-data-dir.ts` and `harness/agents-user-home.ts` — the last
-    four mirror another program's own path resolution rather than DorkOS's. The
-    full list, with reasons, is `.claude/rules/dork-home.md`.
+    `lib/dork-home.ts`, never `os.homedir()`. Seven carve-outs are declared and
+    are NOT findings; the list, with reasons, is `.claude/rules/dork-home.md`.
   - **Marketplace rollback safety**: install failures roll back via a file-scoped
     target backup/restore, not git. A test on an install failure path should assert
     the target is restored (overwrite) or removed (fresh install), never that a git
@@ -143,8 +139,27 @@ is a Nit, open the summary with "No blocking issues."
 - TSDoc **content** matches behavior (the linter enforces presence, not accuracy):
   a doc that describes stale parameters, wrong defaults, or the pre-change
   behavior is drift and a finding.
-- New server routes obtain the runtime via `runtimeRegistry.getDefault()` rather
-  than importing the SDK directly.
+- New server routes are capabilities with an `http` surface
+  (`contributing/api-reference.md`). A session's runtime comes from its binding
+  in `runtimeRegistry` (ADR-0255), never from a direct SDK import.
+- A new server domain, service or feature in the core says which of the three
+  questions it passes (ADR `261124-150519`): the core itself acts on it, only the
+  core can see what it needs, or a mini app cannot do it correctly. If none, it
+  should be a mini app or a schedule with a skill: 🟡, and name which.
+- A new process (a service, worker or sidecar) names the lifetime or trust level
+  that differs from the server's (ADR `261124-150516`). One split off for a
+  feature is 🔴.
+- Space side and computer side stay apart: space-side code (it holds or decides
+  over space data) must not import computer-side internals (runtimes,
+  workspaces, terminals), and the reverse. No lint holds this yet, so flag a new
+  crossing as 🟡 and name the import. Starting a turn through
+  `services/session/message-dispatcher.ts` or `launch/launch-session.ts` is the
+  allowed door until the turn port exists.
+- No dates or launch gates as reasons in docs, issues or code comments: "before
+  launch", "after launch" or a target day for our own work is a 🟡 finding
+  (ADR `261124-150515`). A real outside deadline and a fact about the past stay.
+- An API change fixes every caller in the same PR; a deprecated alias, a `Sunset`
+  header or a kept old path is a finding (ADR `261123-170832`).
 - New client data access goes through the `Transport` interface, not raw `fetch`.
 - New or changed behavior has a test: client tests use a mock `Transport` via
   `TransportProvider`; server tests use `FakeAgentRuntime` from
@@ -382,9 +397,10 @@ mark it 🟡 and state the uncertainty. A false 🔴 costs the author a round tr
 
 ## Re-review convergence
 
-Re-reviews are explicit, not automatic. The auto-review fires once when a PR is
-opened or marked ready, and again only when the author applies the `re-review`
-label (or asks via `@claude`); it does not run on every push. When you re-review:
+The review runs on every push. A full review fires when a PR is opened or
+marked ready, and again when the author applies the `re-review` label (or asks
+via `@claude`); any other push to a PR you already reviewed runs the Security
+lens only. When you re-review:
 
 - Read your prior review comments on the PR. Treat findings the author addressed
   or resolved as done, and do not repeat them.

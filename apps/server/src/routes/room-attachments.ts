@@ -32,6 +32,8 @@ import { parseUploads, type UploadedFile } from '../http/uploads.js';
 import { discardStream, errorBody } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 import { roomRoute } from './room-route.js';
+import { problem, problemBody } from '@dorkos/http-kit';
+import { PROBLEM_CONTENT_TYPE } from '@dorkos/shared/problem';
 import { uploadRefusalProblem } from '../http/problems/upload-refusal.js';
 import { UploadTypeRefusedError } from '../services/core/upload-handler.js';
 
@@ -104,10 +106,9 @@ router.post('/:id/attachments', (c) =>
     }
 
     if (files.length === 0) {
-      return c.json(
-        errorBody(`Attach the files as the '${ATTACHMENT_FIELD}' field.`, 'ATTACHMENT_MISSING'),
-        400
-      );
+      return problem(c, 'invalid_request', {
+        detail: `Attach the files as the '${ATTACHMENT_FIELD}' field.`,
+      });
     }
 
     const store = getRoomAttachmentStore();
@@ -177,7 +178,7 @@ router.post('/:id/attachments', (c) =>
         }
       }
       if (storeErr instanceof InvalidRoomAttachmentIdError) {
-        return c.json(errorBody('That file could not be stored.', 'ATTACHMENT_ID_INVALID'), 400);
+        return problem(c, 'invalid_request', { detail: 'That file could not be stored.' });
       }
       throw storeErr;
     }
@@ -204,7 +205,7 @@ router.get('/:id/attachments/:attachmentId', (c) =>
       const caller = resolveCaller();
       const row = getAttachmentRowStore().get(roomId, c.req.param('attachmentId'));
       if (!row || !getRoomService().canReadAttachment(roomId, caller.id, row)) {
-        return c.json(errorBody('No such file.', 'ATTACHMENT_NOT_FOUND'), 404);
+        return problem(c, 'attachment_not_found', { detail: 'No such file.' });
       }
 
       const inline = row.preview === 'image';
@@ -215,7 +216,7 @@ router.get('/:id/attachments/:attachmentId', (c) =>
         // Only a VERIFIED image is served as the type it claims to be.
         inline ? row.mimeType : 'application/octet-stream'
       );
-      if (!stored) return c.json(errorBody('No such file.', 'ATTACHMENT_NOT_FOUND'), 404);
+      if (!stored) return problem(c, 'attachment_not_found', { detail: 'No such file.' });
       const notModified = c.req.header('if-none-match') === stored.etag;
 
       return streamToNodeResponse(c, (res) => {
@@ -254,7 +255,7 @@ router.get('/:id/attachments/:attachmentId', (c) =>
       });
     } catch (err) {
       if (err instanceof InvalidRoomAttachmentIdError) {
-        return c.json(errorBody('That is not a usable file id.', 'ATTACHMENT_ID_INVALID'), 400);
+        return problem(c, 'invalid_request', { detail: 'That is not a usable file id.' });
       }
       throw err;
     }
@@ -262,15 +263,17 @@ router.get('/:id/attachments/:attachmentId', (c) =>
 );
 
 /**
- * Answer a file that could not be read, before any of it was sent: a 500 with
- * the room's JSON refusal, over the headers already set for the file.
+ * Answer a file that could not be read, before any of it was sent: a 500
+ * `internal_error` problem, over the headers already set for the file.
  *
  * @param res - The raw response, nothing written yet.
  */
 function answerReadFailure(res: ServerResponse): void {
-  const body = JSON.stringify(errorBody('Could not read that file.', 'ATTACHMENT_READ_FAILED'));
+  const body = JSON.stringify(
+    problemBody('internal_error', { detail: 'Couldn’t read that file. Try again.' })
+  );
   res.statusCode = 500;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Type', `${PROBLEM_CONTENT_TYPE}; charset=utf-8`);
   res.setHeader('Content-Length', String(Buffer.byteLength(body)));
   res.removeHeader('Content-Disposition');
   res.removeHeader('ETag');

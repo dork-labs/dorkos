@@ -153,7 +153,8 @@ describe('Agents Routes', () => {
       const res = await request(testServer).get('/api/agents/current');
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('path query parameter required');
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.detail).toContain('`path`');
     });
 
     it('returns 200 with null when no manifest found', async () => {
@@ -189,7 +190,7 @@ describe('Agents Routes', () => {
         .query({ path: '/etc/shadow' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
   });
 
@@ -422,7 +423,7 @@ describe('Agents Routes', () => {
         .send({ path: '/home/user/my-project', name: '   ' });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('INVALID_NAME');
+      expect(res.body.code).toBe('invalid_request');
       expect(mockWriteManifest).not.toHaveBeenCalled();
     });
 
@@ -448,7 +449,7 @@ describe('Agents Routes', () => {
         .send({ path: '/home/user/project' });
 
       expect(res.status).toBe(409);
-      expect(res.body.error).toBe('Agent already exists at this path');
+      expect(res.body.code).toBe('conflict');
       expect(res.body.agent.id).toBe('test-agent-id');
     });
 
@@ -467,7 +468,7 @@ describe('Agents Routes', () => {
       const res = await request(testServer).post('/api/agents').send({ path: '/etc/shadow' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
   });
 
@@ -530,7 +531,8 @@ describe('Agents Routes', () => {
       const res = await request(testServer).patch('/api/agents/current').send({ name: 'new-name' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('path query parameter required');
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.detail).toContain('`path`');
     });
 
     it('returns 404 for unregistered path', async () => {
@@ -546,7 +548,7 @@ describe('Agents Routes', () => {
         .send({ displayName: 'New Name' });
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('No agent registered at this path');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('refuses a model DorkOS credits do not cover for an agent on them (DOR-2636)', async () => {
@@ -558,7 +560,7 @@ describe('Agents Routes', () => {
         .send({ model: 'opus' });
 
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ code: 'UNSUPPORTED_MODEL' });
+      expect(res.body).toMatchObject({ code: 'invalid_request' });
       expect(mockWriteManifest).not.toHaveBeenCalled();
     });
 
@@ -571,7 +573,7 @@ describe('Agents Routes', () => {
         .send({ reportsTo: 'test-agent-id' });
 
       expect(res.status).toBe(400);
-      expect(res.body).toMatchObject({ code: 'REPORTS_TO_CYCLE' });
+      expect(res.body).toMatchObject({ code: 'reports_to_cycle' });
       expect(mockWriteManifest).not.toHaveBeenCalled();
     });
 
@@ -641,7 +643,8 @@ describe('Agents Routes', () => {
           .send({ readsOutsideText: false });
 
         expect(res.status).toBe(403);
-        expect(res.body.error).toBe(
+        expect(res.body.code).toBe('operator_only');
+        expect(res.body.detail).toBe(
           'DorkOS changed nothing. Only a person can turn this off: readsOutsideText.'
         );
         expect(mockWriteManifest).not.toHaveBeenCalled();
@@ -736,7 +739,7 @@ describe('Agents Routes', () => {
         .send({ name: 'hacker' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
 
     it('returns 400 for invalid update body', async () => {
@@ -751,7 +754,8 @@ describe('Agents Routes', () => {
         .send({ persona: 'x'.repeat(4001) });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.issues.fieldErrors.persona).toBeDefined();
     });
 
     it('refuses an over-budget SOUL.md with a 400 and writes nothing', async () => {
@@ -766,7 +770,7 @@ describe('Agents Routes', () => {
         .send({ soulContent: 'x'.repeat(4001), displayName: 'Renamed' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('SOUL.md');
+      expect(res.body.detail).toContain('SOUL.md');
       expect(mockWriteConventionFile).not.toHaveBeenCalled();
       expect(mockWriteManifest).not.toHaveBeenCalled();
     });
@@ -780,9 +784,10 @@ describe('Agents Routes', () => {
         .send({ displayName: 'Hacked Name', description: 'Hacked Desc' });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('displayName');
-      expect(res.body.error).toContain('description');
-      expect(res.body.error).toContain('system agents');
+      expect(res.body.detail).toContain('displayName');
+      expect(res.body.detail).toContain('description');
+      expect(res.body.code).toBe('forbidden');
+      expect(res.body.detail).toContain('system agents');
       expect(mockWriteManifest).not.toHaveBeenCalled();
     });
 
@@ -795,7 +800,7 @@ describe('Agents Routes', () => {
         .send({ namespace: 'evil-ns' });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('namespace');
+      expect(res.body.detail).toContain('namespace');
     });
 
     it('returns 403 when modifying isSystem on a system agent', async () => {
@@ -807,7 +812,7 @@ describe('Agents Routes', () => {
         .send({ isSystem: false });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('isSystem');
+      expect(res.body.detail).toContain('isSystem');
     });
 
     it('allows non-protected fields on a system agent', async () => {
@@ -850,7 +855,7 @@ describe('Agents Routes', () => {
         .send({ name: 'new-slug' });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('displayName');
+      expect(res.body.detail).toContain('displayName');
     });
 
     it('refuses a retired permission field, pointing at the Permissions page', async () => {
@@ -865,7 +870,7 @@ describe('Agents Routes', () => {
         .send({ displayName: 'Sneaky', enabledToolGroups: { relay: true, mesh: true } });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('Permissions page');
+      expect(res.body.detail).toContain('Permissions page');
       // Whole-patch: the legitimate half did not land either.
       expect(mockWriteManifest).not.toHaveBeenCalled();
     });

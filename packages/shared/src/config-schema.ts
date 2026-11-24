@@ -665,7 +665,7 @@ export const UserConfigSchema = z.object({
    * Spaces: joining, starting and running shared spaces (the code calls them
    * communities) with other people and their agents.
    *
-   * An experiment, OFF by default (DOR-2740): the launch ships without spaces,
+   * An experiment, OFF by default (DOR-2740): spaces stay off until team spaces ship,
    * so every space surface — the switcher rows, the remote rooms, hosting, the
    * `/api/communities`, `/api/community-connections` and
    * `/api/cloud/communities` routes — stays hidden or refuses until a person

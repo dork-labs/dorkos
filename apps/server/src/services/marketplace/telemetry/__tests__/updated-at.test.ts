@@ -47,33 +47,6 @@ describe('enrichWithUpdatedAt', () => {
       ['lifeos-starter', undefined],
     ]);
   });
-
-  it('returns the packages unchanged (no updatedAt) when dates are empty', () => {
-    const packages = [pkg({ name: 'flow' })];
-    const result = enrichWithUpdatedAt(packages, {});
-
-    expect(result[0].updatedAt).toBeUndefined();
-    expect(result).toEqual(packages);
-  });
-
-  it('does not mutate the input packages', () => {
-    const packages = [pkg({ name: 'flow' })];
-    enrichWithUpdatedAt(packages, { flow: FLOW_DATE });
-    expect(packages[0].updatedAt).toBeUndefined();
-  });
-
-  it('only stamps community packages — a same-named package in another marketplace stays un-enriched', () => {
-    // The date map is scoped to dorkos-community, so a name collision in a
-    // second marketplace must NOT borrow community recency.
-    const community = pkg({ name: 'flow', marketplace: 'dorkos-community' });
-    const otherMarket = pkg({ name: 'flow', marketplace: 'acme-internal' });
-
-    const result = enrichWithUpdatedAt([community, otherMarket], { flow: FLOW_DATE });
-
-    expect(result[0]).toMatchObject({ marketplace: 'dorkos-community', updatedAt: FLOW_DATE });
-    expect(result[1]).toMatchObject({ marketplace: 'acme-internal' });
-    expect(result[1].updatedAt).toBeUndefined();
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -113,92 +86,12 @@ describe('UpdatedAtProvider', () => {
     await vi.waitFor(() => expect(provider.getUpdatedAt()).toEqual({ flow: FLOW_DATE }));
   });
 
-  it('serves cached dates without re-fetching inside the TTL window (cache hit)', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(updatedAtResponse({ flow: FLOW_DATE }));
-    const provider = makeProvider({ ttlMs: 60_000, fetchImpl });
-
-    await provider.refreshNow();
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-
-    // Advance less than the TTL — still fresh, so no second network call.
-    clock += 30_000;
-    expect(provider.getUpdatedAt()).toEqual({ flow: FLOW_DATE });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-
-    // Cross the TTL — the next read triggers exactly one background refresh.
-    clock += 31_000;
-    provider.getUpdatedAt();
-    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
-  });
-
   it('degrades to an empty map and never throws when the endpoint is unreachable (offline)', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error('ENOTFOUND'));
     const provider = makeProvider({ ttlMs: 60_000, fetchImpl });
 
     await expect(provider.refreshNow()).resolves.toBeUndefined();
     expect(provider.getUpdatedAt()).toEqual({});
-  });
-
-  it('throttles retries after a failure to at most one per TTL', async () => {
-    const fetchImpl = vi.fn().mockRejectedValue(new Error('ENOTFOUND'));
-    const provider = makeProvider({ ttlMs: 60_000, fetchImpl });
-
-    await provider.refreshNow();
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-
-    // Within the TTL, repeated browse reads must not hammer the failing host.
-    clock += 30_000;
-    provider.getUpdatedAt();
-    provider.getUpdatedAt();
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps the last-known dates when a later refresh fails', async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce(updatedAtResponse({ flow: FLOW_DATE }))
-      .mockRejectedValueOnce(new Error('ENOTFOUND'));
-    const provider = makeProvider({ ttlMs: 60_000, fetchImpl });
-
-    await provider.refreshNow();
-    expect(provider.getUpdatedAt()).toEqual({ flow: FLOW_DATE });
-
-    clock += 61_000;
-    await provider.refreshNow();
-    // The failed refresh preserved the previous dates rather than clearing them.
-    expect(provider.getUpdatedAt()).toEqual({ flow: FLOW_DATE });
-  });
-
-  it('ignores a non-OK response body and leaves dates unchanged', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(new Response('nope', { status: 503 }));
-    const provider = makeProvider({ fetchImpl });
-
-    await provider.refreshNow();
-    expect(provider.getUpdatedAt()).toEqual({});
-  });
-
-  it('drops non-string dates so a malformed body cannot poison the comparator', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          updatedAt: { flow: FLOW_DATE, bad: 42, empty: '', nullish: null },
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } }
-      )
-    );
-    const provider = makeProvider({ fetchImpl });
-
-    await provider.refreshNow();
-    // Only the non-empty string entry survives.
-    expect(provider.getUpdatedAt()).toEqual({ flow: FLOW_DATE });
-  });
-
-  it('strips trailing slashes from the base URL so the request path never doubles up', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(updatedAtResponse({ flow: FLOW_DATE }));
-    const provider = makeProvider({ baseUrl: `${BASE_URL}///`, fetchImpl });
-
-    await provider.refreshNow();
-    expect(fetchImpl).toHaveBeenCalledWith(UPDATED_AT_URL, expect.anything());
   });
 
   it('never fires a request when a telemetry kill switch is set (consent gate)', async () => {

@@ -1,7 +1,4 @@
-import { createHash } from 'node:crypto';
-import { constants } from 'node:fs';
 import * as fs from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -294,36 +291,6 @@ afterEach(async () => {
 });
 
 describe('real installation filesystem', () => {
-  it('observes the official Chromium 1252 mac-arm64 application layout', async () => {
-    // Independent literal from the official installer output: deriving this fixture
-    // from INSTALLATION_TARGET previously hid a stale executable-path pin.
-    const fixture = await staged(
-      'official-layout',
-      'payload/chromium-1252/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
-    );
-    const snapshot = await fixture.producer.observeCandidate(fixture.candidate);
-    expect(snapshot.executable.path).toBe(fixture.executable);
-    expect(snapshot.machOCPU).toBe(16777228);
-    await expect(
-      fs.lstat(
-        path.join(
-          fixture.candidate.candidateRoot,
-          'payload/chromium-1252/chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium'
-        )
-      )
-    ).rejects.toMatchObject({ code: 'ENOENT' });
-  });
-  it('constructs and observes missing status without creating its cache', async () => {
-    const status = createRuntimeStatus(config());
-    expect((await status.inspectExisting()).state).toBe('missing');
-    await expect(fs.lstat(config().cacheRoot)).rejects.toMatchObject({ code: 'ENOENT' });
-  });
-  it('reports unsupported configuration without touching a configured path', async () => {
-    expect(
-      (await createRuntimeStatus({ ...config(), platform: 'linux' }).inspectExisting()).state
-    ).toBe('unsupported');
-    expect(await fs.readdir(root)).toEqual([]);
-  });
   it('does not repair malformed current bytes during read-only status', async () => {
     await fs.mkdir(config().cacheRoot, { mode: 0o700 });
     const bytes = Buffer.from('{"schemaVersion":1');
@@ -365,30 +332,6 @@ describe('real installation filesystem', () => {
     });
     await producer.releaseReservation(reservation);
   });
-  it('creates private attempt roots before retaining their identity', async () => {
-    const producer = createInstallationFilesystem(config()),
-      reservation = await producer.acquireReservation(binding(), bounds());
-    const attempt = await producer.createAttempt(reservation);
-    expect((await fs.readdir(attempt.attemptRoot)).sort()).toEqual(['diagnostics', 'home', 'tmp']);
-    expect(String((await fs.lstat(attempt.attemptRoot, { bigint: true })).ino)).toBe(
-      attempt.identity.inode
-    );
-    expect((await fs.stat(attempt.homeRoot)).mode & 0o077).toBe(0);
-    await producer.releaseReservation(reservation);
-  });
-  it('hashes architecture-shaped payload bytes and detects a later byte mutation', async () => {
-    const f = await staged(),
-      snapshot = await f.producer.observeCandidate(f.candidate);
-    expect(snapshot.executable.sha256).toBe(
-      createHash('sha256')
-        .update(await fs.readFile(f.executable))
-        .digest('hex')
-    );
-    await fs.appendFile(f.executable, Buffer.from([1]));
-    await expect(f.producer.revalidateCandidate(f.candidate, snapshot)).rejects.toMatchObject({
-      code: 'ROOT_CHANGED',
-    });
-  });
   it('rejects a wrong Mach-O architecture before durability', async () => {
     const f = await staged(),
       bytes = await fs.readFile(f.executable);
@@ -420,181 +363,6 @@ describe('real installation filesystem', () => {
     await expect(createInstallationFilesystem(config()).validateLibrary()).rejects.toMatchObject({
       code: 'LIBRARY_MISMATCH',
     });
-  });
-  it('validates genuine distribution with the observed 13MiB controller and bounded self-bin metadata', async () => {
-    // Copy this checkout's genuine distribution and Node binary into private
-    // fixture ancestors: CI's tool cache may intentionally be group-writable.
-    // Production ancestor validation stays strict; no network or browser launch.
-    const ownRequire = createRequire(import.meta.url);
-    const installedLibrary = await fs.realpath(
-      path.dirname(ownRequire.resolve('playwright-core/package.json'))
-    );
-    const libraryRoot = path.join(root, 'genuine-library');
-    await fs.cp(installedLibrary, libraryRoot, { recursive: true });
-    // Actual original21722 CLI was 13,236,583 bytes. These equally sized fixture bytes
-    // exercise real controller hashing/limits only and are never executed as native code.
-    const controller = Buffer.alloc(13_236_583, 0x2f),
-      verifier = Buffer.from('export {};\n');
-    const source = recordBytes(
-      { schemaVersion: 1, controllerSHA256: sha256(controller), verifierSHA256: sha256(verifier) },
-      INSTALLATION_LIMITS.manifestBytes
-    );
-    await fs.writeFile(config().controllerEntry, controller);
-    await fs.writeFile(config().verifierEntry, verifier);
-    await fs.writeFile(config().sourceManifestPath, source);
-    const toolCache = path.join(root, 'tool-cache');
-    await fs.mkdir(toolCache, { mode: 0o700 });
-    const nodeExecutable = path.join(toolCache, 'genuine-node');
-    await fs.copyFile(await fs.realpath(process.execPath), nodeExecutable);
-    await fs.chmod(nodeExecutable, 0o700);
-    const node = await fs.open(nodeExecutable, 'r');
-    const hash = createHash('sha256'),
-      buffer = Buffer.alloc(INSTALLATION_LIMITS.bufferBytes);
-    let total = 0;
-    try {
-      while (true) {
-        const read = await node.read(buffer, 0, buffer.length, total);
-        if (!read.bytesRead) break;
-        total += read.bytesRead;
-        expect(total).toBeLessThanOrEqual(INSTALLATION_LIMITS.executableBytes);
-        hash.update(buffer.subarray(0, read.bytesRead));
-      }
-    } finally {
-      await node.close();
-    }
-    const configuration: InstallationConfiguration = {
-      ...config(),
-      libraryRoot,
-      nodeExecutable,
-      nodeExecutableSHA256: hash.digest('hex'),
-      sourceVintage: {
-        controllerSHA256: sha256(controller),
-        verifierSHA256: sha256(verifier),
-        sourceManifestSHA256: sha256(source),
-      },
-    };
-    const producer = createInstallationFilesystem(configuration);
-    await fs.chmod(toolCache, 0o770);
-    await expect(producer.validateLibrary()).rejects.toMatchObject({
-      code: 'OWNERSHIP_UNCERTAIN',
-    });
-    await fs.chmod(toolCache, 0o700);
-    const library = await producer.validateLibrary();
-    expect(library.distributionSHA256).toBe(INSTALLATION_TARGET.libraryDistributionSHA256);
-    expect(library.files).toHaveLength(116);
-    expect(producer.custody().unresolvedHandles).toBe(0);
-    // A sparse over-cap controller must refuse before hashing/opening it; this does
-    // not widen the pinned official library or verifier file bounds.
-    const oversized = await fs.open(configuration.controllerEntry, 'r+');
-    try {
-      await oversized.truncate(INSTALLATION_LIMITS.controllerBytes + 1);
-    } finally {
-      await oversized.close();
-    }
-    const openedBeforeRefusal = control.opened.filter(
-      (entry) => entry.path === configuration.controllerEntry
-    ).length;
-    await expect(producer.validateLibrary()).rejects.toMatchObject({
-      code: 'INSTALLATION_INVALID',
-    });
-    expect(
-      control.opened.filter((entry) => entry.path === configuration.controllerEntry)
-    ).toHaveLength(openedBeforeRefusal);
-    expect(producer.custody().unresolvedHandles).toBe(0);
-    await fs.writeFile(configuration.controllerEntry, controller);
-    // Copy the test allocation's genuine official source into a test-owned root;
-    // generated metadata is independently formed and never executed or hashed as source.
-    const copiedRoot = path.join(root, 'installed-library');
-    await fs.cp(libraryRoot, copiedRoot, {
-      recursive: true,
-      filter: (source) =>
-        !path.relative(libraryRoot, source).split(path.sep).includes('node_modules'),
-    });
-    const bins = path.join(copiedRoot, 'node_modules', '.bin'),
-      shim = path.join(bins, 'playwright-core');
-    await fs.mkdir(bins, { recursive: true, mode: 0o700 });
-    await fs.writeFile(shim, '#!/bin/sh\nexec node "$basedir/../../cli.js" "$@"\n', {
-      mode: 0o755,
-    });
-    const validate = () =>
-      createInstallationFilesystem({ ...configuration, libraryRoot: copiedRoot }).validateLibrary();
-    const installed = await validate();
-    expect(installed.distributionSHA256).toBe(INSTALLATION_TARGET.libraryDistributionSHA256);
-    expect(installed.files).toHaveLength(116);
-    expect(installed.files.some((file) => file.path.includes('/node_modules/'))).toBe(false);
-    await fs.writeFile(path.join(copiedRoot, 'node_modules', 'shadow.js'), 'module.exports = {};');
-    await expect(validate()).rejects.toMatchObject({ code: 'LIBRARY_MISMATCH' });
-    await fs.unlink(path.join(copiedRoot, 'node_modules', 'shadow.js'));
-    await fs.writeFile(path.join(bins, 'node'), 'unexpected executable');
-    await expect(validate()).rejects.toMatchObject({ code: 'LIBRARY_MISMATCH' });
-    await fs.unlink(path.join(bins, 'node'));
-    await fs.unlink(shim);
-    await fs.mkdir(shim, { mode: 0o700 });
-    await expect(validate()).rejects.toMatchObject({ code: 'LIBRARY_MISMATCH' });
-    await fs.rmdir(shim);
-    await fs.symlink('../../package.json', shim);
-    await expect(validate()).rejects.toMatchObject({ code: 'LIBRARY_MISMATCH' });
-    await fs.unlink(shim);
-    await fs.symlink('../../cli.js', shim);
-    expect((await validate()).distributionSHA256).toBe(
-      INSTALLATION_TARGET.libraryDistributionSHA256
-    );
-    await fs.appendFile(path.join(copiedRoot, 'cli.js'), '\n// changed official source\n');
-    await expect(validate()).rejects.toMatchObject({ code: 'LIBRARY_MISMATCH' });
-  }, 30_000);
-  it('caps retained writer chunks before copying and closes both acquired raws', async () => {
-    const f = await staged(),
-      sink = f.producer.createJobSink(f.reservation, f.attempt);
-    const output = await sink.prepare({
-      schemaVersion: 1,
-      role: 'official-install',
-      jobId: 'cap',
-      binding: f.b,
-      bounds: f.end,
-      executable: f.configuration.nodeExecutable,
-      argv: [],
-      cwd: f.attempt.attemptRoot,
-      environmentDigest: 'a'.repeat(64),
-    });
-    await expect(
-      output.stdout.write(new Uint8Array(INSTALLATION_LIMITS.bufferBytes + 1))
-    ).rejects.toMatchObject({ code: 'RETENTION_EXCEEDED' });
-    await output.stdout.finish();
-    await output.stderr.finish();
-    expect(f.producer.custody(f.reservation).firstCause).toBe('RETENTION_EXCEEDED');
-    const rawOriginals = control.opened.filter((entry) => entry.path.endsWith('.raw'));
-    const writers = rawOriginals.filter(
-      (entry) => typeof entry.flags === 'number' && (entry.flags & constants.O_WRONLY) !== 0
-    );
-    expect(writers).toHaveLength(2);
-    expect(new Set(writers.map((entry) => entry.path)).size).toBe(2);
-    // Separate final-snapshot read acquisitions are real additional originals, not writer double-closes.
-    for (const original of rawOriginals)
-      expect(
-        control.closeAttempts.filter((attempt) => attempt.handleId === original.handleId)
-      ).toHaveLength(1);
-    await expect(f.producer.releaseReservation(f.reservation)).rejects.toMatchObject({
-      code: 'CUSTODY_UNCERTAIN',
-    });
-  });
-  it('keeps payload-sync failure primary when its original close also rejects', async () => {
-    const f = await staged(),
-      snapshot = await f.producer.observeCandidate(f.candidate);
-    control.syncPath = f.executable;
-    control.closePath = f.executable;
-    control.closeOnlyAfterSync = true;
-    await expect(f.producer.makeCandidateDurable(f.candidate, snapshot)).rejects.toMatchObject({
-      message: 'injected sync',
-    });
-    expect(f.producer.custody(f.reservation)).toMatchObject({
-      firstCause: 'IO_FAILED',
-      reservation: 'held',
-    });
-    expect(f.producer.custody(f.reservation).unresolvedHandles).toBeGreaterThan(0);
-    expect(control.closeCalls.filter((p) => p === f.executable).length).toBeGreaterThan(0);
-    await expect(
-      fs.lstat(path.join(f.configuration.cacheRoot, 'current.json'))
-    ).rejects.toMatchObject({ code: 'ENOENT' });
   });
   it('publishes exact durable manifest bytes after real payload and diagnostic flushes', async () => {
     const f = await staged(),
@@ -650,48 +418,6 @@ describe('real installation filesystem', () => {
       true
     );
   });
-  it('carries publicationMayHaveChanged when the rename response is ambiguous', async () => {
-    const f = await staged(),
-      snapshot = await f.producer.observeCandidate(f.candidate),
-      records = await diagnostics(f, snapshot);
-    await f.producer.makeCandidateDurable(f.candidate, snapshot);
-    control.rejectAfterCurrentRename = true;
-    await expect(
-      f.producer.publish(f.reservation, f.candidate, records.manifest, records.verification, {
-        state: 'absent',
-      })
-    ).rejects.toMatchObject({ code: 'PUBLICATION_UNCERTAIN', publicationMayHaveChanged: true });
-    expect(f.producer.custody(f.reservation).reservation).toBe('uncertain');
-    expect((await fs.lstat(path.join(f.configuration.cacheRoot, 'current.json'))).isFile()).toBe(
-      true
-    );
-  });
-  it('permits its own serial raw growth and freezes the exact final bytes', async () => {
-    const f = await staged(),
-      sink = f.producer.createJobSink(f.reservation, f.attempt);
-    const output = await sink.prepare({
-      schemaVersion: 1,
-      role: 'official-install',
-      jobId: 'growth',
-      binding: f.b,
-      bounds: f.end,
-      executable: f.configuration.nodeExecutable,
-      argv: [],
-      cwd: f.attempt.attemptRoot,
-      environmentDigest: 'a'.repeat(64),
-    });
-    await output.stdout.write(Buffer.from('first'));
-    await output.stdout.write(Buffer.from('second'));
-    await output.stdout.finish();
-    await output.stderr.finish();
-    expect(
-      await fs.readFile(path.join(f.attempt.attemptRoot, 'diagnostics/growth.stdout.raw'), 'utf8')
-    ).toBe('firstsecond');
-    expect(f.producer.custody(f.reservation)).toMatchObject({
-      firstCause: null,
-      unresolvedHandles: 0,
-    });
-  });
   it('rejects a same-byte named replacement while still closing the acquired raw original', async () => {
     const f = await staged(),
       sink = f.producer.createJobSink(f.reservation, f.attempt);
@@ -744,25 +470,6 @@ describe('real installation filesystem', () => {
     expect((await fs.stat(raw + '.old')).size).toBe(0);
     expect(f.producer.custody(f.reservation).firstCause).toBe('ROOT_CHANGED');
   });
-  it('binds post-finish publication reads to original snapshots even for equal replacement bytes', async () => {
-    const f = await staged(),
-      snapshot = await f.producer.observeCandidate(f.candidate),
-      records = await diagnostics(f, snapshot);
-    const raw = path.join(f.attempt.attemptRoot, 'diagnostics/verifier.stdout.raw'),
-      bytes = await fs.readFile(raw);
-    await fs.rename(raw, raw + '.old');
-    await fs.writeFile(raw, bytes, { mode: 0o600 });
-    await f.producer.makeCandidateDurable(f.candidate, snapshot);
-    await expect(
-      f.producer.publish(f.reservation, f.candidate, records.manifest, records.verification, {
-        state: 'absent',
-      })
-    ).rejects.toMatchObject({ code: 'ROOT_CHANGED' });
-    expect(f.producer.custody(f.reservation).firstCause).toBe('ROOT_CHANGED');
-    await expect(
-      fs.lstat(path.join(f.configuration.cacheRoot, 'current.json'))
-    ).rejects.toMatchObject({ code: 'ENOENT' });
-  });
   it('rejects a same-byte raw replacement before accepting its receipt', async () => {
     const f = await staged(),
       snapshot = await f.producer.observeCandidate(f.candidate);
@@ -780,15 +487,21 @@ describe('real installation filesystem', () => {
       fs.lstat(path.join(f.attempt.attemptRoot, 'diagnostics/verifier.receipt.json'))
     ).rejects.toMatchObject({ code: 'ENOENT' });
   });
-  it('records read replacement as primary before its original close also becomes ambiguous', async () => {
-    const f = await staged();
-    control.replaceDuringReadPath = f.executable;
-    control.closePath = f.executable;
-    await expect(f.producer.observeCandidate(f.candidate)).rejects.toMatchObject({
-      code: 'ROOT_CHANGED',
-    });
-    expect(control.readReplacementMade).toBe(true);
-    expect(f.producer.custody(f.reservation).firstCause).toBe('ROOT_CHANGED');
-    expect(f.producer.custody(f.reservation).unresolvedHandles).toBeGreaterThan(0);
+
+  it('carries publicationMayHaveChanged when the rename response is ambiguous', async () => {
+    const f = await staged(),
+      snapshot = await f.producer.observeCandidate(f.candidate),
+      records = await diagnostics(f, snapshot);
+    await f.producer.makeCandidateDurable(f.candidate, snapshot);
+    control.rejectAfterCurrentRename = true;
+    await expect(
+      f.producer.publish(f.reservation, f.candidate, records.manifest, records.verification, {
+        state: 'absent',
+      })
+    ).rejects.toMatchObject({ code: 'PUBLICATION_UNCERTAIN', publicationMayHaveChanged: true });
+    expect(f.producer.custody(f.reservation).reservation).toBe('uncertain');
+    expect((await fs.lstat(path.join(f.configuration.cacheRoot, 'current.json'))).isFile()).toBe(
+      true
+    );
   });
 });

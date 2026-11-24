@@ -2,8 +2,8 @@
   "$comment": "The test budget (scripts/test-ratio/check-test-ratio.ts). Each package passes while under either its ratio (lines of test per line of source) or its count of test lines. Both only fall. Run `pnpm check:test-ratio -- --update --package <pkg>` after deleting tests; never raise or remove an entry by hand.",
   "packages": {
     "apps/client": {
-      "ratio": 0.86,
-      "tests": 385375
+      "ratio": 0.79,
+      "tests": 351194
     },
     "apps/design-system": {
       "ratio": 0.91,
@@ -14,8 +14,8 @@
       "tests": 19272
     },
     "apps/server": {
-      "ratio": 1.31,
-      "tests": 937229
+      "ratio": 1.25,
+      "tests": 894160
     },
     "apps/site": {
       "ratio": 0.5,
@@ -26,16 +26,16 @@
       "tests": 3519
     },
     "packages/browser": {
-      "ratio": 1.26,
-      "tests": 30648
+      "ratio": 1,
+      "tests": 24180
     },
     "packages/ci-steward": {
       "ratio": 0.62,
       "tests": 8251
     },
     "packages/cli": {
-      "ratio": 0.98,
-      "tests": 36998
+      "ratio": 0.88,
+      "tests": 33324
     },
     "packages/cloud-api": {
       "ratio": 0.77,
@@ -46,8 +46,8 @@
       "tests": 8145
     },
     "packages/db": {
-      "ratio": 1.51,
-      "tests": 14445
+      "ratio": 1.47,
+      "tests": 14106
     },
     "packages/decisions": {
       "ratio": 1.08,
@@ -66,8 +66,8 @@
       "tests": 2982
     },
     "packages/harness": {
-      "ratio": 1.27,
-      "tests": 25595
+      "ratio": 1.11,
+      "tests": 22487
     },
     "packages/marketplace": {
       "ratio": 1.03,
@@ -78,20 +78,20 @@
       "tests": 1828
     },
     "packages/mesh": {
-      "ratio": 1.49,
-      "tests": 7734
+      "ratio": 1.2,
+      "tests": 6228
     },
     "packages/operating-skills": {
       "ratio": 0.57,
       "tests": 1353
     },
     "packages/relay": {
-      "ratio": 1.47,
-      "tests": 34418
+      "ratio": 1.13,
+      "tests": 26461
     },
     "packages/shared": {
       "ratio": 0.5,
-      "tests": 34119
+      "tests": 28043
     },
     "packages/skills": {
       "ratio": 1.47,
@@ -106,7 +106,7 @@
       "tests": 2572
     },
     "scripts": {
-      "ratio": 0.93,
+      "ratio": 0.89,
       "tests": 20251
     }
   }

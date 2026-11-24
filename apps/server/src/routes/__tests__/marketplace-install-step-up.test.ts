@@ -176,7 +176,7 @@ describe('marketplace install and update confirmation', () => {
     const moved = await owner
       .call('post', '/api/marketplace/updates', 'own-tunnel')
       .send({ apply: true, targets: [{ ...target, contentHash: 'sha256:other' }] });
-    expect(moved.status).toBe(409);
+    expect(moved.status).toBe(412);
     expect(moved.body.heldActionId).toBeUndefined();
 
     const held = await owner

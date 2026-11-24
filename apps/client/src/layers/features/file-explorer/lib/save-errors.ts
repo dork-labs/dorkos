@@ -14,7 +14,7 @@
  *
  * **Two ceilings, two answers.** The server accepts 1 MB of request body, which
  * is well under a room's own per-file cap — so a very large save is refused
- * `request_too_large` by the parser and never reaches the room's `FILE_TOO_LARGE`
+ * `request_too_large` by the parser and never reaches the room's `file_too_large`
  * at all. Both are here because a person hitting either has hit "too big", and
  * being told which ceiling it was is the difference between "split this up" and
  * "this does not belong in a room's files".
@@ -35,26 +35,26 @@ import { ROOM_REPO_CONFIG_UNSAFE_CODE, ROOM_REPO_CONFIG_UNSAFE_FALLBACK } from '
  */
 const SAVE_REFUSAL_COPY = new Map<string, string>([
   ['request_too_large', 'Too much text to save here. Put big files in the room’s attachments.'],
-  ['FILE_TOO_LARGE', 'This file is bigger than the room allows, so it wasn’t saved.'],
-  ['REPO_CAP_EXCEEDED', 'This room’s files are full, so nothing was saved.'],
+  ['file_too_large', 'This file is bigger than the room allows, so it wasn’t saved.'],
+  ['repo_cap_exceeded', 'This room’s files are full, so nothing was saved.'],
   [
-    'MAIN_CHECKOUT_DIRTY',
+    'main_checkout_dirty',
     'Saving is paused. Somebody changed these files outside DorkOS. See the warning above.',
   ],
   [
-    'MERGE_IN_FLIGHT',
+    'merge_in_flight',
     'Somebody else is saving these files. Nothing was saved. Try again in a moment.',
   ],
-  ['PEOPLE_ONLY', 'Only a person can save here. Agents bring work in by merging.'],
-  ['ROOM_FILE_NOT_TEXT', 'This file isn’t plain text, so it can’t be saved here.'],
-  ['ROOM_FILE_PATH_INVALID', 'That file name points somewhere else, so nothing was saved.'],
-  ['ROOM_FILE_NOT_FOUND', 'This file is gone from the room, so there was nothing to save over.'],
-  ['ROOM_FILE_NOT_READABLE', 'This file can’t be edited here.'],
-  ['ROOM_HAS_NO_REPO', 'This room no longer has its own files.'],
-  ['ROOM_REPOS_DISABLED', 'Room files are turned off on this install, so nothing was saved.'],
-  ['ROOM_REPO_GIT_UNAVAILABLE', 'Room files need git, and git isn’t installed on this computer.'],
-  ['ROOM_NOT_FOUND', 'This room no longer exists.'],
-  ['ROOM_ARCHIVED', 'This room is archived, so its files can’t be changed.'],
+  ['person_only', 'Only a person can save here. Agents bring work in by merging.'],
+  ['room_file_not_text', 'This file isn’t plain text, so it can’t be saved here.'],
+  ['room_file_path_invalid', 'That file name points somewhere else, so nothing was saved.'],
+  ['room_file_not_found', 'This file is gone from the room, so there was nothing to save over.'],
+  ['room_file_not_readable', 'This file can’t be edited here.'],
+  ['room_has_no_repo', 'This room no longer has its own files.'],
+  ['room_repos_disabled', 'Room files are turned off on this install, so nothing was saved.'],
+  ['room_repo_git_unavailable', 'Room files need git, and git isn’t installed on this computer.'],
+  ['room_not_found', 'This room no longer exists.'],
+  ['room_archived', 'This room is archived, so its files can’t be changed.'],
   [ROOM_REPO_CONFIG_UNSAFE_CODE, ROOM_REPO_CONFIG_UNSAFE_FALLBACK],
 ]);
 

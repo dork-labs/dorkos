@@ -18,21 +18,20 @@
  * @module routes/todos
  */
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { PERSON_APP_HEADER, PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
+import { PERSON_APP_HEADER } from '@dorkos/shared/person-session';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import {
   CreateTodoRequestSchema,
   ListTodosQuerySchema,
   UpdateTodoRequestSchema,
 } from '@dorkos/shared/todo-schemas';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
-import { errorBody } from '../lib/route-utils.js';
 import {
   isPersonWithoutSession,
   PERSON_SESSION_REQUIRED_MESSAGE,
 } from '../lib/person-without-session.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import {
@@ -65,22 +64,23 @@ export interface TodoRouterDeps {
   readSource(entryId: string): TodoSourceFacts | undefined;
 }
 
-/** The HTTP status for each refusal. */
-const STATUS: Record<TodoPromiseErrorCode, ContentfulStatusCode> = {
-  NOT_FOUND: 404,
-  NOT_YOURS: 403,
-  NOTHING_TO_CHANGE: 400,
-  CONFLICT: 409,
-  PAST_DUE: 400,
-  NO_AGENT: 403,
-  UNKNOWN_AGENT: 404,
-  TOO_MANY: 429,
+/** The problem code each refusal answers with; each code's own status comes with it. */
+const PROBLEM: Record<TodoPromiseErrorCode, ProblemCode> = {
+  NOT_FOUND: 'not_found',
+  NOT_YOURS: 'forbidden',
+  NOTHING_TO_CHANGE: 'invalid_request',
+  // The to-do (or promise) is not in the state the caller saw: look again.
+  CONFLICT: 'precondition_failed',
+  PAST_DUE: 'past_due',
+  NO_AGENT: 'forbidden',
+  UNKNOWN_AGENT: 'not_found',
+  TOO_MANY: 'rate_limited',
 };
 
-/** Answer a {@link TodoPromiseError} with its status, or rethrow. */
+/** Answer a {@link TodoPromiseError} as a problem document, or rethrow. */
 function refusal(c: Context<ApiEnv>, err: unknown): Response {
   if (!(err instanceof TodoPromiseError)) throw err;
-  return c.json(errorBody(err.message, err.code), STATUS[err.code]);
+  return problem(c, PROBLEM[err.code], { detail: err.message });
 }
 
 /**
@@ -115,19 +115,15 @@ function personActor(
   const facts = honoRequestFacts(c);
   if (presentsAgentIdentity(facts)) {
     return {
-      refused: c.json(
-        errorBody('Agents make and change to-dos with todo_add and todo_update.', 'NOT_A_PERSON'),
-        403
-      ),
+      refused: problem(c, 'person_only', {
+        detail: 'Agents make and change to-dos with todo_add and todo_update.',
+      }),
     };
   }
   const proven = deps.personProven(facts);
   if (!proven && deps.needsStepUp(facts)) {
     return {
-      refused: c.json(
-        errorBody(PERSON_SESSION_REQUIRED_MESSAGE, PERSON_SESSION_REQUIRED_CODE),
-        401
-      ),
+      refused: problem(c, 'person_session_required', { detail: PERSON_SESSION_REQUIRED_MESSAGE }),
     };
   }
   // The owner on a Wi-Fi device not let run agents gets the no-owner allowance and nothing more:
@@ -157,7 +153,7 @@ export function createTodosRoutes(deps: TodoRouterDeps): Hono<ApiEnv> {
   // the reader's list wouldn't. An id nobody can read answers 404, and the card says so.
   router.get('/:id', (c) => {
     const todo = deps.todos.get(c.req.param('id'));
-    if (!todo) return c.json(errorBody('No to-do has that id.', 'NOT_FOUND'), 404);
+    if (!todo) return problem(c, 'not_found', { detail: 'No to-do has that id.' });
     return c.json({ ...todo, workSessionId: deps.workSessionOf?.(todo.id) ?? null });
   });
 
@@ -172,7 +168,7 @@ export function createTodosRoutes(deps: TodoRouterDeps): Hono<ApiEnv> {
     if (sourceEntryId) {
       // The source's author and marks are the server's own read, never the body's.
       const facts = deps.readSource(sourceEntryId);
-      if (!facts) return c.json(errorBody('No message has that id.', 'NOT_FOUND'), 404);
+      if (!facts) return problem(c, 'not_found', { detail: 'No message has that id.' });
       source = {
         entryId: facts.entryId,
         author: facts.author,

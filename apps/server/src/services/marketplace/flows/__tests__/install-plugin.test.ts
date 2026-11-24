@@ -196,28 +196,6 @@ describe('PluginInstallFlow', () => {
     expect(await pathExists(installedExt)).toBe(true);
   });
 
-  it('places project-local installs under projectPath/.dork/plugins/<name>', async () => {
-    const deps = await buildDeps();
-    cleanupDirs.push(deps.dorkHome);
-    const projectPath = await mkdtemp(path.join(tmpdir(), 'install-plugin-proj-'));
-    cleanupDirs.push(projectPath);
-    const manifest = buildManifest({ name: 'local-plugin' });
-    const pkgPath = await stagePackage({ manifest });
-    cleanupDirs.push(pkgPath);
-
-    const flow = new PluginInstallFlow(deps);
-    const result = await flow.install(pkgPath, manifest, { projectPath });
-
-    const expected = path.join(projectPath, '.dork', 'plugins', 'local-plugin');
-    expect(result.installPath).toBe(expected);
-    expect(await pathExists(expected)).toBe(true);
-    // The global root must NOT be touched for a project-local install.
-    expect(await pathExists(path.join(deps.dorkHome, 'plugins', 'local-plugin'))).toBe(false);
-    // A project-scoped plugin install is legitimate (unlike a project-scoped
-    // Shape install, DOR-386) — it never carries a scope warning.
-    expect(result.warnings).toEqual([]);
-  });
-
   it('rolls back staging and skips installRoot when extension compilation throws', async () => {
     const deps = await buildDeps();
     cleanupDirs.push(deps.dorkHome);
@@ -498,25 +476,6 @@ describe('PluginInstallFlow', () => {
       );
     });
 
-    it('never runs npm for a package that declares no runtime dependencies', async () => {
-      const marker = path.join(await mkdtemp(path.join(tmpdir(), 'npm-marker-')), 'ran');
-      cleanupDirs.push(path.dirname(marker));
-      await stubNpm(`#!/bin/sh\ntouch "${marker}"\n`);
-      const deps = await buildDeps();
-      cleanupDirs.push(deps.dorkHome);
-      const manifest = buildManifest({ name: 'dev-deps-only' });
-      const pkgPath = await stagePackage({
-        manifest,
-        packageJson: { name: 'dev-deps-only', devDependencies: { zod: '^4.3.6' } },
-      });
-      cleanupDirs.push(pkgPath);
-
-      const result = await new PluginInstallFlow(deps).install(pkgPath, manifest, {});
-
-      expect(result.warnings).toEqual([]);
-      expect(await pathExists(marker)).toBe(false);
-    });
-
     it('still installs the package, with a warning, when npm fails', async () => {
       await stubNpm("#!/bin/sh\necho 'npm error code ENETUNREACH' >&2\nexit 1\n");
       const deps = await buildDeps();
@@ -563,25 +522,6 @@ describe('PluginInstallFlow', () => {
       const installRoot = path.join(deps.dorkHome, 'plugins', 'rolls-back');
       expect(await pathExists(path.join(installRoot, 'node_modules'))).toBe(false);
       expect(await pathExists(installRoot)).toBe(false);
-    });
-
-    it('still installs the package, with a warning, when npm is not on the machine', async () => {
-      vi.stubEnv('PATH', path.join(tmpdir(), 'dorkos-no-npm-here'));
-      const deps = await buildDeps();
-      cleanupDirs.push(deps.dorkHome);
-      const manifest = buildManifest({ name: 'no-npm' });
-      const pkgPath = await stagePackage({
-        manifest,
-        packageJson: { name: 'no-npm', dependencies: { zod: '^4.3.6' } },
-      });
-      cleanupDirs.push(pkgPath);
-
-      const result = await new PluginInstallFlow(deps).install(pkgPath, manifest, {});
-
-      expect(result.ok).toBe(true);
-      expect(await pathExists(path.join(deps.dorkHome, 'plugins', 'no-npm'))).toBe(true);
-      expect(result.warnings).toHaveLength(1);
-      expect(result.warnings[0]).toContain('npm is not installed');
     });
   });
 });

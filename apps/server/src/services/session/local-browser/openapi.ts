@@ -14,8 +14,8 @@ import {
   LocalBrowserStateSchema,
 } from '@dorkos/shared/local-browser';
 import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
+import { problemResponse } from '../../core/openapi/problem-openapi.js';
 
-const errorSchema = z.object({ error: z.string(), code: z.string() });
 const authority = 'Only the owner on this computer can call this route. ';
 const selectedPageQuery = z.object({
   sessionId: z
@@ -26,18 +26,25 @@ const selectedPageQuery = z.object({
     .describe('Select this chat’s browser page. Omit it for Your browser.'),
 });
 
-/** Describe the shared browser refusal payload. */
-function refusal(description: string) {
-  return { description, content: { 'application/json': { schema: errorSchema } } };
-}
+/**
+ * A browser refusal: a problem document whose `code` is the one a reader acts
+ * on (`signing_in`, `history_refused`, `precondition_failed`) or `conflict`,
+ * with a sentence written for a person.
+ */
+const refusal = problemResponse;
 
 const stateResponses = {
   200: {
     description: 'Current browser state',
     content: { 'application/json': { schema: LocalBrowserStateSchema } },
   },
-  403: refusal('The caller is not the owner on this computer'),
-  409: refusal('The browser cannot complete this request in its current state'),
+  403: refusal(
+    '`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer'
+  ),
+  409: refusal(
+    '`signing_in` (finish signing in first), `history_refused`, or `conflict`: the browser cannot do this now'
+  ),
+  412: refusal('`precondition_failed`: the page changed since it was read'),
   500: refusal('The browser operation failed'),
 };
 
@@ -179,7 +186,7 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
         },
         400: refusal('The profile id is invalid'),
         403: refusal('The caller is not the owner in person on this computer'),
-        404: refusal('The browser profile no longer exists'),
+        404: refusal('`not_found`: the browser profile no longer exists'),
         409: refusal('A writer still holds the profile, or removal was incomplete'),
         500: refusal('The profile data could not be removed'),
       },
@@ -377,7 +384,7 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
     description:
       'Named profiles are cut for launch: the app can’t show one, so this always refuses with `profiles_closed`. Listing and deleting existing profiles still work.',
     responses: {
-      403: refusal('New browser profiles aren’t available'),
+      403: refusal('`forbidden`: new browser profiles aren’t available'),
     },
   });
   registry.registerPath({

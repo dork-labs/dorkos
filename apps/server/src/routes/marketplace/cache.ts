@@ -11,7 +11,7 @@ import { UnreadableInstallsError } from '../../services/marketplace/cache/packag
 import { directorySize } from '../../services/marketplace/lib/directory-size.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceRouteContext } from './context.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { safeReaddir, validationFailed } from './shared.js';
 
 /**
@@ -73,7 +73,7 @@ export function mountCacheRoutes(
       return c.json({ ...status, cleanup: cacheRetention.status() });
     } catch (err) {
       logger.error('[Marketplace] Failed to read cache status', err);
-      return c.json({ error: 'Failed to read cache status' }, 500);
+      return problem(c, 'internal_error', { detail: "Couldn't read the cache status. Try again." });
     }
   });
 
@@ -84,7 +84,9 @@ export function mountCacheRoutes(
       return c.body(null, 204);
     } catch (err) {
       logger.error('[Marketplace] Failed to clear cache', err);
-      return c.json({ error: 'Failed to clear marketplace cache' }, 500);
+      return problem(c, 'internal_error', {
+        detail: "Couldn't clear the package cache. Try again.",
+      });
     }
   });
 
@@ -111,16 +113,14 @@ export function mountCacheRoutes(
         logger.warn('[Marketplace] cache prune stopped: could not read every install', {
           error: err.message,
         });
-        return c.json(
-          {
-            error:
-              "Couldn't check every installed package, so nothing was removed. The server log names the folder it couldn't read.",
-          },
-          503
-        );
+        return problem(c, 'temporarily_unavailable', {
+          detail: "Nothing was removed. Some installs couldn't be read; the server log names them.",
+        });
       }
       logger.error('[Marketplace] Failed to prune cache', err);
-      return c.json({ error: 'Failed to prune marketplace cache' }, 500);
+      return problem(c, 'internal_error', {
+        detail: "Couldn't clean up the package cache. Try again.",
+      });
     }
   });
 }

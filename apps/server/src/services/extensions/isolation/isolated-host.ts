@@ -71,6 +71,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ExtensionIsolation } from '@dorkos/extension-api';
 import type { DataProviderContext } from '@dorkos/extension-api/server';
+import { problemBody } from '@dorkos/http-kit';
 import { CtxDispatcher } from './ctx-dispatcher.js';
 import {
   ISOLATION_LIMITS,
@@ -577,10 +578,7 @@ export class IsolatedExtensionHost {
             ok: check.ok,
             ...(check.reason !== undefined ? { reason: check.reason } : {}),
           })),
-          personRefusal: (() => {
-            const copy = requirePersonCopy(name);
-            return { error: copy.error, code: copy.code, message: copy.agent };
-          })(),
+          personRefusal: problemBody('person_only', { detail: requirePersonCopy(name).agent }),
         });
         loadTimer = startStartupDeadline(this.timings.loadTimeoutMs, () => {
           if (phase !== 'load' && phase !== 'register') return;

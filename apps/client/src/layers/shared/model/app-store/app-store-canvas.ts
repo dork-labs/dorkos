@@ -484,7 +484,7 @@ function isSessionNotFound(err: unknown): boolean {
   return (
     typeof err === 'object' &&
     err !== null &&
-    (err as { code?: string }).code === 'SESSION_NOT_FOUND'
+    (err as { code?: string }).code === 'session_not_found'
   );
 }
 

@@ -236,7 +236,7 @@ async function expectEveryRouteRefused(
 
 describe('anyone but a person at this computer', () => {
   it('refuses an agent on every route, at the route’s own person check', async () => {
-    await expectEveryRouteRefused(403, 'person_required', { 'x-dorkos-agent': 'agent-a' });
+    await expectEveryRouteRefused(403, 'person_only', { 'x-dorkos-agent': 'agent-a' });
   });
 
   it('refuses a page from another site on every route', async () => {

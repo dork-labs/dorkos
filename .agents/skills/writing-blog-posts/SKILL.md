@@ -11,7 +11,7 @@ The blog at `blog/*.mdx` holds 61 posts and every one of them is a release note.
 
 A blog post is exactly where an unverified claim slips out. The rule is the demo-claim gate in `meta/ROADMAP.md`: never state that a still-unverified or unbuilt surface works.
 
-Read its lists (built today, still unverified, before launch, roadmap) before you draft. On top of them, three things come up in posts often:
+Read its lists ("Built today", "Still unverified", "Next: being built, not built yet", "Later: planned, never claimed as working") before you draft. On top of them, three things come up in posts often:
 
 - **Obsidian plugin:** retired. Link the migration guide; never promise an install.
 - **Linux desktop:** does not exist. Not gated, just absent.
@@ -166,7 +166,7 @@ Two limits:
 
 **Publish design reasoning, including rejected alternatives and corrections made during design.** This is the strongest material we have and it is unusually plentiful: ADRs with errata admitting their own overclaims, specs that correct an earlier draft in the shipped document, decisions reversed with the original argument left standing.
 
-**Do not publish operational failures or incidents.** The research is clear that admitting failure builds credibility, and equally clear that every exemplar was a company with an existing reputation to spend. GitLab live-streamed a database outage recovery and came out ahead. GitLab had years of standing first. DorkOS is a pre-launch alpha with roughly zero outside users, and there is no documented precedent for a product in that position spending credibility it has not yet earned. When we have a track record, revisit this. Until then the line is design reasoning yes, incidents no.
+**Do not publish operational failures or incidents.** The research is clear that admitting failure builds credibility, and equally clear that every exemplar was a company with an existing reputation to spend. GitLab live-streamed a database outage recovery and came out ahead. GitLab had years of standing first. DorkOS is an alpha with roughly zero outside users, and there is no documented precedent for a product in that position spending credibility it has not yet earned. When we have a track record, revisit this. Until then the line is design reasoning yes, incidents no.
 
 ## Voice and lines you may use
 

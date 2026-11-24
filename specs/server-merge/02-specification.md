@@ -14,6 +14,9 @@ status: specified
 **Carries out:** ADR [261006-235238](../../decisions/261006-235238-one-dorkos-server-in-every-size.md), started before launch on 2026-10-12, go/no-go November 16
 **Ideation:** [01-ideation.md](01-ideation.md) (Dorian's 12 requirements, the codebase summary and the options weighed)
 
+> **Changed 2026-11-24 by ADR `261124-150515` (sequence, not dates).** The dates, the launch and the "before launch / after launch" split in this document are retired. What it decided to build, and the order where one step needs another, stand. The live order is `meta/ROADMAP.md`.
+> "After launch, in order" is now simply the order, and step 9 loses its "after launch" gate (its PGlite gates stand). ADR `261124-150516` gives the role checks an end state: two entries, a space side and a computer side.
+
 > **Changed 2026-10-15 by [`everything-is-a-space`](../everything-is-a-space/02-specification.md) (ADR `261015-042933`).** Steps 1 to 4 and 6 continue inside that plan's chat C, on the same dates, so the official space is upgraded by November 20 for the December 8 soft launch; step 4's 20,000-stream bar now gates the launch (late January, moved to early February 2027 by ADR `261015-125850` the same day). Step 10 ("one window") is replaced by the hub, the session relay and one sidebar. Requirement 5 changes for Cloud team spaces (members sign in with a DorkOS account), requirement 6 is met by the session relay, requirement 11 brings team spaces into launch, and the non-goal "merging the space's web page into the app" is resolved by hubs. Step 6 no longer depends on step 4, and go/no-go criterion 4 (the 20,000-stream bar) now applies to the launch, not the soft launch, which runs with current users only. Step 2's code moves about a week later and the release with steps 2 and 3 is cut on November 9 to 10; the go/no-go and the November 20 cutoff keep their dates. The dates below are the old Dec 8 plan where they say "launch".
 
 > **Status 2026-11-21 (architecture rebaseline, [`research/20261121_architecture-rebaseline.md`](../../research/20261121_architecture-rebaseline.md)).** Steps 1, 2, 3a, 3b, 5 and 7 are merged (PRs #2916, #2943, #2930, #2937, #3046, and #3050, #3048, #3079, #3093, #3094, #3096 for 7b to 7g): the space code lives in `apps/server/src/services/spaces/`, `apps/space` is the package that owns the migrations, tests and image, the space pages build from `apps/client/src/space/`, and `apps/community` is retired. Step 6 reads Done in Linear with no production-upgrade receipt found; step 4 (the 20,000-stream bar) is open and gates the February launch; steps 8 and 9 stay after launch. The live-gate rerun this ADR asked for has not happened. The header's "no code lands from this document" and the `apps/community/load/` path below are history.
@@ -62,6 +65,8 @@ Before launch, the official space gets the first four. After launch, the program
 - The full merge (one program, one model, one window) is planned, ordered and ticketed, so launch leaves nothing half-done.
 
 ## Non-goals (before launch)
+
+_"Before launch" and "after launch" are retired as reasons (ADR 261124-150515). Read these as the non-goals of this plan._
 
 - ~~Moving the space code into `apps/server`, building the image from the DorkOS server package~~ (moved before launch on 2026-10-18; see "Step 7 before launch"). A `dorkos space` command for self-hosters stays after launch.
 - Equal accounts for people (access levels, guests, per-account keys; DOR-2743), the one message system (DOR-2744), live shared docs (DOR-2750), mini apps on hosted spaces, and agents moving between computers.
@@ -143,11 +148,15 @@ Chat D builds it, from now. A read-only inventory on 2026-10-18 (base `562de0d37
 | 7f  | The image from the server package: a `space` target, the same image name, workflow file name and compatibility id; acceptance and the launcher evidence rerun (the live launcher test spends money: Dorian decides). | M    |
 | 7g  | `apps/community` retires; internal "community" becomes "space" (folds in DOR-2639); docs, AGENTS.md and guides.                                                                                                      | S    |
 
+_Retired 2026-11-24 (ADR 261124-150515): kept as a record of the old plan. The order of the steps stands; the dates do not._
+
 **Schedule.** About 3 to 4 chat-weeks. Target: 7a to 7f in a release by **November 6**, so the November 11 rehearsal and the November 16 go/no-go run on the merged image. If it is not, or the go/no-go fails on the merged image only, production upgrades by November 20 to the last release before 7d (it already carries steps 2 and 3), and the merged image follows after the soft launch with its own rehearsal, before L1a. The 20,000-stream runs (step 4, C13) are measured on the merged image.
 
 **Risks.** One import drags SQLite or an SDK into the image (7b and the lint boundary). A frozen path breaks (step 1's tests, plus the three new census entries). Required-check churn ejects PRs from the queue (7c alone, first). Collisions with chat C's space work (pure renames; a short freeze; C5's sign-in changes land before 7d). Evidence redone (acceptance, launcher live tests, Cloud's host runbooks, the load bar), once, on the image that launches.
 
 ### After launch, in order
+
+_"Before launch" and "after launch" are retired as reasons for this order (ADR 261124-150515). Read this as one list, in order._
 
 1. ~~**One program.**~~ **Moved before launch (2026-10-18): see "Step 7 before launch".** As first planned: The space code moves into `apps/server` (`services/spaces`), its web page into the client build, and `apps/community` retires. The image is built from the DorkOS server package, keeping D6's promises (offline commands, start command, settings); a build check refuses runtime SDKs and `better-sqlite3` in it. One middleware chain serves both kinds of server. `dorkos` gains a way to run a space host for self-hosters. Internal code is renamed community to space; outside names stay (D5).
 2. **The active-runner lease:** moving an agent between computers takes the lease first, so two computers never run it at once.
@@ -160,6 +169,8 @@ Chat D builds it, from now. A read-only inventory on 2026-10-18 (base `562de0d37
 Sizes: **S** under a day, **M** one to three days, **L** three to six days, each for one implementation chat including review.
 
 ### Before launch
+
+_"Before launch" and "after launch" are retired as reasons for this order (ADR 261124-150515). Read this as one list, in order._
 
 | Step | What                                                                   | Size | Depends on | Must-have |
 | ---- | ---------------------------------------------------------------------- | ---- | ---------- | --------- |
@@ -179,6 +190,8 @@ Sizes: **S** under a day, **M** one to three days, **L** three to six days, each
 
 ### After launch
 
+_"Before launch" and "after launch" are retired as reasons for this order (ADR 261124-150515). Read this as one list, in order._
+
 | Step | What                                                                                                                                  | Size                       | Ticket                                       |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | -------------------------------------------- |
 | 7    | ~~One program~~: moved before launch (2026-10-18)                                                                                     | L+                         | DOR-2882 (absorbs the code half of DOR-2639) |
@@ -188,6 +201,8 @@ Sizes: **S** under a day, **M** one to three days, **L** three to six days, each
 | 11   | Equal accounts, one message system, live docs, mini apps on hosted spaces                                                             | per their specs            | DOR-2743, DOR-2744, DOR-2750, DOR-2759       |
 
 ## Schedule against December 8
+
+_Retired 2026-11-24 (ADR 261124-150515): kept as a record of the old plan. The order of the steps stands; the dates do not._
 
 Two implementation chats: lane A for steps 1 to 3 and 6, lane B for step 4.
 
@@ -204,6 +219,8 @@ Two implementation chats: lane A for steps 1 to 3 and 6, lane B for step 4.
 **Book now:** the Cloud rehearsal slot in the week of Nov 10, and a production-size host plus a separate load machine for lane B.
 
 **Is Nov 16 realistic?** For lane A, yes: about five PRs on a 58,000-line program, with a week of slack. Step 2 is the hardest, because it touches every query that lists members. Lane B is the real risk: the 20,000-stream bar has not been met on any image, and failing it blocks the official space's launch whatever release runs it.
+
+_Retired 2026-11-24 (ADR 261124-150515): kept as a record of the old plan. The order of the steps stands; the dates do not._
 
 **Go/no-go (Nov 16).** Go only if all hold, on the release that carries steps 2 and 3:
 

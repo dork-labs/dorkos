@@ -9,6 +9,8 @@ description: The decisions the founder made while resetting the DorkOS vision on
 **Status:** Decided. Point-in-time record.
 **What it is:** the decisions behind [`2026-10-vision-reset.md`](2026-10-vision-reset.md), in the order they were made. A **Why** line appears only where the founder gave the reason. The current canon is [`meta/VISION.md`](../meta/VISION.md), [`meta/PRINCIPLES.md`](../meta/PRINCIPLES.md), [`meta/VOICE.md`](../meta/VOICE.md) and [`meta/ROADMAP.md`](../meta/ROADMAP.md). The ADRs that record the architecture side are `261006-225605` (trusted by default) and `261006-235237` to `261006-235242` (the workspace, one server, equal accounts, one message system, shared docs, plugins).
 
+> **Changed 2026-11-24 by ADR `261124-150515` (sequence, not dates).** The dates, the launch and the "before launch / after launch" split in the decisions below are retired. Each decision's reason stands as written; nothing below is reworded. The live order is `meta/ROADMAP.md`.
+
 The research behind these decisions is in `research/20261006_*.md`.
 
 ## 1. The picture: the office and the workers

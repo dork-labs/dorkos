@@ -43,6 +43,11 @@ import {
 } from '../ipc-protocol.js';
 import { mountedLocation } from '../../http/reply-headers.js';
 import { VirtualSocket } from '../virtual-socket.js';
+import { problemBody } from '@dorkos/http-kit';
+import { PROBLEM_CONTENT_TYPE } from '@dorkos/shared/problem';
+
+/** What a route that threw is answered with: never its own message or stack, which the log keeps. */
+const ROUTE_FAILED = 'The extension’s route failed. Check its log.';
 
 /** What {@link createVirtualServer} needs. */
 export interface VirtualServerDeps {
@@ -188,14 +193,18 @@ function withMountedLocation(answer: Response, handlerUrl: string, mount: string
 }
 
 /**
- * The JSON error answer every path here gives: the shape DorkOS's own
- * handler answers with.
+ * The error answer every path here gives: a problem document, the shape
+ * DorkOS's own handler answers with.
  *
- * @param status - The status.
- * @param error - The message.
+ * @param code - `not_found` or `internal_error`.
+ * @param detail - What happened, for the person reading it.
  */
-function errorAnswer(status: number, error: string): Response {
-  return Response.json({ error }, { status });
+function errorAnswer(code: 'not_found' | 'internal_error', detail: string): Response {
+  const body = problemBody(code, { detail });
+  return new Response(JSON.stringify(body), {
+    status: body.status,
+    headers: { 'Content-Type': PROBLEM_CONTENT_TYPE },
+  });
 }
 
 /**
@@ -207,7 +216,7 @@ export function createVirtualServer(deps: VirtualServerDeps): VirtualServer {
   const mount = `/api/ext/${deps.extensionId}`;
   let fetchHandler: ExtensionFetchHandler | null = null;
   const notFound = (path: string): Response =>
-    errorAnswer(404, `Extension '${deps.extensionId}' has no route for ${path}`);
+    errorAnswer('not_found', `${deps.extensionId} has no route at ${path}.`);
 
   // Fetch only: no Express at all. The handler gets a request for the path
   // below the mount, without the verdict header, and the caller it named.
@@ -243,7 +252,7 @@ export function createVirtualServer(deps: VirtualServerDeps): VirtualServer {
         return withMountedLocation(answer, request.url, mount);
       } catch (err) {
         console.error('Route error:', err);
-        return errorAnswer(500, err instanceof Error ? err.message : 'Internal error');
+        return errorAnswer('internal_error', ROUTE_FAILED);
       }
     },
     { overrideGlobalObjects: false }
@@ -265,7 +274,12 @@ export function createVirtualServer(deps: VirtualServerDeps): VirtualServer {
   });
   // Nothing in the router matched.
   app.use((req: express.Request, res: express.Response) => {
-    res.status(404).json({ error: `Extension '${deps.extensionId}' has no route for ${req.path}` });
+    res
+      .status(404)
+      .type(PROBLEM_CONTENT_TYPE)
+      .json(
+        problemBody('not_found', { detail: `${deps.extensionId} has no route at ${req.path}.` })
+      );
   });
   // A route threw: answer like DorkOS's own handler, without a stack.
   app.use(
@@ -275,7 +289,14 @@ export function createVirtualServer(deps: VirtualServerDeps): VirtualServer {
         res.destroy();
         return;
       }
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Internal error' });
+      res
+        .status(500)
+        .type(PROBLEM_CONTENT_TYPE)
+        .json(
+          problemBody('internal_error', {
+            detail: ROUTE_FAILED,
+          })
+        );
     }
   );
 

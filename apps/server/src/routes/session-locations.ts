@@ -1,7 +1,6 @@
 /** Private, durable launch folders addressed by opaque caller-scoped references. */
 import { randomUUID } from 'node:crypto';
-import { Hono } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { Hono, type Context } from 'hono';
 import { and, eq, count } from 'drizzle-orm';
 import {
   agents,
@@ -18,19 +17,23 @@ import { AgentManifestSchema } from '@dorkos/shared/mesh-schemas';
 import type { MeshCore } from '@dorkos/mesh';
 import { BoundaryError, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, sendProblem } from '@dorkos/http-kit';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { assessSessionLocationPerson, sessionLocationOwnerId } from './session-person-birth.js';
 
 const bodySchema = z.object({ cwd: z.string().min(1) }).strict();
 const idSchema = z.uuid();
 const allocateBody = z.strictObject({});
-const locationMissing = { error: 'Chat folder not found.' };
-const agentMissing = { error: 'Agent not found' };
-const chatConflict = {
-  error: 'Could not start a new chat.',
-  code: 'SESSION_ID_CONFLICT',
-};
+/** A saved folder this caller does not have. */
+const locationMissing = (c: Context<ApiEnv>) =>
+  problem(c, 'not_found', { detail: 'Chat folder not found.' });
+/** A registered agent this caller cannot start a chat with. */
+const agentMissing = (c: Context<ApiEnv>) =>
+  problem(c, 'not_found', { detail: 'That agent isn’t registered here.' });
+/** A new chat id that collided with one already in use: nothing was started. */
+const chatConflict = (c: Context<ApiEnv>) =>
+  problem(c, 'conflict', { detail: 'Couldn’t start a new chat. Try again.' });
 const registeredAgentBody = z.strictObject({
   kind: z.literal('registered-agent'),
   agentId: AgentManifestSchema.shape.id,
@@ -106,12 +109,13 @@ export function createSessionLocationsRoutes(
   // Every path under the mount, routed or not, as the Express `router.use` ran.
   router.use('*', async (c, next) => {
     const refusal = assessSessionLocationPerson(honoRequestFacts(c));
-    if (refusal) return c.json(refusal.body, refusal.status as ContentfulStatusCode);
+    if (refusal) return sendProblem(c, refusal.body);
     await next();
   });
   router.post('/', async (c) => {
     const parsed = bodySchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json({ error: 'Choose a valid chat folder.' }, 400);
+    if (!parsed.success)
+      return problem(c, 'invalid_request', { detail: 'Choose a valid chat folder.' });
     const ownerId = sessionLocationOwnerId(honoRequestFacts(c));
     try {
       const cwd = await validateBoundaryOrDorkHome(parsed.data.cwd);
@@ -128,28 +132,25 @@ export function createSessionLocationsRoutes(
           .where(eq(sessionLocations.ownerId, ownerId))
           .get()?.value ?? 0;
       if (size >= MAX_SESSION_LOCATIONS)
-        return c.json(
-          { error: 'Too many saved chat folders.', code: 'SESSION_LOCATION_LIMIT' },
-          409
-        );
+        return problem(c, 'conflict', { detail: 'Too many saved chat folders.' });
       const id = randomUUID();
       db.insert(sessionLocations)
         .values({ id, ownerId, cwd, createdAt: new Date().toISOString() })
         .run();
       return c.json({ id }, 201);
     } catch (error) {
-      if (error instanceof BoundaryError)
-        return c.json({ error: error.message, code: error.code }, 403);
+      if (error instanceof BoundaryError) return boundaryProblem(c, error);
       throw error;
     }
   });
   router.post('/chats', (c) => {
     const parsed = registeredAgentBody.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json({ error: 'Choose a registered agent.' }, 400);
+    if (!parsed.success)
+      return problem(c, 'invalid_request', { detail: 'Choose a registered agent.' });
     const ownerId = sessionLocationOwnerId(honoRequestFacts(c));
     const { agentId } = parsed.data;
     const projectPath = options.meshCore?.getProjectPath(agentId);
-    if (!projectPath) return c.json(agentMissing, 404);
+    if (!projectPath) return agentMissing(c);
     const result = db.transaction(
       (tx) => {
         const agent = tx.select().from(agents).where(eq(agents.id, agentId)).get();
@@ -162,23 +163,23 @@ export function createSessionLocationsRoutes(
       },
       { behavior: 'immediate' }
     );
-    if (result.kind === 'missing') return c.json(agentMissing, 404);
-    if (result.kind === 'conflict') return c.json(chatConflict, 409);
+    if (result.kind === 'missing') return agentMissing(c);
+    if (result.kind === 'conflict') return chatConflict(c);
     return c.json({ sessionId: result.sessionId }, 201);
   });
   router.post('/:id/chats', async (c) => {
     const id = c.req.param('id');
-    if (!idSchema.safeParse(id).success) return c.json(locationMissing, 404);
+    if (!idSchema.safeParse(id).success) return locationMissing(c);
     const raw = readJsonBody(c);
     if (!allocateBody.safeParse(raw === undefined ? {} : raw).success)
-      return c.json({ error: 'Send an empty chat request.' }, 400);
+      return problem(c, 'invalid_request', { detail: 'Send an empty chat request.' });
 
     const ownerId = sessionLocationOwnerId(honoRequestFacts(c));
     const location = ownedLocation(db, id, ownerId);
-    if (!location) return c.json(locationMissing, 404);
+    if (!location) return locationMissing(c);
     try {
       const cwd = await validateBoundaryOrDorkHome(location.cwd);
-      if (cwd !== location.cwd) return c.json(locationMissing, 404);
+      if (cwd !== location.cwd) return locationMissing(c);
       const result = db.transaction(
         (tx) => {
           const current = ownedLocation(tx, id, ownerId);
@@ -191,28 +192,26 @@ export function createSessionLocationsRoutes(
         },
         { behavior: 'immediate' }
       );
-      if (result.kind === 'missing') return c.json(locationMissing, 404);
-      if (result.kind === 'conflict') return c.json(chatConflict, 409);
+      if (result.kind === 'missing') return locationMissing(c);
+      if (result.kind === 'conflict') return chatConflict(c);
       return c.json({ sessionId: result.sessionId, launchRef: id }, 201);
     } catch (error) {
-      if (error instanceof BoundaryError)
-        return c.json({ error: error.message, code: error.code }, 403);
+      if (error instanceof BoundaryError) return boundaryProblem(c, error);
       throw error;
     }
   });
   router.get('/:id', async (c) => {
     const id = c.req.param('id');
-    if (!idSchema.safeParse(id).success) return c.json(locationMissing, 404);
+    if (!idSchema.safeParse(id).success) return locationMissing(c);
     const ownerId = sessionLocationOwnerId(honoRequestFacts(c));
     const location = ownedLocation(db, id, ownerId);
-    if (!location) return c.json(locationMissing, 404);
+    if (!location) return locationMissing(c);
     try {
       // Revalidate on every read: boundary changes and symlink retargets cannot widen access.
       const cwd = await validateBoundaryOrDorkHome(location.cwd);
       return c.json({ cwd });
     } catch (error) {
-      if (error instanceof BoundaryError)
-        return c.json({ error: error.message, code: error.code }, 403);
+      if (error instanceof BoundaryError) return boundaryProblem(c, error);
       throw error;
     }
   });

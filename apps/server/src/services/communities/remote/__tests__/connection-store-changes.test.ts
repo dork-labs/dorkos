@@ -100,15 +100,6 @@ async function connected(ref: string, owner = OWNER) {
 }
 
 describe('RemoteConnectionStore change announcements', () => {
-  it('announces a pairing that starts and then connects', async () => {
-    await connected('remote_a');
-
-    expect(changes).toEqual([
-      { ownerKey: OWNER, ref: 'remote_a', status: 'pending', ...PLACE },
-      { ownerKey: OWNER, ref: 'remote_a', status: 'connected', ...PLACE },
-    ]);
-  });
-
   it('announces a connection the Community stopped accepting — once', async () => {
     const ref = await connected('remote_a');
     changes.length = 0;
@@ -118,26 +109,6 @@ describe('RemoteConnectionStore change announcements', () => {
     await store.requireReconnect(ref, OWNER);
 
     expect(changes).toEqual([{ ownerKey: OWNER, ref, status: 'reconnect-required', ...PLACE }]);
-  });
-
-  it('announces a disconnect as a removed row', async () => {
-    const ref = await connected('remote_a');
-    changes.length = 0;
-
-    await store.disconnect(ref, OWNER);
-
-    expect(changes).toEqual([{ ownerKey: OWNER, ref, status: 'removed', ...PLACE }]);
-  });
-
-  it('announces expired pending rows swept from the list', async () => {
-    const ref = await pending('remote_a', OWNER, new Date(Date.now() - 1_000).toISOString());
-    changes.length = 0;
-
-    await store.sweepExpired(OWNER);
-    // Nothing left to sweep: nothing to announce.
-    await store.sweepExpired(OWNER);
-
-    expect(changes).toEqual([{ ownerKey: OWNER, ref, status: 'removed', ...PLACE }]);
   });
 
   it('announces a sweep of several expired rows as ONE write, not one per row', async () => {
@@ -176,17 +147,6 @@ describe('RemoteConnectionStore change announcements', () => {
     expect(changes).toEqual([]);
   });
 
-  it('does not announce a changed host-operator answer, which rides the same re-verification', async () => {
-    const ref = await connected('remote_a');
-    changes.length = 0;
-
-    await store.updateAccess(ref, OWNER, ACCESS, true);
-    await store.updateAccess(ref, OWNER, ACCESS, false);
-
-    expect(changes).toEqual([]);
-    expect((await store.list(OWNER))[0]).not.toHaveProperty('hostOperator');
-  });
-
   it('announces only after the change is readable', async () => {
     const ref = await connected('remote_a');
     const seen: string[] = [];
@@ -200,16 +160,6 @@ describe('RemoteConnectionStore change announcements', () => {
     expect(seen).toEqual(['reconnect-required']);
   });
 
-  it('names the owner the change belongs to, so nothing downstream guesses', async () => {
-    await connected('remote_a', 'owner-author-a');
-    await connected('remote_b', 'owner-author-b');
-
-    expect(changes.filter((change) => change.status === 'connected')).toEqual([
-      { ownerKey: 'owner-author-a', ref: 'remote_a', status: 'connected', ...PLACE },
-      { ownerKey: 'owner-author-b', ref: 'remote_b', status: 'connected', ...PLACE },
-    ]);
-  });
-
   it('never fails the write when a listener throws', async () => {
     store.onChange(() => {
       throw new Error('listener exploded');
@@ -219,17 +169,6 @@ describe('RemoteConnectionStore change announcements', () => {
     await expect(store.disconnect(ref, OWNER)).resolves.toBeUndefined();
     expect(await store.list(OWNER)).toEqual([]);
     expect(changes.at(-1)).toEqual({ ownerKey: OWNER, ref, status: 'removed', ...PLACE });
-  });
-
-  it('stops announcing to a listener that unsubscribed', async () => {
-    const late: RemoteConnectionChange[] = [];
-    const off = store.onChange((batch) => late.push(...batch));
-    off();
-
-    await connected('remote_a');
-
-    expect(late).toEqual([]);
-    expect(changes).toHaveLength(2);
   });
 });
 

@@ -129,8 +129,8 @@ describe('scheduled task credits confirmation', () => {
     expect(view.body.notes).toContain('Prompt: Check stock.');
     store.updateTask(task.id, { prompt: 'Different work.' });
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
-      status: 409,
-      result: { code: 'TASK_CHANGED' },
+      status: 412,
+      result: { code: 'precondition_failed' },
     });
     expect(store.getTask(task.id)?.enabled).toBe(false);
   });

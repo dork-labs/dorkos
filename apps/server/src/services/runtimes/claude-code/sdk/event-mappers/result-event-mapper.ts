@@ -412,7 +412,7 @@ export async function* mapResultEvent(
         data: {
           message,
           code: subtype,
-          ...serverFailureWitness(session, {
+          ...serverFailureWitness(session, sessionId, {
             subtype,
             terminalReason,
             stopped: stopped || stopWasRequested === true,

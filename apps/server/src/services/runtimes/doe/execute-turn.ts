@@ -28,13 +28,16 @@ import {
   readHomeManifest,
 } from '../../core/agent-identity/index.js';
 import { agentRunsOnCredits } from '../../core/cloud/credits-model-gate.js';
+import { chosenModeWithinOwnBounds } from '../../core/turn-power/full-autonomy.js';
 import { creditsRefusalEvent } from '../../core/cloud/credits-protocols.js';
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
+import { CREDITS_PROVIDER_ID } from '../shared/credits/environment.js';
 import { turnReferenceEnv } from '../shared/references/turn-reference-env.js';
 import type { ConnectorTurnLeaseSupervisorHandle } from '../connectors/connector-turn-lease-supervisor.js';
 import { openConnectorTurn } from '../connectors/open-connector-turn.js';
 import type { ConnectorRuntimeTools, ConnectorRuntimeMcpInjection } from '../connector-tools.js';
 import { DOE_CAPABILITIES } from './runtime-constants.js';
+import { DoeToolTurnContext } from './tool-turn/context.js';
 import { DoeEventQueue } from './event-queue.js';
 import { DoeApprovals } from './approvals.js';
 import { DoeTurnEvents, doeErrorEvent } from './turn.js';
@@ -136,6 +139,8 @@ export async function executeDoeTurn(
 ): Promise<void> {
   const { id, cwd, content, opts, compact, beat, turn, queue, abortBeat } = input;
   const controller = turn.controller;
+  const isCurrent = () => hostState.active.get(id) === turn;
+  let toolTurn: DoeToolTurnContext | undefined;
   let host: DoeHostAssembly | undefined;
   let binding: Awaited<ReturnType<ConnectorRuntimeTools['principals']['openTurn']>> | undefined;
   let supervisor: ConnectorTurnLeaseSupervisorHandle | undefined;
@@ -166,7 +171,7 @@ export async function executeDoeTurn(
       const configured = hostState.inference();
       const manifest = agentPath ? await readHomeManifest(agentPath) : null;
       const creditsChosen =
-        configured?.source === 'dorkos-credits' ||
+        configured?.source === CREDITS_PROVIDER_ID ||
         agentRunsOnCredits(
           hostState.runtime,
           { id: manifest?.id, account: manifest?.account },
@@ -206,7 +211,7 @@ export async function executeDoeTurn(
       hostState.sessions.setInference(id, record.inference!);
     }
     const config = DoeInferenceConfigSchema.parse(record.inference);
-    turn.credits = config.source === 'dorkos-credits';
+    turn.credits = config.source === CREDITS_PROVIDER_ID;
     const room = opts?.additionalContext?.find((entry) => entry.kind === 'room_context')?.data;
     const localRoomAnswer =
       config.source === 'local' &&
@@ -263,7 +268,8 @@ export async function executeDoeTurn(
             agentPath,
             cwd,
             signal: controller.signal,
-            isCurrent: () => hostState.active.get(id) === turn,
+            isCurrent,
+            readToolTurn: () => toolTurn?.read(),
             onLost: () => controller.abort(),
           })
         : null;
@@ -365,10 +371,7 @@ export async function executeDoeTurn(
       hostState.options.engineFactory
     );
     supervisor?.assertUsable();
-    if (beat)
-      beat.settle(await turn.engine.runBeat({ ...beat.request, signal: controller.signal }));
-    else if (compact) await turn.engine.compact({ signal: controller.signal });
-    else {
+    if (!beat && !compact) {
       hostState.sessions.message(id, content!, cwd, opts?.title);
       // Say plainly when the first request cannot fit, before the model is called (DOR-2839).
       assertDoeTurnFits({
@@ -377,6 +380,21 @@ export async function executeDoeTurn(
         content: content!,
         window: model,
       });
+    }
+    if (binding) {
+      toolTurn = new DoeToolTurnContext(queue, controller.signal, isCurrent, {
+        effectiveMode: mode,
+        chosenMode: chosenModeWithinOwnBounds(
+          DOE_CAPABILITIES.permissionModes,
+          modeChoice,
+          opts?.permissionCeiling
+        ),
+      });
+    }
+    if (beat)
+      beat.settle(await turn.engine.runBeat({ ...beat.request, signal: controller.signal }));
+    else if (compact) await turn.engine.compact({ signal: controller.signal });
+    else {
       const result = await turn.engine.run(content!, {
         signal: controller.signal,
         ...(plainTextRoomReply ? { finishTurn } : {}),
@@ -403,6 +421,7 @@ export async function executeDoeTurn(
       queue.push(creditsRefusalEvent(error) ?? doeErrorEvent(error));
     }
   } finally {
+    toolTurn?.close();
     turn.approvals.close();
     supervisor?.stop();
     try {
@@ -440,7 +459,7 @@ export async function executeDoeTurn(
       queue.push({ type: 'done', data: { sessionId: id } });
       queue.end();
       beat?.request.signal?.removeEventListener('abort', abortBeat);
-      hostState.active.delete(id);
+      if (isCurrent()) hostState.active.delete(id);
     }
   }
 }

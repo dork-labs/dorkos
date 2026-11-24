@@ -473,21 +473,27 @@ export class PersistentDispatch {
    * @param sessionId - The session being asked about, in any id it answers to
    */
   holdsBackgroundWork(sessionId: string): boolean {
-    const key = this.sessionKeyOf(sessionId);
-    const bundle = this.bundles.get(key);
-    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return false;
-    return bundle.heldWork === true;
+    return this.liveBundle(sessionId)?.heldWork === true;
   }
 
-  /** Read the existing crash policy; unknown/cold process cannot authorize a fresh-id escape. */
-  failedSeatCrashAllows(sessionId: string): boolean {
+  /** The session's bundle while the registry still backs it with the same pump, else nothing. */
+  private liveBundle(sessionId: string): SessionBundle | undefined {
     const key = this.sessionKeyOf(sessionId);
     const bundle = this.bundles.get(key);
-    return (
-      bundle !== undefined &&
-      this.registry.peek(key) === bundle.pump &&
-      bundle.recovery.willAutoResume
-    );
+    return bundle !== undefined && this.registry.peek(key) === bundle.pump ? bundle : undefined;
+  }
+
+  /**
+   * Read the existing crash policy. `'cold'` (no process held) never authorizes a fresh-id escape
+   * from live memory; only a later process's durable record may use it (DOR-4626). Decided: a
+   * cold chat (reaped while idle, or evicted) may recover once after a restart, but `'refuses'`
+   * (a crash loop) is final: `session-crash-recovery.ts` spends the record when it starts, so a
+   * restart never unlocks it.
+   */
+  failedSeatCrashAllows(sessionId: string): 'allows' | 'refuses' | 'cold' {
+    const bundle = this.liveBundle(sessionId);
+    if (bundle === undefined) return 'cold';
+    return bundle.recovery.willAutoResume ? 'allows' : 'refuses';
   }
 
   /**
@@ -922,10 +928,7 @@ export class PersistentDispatch {
    * @returns True when a turn that never finished had to be abandoned
    */
   settleOpenTurn(sessionId: string): boolean {
-    const key = this.sessionKeyOf(sessionId);
-    const bundle = this.bundles.get(key);
-    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return false;
-    return bundle.windows.abandonOpenWindow();
+    return this.liveBundle(sessionId)?.windows.abandonOpenWindow() ?? false;
   }
 
   /**
@@ -1466,6 +1469,7 @@ export class PersistentDispatch {
 
     bundle.recovery = new SessionCrashRecovery({
       sessionId: key,
+      aliases: () => [session.sdkSessionId],
       pump: bundle.pump,
       windows: bundle.windows,
     });

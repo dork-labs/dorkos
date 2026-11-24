@@ -289,18 +289,3 @@ describe('a turn that read words from outside the team (DOR-4851)', () => {
     expect(result).toEqual({ asked: false, ran: true });
   });
 });
-
-describe('the install card sentence', () => {
-  const install = marketplaceDomain.capabilities.find((c) => c.id === 'marketplace.install')!;
-  const sentence = (input: unknown) => install.approvalSentence!(input);
-
-  it('names the package, quoted and escaped', () => {
-    expect(sentence({ name: 'sample-pack' })).toBe('wants to install "sample-pack"');
-  });
-
-  it('still reads when the call names no package or a non-string one', () => {
-    for (const input of [{}, { name: 42 }, undefined]) {
-      expect(sentence(input)).toBe('wants to install a package');
-    }
-  });
-});

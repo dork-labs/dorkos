@@ -16,13 +16,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BOOT_BUDGET_MS,
   BOOT_HOOK_TIMEOUT_MS,
-  BOOT_TIMEOUT_MS,
   bootWithEdges,
   type BootEdges,
   type StartedServer,
 } from './harness.js';
 import { SERVER_DIR } from './server-build.js';
-import { KILL_WAIT_MS, STOP_GRACE_MS } from './stop-server.js';
 
 const ENTRY = 'src/index.ts';
 const BUILT = new Map([[path.resolve(SERVER_DIR, ENTRY), '/built/index.mjs']]);
@@ -137,32 +135,46 @@ describe('the contract boot deadline', () => {
     ).toEqual([true, true]);
   });
 
-  it('stops retrying after three lost ports and reports the last exit', async () => {
-    const servers: ReturnType<typeof fakeServer>[] = [];
-    const verdict = await bootUntilHookTimeout({
-      runsFromBuild: async () => true,
-      build: async () => BUILT,
-      start: async () => {
-        const server = fakeServer(servers.length, 1_000);
-        servers.push(server);
-        return server;
-      },
-    });
+  it.each([
+    { status: 'SIGABRT', exit: { signalCode: 'SIGABRT' } },
+    { status: '0', exit: { exitCode: 0 } },
+  ])(
+    'reports exit $status and startup output before the health deadline',
+    async ({ status, exit }) => {
+      const server = fakeServer(0);
+      vi.spyOn(server, 'log').mockReturnValue('Fixture startup diagnostic');
+      setTimeout(() => Object.assign(server.child, exit), 1_000);
+      const start = vi.fn(async () => server);
+      const verdict = await bootUntilHookTimeout({
+        runsFromBuild: async () => true,
+        build: async () => BUILT,
+        start,
+      });
 
-    expect(verdict, 'no verdict after every port was lost').toBeDefined();
-    expect(verdict!.error.message).toMatch(/The server exited \(1\) before it answered/);
-    expect(verdict!.error.message).toMatch(/Port 50002 is already in use/);
-    expect(servers).toHaveLength(3);
-    expect(
-      servers.map((s) => s.closed),
-      'every server started is stopped'
-    ).toEqual([true, true, true]);
-  });
+      expect(verdict?.error.message).toBe(
+        `The server exited (${status}) before it answered:\nFixture startup diagnostic`
+      );
+      expect(verdict!.atMs).toBeLessThanOrEqual(1_100);
+      expect(start).toHaveBeenCalledOnce();
+      expect(server.closed).toBe(true);
+    }
+  );
 
-  it('leaves the hook room to stop the last server after the budget runs out', () => {
-    expect(BOOT_BUDGET_MS).toBeGreaterThanOrEqual(BOOT_TIMEOUT_MS);
-    expect(BOOT_HOOK_TIMEOUT_MS - BOOT_BUDGET_MS).toBeGreaterThanOrEqual(
-      STOP_GRACE_MS + KILL_WAIT_MS
+  it('returns the healthy child when its expected version answers', async () => {
+    const server = fakeServer(0);
+    const fetchHealth = vi.fn(async () => Response.json({ version: server.version }));
+    vi.stubGlobal('fetch', fetchHealth);
+    const ready = await bootWithEdges(
+      { runsFromBuild: async () => true, build: async () => BUILT, start: async () => server },
+      {},
+      ENTRY,
+      {}
     );
+
+    expect(fetchHealth).toHaveBeenCalledExactlyOnceWith(`${server.baseUrl}/api/health`);
+    expect(ready.baseUrl).toBe(server.baseUrl);
+    expect(server.closed).toBe(false);
+    await ready.close();
+    expect(server.closed).toBe(true);
   });
 });

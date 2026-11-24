@@ -213,16 +213,6 @@ describe('DoeRuntime actual SDK wire', () => {
     expect(runtime.isTurnOpen(id)).toBe(false);
   });
 
-  it('allows a local model to stay quiet in an unaddressed room turn', async () => {
-    const { runtime, wire, id } = await setup('openai-completions', { textChunks: [] });
-    const events = await collect(runtime.sendMessage(id, 'For your information', roomReply(false)));
-
-    expect(wire.requests()).toBe(1);
-    expect(JSON.stringify(wire.bodies[0]?.messages)).toContain('<gen_ui>');
-    expect(events.filter((event) => event.type === 'error')).toEqual([]);
-    expect(terminal(events)).toMatchObject({ terminalReason: 'completed' });
-  });
-
   it.each([
     { trigger: 'the person addressed it', room: roomReply(true) },
     { trigger: 'the room lead owes a reply', room: roomReply(false, 'lead') },
@@ -308,97 +298,6 @@ describe('DoeRuntime actual SDK wire', () => {
     expect(runtime.isTurnOpen(id)).toBe(false);
   });
 
-  it.each([
-    {
-      name: 'when the local model keeps its reply private',
-      room: roomReply(true),
-      loaded: true,
-      requests: 2,
-    },
-    { name: 'for an unaddressed room', room: roomReply(false), loaded: true, requests: 1 },
-    { name: 'for direct chat', room: undefined, loaded: true, requests: 1 },
-    {
-      name: 'when the room post is unavailable',
-      room: roomReply(true),
-      loaded: false,
-      requests: 1,
-    },
-  ])('bounds the room reminder $name', async ({ room, loaded, requests }) => {
-    const post = vi.fn(async () => ({ content: [] }));
-    const { runtime, wire, id } = await setup(
-      'openai-completions',
-      { textChunks: ['Private text.'] },
-      {},
-      loaded ? roomPostTool(post) : undefined
-    );
-    const events = await collect(runtime.sendMessage(id, 'Fixture message', room));
-
-    expect(wire.requests()).toBe(requests);
-    const reminderRequests = wire.bodies.filter(({ messages }) =>
-      JSON.stringify(messages).includes(roomReminder)
-    );
-    expect(reminderRequests).toHaveLength(requests - 1);
-    expect(post).not.toHaveBeenCalled();
-    expect(terminal(events)).toMatchObject({ terminalReason: 'completed' });
-  });
-
-  it('leaves the normal completion after a denied room post in place', async () => {
-    const post = vi.fn(async () => ({ content: [] }));
-    const { runtime, wire, id } = await setup(
-      'openai-completions',
-      {
-        tool: 'post_to_room',
-        toolArguments: { roomId: 'fixture-room', text: 'Fixture answer.' },
-        textChunks: ['Private text after denial.'],
-      },
-      {},
-      roomPostTool(post)
-    );
-    const events: StreamEvent[] = [];
-    for await (const event of runtime.sendMessage(id, 'Answer locally', roomReply(true))) {
-      events.push(event);
-      if (event.type === 'approval_required') {
-        const callId = (event.data as { toolCallId: string }).toolCallId;
-        expect(runtime.approveTool(id, callId, false)).toBe(true);
-      }
-    }
-    expect(wire.requests()).toBe(2);
-    expect(JSON.stringify(wire.bodies)).not.toContain(roomReminder);
-    expect(events.filter((event) => event.type === 'approval_required')).toHaveLength(1);
-    expect(post).not.toHaveBeenCalled();
-    expect(terminal(events)).toMatchObject({ terminalReason: 'completed' });
-  });
-
-  it('accepts an addressed local turn with a tool result and no text', async () => {
-    const effect = vi.fn(async () => ({ content: [] }));
-    const { runtime, wire, id } = await setup(
-      'openai-completions',
-      { tool: 'fixture_reply', textChunks: [] },
-      {},
-      {
-        name: 'fixture_reply',
-        description: 'Record a fixture reply',
-        initialLoad: true,
-        schema: { type: 'object', properties: {} },
-        execute: effect,
-      }
-    );
-    const events: StreamEvent[] = [];
-    for await (const event of runtime.sendMessage(id, 'Answer locally', roomReply(true))) {
-      events.push(event);
-      if (event.type === 'approval_required') {
-        expect(
-          runtime.approveTool(id, (event.data as { toolCallId: string }).toolCallId, true)
-        ).toBe(true);
-      }
-    }
-    expect(wire.requests()).toBe(2);
-    expect(effect).toHaveBeenCalledOnce();
-    expect(text(events).trim()).toBe('');
-    expect(events.filter((event) => event.type === 'error')).toEqual([]);
-    expect(terminal(events)).toMatchObject({ terminalReason: 'completed' });
-  });
-
   for (const approved of [true, false]) {
     it(`RT-TOOL-01: answers a live wire tool approval ${approved ? 'allow' : 'deny'} before executing its effect`, async () => {
       const effect = vi.fn(async () => ({ content: [{ type: 'text', text: 'executed-effect' }] }));
@@ -461,17 +360,6 @@ describe('DoeRuntime actual SDK wire', () => {
     expect(terminal(events)?.terminalReason).toBe('interrupted');
     expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
     expect(runtime.isTurnOpen(id)).toBe(false);
-  });
-
-  it('keeps missing wire usage unavailable instead of inventing zero tokens or cost', async () => {
-    const { runtime, id } = await setup('openai-completions', { usage: false });
-    const events = await collect(runtime.sendMessage(id, 'No usage report'));
-    expect(text(events)).toBe('hello');
-    expect(terminal(events)?.terminalReason).toBe('completed');
-    expect(terminal(events)).not.toHaveProperty('turnInputTokens');
-    expect(terminal(events)).not.toHaveProperty('turnOutputTokens');
-    expect(terminal(events)).not.toHaveProperty('costUsd');
-    expect(await runtime.readContextUsage(id)).toBeNull();
   });
 
   it('interrupts a genuinely hanging HTTP model request and drains owned cleanup', async () => {

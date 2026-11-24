@@ -3,12 +3,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import { createMemoryHistory } from '@tanstack/react-router';
 import { createMockTransport, createMockSession } from '@dorkos/test-utils/mock-factories';
-import {
-  createAppRouter,
-  sessionRouteLoader,
-  sessionLoaderDeps,
-  reloadSessionMatches,
-} from '../router';
+import { sessionRouteLoader, sessionLoaderDeps, reloadSessionMatches } from '../router';
+import { createAppRouterWithoutPages } from '../test-helpers/app-router-without-pages';
 import { sessionSearchSchema, newSessionTarget } from '@/layers/shared/lib';
 import {
   clearSessionRouteContext,
@@ -56,6 +52,9 @@ function run(search: Parameters<typeof sessionSearchSchema.parse>[0], preload = 
     deps: sessionLoaderDeps({ search: sessionSearchSchema.parse(search) }),
     preload,
   });
+}
+function appRouterWithoutPages() {
+  return createAppRouterWithoutPages(queryClient, transport);
 }
 async function destination(search: Parameters<typeof sessionSearchSchema.parse>[0]) {
   try {
@@ -215,7 +214,7 @@ describe('session route identity and launch lifecycle', () => {
       sessionId: 'hover-then-click',
       launchRef: 'opaque-location',
     });
-    const router = createAppRouter(queryClient, transport);
+    const router = appRouterWithoutPages();
     router.update({
       context: router.options.context,
       history: createMemoryHistory({ initialEntries: ['/session?session=existing'] }),

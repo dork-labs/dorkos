@@ -118,6 +118,18 @@ describe('buildConversations', () => {
     expect(result[0].status).toBe('delivered');
   });
 
+  // DOR-5151: what a message's sender carried onto its turn is the server's, never its words.
+  it('leaves the carried turn limits out of a conversation’s preview and payload', () => {
+    const dl = makeDeadLetter('msg-001');
+    dl.envelope.payload = {
+      task: 'Run the tests',
+      __carriedTurnLimits: { carriedMarks: { outsider: true } },
+    } as unknown as typeof dl.envelope.payload;
+    const result = buildConversations([makeMsg()], [dl], new Map());
+    expect(result[0].preview).toBe('{"task":"Run the tests"}');
+    expect(result[0].payload).toEqual({ task: 'Run the tests' });
+  });
+
   it('failed request maps to failed status', () => {
     const msg = makeMsg({ status: 'failed' });
     const result = buildConversations([msg], [], new Map());

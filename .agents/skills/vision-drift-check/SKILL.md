@@ -31,8 +31,9 @@ The source of truth for every judgment is the north-star set: `meta/VOICE.md` (w
    ```
 
 4. **Judge each candidate line** against `meta/VOICE.md` and `meta/ROADMAP.md`. Most hits are fine in context (a license section may say "MIT license"; a comparison page may describe a rival's "side by side" view). Keep only real drift.
-5. **Check the roadmap against reality.** For each ticket the scan lists, read its state in Linear (team DOR, read-only, through the flow `linear-adapter` skill, or `composio execute LINEAR_* --account dorkos`: the `trackerAccount` in `.agents/flow/config.local.json`, never `artblocks`). Flag a ticket that is Done while `meta/ROADMAP.md` still lists it as before launch or roadmap, and a "Built today" claim whose feature was removed.
-6. **Check `meta/` stays clean:** only the north-star set and current canon at the top level, every file listed in `meta/INDEX.md`, no new file that restates the word lists or the demo-claim gate instead of linking to them.
+5. **Check the roadmap against reality.** For each ticket the scan lists, read its state in Linear (team DOR, read-only, through the flow `linear-adapter` skill, or `composio execute LINEAR_* --account dorkos`: the `trackerAccount` in `.agents/flow/config.local.json`, never `artblocks`). Flag a ticket that is Done while `meta/ROADMAP.md` still lists it under "Next: being built, not built yet" or "Later: planned, never claimed as working", and a "Built today" claim whose feature was removed.
+6. **Flag retired plans.** Flag any agent-facing file that states a retired plan as current: a launch date, three server roles as the target, Relay's Maildir as a permanent bus, `arm.sh` or hand-arming, deprecation windows or API aliases.
+7. **Check `meta/` stays clean:** only the north-star set and current canon at the top level, every file listed in `meta/INDEX.md`, no new file that restates the word lists or the demo-claim gate instead of linking to them.
 
 ## Report
 

@@ -205,7 +205,7 @@ describe('POST /api/rooms/:id/repo', () => {
     const res = await request(testServer).post(`/api/rooms/${roomId}/repo`);
 
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('ROOM_ARCHIVED');
+    expect(res.body.code).toBe('room_archived');
     expect(existsSync(store.homeDir(roomId))).toBe(false);
   });
 
@@ -217,7 +217,7 @@ describe('POST /api/rooms/:id/repo', () => {
     const second = await request(testServer).post(`/api/rooms/${roomId}/repo`);
 
     expect(second.status).toBe(409);
-    expect(second.body.code).toBe('ROOM_REPO_EXISTS');
+    expect(second.body.code).toBe('room_repo_exists');
     expect(second.body.repo).toEqual(first.body.repo);
     expect(await gitInRepo(['rev-parse', 'HEAD'], store, roomId)).toBe(head);
   });
@@ -253,7 +253,7 @@ describe('POST /api/rooms/:id/repo', () => {
       .post(`/api/rooms/${roomId}/repo`)
       .set('X-DorkOS-Agent', token);
     expect(again.status).toBe(409);
-    expect(again.body.code).toBe('ROOM_REPO_EXISTS');
+    expect(again.body.code).toBe('room_repo_exists');
     const after = await request(testServer).get(`/api/rooms/${roomId}/entries`);
     expect(after.body.entries).toHaveLength(1);
   });
@@ -269,7 +269,7 @@ describe('POST /api/rooms/:id/repo', () => {
       .set('X-DorkOS-Agent', token);
 
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('ROOM_REPOS_DISABLED');
+    expect(res.body.code).toBe('room_repos_disabled');
     expect(existsSync(store.homeDir(roomId))).toBe(false);
   });
 
@@ -284,7 +284,7 @@ describe('POST /api/rooms/:id/repo', () => {
       .set('X-DorkOS-Agent', token);
 
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('ROOM_ARCHIVED');
+    expect(res.body.code).toBe('room_archived');
     expect(existsSync(store.homeDir(roomId))).toBe(false);
   });
 
@@ -304,9 +304,9 @@ describe('POST /api/rooms/:id/repo', () => {
       .set('X-DorkOS-Agent', token);
 
     expect(known.status).toBe(404);
-    expect(known.body.code).toBe('ROOM_NOT_FOUND');
+    expect(known.body.code).toBe('room_not_found');
     expect(unknown.status).toBe(404);
-    expect(unknown.body.code).toBe('ROOM_NOT_FOUND');
+    expect(unknown.body.code).toBe('room_not_found');
   });
 
   it('refuses a token this machine cannot verify, before any room is looked up', async () => {
@@ -317,13 +317,13 @@ describe('POST /api/rooms/:id/repo', () => {
       .set('X-DorkOS-Agent', 'not-a-real-token');
 
     expect(res.status).toBe(401);
-    expect(res.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+    expect(res.body.code).toBe('agent_identity_unverified');
   });
 
   it('answers 404 for a room that does not exist', async () => {
     const res = await request(testServer).post('/api/rooms/01NOSUCHROOM/repo');
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('ROOM_NOT_FOUND');
+    expect(res.body.code).toBe('room_not_found');
   });
 
   it('is not available while config.rooms.repo.enabled is off, and writes nothing', async () => {
@@ -333,7 +333,7 @@ describe('POST /api/rooms/:id/repo', () => {
     const res = await request(testServer).post(`/api/rooms/${roomId}/repo`);
 
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('ROOM_REPOS_DISABLED');
+    expect(res.body.code).toBe('room_repos_disabled');
     expect(existsSync(store.homeDir(roomId))).toBe(false);
   });
 
@@ -354,8 +354,8 @@ describe('POST /api/rooms/:id/repo', () => {
     }
 
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('ROOM_REPO_GIT_UNAVAILABLE');
-    expect(res.body.error).toContain('git');
+    expect(res.body.code).toBe('room_repo_git_unavailable');
+    expect(res.body.detail).toContain('git');
     expect(store.getRow(roomId)).toBeNull();
   });
 
@@ -568,13 +568,13 @@ describe('the room repo routes', () => {
 
     const status = await request(testServer).get(`/api/rooms/${roomId}/repo/status`);
     expect(status.status).toBe(409);
-    expect(status.body.code).toBe('NOT_A_PROJECT_ROOM');
+    expect(status.body.code).toBe('conflict');
 
     const merged = await request(testServer)
       .post(`/api/rooms/${roomId}/repo/merge`)
       .send({ summary: 'anything' });
     expect(merged.status).toBe(409);
-    expect(merged.body.code).toBe('NOT_A_PROJECT_ROOM');
+    expect(merged.body.code).toBe('conflict');
   });
 
   it('answers an unknown room the way reading one does', async () => {
@@ -675,7 +675,7 @@ describe('the room repo routes', () => {
         .post(`/api/rooms/${roomId}/repo/merge`)
         .send({ summary: 'Add the deploy checklist', worktree: tree.slug });
       expect(refused.status).toBe(409);
-      expect(refused.body.code).toBe('MAIN_CHECKOUT_DIRTY');
+      expect(refused.body.code).toBe('main_checkout_dirty');
 
       // The way out: throw away the change nobody wanted, by name.
       const repaired = await request(testServer)
@@ -732,7 +732,7 @@ describe('the room repo routes', () => {
         .post(`/api/rooms/${roomId}/repo/merge`)
         .send({ summary: 'Add the deploy checklist', worktree: tree.slug });
       expect(merged.status).toBe(409);
-      expect(merged.body.code).toBe('BEHIND_MAIN');
+      expect(merged.body.code).toBe('conflict');
     });
 
     it('discards only what the operator named', async () => {
@@ -765,7 +765,7 @@ describe('the room repo routes', () => {
         .set('X-DorkOS-Agent', token)
         .send({ action: 'commit' });
       expect(asAgent.status).toBe(403);
-      expect(asAgent.body.code).toBe('OPERATOR_ONLY');
+      expect(asAgent.body.code).toBe('operator_only');
 
       // "Discard nothing" is not an action, and the schema says so before any
       // git runs.

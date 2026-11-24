@@ -1421,7 +1421,7 @@ export interface Transport extends TransportSlices {
    * "reject" (DOR-212 Chunk B). Binary-safe, unlike the text-oriented
    * {@link writeFile}: the server writes the snapshot's own bytes (git-HEAD
    * fallback), atomically, so no bytes travel from the client. Throws with
-   * `code: 'NO_BASELINE'` (404) when no restorable baseline exists — a file
+   * `code: 'not_found'` (404) when no restorable baseline exists — a file
    * the agent created this session has no previous version, and the revert
    * never deletes files. Content-independent and idempotent: it restores the
    * same pre-session bytes regardless of what is on disk now, so the caller

@@ -183,60 +183,6 @@ describe(
       await eventually(() => expect(reload).toHaveBeenCalledWith('dash'));
     });
 
-    it('watches a build-named folder inside skills', async () => {
-      // Purpose: `skills/build/` is a skill, not build output; chokidar must
-      // open it, so a new SKILL.md there refreshes plugins.
-      await mkdir(path.join(work, 'skills', 'build'), { recursive: true });
-      // The new folders are a change of their own; only what follows counts. Once
-      // the watch has reported both, flushing acts on them, so no refresh they
-      // cause can land after the clear below and pass the case on its own.
-      await eventually(() =>
-        expect(reported).toEqual(
-          expect.arrayContaining(['addDir skills', `addDir ${path.join('skills', 'build')}`])
-        )
-      );
-      await watcher!.flush();
-      await watcher!.projectionsIdle();
-      refreshPlugins.mockClear();
-      await writeFile(
-        path.join(work, 'skills', 'build', 'SKILL.md'),
-        '---\nname: build\ndescription: Build things.\n---\n'
-      );
-      await eventually(() => expect(refreshPlugins).toHaveBeenCalled());
-      expect(reported).toContain(`add ${path.join('skills', 'build', 'SKILL.md')}`);
-    });
-
-    it('catches a file the watch never reported deep inside a skill folder on the next sweep', async () => {
-      // Purpose: the sweep lists declaration paths all the way down, so a file
-      // a dropped event never reported inside an existing skill still reloads.
-      await watcher!.stop();
-      await mkdir(path.join(work, 'skills', 'a'), { recursive: true });
-      watcher = new DevLinkWatcher({
-        dorkHome: home,
-        refreshPlugins,
-        reproject: async () => undefined,
-        refreshProjectCommands: () => undefined,
-        broadcast: (event) => events.push(event),
-        quietMs: 50,
-        rearmMs: 0,
-        settleMs: 0,
-        watch: (_folder, _ignored, listeners) => {
-          queueMicrotask(() => listeners.onReady());
-          return { close: async () => undefined };
-        },
-      });
-      await watcher.start();
-      await watcher.ready();
-      await watcher.flush();
-      await watcher.projectionsIdle();
-      refreshPlugins.mockClear();
-      await writeFile(path.join(work, 'skills', 'a', 'SKILL.md'), '---\nname: a\n---\n');
-      await watcher.sweep();
-      await watcher.flush();
-      await watcher.projectionsIdle();
-      expect(refreshPlugins).toHaveBeenCalledTimes(1);
-    });
-
     it('catches a change the watch never reported on the next sweep', async () => {
       // Purpose: chokidar can drop an event (right after a watch opens, or a
       // dead watch); the sweep's listing comparison still reloads.

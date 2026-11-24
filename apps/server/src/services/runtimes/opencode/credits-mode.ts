@@ -15,9 +15,9 @@ import {
 } from '../../core/cloud/credits-protocols.js';
 import { heldCreditsToken, resolveCreditsLaunch } from '../../core/cloud/credits-inference.js';
 import { creditsModelsFor } from '../../core/cloud/credits-models.js';
+import { CREDITS_PROVIDER_ID } from '../shared/credits/environment.js';
 import { OPENCODE_CAPABILITIES } from './runtime-constants.js';
 import {
-  OPENCODE_CREDITS_PROVIDER_ID,
   OPENCODE_LABEL,
   OPENCODE_OWN_PLAN,
   creditsModelFor,
@@ -65,7 +65,7 @@ export async function planOpenCodeTurn(): Promise<OpenCodeSidecarPlan> {
  * @param selected - The session's model setting (`provider/model`), if any.
  */
 export function creditsModelIdOf(selected: string | undefined): string | undefined {
-  const prefix = `${OPENCODE_CREDITS_PROVIDER_ID}/`;
+  const prefix = `${CREDITS_PROVIDER_ID}/`;
   return selected?.startsWith(prefix) ? selected.slice(prefix.length) : selected;
 }
 
@@ -75,7 +75,7 @@ export function creditsModelIdOf(selected: string | undefined): string | undefin
  * @param id - A credits model id.
  */
 export function creditsSelection(id: string): string {
-  return `${OPENCODE_CREDITS_PROVIDER_ID}/${id}`;
+  return `${CREDITS_PROVIDER_ID}/${id}`;
 }
 
 /**
@@ -92,5 +92,5 @@ export function creditsPromptModel(
 ): { providerID: string; modelID: string } {
   const modelID = creditsModelFor(selected, plan.models);
   if (modelID === null) throw new CreditsUnavailableError('unreachable', OPENCODE_LABEL);
-  return { providerID: OPENCODE_CREDITS_PROVIDER_ID, modelID };
+  return { providerID: CREDITS_PROVIDER_ID, modelID };
 }

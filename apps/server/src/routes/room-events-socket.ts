@@ -14,7 +14,7 @@ import { STREAM_RESUME_PARAM } from '@dorkos/shared/stream-socket';
 import { getRoomService, RoomError } from '../services/rooms/index.js';
 import { deliverRoomStream } from '../services/core/streams/room-stream-delivery.js';
 import { resolveCaller } from './room-caller.js';
-import { STATUS_BY_CODE } from './room-error-response.js';
+import { roomErrorStatus } from './room-error-response.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
 import type { UpgradeDecision, UpgradeRoute } from '../services/core/streams/upgrade-router.js';
 import { UNOWNED_STREAM_GENERATION } from '@dorkos/shared/session-stream';
@@ -66,7 +66,7 @@ export const roomEventsRoute: UpgradeRoute = {
       // 403 and 404 alike), so what this buys is not a stopped retry — it is
       // that the close frame names the right thing. "No such room" sent to a
       // revoked agent describes a room that is perfectly fine.
-      if (err instanceof RoomError) return refuse(STATUS_BY_CODE[err.code], err.message);
+      if (err instanceof RoomError) return refuse(roomErrorStatus(err.code), err.message);
       logger.warn('[ws room] room resolve failed', {
         roomId,
         error: err instanceof Error ? err.message : String(err),

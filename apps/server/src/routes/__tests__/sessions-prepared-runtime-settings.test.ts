@@ -161,7 +161,7 @@ it.each([
     try {
       const unsupported = await update({ ...requested, permissionMode: 'unknown-fixture-mode' });
       expect(unsupported.status).toBe(400);
-      expect(unsupported.body).toMatchObject({ code: 'UNSUPPORTED_PERMISSION_MODE' });
+      expect(unsupported.body).toMatchObject({ code: 'invalid_request' });
       expect(read(id)).toEqual(before);
 
       // The write reaches SQLite. Replacing the source generation inside that
@@ -178,7 +178,7 @@ it.each([
         const refused = await update(requested);
         expect(transactionWrite).toHaveBeenCalledExactlyOnceWith(id);
         expect(refused.status).toBe(404);
-        expect(refused.body).toMatchObject({ code: 'SESSION_NOT_FOUND' });
+        expect(refused.body).toMatchObject({ code: 'session_not_found' });
         expect(read(id)).toEqual(before);
         expect(codexPublication).not.toHaveBeenCalled();
         expect(testPublication).not.toHaveBeenCalled();

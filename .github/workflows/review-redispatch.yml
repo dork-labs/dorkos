@@ -16,11 +16,24 @@ name: review-redispatch
 # starts no workflow, so the review would never run. The app has no
 # Administration permission. Nothing from a PR is checked out or run here.
 
+# WHEN IT RUNS (ledger 261124-161126). The cron alone fired once in its first
+# 16 hours, so the scan also ticks whenever CLI Smoke Test finishes on main
+# (after every push, about every 16 minutes on a working day). Each tick scans
+# every open PR, and the ladder in should-redispatch-review.sh decides whether
+# a red review's rung has passed: a tick before it answers `SKIP backoff` in
+# seconds. The cron stays as the backstop for quiet hours. `workflow_run` runs
+# main's copy of this file, and nothing from a PR is checked out or run on any
+# trigger.
+
 on:
   schedule:
     # GitHub throttles scheduled workflows (merge-tail measured a median gap of
     # 162 minutes against a 10-minute ask); the ladder's rungs allow for it.
     - cron: '*/10 * * * *'
+  workflow_run:
+    workflows: [CLI Smoke Test]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -28,15 +41,15 @@ on:
         type: boolean
         default: false
 
-concurrency:
-  group: review-redispatch
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
 jobs:
   redispatch:
+    # One scan at a time; a burst of ticks collapses to the newest waiting.
+    concurrency:
+      group: review-redispatch
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

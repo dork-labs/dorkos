@@ -4,7 +4,7 @@
  * The queue is the server's now, so a test that drives the composer has to have
  * a server to drive: one that mints ids, honours an anchor-relative move,
  * answers a mutation on a message it no longer holds with the same
- * `QUEUED_MESSAGE_NOT_FOUND` the real routes answer with, and pushes every
+ * `queued_message_not_found` the real routes answer with, and pushes every
  * change back at the hook the way `queue_update` does. Faking the transport
  * without faking those rules would test a queue that behaves like nothing that
  * ships.
@@ -28,7 +28,7 @@ import { useRenderSlot } from '@/layers/shared/lib';
 /** The error shape the HTTP transport surfaces for a `404` on a queue route. */
 export function notFound(): Error & { code: string } {
   const err = new Error('No such queued message') as Error & { code: string };
-  err.code = 'QUEUED_MESSAGE_NOT_FOUND';
+  err.code = 'queued_message_not_found';
   return err;
 }
 

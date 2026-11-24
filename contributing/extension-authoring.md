@@ -19,6 +19,18 @@ Two name collisions worth flagging:
 - **"marketplace"** names three things — the **`@dorkos/marketplace`** library (schemas / validator / scaffolder), the **`marketplace` core extension** (display name **"Marketplace"**, the browse UI), and the **install runtime** at `apps/server/src/services/marketplace/`. This guide's "marketplace" is the extension; the package and the install runtime are separate layers it sits on top of.
 - **"Linear Loop"** is the _display name_ of the **`linear-issues`** core extension — not to be confused with the `linear-loop` _skill_ bundle retired in spec #257. Both the display name and the `linear-issues` id are provisional and may be renamed.
 
+## Is this a mini app or a core feature?
+
+Before you add a feature to the DorkOS server, ask three questions (ADR `261124-150519`):
+
+1. Does the core itself act on it?
+2. Can only the core see what it needs?
+3. Would a mini app get it wrong, even with care?
+
+If one answer is yes, it may go in the core. If all three are no, build it as a mini app (this guide), or as a schedule with a skill. Some repeated code between mini apps is an accepted price.
+
+**A watcher is a mini app.** Something that watches a pull request, a pipeline or an outside app and tells an agent when it changes belongs here, built on the same author API as everyone else's. Today a watcher can poll with `ctx.schedule()` and message an agent with [`ctx.agent`](#ctxagent), but it cannot yet wake the chat that asked it to watch. The core will own one way to wake a chat or an agent when something happens, stored and safe across a restart. It is not built yet, so do not build your own version of it in the server.
+
 ## Quick Start
 
 **See a live example.** Hello World ships with DorkOS as a core extension (source at `apps/server/src/core-extensions/hello-world/`). It is staged automatically at server startup but ships disabled:
@@ -61,7 +73,7 @@ my-extension/
 
 **A copy that runs by origin runs from a snapshot** (`extension-snapshots.ts`, third security review of DOR-2527). A project copy that runs because of its trusted origin — the person approved another copy from the same source, or trusts that source — was never approved in its own folder, and its server half may run plugin files at runtime (flow runs `<extensionDir>/../../../scripts/*.ts` with node) long after the load was checked. So it never runs from the project: DorkOS copies its whole plugin folder (what the digest covers) into `{dorkHome}/extension-snapshots/<digest>/`, re-hashes the copy, and moves it into place atomically only if it matches. The record's `runPath` points into the snapshot, and compiling, the server half and `ctx.extensionDir` all use it, so everything the extension reaches relative to itself (`scripts/`, `node_modules/`) is the snapshot's; later edits in the project never run, and the next scan sees them and takes the origin away. Snapshots are content-addressed (shared by identical copies, and re-hashed before each reuse and each build since DOR-3068, so one edited after it was made is rebuilt or refused), read-only by convention (an extension's data, settings and secrets live elsewhere under `{dorkHome}`, keyed by its id), and removed once no discovered copy runs from them. Every yes pinned to a digest runs from a snapshot in the same way, at any scope, a direct copy's own folder included (DOR-3068), and the snapshot of an approved digest is kept so a changed copy's row can name what changed. A copy that keeps path trust runs from a snapshot too, of its files as they are at each scan and load (`pin/extension-snapshot-placement.ts`): its edits still need no click, but a build only ever reads bytes that were copied and verified first. A dev link and a global plugin running by its origin run where they are. **An extension that writes into its own folder (`ctx.extensionDir`) changes the files it was approved for, so it stops itself and waits for a person: keep data in `ctx.storage` (`loadData`/`saveData`) or `ctx.filesDir`, never beside your code.**
 
-**What it costs.** Whole-folder digests are cached per file by `(inode, size, mtime, ctime)` and per folder by the whole walk (every stamp plus every directory listing): a file's bytes are read again only when one of those changes, so a warm scan walks and `lstat`s and reads nothing. Each plugin folder is inspected once per scan however many extensions it carries, and a global plugin is only walked for links, never digested. On a laptop, a warm scan of five flow-sized copies (about 1,200 files each) takes about 150ms (`extension-discovery-perf.test.ts`).
+**What it costs.** Whole-folder digests are cached per file by `(inode, size, mtime, ctime)` and per folder by the whole walk (every stamp plus every directory listing): a file's bytes are read again only when one of those changes, so a warm scan walks and `lstat`s and reads nothing. Each plugin folder is inspected once per scan however many extensions it carries, and a global plugin is only walked for links, never digested. On a laptop, a warm scan of five flow-sized copies (about 1,200 files each) takes about 150ms.
 
 **A server half that never finishes starting is let go completely.** On the `register()` timeout its context is disposed: what it scheduled is cancelled, what it registered is released, and any later `ctx.schedule` or listener registration from the still-running `register()` is a no-op, logged once. A retry starts a fresh instance; nothing of the abandoned one keeps running beside it.
 
@@ -252,7 +264,7 @@ api.projectSettings.set(projectRoot, value): Promise<void> // JSON, at most 16 K
 - **Scoped to you.** Every call goes to `/api/extensions/<your id>/…`, and the server answers only your own rows: another extension's decision is a 404.
 - **Attributed to the extension.** An answer given on your page is history's "… · answered in Flow at 2:14pm". Only an answer in DorkOS's own inbox is credited to the person, and only that one can carry a one-time "next time, on its own?" offer.
 - **`projectSettings.set` is the only writer.** Your server half reads them (`ctx.projectSettings`) and has no way to write them, so neither it nor any agent it runs can turn a dial up. It sits behind the person bar, with the residual the bar documents: your own page code can call it too, so it is recorded as written from the extension's page.
-- **A refusal throws** an `Error` carrying the server's sentence and `code` (`not_running`, `already_resolved`, `extension_timeout`).
+- **A refusal throws** an `Error` carrying the server's sentence and `code` (`not_running`, `already_resolved` for a settled question or a lapsed offer, `precondition_failed` when the question changed, `temporarily_unavailable` when your extension did not answer in time).
 
 ### Starting work in a new chat
 
@@ -779,7 +791,7 @@ The generalized `ensureCoreExtensions()` scanner picks the new directory up auto
 
 ## Limitations (v1)
 
-- No sandboxing: client-side extensions run in the browser with full DOM access; server-side extensions run in the Node.js host process.
+- No full sandbox. A server half runs inside DorkOS by default (ADR 0213), with DorkOS's own access, or in its own limited process with `"runtime": "subprocess"` (see [Running separately](#running-separately)). Screens run in a sandboxed frame (`"clientApiVersion": 2`; a bundle built for an older API does not run until it is rebuilt), but they still act with the person's access. Neither is a full sandbox.
 - The `hello-world` core extension (`apps/server/src/core-extensions/hello-world/`) is the worked example of a page, a status-bar item and a tab marker. It ships turned off.
 - No extension marketplace or auto-update mechanism.
 - Storage is local-only (no sync across machines).
@@ -788,7 +800,7 @@ The generalized `ensureCoreExtensions()` scanner picks the new directory up auto
 
 ## Server-Side Data Providers
 
-Extensions can run code on the DorkOS server. A **data provider** extension adds a `server.ts` file alongside `index.ts`, giving it Express routes, encrypted secrets, persistent storage, background scheduling, and SSE event emission — all scoped and isolated per extension.
+Extensions can run code on the DorkOS server. A **data provider** extension adds a `server.ts` file alongside `index.ts`, giving it HTTP routes (an Express router or a fetch handler), encrypted secrets, persistent storage, background scheduling, and SSE event emission — all scoped and isolated per extension.
 
 The three tiers of server-side capability, from simplest to most powerful:
 
@@ -948,7 +960,7 @@ await ctx.accounts.markContinued(sourceSessionId, { sessionId, runtime, accountI
 - **After shutdown or reload the old `ctx.accounts` is closed.** `onUsage` and `registerAdvisor` throw and register nothing, and `markContinued` rejects, so a late `.then(() => ctx.accounts.registerAdvisor(…))` from a previous instance cannot replace the new instance's advisor. `list` and `usage` keep answering.
 - **`markContinued`** tells DorkOS that your extension moved a session it claimed (see `claims` below) to a new session, so the source session points at where its work went. It rejects a malformed call, and rejects while this server tracks no session limits.
 
-**The account advisor.** `ctx.accounts.registerAdvisor(advisor)` lets an extension decide which accounts work may go to. Core never reads any routing policy itself; it asks the advisor.
+**The account advisor.** `ctx.accounts.registerAdvisor(advisor)` lets an extension decide which accounts work may go to. Core never reads your routing policy; it asks the advisor. With no advisor registered, core falls back to its own defaults, including one opt-in rule for an agent's named account (DOR-5033, below).
 
 ```typescript
 const unregister = ctx.accounts.registerAdvisor({
@@ -968,7 +980,7 @@ The rules an advisor lives by:
 - **One advisor at a time.** A second registration replaces the first, and the server log warns naming both extensions. The function `registerAdvisor` returns removes only your own advisor, and shutdown or reload removes it for you.
 - **Every call is bounded at 2 seconds, and every answer is checked.** A ranking keeps only ids DorkOS knows (and never the excluded account); an id you leave out is hidden; a `reason` over 200 characters is cut to fit; `recommendedId` counts only when it names an eligible account of the context's runtime. An `auto` plan's `delaySeconds` is clamped to 0..3600, and its target must be a registered account other than the one that ran out. A `carryOver` seed longer than the seed-context limit is refused. A throw, a timeout or an invalid answer means core's default for that call.
 - **A person's own pick is never refused by the advisor.** Its ranking is advice for anything a person does.
-- **Agents and relay messages need it.** When an agent (`session_start`) or a relay message names an account, core allows it only when the advisor's `launch` ranking marks that account eligible. With no advisor registered, such a pick is refused ("Agents can pick an account only after Flow is set up to say which accounts they may use."), and an advisor that fails refuses it too ("The account policy could not be checked."). Without an advisor everything else uses core's defaults: accounts ranked by weekly headroom, and a person asked what to do when an account runs out.
+- **It decides what agents and relay messages may pick.** When an agent (`session_start`) or a relay message names an account and an advisor is registered, core allows it only when the advisor's `launch` ranking marks that account eligible; an advisor that fails refuses it ("The account policy could not be checked."). With no advisor registered, a relay message's pick is refused, and an agent's pick follows core's own opt-in rule (DOR-5033): only an account a person turned on **Agents may pick this account** for in Settings, and never the main sign-in, DorkOS credits, an account kept out of automatic moves, or one DorkOS could not pick on its own right now. Core never reads your policy, so an account your advisor allows is not opened in core's rule. Without an advisor everything else uses core's defaults: accounts ranked by weekly headroom, and a person asked what to do when an account runs out.
 
 #### `ctx.projects`
 
@@ -1079,7 +1091,7 @@ router.put('/settings', ctx.requirePerson, saveSettings);
 router.use('/admin', ctx.requirePerson); // a whole sub-router
 ```
 
-An agent that names itself is refused with "Only a person can change Flow's settings." (`extension_person_required`), and so is a request from another site. With Require login on it needs the person's cookie. Say the residual honestly: with Require login off, a local caller that does not name itself an agent passes, and in any posture your own page code does. Routes without it stay open. Decisions are not answered through your own routes: use `ctx.inbox`.
+An agent that names itself is refused with a `403` problem document (`application/problem+json`, code `person_only`, a `detail` naming your extension's settings), and so is a request from another site. With Require login on it needs the person's cookie. Say the residual honestly: with Require login off, a local caller that does not name itself an agent passes, and in any posture your own page code does. Routes without it stay open. Decisions are not answered through your own routes: use `ctx.inbox`.
 
 #### `ctx.projectSettings`
 
@@ -1627,12 +1639,14 @@ const repos = await api.request('/proxy/user/repos');
 
 ### Error Responses
 
-| Status | Condition                                                                                      |
-| ------ | ---------------------------------------------------------------------------------------------- |
-| `400`  | The requested path leaves `baseUrl` (`code: PROXY_PATH_NOT_ALLOWED`).                          |
-| `429`  | More than 120 requests per minute from one IP (`code: PROXY_RATE_LIMITED`).                    |
-| `503`  | Required secret is not configured. Response includes a `hint` with the PUT endpoint to set it. |
-| `502`  | Upstream network failure.                                                                      |
+Each is a problem document (`application/problem+json`): read `code` and show `detail`.
+
+| Status | Condition                                                             |
+| ------ | --------------------------------------------------------------------- |
+| `400`  | The requested path leaves `baseUrl` (`code: outside_boundary`).       |
+| `429`  | More than 120 requests per minute from one IP (`code: rate_limited`). |
+| `503`  | Required secret is not configured (`code: temporarily_unavailable`).  |
+| `502`  | Upstream network failure (`code: upstream_unavailable`).              |
 
 ### When to Use Proxy vs Data Provider
 
@@ -1785,7 +1799,7 @@ What this looks like in practice:
 - The **first** `test_extension` or server-entry load for an extension that waits is refused, with a message naming the extension and telling you to ask the person to allow it in **Settings > Extensions**. Retrying without that is refused identically.
 - Its client bundle is not served either, so the extension contributes nothing to the app until the person answers. `GET /api/extensions/:id/bundle` returns 404, the same as an extension that has not compiled.
 - The person turns it on, once: **Turn it on** on the extension's card in Settings > Extensions, or 👍 on its row in the Activity inbox (below). Both halves start immediately; no restart, no page reload.
-- Later calls on the **same files** go through: testing, reloading, turning it off and on. Approval is recorded per extension id **and copy** — the directory, plus the plugin that carries it when it came inside one (`extensions.approvedSources`, DOR-2383) — **and its files** (`approvedSources[id].digest`, DOR-3068: the whole plugin folder for a plugin-carried copy, the extension's own folder otherwise). It is never spent by use. Discovery digests every copy, and every load (server start, `reload_extensions`, `test_extension`, starting the server half, serving the bundle) re-reads the live files: a mismatch stops the server half, withholds the bundle, and raises one "changed since you approved" row naming the changed files. Approved files run from a verified snapshot (`extension-snapshots.ts`), so an edit cannot land between the check and the run. `POST /api/extensions/:id/approve` takes `expectedDigest` (the row's `digest`) and refuses with `409 stale_approval` when the files changed after the row was drawn.
+- Later calls on the **same files** go through: testing, reloading, turning it off and on. Approval is recorded per extension id **and copy** — the directory, plus the plugin that carries it when it came inside one (`extensions.approvedSources`, DOR-2383) — **and its files** (`approvedSources[id].digest`, DOR-3068: the whole plugin folder for a plugin-carried copy, the extension's own folder otherwise). It is never spent by use. Discovery digests every copy, and every load (server start, `reload_extensions`, `test_extension`, starting the server half, serving the bundle) re-reads the live files: a mismatch stops the server half, withholds the bundle, and raises one "changed since you approved" row naming the changed files. Approved files run from a verified snapshot (`extension-snapshots.ts`), so an edit cannot land between the check and the run. `POST /api/extensions/:id/approve` takes `expectedDigest` (the row's `digest`) and refuses with `412 precondition_failed` when the files changed after the row was drawn.
 - **One exception keeps server edits unprompted** (`extension-path-trust.ts`): an extension one of our agents created with `create_extension` keeps path trust while it runs separately (`"runtime": "subprocess"`), declares exactly the grants it had at the yes (`allow`, secrets, data proxy, server entry, runtime, and each agent tool's tier), and its real path stays inside the creating agent's own `.dork/extensions/` folder (scope `local`). A change to any of those pins it or waits for the person. An approval a person gave by hand, a plugin and a marketplace copy never have it. A dev link keeps its own approval by path (DOR-2696), unchanged, and its screen code is not pinned either: a known gap. Approvals given before DOR-3068 were pinned once, to the files found on the first scan after the upgrade (`pinnedOnFirstUse`); one whose copy that scan did not find no longer runs and waits for a person.
   - **Where an agent's mini app lives.** `create_extension` called from an agent's own chat always scaffolds into that agent's folder, `<agentHome>/.dork/extensions/<id>`, whatever `scope` says (the reply's `scope` is `local`); a person's create, and one over the external `/mcp` server, keep the old `scope` default. Discovery scans every registered agent's folder (`projects/extension-scan-roots.ts`), so the app shows the mini app in the right panel, the dashboard and Settings whichever agent or folder is active, and an id DorkOS already knows anywhere is refused for an agent's create.
   - **The author is recorded, never inferred.** The approval stores the creating agent's folder as a real path (`authorHome`) at create time; trust needs the copy's real path inside that recorded folder. A copy moved into another agent's folder, linked out of it, or promoted or copied to the global folder (scope `global`) is pinned by content. A create from a turn that read a stranger's words (`marksOf`) or ran under a ceiling records no author, so every edit waits. `approvedSources` is `operator-only`, so no agent can write an author in.
@@ -1796,7 +1810,7 @@ What this looks like in practice:
 
 **The Activity inbox asks too (DOR-2517).** Every installed extension that is waiting — `origin: 'user'`, not approved for its current copy, not turned off, invalid or incompatible — raises one row in the inbox bell's "Needs You": "Turn on <Name>?", a second line built from the manifest, the source line, and ⓘ 👎 👍. `GET /api/extensions/pending-approvals` lists them; the kind is `extension.approval`, tier `notable`, so it badges the bell and **never pushes to a phone**. The second line has three parts. The first and last are DorkOS's own words: how the copy got here, read from the installer's own records ("You installed the flow plugin from dork-labs/marketplace." only when the installer recorded it; otherwise "<Name> was added to <project>." — neutral on purpose, since that covers both `create_extension` and a folder the person copied in by hand, and DorkOS cannot tell them apart), and "It runs as you." The middle comes from the manifest, which the extension's author writes, so it is the part that is cut: the whole line stays within 300 characters, names are capped at 60, and "It runs as you." always survives. Example: "You installed the flow plugin from dork-labs/marketplace. This adds a Flow tab that shows what your agents are working on. It runs as you." The middle names every place the extension declares in `contributions` (`right-panel` is "a <Name> tab", `settings.tabs` is "a <Name> settings page", every other place DorkOS's own words from `CONTRIBUTION_WORDS`, such as "⌘K commands") followed by the optional manifest field `purpose` (at most 120 characters, written to finish the sentence "This adds a Flow tab that …"), and falls back to `description` when `contributions` says nothing. Declare both if you want the row to say what your extension is for.
 
-Both answers name the exact copy the row showed (path, plugin and version; the Settings card, which is never told a path, sends the version and plugin it shows): `POST /api/extensions/:id/approve` takes that as an optional body and refuses `409 stale_approval` when the copy on disk is no longer it, so a click on an old row can never turn on a copy that took its place. **Stop it** on the Settings card counts as the same answer given later: it records a "Not now" for that copy, so the ask does not come straight back to the bell.
+Both answers name the exact copy the row showed (path, plugin and version; the Settings card, which is never told a path, sends the version and plugin it shows): `POST /api/extensions/:id/approve` takes that as an optional body and refuses `412 precondition_failed` when the copy on disk is no longer it, so a click on an old row can never turn on a copy that took its place. **Stop it** on the Settings card counts as the same answer given later: it records a "Not now" for that copy, so the ask does not come straight back to the bell.
 
 👎 **Not now** (`POST /api/extensions/:id/dismiss-approval`, same person bar as approving) is never destructive: it uninstalls, disables and revokes nothing, and Settings > Extensions can still turn the extension on. It records the copy and version the person declined in `extensions.dismissedApprovals`, so the inbox stops asking until the extension's path, plugin or version changes — an update asks again. Approving clears it. There is no MCP tool for it either.
 

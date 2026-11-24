@@ -17,6 +17,7 @@
  */
 import { Hono, type Context } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
+import { problem } from '@dorkos/http-kit';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import { refusedAppCall, type AppCallRecords } from './extension-app-call.js';
 
@@ -63,7 +64,7 @@ export function createExtensionApiRoutes(
     const { mount, subPath } = splitExtensionMount(c.req.url, id);
     const refused = refusedAppCall(c, id, handler !== null, subPath, records);
     if (refused) return refused;
-    if (!handler) return c.json({ error: `Extension '${id}' has no server routes` }, 404);
+    if (!handler) return problem(c, 'not_found', { detail: `${id} has no server routes.` });
     return (await handler({ c, mount, subPath })) ?? c.notFound();
   };
   routes.all('/:id', serve);

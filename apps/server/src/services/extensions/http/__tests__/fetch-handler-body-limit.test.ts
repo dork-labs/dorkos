@@ -1,3 +1,4 @@
+import { problemBody } from '@dorkos/http-kit';
 import { connect } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { once } from 'node:events';
@@ -29,13 +30,20 @@ afterAll(async () => {
 });
 beforeEach(() => f.serve());
 const LIMIT = 1024 * 1024;
+/** The byte length of the 413 problem document every oversized request is answered with. */
+const REFUSAL_BYTES = Buffer.byteLength(
+  JSON.stringify(problemBody('request_too_large', { detail: 'That request is too large.' }))
+);
 
 function expectRefusal(reply: BodyReply) {
   expect(reply.status).toBe(413);
-  expect(reply.body).toEqual({ error: 'That request is too large.' });
+  expect(reply.body).toMatchObject({
+    code: 'request_too_large',
+    detail: 'That request is too large.',
+  });
   expect(reply.complete).toBe(true);
   expect(reply.headers.connection).toBe('close');
-  expect(reply.headers['content-length']).toBe('38');
+  expect(reply.headers['content-length']).toBe(String(REFUSAL_BYTES));
   expect(reply.headers['x-content-type-options']).toBe('nosniff');
   expect(reply.headers['content-security-policy']).toContain("frame-ancestors 'none'");
 }
@@ -89,7 +97,8 @@ describe('oversized extension request delivery', () => {
           socket.on('data', (chunk: Buffer) => {
             text += chunk.toString();
             const split = text.indexOf('\r\n\r\n');
-            if (split !== -1 && Buffer.byteLength(text.slice(split + 4)) === 38) resolve();
+            if (split !== -1 && Buffer.byteLength(text.slice(split + 4)) === REFUSAL_BYTES)
+              resolve();
           })
         );
         const ended = once(socket, 'end');
@@ -98,8 +107,9 @@ describe('oversized extension request delivery', () => {
         );
         await fullBody;
         expect(text.split('\r\n')[0]).toContain('413');
-        expect(JSON.parse(text.split('\r\n\r\n')[1]!)).toEqual({
-          error: 'That request is too large.',
+        expect(JSON.parse(text.split('\r\n\r\n')[1]!)).toMatchObject({
+          code: 'request_too_large',
+          detail: 'That request is too large.',
         });
         expect(f.exchanges[0]!.outgoing.writableEnded).toBe(false);
         if (exit === 'shutdown') f.server.closeAllConnections();
@@ -127,7 +137,7 @@ describe('oversized extension request delivery', () => {
         socket.on('data', (chunk: Buffer) => {
           text += chunk.toString();
           const split = text.indexOf('\r\n\r\n');
-          if (split !== -1 && Buffer.byteLength(text.slice(split + 4)) === 38) resolve();
+          if (split !== -1 && Buffer.byteLength(text.slice(split + 4)) === REFUSAL_BYTES) resolve();
         })
       );
       const ended = once(socket, 'end');
@@ -139,8 +149,9 @@ describe('oversized extension request delivery', () => {
       socket.write('\r\n');
       await fullBody;
       expect(text.split('\r\n')[0]).toContain('413');
-      expect(JSON.parse(text.split('\r\n\r\n')[1]!)).toEqual({
-        error: 'That request is too large.',
+      expect(JSON.parse(text.split('\r\n\r\n')[1]!)).toMatchObject({
+        code: 'request_too_large',
+        detail: 'That request is too large.',
       });
       const exchange = f.exchanges[0]!;
       await nextTurn();
@@ -164,7 +175,7 @@ describe('oversized extension request delivery', () => {
     f.mount((_req, res) => {
       res.writeHead(413, {
         'content-type': 'application/json',
-        'content-length': 38,
+        'content-length': REFUSAL_BYTES,
         connection: 'close',
       });
       res.end('{"error":');

@@ -124,6 +124,8 @@ if (!parsed.success) return validationProblem(c, parsed.error); // 400 invalid_r
 
 `validationProblem` writes `detail` from the first failing field ("`name`: Required.", plus "(and N more)"); pass `detail` when the route can say what to send in plainer words. Two 400 codes, two meanings: `invalid_request` is a body that was read and failed its checks; `malformed_request` is a body that could not be read at all (the chain sends it). `problem()` takes the status and title from the list; pass `status` only when this occurrence needs a different one, and `retryAfterMs` for a transient failure. `detail` is for a person: write it with the `writing-for-humans` skill, and never put a path, a stack or a secret in it.
 
+**Extra fields** a client acts on (the id of a held action, the packages that conflict, when a window ends) ride as RFC 9457 extension members: `problem(c, 'conflict', { detail, extensions: { conflicts } })`, named in camelCase. An extension member never replaces a standard one. **One code per refusal, and no second one:** a problem names what went wrong in `code` alone, never in a `reason` or any other member. A refusal a client branches on gets a code on `PROBLEM_CODE_LIST` (`precondition_failed` when what the caller was shown changed, `already_resolved`, `not_running`, `no_agent`, …); one no client branches on keeps the generic code (`conflict`, `invalid_request`, `forbidden`) and says which in `detail`. Same meaning, same code: a caller that is not a person is always `person_only`, one not at this computer is always `operator_only`, and a NUL byte in a path is always `400 invalid_request`. A call from one app to another's routes (`/api/ext/<id>/…`) that is refused answers `403 forbidden` with the rule in `detail`, and `403 caller_token_invalid` for a token the server forgot (ask for a new one). It was `{ code: 'app_call_refused', reason: 'not-declared' }`. The SDK's own `AppCallRefusal` words, decided in the frame before any request, keep their kebab-case spelling.
+
 **What the chain answers for you.** An error a route throws reaches the error handler (`middleware/error-handler.ts`): a body over the limit is `413 request_too_large`, broken JSON `400 malformed_request`, a body in an encoding or charset the parser cannot read `415 unsupported_media_type`, a path outside the boundary `403 outside_boundary`, a path with a NUL byte `400 invalid_request`, and anything else `500 internal_error`. Every `detail` the chain writes is a fixed sentence: an exception's message or stack never goes on the wire, in any environment (it is logged instead). The upload refusals follow the same rule. A path no route claims under `/api` is `404 not_found`; a route that must look like such a path answers `apiNotFound(c)` (`http/unclaimed.ts`). A multipart upload the parser refused is `uploadRefusalProblem(c, err)` (`http/problems/upload-refusal.ts`).
 
 **Reading one.** Every client reads failures through `readErrorBody` in `@dorkos/shared/problem` (the web client through `shared/lib/response-error`, the CLI through `ApiError`, the desktop shell directly): `detail`, else `title`, as the message; `code` as the kind. A surface that shows the server's own sentence in place of its own copy (`serverSentence`) takes `detail` only, never the generic `title`.
@@ -194,7 +196,7 @@ Every rule blocks except `hand-registered-path`, which is **advisory** (`blockin
 
 ### Adding a route that passes
 
-**Today** a new route passes every blocking rule when it is a documented `registerPath` (the recipe is [Adding a New Endpoint](#adding-a-new-endpoint)) with:
+A new endpoint is a capability ([Adding a New Endpoint](#adding-a-new-endpoint)). A hand route, kept only for a shape a capability cannot carry yet, passes every blocking rule when it is a documented `registerPath` with:
 
 - a unique `operationId` (or none, and the generator derives one: see [Operation ids](#operation-ids));
 - at least one 4xx or 5xx response, each with a body that is `$ref: ErrorResponse`;
@@ -204,7 +206,7 @@ Every rule blocks except `hand-registered-path`, which is **advisory** (`blockin
 
 Then regenerate the docs (above), so `docs/api/openapi.json` and the census both list it. `hand-registered-path` notes the new call, but only as advice.
 
-**Once DOR-4978 merges** (the capability mount, landing next), a new route is a capability with an `http` surface instead, served by the generic mount and documented by the OpenAPI projection, and `hand-registered-path` blocks. That PR rewrites [Adding a New Endpoint](#adding-a-new-endpoint) with the recipe; the decision is in ADR PR #4160. The path, parameter and paging rules above still apply. One gap stays open after it: a capability's `http` surface cannot declare its error responses yet, so a new capability route adds one to `error-missing` in its group until it can.
+**DOR-4978 has merged:** a new route is a capability with an `http` surface, served by the generic mount and documented by the OpenAPI projection. The path, parameter and paging rules above still apply to it. `hand-registered-path` still only advises: `scripts/api-lint/check-api-lint.ts` has not been switched to block. One gap stays open: a capability's `http` surface cannot declare its error responses yet, so a new capability route adds one to `error-missing` in its group until it can.
 
 **Never raise a number in the baseline by hand.** `--update` only lowers or removes entries, and CI runs the check with `--base`, which refuses any entry that is higher than the base's or new.
 
@@ -243,7 +245,7 @@ The marketplace routes are mounted at `/api/marketplace` and backed by injected 
 
 A source name rides in the path or, from the app, in `?name=`: a name saved by an older DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL path (DOR-4212). Both forms run the same handler.
 
-**Error responses** use a centralised `mapErrorToStatus` helper — `400` for invalid manifests, `409` for file conflicts, `404` for missing packages/sources, `500` for unexpected failures.
+**Error responses** are problem documents from a centralised `mapErrorToProblem` helper — `400 invalid_request` for invalid manifests, `409 conflict` for file conflicts, `404 not_found` for missing packages/sources, `500 internal_error` for unexpected failures.
 
 See `contributing/marketplace-installs.md` for the full install pipeline, transaction semantics, and per-kind flow details.
 
@@ -261,7 +263,7 @@ Trigger-only and accept-only. The server validates the request, accepts the mess
 
 - `content` (string, required) - Message text.
 - `cwd` (optional) - Working directory.
-- `create` (optional) - Allows first-message creation under an unknown id; without it, an unknown session returns `404 SESSION_NOT_FOUND`.
+- `create` (optional) - Allows first-message creation under an unknown id; without it, an unknown session returns `404 session_not_found`.
 - `clientMessageId` (optional) - Client correlation for the submitted message.
 - `context` (optional) - Neutral client signals, including UI state.
 - `runtime`, `account`, `agentPath` (optional) - First-message launch/provenance hints; later messages do not rebind the session.
@@ -270,7 +272,7 @@ Trigger-only and accept-only. The server validates the request, accepts the mess
 **Responses:**
 
 - `202` - `SendMessageResponse`: `{ sessionId, messageId, outcome, queuePosition }`. Re-target to the returned canonical id when it differs. `queuePosition: 1` can mean an immediate start or the only waiting message; it is not a start signal.
-- `404` - `SESSION_NOT_FOUND` when no session exists and `create` was not requested.
+- `404` - `session_not_found` when no session exists and `create` was not requested.
 
 The session stream carries queue changes and the eventual turn. `apps/server/src/routes/sessions.ts`, `packages/shared/src/schemas.ts` and `Transport.postMessage` define the contract.
 
@@ -417,7 +419,7 @@ Approve a pending tool call. Resolves the server-side deferred promise so the SD
 - `200` - `{ ok: true }`
 - `400` - Invalid request
 - `404` - No pending interaction for this tool call
-- `409` - Interaction already resolved (`INTERACTION_ALREADY_RESOLVED`)
+- `409` - Interaction already resolved (`already_resolved`)
 
 ### POST /api/sessions/:id/deny
 
@@ -445,7 +447,7 @@ Deny a pending tool call, optionally saying why.
 - `200` - `{ ok: true }`
 - `400` - Invalid request
 - `404` - No pending interaction for this tool call
-- `409` - Interaction already resolved (`INTERACTION_ALREADY_RESOLVED`)
+- `409` - Interaction already resolved (`already_resolved`)
 
 ### POST /api/sessions/:id/batch-approve
 
@@ -850,10 +852,14 @@ Send a message to a subject pattern.
 }
 ```
 
+The server sets the sender (`routes/relay-message-sender.ts`, DOR-5151). The person's own turn (`sessionLauncherOf`, the chat route's rule) keeps the `from` it names. A verified agent sends from its own registered address, anyone else from `relay.external.http`, and a caller other than the person naming a `relay.human.*` sender is refused, except a verified agent, which is sent from its own address. A message that is not the person's has its turn-shaping payload fields and `responseContext` removed and carries its agent's marks (`launcherTurnCeiling`).
+
 **Responses:**
 
 - `200` - Message sent: `{ messageId: string, deliveredTo: number }`
 - `400` - Validation error
+- `401` - Login requires a credential, or `person_session_required` for an app window without a session
+- `403` - Reserved sender, destination or reply address, or `person_required` for a person's address from someone else
 
 ### GET /api/relay/messages
 

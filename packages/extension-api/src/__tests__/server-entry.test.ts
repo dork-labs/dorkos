@@ -19,9 +19,11 @@ const agent: ExtensionCaller = {
     ok: false,
     status: 403,
     body: {
-      error: "Only a person can change Flow's settings.",
-      code: 'extension_person_required',
-      message: 'DorkOS changed nothing.',
+      type: 'urn:dorkos:problem:person_only',
+      title: 'Only a person can do that, not an agent.',
+      status: 403,
+      code: 'person_only',
+      detail: "DorkOS changed nothing. Only a person can change Flow's settings.",
     },
   },
 };
@@ -113,6 +115,7 @@ describe('checkPerson', () => {
   it('answers anyone else with the refusal DorkOS decided on', async () => {
     const refused = checkPerson(agent)!;
     expect(refused.status).toBe(403);
+    expect(refused.headers.get('content-type')).toBe('application/problem+json');
     expect(await refused.json()).toEqual(agent.person.ok ? null : agent.person.body);
   });
 
@@ -121,12 +124,16 @@ describe('checkPerson', () => {
     ['an empty object', {}],
     ['a forged yes', { person: { ok: 'true' } }],
     ['a refusal with no body', { person: { ok: false, status: 403 } }],
+    [
+      'a refusal in the old shape',
+      { person: { ok: false, status: 403, body: { error: 'No.', code: 'x', message: 'No.' } } },
+    ],
     ['a refusal with a success status', { person: { ok: false, status: 200, body: agent.person } }],
   ])('refuses %s, failing closed', async (_label, caller) => {
     const refused = checkPerson(caller)!;
     expect(refused).toBeInstanceOf(Response);
     expect(refused.status).toBe(403);
-    expect(await refused.json()).toMatchObject({ code: 'extension_person_required' });
+    expect(await refused.json()).toMatchObject({ code: 'person_only', status: 403 });
   });
 });
 

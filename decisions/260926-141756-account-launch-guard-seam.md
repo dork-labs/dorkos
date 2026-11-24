@@ -21,9 +21,9 @@ The operator decided that routing policy (rotation, reserve, repo scope, handoff
 
 - Core never reads flow's policy file.
 - The extension server API gains `accounts.registerAdvisor`: one advisor (last registration wins, with a warning) with `rank`, optional `onLimited` and optional `carryOver`. Core requires its ranking when an AGENT (`session_start`) or a RELAY message names an account (fail-closed on a throw or a 2 s timeout), and uses it optionally to steer the core out-of-usage flow (ranking, automatic handoff, handoff seed).
-- A person's own pick is never refused by it; without an advisor every person-facing flow uses core defaults. With no advisor registered, an agent's or a relay message's account pick is refused: nothing is spent until the operator opts in.
+- A person's own pick is never refused by it; without an advisor every person-facing flow uses core defaults. With no advisor registered, a relay message's account pick is refused, and an agent's pick follows core's own opt-in rule (amended by DOR-5033, 2026-11-23): only an account a person let agents pick (the registry row's `agentsMayPick`, Settings' "Agents may pick this account", default off), and never the main sign-in (by id or by folder), DorkOS credits, an account kept off agents (`noAutoMove`), or one DorkOS could not pick on its own now. Nothing is spent until the operator opts in, account by account, and core reads no file of flow's to decide it.
 
 ## Consequences
 
 - Positive: policy lives in one place, flow; core stays generic.
-- Negative: without the Flow extension, agents cannot name an account at all (they still get the default ladder).
+- Negative: without the Flow extension, agents could not name an account at all, only the default ladder. Since DOR-5033 they can name an account a person opened to them in Settings; the two opt-ins are separate, so an account Flow lets agents use is not opened in core's rule, and the reverse.

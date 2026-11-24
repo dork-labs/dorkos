@@ -10,11 +10,11 @@ import {
   type Db,
 } from '@dorkos/db';
 import {
+  ConnectorRuntimeAuthorityError,
   RuntimeToolContextUnavailableError,
   type OpenConnectorTurnInput,
 } from '../../runtime-principal-port.js';
 import {
-  ConnectorRuntimeAuthorityError,
   ConnectorRuntimePrincipalService,
   type ConnectorRuntimeAuthorityResolver,
 } from '../runtime-principal-service.js';

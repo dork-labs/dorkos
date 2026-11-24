@@ -123,6 +123,8 @@ describe('MCP Config Routes', () => {
   it('GET /api/mcp-config?runtime=<unknown> returns 400', async () => {
     const res = await request(testServer).get('/api/mcp-config?path=/projects/demo&runtime=bogus');
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/unknown runtime/i);
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body).toMatchObject({ code: 'invalid_request' });
+    expect(res.body.detail).toBe('There is no runtime by that name.');
   });
 });

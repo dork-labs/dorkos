@@ -110,6 +110,12 @@ export interface RuntimeAccount {
    * `noAutoMove`, Re-seat P0); absent otherwise, an implicit default included.
    */
   noAutoMove?: true;
+  /**
+   * `true` when a person let agents start chats on this account by naming it
+   * (its row's `agentsMayPick`, DOR-5033); absent otherwise, an implicit
+   * default included.
+   */
+  agentsMayPick?: true;
   /** True when `<runtime>:default` names this account (the standalone default, or its alias). */
   isDefault: boolean;
   /** The ledger file's id (`<ledgerId>.json`), or `null` when it has no ledger. */
@@ -297,6 +303,7 @@ function readRegistered(
         ledgerId: routable ? row.id : null,
         ...(typeof row.renamedFrom === 'string' ? { renamedFrom: row.renamedFrom } : {}),
         ...(row.noAutoMove === true ? { noAutoMove: true as const } : {}),
+        ...(row.agentsMayPick === true ? { agentsMayPick: true as const } : {}),
       };
     });
   return {
@@ -404,6 +411,27 @@ function implicitAccount(
     isDefault: true,
     ledgerId: IMPLICIT_ACCOUNT_ID,
   };
+}
+
+/**
+ * Whether an account is the runtime's main sign-in (DOR-5033): the account
+ * `<runtime>:default` names (the standalone default or its alias row), the id
+ * `default`, or any other row on the default's folder. Agents never pick it on
+ * their own, and Settings never offers to let them. Folders compare in their
+ * comparable form, else as written.
+ *
+ * @param account - The account to judge.
+ * @param accounts - The runtime's accounts, from {@link resolveRuntimeAccounts}.
+ */
+export function isMainSignIn(
+  account: Pick<RuntimeAccount, 'id' | 'isDefault' | 'path' | 'canonicalPath'>,
+  accounts: readonly Pick<RuntimeAccount, 'isDefault' | 'path' | 'canonicalPath'>[]
+): boolean {
+  if (account.isDefault || account.id === IMPLICIT_ACCOUNT_ID) return true;
+  const main = accounts.find((a) => a.isDefault);
+  const mainFolder = main ? (main.canonicalPath ?? main.path) : null;
+  const folder = account.canonicalPath ?? account.path;
+  return folder !== null && mainFolder !== null && folder === mainFolder;
 }
 
 /**

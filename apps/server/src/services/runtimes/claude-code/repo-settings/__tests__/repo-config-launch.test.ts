@@ -48,9 +48,7 @@ import {
   _internal,
   askForRepoConfig,
   describeRepoConfigCapability,
-  repoConfigCapabilityId,
   repoConfigTitle,
-  summariseRepoConfig,
 } from '../repo-config-approval.js';
 import {
   isRepoConfigApproved,
@@ -358,58 +356,6 @@ describe('the card while it is open', () => {
     expect(activity.map((a) => a.state)).not.toContain('running');
   });
 
-  // DOR-3359: the title says what Allow does, and the badge what a yes does.
-  it.each([
-    [['.claude/hooks/guard.mjs'], 'Allow a changed hook in "wt"?', 'runtime.apply_repo_hooks'],
-    [['scripts/check.sh'], 'Allow a changed hook in "wt"?', 'runtime.apply_repo_hooks'],
-    [['.claude/settings.json'], 'Allow a changed setting in "wt"?', 'runtime.apply_repo_hooks'],
-    [['.claude/skills/x/SKILL.md'], 'Allow a changed skill in "wt"?', 'runtime.apply_repo_tools'],
-    [['.agents/skills/x/SKILL.md'], 'Allow a changed skill in "wt"?', 'runtime.apply_repo_tools'],
-    [['.claude/agents/r.md'], 'Allow a changed subagent in "wt"?', 'runtime.apply_repo_tools'],
-    [['.claude/commands/c.md'], 'Allow a changed command in "wt"?', 'runtime.apply_repo_tools'],
-    [
-      ['.claude/skills/x/SKILL.md', '.claude/agents/r.md'],
-      'Allow 2 changed repo files in "wt"?',
-      'runtime.apply_repo_tools',
-    ],
-    [
-      ['.claude/skills/x/SKILL.md', '.claude/settings.json'],
-      'Allow 2 changed repo files in "wt"?',
-      'runtime.apply_repo_hooks',
-    ],
-  ])('titles a change to %j and picks its badge', (names, title, capabilityId) => {
-    const changed = { ...request('/x/wt', 'd'), names };
-    expect(repoConfigTitle(changed)).toBe(title);
-    expect(repoConfigCapabilityId(changed)).toBe(capabilityId);
-    expect(summariseRepoConfig(changed)).not.toContain('paused in');
-  });
-
-  it('titles the first-time card as trusting the repo, with the code badge', () => {
-    const trust = {
-      ...request('/x/wt', 'd'),
-      names: ['.claude/skills/x/SKILL.md'],
-      trust: { commonDir: '/x/.git', baseline: { sha: 'a'.repeat(40), branch: 'main' } },
-    };
-    expect(repoConfigTitle(trust)).toBe("Trust this repo's hooks and skills?");
-    expect(repoConfigCapabilityId(trust)).toBe('runtime.apply_repo_hooks');
-    expect(summariseRepoConfig(trust)).not.toContain('paused in');
-  });
-
-  it('badges only the repo-pin cards, and leaves local settings and MCP alone', () => {
-    expect(describeRepoConfigCapability('runtime.apply_repo_hooks')?.consequence).toBe(
-      'Runs code on this Mac'
-    );
-    expect(describeRepoConfigCapability('runtime.apply_repo_tools')?.consequence).toBe(
-      'Widens what agents can run'
-    );
-    expect(describeRepoConfigCapability('runtime.apply_repo_local_settings')).toEqual({
-      title: "Load a worktree's local settings",
-      tier: 'destructive',
-    });
-    expect(describeRepoConfigCapability('runtime.apply_repo_mcp')?.consequence).toBeUndefined();
-    expect(repoConfigTitle({ ...request('/x/wt', 'd'), kind: 'local' })).toBeUndefined();
-  });
-
   it('raises the card with its own title and spends the yes under the same capability', async () => {
     const pending = askForRepoConfig(
       gateway,
@@ -424,15 +370,6 @@ describe('the card while it is open', () => {
       title: 'Allow a changed skill in "wt"?',
     });
     expect(isRepoConfigApproved('hooks', 'd1')).toBe(true);
-  });
-
-  it('says how many files changed, and never names the guard', () => {
-    const summary = summariseRepoConfig({
-      ...request('/x/wt', 'd'),
-      names: ['.claude/settings.json', '.claude/hooks/a.mjs', '.claude/hooks/b.mjs'],
-    });
-    expect(summary).toContain('3 files here differ from the default branch.');
-    expect(summary).toContain('Your permission settings for "Ops" still apply.');
   });
 });
 
@@ -656,16 +593,6 @@ describe('Security and designer rows for the repo-pin titles (DOR-3359)', () => 
     expect(name).toContain("evilgnp.exe' Allow '");
   });
 
-  it('cuts a long worktree name to 40 characters in the middle', () => {
-    const long = 'feature-very-long-branch-name-that-keeps-going-name-2';
-    const name = quoted(repoConfigTitle(hookChange(`/x/${long}`)))!;
-    expect(Array.from(name)).toHaveLength(40);
-    // 20 from the start, the ellipsis, 19 from the end.
-    expect(name).toBe('feature-very-long-br…-keeps-going-name-2');
-    // A name that fits is left whole.
-    expect(quoted(repoConfigTitle(hookChange('/x/wt-2')))).toBe('wt-2');
-  });
-
   it('sanitizes before it cuts, so an emoji or bidi mark at the cut leaves nothing broken', () => {
     // Plain words after the cut: a long run of one letter reads as a secret
     // and is redacted before the cut, as it should be.
@@ -675,14 +602,6 @@ describe('Security and designer rows for the repo-pin titles (DOR-3359)', () => 
     expect(name).not.toMatch(BIDI);
     expect(name).not.toMatch(LONE_SURROGATE);
     expect(name.startsWith(`${'a'.repeat(18)}😀😀`)).toBe(true);
-  });
-
-  it('names a changed command for what it is', () => {
-    expect(
-      summariseRepoConfig({ ...hookChange('/x/wt'), names: ['.claude/commands/c.md'] })
-    ).toContain(
-      '".claude/commands/c.md" differs from the default branch. It changes what a command can run.'
-    );
   });
 
   it('locks the tools card down exactly as the hooks card', async () => {

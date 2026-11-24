@@ -2,7 +2,7 @@ import {
   sessionBillingPrediction,
   observedSessionRoot,
   observedSessionBilling,
-  failedSessionAuthority,
+  failedSeatAuthorityOf,
   requiredLaunchOwnerFromSettings,
 } from './sessions/identity/failed-seat-authority.js';
 import { AccountsAccessContext } from '../shared/accounts-access-context.js';
@@ -1791,14 +1791,14 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   readObservedBilling(sessionId: string) {
     return observedSessionBilling(this.sessionStore.findSession(sessionId));
   }
-  /** Existing crash/current guards plus the exact previous terminal SDK witness. */
+  /** Live crash/current guards and terminal witness; a later process reads the durable record. */
   readFailedSeatAuthority(sessionId: string) {
-    return failedSessionAuthority(
+    return failedSeatAuthorityOf(
+      this,
+      sessionId,
       this.sessionStore.findSession(sessionId),
-      this.isLocked(sessionId) ||
-        this.holdsBackgroundWork(sessionId) ||
-        this.isHelperWorking(sessionId) ||
-        !this.persistent.failedSeatCrashAllows(sessionId)
+      this.requiredLaunches,
+      this.persistent.failedSeatCrashAllows(sessionId)
     );
   }
 

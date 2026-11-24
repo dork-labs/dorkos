@@ -47,7 +47,7 @@ describe('the room files source', () => {
     const { transport, source } = build();
     transport.readRoomFiles = vi.fn().mockRejectedValue(
       Object.assign(new Error('This room does not have files of its own.'), {
-        code: 'ROOM_HAS_NO_REPO',
+        code: 'room_has_no_repo',
         status: 409,
       })
     );
@@ -66,7 +66,7 @@ describe('the room files source', () => {
     transport.readRoomFiles = vi
       .fn()
       .mockRejectedValue(
-        Object.assign(new Error('no git here'), { code: 'ROOM_REPO_GIT_UNAVAILABLE' })
+        Object.assign(new Error('no git here'), { code: 'room_repo_git_unavailable' })
       );
     await expect(source.list('', { showHidden: false })).rejects.toThrow('no git here');
   });
@@ -130,7 +130,7 @@ describe('the room files source', () => {
     const { transport, source } = build();
     transport.readRoomFileContent = vi
       .fn()
-      .mockRejectedValue(Object.assign(new Error('nope'), { code: 'ROOM_FILE_NOT_READABLE' }));
+      .mockRejectedValue(Object.assign(new Error('nope'), { code: 'room_file_not_readable' }));
     const file = await source.read!('link');
     expect(file.body).toEqual({
       kind: 'not-readable',
@@ -153,7 +153,7 @@ describe('the room files source', () => {
     const { transport, source } = build();
     transport.readRoomFileContent = vi
       .fn()
-      .mockRejectedValue(Object.assign(new Error('nope'), { code: 'ROOM_NOT_FOUND' }));
+      .mockRejectedValue(Object.assign(new Error('nope'), { code: 'room_not_found' }));
     await expect(source.read!('a.md')).rejects.toThrow('nope');
   });
 });
@@ -246,11 +246,13 @@ describe('saving through the room files source', () => {
     const { transport, source } = build();
     transport.saveRoomFile = vi.fn().mockRejectedValue(
       Object.assign(new Error('changed'), {
-        code: 'FILE_CHANGED',
+        code: 'file_changed',
         status: 409,
         body: {
-          error: 'changed',
-          code: 'FILE_CHANGED',
+          title: 'Somebody changed these files since you opened them.',
+          status: 409,
+          detail: 'changed',
+          code: 'file_changed',
           conflict: {
             path: 'ROOM.md',
             commit: 'ddd4444',
@@ -272,7 +274,7 @@ describe('saving through the room files source', () => {
     transport.saveRoomFile = vi
       .fn()
       .mockRejectedValue(
-        Object.assign(new Error('changed'), { code: 'FILE_CHANGED', status: 409 })
+        Object.assign(new Error('changed'), { code: 'file_changed', status: 409 })
       );
     const outcome = await source.save!({ path: 'ROOM.md', baseCommit: 'a1b2c3d', text: 'x' });
     expect(outcome.status).toBe('refused');
@@ -282,9 +284,9 @@ describe('saving through the room files source', () => {
     const { transport, source } = build();
     for (const code of [
       'request_too_large',
-      'FILE_TOO_LARGE',
-      'MAIN_CHECKOUT_DIRTY',
-      'PEOPLE_ONLY',
+      'file_too_large',
+      'main_checkout_dirty',
+      'person_only',
     ]) {
       transport.saveRoomFile = vi
         .fn()
@@ -312,7 +314,7 @@ describe('saving through the room files source', () => {
       'This room’s shared git settings contain entries that can make git run programs: ' +
       'filter.x.smudge. The room’s Files section shows the command that removes them.';
     const refusal = () =>
-      Object.assign(new Error(said), { code: 'ROOM_REPO_CONFIG_UNSAFE', status: 409 });
+      Object.assign(new Error(said), { code: 'room_repo_config_unsafe', status: 409 });
     transport.saveRoomFile = vi.fn().mockRejectedValue(refusal());
     await expect(
       source.save!({ path: 'ROOM.md', baseCommit: null, text: 'x' })
@@ -338,7 +340,7 @@ describe('saving through the room files source', () => {
     transport.saveRoomFile = vi
       .fn()
       .mockRejectedValue(
-        Object.assign(new Error('dirty'), { code: 'MAIN_CHECKOUT_DIRTY', status: 409 })
+        Object.assign(new Error('dirty'), { code: 'main_checkout_dirty', status: 409 })
       );
     await source.save!({ path: 'ROOM.md', baseCommit: null, text: 'x' });
     // The same cache entry the pending-work badge reads (DOR-1599's key), not a

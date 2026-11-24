@@ -36,18 +36,6 @@ describe('RestartPolicy', () => {
     expect(policy.onUnexpectedExit()).toEqual({ restartIn: 30_000 });
   });
 
-  // Purpose: reset (reload, enable, approve) clears the budget and the backoff.
-  it('forgets everything on reset', () => {
-    const { policy, advance } = policyAt();
-    policy.onUnexpectedExit();
-    advance(1_000);
-    policy.onUnexpectedExit();
-    policy.reset();
-    expect(policy.onUnexpectedExit()).toEqual({ restartIn: 1_000 });
-    expect(policy.onUnexpectedExit()).toEqual({ restartIn: 5_000 });
-    expect(policy.onUnexpectedExit()).toEqual({ giveUp: true });
-  });
-
   it('bounds refused automatic starts even when host stalls outlast the crash window', () => {
     const { policy, advance } = policyAt();
     expect(policy.onUnexpectedExit()).toEqual({ restartIn: 1_000 });

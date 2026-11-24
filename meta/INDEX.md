@@ -9,7 +9,7 @@ Read these four first. Where anything else in the repo disagrees with them, they
 - [`VISION.md`](VISION.md): vision, mission, the office-and-workers picture, DorkOS first, who it is for, the message stack and what sets us apart.
 - [`PRINCIPLES.md`](PRINCIPLES.md): how we decide. Trusted by default, co-workers, equal accounts (internal), ownership, DorkOS first and ready in under a minute, local first and cloud optional, claim only what works, build for the world that is coming, the quality bar.
 - [`VOICE.md`](VOICE.md): the single source for language. Headline rules, words we use, words and claims we never use, plain-word swaps.
-- [`ROADMAP.md`](ROADMAP.md): before launch and after launch, with tickets, plus the demo-claim gate and open risks.
+- [`ROADMAP.md`](ROADMAP.md): what is built, then one ordered list of what is next and what is later, with tickets, plus the demo-claim gate and open risks.
 
 Then the guide that applies them to how agents take initiative:
 
@@ -17,7 +17,7 @@ Then the guide that applies them to how agents take initiative:
 
 ## Current canon
 
-- [`dorkos-litepaper.md`](dorkos-litepaper.md): the full story, idea by idea, each labelled built, before launch or roadmap.
+- [`dorkos-litepaper.md`](dorkos-litepaper.md): the full story, idea by idea, each labelled built, next or later.
 - [`brand-foundation.md`](brand-foundation.md): brand position, origin story, the name, tone, aesthetic, messaging bank and site structure.
 - [`agent-etiquette.md`](agent-etiquette.md): how an agent behaves in a room, DM or channel it shares with people and other agents. Present, useful and mostly quiet.
 - [`user-care.md`](user-care.md): how we treat a person who reports a bug or asks for something.

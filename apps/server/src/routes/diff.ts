@@ -29,9 +29,9 @@ import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import {
   MEDIA_CONTENT_TYPES,
   resolveWithinCwd,
-  pathErrorReply,
   servesInlineHere,
 } from '../lib/file-route-guards.js';
+import { boundaryProblem, pathRefusalProblem } from '../http/problems/boundary-refusal.js';
 import {
   editBaselineStore,
   resolveTextBaseline,
@@ -40,10 +40,10 @@ import {
 } from '../services/diff/index.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
-import { canReadSession, SESSION_NOT_FOUND_BODY } from './audit-reader.js';
+import { canReadSession, sessionNotFoundProblem } from './audit-reader.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -61,34 +61,34 @@ router.get('/baseline', async (c) => {
     return validationProblem(c, parsed.error);
   }
   const { cwd, path: relPath, sessionId, mode } = parsed.data;
-  if (!canReadSession(honoRequestFacts(c), sessionId)) return c.json(SESSION_NOT_FOUND_BODY, 404);
+  if (!canReadSession(honoRequestFacts(c), sessionId)) return sessionNotFoundProblem(c);
 
   let validatedCwd: string;
   let resolved: string;
   try {
     ({ validatedCwd, resolved } = await resolveWithinCwd(cwd, relPath));
   } catch (err) {
-    const pathRefusal = pathErrorReply(err);
-    if (pathRefusal) return c.json(pathRefusal.body, pathRefusal.status);
+    const pathRefusal = pathRefusalProblem(c, err);
+    if (pathRefusal) return pathRefusal;
     logger.error('[diff] GET /baseline boundary failed', { err, cwd, path: relPath });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 
   try {
     const result = await resolveTextBaseline(validatedCwd, resolved, sessionId, mode);
     if (!result.ok) {
       if (result.error === 'TOO_LARGE') {
-        return c.json({ error: 'File too large to diff here', code: 'TOO_LARGE' }, 413);
+        return problem(c, 'too_large', { detail: 'This file is too large to diff here.' });
       }
       if (result.error === 'NOT_A_FILE') {
-        return c.json({ error: 'Not a regular file', code: 'NOT_A_FILE' }, 400);
+        return problem(c, 'not_a_file', { detail: 'This path is a folder, not a file.' });
       }
-      return c.json({ error: 'Binary files cannot be diffed as text', code: 'BINARY_FILE' }, 415);
+      return problem(c, 'binary_file', { detail: 'This file isn’t text, so it has no text diff.' });
     }
     return c.json(result.response);
   } catch (err) {
     logger.error('[diff] GET /baseline resolve failed', { err, resolved });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 });
 
@@ -104,16 +104,16 @@ router.post('/baseline/advance', async (c) => {
     return validationProblem(c, parsed.error);
   }
   const { cwd, path: relPath, sessionId } = parsed.data;
-  if (!canReadSession(honoRequestFacts(c), sessionId)) return c.json(SESSION_NOT_FOUND_BODY, 404);
+  if (!canReadSession(honoRequestFacts(c), sessionId)) return sessionNotFoundProblem(c);
 
   let resolved: string;
   try {
     ({ resolved } = await resolveWithinCwd(cwd, relPath));
   } catch (err) {
-    const pathRefusal = pathErrorReply(err);
-    if (pathRefusal) return c.json(pathRefusal.body, pathRefusal.status);
+    const pathRefusal = pathRefusalProblem(c, err);
+    if (pathRefusal) return pathRefusal;
     logger.error('[diff] POST /baseline/advance boundary failed', { err, cwd, path: relPath });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 
   try {
@@ -121,7 +121,7 @@ router.post('/baseline/advance', async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     logger.error('[diff] POST /baseline/advance failed', { err, resolved });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 });
 
@@ -137,17 +137,15 @@ router.get('/pending', async (c) => {
     return validationProblem(c, parsed.error);
   }
   const { cwd, sessionId } = parsed.data;
-  if (!canReadSession(honoRequestFacts(c), sessionId)) return c.json(SESSION_NOT_FOUND_BODY, 404);
+  if (!canReadSession(honoRequestFacts(c), sessionId)) return sessionNotFoundProblem(c);
 
   let validatedCwd: string;
   try {
     validatedCwd = await validateBoundary(cwd);
   } catch (err) {
-    if (err instanceof BoundaryError) {
-      return c.json({ error: err.message, code: err.code }, 403);
-    }
+    if (err instanceof BoundaryError) return boundaryProblem(c, err);
     logger.error('[diff] GET /pending boundary failed', { err, cwd });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 
   try {
@@ -159,7 +157,7 @@ router.get('/pending', async (c) => {
     return c.json({ files });
   } catch (err) {
     logger.error('[diff] GET /pending failed', { err, cwd });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 });
 
@@ -181,28 +179,24 @@ router.get('/baseline/raw', async (c) => {
     return validationProblem(c, parsed.error);
   }
   const { cwd, path: relPath, sessionId } = parsed.data;
-  if (!canReadSession(honoRequestFacts(c), sessionId)) return c.json(SESSION_NOT_FOUND_BODY, 404);
+  if (!canReadSession(honoRequestFacts(c), sessionId)) return sessionNotFoundProblem(c);
 
   let validatedCwd: string;
   let resolved: string;
   try {
     ({ validatedCwd, resolved } = await resolveWithinCwd(cwd, relPath));
   } catch (err) {
-    const pathRefusal = pathErrorReply(err);
-    if (pathRefusal) return c.json(pathRefusal.body, pathRefusal.status);
+    const pathRefusal = pathRefusalProblem(c, err);
+    if (pathRefusal) return pathRefusal;
     logger.error('[diff] GET /baseline/raw boundary failed', { err, cwd, path: relPath });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 
   const contentType = MEDIA_CONTENT_TYPES[path.extname(resolved).toLowerCase()];
   if (!contentType) {
-    return c.json(
-      {
-        error: 'Only image, PDF, and 3D-model baselines can be served',
-        code: 'UNSUPPORTED_TYPE',
-      },
-      415
-    );
+    return problem(c, 'unsupported_media_type', {
+      detail: 'Only image, PDF and 3D-model baselines can be served.',
+    });
   }
 
   try {
@@ -210,7 +204,7 @@ router.get('/baseline/raw', async (c) => {
     if (baseline === null || baseline.bytes.byteLength === 0) {
       // No snapshot and no HEAD content (or an empty pre-image = the file did
       // not exist before this session) — there is no "before" to show.
-      return c.json({ error: 'No baseline for this file', code: 'NO_BASELINE' }, 404);
+      return problem(c, 'not_found', { detail: 'This file has no earlier version to show.' });
     }
 
     const headers: Record<string, string> = {
@@ -228,7 +222,7 @@ router.get('/baseline/raw', async (c) => {
     return c.body(new Uint8Array(baseline.bytes), 200, headers);
   } catch (err) {
     logger.error('[diff] GET /baseline/raw failed', { err, resolved });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 });
 
@@ -237,7 +231,7 @@ router.get('/baseline/raw', async (c) => {
  * "reject" (DOR-212 Chunk B). Binary-safe and server-held: the snapshot's own
  * bytes (git-HEAD fallback) are written atomically, so no bytes travel from the
  * client and the text-oriented `PUT /api/files/content` stays untouched. 404
- * (`NO_BASELINE`) when nothing is restorable — a file the agent created this
+ * (`not_found`) when nothing is restorable — a file the agent created this
  * session has no previous version, and the revert never deletes files. The path
  * is confined to `cwd`; a `..`/symlink escape is rejected (403).
  *
@@ -256,31 +250,31 @@ router.post('/revert', async (c) => {
     return validationProblem(c, parsed.error);
   }
   const { cwd, path: relPath, sessionId } = parsed.data;
-  if (!canReadSession(honoRequestFacts(c), sessionId)) return c.json(SESSION_NOT_FOUND_BODY, 404);
+  if (!canReadSession(honoRequestFacts(c), sessionId)) return sessionNotFoundProblem(c);
 
   let validatedCwd: string;
   let resolved: string;
   try {
     ({ validatedCwd, resolved } = await resolveWithinCwd(cwd, relPath));
   } catch (err) {
-    const pathRefusal = pathErrorReply(err);
-    if (pathRefusal) return c.json(pathRefusal.body, pathRefusal.status);
+    const pathRefusal = pathRefusalProblem(c, err);
+    if (pathRefusal) return pathRefusal;
     logger.error('[diff] POST /revert boundary failed', { err, cwd, path: relPath });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 
   try {
     const outcome = await revertToBaseline(validatedCwd, resolved, sessionId);
     if (outcome === 'no-baseline') {
-      return c.json({ error: 'No baseline to restore for this file', code: 'NO_BASELINE' }, 404);
+      return problem(c, 'not_found', { detail: 'This file has no earlier version to restore.' });
     }
     return c.json({ ok: true });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EACCES') {
-      return c.json({ error: 'Permission denied', code: 'EACCES' }, 403);
+      return problem(c, 'forbidden', { detail: 'DorkOS isn’t allowed to write this file.' });
     }
     logger.error('[diff] POST /revert failed', { err, resolved });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 });
 

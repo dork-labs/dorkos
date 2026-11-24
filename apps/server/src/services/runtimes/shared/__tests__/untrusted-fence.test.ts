@@ -1,7 +1,7 @@
 /**
  * The fence, at the level every block that uses one shares.
  *
- * `room-context-block.test.ts` attacks the room's fence through the room
+ * `room-context-block/room-context-block.untrusted-text.test.ts` attacks the room's fence through the room
  * renderer, and keeps doing so — a caller can hold this primitive correctly and
  * still leak by putting somebody's words in its own region. What is asserted
  * HERE is what no caller can fix for itself: the nonce is unguessable and fresh,

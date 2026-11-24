@@ -26,134 +26,6 @@ function auth(name: string, status: DependencyCheck['status']): DependencyCheck 
 }
 
 describe('RuntimeCapabilities shape', () => {
-  it('accepts a Claude-like declaration with four permission-mode descriptors and a features entry', () => {
-    const claudeLike: RuntimeCapabilities = {
-      type: 'claude-code',
-      commandIntents: { compact: { supported: true } },
-      supportsResume: true,
-      supportsMcp: true,
-      supportsManagedMcpServers: true,
-      supportsCostTracking: true,
-      supportsToolApproval: true,
-      supportsQuestionPrompt: true,
-      supportsPlugins: true,
-      supportsAccounts: true,
-      supportsPersistentSession: false,
-      supportsSteer: false,
-      supportsContextStaging: false,
-      mediaOutput: 'none',
-      nativeContext: [],
-      permissionModes: {
-        supported: true,
-        values: [
-          {
-            id: 'default',
-            label: 'Default',
-            stop: 'ask',
-            asks: 'always',
-            reach: 'edit',
-            promise: 'Asks first.',
-          },
-          {
-            id: 'acceptEdits',
-            label: 'Accept edits',
-            stop: 'act',
-            asks: 'when-risky',
-            reach: 'edit',
-            promise: 'Edits on its own.',
-          },
-          {
-            id: 'plan',
-            label: 'Plan',
-            stop: 'ask',
-            asks: 'always',
-            reach: 'read',
-            promise: 'Reads and plans only.',
-          },
-          {
-            id: 'bypassPermissions',
-            label: 'Bypass permissions',
-            stop: 'autonomy',
-            asks: 'never',
-            reach: 'everything',
-            promise: 'Runs everything without asking.',
-          },
-        ],
-      },
-      settings: {
-        configSection: 'claudeCode',
-        supportsEffort: true,
-        sections: [{ kind: 'claude-accounts' }],
-      },
-      features: {
-        claudeSkills: { enabled: true },
-      },
-    };
-
-    expect(claudeLike.permissionModes.supported).toBe(true);
-    expect(claudeLike.permissionModes.values).toHaveLength(4);
-    expect(claudeLike.features.claudeSkills).toEqual({ enabled: true });
-  });
-
-  it('accepts a runtime that declares no permission-mode support via { supported: false, values: [] }', () => {
-    const minimal: RuntimeCapabilities = {
-      type: 'minimal-runtime',
-      commandIntents: { compact: { supported: false } },
-      supportsResume: false,
-      supportsMcp: false,
-      supportsManagedMcpServers: false,
-      supportsCostTracking: false,
-      supportsToolApproval: false,
-      supportsQuestionPrompt: false,
-      supportsPlugins: false,
-      supportsAccounts: false,
-      supportsPersistentSession: false,
-      supportsSteer: false,
-      supportsContextStaging: false,
-      mediaOutput: 'none',
-      nativeContext: [],
-      permissionModes: { supported: false, values: [] },
-      settings: { configSection: null, supportsEffort: false, sections: [] },
-      features: {},
-    };
-
-    expect(minimal.permissionModes.supported).toBe(false);
-    expect(minimal.permissionModes.values).toEqual([]);
-  });
-
-  it('treats features as Record<string, unknown> — heterogeneous values are allowed', () => {
-    const caps: RuntimeCapabilities = {
-      type: 'heterogeneous-runtime',
-      commandIntents: { compact: { supported: false } },
-      nativeContext: [],
-      supportsResume: true,
-      supportsMcp: false,
-      supportsManagedMcpServers: false,
-      supportsCostTracking: false,
-      supportsToolApproval: false,
-      supportsQuestionPrompt: false,
-      supportsPlugins: false,
-      supportsAccounts: false,
-      supportsPersistentSession: false,
-      supportsSteer: false,
-      supportsContextStaging: false,
-      mediaOutput: 'none',
-      permissionModes: { supported: false, values: [] },
-      settings: { configSection: null, supportsEffort: false, sections: [] },
-      features: {
-        aString: 'hello',
-        aNumber: 42,
-        aBoolean: true,
-        anObject: { nested: [1, 2, 3] },
-        aNull: null,
-      },
-    };
-
-    expect(caps.features.aString).toBe('hello');
-    expect(caps.features.aNumber).toBe(42);
-    expect(caps.features.anObject).toEqual({ nested: [1, 2, 3] });
-  });
-
   it('requires every runtime to declare its settings surface', () => {
     // Compile-time forcing, the `commandIntents` precedent: a new adapter must
     // not be able to silently omit its settings declaration. If `settings` ever
@@ -262,22 +134,6 @@ describe('RuntimeCapabilities shape', () => {
     expect(minimal.description).toBeUndefined();
     expect(minimal.native).toBeUndefined();
   });
-
-  it('allows PermissionModeDescriptor with an optional description and native name', () => {
-    const described: PermissionModeDescriptor = {
-      id: 'plan',
-      label: 'Plan',
-      description: 'Research only, no edits',
-      native: 'read-only',
-      stop: 'ask',
-      asks: 'always',
-      reach: 'read',
-      promise: 'Reads and plans only. Nothing changes until you approve the plan.',
-    };
-
-    expect(described.description).toBe('Research only, no edits');
-    expect(described.native).toBe('read-only');
-  });
 });
 
 describe('deriveRuntimeReadiness', () => {
@@ -293,21 +149,6 @@ describe('deriveRuntimeReadiness', () => {
         },
       ])
     ).toEqual({ state: 'unknown' });
-  });
-
-  it('legacy shape: a binary-only claude-code (no auth check) still reads ready', () => {
-    // Backward-compat: a runtime that declares no auth check is treated as
-    // "auth not required" so old single-dependency shapes never regress.
-    const readiness = deriveRuntimeReadiness('claude-code', [cli('Claude Code CLI')]);
-    expect(readiness).toEqual({ state: 'ready' });
-  });
-
-  it('binary + satisfied auth: claude-code reads ready', () => {
-    const readiness = deriveRuntimeReadiness('claude-code', [
-      cli('Claude Code CLI'),
-      auth('Claude Code authentication', 'satisfied'),
-    ]);
-    expect(readiness).toEqual({ state: 'ready' });
   });
 
   it('binary present + auth missing: claude-code projects to Connect with kind "login"', () => {

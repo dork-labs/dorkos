@@ -23,7 +23,7 @@ import {
 import type { ProfilePickContentProps } from './types';
 
 /** The code the server refuses a loop with. */
-const CYCLE_CODE = 'REPORTS_TO_CYCLE';
+const CYCLE_CODE = 'reports_to_cycle';
 
 /** The field-label style the settings share. */
 const LABEL_CLASS = 'text-muted-foreground text-3xs font-medium tracking-wider uppercase';

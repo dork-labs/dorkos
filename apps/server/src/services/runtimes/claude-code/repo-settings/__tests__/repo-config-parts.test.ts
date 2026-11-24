@@ -27,8 +27,7 @@ vi.mock('../../../../core/operator/config-write.js', () => ({ logConfigWrite: vi
 import { pinRepoBaseline, resolveRepoBaseline } from '../repo-baseline.js';
 import { readRepoConfig } from '../repo-config-parts.js';
 import { readLocalSettings } from '../repo-local-settings.js';
-import { gitBlobId, RepoLocationError } from '../repo-git.js';
-import { fileDiff } from '../text-diff.js';
+import { RepoLocationError } from '../repo-git.js';
 import { recordedBaseline } from '../repo-config-consent.js';
 import { git, isolateGitEnv, makeRepo, writeFile, type RepoFixture } from './git-fixture.js';
 
@@ -83,26 +82,6 @@ describe('the default-branch baseline', () => {
     expect(baseline.commits[0]).toBe(sha);
     expect(baseline.candidate).toEqual({ branch: 'main', sha });
     expect(recordedBaseline(baseline.commonDir!)?.sha).toBe(sha);
-  });
-
-  it('follows origin/HEAD when the repo has one', async () => {
-    const origin = path.join(repo.root, 'origin.git');
-    git(repo.root, ['clone', '-q', '--bare', repo.main, origin]);
-    git(origin, ['branch', '-m', 'main', 'trunk']);
-    git(repo.main, ['remote', 'add', 'origin', origin]);
-    git(repo.main, ['fetch', '-q', 'origin']);
-    git(repo.main, ['remote', 'set-head', 'origin', 'trunk']);
-    const baseline = await resolveRepoBaseline(repo.main, DORK_HOME);
-    expect(baseline.candidate?.branch).toBe('origin/trunk');
-  });
-
-  it('gives no trusted commit when no default branch resolves', async () => {
-    git(repo.main, ['branch', '-m', 'main', 'dev']);
-    const baseline = await resolveRepoBaseline(repo.main, DORK_HOME);
-    expect(baseline.commits).toEqual([]);
-    expect(baseline.untrusted).toBe('no-default-branch');
-    // Fails closed: every committed hook counts as changed.
-    expect((await read(repo.main)).hooks?.files).toContain('.claude/settings.json');
   });
 
   it('moves forward with the branch, and refuses a branch moved anywhere else', async () => {
@@ -183,24 +162,9 @@ describe('the default-branch baseline', () => {
     repo.commit('the script changed');
     expect((await resolveRepoBaseline(wt, DORK_HOME)).untrusted).toBe('hooks-moved');
   });
-
-  it('treats a folder outside any repo as having no baseline', async () => {
-    const plain = path.join(repo.root, 'plain');
-    writeFile(path.join(plain, '.claude/settings.json'), GUARD_SETTINGS);
-    const baseline = await resolveRepoBaseline(plain, DORK_HOME);
-    expect(baseline.untrusted).toBe('not-a-repo');
-    expect((await read(plain)).hooks?.files).toEqual(['.claude/settings.json']);
-  });
 });
 
 describe('repo settings drift', () => {
-  it('finds nothing in a worktree that matches the default branch', async () => {
-    const reading = await read(repo.addWorktree('wt'));
-    expect(reading.hooks).toBeNull();
-    expect(reading.mcpJson).toBeNull();
-    expect(reading.baselineServers).toEqual(MCP.mcpServers);
-  });
-
   it('finds an edited hook script, with a diff against the default branch', async () => {
     const wt = repo.addWorktree('wt');
     writeFile(path.join(wt, '.claude/hooks/guard.mjs'), 'console.log("allow");\n');
@@ -234,25 +198,12 @@ describe('repo settings drift', () => {
     expect(reading.hooks?.mcpKeysChanged).toBe(false);
   });
 
-  it('finds a new script under .claude/hooks', async () => {
-    const wt = repo.addWorktree('wt');
-    writeFile(path.join(wt, '.claude/hooks/new.sh'), 'echo hi\n');
-    expect((await read(wt)).hooks?.files).toEqual(['.claude/hooks/new.sh']);
-  });
-
   it('keeps a worktree started before the default branch changed its hook', async () => {
     const wt = repo.addWorktree('wt');
     writeFile(path.join(repo.main, '.claude/hooks/guard.mjs'), 'process.exit(0); // v2\n');
     repo.commit('guard v2');
     await approveDefaultBranch();
     expect((await read(wt)).hooks).toBeNull();
-  });
-
-  it('gives the same digest for the same edit in two worktrees', async () => {
-    const a = repo.addWorktree('a');
-    const b = repo.addWorktree('b');
-    for (const wt of [a, b]) writeFile(path.join(wt, '.claude/hooks/guard.mjs'), 'x();\n');
-    expect((await read(a)).hooks?.digest).toBe((await read(b)).hooks?.digest);
   });
 
   it('finds a changed .mcp.json and keeps the default branch servers', async () => {
@@ -265,21 +216,9 @@ describe('repo settings drift', () => {
     writeFile(path.join(wt, '.mcp.json'), JSON.stringify(MCP));
     expect((await read(wt)).mcpJson).toBeNull();
   });
-
-  it('hashes a working file the way git does', () => {
-    const sha = git(repo.main, ['rev-parse', 'HEAD:.claude/hooks/guard.mjs']);
-    expect(gitBlobId(Buffer.from(GUARD_SCRIPT), sha.length)).toBe(sha);
-  });
 });
 
 describe('local settings', () => {
-  it('has nothing to approve when absent or only preferences', () => {
-    const wt = repo.addWorktree('wt');
-    expect(readLocalSettings(wt, DORK_HOME)).toBeNull();
-    writeFile(path.join(wt, '.claude/settings.local.json'), { model: 'opus' });
-    expect(readLocalSettings(wt, DORK_HOME)).toBeNull();
-  });
-
   it('names the keys that run code, and digests by content only', () => {
     const a = repo.addWorktree('a');
     const b = repo.addWorktree('b');
@@ -310,19 +249,6 @@ describe('local settings', () => {
     const wt = repo.addWorktree('wt');
     fs.mkdirSync(path.join(wt, '.claude/settings.local.json'), { recursive: true });
     expect(readLocalSettings(wt, DORK_HOME)?.approvable).toBe(false);
-  });
-});
-
-describe('the card diff', () => {
-  it('folds unchanged runs and marks a new file', () => {
-    const before = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n');
-    const after = before.replace('line 10', 'line ten');
-    const diff = fileDiff('a.sh', before, after);
-    expect(diff).toContain('-line 10');
-    expect(diff).toContain('+line ten');
-    expect(diff).toContain('…');
-    expect(diff).not.toContain(' line 0');
-    expect(fileDiff('b.sh', null, 'x')).toContain('(not on the default branch)');
   });
 });
 

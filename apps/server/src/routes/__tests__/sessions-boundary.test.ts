@@ -125,11 +125,11 @@ describe('Sessions Routes — Boundary Validation', () => {
         .send({ permissionMode: 'default' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
-      expect(res.body.error).toBe('Access denied: path outside directory boundary');
+      expect(res.body.code).toBe('outside_boundary');
+      expect(res.body.detail).toBe('This chat is outside the allowed directory.');
     });
 
-    it('rejects null byte paths with 403', async () => {
+    it('rejects null byte paths with 400', async () => {
       vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
         new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
       );
@@ -139,8 +139,8 @@ describe('Sessions Routes — Boundary Validation', () => {
         .query({ cwd: '/home/user\0' })
         .send({ permissionMode: 'default' });
 
-      expect(res.status).toBe(403);
-      expect(res.body.code).toBe('NULL_BYTE');
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('allows request when cwd is within boundary', async () => {
@@ -165,11 +165,11 @@ describe('Sessions Routes — Boundary Validation', () => {
         .query({ cwd: '/etc/passwd' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
-      expect(res.body.error).toBe('Access denied: path outside directory boundary');
+      expect(res.body.code).toBe('outside_boundary');
+      expect(res.body.detail).toBe('This chat is outside the allowed directory.');
     });
 
-    it('rejects null byte paths with 403', async () => {
+    it('rejects null byte paths with 400', async () => {
       vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
         new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
       );
@@ -178,8 +178,8 @@ describe('Sessions Routes — Boundary Validation', () => {
         .get(`/api/sessions/${SESSION_ID}/events`)
         .query({ cwd: '/home/user\0' });
 
-      expect(res.status).toBe(403);
-      expect(res.body.code).toBe('NULL_BYTE');
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('validates the cwd through the DorkHome-aware seam, not the plain boundary', async () => {
@@ -201,7 +201,7 @@ describe('Sessions Routes — Boundary Validation', () => {
       const res = await request(testServer).get('/api/sessions').query({ cwd: '/etc/shadow' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
   });
 
@@ -214,7 +214,7 @@ describe('Sessions Routes — Boundary Validation', () => {
         .query({ cwd: '/etc/shadow' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
   });
 
@@ -227,7 +227,7 @@ describe('Sessions Routes — Boundary Validation', () => {
         .query({ cwd: '/etc/shadow' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
   });
 
@@ -240,7 +240,7 @@ describe('Sessions Routes — Boundary Validation', () => {
         .query({ cwd: '/etc/shadow' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
   });
 
@@ -270,7 +270,7 @@ describe('Sessions Routes — Boundary Validation', () => {
         .query({ cwd: SECRETS });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
   });
 });

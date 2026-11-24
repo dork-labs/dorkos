@@ -26,7 +26,9 @@ import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { resolveSessionCwdOrDefault, resolveSettingsKey } from '../services/session/index.js';
 import { deliverSessionStream } from '../services/core/streams/session-stream-delivery.js';
 import { SseStreamSink } from '../services/core/streams/durable-stream-sink.js';
-import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
+import { sendProblem } from '@dorkos/http-kit';
+import { boundaryRefusal, parseSessionId } from '../lib/route-utils.js';
+import { invalidSessionId } from './session-route-replies.js';
 import { parseResumeCursor } from '../lib/stream-cursor.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 
@@ -49,7 +51,7 @@ import { readCallerPrincipal } from '../lib/caller-principal.js';
  */
 export async function sessionEventsHandler(c: Context<ApiEnv>): Promise<Response> {
   const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+  if (!sessionId) return invalidSessionId(c);
 
   const query = readQuery(c);
   const cwdParam = (query.cwd as string) || undefined;
@@ -88,7 +90,7 @@ export async function sessionEventsHandler(c: Context<ApiEnv>): Promise<Response
   // must stream under a narrow boundary; this is the landing path for
   // onboarding's DorkBot session.
   const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
-  if (outside) return c.json(outside, 403);
+  if (outside) return sendProblem(c, outside);
 
   const resume = parseResumeCursor(
     c.req.header('last-event-id') ?? (query[STREAM_RESUME_PARAM] as string | undefined),

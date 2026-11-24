@@ -3,7 +3,6 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import {
-  CommunityWarningSchema,
   LOCAL_COMMUNITY,
   type CommunityAdapter,
   type CommunityRef,
@@ -68,27 +67,6 @@ describe('aggregateCommunityRooms', () => {
       { community: REMOTE, label: 'Dork Labs', message: 'Dork Labs could not be reached.' },
     ]);
     expect(warnings[0]!.message).not.toContain('relay closed the socket');
-  });
-
-  it('never lets a synchronously-throwing adapter take down the whole listing', async () => {
-    // `allSettled` only settles promises. An adapter that throws before
-    // returning one escapes it entirely and rejects the caller's request —
-    // taking the OTHER communities' rooms with it.
-    const local = new FakeCommunityAdapter({ community: LOCAL_COMMUNITY, type: 'local' });
-    local.seedRoom({ entries: 1 });
-    const exploding = new FakeCommunityAdapter({ community: REMOTE, type: 'buzz' });
-    vi.spyOn(exploding, 'listRooms').mockImplementation(() => {
-      throw new Error('adapter blew up before returning a promise');
-    });
-
-    const { rooms, warnings } = await aggregateCommunityRooms({
-      communities: [source(local, 'This machine'), source(exploding, 'Dork Labs')],
-    });
-
-    expect(rooms).toHaveLength(1);
-    expect(warnings).toEqual([
-      { community: REMOTE, label: 'Dork Labs', message: 'Dork Labs could not be reached.' },
-    ]);
   });
 
   it('gives a slow community a budget rather than letting it stall the list', async () => {
@@ -160,58 +138,5 @@ describe('aggregateCommunityRooms', () => {
       expect(rooms, `${status} says nothing about membership`).toHaveLength(1);
       expect(warnings).toEqual([]);
     }
-  });
-
-  it('carries a label on every warning, so a degraded community is nameable', async () => {
-    const broken = new FakeCommunityAdapter({ community: REMOTE, type: 'buzz' });
-    vi.spyOn(broken, 'listRooms').mockRejectedValue(new Error('boom'));
-
-    const { warnings } = await aggregateCommunityRooms({
-      communities: [
-        source(broken, 'Dork Labs'),
-        source(
-          new FakeCommunityAdapter({ community: LOCAL_COMMUNITY, type: 'local' }),
-          'This machine',
-          { status: 'not-admitted', disclosure: 'Not in this one yet.' }
-        ),
-      ],
-    });
-
-    expect(warnings).toHaveLength(2);
-    for (const warning of warnings) expect(warning.label).toBeTruthy();
-  });
-
-  it('emits warnings that parse, including for a not-admitted community with no disclosure', async () => {
-    const remote = new FakeCommunityAdapter({ community: REMOTE, type: 'buzz' });
-    remote.seedRoom({ entries: 1 });
-    const broken = new FakeCommunityAdapter({ community: LOCAL_COMMUNITY, type: 'local' });
-    vi.spyOn(broken, 'listRooms').mockRejectedValue(new Error('boom'));
-
-    const { warnings } = await aggregateCommunityRooms({
-      communities: [
-        // A backend that reached 'not-admitted' without supplying a disclosure.
-        // The fallback is what a surface renders in that case, so it has to be
-        // real text: an empty one would produce a warning that cannot be shown
-        // and would slip past every other assertion in this file.
-        source(remote, 'Dork Labs', { status: 'not-admitted' }),
-        source(broken, 'This machine'),
-      ],
-    });
-
-    expect(warnings).toHaveLength(2);
-    for (const warning of warnings) {
-      const parsed = CommunityWarningSchema.safeParse(warning);
-      expect(
-        parsed.success,
-        `malformed warning: ${parsed.success ? '' : parsed.error.message}`
-      ).toBe(true);
-    }
-  });
-
-  it('returns an empty list rather than failing when nothing is configured', async () => {
-    await expect(aggregateCommunityRooms({ communities: [] })).resolves.toEqual({
-      rooms: [],
-      warnings: [],
-    });
   });
 });

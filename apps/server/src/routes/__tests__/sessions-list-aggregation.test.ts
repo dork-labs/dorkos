@@ -472,7 +472,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
     const res = await request(testServer).get('/api/sessions').query({ runtime: 'nonexistent' });
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('UNKNOWN_RUNTIME');
+    expect(res.body.code).toBe('invalid_request');
     expect(runtimeA.listSessions).not.toHaveBeenCalled();
     expect(runtimeB.listSessions).not.toHaveBeenCalled();
     // The rejection happens before the fan-out — the real adapter included.
@@ -614,7 +614,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
         .send({ content: 'ping', runtime: 'nonexistent-runtime', create: true });
 
       expect(rejected.status).toBe(400);
-      expect(rejected.body.code).toBe('UNKNOWN_RUNTIME');
+      expect(rejected.body.code).toBe('invalid_request');
     });
 
     it('delivers a mocked Codex turn over the durable /events path (snapshot + replay)', async () => {
