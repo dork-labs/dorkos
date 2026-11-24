@@ -1,11 +1,7 @@
 /**
- * What a relay-triggered turn runs on.
- *
- * The manifest tier runs for real here — `readAgentExecutionDefaults` reads a
- * real `.dork/agent.json` off disk — because the reported break was that
- * nothing on this path read one at all, and a stubbed manifest would prove
- * nothing about it. Only the registry (a database) and the config file are
- * doubles.
+ * What a relay-triggered turn runs on. The manifest tier runs for real against
+ * a `.dork/agent.json` on disk, because the reported break was that nothing on
+ * this path read one. Only the registry and the config file are doubles.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises';
@@ -18,7 +14,7 @@ import { FakeAgentRuntime } from '@dorkos/test-utils';
 
 /** What `session_metadata` holds for the session under test — `null` = no row. */
 let storedSettings: SessionSettings | null = null;
-/** What reading that row does. Throws for the one test about a locked database. */
+/** What reading that row does. */
 let readSettings: () => Promise<SessionSettings | null> = () => Promise.resolve(storedSettings);
 /** Which runtimes this server registered, and what each declares about itself. */
 let registered: Record<string, { configSection: string | null; supportsEffort: boolean }> = {};
@@ -28,14 +24,9 @@ vi.mock('../../core/runtime-registry.js', () => ({
     computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getSessionSettings: () => readSettings(),
-    // A chat with no recorded agent, so the no-agent path is real rather than a
-    // swallowed TypeError (DOR-5057).
     getSessionAgentPath: async () => null,
     has: (type: string) => registered[type] !== undefined,
-    // The real `get` THROWS on an unregistered type — it does not answer
-    // `undefined`. The double used to be gentler than the thing it stands in
-    // for, which is how a `?.` on it read as safe; the resolver now asks `has`
-    // first, and this double throws so that stays honest.
+    // The real `get` THROWS on an unregistered type, so this double does too.
     get: (type: string) => {
       const declared = registered[type];
       if (!declared) throw new Error(`Runtime '${type}' not registered`);
@@ -44,41 +35,28 @@ vi.mock('../../core/runtime-registry.js', () => ({
   },
 }));
 
-/** The stored `runtimes` section the real resolver reads. */
 let runtimesConfig: UserConfig['runtimes'] = USER_CONFIG_DEFAULTS.runtimes;
-
 vi.mock('../../core/config-manager.js', () => ({
   configManager: { get: (key: string) => (key === 'runtimes' ? runtimesConfig : undefined) },
 }));
 
-/** The accounts the registry holds, by runtime; `null` = no usage store at all. */
-let accounts:
-  | { runtime: string; id: string; routable: boolean; implicit: boolean; isDefault: boolean }[]
-  | null = [];
-
+/** The accounts the registry holds. */
+let accounts: {
+  runtime: string;
+  id: string;
+  routable: boolean;
+  implicit: boolean;
+  isDefault: boolean;
+}[] = [];
 vi.mock('../../core/usage/current-usage-store.js', () => ({
-  getAccountUsageStore: () =>
-    accounts === null
-      ? undefined
-      : { listAccounts: (runtime: string) => accounts!.filter((a) => a.runtime === runtime) },
+  getAccountUsageStore: () => ({
+    listAccounts: (runtime: string) => accounts.filter((a) => a.runtime === runtime),
+  }),
 }));
 
-/** The account advisor's answer, as `checkAccountLaunch` reports it. */
 const checkAccountLaunch = vi.fn();
-
 vi.mock('../../core/usage/account-ranking.js', () => ({
   checkAccountLaunch: (request: unknown) => checkAccountLaunch(request),
-}));
-
-const logInfo = vi.fn();
-
-vi.mock('../../../lib/logger.js', () => ({
-  logger: {
-    info: (...a: unknown[]) => logInfo(...a),
-    warn: vi.fn(),
-    debug: vi.fn(),
-    error: vi.fn(),
-  },
 }));
 
 const { createTurnExecutionSettingsResolver } = await import('../turn-execution-settings.js');
@@ -86,18 +64,14 @@ const { setSessionAgentSources } = await import('../../core/agent-identity/sessi
 const { clearTestHomes, registerTestHomes } =
   await import('../../core/agent-identity/__tests__/agent-home-fixture.js');
 
-/** An agent directory holding the manifest this test wrote. */
 let agentDir: string;
+const CLAUDE = { configSection: 'claudeCode', supportsEffort: true };
 
-/**
- * Write an agent manifest to disk, exactly where `.dork/agent.json` lives.
- *
- * @param manifest - The manifest fields under test.
- */
-async function writeManifest(manifest: Record<string, unknown>): Promise<void> {
-  await mkdir(path.join(agentDir, '.dork'), { recursive: true });
+/** Write an agent manifest to `dir/.dork/agent.json`. */
+async function writeManifest(manifest: Record<string, unknown>, dir = agentDir): Promise<void> {
+  await mkdir(path.join(dir, '.dork'), { recursive: true });
   await writeFile(
-    path.join(agentDir, '.dork', 'agent.json'),
+    path.join(dir, '.dork', 'agent.json'),
     JSON.stringify({
       id: 'ana',
       name: 'Ana',
@@ -109,56 +83,120 @@ async function writeManifest(manifest: Record<string, unknown>): Promise<void> {
   );
 }
 
+/** Set the server-wide Claude Code defaults. */
+function serverDefaults(claudeCode: Partial<UserConfig['runtimes']['claudeCode']>): void {
+  runtimesConfig = {
+    ...USER_CONFIG_DEFAULTS.runtimes,
+    claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, ...claudeCode },
+  };
+}
+
+function resolveFor(runtimeType = 'claude-code', extra: Record<string, unknown> = {}) {
+  return createTurnExecutionSettingsResolver()({
+    runtimeType,
+    sessionId: 'agent-ulid-1',
+    agentDirectory: agentDir,
+    ...extra,
+  });
+}
+
+beforeEach(async () => {
+  storedSettings = null;
+  readSettings = () => Promise.resolve(storedSettings);
+  runtimesConfig = USER_CONFIG_DEFAULTS.runtimes;
+  registered = { 'claude-code': CLAUDE };
+  accounts = [];
+  checkAccountLaunch.mockReset();
+  agentDir = await mkdtemp(path.join(tmpdir(), 'dorkos-relay-agent-'));
+});
+
+afterEach(async () => {
+  await rm(agentDir, { recursive: true, force: true });
+});
+
 describe('createTurnExecutionSettingsResolver', () => {
-  beforeEach(async () => {
-    storedSettings = null;
-    readSettings = () => Promise.resolve(storedSettings);
-    runtimesConfig = USER_CONFIG_DEFAULTS.runtimes;
-    registered = { 'claude-code': { configSection: 'claudeCode', supportsEffort: true } };
-    agentDir = await mkdtemp(path.join(tmpdir(), 'dorkos-relay-agent-'));
+  it.each([
+    // An agent pinned to haiku used to answer a colleague on the server's default.
+    [
+      "the agent's own model over the server default",
+      { model: 'claude-haiku-4-5', effort: 'low' },
+      null,
+      { model: 'claude-haiku-4-5', effort: 'low' },
+    ],
+    ["the server's default when the agent names none", {}, null, { model: 'opus' }],
+    // A row with settings is a running conversation, whatever the manifest says now.
+    [
+      'a running conversation keeps its settings',
+      { model: 'claude-haiku-4-5' },
+      { model: 'opus', effort: 'high', fastMode: true },
+      { model: 'opus', effort: 'high', fastMode: true },
+    ],
+    // Moving the trust dial writes a row naming only a mode; that is not a model.
+    [
+      'a row naming only a permission mode keeps the manifest model',
+      { model: 'claude-haiku-4-5' },
+      { permissionMode: 'plan' },
+      { model: 'claude-haiku-4-5' },
+    ],
+    // The relay resolves its own mode from the binding (DOR-604).
+    [
+      'never a permission mode, whatever the row holds',
+      undefined,
+      { permissionMode: 'bypassPermissions', model: 'opus' },
+      { model: 'opus' },
+    ],
+    // This build has no Codex adapter, so the turn falls back to claude-code.
+    [
+      'never a Codex model on the claude-code fallback',
+      { runtime: 'codex', model: 'gpt-5.3-codex' },
+      null,
+      { model: 'opus' },
+    ],
+  ] as const)('answers %s', async (_label, manifest, stored, expected) => {
+    serverDefaults({ defaultModel: 'opus' });
+    if (manifest) await writeManifest(manifest);
+    storedSettings = stored as SessionSettings | null;
+    expect(await resolveFor()).toEqual(expected);
   });
 
-  afterEach(async () => {
-    await rm(agentDir, { recursive: true, force: true });
-  });
-
-  it("runs the turn on the addressed agent's own model", async () => {
-    // The reported break, end to end: an agent pinned to haiku answered a
-    // colleague on the server's default because nothing here read the manifest.
-    runtimesConfig = {
-      ...USER_CONFIG_DEFAULTS.runtimes,
-      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
-    };
-    await writeManifest({ model: 'claude-haiku-4-5', effort: 'low' });
-
-    const settings = await createTurnExecutionSettingsResolver()({
-      runtimeType: 'claude-code',
-      sessionId: 'agent-ulid-1',
-      agentDirectory: agentDir,
+  it('fills only the keys a row leaves unanswered', async () => {
+    serverDefaults({ defaultEffort: 'high' });
+    await writeManifest({ model: 'claude-haiku-4-5' });
+    storedSettings = { fastMode: true };
+    expect(await resolveFor()).toEqual({
+      model: 'claude-haiku-4-5',
+      effort: 'high',
+      fastMode: true,
     });
-
-    expect(settings).toEqual({ model: 'claude-haiku-4-5', effort: 'low' });
   });
 
-  it("falls back to the server's default for an agent that names no model", async () => {
-    runtimesConfig = {
-      ...USER_CONFIG_DEFAULTS.runtimes,
-      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
-    };
-    await writeManifest({});
+  it('asks for nothing when nothing is configured anywhere', async () => {
+    expect(await resolveFor()).toEqual({});
+  });
 
-    const settings = await createTurnExecutionSettingsResolver()({
-      runtimeType: 'claude-code',
-      sessionId: 'agent-ulid-1',
-      agentDirectory: agentDir,
-    });
+  it('starts on the ladder when the settings row cannot be read', async () => {
+    readSettings = () => Promise.reject(new Error('database is locked'));
+    await writeManifest({ model: 'claude-haiku-4-5' });
+    expect(await resolveFor()).toEqual({ model: 'claude-haiku-4-5' });
+  });
 
-    expect(settings).toEqual({ model: 'opus' });
+  it('drops an effort a runtime says it has none of', async () => {
+    registered = { opencode: { configSection: 'opencode', supportsEffort: false } };
+    await writeManifest({ runtime: 'opencode', model: 'anthropic/claude-opus', effort: 'high' });
+    expect(await resolveFor('opencode')).toEqual({ model: 'anthropic/claude-opus' });
+  });
+
+  it('answers rather than throws for an unregistered runtime (DOR-1614)', async () => {
+    registered = {};
+    await writeManifest({ runtime: 'codex', model: 'gpt-5.3-codex' });
+    expect(await resolveFor('codex')).toEqual({ model: 'gpt-5.3-codex' });
   });
 
   // DOR-5057: a turn addressed to a chat names no agent; the chat's own agent answers.
-  it("reads the chat's own agent when the turn names none", async () => {
+  it("reads the chat's own agent when the turn names none, and the subject's agent when it does", async () => {
     await writeManifest({ model: 'claude-haiku-4-5' });
+    const other = await mkdtemp(path.join(tmpdir(), 'dorkos-relay-other-'));
+    await writeManifest({ id: 'rio', name: 'Rio', model: 'claude-opus-4-1' }, other);
     const { RuntimeRegistry } = await vi.importActual<
       typeof import('../../core/runtime-registry.js')
     >('../../core/runtime-registry.js');
@@ -166,266 +204,37 @@ describe('createTurnExecutionSettingsResolver', () => {
     const registry = new RuntimeRegistry();
     registry.setDb(db);
     registry.register(new FakeAgentRuntime('claude-code') as never);
-    // The CLI's shape: a folder, no agent.
     await registry.persistSessionRuntime('chat-1', 'claude-code', { kind: 'interactive' });
-    registerTestHomes([agentDir]);
-    setSessionAgentSources({ db, liveCwd: (id) => (id === 'chat-1' ? agentDir : undefined) });
-    try {
-      const settings = await createTurnExecutionSettingsResolver()({
-        runtimeType: 'claude-code',
-        sessionId: 'chat-1',
-      });
-      expect(settings).toEqual({ model: 'claude-haiku-4-5' });
-    } finally {
-      setSessionAgentSources(undefined);
-      clearTestHomes();
-    }
-  });
-
-  it("keeps the agent the relay resolved from the subject over the chat's own", async () => {
-    await writeManifest({ model: 'claude-haiku-4-5' });
-    const other = await mkdtemp(path.join(tmpdir(), 'dorkos-relay-other-'));
-    await mkdir(path.join(other, '.dork'), { recursive: true });
-    await writeFile(
-      path.join(other, '.dork', 'agent.json'),
-      JSON.stringify({
-        id: 'rio',
-        name: 'Rio',
-        runtime: 'claude-code',
-        model: 'claude-opus-4-1',
-        registeredAt: '2026-08-18T10:00:00.000Z',
-        registeredBy: 'test',
-      })
-    );
     registerTestHomes([agentDir, other]);
-    setSessionAgentSources({ db: createTestDb(), liveCwd: () => other });
     try {
-      const settings = await createTurnExecutionSettingsResolver()({
-        runtimeType: 'claude-code',
-        sessionId: 'chat-1',
-        agentDirectory: agentDir,
+      setSessionAgentSources({ db, liveCwd: (id) => (id === 'chat-1' ? agentDir : undefined) });
+      expect(
+        await resolveFor('claude-code', { sessionId: 'chat-1', agentDirectory: undefined })
+      ).toEqual({ model: 'claude-haiku-4-5' });
+      setSessionAgentSources({ db: createTestDb(), liveCwd: () => other });
+      expect(await resolveFor('claude-code', { sessionId: 'chat-1' })).toEqual({
+        model: 'claude-haiku-4-5',
       });
-      expect(settings).toEqual({ model: 'claude-haiku-4-5' });
     } finally {
       setSessionAgentSources(undefined);
       clearTestHomes();
       await rm(other, { recursive: true, force: true });
     }
   });
-
-  it('asks for nothing when nothing is configured anywhere', async () => {
-    const settings = await createTurnExecutionSettingsResolver()({
-      runtimeType: 'claude-code',
-      sessionId: 'agent-ulid-1',
-      agentDirectory: agentDir,
-    });
-
-    expect(settings).toEqual({});
-  });
-
-  it('leaves a conversation that already has settings alone', async () => {
-    // "Applies to new conversations — running ones keep their settings." A relay
-    // thread with a row is a running one, whatever the manifest now says. It has
-    // to be read HERE rather than left to the runtime: the adapter creates the
-    // session record before the runtime's own hydration would run.
-    await writeManifest({ model: 'claude-haiku-4-5' });
-    storedSettings = { model: 'opus', effort: 'high', fastMode: true };
-
-    const settings = await createTurnExecutionSettingsResolver()({
-      runtimeType: 'claude-code',
-      sessionId: 'sdk-uuid-42',
-      agentDirectory: agentDir,
-    });
-
-    expect(settings).toEqual({ model: 'opus', effort: 'high', fastMode: true });
-  });
-
-  it('still uses the manifest model for a row that names only a permission mode', async () => {
-    // Moving the trust dial writes a row with every other column NULL, and
-    // `rowToSettings` omits NULLs — so "this session has a row" is not "this
-    // session has a model". Reading it as one would cost the agent its model
-    // permanently, for that conversation, the moment somebody touched its
-    // permissions. The other surfaces never had the hazard: their rows are
-    // written by `persistSessionRuntime`, which fills the NULL columns from
-    // this same ladder.
-    await writeManifest({ model: 'claude-haiku-4-5' });
-    storedSettings = { permissionMode: 'plan' };
-
-    const settings = await createTurnExecutionSettingsResolver()({
-      runtimeType: 'claude-code',
-      sessionId: 'sdk-uuid-42',
-      agentDirectory: agentDir,
-    });
-
-    expect(settings).toEqual({ model: 'claude-haiku-4-5' });
-  });
-
-  it('fills the keys a row leaves unanswered, and keeps the ones it names', async () => {
-    // Per key, exactly as `fillNullsWith` fills a row: `fastMode` is the
-    // person's, the model is still the agent's, and the effort still the
-    // server's.
-    runtimesConfig = {
-      ...USER_CONFIG_DEFAULTS.runtimes,
-      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultEffort: 'high' },
-    };
-    await writeManifest({ model: 'claude-haiku-4-5' });
-    storedSettings = { fastMode: true };
-
-    const settings = await createTurnExecutionSettingsResolver()({
-      runtimeType: 'claude-code',
-      sessionId: 'sdk-uuid-42',
-      agentDirectory: agentDir,
-    });
-
-    expect(settings).toEqual({ model: 'claude-haiku-4-5', effort: 'high', fastMode: true });
-  });
-
-  it('never answers with a permission mode, whatever the row holds', async () => {
-    // The relay resolves its own mode from the binding that carried the message
-    // and treats an absent one as prompting rather than as consent (DOR-604).
-    storedSettings = { permissionMode: 'bypassPermissions', model: 'opus' };
-
-    const settings = await createTurnExecutionSettingsResolver()({
-      runtimeType: 'claude-code',
-      sessionId: 'sdk-uuid-42',
-      agentDirectory: agentDir,
-    });
-
-    expect(settings).toEqual({ model: 'opus' });
-  });
-
-  it('never seeds a Codex model onto the claude-code session it falls back to', async () => {
-    // This build has no Codex adapter, so the relay turn runs on claude-code —
-    // and `gpt-5.3-codex` would otherwise reach the Claude Code SDK as an id
-    // from another provider's namespace.
-    registered = { 'claude-code': { configSection: 'claudeCode', supportsEffort: true } };
-    runtimesConfig = {
-      ...USER_CONFIG_DEFAULTS.runtimes,
-      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
-    };
-    await writeManifest({ runtime: 'codex', model: 'gpt-5.3-codex' });
-
-    const settings = await createTurnExecutionSettingsResolver()({
-      runtimeType: 'claude-code',
-      sessionId: 'agent-ulid-1',
-      agentDirectory: agentDir,
-    });
-
-    expect(settings).toEqual({ model: 'opus' });
-  });
-
-  it('answers for an agent nobody could locate', async () => {
-    // No directory means no manifest tier at all, not a refusal: the server's
-    // default still applies.
-    runtimesConfig = {
-      ...USER_CONFIG_DEFAULTS.runtimes,
-      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
-    };
-
-    const settings = await createTurnExecutionSettingsResolver()({
-      runtimeType: 'claude-code',
-      sessionId: 'agent-ulid-1',
-    });
-
-    expect(settings).toEqual({ model: 'opus' });
-  });
-
-  it('starts a new session on the ladder when the settings row cannot be read', async () => {
-    // A locked database makes "has this conversation got settings?" unanswerable
-    // for a moment. The honest fallback is the ladder a new session starts on,
-    // never a refused turn — the message is somebody's agent talking.
-    readSettings = () => Promise.reject(new Error('database is locked'));
-    await writeManifest({ model: 'claude-haiku-4-5' });
-
-    const settings = await createTurnExecutionSettingsResolver()({
-      runtimeType: 'claude-code',
-      sessionId: 'agent-ulid-1',
-      agentDirectory: agentDir,
-    });
-
-    expect(settings).toEqual({ model: 'claude-haiku-4-5' });
-  });
-
-  it('drops an effort a runtime says it has none of', async () => {
-    registered = { opencode: { configSection: 'opencode', supportsEffort: false } };
-    await writeManifest({ runtime: 'opencode', model: 'anthropic/claude-opus', effort: 'high' });
-
-    const settings = await createTurnExecutionSettingsResolver()({
-      runtimeType: 'opencode',
-      sessionId: 'agent-ulid-1',
-      agentDirectory: agentDir,
-    });
-
-    expect(settings).toEqual({ model: 'anthropic/claude-opus' });
-  });
-
-  it('answers rather than throws when asked about an unregistered runtime', async () => {
-    // Newly reachable (DOR-1614). The runtime used to be fixed when the resolver
-    // was built, from a map entry that existed by construction; it now arrives
-    // per call, off the subject the message came in on. A build where the Codex
-    // SDK failed to construct still has codex-owned sessions on disk and codex
-    // in its manifests, so `codex` reaches here with nothing registered under it
-    // — and `runtimeRegistry.get` THROWS on that. This resolver promises never
-    // to throw: a settings problem must not drop somebody's message. Without the
-    // `has` check ahead of the `get`, this rejects instead of answering.
-    registered = {};
-    await writeManifest({ runtime: 'codex', model: 'gpt-5.3-codex' });
-
-    const settings = await createTurnExecutionSettingsResolver()({
-      runtimeType: 'codex',
-      sessionId: 'agent-ulid-1',
-      agentDirectory: agentDir,
-    });
-
-    // The manifest's model survives: it names the very runtime this turn is
-    // running on, so it is readable there — an unregistered runtime declares no
-    // config section and no effort support, which is the same "no preference"
-    // every other absent tier means.
-    expect(settings).toEqual({ model: 'gpt-5.3-codex' });
-  });
 });
 
 describe('a relay message naming an account (DOR-2384)', () => {
-  /** A registered, routable Claude Code account. */
-  const WORK = {
-    runtime: 'claude-code',
-    id: 'work',
-    routable: true,
-    implicit: false,
-    isDefault: false,
-  };
-
-  beforeEach(async () => {
-    storedSettings = null;
-    readSettings = () => Promise.resolve(storedSettings);
-    runtimesConfig = USER_CONFIG_DEFAULTS.runtimes;
-    registered = { 'claude-code': { configSection: 'claudeCode', supportsEffort: true } };
-    accounts = [WORK];
-    checkAccountLaunch.mockReset();
-    logInfo.mockReset();
-    agentDir = await mkdtemp(path.join(tmpdir(), 'dorkos-relay-agent-'));
+  beforeEach(() => {
+    accounts = [
+      { runtime: 'claude-code', id: 'work', routable: true, implicit: false, isDefault: false },
+    ];
   });
-
-  afterEach(async () => {
-    await rm(agentDir, { recursive: true, force: true });
-  });
-
-  /** Ask the resolver about a new conversation that names `requestedAccount`. */
-  function ask(requestedAccount: string, runtimeType = 'claude-code') {
-    return createTurnExecutionSettingsResolver()({
-      runtimeType,
-      sessionId: 'agent-ulid-1',
-      agentDirectory: agentDir,
-      requestedAccount,
-    });
-  }
 
   it('launches on the account when the advisor allows it, asking as a relay caller', async () => {
     checkAccountLaunch.mockResolvedValue({ allowed: true });
-
-    const settings = await ask('work');
-
-    expect(settings.accountHint).toBe('work');
+    expect((await resolveFor('claude-code', { requestedAccount: 'work' })).accountHint).toBe(
+      'work'
+    );
     expect(checkAccountLaunch).toHaveBeenCalledWith({
       accountId: 'work',
       cwd: agentDir,
@@ -434,52 +243,26 @@ describe('a relay message naming an account (DOR-2384)', () => {
     });
   });
 
-  it('runs without the account when no advisor is registered, and says why', async () => {
-    // With no advisor, an agent's or a relay message's pick is refused: nothing
-    // is spent on another account until the operator opts in.
+  it('runs without the account when the advisor refuses it or none is registered', async () => {
     checkAccountLaunch.mockResolvedValue({ allowed: false, reason: 'no advisor' });
-
-    const settings = await ask('work');
-
-    expect(settings).not.toHaveProperty('accountHint');
-    expect(logInfo).toHaveBeenCalledWith(
-      expect.stringContaining('account'),
-      expect.objectContaining({ account: 'work', reason: 'no advisor' })
-    );
-  });
-
-  it('runs without the account when the advisor refuses it', async () => {
-    checkAccountLaunch.mockResolvedValue({ allowed: false, reason: 'kept out' });
-
-    const settings = await ask('work');
-
-    expect(settings).not.toHaveProperty('accountHint');
-    expect(logInfo).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ account: 'work', reason: 'kept out' })
+    expect(await resolveFor('claude-code', { requestedAccount: 'work' })).not.toHaveProperty(
+      'accountHint'
     );
   });
 
   it('never asks the advisor about an id nobody registered', async () => {
     checkAccountLaunch.mockResolvedValue({ allowed: true });
-
-    const settings = await ask('someone-elses');
-
-    expect(settings).not.toHaveProperty('accountHint');
+    expect(
+      await resolveFor('claude-code', { requestedAccount: 'someone-elses' })
+    ).not.toHaveProperty('accountHint');
     expect(checkAccountLaunch).not.toHaveBeenCalled();
-    expect(logInfo).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ account: 'someone-elses' })
-    );
   });
 
   it('runs the turn on its settings when the account check throws', async () => {
     checkAccountLaunch.mockRejectedValue(new Error('advisor exploded'));
     await writeManifest({ model: 'claude-opus-4-6' });
-
-    const settings = await ask('work');
-
-    expect(settings).toEqual({ model: 'claude-opus-4-6' });
-    expect(checkAccountLaunch).toHaveBeenCalled();
+    expect(await resolveFor('claude-code', { requestedAccount: 'work' })).toEqual({
+      model: 'claude-opus-4-6',
+    });
   });
 });

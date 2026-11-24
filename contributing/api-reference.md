@@ -51,7 +51,7 @@ A `get` or `delete` reads every other field from the query string; a `post`, `pu
 
 Two guards keep the mount honest. Building the app throws when a hand route claims a capability's method and path, or when two capabilities declare the same one. And `HAND_SERVED_CAPABILITIES` in `capability-http.ts` lists the capabilities whose path an older hand route still serves: it only shrinks, as each hand route is deleted.
 
-A few shapes a capability cannot carry yet (file uploads, raw bodies, streams) still need a hand route and a hand `registerPath` in `services/core/openapi-registry.ts`; validate the body with `Schema.safeParse(readJsonBody(c))` and answer `validationFailureBody(error)` with a 400.
+A few shapes a capability cannot carry yet (file uploads, raw bodies, streams) still need a hand route and a hand `registerPath` in `services/core/openapi-registry.ts`; validate the body with `Schema.safeParse(readJsonBody(c))` and answer `validationProblem(c, error)` (a 400 problem). Every failure is a problem document; see [Errors](#errors).
 
 ## Operation ids
 
@@ -82,6 +82,53 @@ The document declares two schemes, `sessionCookie` and `apiKey`, and a default o
 A `registerPath` call that sets `security` keeps it. A local install with "Ask for a password on this computer too" off takes calls from this computer with no credential; the `info.description` and both scheme descriptions say so. `X-DorkOS-Agent` is an identity header, not a credential, so it is not a scheme; `docs/api/index.mdx` describes it. `services/core/openapi/__tests__/security-schemes.test.ts` asks the real session gate about every documented operation and fails when the document calls a path open that the gate guards, or the reverse.
 
 The document's `info.version` is the product version: the running server's version at `/api/openapi.json`, and the repo `VERSION` in the committed `docs/api/openapi.json`. A release bumps `VERSION`, so the release PR regenerates the docs too (`.claude/commands/system/release.md`, Phase 6).
+
+## Errors
+
+Every failed request on the API is answered with one shape: an [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem document, served as `application/problem+json` (ADR `261123-170831`, DOR-4979).
+
+```json
+{
+  "type": "urn:dorkos:problem:invalid_request",
+  "title": "The request didn’t pass its checks.",
+  "status": 400,
+  "code": "invalid_request",
+  "detail": "`cwd`: Required.",
+  "issues": { "formErrors": [], "fieldErrors": { "cwd": ["Required"] } }
+}
+```
+
+| Field          | What it is                                                                          |
+| -------------- | ----------------------------------------------------------------------------------- |
+| `code`         | The machine-readable kind, `lower_snake`. Branch on this. Permanent once published. |
+| `title`        | The code's short summary, the same for every occurrence. Safe to show a person.     |
+| `detail`       | This occurrence, in words. Safe to show a person. Optional.                         |
+| `status`       | The HTTP status, repeated.                                                          |
+| `type`         | `urn:dorkos:problem:<code>`.                                                        |
+| `issues`       | A validation failure only: Zod's flattened form (`formErrors`, `fieldErrors`).      |
+| `retryAfterMs` | A transient failure only: how long to wait. Also sent as `Retry-After`.             |
+| `instance`     | Optional: an id for this occurrence, to quote in a report.                          |
+
+**The code list** is `PROBLEM_CODE_LIST` in `packages/shared/src/problem.ts`, each code with its default status and title. A code that is not on the list cannot be sent. Add one there (lower_snake, small and meaningful, never a rename) before you use it. The OpenAPI document carries the `Problem` schema, `ProblemCode`, and the answers the chain gives every route (`components.responses`: `ValidationProblem`, `MalformedRequestProblem`, `NotFoundProblem`, `RequestTooLargeProblem`, `InternalErrorProblem`).
+
+**Sending one** (`@dorkos/http-kit`):
+
+```typescript
+import { problem, validationProblem } from '@dorkos/http-kit';
+
+if (!agent) return problem(c, 'not_found', { detail: 'No agent is registered at that path.' });
+
+const parsed = Schema.safeParse(readJsonBody(c));
+if (!parsed.success) return validationProblem(c, parsed.error); // 400 invalid_request + detail + issues
+```
+
+`validationProblem` writes `detail` from the first failing field ("`name`: Required.", plus "(and N more)"); pass `detail` when the route can say what to send in plainer words. Two 400 codes, two meanings: `invalid_request` is a body that was read and failed its checks; `malformed_request` is a body that could not be read at all (the chain sends it). `problem()` takes the status and title from the list; pass `status` only when this occurrence needs a different one, and `retryAfterMs` for a transient failure. `detail` is for a person: write it with the `writing-for-humans` skill, and never put a path, a stack or a secret in it.
+
+**What the chain answers for you.** An error a route throws reaches the error handler (`middleware/error-handler.ts`): a body over the limit is `413 request_too_large`, broken JSON `400 malformed_request`, a body in an encoding or charset the parser cannot read `415 unsupported_media_type`, a path outside the boundary `403 outside_boundary`, a path with a NUL byte `400 invalid_request`, and anything else `500 internal_error`. Every `detail` the chain writes is a fixed sentence: an exception's message or stack never goes on the wire, in any environment (it is logged instead). The upload refusals follow the same rule. A path no route claims under `/api` is `404 not_found`; a route that must look like such a path answers `apiNotFound(c)` (`http/unclaimed.ts`). A multipart upload the parser refused is `uploadRefusalProblem(c, err)` (`http/problems/upload-refusal.ts`).
+
+**Reading one.** Every client reads failures through `readErrorBody` in `@dorkos/shared/problem` (the web client through `shared/lib/response-error`, the CLI through `ApiError`, the desktop shell directly): `detail`, else `title`, as the message; `code` as the kind. A surface that shows the server's own sentence in place of its own copy (`serverSentence`) takes `detail` only, never the generic `title`.
+
+**Never** `c.json({ error: '…' }, 4xx)`, `c.json({ error, details: z.flattenError(…) })` or a hand-built `{ error, code }` body in new code. Older routes still answer `{ error, code, details }`; they move to problem documents folder by folder under DOR-4979, and the readers keep reading both shapes until the last folder moves, when the old branch and the old shape are removed and a lint rule bans `c.json({ error })`.
 
 ## Regenerating the published API docs (two steps, not one)
 

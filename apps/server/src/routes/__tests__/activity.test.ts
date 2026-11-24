@@ -81,7 +81,7 @@ describe('Activity routes', () => {
     it('rejects invalid params with 400', async () => {
       const res = await request(fixtureServer).get('/api/activity?limit=-1');
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('applies default limit of 50', async () => {

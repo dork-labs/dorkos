@@ -45,6 +45,7 @@ import {
   buildAgentLeftNotice,
   buildAgentHaltedNotice,
   buildAgentPausedNotice,
+  buildPausedMidTurnNotice,
   buildAgentUnavailableNotice,
   buildRuntimeGoneNotice,
   buildBudgetNotice,
@@ -158,6 +159,12 @@ export interface SilenceContext {
    * every other reason.
    */
   pausedAt?: string;
+  /**
+   * For a `paused` reason: the pause landed while the turn was running and
+   * stopped it (DOR-3178), with the person who paused it, or `null` when no
+   * person did. Absent when the turn was refused before it started.
+   */
+  pausedMidTurn?: { by: string | null };
   /**
    * For a `failed` reason with a usage limit: the room tried to move the agent
    * to another account and none had usage left, so the line says so and
@@ -1126,7 +1133,10 @@ const SILENCE_BODIES: Record<
   unavailable: (agent) => buildAgentUnavailableNotice(agent.displayName, agent.authorId),
   'runtime-gone': (agent, { runtime }) =>
     buildRuntimeGoneNotice(agent.displayName, agent.authorId, runtime),
-  paused: (agent) => buildAgentPausedNotice(agent.displayName, agent.authorId),
+  paused: (agent, { pausedMidTurn }) =>
+    pausedMidTurn
+      ? buildPausedMidTurnNotice(agent.displayName, agent.authorId, pausedMidTurn.by)
+      : buildAgentPausedNotice(agent.displayName, agent.authorId),
 };
 
 /**

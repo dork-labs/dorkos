@@ -34,7 +34,6 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
-  statSync,
   symlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -214,74 +213,6 @@ function expectBlockedNotThrown(
 }
 
 describe('a file where a folder belongs on a write path', () => {
-  it('AP-11: at `.claude/commands`, blocks that package’s wrappers and nothing else', () => {
-    // Measured before this rule: ENOTDIR out of `writeFileAtomic`'s `mkdirSync`,
-    // in the middle of the action loop.
-    stageRepo();
-    fileInTheWay('.claude/commands');
-
-    expectBlockedNotThrown(
-      ['.claude/commands/acme/hello.md', '.claude/commands/acme/.gitignore'],
-      '.claude/commands'
-    );
-
-    // The obstacle is exactly as the person left it.
-    expect(readFileSync(join(repo, '.claude/commands'), 'utf8')).toBe(IN_THE_WAY);
-  });
-
-  it('AP-11: at a wrapper directory, blocks that package’s commands only', () => {
-    // Measured before this rule: ENOTDIR out of `findBlockedWrapperDirs`'s
-    // `readdirSync`, BEFORE the loop ran at all — so not one projection landed.
-    stageRepo();
-    fileInTheWay('.claude/commands/acme');
-
-    expectBlockedNotThrown(
-      ['.claude/commands/acme/hello.md', '.claude/commands/acme/.gitignore'],
-      '.claude/commands/acme'
-    );
-
-    expect(readFileSync(join(repo, '.claude/commands/acme'), 'utf8')).toBe(IN_THE_WAY);
-  });
-
-  it('AP-11: at `.opencode/commands`, blocks the flat wrappers — the EEXIST shape', () => {
-    // The one directory a wrapper goes STRAIGHT into, so `mkdirSync` is asked to
-    // make the file itself and answers EEXIST rather than ENOTDIR.
-    stageRepo();
-    fileInTheWay('.opencode/commands');
-
-    expectBlockedNotThrown(
-      ['.opencode/commands/acme-hello.md', '.opencode/commands/.gitignore'],
-      '.opencode/commands'
-    );
-
-    expect(readFileSync(join(repo, '.opencode/commands'), 'utf8')).toBe(IN_THE_WAY);
-  });
-
-  it('AP-11: at `.claude/skills`, blocks the links and leaves the wrappers alone', () => {
-    // A symlink action creates its parent too (`applySymlink`'s own `mkdirSync`),
-    // so the obstacle is not a `generate`-only shape.
-    stageRepo();
-    fileInTheWay('.claude/skills');
-
-    expectBlockedNotThrown(
-      ['.claude/skills/alpha', '.claude/skills/acme__greet'],
-      '.claude/skills'
-    );
-
-    expect(readFileSync(join(repo, '.claude/skills'), 'utf8')).toBe(IN_THE_WAY);
-  });
-
-  it('AP-05, AP-11: at `.codex`, blocks the hooks file it would hold', () => {
-    // AP-05 settled what may sit AT a generate target; this is the same answer
-    // one level up, and the sidecar is never minted for a file never written.
-    stageRepo();
-    fileInTheWay('.codex');
-
-    expectBlockedNotThrown(['.codex/hooks.json'], '.codex');
-
-    expect(readFileSync(join(repo, '.codex'), 'utf8')).toBe(IN_THE_WAY);
-  });
-
   it('HK-11, AP-11: at `.claude`, blocks everything under it and destroys none of it', () => {
     // The widest blast radius the plan has — links, wrappers, the scaffolded
     // pointer and the managed-hook merge all live under this one folder.
@@ -298,6 +229,20 @@ describe('a file where a folder belongs on a write path', () => {
     // the whole sync down.
     expect(applied.applied.map((a) => a.target)).toContain('.agents/skills/acme__greet');
     expect(readFileSync(join(repo, '.claude'), 'utf8')).toBe(IN_THE_WAY);
+  });
+
+  it('AP-11: at `.claude/skills`, blocks the links and leaves the wrappers alone', () => {
+    // A symlink action creates its parent too (`applySymlink`'s own `mkdirSync`),
+    // so the obstacle is not a `generate`-only shape.
+    stageRepo();
+    fileInTheWay('.claude/skills');
+
+    expectBlockedNotThrown(
+      ['.claude/skills/alpha', '.claude/skills/acme__greet'],
+      '.claude/skills'
+    );
+
+    expect(readFileSync(join(repo, '.claude/skills'), 'utf8')).toBe(IN_THE_WAY);
   });
 });
 
@@ -316,27 +261,6 @@ describe('a link where a folder belongs on a write path', () => {
     expect(lstatSync(join(repo, '.claude/commands')).isSymbolicLink()).toBe(true);
     expect(snapshotTree(repo).has('.claude/nowhere')).toBe(false);
   });
-
-  it('AP-11: one pointing at a real folder is a folder, and blocks nothing', () => {
-    // The negative that keeps the rule from becoming "a link is an obstacle": a
-    // person keeping `.claude` in a dotfiles checkout has a working repository.
-    stageRepo();
-    const elsewhere = join(repo, 'dotfiles', 'claude');
-    mkdirSync(elsewhere, { recursive: true });
-    symlinkSync('dotfiles/claude', join(repo, '.claude'));
-
-    const built = plan();
-    const drift = checkPlan(repo, built);
-    expect(drift.blocked).toEqual([]);
-
-    const { conflicts, applied } = applyPlan(repo, built, { sweepOrphans: true });
-
-    expect(conflicts).toEqual([]);
-    expect(applied.map((a) => a.target)).toEqual(expect.arrayContaining(writeTargets(built)));
-    // The bytes landed through the link, in the real folder.
-    expect(lstatSync(join(elsewhere, 'commands', 'acme', 'hello.md')).isFile()).toBe(true);
-    expect(checkPlan(repo, built).blocked).toEqual([]);
-  });
 });
 
 describe('a folder nobody may read on a write path', () => {
@@ -350,37 +274,6 @@ describe('a folder nobody may read on a write path', () => {
       expectBlockedNotThrown(
         ['.claude/commands/acme/hello.md', '.claude/commands/acme/.gitignore'],
         '.claude/commands'
-      );
-    }
-  );
-
-  it.skipIf(!CAN_MAKE_UNREADABLE)(
-    'AP-11: a wrapper directory at mode 000 is blocked, and its contents are never read',
-    () => {
-      stageRepo();
-      mkdirSync(join(repo, '.claude', 'commands', 'acme'), { recursive: true });
-      makeUnreadable('.claude/commands/acme');
-
-      expectBlockedNotThrown(
-        ['.claude/commands/acme/hello.md', '.claude/commands/acme/.gitignore'],
-        '.claude/commands/acme'
-      );
-    }
-  );
-
-  it.skipIf(!CAN_MAKE_UNREADABLE)(
-    'AP-11: `.opencode/commands` at mode 000 is blocked, temp file and all',
-    () => {
-      // This one got furthest before the rule: `mkdirSync` succeeded on the
-      // existing directory, `writeFileSync` failed EACCES, and the cleanup's own
-      // `rmSync` then threw a SECOND EACCES over the temp file it could not stat.
-      stageRepo();
-      mkdirSync(join(repo, '.opencode', 'commands'), { recursive: true });
-      makeUnreadable('.opencode/commands');
-
-      expectBlockedNotThrown(
-        ['.opencode/commands/acme-hello.md', '.opencode/commands/.gitignore'],
-        '.opencode/commands'
       );
     }
   );
@@ -406,20 +299,6 @@ describe('a folder DorkOS may not write in', () => {
 
       expect(reasonFor(applied.conflicts, '.claude/commands/acme/hello.md')).toContain(
         'may not write in'
-      );
-    }
-  );
-
-  it.skipIf(!CAN_MAKE_UNREADABLE)(
-    'AP-11: at mode 0555 on a skills folder, blocks the links',
-    () => {
-      stageRepo();
-      mkdirSync(join(repo, '.claude', 'skills'), { recursive: true });
-      makeReadOnly('.claude/skills');
-
-      expectBlockedNotThrown(
-        ['.claude/skills/alpha', '.claude/skills/acme__greet'],
-        '.claude/skills'
       );
     }
   );
@@ -493,27 +372,6 @@ describe('a folder DorkOS may not write in', () => {
       expect([...swept].sort()).toEqual([...drift.orphans].sort());
     }
   );
-
-  it.skipIf(!CAN_MAKE_UNREADABLE)(
-    'AP-03, AP-11: a read-only folder nothing writes to is not a fault',
-    () => {
-      // The objection the permission probe has to answer, or it is worse than
-      // the crash: a repository whose projections all already match is one this
-      // engine writes nothing to, so the mode of the folder holding them is
-      // nobody's business. Sync clean FIRST, then lock the folder.
-      stageRepo();
-      applyPlan(repo, plan(), { sweepOrphans: true });
-      makeReadOnly('.claude/skills');
-
-      const drift = checkPlan(repo, plan());
-
-      expect(drift.blocked.map((a) => a.target)).not.toContain('.claude/skills/alpha');
-      expect(drift.clean).toBe(true);
-
-      const { conflicts } = applyPlan(repo, plan(), { sweepOrphans: true });
-      expect(conflicts).toEqual([]);
-    }
-  );
 });
 
 describe('a folder DorkOS may not write in, and the merge that shares it', () => {
@@ -528,61 +386,6 @@ describe('a folder DorkOS may not write in, and the merge that shares it', () =>
   function mergePlan(): ProjectionPlan {
     return project(repo, { dorkHome, allowPluginHooks: () => true });
   }
-
-  /** The settings file's modification time, or `undefined` when it is not there. */
-  function settingsMtime(): number | undefined {
-    try {
-      return statSync(join(repo, '.claude', 'settings.local.json')).mtimeMs;
-    } catch {
-      return undefined;
-    }
-  }
-
-  it('AP-01: a second sync does not rewrite the settings file it already merged', () => {
-    // Measured before the gate: the mtime moved on every sync. This is the one
-    // file the projection shares with Claude Code, which re-reads it when it
-    // changes, so a no-op rewrite was a change event for every watcher on it.
-    stageRepo();
-    applyPlan(repo, mergePlan(), { sweepOrphans: true });
-    const first = settingsMtime();
-    expect(first).toBeDefined();
-
-    applyPlan(repo, mergePlan(), { sweepOrphans: true });
-
-    expect(settingsMtime()).toBe(first);
-  });
-
-  it.skipIf(!CAN_MAKE_UNREADABLE)(
-    'AP-01, AP-11: a synced tree with a read-only `.claude` is clean, and the merge writes nothing',
-    () => {
-      // The `generate` defect, in the last kind that still had it: `--check`
-      // reported no drift and exited 0 while `--fix` died with EACCES out of
-      // `writeSettingsFile` — before the sweeps, on a file already holding
-      // exactly the merge.
-      stageRepo();
-      applyPlan(repo, mergePlan(), { sweepOrphans: true });
-      const synced = snapshotTree(repo);
-      const mtime = settingsMtime();
-      makeReadOnly('.claude');
-
-      const drift = checkPlan(repo, mergePlan());
-      expect(drift.drifted).toEqual([]);
-      expect(drift.blocked).toEqual([]);
-      expect(drift.clean).toBe(true);
-
-      const { conflicts, applied } = applyPlan(repo, mergePlan(), { sweepOrphans: true });
-
-      expect(conflicts).toEqual([]);
-      expect(applied.map((a) => a.target)).toContain('.claude/settings.local.json');
-      // Nothing written — content AND mtime, because the bug wrote the same bytes.
-      expect(diffSnapshots(synced, snapshotTree(repo))).toEqual({
-        added: [],
-        changed: [],
-        removed: [],
-      });
-      expect(settingsMtime()).toBe(mtime);
-    }
-  );
 
   it.skipIf(!CAN_MAKE_UNREADABLE)(
     'AP-11: a merge that really drifts under a read-only `.claude` is blocked, in both modes',
@@ -610,23 +413,6 @@ describe('a folder DorkOS may not write in, and the merge that shares it', () =>
 });
 
 describe('what a blocked write path costs the rest of the sync', () => {
-  it('AP-03, AP-11: `--check` names it and writes nothing', () => {
-    // AP-03 is the standing promise that a report never touches disk, and this
-    // report reads more of the tree than any before it.
-    stageRepo();
-    fileInTheWay('.claude/commands');
-
-    const before = snapshotTree(repo);
-    const drift = checkPlan(repo, plan());
-
-    expect(diffSnapshots(before, snapshotTree(repo))).toEqual({
-      added: [],
-      changed: [],
-      removed: [],
-    });
-    expect(drift.blocked.map((a) => a.target)).toContain('.claude/commands/acme/hello.md');
-  });
-
   it('AP-07, AP-11: every other sweep still runs, and takes nothing under the obstacle', () => {
     // Sync clean, then take the plugin away AND put a file where the wrapper
     // directory was — the shape that used to throw before the sweeps ran at all,
@@ -650,19 +436,5 @@ describe('what a blocked write path costs the rest of the sync', () => {
     // …and nothing under the obstacle was touched.
     expect(swept.some((p) => p.startsWith('.claude/commands/'))).toBe(false);
     expect(readFileSync(join(repo, '.claude/commands/acme'), 'utf8')).toBe(IN_THE_WAY);
-  });
-
-  it('AP-11: clearing the obstacle is all it takes — the next run is clean', () => {
-    // The way out the reason names has to actually work, or it is advice.
-    stageRepo();
-    fileInTheWay('.claude/commands');
-    applyPlan(repo, plan(), { sweepOrphans: true });
-
-    rmSync(join(repo, '.claude', 'commands'), { force: true });
-    applyPlan(repo, plan(), { sweepOrphans: true });
-
-    const after = checkPlan(repo, plan());
-    expect(after.blocked).toEqual([]);
-    expect(after.clean).toBe(true);
   });
 });

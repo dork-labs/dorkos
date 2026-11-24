@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { emptySnapshot, gateKey, type DesktopReleaseRun, type Snapshot } from '../data.ts';
+import type { Merge, ReleaseContents } from '../release-facts.ts';
 import { readLedger } from '../ledger.ts';
 import { loadHandFiles } from '../load.ts';
 import { effectiveLedger } from '../steward.ts';
@@ -596,5 +597,101 @@ describe('tracked.desktop-release-wall-clock: tag push to published release', ()
     const none = verdictOn(days([], { measured: () => false }));
     expect(none.after).toMatchObject({ n: 0, value: null });
     expect(none.verdict).toBe('inconclusive');
+  });
+});
+
+describe('tracked.merged-to-released: merge to the first release that holds it', () => {
+  const entry: LedgerEntry = {
+    id: '260901-000003',
+    title: 'release daily',
+    kind: 'experiment',
+    status: 'active',
+    actor: 'agent',
+    gates: [],
+    prs: [903],
+    hypothesis: { metric: 'tracked.merged-to-released', baseline: 24, target: 12, after_days: 7 },
+    'ratchet-release': [],
+    'floor-release': [],
+    'field-changes': [],
+  };
+  const hoursBefore = (iso: string, h: number) =>
+    new Date(Date.parse(iso) - h * 3_600_000).toISOString().replace('.000Z', 'Z');
+  const release = (tag: string, published_at: string, shas: string[]): ReleaseContents => ({
+    tag,
+    published_at,
+    base: 'v0.0.0',
+    shas,
+  });
+
+  /**
+   * Snapshots 2026-08-24 to 2026-09-09; each merge sits on its merge day and
+   * each release on its publication day. The merge is 2026-09-01T00:00Z, so
+   * the before-window is 08-25..08-31 and the after-window 09-01..09-07.
+   */
+  function days(
+    merges: Merge[],
+    releases: ReleaseContents[],
+    measured: (date: string) => boolean = () => true
+  ): Snapshot[] {
+    return daysBetween('2026-08-24', '2026-09-09').map((date) => {
+      const s = emptySnapshot(date, `${addDays(date, 1)}T05:00:00Z`, 700);
+      s.complete = true;
+      s.healthy = true;
+      s.health.ok = true;
+      if (measured(date)) {
+        s.merges = merges.filter((m) => m.at.startsWith(date));
+        s.release_contents = releases.filter((r) => r.published_at.startsWith(date));
+      }
+      return s;
+    });
+  }
+
+  const verdictOn = (snapshots: Snapshot[]) =>
+    computeVerdict({
+      entry,
+      mergedAt: new Map([[903, '2026-09-01T00:00:00Z']]),
+      ledger: [entry],
+      files: files!,
+      series: seriesFrom(
+        (d) => snapshots.filter((s) => d.includes(s.date)),
+        () => []
+      ),
+      now: new Date('2026-09-20T05:00:00Z'),
+    })!;
+
+  const R1 = '2026-09-03T12:00:00Z';
+  const R0 = '2026-08-30T12:00:00Z';
+  // Eleven PRs merged 1 to 11 hours before R1, one merged three days before it
+  // (before the window opens, still found), and one cherry-picked into R0 that
+  // R1 holds again by ancestry.
+  const merges: Merge[] = [
+    ...Array.from({ length: 11 }, (_, i) => ({
+      pr: 100 + i,
+      sha: `a${i}`,
+      at: hoursBefore(R1, i + 1),
+    })),
+    { pr: 200, sha: 'b0', at: '2026-08-31T12:00:00Z' },
+    { pr: 201, sha: 'c0', at: hoursBefore(R0, 12) },
+    { pr: 202, sha: 'c1', at: hoursBefore(R0, 24) },
+  ];
+  const releases = [
+    release('v1.0.1', R0, ['c0', 'c1']),
+    // `d0` has no recorded merge (a direct push): no sample.
+    release('v1.1.0', R1, [...merges.slice(0, 12).map((m) => m.sha), 'c1', 'd0']),
+  ];
+
+  it('reads p50 hours over the PRs shipped inside the window, each in its first release', () => {
+    const v = verdictOn(days(merges, releases));
+    // 1..11 and 72 hours: p50 6.5. c1 shipped in v1.0.1 first, so it is the before-window's.
+    expect(v.after).toMatchObject({ n: 12, value: 6.5 });
+    expect(v.before).toMatchObject({ n: 2, value: 18 });
+    expect(v.baseline).toEqual({ value: 24, source: 'ledger' });
+    expect(v.verdict).toBe('verified');
+  });
+
+  it('reads a window with no release contents recorded as not measured, never as 0', () => {
+    const v = verdictOn(days(merges, releases, () => false));
+    expect(v.after).toMatchObject({ n: 0, value: null });
+    expect(v.verdict).toBe('inconclusive');
   });
 });

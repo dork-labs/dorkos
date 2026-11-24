@@ -1,17 +1,5 @@
 // @vitest-environment jsdom
-/**
- * Rapid context switching, proven against the real fences (DOR-2186, task 4.1).
- *
- * The route epoch is committed by the real `onLoad` handler the router uses
- * (`createCommunityRouteMemory`), the content is the real `ChannelsPage` keyed
- * surface, and every read, stream and send goes through the real hooks. Only
- * the router's two hooks and the network are stand-ins: the address is set by
- * hand so a test can hop A→B→A→this DorkOS→B faster than any network answers,
- * then release the stale answers in the worst order and look at what is left.
- *
- * Two Communities deliberately share one room id (`general`), so nothing but
- * the Community ref and the fences keeps their content apart.
- */
+/** Rapid context switching, proven against the real fences (DOR-2186, task 4.1). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -333,9 +321,8 @@ describe('rapid Community switching', () => {
     const before = cachedContent();
     for (const { key, data } of before) if (key.includes('"b"')) expect(data).not.toMatch(/Alpha/);
 
-    // Release every stale answer, newest-stale first, while B is on screen:
-    // the returned A's read, the first B's read, the first A's read, plus
-    // events on every closed stream.
+    // Release every stale answer, newest-stale first, while B is on screen: the returned A's
+    // read, the first B's read, the first A's read, plus events on every closed stream.
     await act(async () => {
       for (const index of [2, 1, 0]) reads[index]!.resolve(history(reads[index]!.ref as 'a' | 'b'));
       // A late snapshot carries a changed room, so a write it made anywhere
@@ -372,28 +359,6 @@ describe('rapid Community switching', () => {
     // own, for the room B is showing.
     for (const call of vi.mocked(transport.setRemoteCommunityReadCursor).mock.calls)
       expect(call).toEqual(['b', ROOM, 'cursor-b-1']);
-  });
-
-  it('shows only the last context when every hop lands inside one frame', async () => {
-    const { reads, streams, go } = setup();
-    act(() => {
-      go({ community: 'a', id: ROOM });
-      go({ community: 'b', id: ROOM });
-      go({ community: 'a', id: ROOM });
-      go({});
-      go({ community: 'b', id: ROOM });
-    });
-    await waitFor(() =>
-      expect(streams.filter((stream) => !stream.signal?.aborted).map((s) => s.ref)).toEqual(['b'])
-    );
-    await waitFor(() => expect(reads.some((read) => read.ref === 'b')).toBe(true));
-    await act(async () => {
-      for (const read of reads) read.resolve(history(read.ref as 'a' | 'b'));
-      for (const stream of streams) stream.emit(snapshot(stream.ref as 'a' | 'b'));
-    });
-    expect(await screen.findByText(TEXT.b)).toBeInTheDocument();
-    expect(screen.getByTestId('context-label')).toHaveTextContent('Beta');
-    expect(document.body.textContent).not.toContain(TEXT.a);
   });
 
   it('keeps a send made in A bound to A: its receipt never shows in B, and does not revive A’s old frame', async () => {

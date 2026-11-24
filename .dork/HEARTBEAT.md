@@ -30,7 +30,7 @@ Read top to bottom. Stop early when there is nothing to do. Most beats should be
 
 ## Daily (morning)
 
-- [ ] Look for ALERT lines in `~/Library/Logs/dorkos-worktree-janitor.log`, and check free disk. Under 20 GB: clean up merged worktrees.
+- [ ] Look for ALERT lines in `~/Library/Logs/dorkos-worktree-janitor.log`, and check free disk. Under the 25 GB disk floor (`contributing/ci.md`): clean up merged worktrees, then `pnpm store prune`.
 - [ ] Look at what's unreleased since the last tag. If it's worth shipping, tell @dorkos-pm.
 - [ ] Linear: are tickets marked Done really done? Partial PRs close them automatically, so reopen any that aren't.
 - [ ] Any FIX-QUEUE F1–F3 item still in Todo after 24h? Flag it in the report with the reason (PM rule, 10-25).

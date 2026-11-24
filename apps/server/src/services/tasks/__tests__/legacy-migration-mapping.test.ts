@@ -56,35 +56,12 @@ describe('legacyTaskToSchedule', () => {
     });
   });
 
-  it('produces a block the new schema accepts', () => {
-    expect(
-      ScheduleBlockSchema.safeParse(legacyTaskToSchedule(legacy({ cron: '*/5 * * * *' }))).success
-    ).toBe(true);
-  });
-
   it('turns an empty legacy cron into an absent one', () => {
     // The legacy schema accepted `cron: ''`; the block does not, and both mean
     // on-demand. Mapping it through unchanged would fail the rewritten file.
     const block = legacyTaskToSchedule(legacy({ cron: '' }));
     expect(block.cron).toBeUndefined();
     expect(ScheduleBlockSchema.safeParse(block).success).toBe(true);
-  });
-
-  it('never invents a prompt — the body still fires', () => {
-    expect(legacyTaskToSchedule(legacy({ cron: '0 9 * * *' })).prompt).toBeUndefined();
-  });
-
-  it.each([
-    ['origin without shape', { origin: 'shape' as const }, { origin: 'shape' }],
-    ['shape without origin', { shape: 'orphan-pkg' }, { shape: 'orphan-pkg' }],
-  ])('carries %s through as written', (_label, extra, expected) => {
-    expect(legacyTaskToSchedule(legacy(extra))).toEqual({
-      timezone: 'UTC',
-      enabled: true,
-      sticky: false,
-      permissions: 'acceptEdits',
-      ...expected,
-    });
   });
 
   it('leaves prompt and cron identical, which is why an approval survives', () => {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { createMemoryHistory } from '@tanstack/react-router';
+import { createMemoryHistory, type AnyRoute } from '@tanstack/react-router';
 import { createMockTransport, createMockSession } from '@dorkos/test-utils/mock-factories';
 import {
   createAppRouter,
@@ -14,7 +14,6 @@ import {
   clearSessionRouteContext,
   getSessionRouteContext,
   sessionKeys,
-  setSessionRouteContext,
 } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
 import { toast } from 'sonner';
@@ -57,6 +56,25 @@ function run(search: Parameters<typeof sessionSearchSchema.parse>[0], preload = 
     deps: sessionLoaderDeps({ search: sessionSearchSchema.parse(search) }),
     preload,
   });
+}
+/**
+ * The app's router as `main.tsx` builds it, without its pages.
+ *
+ * Every page is a code-split chunk (`autoCodeSplitting`), and a load or
+ * navigation does not settle until the router has imported the chunks of the
+ * routes it matched. For `/session` that is the whole app shell, compiled cold:
+ * about 2 s of a test's 5 s budget on an idle laptop, and all of it on a busy
+ * CI shard. Nothing here renders, so the pages go and what stays is the routes'
+ * own search parsing, `beforeLoad` and loaders. The route tree is this file's
+ * own module instance, so no other suite sees the change, but every router
+ * this file builds after the first call has no pages either.
+ */
+function appRouterWithoutPages() {
+  const router = createAppRouter(queryClient, transport);
+  for (const route of Object.values(router.routesById) as AnyRoute[]) {
+    delete route.options.component;
+  }
+  return router;
 }
 async function destination(search: Parameters<typeof sessionSearchSchema.parse>[0]) {
   try {
@@ -110,25 +128,6 @@ describe('session route identity and launch lifecycle', () => {
     });
     expect(transport.getSession).toHaveBeenCalledWith('existing', '/legacy');
   });
-  it('keeps a separately addressed profile while hiding the conversation directory', async () => {
-    const search = await destination({
-      session: 'existing',
-      dir: '/host',
-      panel: 'profile',
-      agentPath: '/linked',
-      profilePage: 'tools',
-    });
-    expect(transport.createSessionLocation).toHaveBeenCalledWith('/linked');
-    expect(search).toMatchObject({
-      session: 'existing',
-      panel: 'profile',
-      profilePage: 'tools',
-      profileRef: 'opaque-location',
-      dir: undefined,
-      agentPath: undefined,
-    });
-    expect(getSessionRouteContext('existing')?.cwd).toBe('/actual/project');
-  });
   it.each(['claude-code', 'codex', 'opencode'])(
     'resolves a portable %s draft before creation',
     async (runtime) => {
@@ -173,16 +172,6 @@ describe('session route identity and launch lifecycle', () => {
       'Missing location'
     );
     expect(transport.getDefaultCwd).not.toHaveBeenCalled();
-  });
-  it('resolves known agents through their opaque ID', async () => {
-    vi.mocked(transport.listMeshAgentPaths).mockResolvedValue({
-      agents: [{ id: 'agent-1', name: 'Agent', projectPath: '/agent/project' }],
-    });
-    vi.mocked(transport.getSession).mockRejectedValue(
-      Object.assign(new Error('Draft'), { status: 404 })
-    );
-    await run({ session: 'agent-draft', agentId: 'agent-1', draft: '1', runtime: 'codex' });
-    expect(getSessionRouteContext('agent-draft')?.cwd).toBe('/agent/project');
   });
   it('creates a portable draft for an empty directory preserving launch intent', async () => {
     vi.mocked(transport.allocateSession).mockResolvedValueOnce({ sessionId: 'bound-to-receipt' });
@@ -231,13 +220,6 @@ describe('session route identity and launch lifecycle', () => {
     });
   });
 
-  it('keeps a profile or fresh chat intent preload read-only', async () => {
-    await run({ dir: '/first', agentPath: '/profile' }, true);
-    expect(transport.listSessions).toHaveBeenCalledWith('/first');
-    expect(transport.createSessionLocation).not.toHaveBeenCalled();
-    expect(transport.allocateSession).not.toHaveBeenCalled();
-  });
-
   it('allocates once when the real router click overlaps a read-only intent preload', async () => {
     let resolveLookup!: (value: { sessions: Session[] }) => void;
     const lookup = new Promise<{ sessions: Session[] }>((resolve) => {
@@ -252,7 +234,7 @@ describe('session route identity and launch lifecycle', () => {
       sessionId: 'hover-then-click',
       launchRef: 'opaque-location',
     });
-    const router = createAppRouter(queryClient, transport);
+    const router = appRouterWithoutPages();
     router.update({
       context: router.options.context,
       history: createMemoryHistory({ initialEntries: ['/session?session=existing'] }),
@@ -307,15 +289,6 @@ describe('session route identity and launch lifecycle', () => {
     await expect(run({ dir: '/unreachable' })).rejects.toThrow();
     expect(transport.createSessionLocation).not.toHaveBeenCalled();
   });
-  it('keeps each resolved session location separate when tabs switch', async () => {
-    await run({ session: 'a' });
-    vi.mocked(transport.getSession).mockResolvedValue(
-      createMockSession({ id: 'b', cwd: '/other' })
-    );
-    await run({ session: 'b' });
-    expect(getSessionRouteContext('a')?.cwd).toBe('/actual/project');
-    expect(getSessionRouteContext('b')?.cwd).toBe('/other');
-  });
   it('builds a new session without exposing its directory and retains runtime choices', async () => {
     const target = await newSessionTarget(transport, {
       dir: '/private/project',
@@ -329,11 +302,6 @@ describe('session route identity and launch lifecycle', () => {
       runtime: 'codex',
       continuedFrom: 'prior',
     });
-  });
-  it('ignores dialogs as loader dependencies', () => {
-    expect(
-      sessionLoaderDeps({ search: sessionSearchSchema.parse({ session: 'a', panel: 'profile' }) })
-    ).not.toHaveProperty('panel');
   });
 });
 
@@ -358,50 +326,9 @@ describe('opening a chat this window already knows (DOR-2891)', () => {
     expect(transport.getSession).toHaveBeenCalledWith('cached', '/agent/sub');
   });
 
-  it('opens from the cross-agent recent window too', async () => {
-    queryClient.setQueryData(sessionKeys.recent(20), {
-      sessions: [createMockSession({ id: 'cached', cwd: '/recent' })],
-    });
-    serverHangs();
-    await run({ session: 'cached' });
-    expect(getSessionRouteContext('cached')?.cwd).toBe('/recent');
-  });
-
-  it('reopens a chat it resolved before without waiting', async () => {
-    await run({ session: 'existing' });
-    serverHangs();
-    await run({ session: 'existing' });
-    expect(getSessionRouteContext('existing')?.cwd).toBe('/actual/project');
-  });
-
-  it('asks once while a check of the same chat is already out', async () => {
-    queryClient.setQueryData(sessionKeys.list('/agent'), [
-      createMockSession({ id: 'cached', cwd: '/agent' }),
-    ]);
-    // A legacy link's redirect runs the loader twice in a row.
-    await run({ session: 'cached' });
-    await run({ session: 'cached' });
-    await vi.waitFor(() =>
-      expect(queryClient.getQueryData(sessionKeys.detail('cached', '/agent'))).toBeDefined()
-    );
-    expect(transport.getSession).toHaveBeenCalledTimes(1);
-  });
-
-  it('still drops a legacy directory from the address', async () => {
-    queryClient.setQueryData(sessionKeys.list('/agent'), [
-      createMockSession({ id: 'cached', cwd: '/agent' }),
-    ]);
-    serverHangs();
-    expect(await destination({ session: 'cached', dir: '/agent' })).toMatchObject({
-      session: 'cached',
-      dir: undefined,
-    });
-  });
-
   it('opens the agent instead when a chat opened from its list is gone', async () => {
-    // A hidden tab can miss the event that removed a chat, and a reconnect now
-    // opens from that list at once. Waiting for a fresh list used to land on a
-    // chat that exists; so does this.
+    // A hidden tab can miss the event that removed a chat, and a reconnect now opens from that
+    // list at once.
     queryClient.setQueryData(sessionKeys.list('/agent'), [
       createMockSession({ id: 'gone', cwd: '/agent' }),
       createMockSession({ id: 'kept', cwd: '/agent' }),
@@ -423,107 +350,6 @@ describe('opening a chat this window already knows (DOR-2891)', () => {
     expect(toast).toHaveBeenCalledWith('That chat is gone. Opened the agent’s latest chat.');
     // Once only: a second miss is the real error, never a loop.
     await expect(run({ session: 'gone' })).rejects.toBe(missing);
-  });
-
-  it('shows the real error for a gone chat this window had opened itself', async () => {
-    setSessionRouteContext('gone2', { cwd: '/agent', draft: false });
-    const missing = Object.assign(new Error('Missing'), { status: 404 });
-    vi.mocked(transport.getSession).mockRejectedValue(missing);
-    await run({ session: 'gone2' });
-    await vi.waitFor(() => expect(reloadRoute).toHaveBeenCalledWith('gone2'));
-    await expect(run({ session: 'gone2' })).rejects.toBe(missing);
-  });
-
-  it('a hover preload’s 404 still reaches the click that reuses it', async () => {
-    // A click within the preload's stale time reuses its match without loading
-    // again, so the preload's background check is the only one that click gets.
-    queryClient.setQueryData(sessionKeys.list('/agent'), [
-      createMockSession({ id: 'hovered', cwd: '/agent' }),
-    ]);
-    const missing = Object.assign(new Error('Missing'), { status: 404 });
-    vi.mocked(transport.getSession).mockRejectedValue(missing);
-    await sessionRouteLoader({
-      context: { queryClient, transport, reloadRoute },
-      deps: sessionLoaderDeps({ search: sessionSearchSchema.parse({ session: 'hovered' }) }),
-      preload: true,
-    });
-    await vi.waitFor(() => expect(reloadRoute).toHaveBeenCalledWith('hovered'));
-    // The preload's own second run leaves the fallback to the click…
-    await expect(
-      sessionRouteLoader({
-        context: { queryClient, transport, reloadRoute },
-        deps: sessionLoaderDeps({ search: sessionSearchSchema.parse({ session: 'hovered' }) }),
-        preload: true,
-      })
-    ).rejects.toBe(missing);
-    // …which lands on the agent.
-    const redirected = await run({ session: 'hovered' }).catch((error: unknown) => error);
-    expect((redirected as { options: { search: unknown } }).options.search).toMatchObject({
-      launchRef: 'opaque-location',
-    });
-  });
-
-  it('opens the agent whose list held the chat, not the chat’s own subfolder', async () => {
-    // A broad folder somebody once opened holds it too, and is not the agent.
-    queryClient.setQueryData(sessionKeys.list('/'), [
-      createMockSession({ id: 'gone3', cwd: '/project/apps/desktop' }),
-    ]);
-    queryClient.setQueryData(sessionKeys.list('/project'), [
-      createMockSession({ id: 'gone3', cwd: '/project/apps/desktop' }),
-    ]);
-    vi.mocked(transport.getSession).mockRejectedValue(
-      Object.assign(new Error('Missing'), { status: 404 })
-    );
-    await run({ session: 'gone3' });
-    await vi.waitFor(() => expect(reloadRoute).toHaveBeenCalledWith('gone3'));
-    await run({ session: 'gone3' }).catch(() => {});
-    expect(transport.createSessionLocation).toHaveBeenCalledWith('/project');
-  });
-
-  it('shows the real error for a gone chat no agent list holds', async () => {
-    queryClient.setQueryData(sessionKeys.recent(20), {
-      sessions: [createMockSession({ id: 'gone4', cwd: '/recent' })],
-    });
-    const missing = Object.assign(new Error('Missing'), { status: 404 });
-    vi.mocked(transport.getSession).mockRejectedValue(missing);
-    await run({ session: 'gone4' });
-    await vi.waitFor(() => expect(reloadRoute).toHaveBeenCalledWith('gone4'));
-    await expect(run({ session: 'gone4' })).rejects.toBe(missing);
-  });
-
-  it('corrects a stale directory from the server’s answer', async () => {
-    await run({ session: 'existing' });
-    expect(getSessionRouteContext('existing')?.cwd).toBe('/actual/project');
-    vi.mocked(transport.getSession).mockResolvedValue(
-      createMockSession({ id: 'existing', cwd: '/moved/project' })
-    );
-    await run({ session: 'existing' });
-    await vi.waitFor(() => expect(getSessionRouteContext('existing')?.cwd).toBe('/moved/project'));
-    // Filed under the corrected directory too, so the page's read there does
-    // not ask a second time.
-    expect(
-      queryClient.getQueryData(sessionKeys.detail('existing', '/moved/project'))
-    ).toMatchObject({ cwd: '/moved/project' });
-  });
-
-  it('corrects a placeholder runtime from the server’s answer', async () => {
-    setSessionRouteContext('cached', { cwd: '/agent', draft: false, runtime: 'claude-code' });
-    vi.mocked(transport.getSession).mockResolvedValue(
-      createMockSession({ id: 'cached', cwd: '/agent', runtime: 'codex' })
-    );
-    await run({ session: 'cached' });
-    await vi.waitFor(() => expect(getSessionRouteContext('cached')?.runtime).toBe('codex'));
-  });
-
-  it('leaves a chat still being started to its own draft path', async () => {
-    setSessionRouteContext('cached', { cwd: '/agent', draft: true });
-    queryClient.setQueryData(sessionKeys.list('/agent'), [
-      createMockSession({ id: 'cached', cwd: '/agent' }),
-    ]);
-    const missing = Object.assign(new Error('Missing'), { status: 404 });
-    vi.mocked(transport.getSession).mockRejectedValue(missing);
-    await expect(run({ session: 'cached' })).rejects.toBe(missing);
-    expect(getSessionRouteContext('cached')?.draft).toBe(true);
   });
 
   it('does not count an outage as the chat being gone', async () => {

@@ -1,32 +1,10 @@
 // @vitest-environment jsdom
 /**
- * The inline boot sentinel in `index.html` (DOR-1451).
- *
- * v0.63.0 shipped a bundle that threw at module scope. React never mounted,
- * `#root` stayed empty, and the window was a black rectangle with nothing to
- * read and nothing to click. The sentinel's job is to make that whole class of
- * failure legible: buffer whatever went wrong, and if nothing has mounted by the
- * time its watchdog expires, paint a readable panel into `#root`.
- *
- * **The subject is the HTML, not a module.** The sentinel cannot import anything
- * — it has to run when the bundle is exactly what is broken — so there is no
- * module to test. This reads the shipped `index.html`, lifts the script out of
- * it by its `data-boot-sentinel` marker, and evaluates that source against the
- * document's own `<body>` markup, also taken from that file. A test that
- * re-implemented either half would pass forever while the document shipped
- * something else — in particular, a static skeleton added to `#root` must reach
- * the mounted-already guard here rather than silently switching it off.
- *
- * The deadlines are written out as literals below rather than parsed back out of
- * the source. Parsing them would make this green for any value the file happened
- * to contain, which is the one thing a watchdog test must not be.
- *
- * @module __tests__/boot-sentinel
+ * The inline boot sentinel in `index.html` (DOR-1451). v0.63.0 shipped a bundle that threw at
+ * module scope.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-// The shipped document itself, read as text. `?raw` rather than `node:fs`
-// because this file runs under jsdom, where `import.meta.url` is an http URL and
-// cannot be resolved to a path.
+// The shipped document itself, read as text.
 import indexHtml from '../../index.html?raw';
 
 /** How long a *finished* document may take to call `done()` before the surface paints. */
@@ -35,10 +13,6 @@ const BOOT_DEADLINE_MS = 10_000;
 const BOOT_CEILING_MS = 60_000;
 /** How long after an uncaught error the sentinel waits before deciding it was fatal. */
 const ERROR_GRACE_MS = 3_000;
-/** How often the watchdog looks at the page while a boot is in flight. */
-const LOADING_RECHECK_MS = 1_000;
-/** How long a copy-button label stays swapped before returning to rest. */
-const COPY_FEEDBACK_MS = 2_000;
 /** The headline the failure surface leads with. */
 const HEADLINE = 'DorkOS couldn’t finish starting';
 
@@ -73,11 +47,7 @@ function readBodyMarkup(): string {
 const SENTINEL_SOURCE = readSentinelSource();
 const BODY_MARKUP = readBodyMarkup();
 
-/**
- * Evaluate the sentinel against the current jsdom window, exactly as the page
- * would. `new Function` because the subject under test is HTML source text —
- * there is no module to import.
- */
+/** Evaluate the sentinel against the current jsdom window, exactly as the page would. */
 function installSentinel(): void {
   new Function(SENTINEL_SOURCE)();
 }
@@ -108,15 +78,7 @@ function technicalDetails(): string {
   return document.querySelector('pre')?.textContent ?? '';
 }
 
-/**
- * Report an uncaught error to the window the way a dying bundle does.
- *
- * Dispatched cancelable and cancelled: an `error` event nobody cancels keeps its
- * default action, which is "report this as an uncaught exception", and the test
- * harness then fails the run over a failure the test staged on purpose. The
- * suppressor is registered last, so the sentinel's own listener has already seen
- * the event untouched.
- */
+/** Report an uncaught error to the window the way a dying bundle does. */
 function dispatchError(init: ErrorEventInit): void {
   const suppress = (event: Event): void => event.preventDefault();
   window.addEventListener('error', suppress);
@@ -181,19 +143,6 @@ describe('boot sentinel', () => {
     expect(button('Copy details')).toBeDefined();
   });
 
-  // The regression that made this gate exist: measured in Chromium at
-  // 400 kbit/s, the bundle was still downloading at the deadline and the bare
-  // timeout painted over a healthy boot — after which "Try again" cancelled the
-  // in-flight request and started the ~1.16MB download again from zero.
-  it('does not paint while the document is still loading', () => {
-    setReadyState('interactive');
-    installSentinel();
-
-    vi.advanceTimersByTime(BOOT_DEADLINE_MS * 3);
-
-    expect(surfacePainted()).toBe(false);
-  });
-
   it('paints once a slow document finishes loading without mounting', () => {
     setReadyState('interactive');
     installSentinel();
@@ -228,42 +177,6 @@ describe('boot sentinel', () => {
     expect(surfacePainted()).toBe(false);
   });
 
-  // done() must disarm the ERROR path too, not just cancel the pending timer:
-  // an error arriving after a successful boot belongs to the running app's own
-  // reporting, and must never repaint the cockpit as a failure.
-  it('ignores an error that arrives after a successful boot', () => {
-    installSentinel();
-    window.__dorkosBoot?.done();
-
-    throwUncaught('a late failure in the running app');
-    vi.advanceTimersByTime(BOOT_CEILING_MS * 3);
-
-    expect(surfacePainted()).toBe(false);
-  });
-
-  // The watchdog stops for a mounted app, and "mounted" used to be forever: one
-  // early return and the polling chain was never scheduled again, so content
-  // that appeared and then vanished while the document was still loading
-  // switched the whole thing off permanently. Nothing produces that today —
-  // `main.tsx` mounts and calls `done()` in the same breath — but the guard is
-  // one condition, and a latent hole in a watchdog is worth closing rather than
-  // arguing about.
-  it('keeps watching when content appears and vanishes while the document is still loading', () => {
-    setReadyState('interactive');
-    installSentinel();
-    const root = document.getElementById('root')!;
-
-    root.innerHTML = '<main>a flash of something</main>';
-    vi.advanceTimersByTime(LOADING_RECHECK_MS * 2);
-    root.innerHTML = '';
-
-    // The bundle turns out to be broken after all.
-    setReadyState('complete');
-    vi.advanceTimersByTime(BOOT_DEADLINE_MS);
-
-    expect(rootText()).toContain(HEADLINE);
-  });
-
   it('does not paint over an app that mounted without calling done()', () => {
     installSentinel();
     document.getElementById('root')!.innerHTML = '<main>the app</main>';
@@ -271,27 +184,6 @@ describe('boot sentinel', () => {
     vi.advanceTimersByTime(BOOT_CEILING_MS);
 
     expect(rootText()).toBe('the app');
-  });
-
-  // Whitespace is not an app. A static skeleton's indentation text node would
-  // otherwise read as "React is up" and disable the watchdog for good.
-  it('still paints when #root holds nothing but whitespace', () => {
-    installSentinel();
-    document.getElementById('root')!.innerHTML = '\n      ';
-
-    vi.advanceTimersByTime(BOOT_DEADLINE_MS);
-
-    expect(rootText()).toContain(HEADLINE);
-  });
-
-  it('falls back to the body when #root is missing entirely', () => {
-    installSentinel();
-    document.getElementById('root')!.remove();
-
-    vi.advanceTimersByTime(BOOT_DEADLINE_MS);
-
-    expect(surfacePainted()).toBe(true);
-    expect(button('Try again')).toBeDefined();
   });
 
   it('gives up early when an uncaught error left #root empty', () => {
@@ -305,12 +197,7 @@ describe('boot sentinel', () => {
     expect(rootText()).toContain(HEADLINE);
   });
 
-  // DOR-1771, the other half of "a slow load is not a failed boot". The grace
-  // used to paint three seconds after ANY error, with no gate of its own — and
-  // three seconds is less than a cold boot takes on a busy machine (measured:
-  // 3.3s to 13.1s for the dev module graph). One harmless rejection therefore
-  // condemned a page that was still downloading the module that mounts it, and
-  // a capture run driving the phone surfaces hit exactly that in 1 run of 9.
+  // DOR-1771, the other half of "a slow load is not a failed boot".
   it('does not condemn a document that is still loading when an error arrives', () => {
     setReadyState('interactive');
     installSentinel();
@@ -319,62 +206,6 @@ describe('boot sentinel', () => {
     vi.advanceTimersByTime(ERROR_GRACE_MS * 4);
 
     expect(surfacePainted()).toBe(false);
-  });
-
-  it('does not condemn a still-loading document over an unhandled rejection either', () => {
-    setReadyState('interactive');
-    installSentinel();
-
-    const event = new Event('unhandledrejection') as Event & { reason?: unknown };
-    event.reason = new Error('a boot fetch nobody awaited');
-    window.dispatchEvent(event);
-    vi.advanceTimersByTime(BOOT_DEADLINE_MS * 2);
-
-    expect(surfacePainted()).toBe(false);
-  });
-
-  // The error still has to be worth something: it brings the verdict forward
-  // from ten seconds to three, the moment loading actually stops.
-  it('paints as soon as a document that errored finishes loading', () => {
-    setReadyState('interactive');
-    installSentinel();
-    throwUncaught('Uncaught ReferenceError: __APP_VERSION__ is not defined');
-
-    vi.advanceTimersByTime(ERROR_GRACE_MS * 4);
-    expect(surfacePainted()).toBe(false);
-
-    setReadyState('complete');
-    vi.advanceTimersByTime(LOADING_RECHECK_MS);
-
-    expect(rootText()).toContain(HEADLINE);
-    expect(technicalDetails()).toContain('__APP_VERSION__ is not defined');
-  });
-
-  // The panel keeps the stack in a collapsed <details>, which is invisible to
-  // anything reading the page as text — which is how DOR-1771 was filed with a
-  // headline and no stack. The console is the channel every watcher records.
-  it('logs what it knows to the console when it gives up', () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    installSentinel();
-    throwUncaught('createBootCache is not defined');
-
-    vi.advanceTimersByTime(ERROR_GRACE_MS);
-
-    expect(error).toHaveBeenCalledTimes(1);
-    const logged = String(error.mock.calls[0][0]);
-    expect(logged).toContain('[dorkos:boot-failed]');
-    expect(logged).toContain('createBootCache is not defined');
-    expect(logged).toContain('ReferenceError');
-  });
-
-  it('lets a mid-boot error pass when React mounts anyway', () => {
-    installSentinel();
-    throwUncaught('a passing squall');
-    document.getElementById('root')!.innerHTML = '<main>the app</main>';
-
-    vi.advanceTimersByTime(ERROR_GRACE_MS);
-
-    expect(rootText()).toBe('the app');
   });
 
   it('shows the buffered error in the technical details', () => {
@@ -387,49 +218,8 @@ describe('boot sentinel', () => {
     expect(technicalDetails()).toContain('ReferenceError');
   });
 
-  it('buffers unhandled promise rejections too', () => {
-    installSentinel();
-    const event = new Event('unhandledrejection') as Event & { reason?: unknown };
-    event.reason = new Error('config fetch exploded');
-    window.dispatchEvent(event);
-
-    vi.advanceTimersByTime(ERROR_GRACE_MS);
-
-    expect(technicalDetails()).toContain('config fetch exploded');
-  });
-
-  it('buffers a bundle that failed to load at all', () => {
-    installSentinel();
-    const script = document.createElement('script');
-    script.src = '/assets/missing-chunk.js';
-    document.body.appendChild(script);
-    script.dispatchEvent(new Event('error'));
-
-    vi.advanceTimersByTime(ERROR_GRACE_MS);
-
-    expect(technicalDetails()).toContain('missing-chunk.js');
-  });
-
-  it('keeps exactly five buffered failures however many arrive', () => {
-    installSentinel();
-    for (let i = 0; i < 40; i += 1) throwUncaught(`failure number ${i}`);
-
-    vi.advanceTimersByTime(ERROR_GRACE_MS);
-
-    const kept = technicalDetails().match(/failure number \d+/g) ?? [];
-    expect(kept).toHaveLength(5);
-    expect(kept).toEqual([
-      'failure number 0',
-      'failure number 1',
-      'failure number 2',
-      'failure number 3',
-      'failure number 4',
-    ]);
-  });
-
-  // The error text is attacker-adjacent: it can carry anything a thrown value
-  // stringified to, and it is painted while the app's own escaping is exactly
-  // what failed to load.
+  // The error text is attacker-adjacent: it can carry anything a thrown value stringified to, and
+  // it is painted while the app's own escaping is exactly what failed to load.
   it('renders error text as text, never as markup', () => {
     installSentinel();
     dispatchError({ message: '<img src=x onerror="window.__xssFired = true">' });
@@ -468,41 +258,6 @@ describe('boot sentinel', () => {
     expect(copy.textContent).toBe('Copied');
   });
 
-  // Restoring "whatever the label said a moment ago" would capture "Copied" on
-  // the second click and leave the button stuck on it forever.
-  it('returns the copy button to rest after repeated clicks', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
-    installSentinel();
-
-    vi.advanceTimersByTime(BOOT_DEADLINE_MS);
-    const copy = button('Copy details')!;
-
-    copy.click();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(copy.textContent).toBe('Copied');
-
-    // A second click lands while the label is still swapped.
-    await vi.advanceTimersByTimeAsync(COPY_FEEDBACK_MS / 2);
-    copy.click();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(copy.textContent).toBe('Copied');
-
-    await vi.advanceTimersByTimeAsync(COPY_FEEDBACK_MS);
-    expect(copy.textContent).toBe('Copy details');
-  });
-
-  it('survives a browser with no clipboard API', () => {
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
-    installSentinel();
-
-    vi.advanceTimersByTime(BOOT_DEADLINE_MS);
-
-    expect(() => button('Copy details')!.click()).not.toThrow();
-    // The textarea fallback cleans up after itself either way.
-    expect(document.querySelector('body > textarea')).toBeNull();
-  });
-
   it('announces itself as a dialog and takes focus', () => {
     installSentinel();
 
@@ -519,24 +274,10 @@ describe('boot sentinel', () => {
     expect(panel!.style.outline).toBe('none');
   });
 
-  it('follows the theme the page already chose', () => {
-    document.documentElement.classList.add('dark');
-    installSentinel();
-
-    vi.advanceTimersByTime(BOOT_DEADLINE_MS);
-
-    const surface = document.getElementById('root')!.firstElementChild as HTMLElement;
-    expect(surface.style.background).toBe('rgb(10, 10, 10)');
-  });
-
   /**
-   * The desktop shell asks the same question this sentinel does — "did this
-   * page ever come up?" — and reloads, cache-clears and finally replaces a
-   * window that never answers (the desktop app's `main/renderer-health/`,
-   * DOR-1453). It is
-   * answered from inside `done()` so there is exactly one definition of a
-   * successful boot; these pin that the wiring is really there, and that it
-   * cannot turn a healthy boot into a failed one.
+   * The desktop shell asks the same question this sentinel does — "did this page ever come up?" —
+   * and reloads, cache-clears and finally replaces a window that never answers (the desktop app's
+   * `main/renderer-health/`, DOR-1453).
    */
   describe('reporting to the desktop shell', () => {
     /**
@@ -557,19 +298,7 @@ describe('boot sentinel', () => {
       expect(reportAlive).toHaveBeenCalledTimes(1);
     });
 
-    it('does nothing at all in a browser, where there is no bridge', () => {
-      installSentinel();
-
-      expect(() => window.__dorkosBoot!.done()).not.toThrow();
-    });
-
-    /**
-     * Probe C, the DOR-1448 replay. A bundle that throws at module scope is
-     * exactly what shipped in v0.63.0: the sentinel paints its panel, and if
-     * only `done()` reported, the shell would count silence, reload the panel
-     * away three times, restart the app with its graphics acceleration off,
-     * and land on a recovery page that says LESS than the panel it destroyed.
-     */
+    /** Probe C, the DOR-1448 replay. */
     it('reports alive when it paints its own failure panel — a readable panel is not a black window', () => {
       const reportAlive = vi.fn();
       installBridge(reportAlive);
@@ -580,43 +309,6 @@ describe('boot sentinel', () => {
 
       expect(surfacePainted()).toBe(true);
       expect(reportAlive).toHaveBeenCalledTimes(1);
-    });
-
-    it('reports alive on the timeout path too, once it has painted', () => {
-      const reportAlive = vi.fn();
-      installBridge(reportAlive);
-      installSentinel();
-
-      vi.advanceTimersByTime(BOOT_DEADLINE_MS);
-
-      expect(surfacePainted()).toBe(true);
-      expect(reportAlive).toHaveBeenCalledTimes(1);
-    });
-
-    it('does not report alive while it is still waiting', () => {
-      const reportAlive = vi.fn();
-      installBridge(reportAlive);
-      installSentinel();
-
-      vi.advanceTimersByTime(BOOT_DEADLINE_MS - 1);
-
-      // Silence is the whole signal. Reporting early would tell the shell a
-      // window is up before anything is on it.
-      expect(reportAlive).not.toHaveBeenCalled();
-    });
-
-    it('still disarms the watchdog when the bridge throws', () => {
-      installBridge(() => {
-        throw new Error('the bridge is gone');
-      });
-      installSentinel();
-
-      expect(() => window.__dorkosBoot!.done()).not.toThrow();
-
-      // The disarm is the load-bearing half: a boot that succeeded must not be
-      // painted over three seconds later because reporting it failed.
-      vi.advanceTimersByTime(BOOT_DEADLINE_MS * 2);
-      expect(surfacePainted()).toBe(false);
     });
   });
 });

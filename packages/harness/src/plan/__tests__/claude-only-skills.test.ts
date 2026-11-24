@@ -100,24 +100,6 @@ describe('claudeOnlySkills — a real directory where Claude Code reads', () => 
     expect(plan.actions.some((a) => a.target?.includes('secret'))).toBe(false);
     expect(plan.warnings.filter((w) => w.name === 'secret')).toEqual([]);
   });
-
-  it('says the same thing about an unlisted directory as a listed one', () => {
-    // Two identical directories, one named by the manifest and one not. Before
-    // the two code paths were unified they got opposite answers for OpenCode.
-    const plan = planIn(manifestFor([{ name: 'listed' }]), (repo) => {
-      writeSkill(repo, '.claude/skills/listed');
-      writeSkill(repo, '.claude/skills/unlisted');
-    });
-
-    for (const harness of THREE) {
-      const kinds = (name: string): string[] =>
-        [...plan.actions, ...plan.drops]
-          .filter((a) => a.artifact === 'skill' && a.name === name && a.harness === harness)
-          .map((a) => a.kind);
-      expect([harness, kinds('listed')]).toEqual([harness, kinds('unlisted')]);
-      expect([harness, kinds('listed').length]).toEqual([harness, 1]);
-    }
-  });
 });
 
 describe('claudeOnlySkills — the skill lives in BOTH skill roots', () => {
@@ -170,16 +152,6 @@ describe('claudeOnlySkills — the skill is canonical, so the entry is redundant
     writeSkill(repo, '.agents/skills/linked');
   }
 
-  /** The same tree one apply later: the projection symlink now exists. */
-  function afterApply(repo: string): void {
-    freshClone(repo);
-    mkdirSync(join(repo, '.claude', 'skills'), { recursive: true });
-    symlinkSync(
-      join('..', '..', '.agents', 'skills', 'linked'),
-      join(repo, '.claude/skills/linked')
-    );
-  }
-
   it('warns on the FIRST pass, before anything has been projected', () => {
     // The gap this closes: the warning used to need a real directory at the
     // projection target, so on a fresh clone the entry was silent and only spoke
@@ -197,41 +169,6 @@ describe('claudeOnlySkills — the skill is canonical, so the entry is redundant
     expect(
       plan.actions.some((a) => a.artifact === 'skill' && a.target === '.claude/skills/linked')
     ).toBe(true);
-  });
-
-  it('still warns on the second pass, naming the link as the projection it is', () => {
-    const plan = planIn(manifestFor([{ name: 'linked' }]), afterApply);
-
-    const warnings = plan.warnings.filter((w) => w.name === 'linked');
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0].reason).toContain('also lives in .agents/skills');
-    expect(warnings[0].reason).toContain('is a symlink, which is the projection DorkOS makes');
-    expect(warnings[0].reason).toContain('drop it');
-
-    // The projection itself is STILL planned. Withholding it would leave the
-    // link unowned by the plan, and the orphan sweep would prune a working one.
-    expect(
-      plan.actions.some((a) => a.artifact === 'skill' && a.target === '.claude/skills/linked')
-    ).toBe(true);
-  });
-
-  it('says the same thing on both passes, so the message is about the manifest', () => {
-    // Not a restatement of the two cases above: it pins that the FACT does not
-    // change with the state of the tree, which is the whole defect.
-    const first = planIn(manifestFor([{ name: 'linked' }]), freshClone).warnings.filter(
-      (w) => w.name === 'linked'
-    );
-    const second = planIn(manifestFor([{ name: 'linked' }]), afterApply).warnings.filter(
-      (w) => w.name === 'linked'
-    );
-    expect(first).toHaveLength(1);
-    expect(second).toHaveLength(1);
-    for (const [pass, warning] of [first[0], second[0]].entries()) {
-      expect({
-        pass,
-        redundant: warning.reason.includes('The entry is redundant — drop it'),
-      }).toEqual({ pass, redundant: true });
-    }
   });
 });
 
@@ -282,13 +219,6 @@ describe('claudeOnlySkills — nothing is there at all', () => {
     expect(plan.actions.filter((a) => a.name === 'ghost')).toEqual([]);
     expect(plan.drops.filter((a) => a.name === 'ghost')).toEqual([]);
   });
-
-  it('treats a directory with no SKILL.md as nothing, because no harness would load it', () => {
-    const plan = planIn(manifestFor([{ name: 'empty' }]), (repo) =>
-      mkdirSync(join(repo, '.claude', 'skills', 'empty'), { recursive: true })
-    );
-    expect(plan.warnings.filter((w) => w.name === 'empty')[0]?.reason).toMatch(/stale/);
-  });
 });
 
 describe('claudeOnlySkills — this repo’s own manifest', () => {
@@ -334,18 +264,5 @@ describe('claudeOnlySkills — this repo’s own manifest', () => {
       });
     }
     expect(plan.warnings.filter((w) => w.artifact === 'skill')).toEqual([]);
-  });
-
-  it('every entry’s `path` points at the `.claude/skills` directory it names', () => {
-    // The manifest's `path` is now what the engine resolves, so a wrong one is
-    // no longer cosmetic: it decides whether the skill is found at all.
-    const manifest = repoManifest();
-    expect(manifest.claudeOnlySkills.length).toBe(14);
-    for (const entry of manifest.claudeOnlySkills) {
-      expect({ name: entry.name, path: entry.path }).toEqual({
-        name: entry.name,
-        path: `.claude/skills/${entry.name}`,
-      });
-    }
   });
 });

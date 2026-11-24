@@ -1,15 +1,8 @@
 /**
  * Integration: platform message → binding router → agent turn → reply delivery,
- * through the REAL RelayCore + REAL BindingStore + REAL BindingRouter.
- *
- * The unit test (`binding-router.test.ts`) mocks the relay and drives the
- * captured handler directly — it can't catch the seam drifting (subject
- * grammar, subscription wildcard, reply fan-out to the platform adapter, the
- * agent-reply echo guard). This test wires the real relay so a Telegram-shaped
- * inbound StandardPayload actually flows: it resolves a binding, triggers a
- * turn, and the agent's reply is delivered back to the platform adapter's
- * `deliver()` path — with echo prevention keeping it from looping, and a
- * crashed turn surfacing as the error+done sequence at the platform.
+ * through the REAL RelayCore, BindingStore and BindingRouter, so subject
+ * grammar, the subscription wildcard, reply fan-out and the echo guard are all
+ * exercised together.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
@@ -32,24 +25,12 @@ import { createInitiateConsentGate } from '../initiate-consent.js';
 import type { AdapterMeshCoreLike } from '../adapter-manager.js';
 
 const PLATFORM_SUBJECT = 'relay.human.telegram.tg-bot.12345';
-/**
- * The bound agent's own directory, assigned in `beforeEach`.
- *
- * Under a real temp root because the agent-cwd chain boundary-checks the
- * directory a turn resolves to, and a boundary can only be rooted at a
- * directory that exists.
- */
+/** The bound agent's own directory, under a real temp root the boundary check accepts. */
 let PROJECT_PATH: string;
 
 /**
- * Where a turn for that agent actually RUNS — its private checkout, because the
- * manifest this test writes to disk carries a `managed` binding.
- *
- * `managed` and not `home` on purpose. Under a `home` binding the chain's answer
- * IS `PROJECT_PATH`, so a router that ignored the chain entirely and went back
- * to stamping the raw project path would leave this file green — which is
- * exactly what an earlier version of it did. Making the two paths differ is what
- * turns "the real chain runs here" from a claim into a test.
+ * Where a turn for that agent RUNS: its managed checkout, deliberately a
+ * different path from {@link PROJECT_PATH} so the cwd assertions can fail.
  */
 let WORKTREE_CWD: string;
 
@@ -58,13 +39,7 @@ interface Recorded {
   envelope: RelayEnvelope;
 }
 
-/**
- * A CCA-shaped multiplexing adapter registry:
- * - `relay.agent.*` deliveries record the dispatch and stream a realistic reply
- *   (text_delta… then done, or error then done) back to the envelope's replyTo.
- * - `relay.human.*` deliveries record the platform-side delivery — this is the
- *   adapter `deliver()` path the agent reply must reach.
- */
+/** Records agent dispatches and streams a reply back; records platform deliveries. */
 class SeamRegistry implements AdapterRegistryLike {
   private relay: RelayPublisher | null = null;
   readonly dispatches: Recorded[] = [];
@@ -96,22 +71,11 @@ class SeamRegistry implements AdapterRegistryLike {
 
   private async stream(relay: RelayPublisher, replyTo: string): Promise<void> {
     const from = 'agent:cca-session-1';
-    if (this.mode === 'crash') {
-      await relay.publish(
-        replyTo,
-        { type: 'error', data: { message: 'SDK session crashed' } },
-        {
-          from,
-        }
-      );
-      await relay.publish(
-        replyTo,
-        { type: 'done', data: { sessionId: 'cca-session-1' } },
-        { from }
-      );
-      return;
-    }
-    await relay.publish(replyTo, { type: 'text_delta', data: { text: 'Hi back!' } }, { from });
+    const first =
+      this.mode === 'crash'
+        ? { type: 'error', data: { message: 'SDK session crashed' } }
+        : { type: 'text_delta', data: { text: 'Hi back!' } };
+    await relay.publish(replyTo, first, { from });
     await relay.publish(replyTo, { type: 'done', data: { sessionId: 'cca-session-1' } }, { from });
   }
 
@@ -138,21 +102,12 @@ async function makeTempDir(): Promise<string> {
 
 beforeEach(async () => {
   const boundaryRoot = await fs.realpath(os.tmpdir());
-  // Realpath'd: `validateBoundary` canonicalizes what it returns, and on macOS
-  // the temp dir is `/var/...` spelled as a symlink to `/private/var/...`.
   const agentRoot = await fs.realpath(await makeTempDir());
   PROJECT_PATH = path.join(agentRoot, 'proj', 'agent-a');
   WORKTREE_CWD = path.join(agentRoot, 'workspaces', 'dorkos', 'agent-a-checkout');
   await initBoundary(boundaryRoot);
-  // Whose folders these are, as the boot-wired registry says (the workspace
-  // store records the checkout's owner) — what the desk guard asks before a
-  // turn is dispatched (spec `agent-home-desk` §3.4).
   registerTestHomes([PROJECT_PATH], { managed: { [WORKTREE_CWD]: PROJECT_PATH } });
 
-  // A REAL manifest on disk, carrying a `managed` binding — the chain reads
-  // this file, derives the workspace key from it, and asks the manager below.
-  // Nothing here is stubbed except the provisioning itself, which would
-  // otherwise want a git repo.
   await fs.mkdir(path.join(PROJECT_PATH, '.dork'), { recursive: true });
   await fs.writeFile(
     path.join(PROJECT_PATH, '.dork', 'agent.json'),
@@ -183,11 +138,6 @@ beforeEach(async () => {
   await bindingStore.init();
   await bindingStore.create({ adapterId: 'tg-bot', agentId: 'agent-a' });
 
-  // The real consent gate, wired the way index.ts wires it. Without one the
-  // relay refuses to deliver to a human channel at all, so leaving it out
-  // would test a configuration that never runs. Both flows here are exempt
-  // principals — the inbound `.bot` echo and the `agent:` reply — so the
-  // binding's `canInitiate` (false by default) does not gate them.
   relay.setInitiateConsentGate(
     createInitiateConsentGate({
       bindingStore,
@@ -236,28 +186,18 @@ describe('platform → binding router → agent turn → reply delivery (real re
   it('triggers a turn, dispatches enriched payload, and delivers the reply to the platform without looping', async () => {
     await sendInbound('Hello from Telegram');
 
-    // Turn triggered exactly once — the agent reply (from agent:) does not loop
-    // back into a second turn (the from:'agent:' echo guard).
     await vi.waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
-    // The binding above was created without naming a permission mode, so the
-    // turn it drives runs in the prompting mode. Before DOR-604 an unconfigured
-    // binding silently produced 'acceptEdits' — a message from off this machine
-    // choosing a permission level nobody had agreed to.
     expect(createSession).toHaveBeenCalledWith(WORKTREE_CWD, 'default', PROJECT_PATH);
 
-    // Dispatched to the runtime-scoped agent subject with the enriched payload.
     await vi.waitFor(() => expect(registry.dispatches.length).toBe(1));
     const dispatch = registry.dispatches[0]!;
     expect(dispatch.subject).toBe('relay.agent.claude-code.session-1');
     const payload = dispatch.envelope.payload as Record<string, unknown>;
     expect(payload.content).toBe('Hello from Telegram');
     expect(payload.cwd).toBe(WORKTREE_CWD);
-    // And it is genuinely a DIFFERENT directory from the agent's own — the
-    // property that makes the two assertions above capable of failing.
     expect(WORKTREE_CWD).not.toBe(PROJECT_PATH);
     expect(payload.__bindingPermissions).toBeDefined();
 
-    // The agent reply reached the platform adapter's deliver() path.
     await vi.waitFor(() => {
       const replies = registry.agentReplies();
       expect(replies.some((e) => (e.payload as Record<string, unknown>).type === 'done')).toBe(
@@ -270,7 +210,6 @@ describe('platform → binding router → agent turn → reply delivery (real re
     expect(replyTypes).toContain('text_delta');
     expect(replyTypes).toContain('done');
 
-    // Still exactly one turn after the reply round-trip — no echo loop.
     expect(createSession).toHaveBeenCalledTimes(1);
   });
 
@@ -280,7 +219,6 @@ describe('platform → binding router → agent turn → reply delivery (real re
 
     await vi.waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
 
-    // The failure is delivered to the platform as error then done (PR #123 contract).
     await vi.waitFor(() => {
       const types = registry.agentReplies().map((e) => (e.payload as Record<string, unknown>).type);
       expect(types).toEqual(['error', 'done']);
@@ -292,7 +230,6 @@ describe('platform → binding router → agent turn → reply delivery (real re
       'SDK session crashed'
     );
 
-    // The error reply did not re-trigger a turn.
     expect(createSession).toHaveBeenCalledTimes(1);
   });
 });

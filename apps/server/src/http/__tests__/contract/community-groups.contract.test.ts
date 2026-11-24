@@ -69,6 +69,7 @@ import {
   startFakeCommunity,
   type FakeCommunity,
 } from './fake-community.js';
+import { problemBody } from '@dorkos/http-kit';
 
 /** The official space's community, and another one on the same fake server. */
 const OFFICIAL_ID = '11111111-1111-4111-8111-111111111111';
@@ -77,7 +78,9 @@ const OTHER_ID = '22222222-2222-4222-8222-222222222222';
 const PROXIED_HOST = 'dorkos.contract.example';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 const SPACES_DISABLED = {
   error: 'Spaces are switched off. Turn them on in Settings → Advanced → Experiments.',
   code: 'SPACES_DISABLED',
@@ -407,7 +410,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
       path: '/api/community-connections',
       headers: { 'content-type': 'application/json' },
       body: '{"url":',
-      expect: { status: 500, schema: z.object({ code: z.literal('INTERNAL_ERROR') }).loose() },
+      expect: { status: 400, schema: z.object({ code: z.literal('malformed_request') }).loose() },
     });
     await check(server, {
       path: base,

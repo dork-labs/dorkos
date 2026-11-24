@@ -12,6 +12,7 @@ import { ulid } from 'ulidx';
 import type {
   Task,
   TaskRun,
+  TaskRunAccountMove,
   TaskHealth,
   TaskRunTrigger,
   UpdateTaskRequest,
@@ -266,6 +267,7 @@ export class TaskStore {
     if (input.model !== undefined) updates.model = input.model;
     if (input.effort !== undefined) updates.effort = input.effort;
     if (input.account !== undefined) updates.account = input.account;
+    if (input.accountPinned !== undefined) updates.accountPinned = input.accountPinned;
     if (input.status !== undefined) updates.status = input.status;
 
     const activates = existing.status === 'pending_approval' && input.status === 'active';
@@ -447,6 +449,22 @@ export class TaskStore {
     this.db
       .update(pulseRuns)
       .set({ ...columns, ...runCreatorColumns(task, this) })
+      .where(eq(pulseRuns.id, id))
+      .run();
+  }
+
+  /**
+   * Record that a run starts on another account than its own, and why
+   * (DOR-5097). Written before the run's turn starts, like
+   * {@link recordRunExecution}, so the history says it whichever way the run ends.
+   *
+   * @param id - The run.
+   * @param move - The account it would have used, the one it uses, and why.
+   */
+  recordRunAccountMove(id: string, move: TaskRunAccountMove): void {
+    this.db
+      .update(pulseRuns)
+      .set({ accountMove: JSON.stringify(move) })
       .where(eq(pulseRuns.id, id))
       .run();
   }

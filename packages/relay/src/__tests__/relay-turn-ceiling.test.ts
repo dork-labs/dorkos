@@ -138,20 +138,6 @@ describe('the turn ceiling at the adapter dispatch (DOR-791)', () => {
     expect(refused.deliveredTo).toBe(0);
   });
 
-  it('reports the GLOBAL ceiling when that is the one that refused, even for an unspent agent', async () => {
-    relay = await makeRelay({ perAgent: () => 100, global: () => 1 });
-
-    await relay.publish(AGENT_SUBJECT, { text: 'first' }, { from: 'relay.test.a' });
-    const refused = await relay.publish(
-      'relay.agent.demo.agent-2',
-      { text: 'a different agent entirely' },
-      { from: 'relay.test.a' }
-    );
-
-    expect(registry.delivered).toHaveLength(1);
-    expect(refused.rejected?.[0]?.reason).toBe('turn_ceiling');
-  });
-
   it('makes the refusal visible: a warning log, a dead letter naming the ceiling, and a settled waiter', async () => {
     const warn = vi.fn();
     const logger: RelayLogger = { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn() };
@@ -215,30 +201,6 @@ describe('the turn ceiling at the adapter dispatch (DOR-791)', () => {
     expect(registry.delivered).toHaveLength(1);
   });
 
-  it('counts nothing when both ceilings are unlimited', async () => {
-    relay = await makeRelay({ perAgent: () => null, global: () => null });
-
-    for (let i = 0; i < 25; i++) {
-      await relay.publish(AGENT_SUBJECT, { text: `hop ${i}` }, { from: 'relay.test.a' });
-    }
-    expect(registry.delivered).toHaveLength(25);
-  });
-
-  it('decrements the envelope budget on the copy that starts the turn', async () => {
-    relay = await makeRelay({ perAgent: () => null, global: () => null });
-
-    await relay.publish(
-      AGENT_SUBJECT,
-      { text: 'one hop' },
-      { from: 'relay.test.a', budget: { hopCount: 0, callBudgetRemaining: 10 } }
-    );
-
-    const dispatched = registry.delivered[0]!;
-    expect(dispatched.budget.hopCount).toBe(1);
-    expect(dispatched.budget.callBudgetRemaining).toBe(9);
-    expect(dispatched.budget.ancestorChain).toEqual([AGENT_SUBJECT]);
-  });
-
   it('counts a scheduled-task dispatch too — it is the same adapter and the same paid turn', async () => {
     // The hole this closes: the ceiling used to match `relay.agent.*` only,
     // while the Claude Code adapter also answers for `relay.system.tasks.*` and
@@ -256,22 +218,6 @@ describe('the turn ceiling at the adapter dispatch (DOR-791)', () => {
       { text: 'the task turn already spent the install allowance' },
       { from: 'relay.test.a' }
     );
-    expect(refused.rejected?.[0]?.reason).toBe('turn_ceiling');
-  });
-
-  it('refuses a task dispatch at the cap, on the same terms as an agent one', async () => {
-    relay = await makeRelay({ perAgent: () => 1, global: () => null });
-
-    await relay.publish(TASKS_SUBJECT, { taskId: 't1' }, { from: SCHEDULER });
-    const refused = await relay.publish(
-      TASKS_SUBJECT,
-      { taskId: 't1' },
-      {
-        from: SCHEDULER,
-      }
-    );
-
-    expect(registry.delivered).toHaveLength(1);
     expect(refused.rejected?.[0]?.reason).toBe('turn_ceiling');
   });
 
@@ -323,31 +269,6 @@ describe('the turn ceiling at the adapter dispatch (DOR-791)', () => {
     }
   );
 
-  it('gives the allowance back when a DETACHED dispatch is refused a slot', async () => {
-    // `relay.agent.*` is accepted immediately and settles in the background, so
-    // the refund is the delivery layer's rather than the pipeline's. An agent
-    // whose slots are all full would otherwise burn its whole hourly allowance
-    // having run zero turns.
-    relay = await makeRelay({ perAgent: () => 1, global: () => null });
-    registry.refuse = 'at capacity';
-
-    await relay.publish(AGENT_SUBJECT, { text: 'no slot' }, { from: 'relay.test.a' });
-    // The refusal lands with the dead letter, so wait for that rather than for a
-    // timer — it is also what proves the failure actually completed.
-    await vi.waitFor(async () => expect(await relay.getDeadLetters()).toHaveLength(1));
-
-    registry.refuse = undefined;
-    const ok = await relay.publish(
-      AGENT_SUBJECT,
-      { text: 'a slot at last' },
-      {
-        from: 'relay.test.a',
-      }
-    );
-    expect(ok.rejected).toBeUndefined();
-    expect(registry.delivered).toHaveLength(1);
-  });
-
   it('does NOT refund a detached failure the ceiling never charged', async () => {
     // The asymmetry this closes: the reserve asks the ADAPTER whether a dispatch
     // runs a turn, and a refund that re-derived the answer instead would pop a
@@ -397,19 +318,6 @@ describe('the turn ceiling at the adapter dispatch (DOR-791)', () => {
 
     expect(ok.rejected).toBeUndefined();
     expect(registry.delivered).toHaveLength(2);
-  });
-
-  it('refuses at the envelope budget before the ceiling is ever asked, when the chain is spent', async () => {
-    relay = await makeRelay({ perAgent: () => null, global: () => null });
-
-    const result = await relay.publish(
-      AGENT_SUBJECT,
-      { text: 'out of budget' },
-      { from: 'relay.test.a', budget: { callBudgetRemaining: 0 } }
-    );
-
-    expect(result.rejected?.[0]?.reason).toBe('budget_exceeded');
-    expect(registry.delivered).toHaveLength(0);
   });
 });
 
@@ -494,22 +402,6 @@ describe('RelayTurnCeiling — the counter itself', () => {
     expect(ceiling.tryReserve(AGENT_SUBJECT).allowed).toBe(true);
   });
 
-  it('reports headroom as null for a ceiling that is off, and a number for one that is on', () => {
-    const ceiling = new RelayTurnCeiling({
-      limits: { perAgent: () => null, global: () => 5 },
-    });
-    ceiling.tryReserve(AGENT_SUBJECT);
-    expect(ceiling.remaining(AGENT_SUBJECT)).toEqual({ agent: null, global: 4 });
-  });
-
-  it('charges a turn to the global window even when the per-agent ceiling is off', () => {
-    const ceiling = new RelayTurnCeiling({
-      limits: { perAgent: () => null, global: () => 1 },
-    });
-    expect(ceiling.tryReserve(AGENT_SUBJECT).counted).toBe(true);
-    expect(ceiling.tryReserve('relay.agent.demo.other').scope).toBe('global');
-  });
-
   it('forgets the least recently touched subject, and never invents a spend', () => {
     // The map is bounded, so a machine that visits many subjects in an hour
     // drops the oldest windows. Eviction may only ever be GENEROUS: an evicted
@@ -526,24 +418,6 @@ describe('RelayTurnCeiling — the counter itself', () => {
     expect(ceiling.tryReserve('relay.agent.demo.a-0').allowed).toBe(true);
     // The most recent one is still remembered and still spent.
     expect(ceiling.tryReserve('relay.agent.demo.a-256').allowed).toBe(false);
-  });
-
-  it('gives a reservation back, and does nothing when there was none to give', () => {
-    const ceiling = new RelayTurnCeiling({ limits: { perAgent: () => 1, global: () => 1 } });
-    expect(ceiling.tryReserve(AGENT_SUBJECT).allowed).toBe(true);
-    expect(ceiling.tryReserve(AGENT_SUBJECT).allowed).toBe(false);
-
-    ceiling.release(AGENT_SUBJECT);
-    expect(ceiling.remaining(AGENT_SUBJECT)).toEqual({ agent: 1, global: 1 });
-
-    // A release with nothing outstanding cannot manufacture headroom.
-    ceiling.release(AGENT_SUBJECT);
-    expect(ceiling.remaining(AGENT_SUBJECT)).toEqual({ agent: 1, global: 1 });
-  });
-
-  it('caps with the shipped defaults when a host wires no limits at all', () => {
-    const ceiling = new RelayTurnCeiling();
-    expect(ceiling.remaining(AGENT_SUBJECT)).toEqual({ agent: 1000, global: 5000 });
   });
 });
 

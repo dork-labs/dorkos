@@ -18,6 +18,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 pnpm typecheck:scripts
 bash scripts/test-review-classifier.sh
 bash scripts/test-security-verdict-check.sh
+bash scripts/test-security-findings.sh
 bash scripts/test-git-guard.sh
 bash scripts/test-process-guard.sh
 bash scripts/test-merge-guard.sh
@@ -73,10 +74,13 @@ bash scripts/test-community-packaged-scope.sh
 bash scripts/test-no-code-scope.sh
 bash scripts/test-pr-related.sh
 bash scripts/test-auto-revert.sh
+bash scripts/test-rolling-bisect.sh
 bash scripts/test-daily-sweep.sh
+bash scripts/test-daily-release.sh
 bash scripts/test-after-merge-alert.sh
 bash scripts/test-browser-smoke-scope.sh
 bash scripts/test-release-branch-contents.sh
+bash scripts/test-release-gate.sh
 bash .agents/skills/creating-pull-requests/scripts/test-watch-prs.sh
 bash .agents/skills/creating-pull-requests/scripts/test-open-pr-cap.sh
 bash .agents/skills/creating-pull-requests/scripts/test-pr-age-list.sh

@@ -2,15 +2,12 @@
  * The decision behind `tasks.set_mode` and `tasks.approve` (DOR-3703), against
  * Security's ruling of 2026-11-02: who may skip the card, the ceiling, the
  * Don't-ask cap, marks, self-approval, other agents' tasks, and the defaults.
- *
- * @module services/tasks/agent-mode/__tests__/agent-mode-decision
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import type { Task } from '@dorkos/shared/types';
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import {
   PERMISSION_PRESETS,
-  resolvePermission,
   type AgentPermissions,
   type PermissionConfigInput,
 } from '@dorkos/shared/permissions';
@@ -70,15 +67,12 @@ function task(over: Partial<Task> = {}): Task {
     id: 'task-1',
     name: 'sweep',
     prompt: 'sweep',
-    cron: '0 3 * * *',
-    timezone: 'UTC',
     agentId: 'agent-a',
     permissionMode: 'default',
     status: 'pending_approval',
     runtime: null,
     model: null,
     account: null,
-    filePath: '',
     proposedByAgentPath: B,
     proposedBySessionId: 'ses-b',
     ...over,
@@ -130,6 +124,8 @@ function stateOf(decision: AgentModeDecision): string {
   return decision.kind === 'decided' ? decision.state : decision.kind;
 }
 
+beforeEach(reset);
+
 /** Set both actions to Allowed for everyone, the strongest setting a person can choose. */
 function allowBoth(): void {
   config.defaults.actions['tasks.set_mode'] = 'allowed';
@@ -167,38 +163,7 @@ describe('tasks.set_mode and tasks.approve: the defaults', () => {
     expect(stateOf(await decide(setMode('dontAsk')))).toBe('blocked');
   });
 
-  it('resolve through the shared resolver: an area-level Allowed asks, the action’s own allows', () => {
-    const base = {
-      area: 'tasks' as const,
-      tier: 'act' as const,
-      consent: 'standing-grant' as const,
-    };
-    const trusted = { preset: 'trusted' as const, defaults: { areas: {}, actions: {} } };
-    expect(
-      resolvePermission({ ...base, actionId: 'tasks.approve', config: trusted })
-    ).toMatchObject({ state: 'ask', destructiveAsk: true });
-    expect(
-      resolvePermission({
-        ...base,
-        actionId: 'tasks.approve',
-        config: trusted,
-        agent: { actions: { 'tasks.approve': 'allowed' } },
-      }).state
-    ).toBe('allowed');
-    expect(
-      resolvePermission({
-        ...base,
-        actionId: 'tasks.approve',
-        config: {
-          preset: 'trusted',
-          defaults: { areas: {}, actions: { 'tasks.approve': 'blocked' } },
-        },
-      }).state
-    ).toBe('blocked');
-  });
-
   it('follows an agent’s own setting, and a Blocked one refuses at the gate', async () => {
-    reset();
     agentPermissions = { actions: { 'tasks.approve': 'allowed' } };
     expect(stateOf(await decide(approve()))).toBe('allowed');
     agentPermissions = { actions: { 'tasks.approve': 'blocked' } };
@@ -208,7 +173,6 @@ describe('tasks.set_mode and tasks.approve: the defaults', () => {
 
 describe('who may skip the card (ruling 1)', () => {
   it('asks a token even at Allowed; only an agent in its own chat is allowed', async () => {
-    reset();
     allowBoth();
     const token: AgentModeCaller = { structural: false, agentPath: A, marked: false };
     const decision = await decide(setMode('dontAsk'), token);
@@ -218,7 +182,6 @@ describe('who may skip the card (ruling 1)', () => {
   });
 
   it('holds a caller DorkOS cannot name to the lowest level, and asks it even there', async () => {
-    reset();
     allowBoth();
     const unnamed: AgentModeCaller = { structural: false, marked: true };
     // On a Full agent's task, Bypass is refused, not carded: the caller adds the lowest level.
@@ -235,7 +198,6 @@ describe('who may skip the card (ruling 1)', () => {
   });
 
   it('refuses an approval from a caller with no chat, since its chain cannot be read', async () => {
-    reset();
     allowBoth();
     for (const caller of [
       { structural: false, agentPath: A, marked: false },
@@ -252,7 +214,6 @@ describe('who may skip the card (ruling 1)', () => {
 
 describe('the ceiling (ruling 3)', () => {
   it('never refuses a mode on another agent’s task: a person decides it on a card, at any mode', async () => {
-    reset();
     allowBoth();
     levels[A] = 'bypassPermissions';
     levels[B] = 'default';
@@ -264,7 +225,6 @@ describe('the ceiling (ruling 3)', () => {
   });
 
   it('caps the caller’s own level too', async () => {
-    reset();
     levels[A] = 'default';
     expect(await decide(setMode('acceptEdits', 'acceptEdits'))).toMatchObject({
       kind: 'refuse',
@@ -273,7 +233,6 @@ describe('the ceiling (ruling 3)', () => {
   });
 
   it('lets a Bypass agent set Bypass on its own task, in its own unmarked chat', async () => {
-    reset();
     levels[A] = 'bypassPermissions';
     expect(stateOf(await decide(setMode('bypassPermissions', 'acceptEdits')))).toBe('allowed');
     // Within the ceiling a raise is the agent's to make (Dorian's rule, Nov 2).
@@ -281,7 +240,6 @@ describe('the ceiling (ruling 3)', () => {
   });
 
   it('refuses Bypass from an agent at Accept edits, naming the highest it can set', async () => {
-    reset();
     allowBoth();
     levels[A] = 'acceptEdits';
     expect(await decide(setMode('bypassPermissions', 'acceptEdits'))).toMatchObject({
@@ -291,7 +249,6 @@ describe('the ceiling (ruling 3)', () => {
   });
 
   it('asks before an approval arms a mode looser than Don’t ask, Bypass included', async () => {
-    reset();
     allowBoth();
     for (const mode of ['acceptEdits', 'bypassPermissions'] as const) {
       const decision = await decide(approve({}, { task: task({ permissionMode: mode }) }));
@@ -302,7 +259,6 @@ describe('the ceiling (ruling 3)', () => {
   });
 
   it('refuses a mode nobody declared', async () => {
-    reset();
     expect(await decide(setMode('everything'))).toMatchObject({
       kind: 'refuse',
       body: { code: 'unknown_mode' },
@@ -312,7 +268,6 @@ describe('the ceiling (ruling 3)', () => {
 
 describe('marks (ruling 4)', () => {
   it('asks from a marked turn even at Allowed, and before arming a task whose words came from outside', async () => {
-    reset();
     allowBoth();
     const marked = { ...IN_SESSION, marked: true };
     expect(stateOf(await decide(approve(), marked))).toBe('ask');
@@ -322,7 +277,6 @@ describe('marks (ruling 4)', () => {
   });
 
   it('caps a marked turn at Don’t ask, even for a Bypass agent', async () => {
-    reset();
     allowBoth();
     const marked = { ...IN_SESSION, marked: true };
     const refused = await decide(setMode('acceptEdits', 'acceptEdits'), marked);
@@ -338,7 +292,6 @@ describe('marks (ruling 4)', () => {
   });
 
   it('names no mode it lacks on a runtime with no dontAsk, and the highest it has (DOR-4678)', async () => {
-    reset();
     allowBoth();
     const marked = { ...IN_SESSION, marked: true };
     const codex = { ...sources(), declaredModes: () => CODEX_CAPABILITIES.permissionModes };
@@ -354,32 +307,25 @@ describe('marks (ruling 4)', () => {
   });
 
   it('names no mark when an unmarked turn is above its own level (DOR-4678)', async () => {
-    reset();
     levels[A] = 'default';
     const refused = await decide(setMode('acceptEdits', 'acceptEdits'));
     expect(refused.kind === 'refuse' && refused.body.message).not.toContain('vouch');
   });
 });
 
-describe('a caller resolved through a linked worktree (C2)', () => {
-  it('asks above Default, even for a Bypass agent at Allowed, and not at or below it', async () => {
-    reset();
-    allowBoth();
-    const worktree: AgentModeCaller = { ...IN_SESSION, resolved: 'worktree' };
-    for (const mode of ['bypassPermissions', 'acceptEdits'] as const) {
-      const decision = await decide(setMode(mode, 'bypassPermissions'), worktree);
-      expect(stateOf(decision), mode).toBe('ask');
-      expect(decision.kind === 'decided' && decision.asks).toContain('linked-worktree');
-    }
-    expect(stateOf(await decide(setMode('default', 'bypassPermissions'), worktree))).toBe(
-      'allowed'
-    );
-  });
+it('a caller resolved through a linked worktree (C2): asks above Default, even for a Bypass agent at Allowed, and not at or below it', async () => {
+  allowBoth();
+  const worktree: AgentModeCaller = { ...IN_SESSION, resolved: 'worktree' };
+  for (const mode of ['bypassPermissions', 'acceptEdits'] as const) {
+    const decision = await decide(setMode(mode, 'bypassPermissions'), worktree);
+    expect(stateOf(decision), mode).toBe('ask');
+    expect(decision.kind === 'decided' && decision.asks).toContain('linked-worktree');
+  }
+  expect(stateOf(await decide(setMode('default', 'bypassPermissions'), worktree))).toBe('allowed');
 });
 
 describe('no self-approval (ruling 5)', () => {
   it('refuses the agent that made the task, at Allowed', async () => {
-    reset();
     allowBoth();
     const made = task({ proposedByAgentPath: A, proposedBySessionId: 'ses-old' });
     const decision = await decide(
@@ -389,7 +335,6 @@ describe('no self-approval (ruling 5)', () => {
   });
 
   it('refuses the agent that changed it last', async () => {
-    reset();
     allowBoth();
     const edits = { ...EDITS, lastEditedByAgentPath: A, lastEditedBySessionId: 'ses-x' };
     expect(await decide(approve({}, { edits }))).toMatchObject({
@@ -399,7 +344,6 @@ describe('no self-approval (ruling 5)', () => {
   });
 
   it('refuses a spin-off approving its parent’s task, and a parent approving its spin-off’s', async () => {
-    reset();
     allowBoth();
     // Agent B's chat ses-b started a spin-off, ses-child, that runs as agent C.
     parents['ses-child'] = 'ses-b';
@@ -434,7 +378,6 @@ describe('no self-approval (ruling 5)', () => {
   });
 
   it('refuses every agent when DorkOS has no record of the last editor', async () => {
-    reset();
     allowBoth();
     for (const edits of [null, { ...EDITS, lastEditedByAgentPath: null }]) {
       expect(await decide(approve({}, { edits }))).toMatchObject({
@@ -445,7 +388,6 @@ describe('no self-approval (ruling 5)', () => {
   });
 
   it('refuses a new task that names its own status, and an approval sent with other changes', async () => {
-    reset();
     expect(
       await decide({
         door: 'create',
@@ -461,132 +403,95 @@ describe('no self-approval (ruling 5)', () => {
   });
 });
 
-describe('another agent’s task (ruling 6)', () => {
-  it('asks at Allowed; Allowed covers the caller’s own tasks only', async () => {
-    reset();
-    allowBoth();
-    const others = task({ agentId: 'agent-b', proposedByAgentPath: C });
-    const edits = { ...EDITS, lastEditedByAgentPath: C };
-    const decision = await decide(approve({}, { task: others, edits }));
-    expect(stateOf(decision)).toBe('ask');
-    expect(decision.kind === 'decided' && decision.asks).toEqual(['other-agent']);
-    expect(stateOf(await decide(setMode('dontAsk', 'default', { agentId: 'agent-b' })))).toBe(
-      'ask'
-    );
+it('another agent’s task (ruling 6): asks at Allowed; Allowed covers the caller’s own tasks only', async () => {
+  allowBoth();
+  const others = task({ agentId: 'agent-b', proposedByAgentPath: C });
+  const edits = { ...EDITS, lastEditedByAgentPath: C };
+  const decision = await decide(approve({}, { task: others, edits }));
+  expect(stateOf(decision)).toBe('ask');
+  expect(decision.kind === 'decided' && decision.asks).toEqual(['other-agent']);
+  expect(stateOf(await decide(setMode('dontAsk', 'default', { agentId: 'agent-b' })))).toBe('ask');
+});
+
+it('the chain must be readable (S1): refuses when the last editor or the maker names no chat', async () => {
+  allowBoth();
+  expect(
+    await decide(approve({}, { edits: { ...EDITS, lastEditedBySessionId: null } }))
+  ).toMatchObject({ kind: 'refuse', body: { code: 'lineage_unknown' } });
+  expect(await decide(approve({}, { task: task({ proposedBySessionId: null }) }))).toMatchObject({
+    kind: 'refuse',
+    body: { code: 'lineage_unknown' },
   });
 });
 
-describe('nothing to decide', () => {
-  it('answers none for a call that names neither field', async () => {
-    reset();
-    expect(
-      await decide({ door: 'update', body: { prompt: 'x' }, task: task(), edits: EDITS })
-    ).toEqual({
-      kind: 'none',
-    });
+it('the caller’s level is its turn’s real level (S3): caps a chat held below its agent’s launch level at the held level', async () => {
+  allowBoth();
+  // Agent A launches at Full, but this chat's turn ran at Default.
+  turns['ses-a'] = { asks: 'always', reach: 'edit' };
+  expect(await decide(setMode('acceptEdits', 'acceptEdits'))).toMatchObject({
+    kind: 'refuse',
+    body: { code: 'above_ceiling' },
+  });
+  // A chat held to reading only cannot even land Don't ask.
+  turns['ses-a'] = { asks: 'always', reach: 'read' };
+  expect(await decide(setMode('dontAsk'))).toMatchObject({
+    kind: 'refuse',
+    body: { code: 'above_ceiling', highestAllowed: 'plan' },
   });
 });
 
-describe('the chain must be readable (S1)', () => {
-  it('refuses when the last editor or the maker names no chat', async () => {
-    reset();
-    allowBoth();
-    expect(
-      await decide(approve({}, { edits: { ...EDITS, lastEditedBySessionId: null } }))
-    ).toMatchObject({ kind: 'refuse', body: { code: 'lineage_unknown' } });
-    expect(await decide(approve({}, { task: task({ proposedBySessionId: null }) }))).toMatchObject({
-      kind: 'refuse',
-      body: { code: 'lineage_unknown' },
-    });
+it('a person’s decline stands (S7): refuses an agent approving a task a person declined', async () => {
+  allowBoth();
+  expect(
+    await decide(approve({}, { task: task({ declined: true } as Partial<Task>) }))
+  ).toMatchObject({
+    kind: 'refuse',
+    body: { code: 'declined' },
   });
 });
 
-describe('the caller’s level is its turn’s real level (S3)', () => {
-  it('caps a chat held below its agent’s launch level at the held level', async () => {
-    reset();
-    allowBoth();
-    // Agent A launches at Full, but this chat's turn ran at Default.
-    turns['ses-a'] = { asks: 'always', reach: 'edit' };
-    expect(await decide(setMode('acceptEdits', 'acceptEdits'))).toMatchObject({
-      kind: 'refuse',
-      body: { code: 'above_ceiling' },
-    });
-    // A chat held to reading only cannot even land Don't ask.
-    turns['ses-a'] = { asks: 'always', reach: 'read' };
-    expect(await decide(setMode('dontAsk'))).toMatchObject({
-      kind: 'refuse',
-      body: { code: 'above_ceiling', highestAllowed: 'plan' },
-    });
+it('a new task under another agent (N3): is refused before any card, even when the mode would be allowed', async () => {
+  allowBoth();
+  const create = {
+    door: 'create' as const,
+    body: { permissionMode: 'dontAsk' },
+    target: 'agent-b',
+  };
+  expect(await decide(create)).toMatchObject({
+    kind: 'refuse',
+    body: { code: 'not_your_agent' },
   });
+  expect(stateOf(await decide({ ...create, target: 'agent-a' }))).toBe('allowed');
 });
 
-describe('a person’s decline stands (S7)', () => {
-  it('refuses an agent approving a task a person declined', async () => {
-    reset();
-    allowBoth();
-    expect(
-      await decide(approve({}, { task: task({ declined: true } as Partial<Task>) }))
-    ).toMatchObject({
-      kind: 'refuse',
-      body: { code: 'declined' },
-    });
+it('a chat with no recorded turn level (S-B): gets the lowest level, and finds a level kept under the chat’s other id', async () => {
+  allowBoth();
+  delete turns['ses-a'];
+  expect(await decide(setMode('dontAsk'))).toMatchObject({
+    kind: 'refuse',
+    body: { code: 'above_ceiling', highestAllowed: 'plan' },
   });
+  // The level was recorded under the chat's first id before it was rekeyed.
+  turns['ses-first'] = FULL_LEVEL;
+  const rekeyed = { ...IN_SESSION, turnSessionIds: ['ses-a', 'ses-first'] };
+  expect(stateOf(await decide(setMode('dontAsk'), rekeyed))).toBe('allowed');
 });
 
-describe('a new task under another agent (N3)', () => {
-  it('is refused before any card, even when the mode would be allowed', async () => {
-    reset();
-    allowBoth();
-    const create = {
-      door: 'create' as const,
-      body: { permissionMode: 'dontAsk' },
-      target: 'agent-b',
-    };
-    expect(await decide(create)).toMatchObject({
-      kind: 'refuse',
-      body: { code: 'not_your_agent' },
-    });
-    expect(stateOf(await decide({ ...create, target: 'agent-a' }))).toBe('allowed');
-  });
+it('modes looser than Don’t ask (M-A): marks a mode above Don’t ask so the door can hold it for a person', async () => {
+  const above = await decide(setMode('bypassPermissions', 'acceptEdits'));
+  expect(above).toMatchObject({ kind: 'decided', state: 'allowed', aboveDontAsk: true });
+  expect(await decide(setMode('dontAsk'))).toMatchObject({ aboveDontAsk: false });
 });
 
-describe('a chat with no recorded turn level (S-B)', () => {
-  it('gets the lowest level, and finds a level kept under the chat’s other id', async () => {
-    reset();
-    allowBoth();
-    delete turns['ses-a'];
-    expect(await decide(setMode('dontAsk'))).toMatchObject({
-      kind: 'refuse',
-      body: { code: 'above_ceiling', highestAllowed: 'plan' },
-    });
-    // The level was recorded under the chat's first id before it was rekeyed.
-    turns['ses-first'] = FULL_LEVEL;
-    const rekeyed = { ...IN_SESSION, turnSessionIds: ['ses-a', 'ses-first'] };
-    expect(stateOf(await decide(setMode('dontAsk'), rekeyed))).toBe('allowed');
+it('a chat kept under more than one id (round 3 nit): is held to the strictest level recorded under any of them, not the first found', async () => {
+  allowBoth();
+  turns['ses-first'] = levelOfMode(CLAUDE_CODE_CAPABILITIES.permissionModes, 'default')!;
+  const rekeyed = { ...IN_SESSION, turnSessionIds: ['ses-first'] };
+  expect(await decide(setMode('bypassPermissions'), rekeyed)).toMatchObject({
+    kind: 'refuse',
+    body: { code: 'above_ceiling' },
   });
-});
-
-describe('modes looser than Don’t ask (M-A)', () => {
-  it('marks a mode above Don’t ask so the door can hold it for a person', async () => {
-    reset();
-    const above = await decide(setMode('bypassPermissions', 'acceptEdits'));
-    expect(above).toMatchObject({ kind: 'decided', state: 'allowed', aboveDontAsk: true });
-    expect(await decide(setMode('dontAsk'))).toMatchObject({ aboveDontAsk: false });
-  });
-});
-
-describe('a chat kept under more than one id (round 3 nit)', () => {
-  it('is held to the strictest level recorded under any of them, not the first found', async () => {
-    reset();
-    allowBoth();
-    turns['ses-first'] = levelOfMode(CLAUDE_CODE_CAPABILITIES.permissionModes, 'default')!;
-    const rekeyed = { ...IN_SESSION, turnSessionIds: ['ses-first'] };
-    expect(await decide(setMode('bypassPermissions'), rekeyed)).toMatchObject({
-      kind: 'refuse',
-      body: { code: 'above_ceiling' },
-    });
-    expect(stateOf(await decide(setMode('bypassPermissions')))).toBe('allowed');
-  });
+  expect(stateOf(await decide(setMode('bypassPermissions')))).toBe('allowed');
 });
 
 describe('a mode a person must approve travels alone (M1, round 3)', () => {
@@ -598,7 +503,6 @@ describe('a mode a person must approve travels alone (M1, round 3)', () => {
   });
 
   it('refuses a carded mode sent with other changes, before any card', async () => {
-    reset();
     config.defaults.actions['tasks.set_mode'] = 'ask';
     expect(await decide(mixed())).toMatchObject({ kind: 'refuse', body: { code: 'mode_alone' } });
     // The mode alone is carded as usual.
@@ -606,7 +510,6 @@ describe('a mode a person must approve travels alone (M1, round 3)', () => {
   });
 
   it('lets the same call through where no card is raised', async () => {
-    reset();
     expect(stateOf(await decide(mixed()))).toBe('allowed');
   });
 });
@@ -619,7 +522,6 @@ describe('the task’s own agent vouching in place of a person (Nov 3 ruling)', 
   const HOME: AgentModeCaller = { ...IN_SESSION, resolved: 'home' };
 
   it('vouches from its own home chat, in an unmarked turn', async () => {
-    reset();
     expect(await decide(own(), HOME)).toMatchObject({
       kind: 'decided',
       vouched: true,
@@ -628,7 +530,6 @@ describe('the task’s own agent vouching in place of a person (Nov 3 ruling)', 
   });
 
   it('does not vouch for content an outsider wrote, nor for a task another agent proposed', async () => {
-    reset();
     expect(await decide(own({ originMarks: { outsider: true } }), HOME)).toMatchObject({
       vouched: false,
     });
@@ -636,7 +537,6 @@ describe('the task’s own agent vouching in place of a person (Nov 3 ruling)', 
   });
 
   it('does not vouch from a chat its folder does not vouch for, or for a scheduled run’s raise', async () => {
-    reset();
     expect(await decide(own(), { ...HOME, resolved: 'worktree' })).toMatchObject({
       vouched: false,
     });

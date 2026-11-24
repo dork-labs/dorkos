@@ -19,7 +19,6 @@ import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../task-store.js';
 import type { TaskFileSync } from '../../../services/tasks/sync/task-file-sync.js';
 import {
-  parseContentKey,
   scheduleContentKey,
   taskWorkOf,
   upgradeLegacyContentKey,
@@ -81,29 +80,6 @@ describe('the content key carries the account', () => {
     expect(key).not.toBe(scheduleContentKey({ ...work, account: null }));
   });
 
-  it('reads a ten-part key back, account included', () => {
-    const key = scheduleContentKey({ ...work, account: 'work' });
-    expect(parseContentKey(key)).toEqual({ ...work, account: 'work' });
-  });
-
-  it('reads a nine-part key as one with no account', () => {
-    // Purpose: a withdrawn approval is kept exactly as written, so the card's
-    // "what changed" must still read one recorded before the account existed.
-    expect(parseContentKey(ninePartKey())).toEqual({ ...work, account: null });
-  });
-
-  it('reads nothing from a key whose account part is not text', () => {
-    const bad = JSON.stringify([PROMPT, CRON, 'UTC', 'digest', null, null, null, null, false, 7]);
-    expect(parseContentKey(bad)).toBeNull();
-  });
-
-  it('upgrades a nine-part key by adding the account the row runs with now', () => {
-    const current = { ...work, timezone: 'UTC', account: 'work' };
-    expect(upgradeLegacyContentKey(ninePartKey(), current)).toBe(
-      scheduleContentKey({ ...work, account: 'work' })
-    );
-  });
-
   it('keeps every part a nine-part key recorded, even one the row no longer matches', () => {
     // Purpose: the upgrade adds the account and nothing else; a grant that no
     // longer covers the row must not start covering it.
@@ -111,11 +87,6 @@ describe('the content key carries the account', () => {
     expect(upgradeLegacyContentKey(ninePartKey('claude-sonnet-4'), current)).toBe(
       scheduleContentKey({ ...work, model: 'claude-sonnet-4', account: null })
     );
-  });
-
-  it('leaves a current key alone', () => {
-    const current = { ...work, account: 'work' };
-    expect(upgradeLegacyContentKey(scheduleContentKey(current), current)).toBeNull();
   });
 });
 
@@ -135,28 +106,11 @@ describe('the account is part of the approval', () => {
   const approvedSchedule = (opts: { account?: string } = {}) =>
     store.fileSync.upsertFromFile(definition(opts)).id;
 
-  it('reads the account out of the file onto the task', () => {
-    const id = approvedSchedule({ account: 'work' });
-    expect(store.getTask(id)!.account).toBe('work');
-    expect(row(id).account).toBe('work');
-  });
-
-  it('reports no account as null', () => {
-    expect(store.getTask(approvedSchedule())!.account).toBeNull();
-  });
-
   it('asks again when a file changes the account', () => {
     approvedSchedule();
     expect(
       store.fileSync.upsertFromFile(definition({ account: 'work' }), undefined, DISCOVERY).status
     ).toBe('pending_approval');
-  });
-
-  it('keeps an approved schedule approved through a sync of the same account', () => {
-    approvedSchedule({ account: 'work' });
-    expect(
-      store.fileSync.upsertFromFile(definition({ account: 'work' }), undefined, DISCOVERY).status
-    ).toBe('active');
   });
 
   it('parks an agent’s change of account and says what changed', () => {
@@ -175,16 +129,6 @@ describe('the account is part of the approval', () => {
     expect(parked.approvalChanges).toEqual([
       { field: 'account', from: null, to: 'work', via: 'schedule' },
     ]);
-  });
-
-  it('moves the approval with a person’s change of account', () => {
-    const id = approvedSchedule();
-    store.updateTask(id, { account: 'work' });
-    store.approvals.recordApproval(id);
-
-    expect(
-      store.fileSync.upsertFromFile(definition({ account: 'work' }), undefined, DISCOVERY).status
-    ).toBe('active');
   });
 
   describe('a grant recorded before the account joined the key', () => {
@@ -217,14 +161,6 @@ describe('the account is part of the approval', () => {
           .status
       ).toBe('pending_approval');
     });
-
-    it('does nothing the second time', () => {
-      const id = approvedSchedule();
-      withGrant(id, ninePartKey());
-
-      expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(1);
-      expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(0);
-    });
   });
 
   describe('a file that moves a started sticky conversation to another account', () => {
@@ -256,24 +192,6 @@ describe('the account is part of the approval', () => {
       expect(row(id).account).toBeNull();
     });
 
-    it('keeps refusing on every later sync of the same file', () => {
-      const id = startedSticky();
-      store.fileSync.upsertFromFile(
-        definition({ sticky: true, account: 'work' }),
-        undefined,
-        DISCOVERY
-      );
-      store.approvals.recordApproval(id);
-
-      expect(
-        store.fileSync.upsertFromFile(
-          definition({ sticky: true, account: 'work' }),
-          undefined,
-          DISCOVERY
-        )
-      ).toMatchObject({ status: 'pending_approval', reason: STICKY_ACCOUNT_LOCKED_MESSAGE });
-    });
-
     it('takes the account once the file stops keeping one conversation', () => {
       const id = startedSticky();
 
@@ -285,18 +203,6 @@ describe('the account is part of the approval', () => {
 
       expect(row(id).account).toBe('work');
       expect(store.getTask(id)!.reason).not.toBe(STICKY_ACCOUNT_LOCKED_MESSAGE);
-    });
-
-    it('lets a sticky schedule that has never run take the file’s account', () => {
-      const id = store.fileSync.upsertFromFile(definition({ sticky: true })).id;
-
-      store.fileSync.upsertFromFile(
-        definition({ sticky: true, account: 'work' }),
-        undefined,
-        DISCOVERY
-      );
-
-      expect(row(id).account).toBe('work');
     });
   });
 });

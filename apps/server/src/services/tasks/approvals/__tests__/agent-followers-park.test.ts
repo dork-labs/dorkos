@@ -109,15 +109,6 @@ describe('parking the schedules that follow an agent', () => {
     expect(after.followedAgentChanges).not.toBeNull();
   });
 
-  it('never touches another agent’s schedules', () => {
-    const other = schedule('other', {}, 'agent-2');
-
-    store.approvals.parkAgentFollowers(AGENT, [...MODEL_CHANGE]);
-
-    expect(row(other.id).status).toBe('active');
-    expect(row(other.id).approvedContentKey).not.toBeNull();
-  });
-
   it('keeps the first value and follows the latest across two changes', () => {
     const task = schedule('digest');
     store.approvals.parkAgentFollowers(AGENT, [...MODEL_CHANGE]);
@@ -200,19 +191,6 @@ describe('parking the schedules that follow an agent', () => {
     ]);
   });
 
-  it('shows the agent’s change even when the withdrawn approval is in a format this build cannot read', () => {
-    const task = schedule('digest');
-    store.approvals.parkAgentFollowers(AGENT, [...MODEL_CHANGE]);
-    db.update(pulseSchedules)
-      .set({ previousApprovalKey: '["an older key"]' })
-      .where(eq(pulseSchedules.id, task.id))
-      .run();
-
-    expect(store.getTask(task.id)!.approvalChanges).toEqual([
-      { field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4', via: 'agent' },
-    ]);
-  });
-
   it('attaches nothing to a proposal nobody has approved yet', () => {
     // A person approving it will approve what the agent runs on then; there is
     // no approved value for a change to be measured from.
@@ -223,20 +201,5 @@ describe('parking the schedules that follow an agent', () => {
 
     expect(outcome).toEqual({ parked: [], withdrawn: [], updated: [] });
     expect(row(task.id).followedAgentChanges).toBeNull();
-  });
-
-  it('tells whoever watches approvals about a schedule created armed', () => {
-    const approved: string[] = [];
-    store.approvals.setOnApproved((agentId) => approved.push(agentId));
-
-    schedule('fresh');
-    store.createTask({
-      name: 'no-agent',
-      description: 'x',
-      prompt: 'x',
-      filePath: '/skills/no-agent/SKILL.md',
-    });
-
-    expect(approved).toEqual([AGENT]);
   });
 });

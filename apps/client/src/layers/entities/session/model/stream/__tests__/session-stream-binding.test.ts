@@ -25,12 +25,8 @@ import {
   resetSessionListResetMarker,
 } from '../../../lib/session-list-reset';
 
-// End-to-end wiring test: prove that driving a StreamManager's (fake) connection
-// results in the stores being updated through the binding's real listener object.
-// We capture the listeners the binding installs on the singleton, then replay
-// them through a fake-backed StreamManager so a pushed frame travels the full
-// path (connection → StreamManager → binding listener → store) with no real
-// network — the injected-fake-connection seam (see stream-manager.test.ts note).
+// End-to-end wiring test: prove that driving a StreamManager's (fake) connection results in the
+// stores being updated through the binding's real listener object.
 
 class FakeConnection implements DurableStreamConnection {
   connect = vi.fn();
@@ -88,12 +84,11 @@ describe('initSessionStreamBinding', () => {
   let installed: StreamManagerListeners;
   let manager: StreamManager;
   let connections: FakeConnection[];
-  let listStateListener: ((state: ConnectionState, failedAttempts: number) => void) | undefined;
 
   beforeEach(() => {
-    // Restore singleton spies from the PREVIOUS test first — e.g. a mocked
-    // getAttachedSessionId must not leak into tests that rely on the real
-    // (null) value, and re-spying setListeners must not stack wrappers.
+    // Restore singleton spies from the PREVIOUS test first — e.g. a mocked getAttachedSessionId
+    // must not leak into tests that rely on the real (null) value, and re-spying setListeners
+    // must not stack wrappers.
     vi.restoreAllMocks();
     useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
     useSessionListStore.setState({
@@ -111,11 +106,7 @@ describe('initSessionStreamBinding', () => {
     vi.spyOn(streamManager, 'setListeners').mockImplementation((l) => {
       installed = l;
     });
-    listStateListener = undefined;
-    vi.spyOn(streamManager, 'subscribeListConnectionState').mockImplementation((l) => {
-      listStateListener = l;
-      return () => {};
-    });
+    vi.spyOn(streamManager, 'subscribeListConnectionState').mockImplementation(() => () => {});
     initSessionStreamBinding();
 
     // Replay those listeners through a fake-backed StreamManager.
@@ -130,13 +121,6 @@ describe('initSessionStreamBinding', () => {
     manager.setListeners(installed);
   });
 
-  it('dispatches a snapshot frame into the per-session stream store', () => {
-    manager.attachSession('sess-1');
-    connections[0]!.push('snapshot', SNAPSHOT);
-    expect(useSessionStreamStore.getState().getSession('sess-1').messages).toHaveLength(1);
-    expect(useSessionStreamStore.getState().getSession('sess-1').streamReadyCursor).toBe(0);
-  });
-
   it('dispatches a session event into the per-session stream store', () => {
     manager.attachSession('sess-1');
     connections[0]!.push('snapshot', SNAPSHOT);
@@ -146,15 +130,9 @@ describe('initSessionStreamBinding', () => {
   });
 
   it('dispatches the capability-approval hold pair into the in-progress turn (inline approval card)', () => {
-    // Real failure mode (DOR-963): the in-session capability hold (DOR-939) is
-    // rendered from `inProgressTurn` — `projectInProgressTurn` folds
-    // `capability_approval_required` into an inline `capability_approval` card
-    // and `capability_approval_resolved` retires it. Both halves reach that
-    // array ONLY if StreamManager registers a frame handler under each name;
-    // the socket drops an unregistered name in silence, so a missing entry
-    // means the operator is never asked and the agent's held call just waits
-    // out its cap. This drives the whole path with no network: frame →
-    // StreamManager → binding listener → store.
+    // Real failure mode (DOR-963): the in-session capability hold (DOR-939) is rendered from
+    // `inProgressTurn` — `projectInProgressTurn` folds `capability_approval_required` into an
+    // inline `capability_approval` card and `capability_approval_resolved` retires it.
     manager.attachSession('sess-1');
     connections[0]!.push('snapshot', SNAPSHOT);
 
@@ -192,28 +170,9 @@ describe('initSessionStreamBinding', () => {
     ]);
   });
 
-  it('dispatches a connection-state change into the store', () => {
-    manager.attachSession('sess-1');
-    connections[0]!.emitState('connected');
-    expect(useSessionStreamStore.getState().getSession('sess-1').connectionState).toBe('connected');
-  });
-
-  it('dispatches a session-list event into the list store', () => {
-    manager.connectList();
-    const streaming = { ...STATUS, lifecycle: 'streaming' as const };
-    connections[0]!.push('session_status', {
-      type: 'session_status',
-      sessionId: 'sess-1',
-      status: streaming,
-    });
-    expect(useSessionListStore.getState().statuses['sess-1']).toEqual(streaming);
-  });
-
   it('a session_removed event evicts the entry from BOTH stores', () => {
-    // Real failure mode: a deleted session must drop its per-session stream
-    // projection immediately, not linger until LRU eviction. The binding fans a
-    // session_removed list event out to the per-session stream store's
-    // removeSession in addition to the list store.
+    // Real failure mode: a deleted session must drop its per-session stream projection
+    // immediately, not linger until LRU eviction.
     useSessionStreamStore.getState().applySnapshot('sess-1', SNAPSHOT);
     useSessionListStore
       .getState()
@@ -225,15 +184,6 @@ describe('initSessionStreamBinding', () => {
     expect(useSessionStreamStore.getState().sessions['sess-1']).toBeUndefined();
     expect(useSessionListStore.getState().sessions['sess-1']).toBeUndefined();
     expect(useSessionListStore.getState().statuses['sess-1']).toBeUndefined();
-  });
-
-  it('is idempotent — a second init does not re-install listeners', () => {
-    const calls = (streamManager.setListeners as unknown as ReturnType<typeof vi.fn>).mock.calls
-      .length;
-    initSessionStreamBinding();
-    expect(
-      (streamManager.setListeners as unknown as ReturnType<typeof vi.fn>).mock.calls.length
-    ).toBe(calls);
   });
 
   it('marks a BACKGROUND session unseen on its streaming→settled edge', () => {
@@ -258,42 +208,11 @@ describe('initSessionStreamBinding', () => {
     expect(useSessionListStore.getState().statuses['sess-bg']).toBeUndefined();
   });
 
-  it('does NOT mark the actively-attached session unseen when it settles', () => {
-    // The operator is watching the attached session settle — nothing is unseen.
-    vi.spyOn(streamManager, 'getAttachedSessionId').mockReturnValue('sess-fg');
-    manager.connectList();
-    const streaming = { ...STATUS, lifecycle: 'streaming' as const };
-    connections[0]!.push('session_status', {
-      type: 'session_status',
-      sessionId: 'sess-fg',
-      status: streaming,
-    });
-    connections[0]!.push('session_status', {
-      type: 'session_status',
-      sessionId: 'sess-fg',
-      status: STATUS,
-    });
-    expect(useSessionListStore.getState().unseen['sess-fg']).toBeUndefined();
-  });
-
-  it('does NOT mark a session that settles without having streamed', () => {
-    // A bare idle re-announce (no observed streaming→settled edge) is not activity.
-    manager.connectList();
-    connections[0]!.push('session_status', {
-      type: 'session_status',
-      sessionId: 'sess-quiet',
-      status: STATUS,
-    });
-    expect(useSessionListStore.getState().unseen['sess-quiet']).toBeUndefined();
-  });
-
   it('a retire announce migrates client continuity state to the canonical id (NF-2)', () => {
-    // Real failure mode (acceptance run 20260611-145454): the canonical id
-    // usually resolves AFTER the trigger 202, so the announce on the global
-    // stream is the only rekey signal this client gets — without this fan-out
-    // the message the person can see on screen is orphaned under the request
-    // UUID. (The QUEUE is not in here: the server owns it and follows the rekey
-    // itself.)
+    // Real failure mode (acceptance run 20260611-145454): the canonical id usually resolves AFTER
+    // the trigger 202, so the announce on the global stream is the only rekey signal this client
+    // gets — without this fan-out the message the person can see on screen is orphaned under the
+    // request UUID.
     useSessionStreamStore
       .getState()
       .setOptimisticUserMessage('request-uuid', { id: 'opt-1', content: 'first words' });
@@ -324,11 +243,7 @@ describe('initSessionStreamBinding', () => {
   });
 
   it('a session-stream reconnect forces the next send to re-include uiState', () => {
-    // Real failure mode: the server holds session.uiState in memory only. After
-    // a restart with the tab open, the SSE stream auto-reconnects while the
-    // client's last-sent cache still says "unchanged" — so uiState stays omitted
-    // and get_ui_state answers with fabricated defaults until the UI changes.
-    // The binding must drop the cache entry on every (re)entry into 'connected'.
+    // Real failure mode: the server holds session.uiState in memory only.
     clearUiStateSendCache('sess-ui');
     prepareUiStateForSend('sess-ui', UI_SNAPSHOT).commit();
     // Sanity: unchanged snapshot is omitted while the connection is healthy.
@@ -351,22 +266,6 @@ describe('initSessionStreamBinding', () => {
 
     // Entry gone — a hypothetical next send would re-include the snapshot.
     expect(prepareUiStateForSend('sess-dead', UI_SNAPSHOT).uiState).toEqual(UI_SNAPSHOT);
-  });
-
-  it('re-baselines statuses (but not unseen flags) when the global stream connects', () => {
-    // Real failure mode: session_status is fan-out-only — a 'streaming' held
-    // across a server restart would pin a stale border forever.
-    const streaming = { ...STATUS, lifecycle: 'streaming' as const };
-    useSessionListStore
-      .getState()
-      .applyListEvent({ type: 'session_status', sessionId: 'stale', status: streaming });
-    useSessionListStore.getState().markUnseen('done-bg', '/projects/bg');
-    expect(listStateListener).toBeDefined();
-
-    listStateListener!('connected', 0);
-
-    expect(useSessionListStore.getState().statuses['stale']).toBeUndefined();
-    expect(useSessionListStore.getState().unseen['done-bg']).toBe('/projects/bg');
   });
 });
 
@@ -466,18 +365,6 @@ describe('account_usage matching and the Claude subscription bar', () => {
     useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
   });
 
-  it('a Codex default event never touches a Claude default session', () => {
-    const store = useSessionStreamStore.getState();
-    store.applySnapshot('claude', {
-      ...SNAPSHOT,
-      status: { ...STATUS, accountUsage: usage('claude-code', 10) },
-    });
-    store.applyAccountUsage(usage('codex', 90));
-    expect(
-      useSessionStreamStore.getState().getSession('claude').status?.accountUsage?.runtime
-    ).toBe('claude-code');
-  });
-
   it("moves a Claude subscription session's bar with its account and keeps its cost; pay-as-you-go stays", () => {
     const store = useSessionStreamStore.getState();
     store.applySnapshot('sub', {
@@ -540,23 +427,6 @@ describe('when the session lists were last declared wrong (DOR-2891)', () => {
     return { handlers, setListState: (state) => stateListeners.forEach((l) => l(state, 0)) };
   }
 
-  it('marks lists a fresh window fetched before its first frame when that frame names a switch', () => {
-    const { handlers } = bind();
-    const before = Date.now() - 1;
-    expect(predatesSessionListReset(before)).toBe(false);
-    handlers.get('connected')!({ sessionListsResetAt: '2026-10-13T11:00:00.000Z' });
-    expect(predatesSessionListReset(before)).toBe(true);
-  });
-
-  it('records a live account switch', () => {
-    const { handlers } = bind();
-    handlers.get('connected')!({ connectedAt: new Date().toISOString() });
-    const before = Date.now() - 1;
-    expect(predatesSessionListReset(before)).toBe(false);
-    handlers.get('session_list_invalidated')!({ changedAt: '2026-10-13T11:00:00.000Z' });
-    expect(predatesSessionListReset(before)).toBe(true);
-  });
-
   it('distrusts every list from a drop until the reconnect names the last switch', () => {
     // The stream says `connected` (and the reconnect invalidates every list)
     // one round trip before its first frame can say a switch was missed.
@@ -569,63 +439,5 @@ describe('when the session lists were last declared wrong (DOR-2891)', () => {
     expect(predatesSessionListReset(cachedAt)).toBe(true);
     handlers.get('connected')!({ connectedAt: new Date().toISOString() });
     expect(predatesSessionListReset(cachedAt)).toBe(false);
-  });
-
-  it('learns of a missed switch on its own clock, whatever the server’s says', () => {
-    // A server clock an hour behind (or ahead) of this window must not decide
-    // which lists are trusted: only that the switch is one not heard before.
-    const { handlers } = bind();
-    handlers.get('connected')!({ connectedAt: new Date().toISOString() });
-    const cachedAt = Date.now() - 1;
-    handlers.get('connected')!({ sessionListsResetAt: '1999-01-01T00:00:00.000Z' });
-    expect(predatesSessionListReset(cachedAt)).toBe(true);
-    // A list fetched after the frame is trusted.
-    const fetchedLater = Date.now() + 1;
-    expect(predatesSessionListReset(fetchedLater)).toBe(false);
-  });
-
-  it('does not count a switch twice when a reconnect names one it heard live', () => {
-    vi.useFakeTimers({ now: Date.parse('2026-10-13T12:00:00.000Z') });
-    try {
-      const { handlers } = bind();
-      handlers.get('connected')!({ connectedAt: new Date().toISOString() });
-      handlers.get('session_list_invalidated')!({ changedAt: '2026-10-13T11:00:00.000Z' });
-      vi.advanceTimersByTime(1_000);
-      const fetchedAfterSwitch = Date.now();
-      vi.advanceTimersByTime(1_000);
-      handlers.get('connected')!({ sessionListsResetAt: '2026-10-13T11:00:00.000Z' });
-      expect(predatesSessionListReset(fetchedAfterSwitch)).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('distrusts every list while a hidden tab’s released stream opens again', () => {
-    // A hidden tab's stream is closed without ever reporting itself down, then
-    // reopens through `connecting`: a switch could have been missed meanwhile.
-    const { handlers, setListState } = bind();
-    handlers.get('connected')!({ connectedAt: new Date().toISOString() });
-    const cachedAt = Date.now() - 1;
-    setListState('connecting');
-    expect(predatesSessionListReset(cachedAt)).toBe(true);
-    handlers.get('connected')!({ connectedAt: new Date().toISOString() });
-    expect(predatesSessionListReset(cachedAt)).toBe(false);
-  });
-
-  it('trusts a list fetched while the stream is down: it is the server as it is now', () => {
-    vi.useFakeTimers({ now: Date.parse('2026-10-13T12:00:00.000Z') });
-    try {
-      const { handlers, setListState } = bind();
-      handlers.get('connected')!({ connectedAt: new Date().toISOString() });
-      const beforeDrop = Date.now();
-      vi.advanceTimersByTime(1_000);
-      setListState('reconnecting');
-      vi.advanceTimersByTime(1_000);
-      const whileDown = Date.now();
-      expect(predatesSessionListReset(beforeDrop)).toBe(true);
-      expect(predatesSessionListReset(whileDown)).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });

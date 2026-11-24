@@ -18,11 +18,11 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ZodType } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import type { AuthorRecord } from '../services/rooms/index.js';
 import { callerAccessOf } from './caller-access.js';
 import { resolveCaller } from './room-caller.js';
 import { isOwnerCaller, roomErrorReply } from './room-error-response.js';
+import { validationProblem } from '@dorkos/http-kit';
 
 /** The caller of one room request, resolved the first time it is asked for. */
 export type RoomCaller = () => AuthorRecord;
@@ -91,6 +91,6 @@ export async function roomRoute(
  */
 export function parseOrRefuse<T>(c: Context, schema: ZodType<T>, data: unknown): T | Response {
   const result = schema.safeParse(data);
-  if (!result.success) return c.json(validationFailureBody(result.error), 400);
+  if (!result.success) return validationProblem(c, result.error);
   return result.data;
 }

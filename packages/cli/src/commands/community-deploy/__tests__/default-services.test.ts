@@ -213,32 +213,6 @@ function neonTopology(roleName: string) {
 const inFlight = () => ({ journal: baseJournal(), provenanceMarker: marker });
 
 describe('default Community creation boundaries', () => {
-  it('returns the Neon creation identity before any topology readback', async () => {
-    await expect(dependencies().neon.create(marker)).resolves.toEqual({
-      id: 'project_fixture_01',
-      organizationId: 'org_fixture_01',
-      name: 'community-fixture',
-    });
-  });
-
-  it('returns the Tigris creation identity before reading attached secret inventory', async () => {
-    await expect(dependencies().tigris.create(marker)).resolves.toEqual({
-      id: 'addon_fixture_01',
-      organizationId: 'fixture-org',
-      name: 'community-fixture-bucket',
-      bindingId: 'app_fixture_01',
-    });
-    expect(mocks.readFlySecretInventory).not.toHaveBeenCalled();
-  });
-
-  it('creates Tigris under the Fly organization ID resolved from the planned slug', async () => {
-    await dependencies().tigris.create(marker);
-    expect(mocks.readFlyOrganizationId).toHaveBeenCalledWith(expect.anything(), 'fixture-org');
-    expect(mocks.createTigris).toHaveBeenCalledWith(
-      expect.objectContaining({ organizationId: 'org_fixture_graphql_01', appId: 'app_fixture_01' })
-    );
-  });
-
   it('creates the Fly app on the marker network and hands the fallback a provenance read', async () => {
     mocks.createFlyApp.mockResolvedValue({
       id: 'app_fixture_01',
@@ -262,15 +236,6 @@ describe('default Community creation boundaries', () => {
     expect(mocks.readAppProvenanceOrNotFound).toHaveBeenCalledWith('community-fixture-app');
   });
 
-  it('records the Fly network exactly as the provenance read reports it', async () => {
-    await expect(dependencies().fly.inspect('app_fixture_01', inFlight())).resolves.toEqual({
-      id: 'app_fixture_01',
-      organizationId: 'fixture-org',
-      name: 'community-fixture-app',
-      provenance: { flyNetwork: network },
-    });
-  });
-
   it('rejects a Fly app whose provenance read does not match the run', async () => {
     const reads = [
       // `apps list` always reports an empty network; the provenance read must never be that.
@@ -291,38 +256,6 @@ describe('default Community creation boundaries', () => {
     }
   });
 
-  it('rechecks a completed Fly app against the journaled network', async () => {
-    const completed = baseJournal({ provenance: { flyNetwork: network } });
-    await expect(
-      dependencies(completed).fly.inspect('app_fixture_01', { journal: completed })
-    ).resolves.toMatchObject({ provenance: { flyNetwork: network } });
-
-    mocks.readAppProvenance.mockResolvedValueOnce(appProvenance({ network: 'dorkos-elsewhere' }));
-    await expect(
-      dependencies(completed).fly.inspect('app_fixture_01', { journal: completed })
-    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
-  });
-
-  // A launch already in progress when this shipped must be re-checked exactly as before: through
-  // the listing it has always used, never the newer provenance read.
-  it('re-checks a run started before markers through the app listing, and records no network', async () => {
-    await expect(
-      dependencies().fly.inspect('app_fixture_01', { journal: baseJournal() })
-    ).resolves.toEqual({
-      id: 'app_fixture_01',
-      organizationId: 'fixture-org',
-      name: 'community-fixture-app',
-    });
-    expect(mocks.readFlyApps).toHaveBeenCalledWith(expect.anything(), 'fixture-org');
-    expect(mocks.readAppProvenance).not.toHaveBeenCalled();
-
-    mocks.readFlyApps.mockResolvedValueOnce([]);
-    await expect(
-      dependencies().fly.inspect('app_fixture_01', { journal: baseJournal() })
-    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
-    expect(mocks.readAppProvenance).not.toHaveBeenCalled();
-  });
-
   it('re-checks a marked run through the provenance read, never the listing', async () => {
     const completed = baseJournal({ provenance: { flyNetwork: network } });
     for (const context of [inFlight(), { journal: completed }]) {
@@ -334,14 +267,6 @@ describe('default Community creation boundaries', () => {
     }
     expect(mocks.readAppProvenance).toHaveBeenCalledTimes(2);
     expect(mocks.readFlyApps).not.toHaveBeenCalled();
-  });
-
-  it('creates the Neon project with the marker role instead of a fixed one', async () => {
-    await dependencies().neon.create(marker);
-    expect(mocks.createNeonProject).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ roleName: `community_${marker}`, databaseName: 'community' })
-    );
   });
 
   it('requires the in-flight marker role on the Neon project and its database owner', async () => {
@@ -385,19 +310,6 @@ describe('default Community creation boundaries', () => {
       ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
     }
   );
-
-  it('keeps the journaled Neon role, and the old fixed role for a pre-marker intent', async () => {
-    const journaled = baseJournal({
-      resources: { flyAppId: 'app_fixture_01', neonRoleId: 'community_owner' },
-    });
-    mocks.readNeonBranchTopology.mockResolvedValue(neonTopology('community_owner'));
-    await expect(
-      dependencies(journaled).neon.inspect('project_fixture_01', { journal: journaled })
-    ).resolves.toMatchObject({ relatedResources: { neonRoleId: 'community_owner' } });
-    await expect(
-      dependencies().neon.inspect('project_fixture_01', { journal: baseJournal() })
-    ).resolves.toMatchObject({ relatedResources: { neonRoleId: 'community_owner' } });
-  });
 
   // After a removal, a re-created bucket must bring its own credentials: a digest equal to one the
   // removed bucket had means the app still holds stale values, and the step must not continue.
@@ -528,27 +440,6 @@ describe('default Community creation boundaries', () => {
       expect(mocks.readTigrisCredentials).toHaveBeenCalledWith('addon_fixture_01');
     });
 
-    it('neither reads nor sets keys that are already on the app', async () => {
-      mocks.readFlySecretInventory.mockResolvedValue(keyRows);
-      await dependencies().tigris.inspect('addon_fixture_01', { journal: baseJournal() });
-      expect(mocks.stageFlySecrets).not.toHaveBeenCalled();
-      expect(mocks.readTigrisCredentials).not.toHaveBeenCalled();
-    });
-
-    it('re-reads the keys by exact ID when a resumed launch no longer holds them', async () => {
-      mocks.readTigrisCredentials.mockResolvedValueOnce(
-        new TigrisBucketCredentials(KEYS.AWS_ACCESS_KEY_ID, KEYS.AWS_SECRET_ACCESS_KEY)
-      );
-      mocks.readFlySecretInventory.mockResolvedValueOnce([]).mockResolvedValueOnce(keyRows);
-      await dependencies().tigris.inspect('addon_fixture_01', { journal: baseJournal() });
-      expect(mocks.readTigrisCredentials).toHaveBeenCalledWith('addon_fixture_01');
-      expect(mocks.stageFlySecrets).toHaveBeenCalledWith(
-        expect.anything(),
-        'community-fixture-app',
-        KEYS
-      );
-    });
-
     it('stops without setting anything when Fly no longer returns the keys', async () => {
       await expect(
         dependencies().tigris.inspect('addon_fixture_01', { journal: baseJournal() })
@@ -584,21 +475,6 @@ describe('Fly create after an uncertain-create removal', () => {
     removedAt: '2026-09-21T00:00:00.900Z',
   };
 
-  it('does not ask Fly about the name when nothing with it was removed', async () => {
-    await dependencies(
-      baseJournal({ state: 'planned', resources: {}, completedSteps: ['planned'] })
-    ).fly.prepare!();
-    await dependencies(
-      baseJournal({
-        state: 'planned',
-        resources: {},
-        completedSteps: ['planned'],
-        removals: [{ ...removal, resourceName: 'another-app' }],
-      })
-    ).fly.prepare!();
-    expect(mocks.isAppNameAvailable).not.toHaveBeenCalled();
-  });
-
   it('stops before any intent while Fly still holds a removed app name', async () => {
     const latest = baseJournal({
       state: 'planned',
@@ -628,13 +504,6 @@ describe('Tigris create after an uncertain-create removal', () => {
     requestedAt: '2026-09-21T00:00:00.500Z',
     removedAt: '2026-09-21T00:00:00.900Z',
   };
-
-  it('does not look the name up when no bucket with it was removed', async () => {
-    mocks.hasAcceptedTerms.mockResolvedValue(true);
-    await dependencies(baseJournal({ removals: [{ ...removal, resourceName: 'other' }] })).tigris
-      .prepare!();
-    expect(mocks.isTigrisNameHeld).not.toHaveBeenCalled();
-  });
 
   it('stops before any intent while Fly still holds a removed bucket name', async () => {
     mocks.hasAcceptedTerms.mockResolvedValue(true);

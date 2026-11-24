@@ -42,6 +42,7 @@ import {
 } from '../timing/effective-timing.js';
 import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { clearOutsiderParks, markScheduleOrigin } from './marked-schedules.js';
+import { movesOnlyAccount } from './account-move-rule.js';
 import { patchAgentModeColumnOf, readAgentModeColumnOf } from './agent-mode-column.js';
 import {
   CLEARED_APPROVAL_RECEIPT,
@@ -52,11 +53,12 @@ import {
   trustedAgentReceiptColumns,
   type TaskApprovalInput,
 } from './task-approval-receipt.js';
-import type {
-  AgentAttestation,
-  AgentModeColumn,
-  AgentModeColumnPatch,
-  PromptUndo,
+import {
+  patchAgentModeColumn,
+  type AgentAttestation,
+  type AgentModeColumn,
+  type AgentModeColumnPatch,
+  type PromptUndo,
 } from '../agent-mode/agent-mode-record-field.js';
 import type { PermissionMode } from '@dorkos/shared/types';
 
@@ -97,7 +99,7 @@ export interface ScheduleAgentEdits {
  * What {@link TaskApprovals.settleApprovedWorkChange} did about a schedule whose
  * approved work changed.
  */
-export type WorkChangeSettlement = 'unchanged' | 'rekeyed' | 'parked';
+export type WorkChangeSettlement = 'unchanged' | 'rekeyed' | 'account-moved' | 'parked';
 
 /**
  * The approval rules for scheduled tasks, over the same database the store
@@ -361,6 +363,11 @@ export class TaskApprovals {
    *   grant no longer matches what would run, so nothing can arm it again
    *   without a person.
    *
+   * - **Only the account changed** (`caller.accountMayMoveTo` allows the new
+   *   one, DOR-5097): the approval follows it, as `account-moved`, and the
+   *   caller tells the person with an Undo. Who pays is not what the run does,
+   *   unless the person restricted that account, and then it parks as below.
+   *
    * It never touches `enabled`: a park stops a schedule, it never starts one.
    *
    * @param id - The schedule whose approved work may just have changed.
@@ -381,6 +388,8 @@ export class TaskApprovals {
       ownAgentVouches?: boolean;
       /** Who a trusted caller is, for the receipt of the work they re-keyed. */
       approval?: TaskApprovalInput;
+      /** Whether an account-only change from one account to another keeps the approval (DOR-5097). */
+      accountMayMoveTo?: (to: string | null, from: string | null) => boolean;
     }
   ): WorkChangeSettlement {
     const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
@@ -405,11 +414,23 @@ export class TaskApprovals {
       return 'rekeyed';
     }
 
+    // A grant that no longer covers the old work falls through to the rules below.
+    const now = effectiveWork(row);
+    const onlyAccount = movesOnlyAccount(before, now);
+    const movesAccount =
+      onlyAccount && caller.accountMayMoveTo?.(now.account, before.account ?? null) === true;
+    if (movesAccount && this.followAccountMove(row, before, previousKey, key)) {
+      return 'account-moved';
+    }
     // Substituted work always needs a person; target/mode writes are refused at the doors (DOR-3651).
     const substitutesWork = before.prompt !== row.prompt || before.runtime !== row.runtime;
     // The task's own agent vouching for its own edit, from an ordinary turn, keeps
     // even substituted work and a file-born row live (Security ruling of Nov 3).
-    const kept = caller.ownAgentVouches === true || (row.origin !== 'file' && !substitutesWork);
+    // An account-only change the move rule declined (or no rule allowed) is
+    // money, not work: it parks, whatever an agent's live edit would keep (DOR-5097).
+    const kept =
+      !onlyAccount &&
+      (caller.ownAgentVouches === true || (row.origin !== 'file' && !substitutesWork));
     if (caller.armsAgentWork === true && kept) {
       // The sync parks a row whose key changed and moves its grant aside, so a
       // grant that covered the old work is in one of the two columns.
@@ -463,6 +484,79 @@ export class TaskApprovals {
       .where(eq(pulseSchedules.id, id))
       .run();
     return 'parked';
+  }
+
+  /**
+   * Carry the grant over an account-only change (DOR-5097): what a person
+   * approved still runs, only on another account. A sync that parked the row
+   * mid-request is undone, as for an agent's live edit. The receipt stays the
+   * person's (DorkOS's rule, when that sync cleared it), and so does a person's
+   * approval of the content. What it replaced is kept for the person's Undo
+   * (`accountUndo`). Answers `false`, writing nothing, when the grant did not
+   * cover the work the move replaced.
+   */
+  private followAccountMove(
+    row: typeof pulseSchedules.$inferSelect,
+    before: { status: string; account: string | null },
+    previousKey: string,
+    key: string
+  ): boolean {
+    const parkedMidRequest =
+      before.status === 'active' &&
+      row.status === 'pending_approval' &&
+      row.approvedContentKey === null &&
+      row.previousApprovalKey === previousKey;
+    if (row.approvedContentKey !== previousKey && !parkedMidRequest) return false;
+    const at = new Date().toISOString();
+    const accountUndo = { previous: before.account ?? null, written: row.account ?? null, at };
+    this.db
+      .update(pulseSchedules)
+      .set({
+        approvedContentKey: key,
+        previousApprovalKey: null,
+        agentModeRecord: patchAgentModeColumn(row.agentModeRecord, { accountUndo }),
+        ...(row.personApprovedKey === previousKey ? { personApprovedKey: key } : {}),
+        ...(parkedMidRequest
+          ? {
+              status: 'active' as const,
+              // The sync's park cleared the person's receipt: what keeps it now is DorkOS's rule.
+              ...taskApprovalReceiptColumns(completeTaskApproval()),
+              ...(row.reasonSource === 'dorkos' ? { reason: null, reasonSource: null } : {}),
+              updatedAt: at,
+            }
+          : {}),
+      })
+      .where(eq(pulseSchedules.id, row.id))
+      .run();
+    return true;
+  }
+
+  /**
+   * Park a schedule with DorkOS's own sentence saying why (DOR-5097: an
+   * account move nobody could be told about). Withdraws the approval and keeps
+   * it aside for the card, as any park does. A schedule already waiting is left
+   * as it is, with the sentence it already has.
+   *
+   * @param id - The schedule.
+   * @param reason - DorkOS's sentence.
+   */
+  parkWithReason(id: string, reason: string): void {
+    const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
+    // Already waiting: its own sentence already says why.
+    if (!row || row.status === 'pending_approval') return;
+    this.db
+      .update(pulseSchedules)
+      .set({
+        status: 'pending_approval',
+        approvedContentKey: null,
+        ...CLEARED_APPROVAL_RECEIPT,
+        previousApprovalKey: row.approvedContentKey ?? row.previousApprovalKey,
+        reason,
+        reasonSource: 'dorkos',
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(pulseSchedules.id, id))
+      .run();
   }
 
   /**

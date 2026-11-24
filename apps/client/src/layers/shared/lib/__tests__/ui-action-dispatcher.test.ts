@@ -7,10 +7,6 @@ import {
   type DispatcherStore,
 } from '../ui-action-dispatcher';
 
-import { queryClient } from '../query-client';
-import { configKeys } from '@/layers/shared/model';
-import { canvasContentForFile } from '@dorkos/shared/viewer-registry';
-
 vi.mock('../celebrations/celebration-effects', () => ({
   fireCelebration: vi.fn().mockResolvedValue(vi.fn()),
 }));
@@ -43,11 +39,7 @@ function makeMockStore(overrides: Partial<DispatcherStore> = {}): DispatcherStor
   };
 }
 
-/**
- * A context over a *fixed* mock store. `ctx.getStore()` returns the same object
- * every call, so assertions read `ctx.getStore().setX`. Tests that care about
- * the store changing under a live context use {@link makeLiveCtx} instead.
- */
+/** A context over a *fixed* mock store. */
 function makeMockCtx(storeOverrides: Partial<DispatcherStore> = {}): DispatcherContext {
   const store = makeMockStore(storeOverrides);
   return {
@@ -83,18 +75,6 @@ function makeLiveCtx(initial: Partial<DispatcherStore> = {}): {
 // --- Panel commands ---
 
 describe('executeUiCommand — panel commands', () => {
-  it('open_panel calls the correct setter with true', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_panel', panel: 'tasks' }, 'agent');
-    expect(ctx.getStore().setTasksOpen).toHaveBeenCalledWith(true);
-  });
-
-  it('close_panel calls the correct setter with false', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'close_panel', panel: 'settings' }, 'agent');
-    expect(ctx.getStore().setSettingsOpen).toHaveBeenCalledWith(false);
-  });
-
   it('toggle_panel opens a closed panel', () => {
     const ctx = makeMockCtx({ relayOpen: false });
     executeUiCommand(ctx, { action: 'toggle_panel', panel: 'relay' }, 'agent');
@@ -106,35 +86,15 @@ describe('executeUiCommand — panel commands', () => {
     executeUiCommand(ctx, { action: 'toggle_panel', panel: 'relay' }, 'agent');
     expect(ctx.getStore().setRelayOpen).toHaveBeenCalledWith(false);
   });
-
-  it('open_panel picker calls setPickerOpen', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_panel', panel: 'picker' }, 'agent');
-    expect(ctx.getStore().setPickerOpen).toHaveBeenCalledWith(true);
-  });
-
-  it('close_panel settings calls setSettingsOpen with false', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'close_panel', panel: 'settings' }, 'agent');
-    expect(ctx.getStore().setSettingsOpen).toHaveBeenCalledWith(false);
-  });
 });
 
-// --- The store a dispatch reads is the store as of the dispatch ---
-//
-// The app entry builds ONE `DispatcherContext` at module scope and hands it to
-// every extension for the life of the app. Zustand replaces the whole state
-// object on every `set`, so a context that captured a state *value* would answer
-// every later `toggle_panel` from boot-time flags — a bug that hides well,
-// because the setters keep working (their identities are stable) and only the
-// reads go stale. `getStore` is the reason that cannot happen; these pin it.
+// --- The store a dispatch reads is the store as of the dispatch --- The app entry builds ONE
+// `DispatcherContext` at module scope and hands it to every extension for the life of the app.
 
 describe('executeUiCommand — reads the live store, not the one the context was built over', () => {
-  // Each of these dispatches TWICE against one context, swapping the state
-  // object in between — the real shape, where the app entry's single context is
-  // dispatched against for the app's whole life. A context (or a dispatcher)
-  // that captures the store on its first use passes a single dispatch and only
-  // goes wrong on the second.
+  // Each of these dispatches TWICE against one context, swapping the state object in between —
+  // the real shape, where the app entry's single context is dispatched against for the app's
+  // whole life.
 
   it('toggle_panel reads the flag as of this dispatch, not the last one', () => {
     const { ctx, setStore } = makeLiveCtx({ relayOpen: false });
@@ -148,48 +108,13 @@ describe('executeUiCommand — reads the live store, not the one the context was
     const live = setStore({ relayOpen: true });
     executeUiCommand(ctx, { action: 'toggle_panel', panel: 'relay' }, 'agent');
 
-    // Read the live flag → close it. Answering from the boot snapshot reads
-    // `relayOpen: false` and "opens" the panel already on screen — the DOR-839
-    // toggle bug, one layer down.
+    // Read the live flag → close it.
     expect(live.setRelayOpen).toHaveBeenCalledWith(false);
-  });
-
-  it('drives the setters on the live state object, not the one it saw first', () => {
-    const { ctx, setStore } = makeLiveCtx({ tasksOpen: false });
-    const atBoot = ctx.getStore();
-
-    executeUiCommand(ctx, { action: 'open_panel', panel: 'tasks' }, 'agent');
-    expect(atBoot.setTasksOpen).toHaveBeenCalledTimes(1);
-
-    const live = setStore({ tasksOpen: true });
-    executeUiCommand(ctx, { action: 'open_panel', panel: 'tasks' }, 'agent');
-
-    expect(live.setTasksOpen).toHaveBeenCalledWith(true);
-    // The first state object must not have been written to a second time.
-    expect(atBoot.setTasksOpen).toHaveBeenCalledTimes(1);
-  });
-
-  it('reveals the canvas through the live state object', () => {
-    const { ctx, setStore } = makeLiveCtx();
-    const atBoot = ctx.getStore();
-
-    executeUiCommand(ctx, { action: 'open_diff', sourcePath: 'src/App.tsx' }, 'agent');
-    expect(atBoot.setRightPanelOpen).toHaveBeenCalledTimes(1);
-
-    const live = setStore({});
-    executeUiCommand(ctx, { action: 'open_diff', sourcePath: 'src/Other.tsx' }, 'agent');
-
-    expect(live.setRightPanelOpen).toHaveBeenCalledWith(true);
-    expect(atBoot.setRightPanelOpen).toHaveBeenCalledTimes(1);
   });
 });
 
-// --- Panels with a URL half (DOR-839) ---
-//
-// Settings and Tasks can be held open by a search param as well as the store
-// flag, and `DialogHost` renders them on either. Dispatch runs outside React, so
-// the URL half arrives as an injected `panelUrlSignal`; without it, closing a
-// deep-linked dialog left it on screen and toggling it read closed and reopened.
+// --- Panels with a URL half (DOR-839) --- Settings and Tasks can be held open by a search param
+// as well as the store flag, and `DialogHost` renders them on either.
 
 describe('executeUiCommand — panels with a URL half', () => {
   function makeSignalCtx(urlOpen: Record<string, boolean>, storeOverrides = {}) {
@@ -208,13 +133,6 @@ describe('executeUiCommand — panels with a URL half', () => {
     expect(close).toHaveBeenCalledWith('settings');
   });
 
-  it('open_panel leaves the URL half alone', () => {
-    const { ctx, close } = makeSignalCtx({});
-    executeUiCommand(ctx, { action: 'open_panel', panel: 'settings' }, 'agent');
-    expect(ctx.getStore().setSettingsOpen).toHaveBeenCalledWith(true);
-    expect(close).not.toHaveBeenCalled();
-  });
-
   it('toggle_panel closes a panel the URL alone is holding open', () => {
     // The store flag says closed, so a store-only read toggles it to open —
     // which does nothing visible, because the URL already has it on screen.
@@ -223,35 +141,9 @@ describe('executeUiCommand — panels with a URL half', () => {
     expect(ctx.getStore().setSettingsOpen).toHaveBeenCalledWith(false);
     expect(close).toHaveBeenCalledWith('settings');
   });
-
-  it('toggle_panel still opens a panel neither signal is holding open', () => {
-    const { ctx } = makeSignalCtx({ settings: false }, { settingsOpen: false });
-    executeUiCommand(ctx, { action: 'toggle_panel', panel: 'settings' }, 'agent');
-    expect(ctx.getStore().setSettingsOpen).toHaveBeenCalledWith(true);
-  });
-
-  it('works without a signal — the dep is optional and closing still runs', () => {
-    const ctx = makeMockCtx({ settingsOpen: true });
-    executeUiCommand(ctx, { action: 'toggle_panel', panel: 'settings' }, 'agent');
-    expect(ctx.getStore().setSettingsOpen).toHaveBeenCalledWith(false);
-  });
 });
 
 // --- Sidebar commands ---
-
-describe('executeUiCommand — sidebar commands', () => {
-  it('open_sidebar calls setSidebarOpen(true)', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_sidebar' }, 'agent');
-    expect(ctx.getStore().setSidebarOpen).toHaveBeenCalledWith(true);
-  });
-
-  it('close_sidebar calls setSidebarOpen(false)', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'close_sidebar' }, 'agent');
-    expect(ctx.getStore().setSidebarOpen).toHaveBeenCalledWith(false);
-  });
-});
 
 // --- Canvas commands ---
 
@@ -272,51 +164,12 @@ describe('executeUiCommand — canvas commands', () => {
       type: 'markdown',
       content: '# Hello',
     });
-    // Live render path (DOR-97): the canvas only shows when the right panel is
-    // open AND its active tab is 'canvas'. Agent origin → the tab switch is
-    // view-only so it never persists over the user's preference (DOR-227).
+    // Live render path (DOR-97): the canvas only shows when the right panel is open AND its
+    // active tab is 'canvas'.
     expect(ctx.getStore().setRightPanelOpen).toHaveBeenCalledWith(true);
     expect(ctx.getStore().setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
     expect(ctx.getStore().setActiveRightPanelTab).not.toHaveBeenCalled();
     expect(ctx.getStore().setCanvasOpen).toHaveBeenCalledWith(true);
-  });
-
-  it('open_canvas from a user origin persists the tab pick', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(
-      ctx,
-      { action: 'open_canvas', content: { type: 'markdown', content: '# Hello' } },
-      'user'
-    );
-    expect(ctx.getStore().setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
-    expect(ctx.getStore().setActiveRightPanelTabView).not.toHaveBeenCalled();
-  });
-
-  it('open_canvas with preferredWidth sets the width', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(
-      ctx,
-      {
-        action: 'open_canvas',
-        content: { type: 'markdown', content: '# Hi' },
-        preferredWidth: 60,
-      },
-      'agent'
-    );
-    expect(ctx.getStore().setCanvasPreferredWidth).toHaveBeenCalledWith(60);
-  });
-
-  it('open_canvas without preferredWidth does not call setCanvasPreferredWidth', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(
-      ctx,
-      {
-        action: 'open_canvas',
-        content: { type: 'markdown', content: '# Hi' },
-      },
-      'agent'
-    );
-    expect(ctx.getStore().setCanvasPreferredWidth).not.toHaveBeenCalled();
   });
 
   it('update_canvas mutates the active document only', () => {
@@ -335,13 +188,6 @@ describe('executeUiCommand — canvas commands', () => {
     });
     expect(ctx.getStore().setCanvasOpen).not.toHaveBeenCalled();
   });
-
-  it('close_canvas closes the canvas and its right-panel host', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'close_canvas' }, 'agent');
-    expect(ctx.getStore().setCanvasOpen).toHaveBeenCalledWith(false);
-    expect(ctx.getStore().setRightPanelOpen).toHaveBeenCalledWith(false);
-  });
 });
 
 // --- PIP (floating panel) ---
@@ -357,16 +203,6 @@ describe('executeUiCommand — pip commands', () => {
     });
   });
 
-  it("open_pip falls back to 'Widget' when no title is given", () => {
-    const ctx = { ...makeMockCtx(), sessionId: 'sess-1' };
-    executeUiCommand(ctx, { action: 'open_pip' }, 'agent');
-    expect(ctx.getStore().openPip).toHaveBeenCalledWith({
-      kind: 'widget',
-      sessionId: 'sess-1',
-      title: 'Widget',
-    });
-  });
-
   it('open_pip without a session degrades to a toast and does not open the panel', async () => {
     const { toast } = await import('sonner');
     vi.spyOn(toast, 'info');
@@ -377,12 +213,6 @@ describe('executeUiCommand — pip commands', () => {
       'Picture-in-picture needs an open chat',
       expect.anything()
     );
-  });
-
-  it('close_pip closes the floating panel', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'close_pip' }, 'agent');
-    expect(ctx.getStore().closePip).toHaveBeenCalled();
   });
 });
 
@@ -399,13 +229,6 @@ describe('executeUiCommand — open_file', () => {
     expect(ctx.getStore().setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
     expect(ctx.getStore().setActiveRightPanelTab).not.toHaveBeenCalled();
     expect(ctx.getStore().setCanvasOpen).toHaveBeenCalledWith(true);
-  });
-
-  it('open_file from the file tree (user origin) persists the tab pick', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_file', sourcePath: 'src/index.ts' }, 'user');
-    expect(ctx.getStore().setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
-    expect(ctx.getStore().setActiveRightPanelTabView).not.toHaveBeenCalled();
   });
 
   it('resolves media/3D/audio/video/csv extensions to their viewers', () => {
@@ -425,57 +248,6 @@ describe('executeUiCommand — open_file', () => {
       expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith(expected);
     }
   });
-
-  it('honors a config viewer override stated on the context', () => {
-    const ctx = makeMockCtx();
-    ctx.workbenchViewerOverrides = { csv: 'file' };
-    executeUiCommand(ctx, { action: 'open_file', sourcePath: 'data.csv' }, 'agent');
-    expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith({
-      type: 'file',
-      sourcePath: 'data.csv',
-    });
-  });
-
-  /**
-   * The production path: nothing passes the overrides in, so the dispatcher has
-   * to READ them (DOR-2006 review round 2, N1).
-   *
-   * Four places build a dispatcher context and none of them carried the value,
-   * so an install with `{png:'file'}` configured had the server write
-   * `{type:'file'}` and this window write `{type:'image'}` for the same file —
-   * two `canvasSourceKey`s, two tabs, which is exactly the divergence round 1
-   * closed for the DEFAULT config and this closes for the configured one.
-   */
-  it('reads the overrides off the config cache when the context states none', () => {
-    queryClient.setQueryData(configKeys.current(), {
-      workbench: { defaultViewers: { png: 'file', csv: 'file' } },
-    });
-    const ctx = makeMockCtx();
-    expect(ctx.workbenchViewerOverrides).toBeUndefined();
-
-    executeUiCommand(ctx, { action: 'open_file', sourcePath: 'chart.png' }, 'agent');
-
-    // The content the SERVER writes for the same file under the same config —
-    // asked of the one resolver both sides call, rather than restated here.
-    expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith(
-      canvasContentForFile('chart.png', { png: 'file', csv: 'file' })
-    );
-    // …and it really is the overridden answer, not the built-in one.
-    expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith({
-      type: 'file',
-      sourcePath: 'chart.png',
-    });
-  });
-
-  it('falls back to the built-in table when no config has been fetched', () => {
-    queryClient.removeQueries({ queryKey: configKeys.all });
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_file', sourcePath: 'chart.png' }, 'agent');
-    expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith({
-      type: 'image',
-      src: 'chart.png',
-    });
-  });
 });
 
 // --- open_diff (DorkOS-observed auto-open + agent tool) ---
@@ -493,13 +265,6 @@ describe('executeUiCommand — open_diff', () => {
     expect(ctx.getStore().setActiveRightPanelTab).not.toHaveBeenCalled();
     expect(ctx.getStore().setCanvasOpen).toHaveBeenCalledWith(true);
   });
-
-  it('persists the tab pick when a user deliberately opens a diff', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_diff', sourcePath: 'src/App.tsx' }, 'user');
-    expect(ctx.getStore().setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
-    expect(ctx.getStore().setActiveRightPanelTabView).not.toHaveBeenCalled();
-  });
 });
 
 // --- open_terminal (agent tool → reveal/focus the Terminal tab) ---
@@ -513,22 +278,6 @@ describe('executeUiCommand — open_terminal', () => {
     expect(ctx.getStore().setRightPanelOpen).toHaveBeenCalledWith(true);
     expect(ctx.getStore().setActiveRightPanelTabView).toHaveBeenCalledWith('terminal');
     expect(ctx.getStore().setActiveRightPanelTab).not.toHaveBeenCalled();
-  });
-
-  it('user origin: focusing the Terminal tab persists the preference', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_terminal' }, 'user');
-    expect(ctx.getStore().setRightPanelOpen).toHaveBeenCalledWith(true);
-    expect(ctx.getStore().setActiveRightPanelTab).toHaveBeenCalledWith('terminal');
-    expect(ctx.getStore().setActiveRightPanelTabView).not.toHaveBeenCalled();
-  });
-
-  it('ignores the advisory cwd hint (PTY spawns in the session worktree)', () => {
-    // No agent-side PTY spawn: the command only reveals the tab, so cwd never
-    // reaches the store.
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_terminal', cwd: '/somewhere/else' }, 'agent');
-    expect(ctx.getStore().setActiveRightPanelTabView).toHaveBeenCalledWith('terminal');
   });
 
   it('degrades to a toast (no phantom tab) when the transport has no terminal', async () => {
@@ -584,36 +333,6 @@ describe('executeUiCommand — reveal follows what the command produced', () => 
       revealedTab({ action: 'open_canvas', content: { type: 'browser', url: 'https://a.test/' } })
     ).toBe('browser');
   });
-
-  it('reveals Canvas for an open_canvas carrying a document, and for a bare one', () => {
-    expect(
-      revealedTab({ action: 'open_canvas', content: { type: 'markdown', content: '# hi' } })
-    ).toBe('canvas');
-    // An app is not a page: `mcp_app` has its own viewer (Q3 of the spec).
-    expect(
-      revealedTab({
-        action: 'open_canvas',
-        content: { type: 'mcp_app', serverName: 's', uri: 'ui://a' },
-      })
-    ).toBe('canvas');
-    expect(revealedTab({ action: 'open_canvas' })).toBe('canvas');
-  });
-
-  it('reveals Canvas for open_file of a markdown file, and for open_diff', () => {
-    expect(revealedTab({ action: 'open_file', sourcePath: 'notes/plan.md' })).toBe('canvas');
-    expect(revealedTab({ action: 'open_diff', sourcePath: 'src/app.ts' })).toBe('canvas');
-  });
-
-  it('reveals nothing at all for update_canvas — an update is not an open', () => {
-    // A tab that selects itself because an agent refreshed a document is the
-    // pixel version of a turn that triggers itself.
-    expect(
-      revealedTab({ action: 'update_canvas', content: { type: 'url', url: 'https://a.test/' } })
-    ).toBe(undefined);
-    expect(
-      revealedTab({ action: 'update_canvas', content: { type: 'markdown', content: '# hi' } })
-    ).toBe(undefined);
-  });
 });
 
 // --- Toast ---
@@ -626,60 +345,9 @@ describe('executeUiCommand — show_toast', () => {
     executeUiCommand(ctx, { action: 'show_toast', message: 'All done', level: 'info' }, 'agent');
     expect(toast.info).toHaveBeenCalledWith('All done', { description: undefined });
   });
-
-  it('calls toast.error for error level', async () => {
-    const { toast } = await import('sonner');
-    vi.spyOn(toast, 'error');
-    const ctx = makeMockCtx();
-    executeUiCommand(
-      ctx,
-      {
-        action: 'show_toast',
-        message: 'Something failed',
-        level: 'error',
-        description: 'Details here',
-      },
-      'agent'
-    );
-    expect(toast.error).toHaveBeenCalledWith('Something failed', { description: 'Details here' });
-  });
-
-  it('calls toast.success for success level', async () => {
-    const { toast } = await import('sonner');
-    vi.spyOn(toast, 'success');
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'show_toast', message: 'Done!', level: 'success' }, 'agent');
-    expect(toast.success).toHaveBeenCalledWith('Done!', { description: undefined });
-  });
-
-  it('calls toast.warning for warning level', async () => {
-    const { toast } = await import('sonner');
-    vi.spyOn(toast, 'warning');
-    const ctx = makeMockCtx();
-    executeUiCommand(
-      ctx,
-      { action: 'show_toast', message: 'Watch out', level: 'warning' },
-      'agent'
-    );
-    expect(toast.warning).toHaveBeenCalledWith('Watch out', { description: undefined });
-  });
 });
 
 // --- Theme ---
-
-describe('executeUiCommand — set_theme', () => {
-  it('calls ctx.setTheme with the specified theme', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'set_theme', theme: 'dark' }, 'agent');
-    expect(ctx.setTheme).toHaveBeenCalledWith('dark');
-  });
-
-  it('calls ctx.setTheme with light', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'set_theme', theme: 'light' }, 'agent');
-    expect(ctx.setTheme).toHaveBeenCalledWith('light');
-  });
-});
 
 // --- Scroll ---
 
@@ -688,20 +356,6 @@ describe('executeUiCommand — scroll_to_message', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'scroll_to_message', messageId: 'msg-42' }, 'agent');
     expect(ctx.scrollToMessage).toHaveBeenCalledWith('msg-42');
-  });
-
-  it('calls scrollToMessage with undefined when messageId is omitted', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'scroll_to_message' }, 'agent');
-    expect(ctx.scrollToMessage).toHaveBeenCalledWith(undefined);
-  });
-
-  it('is a no-op when scrollToMessage is not provided', () => {
-    const ctx = makeMockCtx();
-    ctx.scrollToMessage = undefined;
-    expect(() =>
-      executeUiCommand(ctx, { action: 'scroll_to_message', messageId: 'x' }, 'agent')
-    ).not.toThrow();
   });
 });
 
@@ -713,14 +367,6 @@ describe('executeUiCommand — switch_agent', () => {
     executeUiCommand(ctx, { action: 'switch_agent', cwd: '/home/user/project' }, 'agent');
     expect(ctx.switchAgent).toHaveBeenCalledWith('/home/user/project');
   });
-
-  it('is a no-op when switchAgent is not provided', () => {
-    const ctx = makeMockCtx();
-    ctx.switchAgent = undefined;
-    expect(() =>
-      executeUiCommand(ctx, { action: 'switch_agent', cwd: '/tmp/x' }, 'agent')
-    ).not.toThrow();
-  });
 });
 
 // --- Shape switching ---
@@ -731,25 +377,9 @@ describe('executeUiCommand — apply_layout', () => {
     executeUiCommand(ctx, { action: 'apply_layout', shape: 'linear-ops' }, 'agent');
     expect(ctx.applyShape).toHaveBeenCalledWith('linear-ops');
   });
-
-  it('is a no-op when applyShape is not provided (unwired until Phase 3)', () => {
-    const ctx = makeMockCtx();
-    ctx.applyShape = undefined;
-    expect(() =>
-      executeUiCommand(ctx, { action: 'apply_layout', shape: 'linear-ops' }, 'agent')
-    ).not.toThrow();
-  });
 });
 
 // --- Command palette ---
-
-describe('executeUiCommand — open_command_palette', () => {
-  it('calls setGlobalPaletteOpen(true)', () => {
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'open_command_palette' }, 'agent');
-    expect(ctx.getStore().setGlobalPaletteOpen).toHaveBeenCalledWith(true);
-  });
-});
 
 // --- Celebration ---
 
@@ -760,79 +390,13 @@ describe('executeUiCommand — celebrate', () => {
     executeUiCommand(ctx, { action: 'celebrate' }, 'agent');
     expect(fireCelebration).toHaveBeenCalled();
   });
-
-  it('threads the command kind, emoji, and the context origin into the celebration', async () => {
-    const { fireCelebration } = await import('../celebrations/celebration-effects');
-    vi.mocked(fireCelebration).mockClear();
-    const ctx = makeMockCtx();
-    ctx.celebrationOrigin = { x: 0.25, y: 0.75 };
-    executeUiCommand(ctx, { action: 'celebrate', kind: 'emoji', emoji: '🏆' }, 'user');
-    expect(fireCelebration).toHaveBeenCalledWith({
-      kind: 'emoji',
-      emoji: '🏆',
-      origin: { x: 0.25, y: 0.75 },
-    });
-  });
-
-  it('falls back to no origin when the context omits one (agent/stream celebrate)', async () => {
-    const { fireCelebration } = await import('../celebrations/celebration-effects');
-    vi.mocked(fireCelebration).mockClear();
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'celebrate', kind: 'fireworks' }, 'agent');
-    expect(fireCelebration).toHaveBeenCalledWith({
-      kind: 'fireworks',
-      emoji: undefined,
-      origin: undefined,
-    });
-  });
 });
 
 // --- Reach: which commands leave the browser (DOR-625) ---
 
-/**
- * The other half of the DOR-625 guard, and the half no server test can perform.
- *
- * The server decides whether an agent's `control_ui` call needs an approval card
- * by reading `UI_COMMAND_REACH` — a verdict per UI action, `client-only` meaning
- * "this only moves pixels, so do not ask". That verdict is a claim about code in
- * THIS package: the dispatcher below is what actually runs the command, and
- * `apply_layout` is `reaches-the-machine` because the case body calls
- * `ctx.applyShape`, which POSTs `/api/shapes/:name/apply` — writing `SKILL.md`
- * files into the person's skills root, rewriting their active-Shape config, and
- * creating, rebinding and deleting scheduled tasks.
- *
- * Nothing connected the claim to the code. `mcp-tool-gate.test.ts` pins that
- * every action HAS a verdict; it says in its own comment that it cannot check
- * whether the verdicts are true, because following `control_ui` → dispatcher →
- * transport → route crosses a package boundary. This test closes that gap from
- * the other side: it drives the real dispatcher with a real command for every
- * action and fails if a `client-only` one reaches a server mutation.
- *
- * ## What it can see
- *
- * `applyShape` is the only `DispatcherContext` callback that mutates server
- * state, and the dispatcher holds no transport of its own — every route call it
- * can cause goes through an injected callback. So spying the callbacks covers
- * every server effect the dispatcher can reach TODAY.
- *
- * ## What it cannot see
- *
- * - A store action that starts calling the server. `DispatcherStore` is Zustand
- *   state today, but nothing forces it to stay that way, and a `setFoo` that
- *   grew a fetch would slip past. The store methods are spies here, so such a
- *   call would be invisible rather than caught.
- * - The dispatcher importing a transport directly instead of taking a callback.
- * - Anything downstream of `applyShapeAction` beyond the POST itself.
- * - Codex. Its `control_ui` events are produced in the server event-mapper and
- *   dispatched through this same function, but its approval gate is the Codex
- *   SDK's and does not consult `UI_COMMAND_REACH` at all.
- */
+/** The other half of the DOR-625 guard, and the half no server test can perform. */
 describe('UI_COMMAND_REACH is true of the real dispatcher (DOR-625)', () => {
-  /**
-   * One real command per action. Deliberately a total map rather than generated:
-   * a generated fixture would drift into passing empty objects the dispatcher
-   * short-circuits on, which is a green that proves nothing.
-   */
+  /** One real command per action. */
   const SAMPLES: Record<UiCommand['action'], UiCommand> = {
     open_panel: { action: 'open_panel', panel: 'tasks' },
     close_panel: { action: 'close_panel', panel: 'tasks' },

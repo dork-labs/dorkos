@@ -6,6 +6,7 @@ import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
+import { validationProblem } from '@dorkos/http-kit';
 
 const router = new Hono<ApiEnv>();
 
@@ -16,7 +17,7 @@ const GitStatusQuerySchema = z.object({
 router.get('/status', async (c) => {
   const parsed = GitStatusQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   try {
     let validatedDir: string | undefined;

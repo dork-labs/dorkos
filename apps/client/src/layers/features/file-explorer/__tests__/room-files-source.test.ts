@@ -281,7 +281,7 @@ describe('saving through the room files source', () => {
   it('turns each refusal it knows into a sentence, and rethrows the ones it does not', async () => {
     const { transport, source } = build();
     for (const code of [
-      'REQUEST_TOO_LARGE',
+      'request_too_large',
       'FILE_TOO_LARGE',
       'MAIN_CHECKOUT_DIRTY',
       'PEOPLE_ONLY',

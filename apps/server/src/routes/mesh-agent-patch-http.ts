@@ -1,5 +1,4 @@
 import path from 'path';
-import { z } from 'zod';
 import { ManifestUnreadableError } from '@dorkos/mesh';
 import { UpdateAgentRequestSchema } from '@dorkos/shared/mesh-schemas';
 import { clearsTheAgentBar, refuseUnlessAccountOwner } from '../lib/caller-authority.js';
@@ -7,7 +6,7 @@ import { clearAgentByPerson, declareAgent } from '../services/core/turn-power/de
 import { READS_OUTSIDE_TEXT_PERSON_ONLY } from '../services/core/operator/agent-updater.js';
 import { withPersonRepin } from '../services/runtimes/claude-code/folder-settings/folder-config-consent.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { setCreditsAllowedForAgent } from '../services/core/cloud/credits-defaults.js';
 import { creditsAgentPatchRefusal } from '../services/core/cloud/credits-model-gate.js';
@@ -53,7 +52,7 @@ export async function patchMeshAgent(
   }
   const result = UpdateAgentRequestSchema.safeParse(body);
   if (!result.success) {
-    return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
+    return validationProblem(c, result.error);
   }
   // Anyone may say an agent reads outside text; only a person takes it back (DOR-3969).
   const readsOutsideText = result.data.readsOutsideText;

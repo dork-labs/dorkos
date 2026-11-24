@@ -29,6 +29,7 @@ import {
 import { useEventSubscription } from '@/layers/shared/model';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
 import { createRefreshLeader } from './refresh-leader';
+import { readResponseError } from '@/layers/shared/lib';
 
 /** Which mounted copy of {@link useExtensionDecisions} answers an event. */
 const useIsDecisionsRefreshLeader = createRefreshLeader();
@@ -57,10 +58,8 @@ export interface ExtensionDecisionsState {
 
 /** A failed request's own sentence, or the status when it sent none. */
 async function failureOf(res: Response): Promise<Error & { code?: string }> {
-  const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
-  const error: Error & { code?: string } = new Error(
-    body.error ?? `The server answered ${res.status}`
-  );
+  const body = await readResponseError(res, `The server answered ${res.status}`);
+  const error: Error & { code?: string } = new Error(body.message);
   if (body.code) error.code = body.code;
   return error;
 }

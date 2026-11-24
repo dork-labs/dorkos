@@ -29,9 +29,7 @@
  */
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { z } from 'zod';
 import { ProjectResolveQuerySchema } from '@dorkos/shared/project-schemas';
-
 import { BoundaryError, validateBoundary } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { projectRegistry } from '../services/projects/project-registry.js';
@@ -39,6 +37,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { validationProblem } from '@dorkos/http-kit';
 
 /** What `GET /api/projects/resolve` says when the caller is not a person. */
 const PROJECT_LOOKUP_BAR: PersonBarCopy = {
@@ -79,7 +78,7 @@ router.get('/resolve', async (c) => {
   if (refusal) return c.json(refusal.body, refusal.status as ContentfulStatusCode);
   const parsed = ProjectResolveQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   try {
     const cwd = await validateBoundary(parsed.data.cwd);

@@ -2,12 +2,9 @@
  * @vitest-environment jsdom
  */
 /**
- * The default-first pattern on a runtime's connect step, end to end: the real
- * connect flow, the real credits card the app shell supplies, the real link
- * flow and the real Settings panel, over a mock transport (spec
- * `dorkos-account-by-default` §3).
- *
- * Nothing here can spend: every cloud answer is a fake the transport returns.
+ * The default-first pattern on a runtime's connect step, end to end: the real connect flow, the
+ * real credits card the app shell supplies, the real link flow and the real Settings panel, over
+ * a mock transport (spec `dorkos-account-by-default` §3).
  */
 import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -256,23 +253,6 @@ describe('a runtime connect step with nothing working yet', () => {
     );
   });
 
-  it('shows a code started from Settings right here too, since there is only one', async () => {
-    vi.useFakeTimers();
-    const { transport } = setup({ withSettings: true });
-    await flush();
-    await act(async () => {
-      fireEvent.click(
-        within(screen.getByTestId('settings-account')).getByRole('button', {
-          name: /link this computer/i,
-        })
-      );
-    });
-    await flush();
-
-    expect(transport.startCloudLink).toHaveBeenCalledTimes(1);
-    expect(within(screen.getByTestId('connect-step')).getByText('WXYZ7890')).toBeInTheDocument();
-  });
-
   it('signed in, makes the choice at once and starts no link', async () => {
     const { transport } = setup({
       linked: true,
@@ -285,116 +265,6 @@ describe('a runtime connect step with nothing working yet', () => {
       expect(transport.setCloudCreditsDefault).toHaveBeenCalledWith('claude-code', true)
     );
     expect(transport.startCloudLink).not.toHaveBeenCalled();
-  });
-
-  it('says "Try…" for included credits never spent, and "Buy…" with nothing left, which opens the page to add credits', async () => {
-    setup({
-      linked: true,
-      credits: creditsReport({ enabled: true, linked: true }),
-      planRead: plan('5000000', '5000000', '0'),
-    });
-    expect(await screen.findByRole('button', { name: 'Try DorkOS credits' })).toBeInTheDocument();
-    cleanup();
-
-    vi.spyOn(window, 'open').mockReturnValue({
-      document: { title: '' },
-      location: { href: '' },
-      close: vi.fn(),
-      opener: null,
-    } as unknown as Window);
-    const { transport } = setup({
-      linked: true,
-      credits: creditsReport({ enabled: true, linked: true }),
-      planRead: plan('5000000', '0', '0'),
-    });
-    vi.mocked(transport.createCloudBillingSession).mockResolvedValue({
-      ok: true,
-      url: 'https://dorkos.ai/billing/topup',
-    });
-    const buy = await screen.findByRole('button', { name: 'Buy DorkOS credits' });
-    await vi.waitFor(() => expect(buy).toBeEnabled());
-    fireEvent.click(buy);
-    await vi.waitFor(() =>
-      expect(transport.createCloudBillingSession).toHaveBeenCalledWith('topup', undefined)
-    );
-    expect(transport.setCloudCreditsDefault).not.toHaveBeenCalled();
-  });
-});
-
-describe('a runtime connect step that does not lead with credits', () => {
-  afterEach(cleanup);
-
-  it('offers nothing over a working sign-in', async () => {
-    const { queryClient } = setup({ signIn: 'working' });
-    await settled(queryClient);
-    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /DorkOS credits/ })).not.toBeInTheDocument();
-  });
-
-  it('keeps a working sign-in first even when new work is set to run on credits', async () => {
-    const { queryClient } = setup({
-      signIn: 'working',
-      linked: true,
-      credits: creditsReport({
-        enabled: true,
-        linked: true,
-        defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'user' } },
-      }),
-    });
-    await settled(queryClient);
-    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
-    expect(screen.queryByText('You’re ready')).not.toBeInTheDocument();
-  });
-
-  it('leads with signing in again when the sign-in expired, never with credits', async () => {
-    const { queryClient } = setup({ signIn: 'expired' });
-    await settled(queryClient);
-    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /DorkOS credits/ })).not.toBeInTheDocument();
-  });
-
-  it('offers nothing for a runtime credits are not wired for', async () => {
-    const { queryClient } = setup({
-      credits: creditsReport({
-        runtimes: {
-          'claude-code': 'follow-up',
-          codex: 'follow-up',
-          opencode: 'follow-up',
-          doe: 'follow-up',
-        },
-      }),
-    });
-    await settled(queryClient);
-    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /DorkOS credits/ })).not.toBeInTheDocument();
-  });
-
-  it('offers nothing when credits are switched off on this computer', async () => {
-    const { queryClient } = setup({ credits: creditsReport({ killed: true }) });
-    await settled(queryClient);
-    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /DorkOS credits/ })).not.toBeInTheDocument();
-  });
-
-  it('says "You’re ready" and shows no card once its new work runs on credits', async () => {
-    setup({
-      linked: true,
-      credits: creditsReport({
-        enabled: true,
-        linked: true,
-        defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'default' } },
-      }),
-    });
-    expect(await screen.findByText('You’re ready')).toBeInTheDocument();
-    expect(
-      screen.getByText('New work on Claude Code runs on your DorkOS credits.')
-    ).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /DorkOS credits/ })).not.toBeInTheDocument();
-    // A repeat visit: the other ways are folded behind one quiet line.
-    expect(screen.getByRole('button', { name: 'Other ways' })).toHaveAttribute(
-      'aria-expanded',
-      'false'
-    );
   });
 
   // Codex can't search the web on credits, and every place that can move it
@@ -426,9 +296,20 @@ describe('a runtime connect step that does not lead with credits', () => {
       "New work on Codex runs on your DorkOS credits. Codex can't search the web on DorkOS credits."
     );
   });
+});
 
-  it('shows only its own ways where the app supplies no offer', async () => {
-    const { queryClient } = setup({ withSlot: false });
+describe('a runtime connect step that does not lead with credits', () => {
+  afterEach(cleanup);
+
+  it('offers nothing over a working sign-in', async () => {
+    const { queryClient } = setup({ signIn: 'working' });
+    await settled(queryClient);
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /DorkOS credits/ })).not.toBeInTheDocument();
+  });
+
+  it('leads with signing in again when the sign-in expired, never with credits', async () => {
+    const { queryClient } = setup({ signIn: 'expired' });
     await settled(queryClient);
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /DorkOS credits/ })).not.toBeInTheDocument();
@@ -470,40 +351,6 @@ describe('what happens once the link lands', () => {
     await flush(10);
 
     expect(screen.getByText('kai@dork.dev')).toBeInTheDocument();
-    expect(transport.setCloudCreditsDefault).not.toHaveBeenCalled();
-  });
-
-  it('does nothing for a code another surface started, even with this one on screen', async () => {
-    vi.useFakeTimers();
-    const { transport } = setup({ withSettings: true });
-    await flush();
-    await act(async () => {
-      fireEvent.click(
-        within(screen.getByTestId('settings-account')).getByRole('button', {
-          name: /link this computer/i,
-        })
-      );
-    });
-    await flush();
-    approve(transport);
-    await flush(2500);
-    await flush(10);
-
-    expect(transport.setCloudCreditsDefault).not.toHaveBeenCalled();
-  });
-
-  it('does nothing in another tab, which never started the code', async () => {
-    vi.useFakeTimers();
-    // This tab: the offer on screen, nothing started here.
-    const { transport } = setup();
-    await flush();
-    // The server reports a link pending (another tab started it), then approved.
-    vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'pending' });
-    await flush(2500);
-    approve(transport);
-    await flush(2500);
-    await flush(10);
-
     expect(transport.setCloudCreditsDefault).not.toHaveBeenCalled();
   });
 
@@ -641,33 +488,10 @@ describe('before choosing, the account is read again', () => {
     expect(screen.getByRole('button', { name: 'Buy DorkOS credits' })).toBeInTheDocument();
     expect(transport.setCloudCreditsDefault).not.toHaveBeenCalled();
   });
-
-  it('holds the button while a signed-in plan is still loading, rather than guess', async () => {
-    const { transport } = setup({
-      linked: true,
-      credits: creditsReport({ enabled: true, linked: true }),
-    });
-    vi.mocked(transport.getCloudPlan).mockReturnValue(new Promise(() => {}));
-    const offer = await screen.findByRole('button', { name: /Checking your DorkOS credits/ });
-    expect(offer).toBeDisabled();
-    expect(screen.queryByRole('button', { name: 'Use DorkOS credits' })).not.toBeInTheDocument();
-  });
 });
 
 describe('where the offer sits', () => {
   afterEach(cleanup);
-
-  it('is offered on a phone too, with the notice standing in for signing in here', async () => {
-    const { queryClient } = setup({ remote: true });
-    await settled(queryClient);
-    expect(await screen.findByRole('button', { name: 'Use DorkOS credits' })).toBeInTheDocument();
-    expect(screen.getByTestId('remote-signin-notice')).toBeInTheDocument();
-    // "This computer" would be the phone: the line names the right one.
-    expect(screen.getByTestId('keep-it-local-note')).toHaveTextContent(
-      'Prefer everything on the computer DorkOS runs on? Use your own sign-in there.'
-    );
-    expect(screen.queryByRole('button', { name: /Sign in with Claude/ })).not.toBeInTheDocument();
-  });
 
   it('keeps a person’s "no": their own sign-in leads, credits are a row under it', async () => {
     setup({

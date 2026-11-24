@@ -1,9 +1,9 @@
 /**
  * The answer to a request no route claims: the last step of the chain.
  *
- * - **Under `/api`**, the API 404 (`{ error, code: 'API_NOT_FOUND' }`), so a
- *   client asking for a route this server does not have is told so in JSON,
- *   never handed the app.
+ * - **Under `/api`**, the API 404, a `not_found` problem document, so a client
+ *   asking for a route this server does not have is told so in JSON, never
+ *   handed the app.
  * - **Anywhere else, with a client build**, the app itself: its files, the
  *   bundle 404 and the deep-link fallback (`http/client-files.ts`), which
  *   answer GET and HEAD only.
@@ -22,10 +22,10 @@ import type { HttpBindings } from '@hono/node-server';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import type { Context, NotFoundHandler } from 'hono';
 import type { ClientFilesHandler } from './client-files.js';
-import { underMount } from '@dorkos/http-kit';
+import { problem, underMount } from '@dorkos/http-kit';
 
-/** The `/api` 404 body. */
-const API_NOT_FOUND_BODY = { error: 'Not found', code: 'API_NOT_FOUND' } as const;
+/** The `/api` 404's explanation. */
+const API_NOT_FOUND_DETAIL = 'This server has no API route at that path.';
 
 /**
  * Characters a URL may carry as they are; everything else, and a `%` that does
@@ -111,6 +111,18 @@ function serveClientFiles(
 }
 
 /**
+ * The `/api` 404: what the chain answers a path no route claims, for a route
+ * that must look exactly like a path that does not exist (a feature turned
+ * off, a hub-only route on a computer).
+ *
+ * @param c - The Hono context.
+ * @returns The response.
+ */
+export function apiNotFound(c: Context): Response {
+  return problem(c, 'not_found', { detail: API_NOT_FOUND_DETAIL });
+}
+
+/**
  * Build the chain's not-found handler.
  *
  * @param clientFiles - The client build's handler, when this server serves one
@@ -121,7 +133,7 @@ export function answerUnclaimed<E extends { Bindings: HttpBindings }>(
   clientFiles?: ClientFilesHandler
 ): NotFoundHandler<E> {
   return (c) => {
-    if (underMount(c.req.path, '/api')) return c.json(API_NOT_FOUND_BODY, 404);
+    if (underMount(c.req.path, '/api')) return apiNotFound(c as unknown as Context);
     if (clientFiles)
       return serveClientFiles(clientFiles, c as unknown as Context<{ Bindings: HttpBindings }>);
     const { incoming } = c.env;

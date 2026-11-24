@@ -632,8 +632,8 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const res = await request(testServer).get(`/api/sessions/${CODEX_ORPHAN_SESSION}/messages`);
 
       expect(res.status).toBe(503);
-      expect(res.body.code).toBe('RUNTIME_NOT_AVAILABLE');
-      expect(res.body.runtime).toBe('codex');
+      expect(res.body.code).toBe('runtime_not_available');
+      expect(res.body.detail).toContain('Codex');
     });
   });
 

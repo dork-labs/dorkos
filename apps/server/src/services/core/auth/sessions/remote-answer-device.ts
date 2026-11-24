@@ -16,7 +16,7 @@ export async function remoteAnswerDevice(
     ? await listSignedInDevices(auth, facts.user.userId, facts.user.sessionId).catch(() => [])
     : [];
   const device = devices.find((candidate) => candidate.current);
-  const route = facts.user.route === 'wifi' ? 'over Wi-Fi' : 'over Remote Access';
+  const route = facts.user.route === 'wifi' ? 'on your network' : 'over Remote Access';
   return {
     id: device?.id ?? deviceIdOf(facts.user.sessionId),
     label: `${device?.name ?? 'another device'} ${route}`,

@@ -292,6 +292,13 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    * conversation.
    */
   account: text('account'),
+  /**
+   * Whether this schedule runs only on its own account (DOR-5097). False, the
+   * default: a run whose account is out of usage or signed out runs on another
+   * signed-in account with room, chosen the way a room seat's move chooses.
+   * True: such a run fails with a plain sentence instead of moving.
+   */
+  accountPinned: integer('account_pinned', { mode: 'boolean' }).notNull().default(false),
   status: text('status', {
     enum: ['active', 'paused', 'pending_approval'],
   })
@@ -409,6 +416,13 @@ export const pulseRuns = sqliteTable(
      * agent runs, and on every run older than the column.
      */
     missedTicks: integer('missed_ticks'),
+    /**
+     * The account this run moved to, because its own was out of usage or signed
+     * out (DOR-5097), as JSON `{ from, to, reason }` (each account `{ id, label }`).
+     * NULL when the run started on its own account, and on every run older than
+     * the column.
+     */
+    accountMove: text('account_move'),
     /**
      * The agent that made this run's task, read from the task when the run was dispatched
      * (DOR-3938): its home folder. NULL for a task a person (or a file) made, and on every run

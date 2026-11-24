@@ -19,8 +19,7 @@ import {
 } from '@dorkos/shared/connector-exclusion-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readJsonBody } from '@dorkos/http-kit';
-import { validationFailureBody } from '../lib/route-utils.js';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import {
   readWritesBack,
@@ -79,7 +78,7 @@ export function createConnectorWritesBackRoutes(deps: ConnectorWritesBackRouterD
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
     const input = ConnectorWritesBackChangeRequestSchema.safeParse(readJsonBody(c));
-    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    if (!input.success) return validationProblem(c, input.error);
     const connectionId = c.req.param('connectionId');
     const on = input.data.writesBackUnasked;
     // Turning it off only takes power away, so it answers at once.

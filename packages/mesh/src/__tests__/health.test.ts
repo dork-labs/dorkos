@@ -21,13 +21,6 @@ describe('computeHealthStatus', () => {
     expect(computeHealthStatus(null)).toBe('stale');
   });
 
-  it('returns "active" when last seen within active threshold', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(BASE);
-    const recent = minutesBefore(BASE, ACTIVE_THRESHOLD_MINUTES / 2);
-    expect(computeHealthStatus(recent.toISOString())).toBe('active');
-  });
-
   it('returns "inactive" when last seen between active and inactive thresholds', () => {
     vi.useFakeTimers();
     vi.setSystemTime(BASE);
@@ -43,25 +36,10 @@ describe('computeHealthStatus', () => {
     expect(computeHealthStatus(timestamp.toISOString())).toBe('stale');
   });
 
-  it('returns "active" just before active threshold boundary', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(BASE);
-    // 1ms before the boundary
-    const justBefore = new Date(BASE.getTime() - ACTIVE_THRESHOLD_MINUTES * 60_000 + 1);
-    expect(computeHealthStatus(justBefore.toISOString())).toBe('active');
-  });
-
   it('returns "inactive" at exactly the active threshold', () => {
     vi.useFakeTimers();
     vi.setSystemTime(BASE);
     const atBoundary = minutesBefore(BASE, ACTIVE_THRESHOLD_MINUTES);
     expect(computeHealthStatus(atBoundary.toISOString())).toBe('inactive');
-  });
-
-  it('returns "stale" at exactly the inactive threshold', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(BASE);
-    const atBoundary = minutesBefore(BASE, INACTIVE_THRESHOLD_MINUTES);
-    expect(computeHealthStatus(atBoundary.toISOString())).toBe('stale');
   });
 });

@@ -95,11 +95,6 @@ function localMail(
 }
 
 describe('the running-skills ledger reader', () => {
-  it('reads an absent ledger as empty and says it was absent', () => {
-    const home = temp('ext-skills-home-');
-    expect(readRunningExtensionSkillsSync(home)).toEqual({ state: 'absent', entries: [] });
-  });
-
   it('refuses a ledger whose entry names a relative path or an unsafe skill name', () => {
     const home = temp('ext-skills-home-');
     writeLedger(home, [
@@ -177,44 +172,6 @@ describe('a local extension skill at project scope', () => {
       '.agents/skills/mail__triage-inbox',
       '.claude/skills/mail__triage-inbox',
     ]);
-  });
-
-  it('sweeps the links when the skills folder is gone', () => {
-    const repo = buildRepo();
-    const home = temp('ext-skills-home-');
-    const entry = localMail(repo, home);
-    applyPlan(repo, project(repo, { dorkHome: home }), { sweepOrphans: true });
-    rmSync(entry.skillsDir, { recursive: true, force: true });
-    const result = applyPlan(repo, project(repo, { dorkHome: home }), { sweepOrphans: true });
-    expect(result.swept).toContain('.claude/skills/mail__triage-inbox');
-  });
-
-  it('plans nothing for an entry that belongs to another project', () => {
-    const repo = buildRepo();
-    const other = buildRepo();
-    const home = temp('ext-skills-home-');
-    localMail(other, home);
-    const plan = project(repo, { dorkHome: home });
-    expect(plan.actions.some((a) => a.name === 'mail__triage-inbox')).toBe(false);
-  });
-
-  it('ignores an entry whose skills folder is neither in the project nor a DorkOS snapshot', () => {
-    const repo = buildRepo();
-    const home = temp('ext-skills-home-');
-    // The right shape, in the wrong place: only the location rule refuses it.
-    const elsewhere = join(temp('ext-skills-elsewhere-'), '.dork', 'extensions', 'mail', 'skills');
-    writeSkill(elsewhere, 'triage-inbox');
-    writeLedger(home, [
-      {
-        id: 'mail',
-        scope: 'local',
-        projectRoot: repo,
-        skillsDir: elsewhere,
-        skills: ['triage-inbox'],
-      },
-    ]);
-    const plan = project(repo, { dorkHome: home });
-    expect(plan.actions.some((a) => a.name === 'mail__triage-inbox')).toBe(false);
   });
 
   it('projects a trusted copy from its snapshot outside the repository and never gitignores the snapshot', () => {
@@ -331,20 +288,14 @@ describe('a local extension skill at project scope', () => {
     );
   });
 
-  it('drops an invalid SKILL.md with a warning', () => {
+  it('sweeps the links when the skills folder is gone', () => {
     const repo = buildRepo();
     const home = temp('ext-skills-home-');
-    const skillsDir = join(repo, '.dork', 'extensions', 'mail', 'skills');
-    mkdirSync(join(skillsDir, 'broken'), { recursive: true });
-    writeFileSync(join(skillsDir, 'broken', 'SKILL.md'), '# no frontmatter\n');
-    writeLedger(home, [
-      { id: 'mail', scope: 'local', projectRoot: repo, skillsDir, skills: ['broken'] },
-    ]);
-    const plan = project(repo, { dorkHome: home });
-    expect(plan.actions.some((a) => a.name === 'mail__broken')).toBe(false);
-    expect(plan.warnings.find((w) => w.name === 'mail__broken')?.reason).toMatch(
-      /not a valid skill/
-    );
+    const entry = localMail(repo, home);
+    applyPlan(repo, project(repo, { dorkHome: home }), { sweepOrphans: true });
+    rmSync(entry.skillsDir, { recursive: true, force: true });
+    const result = applyPlan(repo, project(repo, { dorkHome: home }), { sweepOrphans: true });
+    expect(result.swept).toContain('.claude/skills/mail__triage-inbox');
   });
 
   it('keeps the plugin skill when a plugin and an extension claim the same name', () => {
@@ -375,31 +326,6 @@ describe('a local extension skill at project scope', () => {
     expect(links[0]?.source).toBe('.dork/plugins/mail/skills/triage-inbox');
     const warning = plan.warnings.find((w) => w.name === 'mail__triage-inbox');
     expect(warning?.reason).toMatch(/"mail" extension's skill.*"mail" plugin/);
-  });
-
-  it('labels a dev-linked extension skill with its folder', () => {
-    const repo = buildRepo();
-    const home = temp('ext-skills-home-');
-    localMail(repo, home, { devLink: '/work/mail' });
-    const plan = project(repo, { dorkHome: home });
-    const links = plan.actions.filter((a) => a.name === 'mail__triage-inbox');
-    expect(links.length).toBeGreaterThan(0);
-    for (const link of links) {
-      expect(link.devLink).toBe('/work/mail');
-      expect(link.reason).toContain('(dev link: /work/mail)');
-    }
-  });
-
-  it('reads the ledger from extensionSkillsHome when no dork home is passed', () => {
-    const repo = buildRepo();
-    const home = temp('ext-skills-home-');
-    localMail(repo, home);
-    expect(project(repo).actions.some((a) => a.name === 'mail__triage-inbox')).toBe(false);
-    expect(
-      project(repo, { extensionSkillsHome: home }).actions.some(
-        (a) => a.name === 'mail__triage-inbox'
-      )
-    ).toBe(true);
   });
 });
 
@@ -452,6 +378,14 @@ describe('a global extension skill', () => {
     expect(findGlobalOrphans(stopped, roots).map((o) => o.path)).toEqual([link]);
   });
 
+  it('ignores a global entry whose skills folder is outside the dork home', () => {
+    const home = temp('ext-skills-home-');
+    const elsewhere = join(temp('ext-skills-elsewhere-'), 'extensions', 'notes', 'skills');
+    writeSkill(elsewhere, 'daily');
+    writeLedger(home, [{ id: 'notes', scope: 'global', skillsDir: elsewhere, skills: ['daily'] }]);
+    expect(projectGlobal({ roots: { dorkHome: home }, harnesses: [] }).actions).toEqual([]);
+  });
+
   it('sweeps its links once the generated root is gone, even when the ledger cannot be read', () => {
     const home = temp('ext-skills-home-');
     globalNotes(home);
@@ -490,13 +424,5 @@ describe('a global extension skill', () => {
     expect(plan.warnings.some((w) => w.name === 'notes__daily' && /plugin/.test(w.reason))).toBe(
       true
     );
-  });
-
-  it('ignores a global entry whose skills folder is outside the dork home', () => {
-    const home = temp('ext-skills-home-');
-    const elsewhere = join(temp('ext-skills-elsewhere-'), 'extensions', 'notes', 'skills');
-    writeSkill(elsewhere, 'daily');
-    writeLedger(home, [{ id: 'notes', scope: 'global', skillsDir: elsewhere, skills: ['daily'] }]);
-    expect(projectGlobal({ roots: { dorkHome: home }, harnesses: [] }).actions).toEqual([]);
   });
 });

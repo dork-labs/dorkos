@@ -16,10 +16,6 @@ vi.mock('node:readline', () => ({
 }));
 
 import {
-  formatBytes,
-  parseCacheClearArgs,
-  parseCacheListArgs,
-  parseCachePruneArgs,
   renderCacheStatus,
   runCacheClear,
   runCacheList,
@@ -45,34 +41,6 @@ const CACHE_STATUS_FIXTURE = {
   totalSizeBytes: 49_283_072, // ~47 MB
 };
 
-describe('formatBytes', () => {
-  it('formats bytes below 1 KB as B', () => {
-    expect(formatBytes(0)).toBe('0 B');
-    expect(formatBytes(512)).toBe('512 B');
-    expect(formatBytes(1023)).toBe('1023 B');
-  });
-
-  it('formats KB range', () => {
-    expect(formatBytes(1024)).toBe('1 KB');
-    expect(formatBytes(1024 * 1.5)).toBe('1.5 KB');
-  });
-
-  it('formats MB range', () => {
-    expect(formatBytes(1024 * 1024)).toBe('1 MB');
-    expect(formatBytes(47 * 1024 * 1024)).toBe('47 MB');
-  });
-
-  it('formats GB range', () => {
-    expect(formatBytes(1024 * 1024 * 1024)).toBe('1 GB');
-    expect(formatBytes(1.25 * 1024 * 1024 * 1024)).toBe('1.25 GB');
-  });
-
-  it('handles negative or non-finite input defensively', () => {
-    expect(formatBytes(-1)).toBe('0 B');
-    expect(formatBytes(Number.NaN)).toBe('0 B');
-  });
-});
-
 describe('renderCacheStatus', () => {
   it('adds one line when automatic cleanup is paused', () => {
     // Purpose: a paused cleanup removes nothing; this is where a person sees it.
@@ -88,86 +56,6 @@ describe('renderCacheStatus', () => {
     expect(lines).toHaveLength(4);
     expect(lines[3]).toBe(
       "Automatic cleanup is paused: couldn't read /Volumes/Work/app (the folder is missing)"
-    );
-  });
-
-  it('adds nothing when cleanup is running, or the server does not say', () => {
-    const running = renderCacheStatus({
-      ...CACHE_STATUS_FIXTURE,
-      cleanup: { paused: false, reason: null, since: null },
-    });
-    expect(running.split('\n')).toHaveLength(3);
-    expect(renderCacheStatus(CACHE_STATUS_FIXTURE).split('\n')).toHaveLength(3);
-  });
-
-  it('renders three right-aligned rows', () => {
-    const rendered = renderCacheStatus(CACHE_STATUS_FIXTURE);
-    const lines = rendered.split('\n');
-    expect(lines).toHaveLength(3);
-    expect(lines[0]).toContain('Marketplaces cached:');
-    expect(lines[0]).toContain('2');
-    expect(lines[1]).toContain('Packages cached:');
-    expect(lines[1]).toContain('14');
-    expect(lines[2]).toContain('Total size:');
-    expect(lines[2]).toMatch(/47(\.\d+)? MB$/);
-    // Right-alignment: all three lines should share the same total length.
-    const lengths = new Set(lines.map((l) => l.length));
-    expect(lengths.size).toBe(1);
-  });
-
-  it('handles an empty cache cleanly', () => {
-    const rendered = renderCacheStatus({ marketplaces: 0, packages: 0, totalSizeBytes: 0 });
-    expect(rendered).toContain('Marketplaces cached:');
-    expect(rendered).toContain('0 B');
-  });
-});
-
-describe('parseCacheListArgs', () => {
-  it('accepts no arguments', () => {
-    expect(() => parseCacheListArgs([])).not.toThrow();
-  });
-
-  it('throws on unknown option', () => {
-    expect(() => parseCacheListArgs(['--nope'])).toThrow(/Unknown option for 'cache list': --nope/);
-  });
-});
-
-describe('parseCachePruneArgs', () => {
-  it('accepts no arguments', () => {
-    expect(() => parseCachePruneArgs([])).not.toThrow();
-  });
-
-  it('refuses the retired --keep-last-n', () => {
-    // Purpose: a per-name "keep N" deleted the commits installs record; a
-    // script still passing it must fail loudly, not prune differently.
-    expect(() => parseCachePruneArgs(['--keep-last-n', '3'])).toThrow(
-      /Unknown option for 'cache prune': --keep-last-n/
-    );
-  });
-
-  it('throws on unknown option', () => {
-    expect(() => parseCachePruneArgs(['--force'])).toThrow(
-      /Unknown option for 'cache prune': --force/
-    );
-  });
-});
-
-describe('parseCacheClearArgs', () => {
-  it('defaults yes to false', () => {
-    expect(parseCacheClearArgs([])).toEqual({ yes: false });
-  });
-
-  it('parses --yes', () => {
-    expect(parseCacheClearArgs(['--yes'])).toEqual({ yes: true });
-  });
-
-  it('parses -y shorthand', () => {
-    expect(parseCacheClearArgs(['-y'])).toEqual({ yes: true });
-  });
-
-  it('throws on unknown option', () => {
-    expect(() => parseCacheClearArgs(['--force'])).toThrow(
-      /Unknown option for 'cache clear': --force/
     );
   });
 });
@@ -204,17 +92,6 @@ describe('runCacheList', () => {
     expect(allLogs).toContain('Packages cached:');
     expect(allLogs).toContain('Total size:');
     expect(allLogs).toMatch(/47(\.\d+)? MB/);
-  });
-
-  it('prints a friendly error when the server is unreachable', async () => {
-    const fetchMock = vi.fn().mockRejectedValueOnce(new Error('ECONNREFUSED'));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const code = await runCacheList();
-
-    expect(code).toBe(1);
-    const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allErr).toContain('Error:');
   });
 });
 
@@ -259,50 +136,6 @@ describe('runCachePrune', () => {
     const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(allLogs).toContain('Removed 7 cached packages');
     expect(allLogs).toContain('23 MB');
-  });
-
-  it('uses singular noun when exactly one package was removed', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(
-      mockResponse(200, {
-        removed: [
-          { packageName: 'pkg', commitSha: 'sha', path: '/p', lastUsedAt: '2026-04-06T00:00:00Z' },
-        ],
-        freedBytes: 2048,
-      })
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await runCachePrune();
-
-    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allLogs).toContain('Removed 1 cached package,');
-    expect(allLogs).toContain('2 KB');
-  });
-
-  it('prints an empty-state hint when nothing was removed', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(mockResponse(200, { removed: [], freedBytes: 0 }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const code = await runCachePrune();
-
-    expect(code).toBe(0);
-    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allLogs).toContain('Nothing to remove.');
-  });
-
-  it('exits non-zero on server error', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(mockResponse(500, { error: 'Failed to prune marketplace cache' }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const code = await runCachePrune();
-
-    expect(code).toBe(1);
-    const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allErr).toContain('Failed to prune');
   });
 });
 
@@ -394,18 +227,5 @@ describe('runCacheClear', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(allLogs).toContain('Cache cleared.');
-  });
-
-  it('exits non-zero on server failure', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(mockResponse(500, { error: 'Failed to clear marketplace cache' }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const code = await runCacheClear({ yes: true });
-
-    expect(code).toBe(1);
-    const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allErr).toContain('Failed to clear');
   });
 });

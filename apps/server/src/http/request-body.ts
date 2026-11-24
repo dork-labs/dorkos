@@ -4,8 +4,8 @@
  *
  * Every body is parsed once, up front, before the session gate, because that
  * is where Express did it: an oversized POST is a `413` even when it carries no
- * credential, and a malformed one is a `500` (the error handler maps only the
- * size limit; see `middleware/error-handler.ts`). A route reads the result with
+ * credential, and a malformed one a `400`, each a problem document (the error
+ * handler maps the parser's refusals; see `middleware/error-handler.ts`). A route reads the result with
  * `readJsonBody` from `@dorkos/http-kit`.
  *
  * @module http/request-body

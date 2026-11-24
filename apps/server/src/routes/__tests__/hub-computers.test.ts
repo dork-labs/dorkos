@@ -38,6 +38,7 @@ import {
   type HubComputerRoutesDeps,
   type RelayedComputer,
 } from '../hub-computers.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const COMPUTER = 'computer-1';
 const AGENT = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
@@ -172,7 +173,7 @@ describe('who is answered', () => {
     for (const path of ['/api/hub/computers', `${BASE}/agents/${AGENT}/chats`]) {
       const res = await request(server).get(path);
       expect(res.status, path).toBe(404);
-      expect(res.body.code).toBe('API_NOT_FOUND');
+      expect(res.body.code).toBe('not_found');
     }
     const post = await request(server).post(`${BASE}/sessions/${SESSION}/interrupt`);
     expect(post.status).toBe(404);
@@ -183,7 +184,9 @@ describe('who is answered', () => {
     deps.linkedComputerIds.mockReturnValue([]);
     const res = await request(server).get(`${BASE}/agents/${AGENT}/chats`);
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: 'Not found', code: 'API_NOT_FOUND' });
+    expect(res.body).toEqual(
+      problemBody('not_found', { detail: 'This server has no API route at that path.' })
+    );
     expect(deps.wake).not.toHaveBeenCalled();
     expect(fake.computer.request).not.toHaveBeenCalled();
   });

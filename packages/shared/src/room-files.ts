@@ -241,7 +241,7 @@ const CommitIdSchema = z.string().regex(/^[0-9a-f]{7,40}$/, 'that is not a commi
  * **The request body limit applies first, and answers differently.** The server
  * accepts 1 MB of JSON, which is well under a room's own `maxFileBytes` — so a
  * very large save never reaches the room's cap at all. It is refused **413
- * `REQUEST_TOO_LARGE`**, by the request parser rather than by the room, while
+ * `request_too_large`**, by the request parser rather than by the room, while
  * a save that fits the request and not the room is refused 409
  * `FILE_TOO_LARGE`. Two ceilings, two answers; an editor that means to explain
  * itself has to read both.

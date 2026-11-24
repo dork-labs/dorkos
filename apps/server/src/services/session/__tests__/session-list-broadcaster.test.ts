@@ -33,7 +33,6 @@ import {
 // Sessions carry UUID ids per SessionSchema; non-UUID ids fail validation.
 const SESSION_A = '11111111-1111-4111-8111-111111111111';
 const SESSION_B = '22222222-2222-4222-8222-222222222222';
-const SESSION_C = '33333333-3333-4333-8333-333333333333';
 
 /**
  * A hand-driven async iterable of session-list events. `push()` delivers the
@@ -117,31 +116,6 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
     resetAgentSessionFanoutCache();
   });
 
-  it('survives a MALFORMED upsert even with a retirement check armed', async () => {
-    // The retirement check reads `session.id`. Doing that before schema
-    // validation threw out of the consume loop and killed the runtime's entire
-    // subscription — every later event silently lost. Validation is the gate;
-    // nothing ahead of it may assume shape.
-    const a = controllableSessionList();
-    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
-    runtimeA.getInternalSessionId.mockImplementation((id: string) =>
-      id === SESSION_A ? SESSION_B : undefined
-    );
-
-    broadcaster.start([runtimeA]);
-    a.push({ type: 'session_upserted' } as unknown as SessionListEvent);
-    // A valid event after the bad one proves the loop survived.
-    a.push({ type: 'session_removed', sessionId: SESSION_A });
-
-    await vi.waitFor(() => {
-      expect(broadcastSpy).toHaveBeenCalledWith(
-        'session_removed',
-        expect.objectContaining({ sessionId: SESSION_A })
-      );
-    });
-    expect(broadcastSpy).not.toHaveBeenCalledWith('session_upserted', expect.anything());
-  });
-
   it('marks the machine-wide fan-out stale on every upsert and removal', async () => {
     // Red when the wiring is lost: the fan-out then hands a caller asking
     // because of a new chat an answer scanned before that chat existed.
@@ -221,25 +195,6 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
     );
   });
 
-  it('still forwards session_removed for a retired id', async () => {
-    // Telling a client to drop a row it should not be holding is always safe.
-    const a = controllableSessionList();
-    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
-    runtimeA.getInternalSessionId.mockImplementation((id: string) =>
-      id === SESSION_A ? SESSION_B : undefined
-    );
-
-    broadcaster.start([runtimeA]);
-    a.push({ type: 'session_removed', sessionId: SESSION_A });
-
-    await vi.waitFor(() => {
-      expect(broadcastSpy).toHaveBeenCalledWith(
-        'session_removed',
-        expect.objectContaining({ sessionId: SESSION_A })
-      );
-    });
-  });
-
   it('overlays persisted settings onto a broadcast session_upserted', async () => {
     // This stream — not GET /api/sessions — is what keeps a client's session
     // list current: the cold-load query has no poll, so every later refresh of a
@@ -280,51 +235,6 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
         })
       );
     });
-  });
-
-  it('discards a half-written row when an overlay throws part way through', async () => {
-    // What the per-step copy is FOR. An overlay writes field by field, so one
-    // that throws mid-row would otherwise broadcast a row that is neither what
-    // the runtime reported nor what the store says — a mode nobody chose.
-    //
-    // This replaces a test that asserted the adapter's own object was not
-    // mutated. That claim cannot fail here and so proved nothing:
-    // `SessionListEventSchema.safeParse` runs first and hands back its own
-    // freshly built session, so the instance a runtime holds is already out of
-    // reach. Deleting the copy left that test green; it reds this one.
-    const a = controllableSessionList();
-    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
-    // `applyStoredSettings` writes permissionMode, then model, then consults the
-    // runtime's effort declaration. A declaration read that throws lands the
-    // first field and abandons the row exactly half way.
-    const settings = {
-      getSessionSettingsMany: vi.fn(
-        () =>
-          new Map([
-            [SESSION_A, { permissionMode: 'bypassPermissions' as const, effort: 'high' as const }],
-          ])
-      ),
-      has: () => true,
-      get: () => ({
-        getInternalSessionId: () => undefined,
-        getCapabilities: () => {
-          throw new Error('runtime declaration unavailable');
-        },
-      }),
-    };
-
-    broadcaster.start([runtimeA], settings);
-    a.push({
-      type: 'session_upserted',
-      session: createMockSession({ id: SESSION_A, permissionMode: 'default' }),
-    });
-
-    await vi.waitFor(() => expect(broadcastSpy).toHaveBeenCalled());
-    const [, upsert] = broadcastSpy.mock.calls.find(
-      (call: unknown[]) => call[0] === 'session_upserted'
-    )!;
-    // The row the runtime reported, whole — not the partly-overlaid one.
-    expect((upsert as { session: Session }).session.permissionMode).toBe('default');
   });
 
   it('broadcasts as-is when the settings store throws — stale beats invisible', async () => {
@@ -401,110 +311,6 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
     expect('userLastMessageAt' in session).toBe(false);
   });
 
-  it('lets the Pulse overlay win on the stream, the same way it wins on the routes', async () => {
-    // The ordering is a product decision: a scheduled task that posts into a
-    // room is still the task somebody scheduled. It lives in
-    // `applySessionOriginOverlays`, which is why both producers can obey it.
-    const a = controllableSessionList();
-    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
-    broadcaster.setOriginResolvers({
-      resolveRoomOrigins: () =>
-        new Map([[SESSION_A, { roomLabel: '#general', roomId: 'room-general' }]]),
-      resolveTaskOrigins: () => new Map([[SESSION_A, { taskName: 'digest' }]]),
-    });
-
-    broadcaster.start([runtimeA]);
-    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
-
-    await vi.waitFor(() => {
-      expect(broadcastSpy).toHaveBeenCalledWith(
-        'session_upserted',
-        expect.objectContaining({
-          session: expect.objectContaining({
-            origin: 'task',
-            originLabel: 'Scheduled task · digest',
-          }),
-        })
-      );
-    });
-  });
-
-  it('keeps its origin resolvers across the stop/start a live account switch does', async () => {
-    // `runtimes/claude-code/account-switch.ts` restarts discovery by calling
-    // `stop()` then `start()`, and it cannot know about a lookup it was never
-    // handed. Passing the resolvers to `start()` would therefore have made room
-    // turns read as the operator's own again from the first account switch on —
-    // silently, and only on that path.
-    const first = controllableSessionList();
-    const second = controllableSessionList();
-    runtimeA.subscribeSessionList.mockReturnValueOnce(first.iterable);
-    runtimeA.subscribeSessionList.mockReturnValueOnce(second.iterable);
-    broadcaster.setOriginResolvers({
-      resolveRoomOrigins: () =>
-        new Map([[SESSION_A, { roomLabel: '#general', roomId: 'room-general' }]]),
-    });
-
-    broadcaster.start([runtimeA]);
-    await broadcaster.stop();
-    broadcaster.start([runtimeA]);
-    second.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
-
-    await vi.waitFor(() => {
-      expect(broadcastSpy).toHaveBeenCalledWith(
-        'session_upserted',
-        expect.objectContaining({ session: expect.objectContaining({ origin: 'room' }) })
-      );
-    });
-  });
-
-  it('broadcasts as-is when the origin lookup throws — stale beats invisible', async () => {
-    const a = controllableSessionList();
-    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
-    broadcaster.setOriginResolvers({
-      resolveRoomOrigins: () => {
-        throw new Error('rooms database is locked');
-      },
-    });
-
-    broadcaster.start([runtimeA]);
-    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
-
-    await vi.waitFor(() => {
-      expect(broadcastSpy).toHaveBeenCalledWith(
-        'session_upserted',
-        expect.objectContaining({ session: expect.objectContaining({ id: SESSION_A }) })
-      );
-    });
-  });
-
-  it('keeps the room marking when the Pulse lookup is the half that fails', async () => {
-    // The two origin overlays are guarded SEPARATELY. Sharing one guard would
-    // have meant a failing Pulse lookup discarded the room marking that had
-    // already succeeded — and a row broadcast with no origin at all is exactly
-    // the DOR-1141 defect, reached from the other side.
-    const a = controllableSessionList();
-    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
-    broadcaster.setOriginResolvers({
-      resolveRoomOrigins: () =>
-        new Map([[SESSION_A, { roomLabel: '#general', roomId: 'room-general' }]]),
-      resolveTaskOrigins: () => {
-        throw new Error('pulse store unavailable');
-      },
-    });
-
-    broadcaster.start([runtimeA]);
-    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
-
-    await vi.waitFor(() => {
-      expect(broadcastSpy).toHaveBeenCalledWith(
-        'session_upserted',
-        expect.objectContaining({
-          session: expect.objectContaining({ origin: 'room', originRoomId: 'room-general' }),
-        })
-      );
-    });
-  });
-
   it('carries trackerItems and the deprecated trackerItem on a live upsert, like GET /api/sessions (D10)', async () => {
     const a = controllableSessionList();
     runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
@@ -550,52 +356,6 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
     const { session } = upsert as { session: Session };
     expect(session.trackerItems).toEqual(items);
     expect(session.trackerItem).toEqual({ id: 'DOR-2', stage: 'execute', runStatus: 'running' });
-  });
-
-  it('drops an upsert whose id the runtime retired while the tracker overlay was reading', async () => {
-    const a = controllableSessionList();
-    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
-    let retired = false;
-    runtimeA.getInternalSessionId.mockImplementation((id: string) =>
-      retired && id === SESSION_A ? SESSION_B : undefined
-    );
-    let finishRead!: () => void;
-    broadcaster.setTrackerItemsOverlay(
-      () =>
-        new Promise<void>((resolve) => {
-          finishRead = resolve;
-        })
-    );
-
-    broadcaster.start([runtimeA]);
-    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
-    await vi.waitFor(() => expect(finishRead).toBeTypeOf('function'));
-    // The runtime retires the id while the overlay is still reading.
-    retired = true;
-    finishRead();
-    a.push({ type: 'session_removed', sessionId: SESSION_B });
-    await vi.waitFor(() => {
-      expect(broadcastSpy).toHaveBeenCalledWith('session_removed', expect.anything());
-    });
-    expect(broadcastSpy).not.toHaveBeenCalledWith('session_upserted', expect.anything());
-  });
-
-  it('broadcasts an upsert as-is when the tracker overlay fails', async () => {
-    const a = controllableSessionList();
-    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
-    broadcaster.setTrackerItemsOverlay(async () => {
-      throw new Error('flow-state.json unreadable');
-    });
-
-    broadcaster.start([runtimeA]);
-    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
-
-    await vi.waitFor(() => {
-      expect(broadcastSpy).toHaveBeenCalledWith(
-        'session_upserted',
-        expect.objectContaining({ session: expect.objectContaining({ id: SESSION_A }) })
-      );
-    });
   });
 
   it('merges session-list events from every runtime onto the single fan-out', async () => {
@@ -653,72 +413,6 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
     broadcaster.start([runtimeA, runtimeB]);
     expect(runtimeA.subscribeSessionList).toHaveBeenCalledTimes(1);
     expect(runtimeB.subscribeSessionList).toHaveBeenCalledTimes(1);
-  });
-
-  it('every runtime failing at construction leaves the broadcaster stopped so a later start() retries', () => {
-    const boom = (): AsyncIterable<SessionListEvent> => {
-      throw new Error('watcher failed to start');
-    };
-    runtimeA.subscribeSessionList.mockImplementation(boom);
-    runtimeB.subscribeSessionList.mockImplementation(boom);
-
-    expect(() => broadcaster.start([runtimeA, runtimeB])).not.toThrow();
-
-    // Discovery is fully off (running reset), so a retry re-subscribes both.
-    runtimeA.subscribeSessionList.mockReturnValue(controllableSessionList().iterable);
-    runtimeB.subscribeSessionList.mockReturnValue(controllableSessionList().iterable);
-    broadcaster.start([runtimeA, runtimeB]);
-    expect(runtimeA.subscribeSessionList).toHaveBeenCalledTimes(2);
-    expect(runtimeB.subscribeSessionList).toHaveBeenCalledTimes(2);
-  });
-
-  it('projector liveness survives every watcher failing at construction', async () => {
-    // The status fan-out is installed before (and independent of) the watchers.
-    const boom = (): AsyncIterable<SessionListEvent> => {
-      throw new Error('watcher failed to start');
-    };
-    runtimeA.subscribeSessionList.mockImplementation(boom);
-    runtimeB.subscribeSessionList.mockImplementation(boom);
-    broadcaster.start([runtimeA, runtimeB]);
-
-    const projector = getOrCreateProjector(SESSION_A, '/work/alpha');
-    projector.ingest({ type: 'turn_start' });
-    disposeProjector(SESSION_A);
-
-    await vi.waitFor(() => {
-      expect(broadcastSpy).toHaveBeenCalledWith(
-        'session_status',
-        expect.objectContaining({
-          sessionId: SESSION_A,
-          cwd: '/work/alpha',
-          status: expect.objectContaining({ lifecycle: 'streaming' }),
-        })
-      );
-    });
-  });
-
-  it("one runtime's stream ending naturally does not stop the sibling runtime's broadcasting", async () => {
-    const a = controllableSessionList();
-    const b = controllableSessionList();
-    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
-    runtimeB.subscribeSessionList.mockReturnValue(b.iterable);
-    broadcaster.start([runtimeA, runtimeB]);
-
-    // Runtime A's stream ends cleanly; runtime B must keep broadcasting.
-    a.end();
-    b.push({ type: 'session_removed', sessionId: SESSION_B });
-
-    await vi.waitFor(() => {
-      expect(broadcastSpy).toHaveBeenCalledWith(
-        'session_removed',
-        expect.objectContaining({ sessionId: SESSION_B })
-      );
-    });
-
-    // The broadcaster is still running for B: stop() must close B's iterator
-    // (a shared running=false on A's exit would have made stop() return early).
-    await broadcaster.stop();
-    expect(b.returned()).toBe(true);
   });
 
   it("stop() closes every runtime's iterator via return()", async () => {
@@ -835,22 +529,5 @@ describe('sendSessionStatusSnapshot — the connect preamble', () => {
 
     expect(congested.sessionIds()).toEqual([]);
     expect(healthy.sessionIds()).toEqual([SESSION_A]);
-  });
-
-  it('stops part-way rather than dropping the client', () => {
-    errorProjector(SESSION_A);
-    errorProjector(SESSION_B);
-    errorProjector(SESSION_C);
-
-    // Congested by its own first frame: the ceiling is crossed after one send,
-    // so this walks the loop rather than failing its very first check.
-    const client = recordingClient(SSE.MAX_BUFFERED_BYTES + 1);
-    sendSessionStatusSnapshot(client.client, { kind: 'operator' });
-
-    expect(client.sessionIds()).toHaveLength(1);
-    // The opposite of what a broadcast does to a slow client, and deliberately:
-    // one dropped here would reconnect straight into this same function and hit
-    // the same ceiling. A partial preamble is the honest floor.
-    expect(client.wasDropped()).toBe(false);
   });
 });

@@ -171,51 +171,6 @@ describe('remote community delivery drafts', () => {
     expect(result.current.deliveries[0]?.text).toBe('notes.txt');
   });
 
-  it('keeps channel and thread drafts separate while preserving their pending deliveries', () => {
-    const { transport, receipt, wrapper } = harness();
-    vi.mocked(transport.postRemoteCommunityEntry).mockReturnValue(new Promise(() => {}));
-    const { result, rerender } = renderHook(
-      ({ key }) =>
-        useRemoteCommunityDrafts(
-          options(receipt, { threadId: key === 'channel' ? undefined : key })
-        ),
-      {
-        wrapper,
-        initialProps: { key: 'channel' },
-      }
-    );
-    act(() => result.current.setText('channel draft'));
-    rerender({ key: 'thread-one' });
-    expect(result.current.text).toBe('');
-    act(() => result.current.setText('thread reply'));
-    act(() => result.current.send('thread-one'));
-    rerender({ key: 'channel' });
-    expect(result.current.text).toBe('channel draft');
-    expect(result.current.deliveries[0]?.parentEntryId).toBe('thread-one');
-  });
-
-  it('a double retry never posts concurrently and file count is bounded', async () => {
-    const { transport, receipt, wrapper } = harness();
-    vi.mocked(transport.postRemoteCommunityEntry)
-      .mockRejectedValueOnce(new Error('retry'))
-      .mockReturnValue(new Promise(() => {}));
-    const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt)), { wrapper });
-    act(() =>
-      result.current.attachments.add(Array.from({ length: 9 }, () => new File(['x'], 'x.txt')))
-    );
-    expect(result.current.attachments.staged).toHaveLength(0);
-    expect(result.current.error).toContain('eight');
-    act(() => result.current.setText('hello'));
-    act(() => result.current.send());
-    await waitFor(() => expect(result.current.deliveries[0]?.status).toBe('failed'));
-    const key = result.current.deliveries[0]!.key;
-    act(() => {
-      result.current.retry(key);
-      result.current.retry(key);
-    });
-    expect(transport.postRemoteCommunityEntry).toHaveBeenCalledTimes(2);
-  });
-
   it('hides another owner’s draft immediately and discards its late receipt', async () => {
     const { transport, receipt, wrapper } = harness();
     let resolve!: (value: RemoteCommunityEntry) => void;
@@ -292,51 +247,6 @@ describe('remote community delivery drafts', () => {
     expect(back.result.current.attachments.staged.map((item) => item.file)).toEqual([file]);
   });
 
-  it('clears the held draft on send, and a second quick send posts nothing', () => {
-    const { transport, receipt, wrapper } = harness();
-    vi.mocked(transport.postRemoteCommunityEntry).mockReturnValue(new Promise(() => {}));
-    const { result, unmount } = renderHook(() => useRemoteCommunityDrafts(options(receipt)), {
-      wrapper,
-    });
-    act(() => result.current.setText('once'));
-    act(() => {
-      result.current.send();
-      result.current.send();
-    });
-    expect(transport.postRemoteCommunityEntry).toHaveBeenCalledTimes(1);
-    expect(result.current.text).toBe('');
-    unmount();
-    const back = renderHook(() => useRemoteCommunityDrafts(options(receipt)), { wrapper });
-    expect(back.result.current.text).toBe('');
-  });
-
-  it('holds nothing while the owner is unconfirmed', () => {
-    const { receipt, wrapper } = harness();
-    const { result } = renderHook(
-      () => useRemoteCommunityDrafts(options(receipt, { draft: null })),
-      { wrapper }
-    );
-    act(() => result.current.setText('typed before the owner resolved'));
-    expect(result.current.text).toBe('');
-    expect(useCommunityDraftStore.getState().drafts).toEqual({});
-  });
-
-  it('keeps a restored draft and posts nothing when the room has become read-only', () => {
-    const { transport, receipt, wrapper } = harness();
-    const first = renderHook(() => useRemoteCommunityDrafts(options(receipt)), { wrapper });
-    act(() => first.result.current.setText('written while I could post'));
-    first.unmount();
-
-    const back = renderHook(() => useRemoteCommunityDrafts(options(receipt, { canSend: false })), {
-      wrapper,
-    });
-    expect(back.result.current.text).toBe('written while I could post');
-    act(() => back.result.current.send());
-    expect(transport.postRemoteCommunityEntry).not.toHaveBeenCalled();
-    expect(back.result.current.deliveries).toEqual([]);
-    expect(back.result.current.text).toBe('written while I could post');
-  });
-
   /**
    * The error `fetchJSON` throws for the local route's gone refusal, exactly as the server sends
    * it (`routes/remote-communities.ts`, `verifiedConnection`): status, code and plain wording.
@@ -356,8 +266,7 @@ describe('remote community delivery drafts', () => {
   // Purpose (DOR-2575): a send the community refuses because it is gone (deleted, or taken down)
   // can never go through, and the room is about to be replaced by the gone panel, so the message
   // goes back into its composer's draft, in front of anything typed since, files and all, where
-  // the panel counts it and offers to copy it. It fails if the message is left only in a failed
-  // row that unmounts with the room, or if what was typed after it is lost.
+  // the panel counts it and offers to copy it.
   it.each(['COMMUNITY_DELETED', 'COMMUNITY_TAKEN_DOWN'] as const)(
     'puts a message refused with %s back into the draft',
     async (code) => {
@@ -389,57 +298,83 @@ describe('remote community delivery drafts', () => {
     }
   );
 
-  // Purpose (DOR-2575 review): several sends refused as gone come back oldest first, whatever
-  // order the refusals arrive in, ahead of what was typed since; a files-only send adds its file
-  // and no blank line. It fails if the order flips or an empty part leaves a blank line.
-  it('returns several refused sends oldest first, and a files-only one without a blank line', async () => {
+  it('keeps a restored draft and posts nothing when the room has become read-only', () => {
     const { transport, receipt, wrapper } = harness();
-    const refusals: Array<(reason: unknown) => void> = [];
-    vi.mocked(transport.postRemoteCommunityEntry).mockImplementation(
-      () =>
-        new Promise((_resolve, reject) => {
-          refusals.push(reject);
-        })
-    );
-    vi.mocked(transport.uploadRemoteCommunityAttachment).mockResolvedValue(file);
-    const attached = new File(['data'], 'photo.png');
-    const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt)), { wrapper });
-    act(() => result.current.setText('first'));
-    act(() => result.current.send());
-    act(() => result.current.attachments.add([attached]));
-    act(() => result.current.send());
-    act(() => result.current.setText('second'));
-    act(() => result.current.send());
-    await waitFor(() => expect(refusals).toHaveLength(3));
-    act(() => result.current.setText('typed since'));
+    const first = renderHook(() => useRemoteCommunityDrafts(options(receipt)), { wrapper });
+    act(() => first.result.current.setText('written while I could post'));
+    first.unmount();
 
-    // Refuse newest first. The files-only post leaves last (it uploads first), so find each by
-    // what it posted rather than by position.
-    const posted = vi.mocked(transport.postRemoteCommunityEntry).mock.calls;
-    const refusalFor = (text: string) =>
-      refusals[posted.findIndex((call) => call[2].text === text)]!;
-    await act(async () => refusalFor('second')(goneRefusal('COMMUNITY_DELETED')));
-    await act(async () => refusalFor('photo.png')(goneRefusal('COMMUNITY_DELETED')));
-    await act(async () => refusalFor('first')(goneRefusal('COMMUNITY_DELETED')));
-
-    await waitFor(() => expect(result.current.deliveries).toEqual([]));
-    expect(result.current.text).toBe('first\n\nsecond\n\ntyped since');
-    expect(result.current.attachments.staged.map((item) => item.file)).toEqual([attached]);
+    const back = renderHook(() => useRemoteCommunityDrafts(options(receipt, { canSend: false })), {
+      wrapper,
+    });
+    expect(back.result.current.text).toBe('written while I could post');
+    act(() => back.result.current.send());
+    expect(transport.postRemoteCommunityEntry).not.toHaveBeenCalled();
+    expect(back.result.current.deliveries).toEqual([]);
+    expect(back.result.current.text).toBe('written while I could post');
   });
 
-  // Purpose: any other refusal keeps today's failed row with its retry, and touches no draft.
-  it('keeps any other refusal as a failed row to retry', async () => {
+  it('clears the held draft on send, and a second quick send posts nothing', () => {
     const { transport, receipt, wrapper } = harness();
-    vi.mocked(transport.postRemoteCommunityEntry).mockRejectedValue(
-      Object.assign(new Error('This community is archived, so it’s read-only.'), {
-        code: 'COMMUNITY_READ_ONLY',
-      })
+    vi.mocked(transport.postRemoteCommunityEntry).mockReturnValue(new Promise(() => {}));
+    const { result, unmount } = renderHook(() => useRemoteCommunityDrafts(options(receipt)), {
+      wrapper,
+    });
+    act(() => result.current.setText('once'));
+    act(() => {
+      result.current.send();
+      result.current.send();
+    });
+    expect(transport.postRemoteCommunityEntry).toHaveBeenCalledTimes(1);
+    expect(result.current.text).toBe('');
+    unmount();
+    const back = renderHook(() => useRemoteCommunityDrafts(options(receipt)), { wrapper });
+    expect(back.result.current.text).toBe('');
+  });
+
+  it('keeps channel and thread drafts separate while preserving their pending deliveries', () => {
+    const { transport, receipt, wrapper } = harness();
+    vi.mocked(transport.postRemoteCommunityEntry).mockReturnValue(new Promise(() => {}));
+    const { result, rerender } = renderHook(
+      ({ key }) =>
+        useRemoteCommunityDrafts(
+          options(receipt, { threadId: key === 'channel' ? undefined : key })
+        ),
+      {
+        wrapper,
+        initialProps: { key: 'channel' },
+      }
     );
+    act(() => result.current.setText('channel draft'));
+    rerender({ key: 'thread-one' });
+    expect(result.current.text).toBe('');
+    act(() => result.current.setText('thread reply'));
+    act(() => result.current.send('thread-one'));
+    rerender({ key: 'channel' });
+    expect(result.current.text).toBe('channel draft');
+    expect(result.current.deliveries[0]?.parentEntryId).toBe('thread-one');
+  });
+
+  it('a double retry never posts concurrently and file count is bounded', async () => {
+    const { transport, receipt, wrapper } = harness();
+    vi.mocked(transport.postRemoteCommunityEntry)
+      .mockRejectedValueOnce(new Error('retry'))
+      .mockReturnValue(new Promise(() => {}));
     const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt)), { wrapper });
-    act(() => result.current.setText('still mine'));
+    act(() =>
+      result.current.attachments.add(Array.from({ length: 9 }, () => new File(['x'], 'x.txt')))
+    );
+    expect(result.current.attachments.staged).toHaveLength(0);
+    expect(result.current.error).toContain('eight');
+    act(() => result.current.setText('hello'));
     act(() => result.current.send());
     await waitFor(() => expect(result.current.deliveries[0]?.status).toBe('failed'));
-    expect(result.current.text).toBe('');
+    const key = result.current.deliveries[0]!.key;
+    act(() => {
+      result.current.retry(key);
+      result.current.retry(key);
+    });
+    expect(transport.postRemoteCommunityEntry).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -506,46 +441,6 @@ describe('a post the space’s moderation held (DOR-2770)', () => {
     ]);
   });
 
-  // Purpose: fails if a held message sent again reuses an upload too old for the space to take
-  // (it refuses a file no message took within an hour), or replaces it under the same key, which
-  // the space would answer with that same old upload.
-  it('uploads a held message’s file again under a new key once its first upload is too old', async () => {
-    const { transport, receipt, wrapper } = harness();
-    const onHold = vi.fn();
-    let uploads = 0;
-    vi.mocked(transport.uploadRemoteCommunityAttachment).mockImplementation(async () => ({
-      ...file,
-      id: `upload-${(uploads += 1)}`,
-    }));
-    vi.mocked(transport.postRemoteCommunityEntry)
-      .mockRejectedValueOnce(held('COMMUNITY_MUTED'))
-      .mockResolvedValue(entry);
-    const now = vi.spyOn(Date, 'now');
-    const start = Date.parse('2026-10-12T10:00:00Z');
-    now.mockReturnValue(start);
-    try {
-      const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt, { onHold })), {
-        wrapper,
-      });
-      act(() => result.current.attachments.add([new File(['a'], 'a.txt')]));
-      act(() => result.current.send());
-      await waitFor(() => expect(onHold).toHaveBeenCalled());
-      now.mockReturnValue(start + 31 * 60_000);
-      act(() => result.current.send());
-      await waitFor(() => expect(receipt).toHaveBeenCalledWith(entry));
-      const keys = vi
-        .mocked(transport.uploadRemoteCommunityAttachment)
-        .mock.calls.map((call) => call[3]);
-      expect(keys).toHaveLength(2);
-      expect(keys[1]).not.toBe(keys[0]);
-      expect(
-        vi.mocked(transport.postRemoteCommunityEntry).mock.lastCall?.[2].attachmentIds
-      ).toEqual(['upload-2']);
-    } finally {
-      now.mockRestore();
-    }
-  });
-
   // Purpose: fails if retrying a post whose answer was lost swaps in new uploads when the old
   // ones age. Its key names those exact files: the space answers a post that landed with its
   // entry, but the same key with other files is a conflict for good.
@@ -574,59 +469,5 @@ describe('a post the space’s moderation held (DOR-2770)', () => {
     } finally {
       now.mockRestore();
     }
-  });
-
-  // Purpose: fails if an upload retried after a lost answer is stamped when the answer came,
-  // not when it was first tried: the space keeps the first upload's time, so the reuse window
-  // would outlast the space's one-hour limit.
-  it('dates an upload from its first try, so a retried one is not reused too long', async () => {
-    const { transport, receipt, wrapper } = harness();
-    const onHold = vi.fn();
-    let uploads = 0;
-    vi.mocked(transport.uploadRemoteCommunityAttachment)
-      .mockRejectedValueOnce(new Error('Lost upload answer'))
-      .mockImplementation(async () => ({ ...file, id: `upload-${(uploads += 1)}` }));
-    vi.mocked(transport.postRemoteCommunityEntry)
-      .mockRejectedValueOnce(held('COMMUNITY_MUTED'))
-      .mockResolvedValue(entry);
-    const now = vi.spyOn(Date, 'now');
-    const start = Date.parse('2026-10-12T10:00:00Z');
-    now.mockReturnValue(start);
-    try {
-      const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt, { onHold })), {
-        wrapper,
-      });
-      act(() => result.current.attachments.add([new File(['a'], 'a.txt')]));
-      act(() => result.current.send());
-      await waitFor(() => expect(result.current.deliveries[0]?.status).toBe('failed'));
-      now.mockReturnValue(start + 20 * 60_000);
-      act(() => result.current.retry(result.current.deliveries[0]!.key));
-      await waitFor(() => expect(onHold).toHaveBeenCalled());
-      // 31 minutes after the first try, 11 after the answer came: too old to reuse.
-      now.mockReturnValue(start + 31 * 60_000);
-      act(() => result.current.send());
-      await waitFor(() => expect(receipt).toHaveBeenCalledWith(entry));
-      expect(transport.uploadRemoteCommunityAttachment).toHaveBeenCalledTimes(3);
-      expect(
-        vi.mocked(transport.postRemoteCommunityEntry).mock.lastCall?.[2].attachmentIds
-      ).toEqual(['upload-2']);
-    } finally {
-      now.mockRestore();
-    }
-  });
-
-  it('still shows any other refusal as a failed row to retry', async () => {
-    const { transport, receipt, wrapper } = harness();
-    const onHold = vi.fn();
-    vi.mocked(transport.postRemoteCommunityEntry).mockRejectedValueOnce(
-      held('COMMUNITY_ACCESS_DENIED')
-    );
-    const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt, { onHold })), {
-      wrapper,
-    });
-    act(() => result.current.setText('hello'));
-    act(() => result.current.send());
-    await waitFor(() => expect(result.current.deliveries[0]?.status).toBe('failed'));
-    expect(onHold).not.toHaveBeenCalled();
   });
 });

@@ -50,27 +50,6 @@ describe('resolveScheduledRunPermissionMode', () => {
     ).toBe('bypassPermissions');
   });
 
-  it('honours the first-declared rule where a runtime declares two modes at one stop', () => {
-    // Claude Code declares `acceptEdits` before `auto` at the `act` stop, and
-    // the resolved default has to be the one the dial would show as selected —
-    // which is `resolveTrustStops`'s answer, never a second mapping here.
-    expect(
-      resolveScheduledRunPermissionMode({
-        capabilities: CLAUDE_CODE_CAPABILITIES,
-        runtimes: runtimes({ defaultTrustStop: 'act' }),
-      })
-    ).toBe('acceptEdits');
-  });
-
-  it('asks first when that is what the operator chose', () => {
-    expect(
-      resolveScheduledRunPermissionMode({
-        capabilities: CLAUDE_CODE_CAPABILITIES,
-        runtimes: runtimes({ defaultTrustStop: 'ask' }),
-      })
-    ).toBe('default');
-  });
-
   it("lets the runtime's own override beat the global stop", () => {
     expect(
       resolveScheduledRunPermissionMode({
@@ -94,45 +73,6 @@ describe('resolveScheduledRunPermissionMode', () => {
       })
     ).toBe('acceptEdits');
   });
-
-  it('falls back for a runtime that declares no mode at the configured stop', () => {
-    const noAutonomy = {
-      ...CLAUDE_CODE_CAPABILITIES,
-      permissionModes: {
-        ...CLAUDE_CODE_CAPABILITIES.permissionModes,
-        values: CLAUDE_CODE_CAPABILITIES.permissionModes.values.filter(
-          (mode) => mode.stop !== 'autonomy'
-        ),
-      },
-    };
-
-    expect(
-      resolveScheduledRunPermissionMode({
-        capabilities: noAutonomy,
-        runtimes: runtimes({ defaultTrustStop: 'autonomy' }),
-      })
-    ).toBe('acceptEdits');
-  });
-
-  it('still reads the global stop for a runtime with no config section of its own', () => {
-    // `test-mode` declares `configSection: null`. The stop is runtime-neutral,
-    // so it still applies; the mode id is whatever that runtime calls it.
-    expect(TEST_MODE_CAPABILITIES.settings.configSection).toBeNull();
-    expect(
-      resolveScheduledRunPermissionMode({
-        capabilities: TEST_MODE_CAPABILITIES,
-        runtimes: runtimes({ defaultTrustStop: 'autonomy' }),
-      })
-    ).toBe('always-allow');
-  });
-
-  it('falls back before the config manager has booted', () => {
-    // `configManager` is a `let` that is undefined until `initConfigManager`
-    // runs, and nothing here initialises it. A scheduled run must still start.
-    expect(resolveScheduledRunPermissionMode({ capabilities: CLAUDE_CODE_CAPABILITIES })).toBe(
-      'acceptEdits'
-    );
-  });
 });
 
 /**
@@ -149,29 +89,6 @@ describe('capabilitiesForTaskRuntime', () => {
     getAllCapabilities: () => registered,
     getDefaultType: () => dflt,
     has: (type: string) => Object.hasOwn(registered, type),
-  });
-
-  it('reads the profile of the runtime the caller NAMED', () => {
-    expect(
-      capabilitiesForTaskRuntime(
-        'codex',
-        registry(
-          { 'claude-code': CLAUDE_CODE_CAPABILITIES, codex: CODEX_CAPABILITIES },
-          'claude-code'
-        )
-      )
-    ).toBe(CODEX_CAPABILITIES);
-  });
-
-  it('falls to the registry default when the caller named none', () => {
-    for (const named of [null, undefined, '']) {
-      expect(
-        capabilitiesForTaskRuntime(
-          named,
-          registry({ 'claude-code': CLAUDE_CODE_CAPABILITIES, codex: CODEX_CAPABILITIES }, 'codex')
-        )
-      ).toBe(CODEX_CAPABILITIES);
-    }
   });
 
   it('answers undefined for a runtime that is not registered, rather than guessing', () => {

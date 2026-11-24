@@ -100,62 +100,29 @@ async function expectNothingWritten() {
   ).rejects.toThrow();
 }
 
-describe.each(['claude-code', 'codex'])('%s schedule folder hardening', (runtime) => {
-  describe.each(['acceptEdits', 'bypassPermissions'])('at %s', (permissionMode) => {
-    it.each([
-      ['home', 'global'],
-      ['data', 'global'],
-      ['home', 'scout'],
-      ['data', 'scout'],
-    ])(
-      'refuses protected %s execution through target %s before any write',
-      async (folder, target) => {
-        const unsafe = folder === 'home' ? home : dorkHome;
-        agents = [{ id: 'scout', projectPath: unsafe }];
-        const outcome = await create({ target, caller: unsafe, runtime, permissionMode });
-        expect(outcome).toMatchObject({ ok: false, status: 403, code: 'PROTECTED_FOLDER' });
-        await expectNothingWritten();
-      }
+// Protected homes, the data folder and its symlink aliases are refused in the
+// task-tools file-first and own-folder-level tests and routes/tasks-agent-owner.
+describe('schedule folder hardening', () => {
+  it('keeps a global target in the caller home through file reconciliation', async () => {
+    const outcome = await create({ target: 'global' });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.parked).toBe(true);
+    expect(outcome.task.filePath).toBe(
+      path.join(agentPath, '.agents', 'skills', 'nightly-sweep', 'SKILL.md')
     );
-
-    it('refuses a symlink alias of the data folder before any write', async () => {
-      const alias = path.join(root, 'data-link');
-      await fs.symlink(dorkHome, alias);
-      agents = [{ id: 'scout', projectPath: alias }];
-      const outcome = await create({ caller: alias, runtime, permissionMode });
-      expect(outcome).toMatchObject({ ok: false, status: 403, code: 'PROTECTED_FOLDER' });
-      await expectNothingWritten();
+    const parsed = parseSkillFile(
+      outcome.task.filePath,
+      await fs.readFile(outcome.task.filePath, 'utf8'),
+      SkillFrontmatterSchema
+    );
+    if (!parsed.ok) throw new Error('unparseable');
+    const found = readScheduleFromSkill(parsed.definition, {
+      resolvedPath: outcome.task.filePath,
+      scope: 'project',
+      projectPath: agentPath,
     });
-
-    it.each([null, 'global'])(
-      'keeps target %s in the caller home through file reconciliation',
-      async (target) => {
-        const outcome = await create({ target, runtime, permissionMode });
-        expect(outcome.ok).toBe(true);
-        if (!outcome.ok) return;
-        expect(outcome.parked).toBe(true);
-        expect(outcome.task.agentId).toBe('scout');
-        expect(outcome.task.filePath).toBe(
-          path.join(agentPath, '.agents', 'skills', 'nightly-sweep', 'SKILL.md')
-        );
-        const parsed = parseSkillFile(
-          outcome.task.filePath,
-          await fs.readFile(outcome.task.filePath, 'utf8'),
-          SkillFrontmatterSchema
-        );
-        expect(parsed.ok).toBe(true);
-        if (!parsed.ok) return;
-        const found = readScheduleFromSkill(parsed.definition, {
-          resolvedPath: outcome.task.filePath,
-          scope: 'project',
-          projectPath: agentPath,
-        });
-        expect(found).not.toBeNull();
-        if (!found) return;
-        const synced = store.fileSync.upsertFromFile(found.def, 'scout');
-        expect(synced.agentId).toBe('scout');
-      }
-    );
+    expect(store.fileSync.upsertFromFile(found!.def, 'scout').agentId).toBe('scout');
   });
 });
 
@@ -196,18 +163,6 @@ it('keeps a person-made global schedule global', async () => {
     path.join(dorkHome, 'skills', 'nightly-sweep', 'SKILL.md')
   );
   expect(outcome.ok && outcome.parked).toBe(false);
-});
-
-it('keeps a person-made schedule under the agent they chose', async () => {
-  agents = [{ id: 'scout', projectPath: home }];
-  const outcome = await create({ target: 'scout', trusted: true });
-  expect(outcome.ok && outcome.task.agentId).toBe('scout');
-  expect(outcome.ok && outcome.parked).toBe(false);
-});
-
-it('still requires a target for a person-made schedule', async () => {
-  expect(await create({ target: null, trusted: true })).toMatchObject({ ok: false, status: 400 });
-  await expectNothingWritten();
 });
 
 it('allows an agent project that contains its development data folder', async () => {

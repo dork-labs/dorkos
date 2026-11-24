@@ -8,6 +8,7 @@ import {
   ProblemSchema,
   isProblem,
   problemType,
+  readErrorBody,
 } from '../problem.js';
 
 describe('PROBLEM_CODE_LIST', () => {
@@ -107,5 +108,74 @@ describe('ProblemSchema', () => {
 
   it('refuses a success status', () => {
     expect(ProblemSchema.safeParse({ ...minimal, status: 200 }).success).toBe(false);
+  });
+});
+
+describe('readErrorBody', () => {
+  it('reads a problem: detail first, then title', () => {
+    expect(
+      readErrorBody(
+        {
+          type: problemType('request_too_large'),
+          title: 'The request is too large.',
+          status: 413,
+          code: 'request_too_large',
+          detail: 'That file is over 1 MB.',
+        },
+        'HTTP 413'
+      )
+    ).toEqual({
+      code: 'request_too_large',
+      message: 'That file is over 1 MB.',
+      status: 413,
+    });
+    expect(
+      readErrorBody({ title: 'Not found.', status: 404, code: 'not_found' }, 'HTTP 404')
+    ).toEqual({ code: 'not_found', message: 'Not found.', status: 404 });
+  });
+
+  it('carries a problem’s issues and retry delay', () => {
+    const issues = { formErrors: [], fieldErrors: { name: ['Required'] } };
+    expect(
+      readErrorBody(
+        {
+          title: 'The request could not be read.',
+          status: 400,
+          code: 'malformed_request',
+          issues,
+        },
+        'x'
+      ).issues
+    ).toEqual(issues);
+    expect(
+      readErrorBody(
+        { title: 'Slow down.', status: 429, code: 'rate_limited', retryAfterMs: 1500 },
+        'x'
+      ).retryAfterMs
+    ).toBe(1500);
+  });
+
+  it('reads the old `{ error, code, details }` shape', () => {
+    expect(readErrorBody({ error: 'Chat is busy', code: 'SESSION_LOCKED' }, 'HTTP 409')).toEqual({
+      code: 'SESSION_LOCKED',
+      message: 'Chat is busy',
+    });
+    const details = { formErrors: ['Bad'], fieldErrors: { cwd: ['Required'] } };
+    expect(readErrorBody({ error: 'Validation failed', details }, 'x')).toEqual({
+      message: 'Validation failed',
+      issues: details,
+    });
+  });
+
+  it('reads an old body that says `message` instead of `error`', () => {
+    expect(readErrorBody({ message: 'Denied by policy', status: 'denied' }, 'x')).toEqual({
+      message: 'Denied by policy',
+    });
+  });
+
+  it('falls back for a body it cannot read', () => {
+    for (const body of [null, undefined, 'oops', 42, {}, { error: 7 }]) {
+      expect(readErrorBody(body, 'HTTP 500')).toEqual({ message: 'HTTP 500' });
+    }
   });
 });

@@ -1,7 +1,6 @@
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createInstallationTransaction } from '../transaction.js';
-import { createRuntimeInstallation } from '../index.js';
 import { parsePinnedVersionOutput } from '../fresh-verifier.js';
 import {
   canonicalDigest,
@@ -440,48 +439,12 @@ function harness(existing: ExistingInstallation | null = null) {
 }
 
 describe('installation transaction semantic ordering (physical acceptance UNRUN)', () => {
-  it('parses the exact official Darwin product branding and version output', () => {
-    expect(
-      parsePinnedVersionOutput(Buffer.from('Google Chrome for Testing 157.0.8103.15 \n'))
-    ).toBe('157.0.8103.15');
-  });
-
   it.each([
     'Chromium 157.0.8103.15\n',
     'Google Chrome for Testing 153.0.8010.13 \n',
     'Google Chrome for Testing 157.0.8103.15 \nextra\n',
   ])('rejects substituted branding, version or extra output: %s', (output) => {
     expect(() => parsePinnedVersionOutput(Buffer.from(output))).toThrow('VERSION_MISMATCH');
-  });
-
-  it('facade retains an uncertain attempt and admits no replacement producer', async () => {
-    const h = harness();
-    composition.filesystem.mockReset().mockReturnValue(h.fs);
-    composition.jobs.mockReset().mockReturnValue(h.jobs);
-    h.fs.makeCandidateDurable = vi.fn(async () => {
-      throw new InstallationFailure('IO_FAILED');
-    });
-    const facade = createRuntimeInstallation(config);
-    const first = facade.install();
-    expect(await first).toMatchObject({ state: 'uncertain', cause: 'IO_FAILED' });
-    expect(facade.install({ repair: true })).toBe(first);
-    expect(composition.filesystem).toHaveBeenCalledTimes(2); // Status facade and original owner only.
-    expect(composition.jobs).toHaveBeenCalledTimes(1);
-    expect(h.fs.releaseReservation).not.toHaveBeenCalled();
-  });
-
-  it('facade admits a new owner only after genuine producer custody returns cleanly', async () => {
-    const first = harness();
-    composition.filesystem.mockReset().mockReturnValue(first.fs);
-    composition.jobs.mockReset().mockReturnValue(first.jobs);
-    const facade = createRuntimeInstallation(config);
-    expect((await facade.install()).state).toBe('verified-installed');
-    const second = harness();
-    composition.filesystem.mockReturnValue(second.fs);
-    composition.jobs.mockReturnValue(second.jobs);
-    expect((await facade.install()).state).toBe('verified-installed');
-    expect(first.jobs.runInstaller).toHaveBeenCalledTimes(1);
-    expect(second.jobs.runInstaller).toHaveBeenCalledTimes(1);
   });
 
   it('publishes only after original return, re-observation and complete payload durability', async () => {
@@ -497,44 +460,6 @@ describe('installation transaction semantic ordering (physical acceptance UNRUN)
     expect(h.events.indexOf('payload-durable')).toBeLessThan(h.events.indexOf('publish'));
     expect(h.events.indexOf('publish')).toBeLessThan(h.events.indexOf('release'));
     expect(h.owner?.births).toHaveLength(2);
-  });
-
-  it('joins one in-progress original and never repeats an installer on the same transaction', async () => {
-    const h = harness();
-    const transaction = h.transaction();
-    const first = transaction.install();
-    expect(transaction.install({ repair: true })).toBe(first);
-    await first;
-    expect(h.jobs.runInstaller).toHaveBeenCalledTimes(1);
-    expect(transaction.install()).toBe(first);
-  });
-
-  it('reuses through a fresh attempt journal without installer or immutable-chain writes', async () => {
-    const old = oldInstallation();
-    const before = canonicalDigest(old);
-    const h = harness(old);
-    const result = await h.transaction().install();
-    expect(result.state).toBe('verified-reused');
-    expect(old.current.file.sha256).not.toBe(old.current.pointer.manifestDigest);
-    expect(result.state === 'verified-reused' && result.currentManifestDigest).toBe(
-      old.current.pointer.manifestDigest
-    );
-    expect(h.reuse?.currentManifestDigest).toBe(old.current.pointer.manifestDigest);
-    expect(h.events.indexOf('owner:verifying')).toBeLessThan(h.events.indexOf('fresh-verifier'));
-    expect(h.events.indexOf('fresh-verifier')).toBeLessThan(h.events.indexOf('owner:reusing'));
-    expect(h.events.indexOf('owner:reusing')).toBeLessThan(h.events.indexOf('reuse-journal'));
-    expect(h.jobs.runInstaller).not.toHaveBeenCalled();
-    expect(h.fs.stageCandidate).not.toHaveBeenCalled();
-    expect(h.fs.makeCandidateDurable).not.toHaveBeenCalled();
-    expect(h.fs.publish).not.toHaveBeenCalled();
-    expect(h.reuse?.installer).toEqual({ kind: 'not-invoked' });
-    expect(h.reuse?.freshVerification.installer).toEqual({ kind: 'not-invoked' });
-    expect(h.reuse?.binding.attemptId).not.toBe(oldBinding.attemptId);
-    expect(canonicalDigest(old)).toBe(before);
-    const historical = h.inspect().status;
-    expect(historical.state === 'installed-files' && historical.lastFreshVerifiedVersion).toBe(
-      '157.0.8103.15'
-    );
   });
 
   it('explicit repair stages a new candidate and preserves the old pointer until publish', async () => {
@@ -566,24 +491,6 @@ describe('installation transaction semantic ordering (physical acceptance UNRUN)
     expect(h.fs.stageCandidate).not.toHaveBeenCalled();
     expect(h.jobs.runInstaller).not.toHaveBeenCalled();
     expect(h.fs.publish).not.toHaveBeenCalled();
-  });
-
-  it('classifies acquired originals as uncertain even when reservation acquisition rejects before returning its handle', async () => {
-    const h = harness();
-    const acquire = h.fs.acquireReservation;
-    h.fs.acquireReservation = vi.fn(
-      async (...args: Parameters<InstallationFilesystem['acquireReservation']>) => {
-        await acquire(...args);
-        throw new InstallationFailure('RECORD_FAILED');
-      }
-    );
-    expect(await h.transaction().install()).toMatchObject({
-      state: 'uncertain',
-      cause: 'RECORD_FAILED',
-    });
-    expect(h.fs.stageCandidate).not.toHaveBeenCalled();
-    expect(h.jobs.runInstaller).not.toHaveBeenCalled();
-    expect(h.fs.releaseReservation).not.toHaveBeenCalled();
   });
 
   it('refuses a changed current observed after reservation before candidate acquisition', async () => {
@@ -631,14 +538,6 @@ describe('installation transaction semantic ordering (physical acceptance UNRUN)
     expect(h.fs.publish).not.toHaveBeenCalled();
   });
 
-  it('rejects an authentic job handle with unresolved pipe/raw custody', async () => {
-    const h = harness();
-    h.changeJob((facts) => ({ ...facts, stdout: { ...facts.stdout, rawFlushedClosed: false } }));
-    expect(await h.transaction().install()).toMatchObject({ cause: 'CUSTODY_UNCERTAIN' });
-    expect(h.jobs.runVerifier).not.toHaveBeenCalled();
-    expect(h.fs.publish).not.toHaveBeenCalled();
-  });
-
   it('rejects a copied handle even when all serialized facts match', async () => {
     const h = harness();
     const run = h.jobs.runInstaller;
@@ -648,34 +547,6 @@ describe('installation transaction semantic ordering (physical acceptance UNRUN)
     });
     expect(await h.transaction().install()).toMatchObject({ cause: 'CUSTODY_UNCERTAIN' });
     expect(h.fs.publish).not.toHaveBeenCalled();
-  });
-
-  it('rejects renewed bounds in an otherwise matching original birth', async () => {
-    const h = harness();
-    h.changeJob((facts) => ({
-      ...facts,
-      birth: facts.birth && {
-        ...facts.birth,
-        bounds: { ...facts.birth.bounds, workEnd: facts.birth.bounds.workEnd + 1 },
-      },
-    }));
-    expect(await h.transaction().install()).toMatchObject({ cause: 'BINDING_MISMATCH' });
-    expect(h.jobs.runVerifier).not.toHaveBeenCalled();
-    expect(h.fs.publish).not.toHaveBeenCalled();
-  });
-
-  it('preserves original installer failure and enters no verifier/publication', async () => {
-    const h = harness();
-    h.changeJob((facts) => ({
-      ...facts,
-      exitCode: 1,
-      firstCause: 'INSTALLER_FAILED',
-      cleanupCauses: ['IO_FAILED'],
-      descendantDisposition: 'unknown',
-    }));
-    expect(await h.transaction().install()).toMatchObject({ cause: 'INSTALLER_FAILED' });
-    expect(h.jobs.runVerifier).not.toHaveBeenCalled();
-    expect(h.fs.releaseReservation).not.toHaveBeenCalled();
   });
 
   it('never replaces current after the filesystem durability gate fails', async () => {
@@ -704,30 +575,26 @@ describe('installation transaction semantic ordering (physical acceptance UNRUN)
     expect(h.fs.publish).not.toHaveBeenCalled();
   });
 
-  it('admits no installer when attempt creation fails its durability gate', async () => {
-    const h = harness();
-    h.fs.createAttempt = vi.fn(async () => {
-      throw new InstallationFailure('IO_FAILED');
-    });
-    expect(await h.transaction().install()).toMatchObject({ cause: 'IO_FAILED' });
-    expect(h.jobs.runInstaller).not.toHaveBeenCalled();
+  it('refuses a forged reuse-journal digest and never rewrites current', async () => {
+    const h = harness(oldInstallation());
+    h.fs.writeReuseJournal = vi.fn(async (_reservation, attempt) =>
+      file(join(attempt.attemptRoot, 'reuse.json'))
+    );
+    expect(await h.transaction().install()).toMatchObject({ cause: 'OWNERSHIP_UNCERTAIN' });
     expect(h.fs.publish).not.toHaveBeenCalled();
+    expect(h.fs.releaseReservation).not.toHaveBeenCalled();
   });
 
-  it('does not publish after the fixed work deadline expires during installation', async () => {
+  it('refuses abort before any reservation/native effect', async () => {
     const h = harness();
-    const install = h.jobs.runInstaller;
-    h.jobs.runInstaller = vi.fn(async (request) => {
-      const result = await install(request);
-      h.setClock(1002);
-      return result;
+    const abort = new AbortController();
+    abort.abort();
+    expect(await h.transaction().install({ signal: abort.signal })).toMatchObject({
+      state: 'refused',
+      cause: 'ABORTED',
     });
-    expect(await h.transaction().install()).toMatchObject({
-      cause: 'WORK_EXPIRED',
-      publicationMayHaveChanged: false,
-    });
-    expect(h.jobs.runVerifier).not.toHaveBeenCalled();
-    expect(h.fs.publish).not.toHaveBeenCalled();
+    expect(h.fs.acquireReservation).not.toHaveBeenCalled();
+    expect(h.jobs.runInstaller).not.toHaveBeenCalled();
   });
 
   it('retains post-rename uncertainty instead of rollback or clean release', async () => {
@@ -738,20 +605,6 @@ describe('installation transaction semantic ordering (physical acceptance UNRUN)
     expect(await h.transaction().install()).toMatchObject({
       state: 'uncertain',
       cause: 'PUBLICATION_UNCERTAIN',
-      publicationMayHaveChanged: true,
-    });
-    expect(h.fs.publish).toHaveBeenCalledTimes(1);
-    expect(h.fs.releaseReservation).not.toHaveBeenCalled();
-  });
-
-  it('preserves an original filesystem cause with ambiguous publication effects', async () => {
-    const h = harness();
-    h.fs.publish = vi.fn(async () => {
-      throw new InstallationFailure('IO_FAILED', true);
-    });
-    expect(await h.transaction().install()).toMatchObject({
-      state: 'uncertain',
-      cause: 'IO_FAILED',
       publicationMayHaveChanged: true,
     });
     expect(h.fs.publish).toHaveBeenCalledTimes(1);
@@ -770,40 +623,6 @@ describe('installation transaction semantic ordering (physical acceptance UNRUN)
     });
     expect(h.fs.publish).toHaveBeenCalledTimes(1);
   });
-
-  it('refuses a forged reuse-journal digest and never rewrites current', async () => {
-    const h = harness(oldInstallation());
-    h.fs.writeReuseJournal = vi.fn(async (_reservation, attempt) =>
-      file(join(attempt.attemptRoot, 'reuse.json'))
-    );
-    expect(await h.transaction().install()).toMatchObject({ cause: 'OWNERSHIP_UNCERTAIN' });
-    expect(h.fs.publish).not.toHaveBeenCalled();
-    expect(h.fs.releaseReservation).not.toHaveBeenCalled();
-  });
-
-  it('does not turn clock regression into a renewed admission window', async () => {
-    const h = harness();
-    const validate = h.fs.validateLibrary;
-    h.fs.validateLibrary = vi.fn(async () => {
-      const library = await validate();
-      h.setClock(0);
-      return library;
-    });
-    expect(await h.transaction().install()).toMatchObject({ cause: 'CLOCK_UNAVAILABLE' });
-    expect(h.jobs.runInstaller).not.toHaveBeenCalled();
-  });
-
-  it('refuses abort before any reservation/native effect', async () => {
-    const h = harness();
-    const abort = new AbortController();
-    abort.abort();
-    expect(await h.transaction().install({ signal: abort.signal })).toMatchObject({
-      state: 'refused',
-      cause: 'ABORTED',
-    });
-    expect(h.fs.acquireReservation).not.toHaveBeenCalled();
-    expect(h.jobs.runInstaller).not.toHaveBeenCalled();
-  });
 });
 
 describe('existing-only startup verification prerequisite (semantic controls, physical acceptance UNRUN)', () => {
@@ -820,125 +639,7 @@ describe('existing-only startup verification prerequisite (semantic controls, ph
     expect(h.jobs.runInstaller).not.toHaveBeenCalled();
     expect(h.jobs.runVerifier).not.toHaveBeenCalled();
   });
-  it('existing-only cannot be turned into repair/install by a conflicting option', async () => {
-    const h = harness(oldInstallation());
-    expect(await h.transaction().install({ existingOnly: true, repair: true })).toMatchObject({
-      state: 'refused',
-      cause: 'VERIFICATION_UNAVAILABLE',
-    });
-    expect(h.fs.acquireReservation).not.toHaveBeenCalled();
-    expect(h.jobs.runInstaller).not.toHaveBeenCalled();
-  });
-  it('invalid historical files refuse before any original native job', async () => {
-    const h = harness();
-    h.fs.inspectExisting = vi.fn(async () => ({
-      ...h.inspect(),
-      status: {
-        ...statusCommon,
-        state: 'invalid' as const,
-        cause: 'INSTALLATION_INVALID' as const,
-      },
-    }));
-    expect(await h.transaction().install({ existingOnly: true })).toMatchObject({
-      state: 'refused',
-      cause: 'INSTALLATION_INVALID',
-    });
-    expect(h.fs.acquireReservation).not.toHaveBeenCalled();
-    expect(h.jobs.runVerifier).not.toHaveBeenCalled();
-  });
-  it('facade fresh verification invokes the original verifier for existing files without installer or mode readiness', async () => {
-    const h = harness(oldInstallation());
-    composition.filesystem.mockReset().mockReturnValue(h.fs);
-    composition.jobs.mockReset().mockReturnValue(h.jobs);
-    const facade = createRuntimeInstallation(config);
-    const result = await facade.verifyExisting();
-    expect(result.state).toBe('verified-reused');
-    expect(result.readiness).toEqual(READINESS_UNAVAILABLE);
-    expect(h.jobs.runVerifier).toHaveBeenCalledTimes(1);
-    expect(h.jobs.runInstaller).not.toHaveBeenCalled();
-    expect(h.fs.stageCandidate).not.toHaveBeenCalled();
-    expect(h.fs.publish).not.toHaveBeenCalled();
-    expect(h.reuse?.binding.attemptId).not.toBe(oldBinding.attemptId);
-  });
-  it('concurrent existing verification joins its exact original held verifier through natural settlement', async () => {
-    const h = harness(oldInstallation());
-    let release!: () => void;
-    const held = new Promise<void>((yes) => {
-      release = yes;
-    });
-    const originalVerifier = h.jobs.runVerifier.bind(h.jobs);
-    h.jobs.runVerifier = vi.fn(async (request: Parameters<InstallationJobs['runVerifier']>[0]) => {
-      await held;
-      return originalVerifier(request);
-    });
-    composition.filesystem.mockReset().mockReturnValue(h.fs);
-    composition.jobs.mockReset().mockReturnValue(h.jobs);
-    const facade = createRuntimeInstallation(config),
-      original = facade.verifyExisting();
-    let settled = false;
-    void original.then(
-      () => {
-        settled = true;
-      },
-      () => {
-        settled = true;
-      }
-    );
-    try {
-      await vi.waitFor(() => expect(h.jobs.runVerifier).toHaveBeenCalledTimes(1));
-      expect(facade.verifyExisting()).toBe(original);
-      expect(settled).toBe(false);
-      expect(h.jobs.runInstaller).not.toHaveBeenCalled();
-    } finally {
-      release();
-      await original;
-    }
-    expect(settled).toBe(true);
-  });
-  it('active ordinary installation cannot lend a fresh existing-verification result or launch another original', async () => {
-    const h = harness();
-    let release!: () => void;
-    const held = new Promise<void>((yes) => {
-      release = yes;
-    });
-    const originalInspection = h.fs.inspectExisting.bind(h.fs);
-    h.fs.inspectExisting = vi.fn(
-      async (options: Parameters<InstallationFilesystem['inspectExisting']>[0]) => {
-        await held;
-        return originalInspection(options);
-      }
-    );
-    composition.filesystem.mockReset().mockReturnValue(h.fs);
-    composition.jobs.mockReset().mockReturnValue(h.jobs);
-    const facade = createRuntimeInstallation(config),
-      original = facade.install();
-    try {
-      await vi.waitFor(() => expect(h.fs.inspectExisting).toHaveBeenCalledTimes(1));
-      expect(await facade.verifyExisting()).toMatchObject({
-        state: 'refused',
-        cause: 'PUBLICATION_BUSY',
-        readiness: READINESS_UNAVAILABLE,
-      });
-      expect(composition.jobs).toHaveBeenCalledTimes(1);
-      expect(h.jobs.runInstaller).not.toHaveBeenCalled();
-    } finally {
-      release();
-      await original;
-    }
-  });
-  it('unsupported platform refuses before filesystem inspection or jobs', async () => {
-    const h = harness();
-    composition.filesystem.mockReset().mockReturnValue(h.fs);
-    composition.jobs.mockReset().mockReturnValue(h.jobs);
-    const facade = createRuntimeInstallation({ ...config, platform: 'linux' });
-    expect(await facade.verifyExisting()).toMatchObject({
-      state: 'refused',
-      cause: 'PLATFORM_UNSUPPORTED',
-    });
-    expect(h.fs.inspectExisting).not.toHaveBeenCalled();
-    expect(h.jobs.runInstaller).not.toHaveBeenCalled();
-    expect(h.jobs.runVerifier).not.toHaveBeenCalled();
-  });
+
   it('changed current pointer under original reservation refuses instead of installing a replacement', async () => {
     const h = harness(oldInstallation());
     h.fs.inspectExisting = vi

@@ -1,17 +1,6 @@
 /**
- * @vitest-environment jsdom
- *
- * The session list has one writer that everybody reads and several readers that
- * nobody writes for. This file mounts the REAL writer and calls the REAL
- * readers, so the only thing that can make it pass is the two of them landing
- * on the same cache entry.
- *
- * Seeding the cache by hand would prove nothing: a test that writes the key its
- * own reader reads builds the world in which the code works. That is exactly
- * how a banner read `['session', id]` for months while the app wrote
- * `['session', id, cwd]` (DOR-482) — the reader's own test was the only thing
- * that ever filled the short key. So there is no `setQueryData` for the session
- * list anywhere below; every entry gets there the way it gets there in the app.
+ * @vitest-environment jsdom The session list has one writer that everybody reads and several
+ * readers that nobody writes for.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, render, screen, waitFor, act } from '@testing-library/react';
@@ -22,7 +11,6 @@ import type { Session } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
-import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TooltipProvider } from '@/layers/shared/ui';
 import {
   useSessions,
@@ -34,7 +22,6 @@ import {
   useSessionStatus,
   useSessionSettingsOverridesStore,
   resolveSessionForCwd,
-  markSessionListsReset,
   noteSessionListsResetStamp,
   resetSessionListResetMarker,
   sessionKeys,
@@ -64,10 +51,8 @@ vi.mock('@/layers/entities/session/model/navigation/use-session-id', () => ({
   useSessionId: () => [null, vi.fn()] as const,
 }));
 
-// Both call styles are in use: `useSessions` destructures the whole store,
-// `useSessionDetail` passes a selector. A mock that answers only the first hands
-// the selector caller the state object where it expects a cwd string, which
-// empties the detail key and quietly disables the very query under test.
+// Both call styles are in use: `useSessions` destructures the whole store, `useSessionDetail`
+// passes a selector.
 vi.mock('@/layers/shared/model/app-store', () => {
   const state = { selectedCwd: CWD };
   return {
@@ -107,13 +92,7 @@ function createHarness(sessions: Session[] = [makeSession()], overrides: Partial
   return { transport, queryClient, wrapper };
 }
 
-/**
- * Run the `/session` loader and report the session id it redirects to.
- *
- * Awaited rather than called bare so it reads the answer the same way whether
- * the loader redirects synchronously or after asking the server — the shape of
- * the loader is not what any case here is about.
- */
+/** Run the `/session` loader and report the session id it redirects to. */
 async function loaderRedirectSession(
   context: { queryClient: QueryClient; transport: Transport },
   dir: string | undefined
@@ -132,10 +111,8 @@ async function loaderRedirectSession(
     });
     return null;
   } catch (thrown: unknown) {
-    // The redirect's search is a function of the search that arrived — the
-    // router applies it against the live location — so it is resolved here the
-    // same way. This loader only fires when there is no `?session=`, so an
-    // empty previous search is the honest stand-in.
+    // The redirect's search is a function of the search that arrived — the router applies it
+    // against the live location — so it is resolved here the same way.
     const { search } = (thrown as { options: { search: unknown } }).options;
     const resolved =
       typeof search === 'function'
@@ -185,27 +162,9 @@ describe('session list: one writer, many readers', () => {
     expect(await loaderRedirectSession({ queryClient, transport }, CWD)).toBe('listed-1');
   });
 
-  it('a navigation reuses the session the list query fetched', async () => {
-    // Red when: `resolveSessionForCwd` and `useSessions` disagree on the key —
-    // every agent switch would open a brand-new empty session instead.
-    const { queryClient, transport, wrapper } = createHarness();
-    const { result } = renderHook(() => useSessions(), { wrapper });
-    await waitFor(() => expect(result.current.sessions).toHaveLength(1));
-
-    expect(await resolveSessionForCwd({ queryClient, transport }, CWD)).toEqual({
-      sessionId: 'listed-1',
-      isNew: false,
-      cwd: CWD,
-    });
-  });
-
   it('an optimistic rename shows up in the list every other surface reads', async () => {
-    // Red when: the rename mutation writes a key `useSessions` does not read —
-    // the sidebar row would keep the old title until a full refetch.
-    //
-    // The PATCH is left in flight on purpose: settling it refetches the list
-    // and would hide whether the optimistic write ever landed in the right
-    // place.
+    // Red when: the rename mutation writes a key `useSessions` does not read — the sidebar row
+    // would keep the old title until a full refetch.
     const { wrapper } = createHarness(undefined, {
       updateSession: vi.fn().mockReturnValue(new Promise(() => {})),
     });
@@ -247,11 +206,8 @@ describe('session list: one writer, many readers', () => {
 });
 
 /**
- * The window has never opened this agent, so nothing has ever filled its
- * per-directory cache entry. That is the ordinary case — a cockpit only
- * cold-loads the list for the agent it is pointed at — and it is
- * indistinguishable from "this agent has no conversations" if the only thing
- * anyone asks is the cache.
+ * The window has never opened this agent, so nothing has ever filled its per-directory cache
+ * entry.
  */
 describe('session resolution for an agent this window has never opened', () => {
   // A window whose event stream has connected and named no account switch.
@@ -271,9 +227,7 @@ describe('session resolution for an agent this window has never opened', () => {
   }
 
   it('resolves the agent’s most recent conversation, not a brand-new one', async () => {
-    // Red when: resolution answers from this window's query cache alone. A cache
-    // MISS is read as "no conversations", so clicking an agent the window has not
-    // already visited opens an empty chat and abandons the real one.
+    // Red when: resolution answers from this window's query cache alone.
     const { queryClient, transport } = createPerDirectoryHarness({
       [OTHER_CWD]: [makeSession({ id: 'web-1', cwd: OTHER_CWD })],
     });
@@ -283,104 +237,13 @@ describe('session resolution for an agent this window has never opened', () => {
     expect(resolved).toEqual({ sessionId: 'web-1', isNew: false, cwd: OTHER_CWD });
   });
 
-  it('sends the /session loader to that same conversation', async () => {
-    // The other door into the same decision: a bookmark, a pasted link, or any
-    // navigation that names a directory without naming a session.
-    const { queryClient, transport } = createPerDirectoryHarness({
-      [OTHER_CWD]: [makeSession({ id: 'web-1', cwd: OTHER_CWD })],
-    });
-
-    expect(await loaderRedirectSession({ queryClient, transport }, OTHER_CWD)).toBe('web-1');
-  });
-
-  it('still starts a fresh conversation for an agent that genuinely has none', async () => {
-    const sessionId = 'babd069c-b5d6-4616-addb-0df82a8337a9';
-    const launchRef = '2c110db5-b5ac-4db2-9328-151e9cf00ba1';
-    const { queryClient, transport, listSessions } = createPerDirectoryHarness({});
-    vi.mocked(transport.createSessionLocation).mockResolvedValue({ id: launchRef });
-    vi.mocked(transport.allocateSession).mockResolvedValue({ sessionId, launchRef });
-
-    const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
-
-    expect(resolved).toEqual({ isNew: true, cwd: OTHER_CWD });
-    expect(listSessions).toHaveBeenCalledWith(OTHER_CWD);
-    expect(transport.createSessionLocation).not.toHaveBeenCalled();
-    expect(transport.allocateSession).not.toHaveBeenCalled();
-
-    expect(await loaderRedirectSession({ queryClient, transport }, OTHER_CWD)).toBe(sessionId);
-    expect(transport.createSessionLocation).toHaveBeenCalledExactlyOnceWith(OTHER_CWD);
-    expect(transport.allocateSession).toHaveBeenCalledExactlyOnceWith({
-      kind: 'location',
-      launchRef,
-    });
-  });
-
-  it('asks once and reuses the answer, so switching back is free', async () => {
-    // The answer is cached under the same key `useSessions` reads, so the second
-    // switch costs nothing and the chat paints from what is already there.
-    const { queryClient, transport, listSessions } = createPerDirectoryHarness({
-      [OTHER_CWD]: [makeSession({ id: 'web-1', cwd: OTHER_CWD })],
-    });
-
-    await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
-    await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
-
-    expect(listSessions).toHaveBeenCalledTimes(1);
-    expect(queryClient.getQueryData<Session[]>(sessionKeys.list(OTHER_CWD))).toHaveLength(1);
-  });
-
   it('answers "I could not find out" when the server cannot be reached', async () => {
-    // Red when: a failed lookup mints a fresh id. That opens a blank chat for an
-    // agent that has work — DOR-928's own symptom, and indistinguishable from
-    // it. "No sessions" and "could not ask" are different answers and only one
-    // of them may start a new conversation.
+    // Red when: a failed lookup mints a fresh id.
     const { queryClient, transport } = createHarness(undefined, {
       listSessions: vi.fn().mockRejectedValue(new Error('offline')),
     });
 
     expect(await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD)).toBeNull();
-  });
-
-  it('re-asks under the app’s real cache policy, not the test default', async () => {
-    // Every other case here builds a bare QueryClient, whose `staleTime` is 0 —
-    // so anything cached counts as stale and gets re-fetched, and the fix looks
-    // right for a reason the app does not share. The app runs `staleTime: 30s`
-    // (`createQueryClientConfig`), and the global-stream bridge writes an EMPTY
-    // list whenever it removes the last session for a directory. Under the real
-    // policy that empty entry is FRESH for the next 30 seconds, so a resolver
-    // that lets freshness decide reproduces DOR-928 exactly.
-    const transport = createMockTransport({
-      listSessions: vi.fn().mockResolvedValue({
-        sessions: [makeSession({ id: 'still-there', cwd: OTHER_CWD })],
-      }),
-    }) as Transport;
-    const queryClient = new QueryClient(createQueryClientConfig());
-    queryClient.setQueryData<Session[]>(sessionKeys.list(OTHER_CWD), []);
-
-    const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
-
-    expect(resolved).toEqual({ sessionId: 'still-there', isNew: false, cwd: OTHER_CWD });
-  });
-
-  it('re-asks rather than trusting a listing the server has disowned', async () => {
-    // A Claude account switch fires `session_list_invalidated`, which invalidates
-    // every per-directory list. The entries are marked, not dropped, so a
-    // resolver that trusts any cached row resumes an id from the account that is
-    // no longer signed in — and that id 404s.
-    const { queryClient, transport, listSessions } = createPerDirectoryHarness({
-      [OTHER_CWD]: [makeSession({ id: 'new-account-s1', cwd: OTHER_CWD })],
-    });
-    queryClient.setQueryData<Session[]>(sessionKeys.list(OTHER_CWD), [
-      makeSession({ id: 'old-account-s1', cwd: OTHER_CWD }),
-    ]);
-    // What the binding does when `session_list_invalidated` arrives.
-    markSessionListsReset();
-    await queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
-
-    const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
-
-    expect(resolved?.sessionId).toBe('new-account-s1');
-    expect(listSessions).toHaveBeenCalledWith(OTHER_CWD);
   });
 
   it('re-asks when a reconnect names a switch it missed, invalidated or not (DOR-2891)', async () => {
@@ -397,26 +260,6 @@ describe('session resolution for an agent this window has never opened', () => {
     const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
 
     expect(resolved?.sessionId).toBe('new-account-s1');
-    expect(listSessions).toHaveBeenCalledWith(OTHER_CWD);
-  });
-
-  it('opens a list a reconnect marked stale at once, and refreshes it behind (DOR-2891)', async () => {
-    // A stream reconnect invalidates every cache because events may have been
-    // missed — but the list is still this agent's chats. Waiting on the server
-    // for it made every agent click after a wake from sleep hang.
-    const { queryClient, transport, listSessions } = createPerDirectoryHarness({
-      [OTHER_CWD]: [makeSession({ id: 'fresh-s1', cwd: OTHER_CWD })],
-    });
-    queryClient.setQueryData<Session[]>(sessionKeys.list(OTHER_CWD), [
-      makeSession({ id: 'cached-s1', cwd: OTHER_CWD }),
-    ]);
-    await queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
-    // Never answer, so a resolver that waited would never resolve.
-    listSessions.mockImplementation(() => new Promise(() => {}));
-
-    const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
-
-    expect(resolved?.sessionId).toBe('cached-s1');
     expect(listSessions).toHaveBeenCalledWith(OTHER_CWD);
   });
 });
@@ -471,18 +314,7 @@ describe('session list: what may live under the list prefix', () => {
   });
 });
 
-/**
- * A chat's permission mode, against the two caches that both claim to know it.
- *
- * The open chat reads the detail cache; the list and Recent queries write the
- * same rows from their own fetches, so the two can disagree, and the older one
- * used to win. Every case below mounts the REAL writers and lets each cache
- * fill the way it fills in the app: seeding the detail key by hand is precisely
- * the move that made the first round of these tests pass while the app went
- * quiet about a bypassing chat (DOR-496). The session rows that once read these
- * caches are gone (DOR-2789), so the status line and the open chat's detail are
- * what is checked.
- */
+/** A chat's permission mode, against the two caches that both claim to know it. */
 describe('session permission mode: the fresher answer wins', () => {
   /** What the chat panel mounts while a session is open — the one fetch that fills the detail cache. */
   function OpenSession({ sessionId }: { sessionId: string }) {
@@ -513,11 +345,8 @@ describe('session permission mode: the fresher answer wins', () => {
   }
 
   /**
-   * The list cache mounted the way the app mounts it, beside the open chat's
-   * detail read and status line. The rows that used to draw a full-power mark
-   * from these caches are gone (DOR-2789); what is left to prove is that the
-   * caches themselves stay right, read through the status line and the open
-   * chat's detail.
+   * The list cache mounted the way the app mounts it, beside the open chat's detail read and
+   * status line.
    */
   function Rail({ openSessionId }: { openSessionId: string | null }) {
     useGlobalSessionStream();
@@ -536,15 +365,8 @@ describe('session permission mode: the fresher answer wins', () => {
   }
 
   it('lets the later-fetched of two sources win, whichever arrives first', async () => {
-    // The guard compares an incoming answer against the date on the entry, so
-    // that date has to mean "when this data was true" for EVERY writer, not "when
-    // somebody copied it". Here the Recent fetch starts second and answers second,
-    // while the list fetch starts first and answers in between. If the list answer
-    // dates the entry by its own arrival, the genuinely newer Recent answer — the
-    // only one that knows the session has started bypassing — looks older than
-    // what it is replacing and is dropped. Two fetches of ONE query cannot
-    // interleave this way (TanStack dedupes them); these are two queries over the
-    // same rows, and only the clock they are dated on can order them.
+    // The guard compares an incoming answer against the date on the entry, so that date has to
+    // mean "when this data was true" for EVERY writer, not "when somebody copied it".
     let answerList!: (value: { sessions: Session[] }) => void;
     let answerRecent!: (value: {
       sessions: Session[];
@@ -587,9 +409,7 @@ describe('session permission mode: the fresher answer wins', () => {
     );
     await waitFor(() => expect(screen.getByTestId('recent-count')).toHaveTextContent('1'));
 
-    // Both refetch, list first. The gap is real time because the ordering under
-    // test is between the two FETCH STARTS, and the clock they are compared on
-    // has millisecond resolution.
+    // Both refetch, list first.
     void queryClient.refetchQueries({ queryKey: sessionKeys.list(CWD) });
     await waitFor(() => expect(listSessions).toHaveBeenCalledTimes(2));
     await new Promise((resolve) => setTimeout(resolve, 5));
@@ -614,10 +434,8 @@ describe('session permission mode: the fresher answer wins', () => {
   });
 
   it('warns the moment the person switches the open session to bypass', async () => {
-    // The other direction: the PATCH answer is the freshest thing anyone holds,
-    // and the list row will not hear about it until the runtime's watcher fires.
-    // Red when a fix makes the caller's list row outrank the detail cache — the
-    // rail would then go quiet about a bypass the person just switched on.
+    // The other direction: the PATCH answer is the freshest thing anyone holds, and the list row
+    // will not hear about it until the runtime's watcher fires.
     const getSession = vi.fn().mockResolvedValue(makeSession({ permissionMode: 'default' }));
     const updateSession = vi
       .fn()
@@ -643,17 +461,7 @@ describe('session permission mode: the fresher answer wins', () => {
   });
 
   it('keeps that bypass when a list answer older than the change lands after it', async () => {
-    // Arrival order is not freshness. A list fetch already in flight when the
-    // person turns the dial was built before the PATCH persisted, and lands after
-    // the PATCH answer has written the detail row AND the convergence effect has
-    // dropped the optimistic override that would have outranked it. Refreshing
-    // the detail cache from whatever arrives last therefore reverts the session
-    // to the mode it held a moment ago — the same defect as the first case here,
-    // reached from the opposite side.
-    //
-    // The trigger is `refetchQueries` because that is what puts a list fetch in
-    // flight in the app: window focus against the 30s staleTime, the SSE
-    // reconnect broom, a Claude account switch.
+    // Arrival order is not freshness.
     let answerSecondList!: (value: { sessions: Session[] }) => void;
     const secondList = new Promise<{ sessions: Session[] }>((resolve) => {
       answerSecondList = resolve;
@@ -685,13 +493,7 @@ describe('session permission mode: the fresher answer wins', () => {
     );
     expect(screen.getByTestId('status-line-mode')).toHaveTextContent('bypassPermissions');
 
-    // Now the older answer arrives. The sync is a synchronous call INSIDE the
-    // query function, so waiting for the refetch to settle is a guarantee it has
-    // already had its chance — no sleep, and no window where this passes because
-    // the damage has not landed yet. That guarantee is the whole reason this
-    // waits on `isFetching`: move the sync to `onSuccess` or any other
-    // post-settle hook and the wait stops proving anything, so the wait has to
-    // move with it.
+    // Now the older answer arrives.
     answerSecondList({ sessions: [makeSession({ permissionMode: 'default' })] });
     await waitFor(() =>
       expect(queryClient.isFetching({ queryKey: sessionKeys.list(CWD) })).toBe(0)

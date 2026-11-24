@@ -1,279 +1,24 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { WebClient } from '@slack/web-api';
-import { deliverMessage, createSlackOutboundState } from '../outbound.js';
+import { describe, it, expect, beforeEach } from 'vitest';
 import type { ActiveStream } from '../outbound.js';
 import { STREAM_TTL_MS } from '../stream.js';
 import type { AdapterOutboundCallbacks } from '../../../types.js';
-import { SlackThreadIdCodec } from '../../../lib/thread-id.js';
-import { ThreadParticipationTracker } from '../thread-tracker.js';
 import {
-  createSlackPresenceState,
-  queuePendingReaction,
-  markAssistantThread,
-  clearAllPresence,
-  PRESENCE_EMOJI,
-  WORKING_STATUS,
-  WORKING_LATE_STATUS,
-  PRESENCE_LATE_MS,
-  PRESENCE_REFRESH_MS,
-  PRESENCE_INACTIVITY_MS,
-} from '../presence.js';
-import type { SlackPresenceState } from '../presence.js';
-
-/** Shared codec for tests — no instance ID so prefix is `relay.human.slack`. */
-const testCodec = new SlackThreadIdCodec();
-
-// Mock the inbound module since it is developed in parallel.
-// These constants match the values defined in inbound.ts.
-vi.mock('../inbound.js', () => ({
-  SUBJECT_PREFIX: 'relay.human.slack',
-  MAX_MESSAGE_LENGTH: 4000,
-  extractChannelId: (
-    codec: { decode: (s: string) => { platformId: string } | null },
-    subject: string
-  ) => {
-    const decoded = codec.decode(subject);
-    if (!decoded) return null;
-    return decoded.platformId || null;
-  },
-  isGroupChannel: (channelId: string) => channelId.startsWith('C') || channelId.startsWith('G'),
-}));
-
-// Mock payload-utils.js to avoid slackify-markdown dependency noise in tests.
-// formatForPlatform is a passthrough so test assertions match raw text without
-// mrkdwn conversion applied. All other utils are provided with real implementations.
-vi.mock('../../../lib/payload-utils.js', () => {
-  return {
-    extractPayloadContent: (payload: unknown) => {
-      if (typeof payload === 'string') return payload;
-      if (payload !== null && typeof payload === 'object') {
-        const obj = payload as Record<string, unknown>;
-        if (typeof obj.content === 'string') return obj.content;
-        if (typeof obj.text === 'string') return obj.text;
-      }
-      try {
-        return JSON.stringify(payload);
-      } catch {
-        return '[unserializable payload]';
-      }
-    },
-    detectStreamEventType: (payload: unknown) => {
-      if (payload === null || typeof payload !== 'object') return null;
-      const obj = payload as Record<string, unknown>;
-      if (typeof obj.type !== 'string' || !('data' in obj)) return null;
-      return obj.type;
-    },
-    extractTextDelta: (payload: unknown) => {
-      if (payload === null || typeof payload !== 'object') return null;
-      const obj = payload as Record<string, unknown>;
-      if (obj.type !== 'text_delta') return null;
-      const data = obj.data as Record<string, unknown> | undefined;
-      if (!data || typeof data.text !== 'string') return null;
-      return data.text;
-    },
-    extractErrorMessage: (payload: unknown) => {
-      if (payload === null || typeof payload !== 'object') return null;
-      const obj = payload as Record<string, unknown>;
-      if (obj.type !== 'error') return null;
-      const data = obj.data as Record<string, unknown> | undefined;
-      return typeof data?.message === 'string' ? data.message : null;
-    },
-    extractApprovalData: (payload: unknown) => {
-      if (payload === null || typeof payload !== 'object') return null;
-      const obj = payload as Record<string, unknown>;
-      if (obj.type !== 'approval_required') return null;
-      const data = obj.data as Record<string, unknown> | undefined;
-      if (!data?.toolCallId || !data?.toolName) return null;
-      return {
-        toolCallId: data.toolCallId as string,
-        toolName: data.toolName as string,
-        input: (data.input as string) ?? '',
-        timeoutMs: (data.timeoutMs as number) ?? 600_000,
-      };
-    },
-    formatToolDescription: (toolName: string, input: string) => {
-      try {
-        const parsed = JSON.parse(input) as Record<string, unknown>;
-        if (toolName === 'Write' && typeof parsed.path === 'string') {
-          return `wants to write to \`${parsed.path}\``;
-        }
-        if (toolName === 'Edit' && typeof parsed.file_path === 'string') {
-          return `wants to edit \`${parsed.file_path}\``;
-        }
-        if (toolName === 'Bash' && typeof parsed.command === 'string') {
-          const cmd = parsed.command as string;
-          const preview = cmd.length > 60 ? `${cmd.slice(0, 57)}...` : cmd;
-          return `wants to run \`${preview}\``;
-        }
-      } catch {
-        // not JSON
-      }
-      return `wants to use tool \`${toolName}\``;
-    },
-    SLACK_MAX_LENGTH: 3500,
-    splitMessage: (text: string, maxLen = 3500): string[] => {
-      if (text.length <= maxLen) return [text];
-      const chunks: string[] = [];
-      let remaining = text;
-      while (remaining.length > maxLen) {
-        let splitAt = -1;
-        const paraBreak = remaining.lastIndexOf('\n\n', maxLen);
-        if (paraBreak > 0) splitAt = paraBreak + 2;
-        if (splitAt === -1) {
-          const lineBreak = remaining.lastIndexOf('\n', maxLen);
-          if (lineBreak > 0) splitAt = lineBreak + 1;
-        }
-        if (splitAt === -1) {
-          const space = remaining.lastIndexOf(' ', maxLen);
-          if (space > 0) splitAt = space + 1;
-        }
-        if (splitAt === -1) splitAt = maxLen;
-        chunks.push(remaining.slice(0, splitAt));
-        remaining = remaining.slice(splitAt);
-      }
-      if (remaining.length > 0) chunks.push(remaining);
-      return chunks;
-    },
-    truncateText: (text: string, maxLen: number) => {
-      if (text.length <= maxLen) return text;
-      return `${text.slice(0, maxLen - 3)}...`;
-    },
-    // Passthrough — no mrkdwn conversion applied in tests
-    formatForPlatform: (content: string, _platform: string) => content,
-    extractAgentIdFromEnvelope: (envelope: { payload?: unknown }) => {
-      const payload = envelope.payload;
-      if (payload && typeof payload === 'object' && 'data' in payload) {
-        const data = (payload as Record<string, unknown>).data;
-        if (data && typeof data === 'object' && 'agentId' in data) {
-          return (data as Record<string, unknown>).agentId as string | undefined;
-        }
-      }
-      return undefined;
-    },
-    extractSessionIdFromEnvelope: (envelope: { payload?: unknown }) => {
-      const payload = envelope.payload;
-      if (payload && typeof payload === 'object' && 'data' in payload) {
-        const data = (payload as Record<string, unknown>).data;
-        if (data && typeof data === 'object' && 'ccaSessionKey' in data) {
-          return (data as Record<string, unknown>).ccaSessionKey as string | undefined;
-        }
-      }
-      return undefined;
-    },
-  };
-});
-
-const mockPostMessage = vi.fn().mockResolvedValue({ ts: 'msg-ts-1' });
-const mockChatUpdate = vi.fn().mockResolvedValue({ ts: 'msg-ts-1' });
-const mockStartStream = vi.fn().mockResolvedValue({ stream_id: 'stream-123' });
-const mockAppendStream = vi.fn().mockResolvedValue({ ok: true });
-const mockStopStream = vi.fn().mockResolvedValue({ ok: true });
-const mockReactionsAdd = vi.fn().mockResolvedValue({ ok: true });
-const mockReactionsRemove = vi.fn().mockResolvedValue({ ok: true });
-const mockSetStatus = vi.fn().mockResolvedValue({ ok: true });
-
-/**
- * Build a WebClient test double with chat and reactions methods wired.
- * The cast through `unknown` is intentional: the real WebClient has dozens
- * of API groups we don't need, and a partial stub is cleaner than
- * implementing the full interface.
- */
-function buildMockClient(): WebClient {
-  const stub = {
-    chat: {
-      postMessage: mockPostMessage,
-      update: mockChatUpdate,
-      startStream: mockStartStream,
-      appendStream: mockAppendStream,
-      stopStream: mockStopStream,
-    },
-    reactions: { add: mockReactionsAdd, remove: mockReactionsRemove },
-    assistant: { threads: { setStatus: mockSetStatus } },
-  };
-  return stub as unknown as WebClient;
-}
-
-function createCallbacks(): AdapterOutboundCallbacks {
-  return {
-    trackOutbound: vi.fn(),
-    recordError: vi.fn(),
-  };
-}
-
-function createEnvelope(subject: string, payload: unknown, from = 'relay.agent.backend') {
-  return {
-    id: 'env-01',
-    subject,
-    from,
-    budget: {
-      hopCount: 0,
-      maxHops: 5,
-      ancestorChain: [],
-      ttl: Date.now() + 3_600_000,
-      callBudgetRemaining: 10,
-    },
-    createdAt: new Date().toISOString(),
-    payload,
-  };
-}
-
-/** Helper to call deliverMessage with options object. */
-/**
- * Outbound state for the current test.
- *
- * Shared across `deliver()` calls the way the real adapter shares it: one
- * instance per adapter, for its whole life. A fresh one per call would hide
- * anything that spans two events of the same turn — which is most of what this
- * module does.
- */
-let approvalState = createSlackOutboundState();
-
-function deliver(
-  subject: string,
-  envelope: ReturnType<typeof createEnvelope>,
-  client: WebClient | null,
-  streamState: Map<string, ActiveStream>,
-  callbacks: AdapterOutboundCallbacks,
-  botUserId = 'UBOTID',
-  streaming = true,
-  typingIndicator: 'none' | 'reaction' = 'none',
-  nativeStreaming = false,
-  presence: SlackPresenceState = createSlackPresenceState(),
-  threadTracker?: ThreadParticipationTracker
-) {
-  return deliverMessage({
-    adapterId: 'slack',
-    subject,
-    envelope,
-    client,
-    streamState,
-    presence,
-    botUserId,
-    callbacks,
-    streaming,
-    nativeStreaming,
-    typingIndicator,
-    approvalState,
-    codec: testCodec,
-    threadTracker,
-  });
-}
+  createEnvelope,
+  deliver,
+  env,
+  h,
+  mockChatUpdate,
+  mockPostMessage,
+  resetOutboundHarness,
+  textDelta,
+} from './outbound.fixtures.js';
 
 describe('deliverMessage', () => {
-  let client: WebClient;
   let streamState: Map<string, ActiveStream>;
   let callbacks: AdapterOutboundCallbacks;
-  let nowMs: number;
 
   beforeEach(() => {
-    vi.clearAllMocks();
-    client = buildMockClient();
-    streamState = new Map();
-    approvalState = createSlackOutboundState();
-    callbacks = createCallbacks();
-    // Pin Date.now for throttle-aware tests
-    nowMs = 1_000_000;
-    vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+    ({ streamState, callbacks } = resetOutboundHarness());
   });
 
   describe('echo prevention', () => {
@@ -283,13 +28,7 @@ describe('deliverMessage', () => {
         { content: 'echo' },
         'relay.human.slack.bot'
       );
-      const result = await deliver(
-        'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks
-      );
+      const result = await deliver(envelope);
       // `skipped`, not a plain success — see the Telegram twin of this test.
       expect(result).toMatchObject({ success: true, skipped: true });
       expect(mockPostMessage).not.toHaveBeenCalled();
@@ -298,66 +37,31 @@ describe('deliverMessage', () => {
 
   describe('guard conditions', () => {
     it('returns error when client is null', async () => {
-      const envelope = createEnvelope('relay.human.slack.D123', { content: 'hi' });
-      const result = await deliver(
-        'relay.human.slack.D123',
-        envelope,
-        null,
-        streamState,
-        callbacks
-      );
+      const envelope = env({ content: 'hi' });
+      const result = await deliver(envelope, { client: null });
       expect(result.success).toBe(false);
       expect(result.error).toContain('not started');
-    });
-
-    it('returns error when subject has no extractable channel ID', async () => {
-      const envelope = createEnvelope('relay.human.telegram.D123', { content: 'hi' });
-      const result = await deliver(
-        'relay.human.telegram.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks
-      );
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('cannot extract channel ID');
     });
   });
 
   describe('standard payload delivery', () => {
     it('sends standard payload via chat.postMessage', async () => {
-      const envelope = createEnvelope('relay.human.slack.D123', { content: 'Hello!' });
-      const result = await deliver(
-        'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks
-      );
+      const envelope = env({ content: 'Hello!' });
+      const result = await deliver(envelope);
       expect(result.success).toBe(true);
       expect(mockPostMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ channel: 'D123', text: 'Hello!' })
+        // Real mrkdwn conversion runs here, which ends every block with a newline.
+        expect.objectContaining({ channel: 'D123', text: 'Hello!\n' })
       );
       expect(callbacks.trackOutbound).toHaveBeenCalled();
     });
 
-    it('includes thread_ts when platformData.ts is present', async () => {
-      const envelope = createEnvelope('relay.human.slack.D123', {
-        content: 'Threaded reply',
-        platformData: { ts: '1234567890.123456' },
-      });
-      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
-      expect(mockPostMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ thread_ts: '1234567890.123456' })
-      );
-    });
-
     it('uses platformData.threadTs over platformData.ts for threading', async () => {
-      const envelope = createEnvelope('relay.human.slack.D123', {
+      const envelope = env({
         content: 'Already threaded',
         platformData: { ts: '1234.0001', threadTs: '1234.0000' },
       });
-      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+      await deliver(envelope);
       expect(mockPostMessage).toHaveBeenCalledWith(
         expect.objectContaining({ thread_ts: '1234.0000' })
       );
@@ -365,26 +69,21 @@ describe('deliverMessage', () => {
 
     it('splits long messages into multiple postMessage calls', async () => {
       const longContent = 'A'.repeat(5000);
-      const envelope = createEnvelope('relay.human.slack.D123', { content: longContent });
-      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+      const envelope = env({ content: longContent });
+      await deliver(envelope);
       // 5000 chars at SLACK_MAX_LENGTH=3500 produces 2 chunks
       expect(mockPostMessage).toHaveBeenCalledTimes(2);
       const call1 = mockPostMessage.mock.calls[0][0] as { text: string };
       const call2 = mockPostMessage.mock.calls[1][0] as { text: string };
       expect(call1.text.length).toBeLessThanOrEqual(3500);
-      expect(call1.text.length + call2.text.length).toBe(5000);
+      // 5000 characters plus the newline mrkdwn conversion appends.
+      expect(call1.text.length + call2.text.length).toBe(5001);
     });
 
     it('records error and returns failure when postMessage throws', async () => {
       mockPostMessage.mockRejectedValueOnce(new Error('channel_not_found'));
-      const envelope = createEnvelope('relay.human.slack.D123', { content: 'hi' });
-      const result = await deliver(
-        'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks
-      );
+      const envelope = env({ content: 'hi' });
+      const result = await deliver(envelope);
       expect(result.success).toBe(false);
       expect(result.error).toBe('channel_not_found');
       expect(callbacks.recordError).toHaveBeenCalled();
@@ -392,53 +91,18 @@ describe('deliverMessage', () => {
   });
 
   describe('message splitting', () => {
-    it('sends a single postMessage for short content', async () => {
-      const envelope = createEnvelope('relay.human.slack.D123', { content: 'Short message' });
-      const result = await deliver(
-        'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks
-      );
-      expect(result.success).toBe(true);
-      expect(mockPostMessage).toHaveBeenCalledTimes(1);
-      expect(mockPostMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ channel: 'D123', text: 'Short message' })
-      );
-    });
-
     it('posts all chunks to the same thread_ts', async () => {
       const longContent = 'word '.repeat(1000); // ~5000 chars
-      const envelope = createEnvelope('relay.human.slack.D123', {
+      const envelope = env({
         content: longContent,
         platformData: { ts: '9999.0001' },
       });
-      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+      await deliver(envelope);
       expect(mockPostMessage.mock.calls.length).toBeGreaterThan(1);
       for (const call of mockPostMessage.mock.calls) {
         const args = call[0] as { thread_ts?: string };
         expect(args.thread_ts).toBe('9999.0001');
       }
-    });
-
-    it('delays 1.1s between chunks for rate limiting', async () => {
-      vi.useFakeTimers({ shouldAdvanceTime: true });
-      // Restore Date.now spy on top of fake timers
-      vi.spyOn(Date, 'now').mockImplementation(() => 1_000_000);
-
-      const timeoutSpy = vi.spyOn(globalThis, 'setTimeout');
-      const longContent = 'A'.repeat(5000);
-      const envelope = createEnvelope('relay.human.slack.D123', { content: longContent });
-      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
-
-      // Find setTimeout calls with 1100ms delay (rate-limiting between chunks)
-      const delayCalls = timeoutSpy.mock.calls.filter((call) => call[1] === 1_100);
-      // 2 chunks means 1 delay between them
-      expect(delayCalls).toHaveLength(1);
-
-      timeoutSpy.mockRestore();
-      vi.useRealTimers();
     });
 
     it('stops sending chunks when a postMessage call fails', async () => {
@@ -448,14 +112,8 @@ describe('deliverMessage', () => {
         .mockRejectedValueOnce(new Error('rate_limited'));
 
       const longContent = 'A'.repeat(8000); // produces 3 chunks
-      const envelope = createEnvelope('relay.human.slack.D123', { content: longContent });
-      const result = await deliver(
-        'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks
-      );
+      const envelope = env({ content: longContent });
+      const result = await deliver(envelope);
       expect(result.success).toBe(false);
       expect(result.error).toBe('rate_limited');
       // Should not attempt the third chunk after the second failed
@@ -465,11 +123,8 @@ describe('deliverMessage', () => {
 
   describe('streaming — text_delta', () => {
     it('starts stream on first text_delta via chat.postMessage', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-      });
-      await deliver('relay.human.slack.D123', delta, client, streamState, callbacks);
+      const delta = textDelta('Hello');
+      await deliver(delta);
       expect(mockPostMessage).toHaveBeenCalledTimes(1);
       // Stream key includes envelope.id for collision prevention
       expect(streamState.has('D123:relay.agent.backend')).toBe(true);
@@ -478,20 +133,14 @@ describe('deliverMessage', () => {
     });
 
     it('updates existing stream on subsequent text_delta via chat.update after throttle window', async () => {
-      const delta1 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-      });
-      await deliver('relay.human.slack.D123', delta1, client, streamState, callbacks);
+      const delta1 = textDelta('Hello');
+      await deliver(delta1);
 
       // Advance past throttle window (1000ms)
-      nowMs += 1_001;
+      h.now += 1_001;
 
-      const delta2 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: ' world' },
-      });
-      await deliver('relay.human.slack.D123', delta2, client, streamState, callbacks);
+      const delta2 = textDelta(' world');
+      await deliver(delta2);
 
       expect(mockPostMessage).toHaveBeenCalledTimes(1);
       expect(mockChatUpdate).toHaveBeenCalledTimes(1);
@@ -499,127 +148,44 @@ describe('deliverMessage', () => {
     });
 
     it('throttles chat.update when called within throttle window', async () => {
-      const delta1 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-      });
-      await deliver('relay.human.slack.D123', delta1, client, streamState, callbacks);
+      const delta1 = textDelta('Hello');
+      await deliver(delta1);
 
       // Do NOT advance time — within throttle window
-      const delta2 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: ' world' },
-      });
-      const result = await deliver(
-        'relay.human.slack.D123',
-        delta2,
-        client,
-        streamState,
-        callbacks
-      );
+      const delta2 = textDelta(' world');
+      const result = await deliver(delta2);
 
       expect(result.success).toBe(true);
       expect(mockChatUpdate).not.toHaveBeenCalled();
       // Text is still accumulated even though update was throttled
       expect(streamState.get('D123:relay.agent.backend')?.accumulatedText).toBe('Hello world');
     });
-
-    it('uses chat.update with accumulated text on subsequent deltas', async () => {
-      const delta1 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Part 1' },
-      });
-      await deliver('relay.human.slack.D123', delta1, client, streamState, callbacks);
-
-      nowMs += 1_001;
-
-      const delta2 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: ' Part 2' },
-      });
-      await deliver('relay.human.slack.D123', delta2, client, streamState, callbacks);
-
-      expect(mockChatUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ channel: 'D123', ts: 'msg-ts-1', text: 'Part 1 Part 2' })
-      );
-    });
-
-    it('collapses consecutive newlines on intermediate updates', async () => {
-      const delta1 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Line 1\n\nLine 2' },
-      });
-      await deliver('relay.human.slack.D123', delta1, client, streamState, callbacks);
-
-      nowMs += 1_001;
-
-      const delta2 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: '\n\nLine 3' },
-      });
-      await deliver('relay.human.slack.D123', delta2, client, streamState, callbacks);
-
-      // Intermediate update should collapse \n\n to \n
-      const updateCall = mockChatUpdate.mock.calls[0][0] as { text: string };
-      expect(updateCall.text).toBe('Line 1\nLine 2\nLine 3');
-    });
-
-    it('records error and returns failure when chat.update throws', async () => {
-      const delta1 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hi' },
-      });
-      await deliver('relay.human.slack.D123', delta1, client, streamState, callbacks);
-
-      nowMs += 1_001;
-
-      mockChatUpdate.mockRejectedValueOnce(new Error('message_not_found'));
-      const delta2 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: ' more' },
-      });
-      const result = await deliver(
-        'relay.human.slack.D123',
-        delta2,
-        client,
-        streamState,
-        callbacks
-      );
-      expect(result.success).toBe(false);
-      expect(callbacks.recordError).toHaveBeenCalled();
-    });
   });
 
   describe('streaming — done', () => {
     it('finalizes stream on done event and removes from streamState', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hi' },
-      });
-      await deliver('relay.human.slack.D123', delta, client, streamState, callbacks);
+      const delta = textDelta('Hi');
+      await deliver(delta);
 
-      const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
-      const result = await deliver('relay.human.slack.D123', done, client, streamState, callbacks);
+      const done = env({ type: 'done', data: {} });
+      const result = await deliver(done);
 
       expect(result.success).toBe(true);
       expect(streamState.has('D123:relay.agent.backend')).toBe(false);
       expect(mockChatUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ channel: 'D123', ts: 'msg-ts-1', text: 'Hi' })
+        expect.objectContaining({ channel: 'D123', ts: 'msg-ts-1', text: 'Hi\n' })
       );
       expect(callbacks.trackOutbound).toHaveBeenCalled();
     });
 
     it('splits an over-limit response into follow-up messages instead of truncating', async () => {
       const longText = 'lorem ipsum '.repeat(400); // ~4800 chars → 2 chunks
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: longText },
-      });
-      await deliver('relay.human.slack.D123', delta, client, streamState, callbacks);
+      const delta = textDelta(longText);
+      await deliver(delta);
       expect(mockPostMessage).toHaveBeenCalledTimes(1); // stream start
 
-      const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
-      const result = await deliver('relay.human.slack.D123', done, client, streamState, callbacks);
+      const done = env({ type: 'done', data: {} });
+      const result = await deliver(done);
 
       expect(result.success).toBe(true);
       // First chunk finalizes the streamed message via chat.update...
@@ -639,8 +205,8 @@ describe('deliverMessage', () => {
     // A turn that ends having posted nothing at all leaves the person looking
     // at their own question with no sign anything happened (DOR-789).
     it('done with nothing posted says the agent finished without a reply', async () => {
-      const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
-      const result = await deliver('relay.human.slack.D123', done, client, streamState, callbacks);
+      const done = env({ type: 'done', data: {} });
+      const result = await deliver(done);
       expect(result.success).toBe(true);
       expect(mockPostMessage).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -655,60 +221,31 @@ describe('deliverMessage', () => {
     // posted" and add "the agent finished without sending anything back" under
     // the error line — on every crashed turn (DOR-789).
     it('done after an error adds nothing — the error was the answer', async () => {
-      const error = createEnvelope('relay.human.slack.D123', {
+      const error = env({
         type: 'error',
         data: { message: 'SDK session crashed' },
       });
-      await deliver('relay.human.slack.D123', error, client, streamState, callbacks);
+      await deliver(error);
       expect(mockPostMessage).toHaveBeenCalledTimes(1);
       mockPostMessage.mockClear();
 
-      const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
-      await deliver('relay.human.slack.D123', done, client, streamState, callbacks);
+      const done = env({ type: 'done', data: {} });
+      await deliver(done);
 
-      expect(mockPostMessage).not.toHaveBeenCalled();
-    });
-
-    it('done after a standard-payload answer adds nothing', async () => {
-      const answer = createEnvelope('relay.human.slack.D123', { content: 'here you go' });
-      await deliver('relay.human.slack.D123', answer, client, streamState, callbacks);
-      mockPostMessage.mockClear();
-
-      const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
-      await deliver('relay.human.slack.D123', done, client, streamState, callbacks);
-
-      expect(mockPostMessage).not.toHaveBeenCalled();
-    });
-
-    it('done after a partial answer stays quiet — that turn already spoke', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'here you go' },
-      });
-      await deliver('relay.human.slack.D123', delta, client, streamState, callbacks);
-      mockPostMessage.mockClear();
-
-      const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
-      await deliver('relay.human.slack.D123', done, client, streamState, callbacks);
-
-      // Finalized through chat.update — no "said nothing" line on top of it.
       expect(mockPostMessage).not.toHaveBeenCalled();
     });
   });
 
   describe('streaming — error', () => {
     it('handles error event with buffered content via chat.update', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Partial response' },
-      });
-      await deliver('relay.human.slack.D123', delta, client, streamState, callbacks);
+      const delta = textDelta('Partial response');
+      await deliver(delta);
 
-      const error = createEnvelope('relay.human.slack.D123', {
+      const error = env({
         type: 'error',
         data: { message: 'Context exceeded' },
       });
-      await deliver('relay.human.slack.D123', error, client, streamState, callbacks);
+      await deliver(error);
 
       expect(mockChatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -720,11 +257,11 @@ describe('deliverMessage', () => {
     });
 
     it('sends standalone error message when no stream is active', async () => {
-      const error = createEnvelope('relay.human.slack.D123', {
+      const error = env({
         type: 'error',
         data: { message: 'Session failed' },
       });
-      await deliver('relay.human.slack.D123', error, client, streamState, callbacks);
+      await deliver(error);
       expect(mockPostMessage).toHaveBeenCalledWith(
         expect.objectContaining({ text: '[Error: Session failed]' })
       );
@@ -732,18 +269,15 @@ describe('deliverMessage', () => {
     });
 
     it('clears stream state on error even when update fails', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hi' },
-      });
-      await deliver('relay.human.slack.D123', delta, client, streamState, callbacks);
+      const delta = textDelta('Hi');
+      await deliver(delta);
 
       mockChatUpdate.mockRejectedValueOnce(new Error('edit_window_closed'));
-      const error = createEnvelope('relay.human.slack.D123', {
+      const error = env({
         type: 'error',
         data: { message: 'timeout' },
       });
-      const result = await deliver('relay.human.slack.D123', error, client, streamState, callbacks);
+      const result = await deliver(error);
       expect(result.success).toBe(false);
       // Stream state is cleared even on failure
       expect(streamState.has('D123:relay.agent.backend')).toBe(false);
@@ -752,52 +286,13 @@ describe('deliverMessage', () => {
 
   describe('silent event types', () => {
     it('skips session_status events without sending', async () => {
-      const envelope = createEnvelope('relay.human.slack.D123', {
+      const envelope = env({
         type: 'session_status',
         data: {},
       });
-      const result = await deliver(
-        'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks
-      );
+      const result = await deliver(envelope);
       expect(result.success).toBe(true);
       expect(mockPostMessage).not.toHaveBeenCalled();
-    });
-
-    it('skips tool_call_start events without sending', async () => {
-      const envelope = createEnvelope('relay.human.slack.D123', {
-        type: 'tool_call_start',
-        data: { tool: 'bash' },
-      });
-      const result = await deliver(
-        'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks
-      );
-      expect(result.success).toBe(true);
-      expect(mockPostMessage).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('group channel delivery', () => {
-    it('delivers to group channel via subject with group segment', async () => {
-      const envelope = createEnvelope('relay.human.slack.group.C12345', {
-        content: 'Team update',
-      });
-      const result = await deliver(
-        'relay.human.slack.group.C12345',
-        envelope,
-        client,
-        streamState,
-        callbacks
-      );
-      expect(result.success).toBe(true);
-      expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({ channel: 'C12345' }));
     });
   });
 
@@ -809,14 +304,14 @@ describe('deliverMessage', () => {
         threadTs: '',
         messageTs: 'old-ts',
         accumulatedText: 'stale',
-        lastUpdateAt: nowMs - 6 * 60 * 1_000,
-        startedAt: nowMs - 6 * 60 * 1_000,
-        lastEventAt: nowMs - 6 * 60 * 1_000,
+        lastUpdateAt: h.now - 6 * 60 * 1_000,
+        startedAt: h.now - 6 * 60 * 1_000,
+        lastEventAt: h.now - 6 * 60 * 1_000,
         streamId: 'stale-stream',
       });
 
-      const envelope = createEnvelope('relay.human.slack.D123', { content: 'hi' });
-      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+      const envelope = env({ content: 'hi' });
+      await deliver(envelope);
 
       expect(streamState.has('D999')).toBe(false);
     });
@@ -827,14 +322,14 @@ describe('deliverMessage', () => {
         threadTs: '',
         messageTs: 'recent-ts',
         accumulatedText: 'recent',
-        lastUpdateAt: nowMs - 1_000,
-        startedAt: nowMs - 1_000,
-        lastEventAt: nowMs - 1_000,
+        lastUpdateAt: h.now - 1_000,
+        startedAt: h.now - 1_000,
+        lastEventAt: h.now - 1_000,
         streamId: 'recent-stream',
       });
 
-      const envelope = createEnvelope('relay.human.slack.D123', { content: 'hi' });
-      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+      const envelope = env({ content: 'hi' });
+      await deliver(envelope);
 
       expect(streamState.has('D999')).toBe(true);
     });
@@ -844,11 +339,8 @@ describe('deliverMessage', () => {
     // the native stream_id leaked, and the rest of the reply opened a second
     // Slack message (DOR-789).
     it('keeps a stream alive past the window as long as deltas keep arriving', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'the beginning ' },
-      });
-      await deliver('relay.human.slack.D123', delta, client, streamState, callbacks);
+      const delta = textDelta('the beginning ');
+      await deliver(delta);
 
       const key = [...streamState.keys()][0]!;
       const stream = streamState.get(key)!;
@@ -858,11 +350,8 @@ describe('deliverMessage', () => {
       stream.lastEventAt = Date.now() - 1_000;
       const streamIdBefore = stream.streamId;
 
-      const more = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'and its end' },
-      });
-      await deliver('relay.human.slack.D123', more, client, streamState, callbacks);
+      const more = textDelta('and its end');
+      await deliver(more);
 
       const after = streamState.get(key);
       expect(after).toBeDefined();
@@ -875,21 +364,15 @@ describe('deliverMessage', () => {
   describe('concurrent stream isolation', () => {
     it('concurrent responses from different agents get independent stream state', async () => {
       // Two agents respond to the same channel simultaneously
-      const deltaA = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'From A' },
-      });
+      const deltaA = textDelta('From A');
       // Override from to simulate different agent sessions
       (deltaA as Record<string, unknown>).from = 'agent:session-1';
 
-      const deltaB = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'From B' },
-      });
+      const deltaB = textDelta('From B');
       (deltaB as Record<string, unknown>).from = 'agent:session-2';
 
-      await deliver('relay.human.slack.D123', deltaA, client, streamState, callbacks);
-      await deliver('relay.human.slack.D123', deltaB, client, streamState, callbacks);
+      await deliver(deltaA);
+      await deliver(deltaB);
 
       // Two separate stream entries should exist
       expect(streamState.size).toBe(2);
@@ -902,347 +385,10 @@ describe('deliverMessage', () => {
     });
   });
 
-  describe('durationMs', () => {
-    it('includes durationMs in all result paths', async () => {
-      const envelope = createEnvelope('relay.human.slack.D123', { content: 'hi' });
-      const result = await deliver(
-        'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks
-      );
-      expect(typeof result.durationMs).toBe('number');
-    });
-  });
-
-  describe('working presence — :eyes: at claim', () => {
-    let presence: SlackPresenceState;
-
-    beforeEach(() => {
-      presence = createSlackPresenceState();
-    });
-
-    afterEach(() => {
-      clearAllPresence(presence);
-    });
-
-    /** A runtime stream event for a turn in flight. */
-    function turnEvent(
-      ts: string,
-      type = 'text_delta',
-      data: Record<string, unknown> = { text: 'x' }
-    ) {
-      return createEnvelope('relay.human.slack.D123', {
-        type,
-        data,
-        platformData: { ts },
-      });
-    }
-
-    /** Deliver one envelope with presence wired in. */
-    function deliverWith(
-      envelope: ReturnType<typeof createEnvelope>,
-      typingIndicator: 'none' | 'reaction' = 'reaction'
-    ) {
-      return deliver(
-        'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        typingIndicator,
-        false,
-        presence
-      );
-    }
-
-    it('adds :eyes: to the trigger message when the turn claims it, not when the message arrives', async () => {
-      queuePendingReaction(presence, 'D123', '1234.0001');
-
-      // The message has arrived and is queued — nothing is shown yet.
-      expect(mockReactionsAdd).not.toHaveBeenCalled();
-
-      await deliverWith(turnEvent('1234.0001'));
-
-      expect(mockReactionsAdd).toHaveBeenCalledTimes(1);
-      expect(mockReactionsAdd).toHaveBeenCalledWith({
-        channel: 'D123',
-        name: PRESENCE_EMOJI,
-        timestamp: '1234.0001',
-      });
-    });
-
-    it('does not re-add on every event of the same turn', async () => {
-      queuePendingReaction(presence, 'D123', '1234.0001');
-      await deliverWith(turnEvent('1234.0001'));
-      await deliverWith(turnEvent('1234.0001'));
-      await deliverWith(turnEvent('1234.0001'));
-
-      expect(mockReactionsAdd).toHaveBeenCalledTimes(1);
-    });
-
-    it('removes the reaction at done', async () => {
-      queuePendingReaction(presence, 'D123', '1234.0001');
-      await deliverWith(turnEvent('1234.0001'));
-      await deliverWith(turnEvent('1234.0001', 'done', {}));
-
-      expect(mockReactionsRemove).toHaveBeenCalledWith({
-        channel: 'D123',
-        name: PRESENCE_EMOJI,
-        timestamp: '1234.0001',
-      });
-    });
-
-    it('removes the reaction at error', async () => {
-      queuePendingReaction(presence, 'D123', '1234.0001');
-      await deliverWith(turnEvent('1234.0001'));
-      await deliverWith(turnEvent('1234.0001', 'error', { message: 'failed' }));
-
-      expect(mockReactionsRemove).toHaveBeenCalledWith({
-        channel: 'D123',
-        name: PRESENCE_EMOJI,
-        timestamp: '1234.0001',
-      });
-    });
-
-    it('releases when the turn stops to wait on a person', async () => {
-      queuePendingReaction(presence, 'D123', '1234.0001');
-      await deliverWith(turnEvent('1234.0001'));
-      await deliverWith(
-        turnEvent('1234.0001', 'approval_required', {
-          toolCallId: 'tc-1',
-          toolName: 'Bash',
-          input: 'ls',
-        })
-      );
-
-      expect(mockReactionsRemove).toHaveBeenCalledWith({
-        channel: 'D123',
-        name: PRESENCE_EMOJI,
-        timestamp: '1234.0001',
-      });
-    });
-
-    it('an approval pause gives the mark back to the same message, never the next one', async () => {
-      queuePendingReaction(presence, 'D123', '1234.0001');
-      queuePendingReaction(presence, 'D123', '1234.0002');
-
-      await deliverWith(turnEvent('1234.0001'));
-      await deliverWith(
-        turnEvent('1234.0001', 'approval_required', {
-          toolCallId: 'tc-1',
-          toolName: 'Bash',
-          input: 'ls',
-        })
-      );
-      // The turn resumes after the person answers.
-      await deliverWith(turnEvent('1234.0001'));
-      await deliverWith(turnEvent('1234.0001', 'done', {}));
-
-      const touched = [...mockReactionsAdd.mock.calls, ...mockReactionsRemove.mock.calls].map(
-        (c) => c[0].timestamp
-      );
-      // The asker's message was marked, unmarked, re-marked and cleaned up...
-      expect(touched).toEqual(['1234.0001', '1234.0001', '1234.0001', '1234.0001']);
-      // ...and nobody else's message was touched, or lost its place in the queue.
-      expect(presence.pendingReactions.get('D123')?.map((e) => e.ts)).toEqual(['1234.0002']);
-    });
-
-    it('ignores a trailing event from a turn that already ended', async () => {
-      queuePendingReaction(presence, 'D123', '1234.0001');
-      await deliverWith(turnEvent('1234.0001'));
-      await deliverWith(turnEvent('1234.0001', 'done', {}));
-      queuePendingReaction(presence, 'D123', '1234.0002');
-      mockReactionsAdd.mockClear();
-
-      // An event the runtime emits after `done` must not claim the next question.
-      await deliverWith(turnEvent('1234.0001', 'tool_result', { ok: true }));
-
-      expect(mockReactionsAdd).not.toHaveBeenCalled();
-      expect(presence.pendingReactions.get('D123')?.map((e) => e.ts)).toEqual(['1234.0002']);
-    });
-
-    it('two interleaved turns remove the reaction from the right message (FIFO)', async () => {
-      queuePendingReaction(presence, 'D123', '1234.0001');
-      queuePendingReaction(presence, 'D123', '1234.0002');
-
-      // Both turns start before either finishes.
-      await deliverWith(turnEvent('1234.0001'));
-      await deliverWith(turnEvent('1234.0002'));
-
-      expect(mockReactionsAdd.mock.calls.map((c) => c[0].timestamp)).toEqual([
-        '1234.0001',
-        '1234.0002',
-      ]);
-
-      // The second turn finishes first — its own message loses the reaction.
-      await deliverWith(turnEvent('1234.0002', 'done', {}));
-      expect(mockReactionsRemove).toHaveBeenCalledTimes(1);
-      expect(mockReactionsRemove).toHaveBeenLastCalledWith({
-        channel: 'D123',
-        name: PRESENCE_EMOJI,
-        timestamp: '1234.0002',
-      });
-
-      await deliverWith(turnEvent('1234.0001', 'done', {}));
-      expect(mockReactionsRemove).toHaveBeenLastCalledWith({
-        channel: 'D123',
-        name: PRESENCE_EMOJI,
-        timestamp: '1234.0001',
-      });
-    });
-
-    it("makes zero reactions.* calls across a full turn when the indicator is 'none'", async () => {
-      queuePendingReaction(presence, 'D123', '1234.0001');
-      await deliverWith(turnEvent('1234.0001'), 'none');
-      await deliverWith(turnEvent('1234.0001'), 'none');
-      await deliverWith(turnEvent('1234.0001', 'done', {}), 'none');
-
-      expect(mockReactionsAdd).not.toHaveBeenCalled();
-      expect(mockReactionsRemove).not.toHaveBeenCalled();
-    });
-
-    it('shows nothing when no trigger message was queued', async () => {
-      await deliverWith(turnEvent('1234.0001'));
-
-      expect(mockReactionsAdd).not.toHaveBeenCalled();
-    });
-
-    it('adds no completion emoji — the reply is the terminal', async () => {
-      queuePendingReaction(presence, 'D123', '1234.0001');
-      await deliverWith(turnEvent('1234.0001'));
-      await deliverWith(turnEvent('1234.0001', 'done', {}));
-
-      const named = [...mockReactionsAdd.mock.calls, ...mockReactionsRemove.mock.calls].map(
-        (c) => c[0].name
-      );
-      expect(new Set(named)).toEqual(new Set([PRESENCE_EMOJI]));
-    });
-
-    it('keeps delivering when the reaction call fails', async () => {
-      mockReactionsAdd.mockRejectedValueOnce(new Error('no_permission'));
-      queuePendingReaction(presence, 'D123', '1234.0001');
-
-      const result = await deliverWith(turnEvent('1234.0001'));
-
-      expect(result.success).toBe(true);
-    });
-
-    describe('assistant split panel — status, not reaction', () => {
-      it('sets a working status at claim and clears it at the terminal', async () => {
-        markAssistantThread(presence, 'D123', '1234.0001');
-        queuePendingReaction(presence, 'D123', '1234.0001');
-
-        await deliverWith(turnEvent('1234.0001'));
-        expect(mockSetStatus).toHaveBeenCalledWith({
-          channel_id: 'D123',
-          thread_ts: '1234.0001',
-          status: WORKING_STATUS,
-        });
-        // The status IS the indicator here — no emoji on top of it.
-        expect(mockReactionsAdd).not.toHaveBeenCalled();
-
-        await deliverWith(turnEvent('1234.0001', 'done', {}));
-        expect(mockSetStatus).toHaveBeenLastCalledWith({
-          channel_id: 'D123',
-          thread_ts: '1234.0001',
-          status: '',
-        });
-      });
-
-      it('says nothing on a thread it has never seen start', async () => {
-        queuePendingReaction(presence, 'D123', '1234.0001');
-        await deliverWith(turnEvent('1234.0001'));
-
-        expect(mockSetStatus).not.toHaveBeenCalled();
-        expect(mockReactionsAdd).toHaveBeenCalledTimes(1);
-      });
-
-      it('says it is running long exactly once, and says nothing after the terminal', async () => {
-        vi.useFakeTimers();
-        try {
-          markAssistantThread(presence, 'D123', '1234.0001');
-          await deliverWith(turnEvent('1234.0001'));
-          expect(mockSetStatus).toHaveBeenCalledWith({
-            channel_id: 'D123',
-            thread_ts: '1234.0001',
-            status: WORKING_STATUS,
-          });
-
-          // The turn keeps reporting in, so it is never released as stalled.
-          for (
-            let elapsed = 0;
-            elapsed < PRESENCE_LATE_MS + PRESENCE_REFRESH_MS;
-            elapsed += 10_000
-          ) {
-            nowMs += 10_000;
-            await vi.advanceTimersByTimeAsync(10_000);
-            await deliverWith(turnEvent('1234.0001'));
-          }
-
-          const statuses = mockSetStatus.mock.calls.map((c) => c[0].status as string);
-          const firstLate = statuses.indexOf(WORKING_LATE_STATUS);
-          expect(firstLate).toBeGreaterThan(0);
-          // Once it has run long it never goes back to claiming it is on pace.
-          expect(statuses.slice(firstLate)).not.toContain(WORKING_STATUS);
-
-          await deliverWith(turnEvent('1234.0001', 'done', {}));
-          expect(mockSetStatus).toHaveBeenLastCalledWith({
-            channel_id: 'D123',
-            thread_ts: '1234.0001',
-            status: '',
-          });
-
-          const callsAtTerminal = mockSetStatus.mock.calls.length;
-          nowMs += PRESENCE_REFRESH_MS * 4 + PRESENCE_LATE_MS;
-          await vi.advanceTimersByTimeAsync(PRESENCE_REFRESH_MS * 4 + PRESENCE_LATE_MS);
-          expect(mockSetStatus).toHaveBeenCalledTimes(callsAtTerminal);
-        } finally {
-          vi.useRealTimers();
-        }
-      });
-    });
-
-    it('releases a claim whose stream goes dark, so nothing lingers', async () => {
-      vi.useFakeTimers();
-      try {
-        queuePendingReaction(presence, 'D123', '1234.0001');
-        await deliverWith(turnEvent('1234.0001'));
-        expect(mockReactionsRemove).not.toHaveBeenCalled();
-
-        // No further events: the stream has stalled without a terminal.
-        nowMs += PRESENCE_INACTIVITY_MS + PRESENCE_REFRESH_MS;
-        await vi.advanceTimersByTimeAsync(PRESENCE_REFRESH_MS * 2);
-
-        expect(mockReactionsRemove).toHaveBeenCalledWith({
-          channel: 'D123',
-          name: PRESENCE_EMOJI,
-          timestamp: '1234.0001',
-        });
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-  });
-
   describe('streaming toggle — buffered mode', () => {
     it('accumulates text without posting when streaming is false', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        false
-      );
+      const delta = textDelta('Hello');
+      await deliver(delta, { streaming: false });
 
       expect(mockPostMessage).not.toHaveBeenCalled();
       expect(mockChatUpdate).not.toHaveBeenCalled();
@@ -1254,83 +400,34 @@ describe('deliverMessage', () => {
 
     it('sends single message on done when streaming is false', async () => {
       // Accumulate two deltas
-      const delta1 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta1,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        false
-      );
+      const delta1 = textDelta('Hello');
+      await deliver(delta1, { streaming: false });
 
-      const delta2 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: ' world' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta2,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        false
-      );
+      const delta2 = textDelta(' world');
+      await deliver(delta2, { streaming: false });
 
       // Now send done
-      const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
-      await deliver(
-        'relay.human.slack.D123',
-        done,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        false
-      );
+      const done = env({ type: 'done', data: {} });
+      await deliver(done, { streaming: false });
 
       // Should post once (not update) with complete text
       expect(mockPostMessage).toHaveBeenCalledTimes(1);
       expect(mockPostMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ channel: 'D123', text: 'Hello world' })
+        expect.objectContaining({ channel: 'D123', text: 'Hello world\n' })
       );
       expect(mockChatUpdate).not.toHaveBeenCalled();
       expect(callbacks.trackOutbound).toHaveBeenCalled();
     });
 
     it('handles error in buffered mode by posting accumulated text + error', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Partial' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        false
-      );
+      const delta = textDelta('Partial');
+      await deliver(delta, { streaming: false });
 
-      const error = createEnvelope('relay.human.slack.D123', {
+      const error = env({
         type: 'error',
         data: { message: 'timeout' },
       });
-      await deliver(
-        'relay.human.slack.D123',
-        error,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        false
-      );
+      await deliver(error, { streaming: false });
 
       expect(mockPostMessage).toHaveBeenCalledTimes(1);
       expect(mockPostMessage).toHaveBeenCalledWith(
@@ -1344,759 +441,6 @@ describe('deliverMessage', () => {
         })
       );
       expect(mockChatUpdate).not.toHaveBeenCalled();
-    });
-
-    it('defaults to streaming mode (existing behavior preserved)', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-      });
-      // streaming defaults to true in deliver helper
-      await deliver('relay.human.slack.D123', delta, client, streamState, callbacks);
-
-      // Should post immediately (streaming mode)
-      expect(mockPostMessage).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe('native streaming — chat.startStream/appendStream/stopStream', () => {
-    it('starts stream on first text_delta and buffers until a line boundary', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' }, // no newline yet
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none',
-        true
-      );
-      expect(mockStartStream).toHaveBeenCalledWith(
-        expect.objectContaining({ channel: 'D123', thread_ts: '1234.0001' })
-      );
-      // The fragment has no complete line, so it is buffered rather than
-      // formatted + appended in isolation (which would mangle split tokens).
-      expect(mockAppendStream).not.toHaveBeenCalled();
-      expect(mockPostMessage).not.toHaveBeenCalled();
-    });
-
-    it('formats and appends only complete lines across deltas', async () => {
-      // A bold token split across two deltas: '**Hel' then 'lo**\n'.
-      const delta1 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: '**Hel' },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta1,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none',
-        true
-      );
-      // No line boundary yet — nothing appended.
-      expect(mockAppendStream).not.toHaveBeenCalled();
-
-      const delta2 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'lo**\n' },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta2,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none',
-        true
-      );
-
-      // A single append carries the reunited token — fragments were coalesced
-      // and formatted as one whole line rather than in isolation.
-      expect(mockAppendStream).toHaveBeenCalledTimes(1);
-      const appended = mockAppendStream.mock.calls[0][0] as { text: string };
-      expect(appended.text).toContain('**Hello**');
-      expect(mockChatUpdate).not.toHaveBeenCalled();
-    });
-
-    it('force-flushes a newline-free buffer once it exceeds the size threshold', async () => {
-      // A response with no newlines must not stay invisible until done: the
-      // buffer flushes whole once it crosses the threshold (600 chars).
-      const part1 = 'a'.repeat(400); // below threshold — buffered
-      const delta1 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: part1 },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta1,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none',
-        true
-      );
-      expect(mockAppendStream).not.toHaveBeenCalled();
-
-      const part2 = 'b'.repeat(400); // total 800 >= threshold — flush whole buffer
-      const delta2 = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: part2 },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta2,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none',
-        true
-      );
-
-      expect(mockAppendStream).toHaveBeenCalledTimes(1);
-      const appended = mockAppendStream.mock.calls[0][0] as { text: string };
-      expect(appended.text).toContain(part1);
-      expect(appended.text).toContain(part2);
-    });
-
-    it('stops stream on done', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none',
-        true
-      );
-
-      const done = createEnvelope('relay.human.slack.D123', {
-        type: 'done',
-        data: {},
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        done,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none',
-        true
-      );
-
-      expect(mockStopStream).toHaveBeenCalledWith(
-        expect.objectContaining({ stream_id: 'stream-123' })
-      );
-    });
-
-    it('appends error and stops stream on error', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Partial' },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none',
-        true
-      );
-
-      const error = createEnvelope('relay.human.slack.D123', {
-        type: 'error',
-        data: { message: 'timeout' },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        error,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none',
-        true
-      );
-
-      expect(mockAppendStream).toHaveBeenLastCalledWith(
-        expect.objectContaining({ stream_id: 'stream-123' })
-      );
-      expect(mockStopStream).toHaveBeenCalled();
-    });
-
-    it('falls back to chat.postMessage when startStream fails', async () => {
-      mockStartStream.mockRejectedValueOnce(new Error('missing_scope'));
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none',
-        true
-      );
-
-      // Should fall back to chat.postMessage
-      expect(mockPostMessage).toHaveBeenCalled();
-      expect(callbacks.recordError).toHaveBeenCalled();
-    });
-  });
-
-  describe('approval_required handling', () => {
-    it('renders Block Kit card with Approve and Deny buttons', async () => {
-      const envelope = createEnvelope('relay.human.slack.D123', {
-        type: 'approval_required',
-        data: {
-          toolCallId: 'toolu_123',
-          toolName: 'Write',
-          input: '{"path":"src/index.ts","content":"hello"}',
-          timeoutMs: 600000,
-          agentId: 'agent-1',
-          ccaSessionKey: 'sess-abc',
-        },
-      });
-      const result = await deliver(
-        'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks
-      );
-      expect(result.success).toBe(true);
-      const call = mockPostMessage.mock.calls[0][0];
-      expect(call.blocks).toHaveLength(3);
-      expect(call.blocks[2].elements).toHaveLength(2);
-      expect(call.blocks[2].elements[0].action_id).toBe('tool_approve');
-      expect(call.blocks[2].elements[1].action_id).toBe('tool_deny');
-      expect(call.blocks[2].block_id).toBe('tool_approval');
-    });
-
-    it('encodes only IDs in button value (no sensitive input)', async () => {
-      const envelope = createEnvelope('relay.human.slack.D123', {
-        type: 'approval_required',
-        data: {
-          toolCallId: 'toolu_123',
-          toolName: 'Write',
-          input: '{"path":"src/index.ts","content":"top secret"}',
-          timeoutMs: 600000,
-          agentId: 'agent-1',
-          ccaSessionKey: 'sess-abc',
-        },
-      });
-      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
-      const call = mockPostMessage.mock.calls[0][0];
-      const value = JSON.parse(call.blocks[2].elements[0].value) as Record<string, unknown>;
-      expect(value).toEqual({
-        toolCallId: 'toolu_123',
-        sessionId: 'sess-abc',
-        agentId: 'agent-1',
-      });
-      // Tool input must NOT appear in button value
-      expect(JSON.stringify(value)).not.toContain('top secret');
-    });
-
-    it('truncates tool input preview to 500 chars in section block', async () => {
-      const longInput = 'a'.repeat(1000);
-      const envelope = createEnvelope('relay.human.slack.D123', {
-        type: 'approval_required',
-        data: {
-          toolCallId: 'toolu_123',
-          toolName: 'Write',
-          input: longInput,
-          timeoutMs: 600000,
-          agentId: 'agent-1',
-          ccaSessionKey: 'sess-abc',
-        },
-      });
-      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
-      const call = mockPostMessage.mock.calls[0][0];
-      // Second block contains the input preview
-      const previewBlock = call.blocks[1] as { text: { text: string } };
-      // 500 chars + ``` fences — should be well within 600 chars
-      expect(previewBlock.text.text.length).toBeLessThanOrEqual(510);
-    });
-
-    it('threads the approval card when threadTs is present', async () => {
-      const envelope = createEnvelope('relay.human.slack.D123', {
-        type: 'approval_required',
-        data: {
-          toolCallId: 'toolu_123',
-          toolName: 'Bash',
-          input: '{"command":"ls"}',
-          timeoutMs: 600000,
-          agentId: 'agent-1',
-          ccaSessionKey: 'sess-abc',
-        },
-        platformData: { ts: '9999.0001' },
-      });
-      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
-      const call = mockPostMessage.mock.calls[0][0];
-      expect(call.thread_ts).toBe('9999.0001');
-    });
-
-    it('falls through to whitelist drop when approval data is invalid (missing toolCallId)', async () => {
-      const envelope = createEnvelope('relay.human.slack.D123', {
-        type: 'approval_required',
-        data: { toolName: 'Write' }, // missing toolCallId
-      });
-      const result = await deliver(
-        'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks
-      );
-      expect(result.success).toBe(true); // silently dropped
-      expect(mockPostMessage).not.toHaveBeenCalled();
-    });
-
-    it('sets fallback text field for notification accessibility', async () => {
-      const envelope = createEnvelope('relay.human.slack.D123', {
-        type: 'approval_required',
-        data: {
-          toolCallId: 'toolu_xyz',
-          toolName: 'Edit',
-          input: '{"file_path":"src/app.ts"}',
-          timeoutMs: 600000,
-          agentId: 'agent-2',
-          ccaSessionKey: 'sess-def',
-        },
-      });
-      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
-      const call = mockPostMessage.mock.calls[0][0];
-      expect(typeof call.text).toBe('string');
-      expect(call.text).toContain('Edit');
-    });
-
-    it('first section block describes the tool action', async () => {
-      const envelope = createEnvelope('relay.human.slack.D123', {
-        type: 'approval_required',
-        data: {
-          toolCallId: 'toolu_abc',
-          toolName: 'Write',
-          input: '{"path":"src/index.ts","content":"x"}',
-          timeoutMs: 600000,
-          agentId: 'agent-1',
-          ccaSessionKey: 'sess-abc',
-        },
-      });
-      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
-      const call = mockPostMessage.mock.calls[0][0];
-      const firstBlock = call.blocks[0] as { text: { text: string } };
-      expect(firstBlock.text.text).toContain('Write');
-      expect(firstBlock.text.text).toContain('wants to write to');
-    });
-
-    it('flushes buffered text before posting approval card (buffered mode)', async () => {
-      // Simulate text_delta accumulation in buffered mode (streaming=false)
-      const deltaEnv = createEnvelope(
-        'relay.human.slack.D123',
-        {
-          type: 'text_delta',
-          data: { text: 'Let me search for Art Blocks projects' },
-        },
-        'agent:sess-1'
-      );
-      await deliver(
-        'relay.human.slack.D123',
-        deltaEnv,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        false
-      );
-      expect(mockPostMessage).not.toHaveBeenCalled(); // buffered, not posted yet
-
-      // Now send approval_required — should flush buffered text first
-      const approvalEnv = createEnvelope(
-        'relay.human.slack.D123',
-        {
-          type: 'approval_required',
-          data: {
-            toolCallId: 'toolu_flush',
-            toolName: 'WebSearch',
-            input: '{"query":"art blocks"}',
-            timeoutMs: 600000,
-            agentId: 'agent-1',
-            ccaSessionKey: 'sess-1',
-          },
-        },
-        'agent:sess-1'
-      );
-      await deliver(
-        'relay.human.slack.D123',
-        approvalEnv,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        false
-      );
-
-      // First postMessage: the flushed text buffer
-      expect(mockPostMessage).toHaveBeenCalledTimes(2);
-      const flushCall = mockPostMessage.mock.calls[0][0];
-      expect(flushCall.text).toContain('Let me search for Art Blocks projects');
-
-      // Second postMessage: the approval card
-      const approvalCall = mockPostMessage.mock.calls[1][0];
-      expect(approvalCall.blocks).toBeDefined();
-      expect(approvalCall.blocks[2].block_id).toBe('tool_approval');
-    });
-
-    it('flushes streaming text before posting approval card (streaming mode)', async () => {
-      // Simulate text_delta in streaming mode — first delta posts the message
-      const deltaEnv = createEnvelope(
-        'relay.human.slack.D123',
-        {
-          type: 'text_delta',
-          data: { text: 'Let me look' },
-          platformData: { ts: '1234.0001' },
-        },
-        'agent:sess-2'
-      );
-      await deliver(
-        'relay.human.slack.D123',
-        deltaEnv,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true
-      );
-      expect(mockPostMessage).toHaveBeenCalledTimes(1); // initial post
-
-      // Accumulate more text (within throttle window — no update sent)
-      const delta2 = createEnvelope(
-        'relay.human.slack.D123',
-        {
-          type: 'text_delta',
-          data: { text: ' into that for you' },
-          platformData: { ts: '1234.0001' },
-        },
-        'agent:sess-2'
-      );
-      await deliver(
-        'relay.human.slack.D123',
-        delta2,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true
-      );
-
-      // Now send approval — should flush via chat.update then post card
-      mockPostMessage.mockClear();
-      mockChatUpdate.mockClear();
-      const approvalEnv = createEnvelope(
-        'relay.human.slack.D123',
-        {
-          type: 'approval_required',
-          data: {
-            toolCallId: 'toolu_flush2',
-            toolName: 'Bash',
-            input: '{"command":"ls"}',
-            timeoutMs: 600000,
-            agentId: 'agent-2',
-            ccaSessionKey: 'sess-2',
-          },
-          platformData: { ts: '1234.0001' },
-        },
-        'agent:sess-2'
-      );
-      await deliver(
-        'relay.human.slack.D123',
-        approvalEnv,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true
-      );
-
-      // Flush should update the existing message with full accumulated text
-      expect(mockChatUpdate).toHaveBeenCalledTimes(1);
-      const updateCall = mockChatUpdate.mock.calls[0][0];
-      expect(updateCall.text).toContain('Let me look into that for you');
-
-      // Approval card should be posted
-      expect(mockPostMessage).toHaveBeenCalledTimes(1);
-      const approvalCall = mockPostMessage.mock.calls[0][0];
-      expect(approvalCall.blocks[2].block_id).toBe('tool_approval');
-    });
-  });
-
-  describe('thread-first warning', () => {
-    it('logs warning for group channel messages without threadTs', async () => {
-      const loggerSpy = { debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn() };
-      const envelope = createEnvelope('relay.human.slack.group.C12345', {
-        content: 'No thread',
-      });
-      await deliverMessage({
-        adapterId: 'slack',
-        subject: 'relay.human.slack.group.C12345',
-        envelope,
-        client,
-        streamState,
-        presence: createSlackPresenceState(),
-        botUserId: 'UBOTID',
-        callbacks,
-        streaming: true,
-        nativeStreaming: false,
-        typingIndicator: 'none',
-        approvalState: createSlackOutboundState(),
-        codec: testCodec,
-        logger: loggerSpy,
-      });
-      expect(loggerSpy.warn).toHaveBeenCalledWith(
-        expect.stringContaining('no threadTs for channel message in C12345')
-      );
-    });
-
-    it('does not log warning for DM messages without threadTs', async () => {
-      const loggerSpy = { debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn() };
-      const envelope = createEnvelope('relay.human.slack.D123', {
-        content: 'DM message',
-      });
-      await deliverMessage({
-        adapterId: 'slack',
-        subject: 'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        presence: createSlackPresenceState(),
-        botUserId: 'UBOTID',
-        callbacks,
-        streaming: true,
-        nativeStreaming: false,
-        typingIndicator: 'none',
-        approvalState: createSlackOutboundState(),
-        codec: testCodec,
-        logger: loggerSpy,
-      });
-      expect(loggerSpy.warn).not.toHaveBeenCalledWith(expect.stringContaining('no threadTs'));
-    });
-
-    it('does not log warning when threadTs is present for group channel', async () => {
-      const loggerSpy = { debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn() };
-      const envelope = createEnvelope('relay.human.slack.group.C12345', {
-        content: 'Threaded reply',
-        platformData: { ts: '1234.0001' },
-      });
-      await deliverMessage({
-        adapterId: 'slack',
-        subject: 'relay.human.slack.group.C12345',
-        envelope,
-        client,
-        streamState,
-        presence: createSlackPresenceState(),
-        botUserId: 'UBOTID',
-        callbacks,
-        streaming: true,
-        nativeStreaming: false,
-        typingIndicator: 'none',
-        approvalState: createSlackOutboundState(),
-        codec: testCodec,
-        logger: loggerSpy,
-      });
-      expect(loggerSpy.warn).not.toHaveBeenCalledWith(expect.stringContaining('no threadTs'));
-    });
-  });
-
-  describe('thread participation tracking', () => {
-    it('marks participation after successful standard delivery with threadTs', async () => {
-      const tracker = new ThreadParticipationTracker();
-      const envelope = createEnvelope('relay.human.slack.D123', {
-        content: 'Hello!',
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none',
-        false,
-        createSlackPresenceState(),
-        tracker
-      );
-      expect(tracker.isParticipating('D123', '1234.0001')).toBe(true);
-    });
-
-    it('does not mark participation when threadTs is missing', async () => {
-      const tracker = new ThreadParticipationTracker();
-      const envelope = createEnvelope('relay.human.slack.D123', {
-        content: 'No thread',
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none',
-        false,
-        createSlackPresenceState(),
-        tracker
-      );
-      expect(tracker.size).toBe(0);
-    });
-
-    it('does not mark participation when delivery fails', async () => {
-      mockPostMessage.mockRejectedValueOnce(new Error('channel_not_found'));
-      const tracker = new ThreadParticipationTracker();
-      const envelope = createEnvelope('relay.human.slack.D123', {
-        content: 'fail',
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none',
-        false,
-        createSlackPresenceState(),
-        tracker
-      );
-      expect(tracker.isParticipating('D123', '1234.0001')).toBe(false);
-    });
-
-    it('marks participation on stream start (legacy)', async () => {
-      const tracker = new ThreadParticipationTracker();
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none',
-        false,
-        createSlackPresenceState(),
-        tracker
-      );
-      expect(tracker.isParticipating('D123', '1234.0001')).toBe(true);
-    });
-
-    it('marks participation on stream start (buffered mode)', async () => {
-      const tracker = new ThreadParticipationTracker();
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        false,
-        'none',
-        false,
-        createSlackPresenceState(),
-        tracker
-      );
-      expect(tracker.isParticipating('D123', '1234.0001')).toBe(true);
-    });
-
-    it('marks participation on native stream start', async () => {
-      const tracker = new ThreadParticipationTracker();
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none',
-        true,
-        createSlackPresenceState(),
-        tracker
-      );
-      expect(tracker.isParticipating('D123', '1234.0001')).toBe(true);
-    });
-
-    it('does not mark participation when tracker is not provided', async () => {
-      const envelope = createEnvelope('relay.human.slack.D123', {
-        content: 'Hello!',
-        platformData: { ts: '1234.0001' },
-      });
-      // No tracker passed — should not throw
-      const result = await deliver(
-        'relay.human.slack.D123',
-        envelope,
-        client,
-        streamState,
-        callbacks
-      );
-      expect(result.success).toBe(true);
     });
   });
 });

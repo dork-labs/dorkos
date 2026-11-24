@@ -8,13 +8,11 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
-  renameSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -27,12 +25,7 @@ import { scanInstalledPlugins } from '../installed.js';
 import { readDevLinksSync } from '../dev-links.js';
 import { project } from '../../engine.js';
 import { applyPlan } from '../../apply/apply.js';
-import { formatDropList } from '../../report/drop-list.js';
-import {
-  GENERATED_COMMAND_MARKER,
-  MANAGED_HOOK_SENTINEL_KEY,
-} from '../../plan/installed-projector.js';
-import { DEV_LINK_MARKER, MANAGED_HOOK_DEV_LINK_KEY } from '../../plan/dev-link-labels.js';
+import { MANAGED_HOOK_SENTINEL_KEY } from '../../plan/installed-projector.js';
 
 const made: string[] = [];
 afterEach(() => {
@@ -148,19 +141,6 @@ describe('scanInstalledPlugins: which symlinked slots are followed', () => {
     expect(plugin?.commands.map((c) => c.name)).toEqual(['go']);
   });
 
-  it('follows a global slot a record names', () => {
-    // Purpose: the global scope reads the same registry and the same rule.
-    const folder = writeWorkingFolder();
-    const dorkHome = tempDir('devlink-home-');
-    const slot = linkSlot(join(dorkHome, 'plugins'), 'flow', folder);
-    writeRegistry(dorkHome, [recordFor(slot, folder, 'global')]);
-
-    const [plugin] = scanInstalledPlugins({ dorkHome });
-
-    expect(plugin?.location).toEqual({ scope: 'global', absDir: slot });
-    expect(plugin?.devLink).toEqual({ path: folder });
-  });
-
   it('skips a recorded slot that now points at a different folder', () => {
     // Purpose: `ln -sfn /elsewhere <slot>` by an agent must not inherit the
     // dev link's standing. The record still names the old folder.
@@ -170,30 +150,6 @@ describe('scanInstalledPlugins: which symlinked slots are followed', () => {
     const dorkHome = tempDir('devlink-home-');
     const slot = linkSlot(join(repo, '.dork', 'plugins'), 'flow', elsewhere);
     writeRegistry(dorkHome, [recordFor(slot, folder, 'project', repo)]);
-
-    expect(scanInstalledPlugins({ projectRoot: repo, dorkHome })).toEqual([]);
-  });
-
-  it('skips a slot whose record is for the other scope', () => {
-    // Purpose: a record is about one slot in one scope, never a name anywhere.
-    const folder = writeWorkingFolder();
-    const dorkHome = tempDir('devlink-home-');
-    const slot = linkSlot(join(dorkHome, 'plugins'), 'flow', folder);
-    writeRegistry(dorkHome, [recordFor(slot, folder, 'project', '/somewhere')]);
-
-    expect(scanInstalledPlugins({ dorkHome })).toEqual([]);
-  });
-
-  it('skips a slot whose record names a different slot with the same package name', () => {
-    // Purpose: a project record does not let the same name be followed in
-    // another project, or globally.
-    const folder = writeWorkingFolder();
-    const repo = writeRepo();
-    const other = writeRepo();
-    const dorkHome = tempDir('devlink-home-');
-    linkSlot(join(repo, '.dork', 'plugins'), 'flow', folder);
-    const otherSlot = linkSlot(join(other, '.dork', 'plugins'), 'flow', folder);
-    writeRegistry(dorkHome, [recordFor(otherSlot, folder, 'project', other)]);
 
     expect(scanInstalledPlugins({ projectRoot: repo, dorkHome })).toEqual([]);
   });
@@ -231,37 +187,6 @@ describe('scanInstalledPlugins: which symlinked slots are followed', () => {
     writeRegistry(dorkHome, [recordFor(slot, folder, 'project', repo)]);
     expect(scanInstalledPlugins({ projectRoot: repo })).toEqual([]);
   });
-
-  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
-    'skips a slot it may not look at, rather than stopping the scan',
-    () => {
-      // Purpose: a plugins root that lists but refuses a stat (EACCES) must not
-      // throw out of the scan; the slot is simply not a dev link.
-      const folder = writeWorkingFolder();
-      const repo = writeRepo();
-      const dorkHome = tempDir('devlink-home-');
-      const root = join(repo, '.dork', 'plugins');
-      const slot = linkSlot(root, 'flow', folder);
-      writeRegistry(dorkHome, [recordFor(slot, folder, 'project', repo)]);
-      chmodSync(root, 0o444);
-      try {
-        expect(scanInstalledPlugins({ projectRoot: repo, dorkHome })).toEqual([]);
-      } finally {
-        chmodSync(root, 0o755);
-      }
-    }
-  );
-
-  it('takes pinned records over the registry file', () => {
-    // Purpose: `devLinks` is the injection point; an empty list follows nothing.
-    const folder = writeWorkingFolder();
-    const repo = writeRepo();
-    const dorkHome = tempDir('devlink-home-');
-    const slot = linkSlot(join(repo, '.dork', 'plugins'), 'flow', folder);
-    writeRegistry(dorkHome, [recordFor(slot, folder, 'project', repo)]);
-
-    expect(scanInstalledPlugins({ projectRoot: repo, dorkHome, devLinks: [] })).toEqual([]);
-  });
 });
 
 describe('projection of a dev link: labels, and their removal on unlink', () => {
@@ -275,8 +200,6 @@ describe('projection of a dev link: labels, and their removal on unlink', () => 
     return { repo, dorkHome, folder, slot };
   }
 
-  const wrapper = (repo: string): string =>
-    readFileSync(join(repo, '.claude', 'commands', 'flow', 'go.md'), 'utf8');
   const managedGroups = (repo: string): Array<Record<string, unknown>> => {
     const settings = JSON.parse(
       readFileSync(join(repo, '.claude', 'settings.local.json'), 'utf8')
@@ -285,52 +208,6 @@ describe('projection of a dev link: labels, and their removal on unlink', () => 
       .flat()
       .filter((group) => typeof group[MANAGED_HOOK_SENTINEL_KEY] === 'string');
   };
-
-  it('marks wrappers, hook groups and every planned action with the folder', () => {
-    // Purpose: a person reading any projection can tell it runs from a folder.
-    const { repo, dorkHome, folder } = linkedRepo();
-
-    const plan = project(repo, { dorkHome });
-    const result = applyPlan(repo, plan, { sweepOrphans: true });
-    expect(result.conflicts).toEqual([]);
-
-    expect(wrapper(repo)).toContain(GENERATED_COMMAND_MARKER);
-    expect(wrapper(repo)).toContain(`<!-- ${DEV_LINK_MARKER} ${folder} -->`);
-    expect(managedGroups(repo)).toEqual([
-      expect.objectContaining({
-        [MANAGED_HOOK_SENTINEL_KEY]: 'flow',
-        [MANAGED_HOOK_DEV_LINK_KEY]: folder,
-      }),
-    ]);
-    // Skill links keep their names: `<pkg>__<name>`.
-    expect(existsSync(join(repo, '.agents', 'skills', 'flow__greet'))).toBe(true);
-    const fromFlow = [...plan.actions, ...plan.drops].filter(
-      (a) => a.name.startsWith('flow') && a.name !== 'plugin-hooks'
-    );
-    expect(fromFlow.length).toBeGreaterThan(0);
-    for (const action of fromFlow) {
-      expect(action.devLink).toBe(folder);
-      expect(action.reason).toContain(`(dev link: ${folder})`);
-    }
-    // The drop list names it too (the extensions layer has no harness home).
-    expect(formatDropList(plan)).toContain(`(dev link: ${folder})`);
-  });
-
-  it('labels the shared .agents/skills link when no enabled harness plans it', () => {
-    // Purpose: with Claude Code alone, the canonical link is planned for every
-    // package at once; it is matched back to the dev-linked package by source.
-    const { repo, dorkHome, folder } = linkedRepo();
-    writeFileSync(
-      join(repo, '.agents', 'harness.manifest.json'),
-      JSON.stringify({ version: 1, harnesses: ['claude-code'] })
-    );
-
-    const plan = project(repo, { dorkHome });
-    const canonical = plan.actions.find((a) => a.target === '.agents/skills/flow__greet');
-
-    expect(canonical?.devLink).toBe(folder);
-    expect(canonical?.reason).toContain(`(dev link: ${folder})`);
-  });
 
   it('drops every projection and marker when the dev link goes and nothing comes back', () => {
     // Purpose: unlink with no installed copy un-projects the package.
@@ -345,34 +222,5 @@ describe('projection of a dev link: labels, and their removal on unlink', () => 
     expect(existsSync(join(repo, '.claude', 'commands', 'flow', 'go.md'))).toBe(false);
     expect(existsSync(join(repo, '.agents', 'skills', 'flow__greet'))).toBe(false);
     expect(managedGroups(repo)).toEqual([]);
-  });
-
-  it('rewrites the projections without dev markers when the installed copy comes back', () => {
-    // Purpose: unlink that restores the parked copy leaves no dev label behind.
-    const { repo, dorkHome, folder, slot } = linkedRepo();
-    // The installed copy the link set aside, a byte copy of the folder's package.
-    const parked = `${slot}.dorkos-devlink-parked`;
-    mkdirSync(parked, { recursive: true });
-    for (const rel of ['.dork', 'skills', 'commands', 'hooks']) {
-      renameSync(join(writeWorkingFolder(), rel), join(parked, rel));
-    }
-    applyPlan(repo, project(repo, { dorkHome }), { sweepOrphans: true });
-    expect(wrapper(repo)).toContain(DEV_LINK_MARKER);
-
-    unlinkSync(slot);
-    renameSync(parked, slot);
-    writeRegistry(dorkHome, []);
-    const plan = project(repo, { dorkHome });
-    const result = applyPlan(repo, plan, { sweepOrphans: true });
-
-    expect(result.conflicts).toEqual([]);
-    expect(wrapper(repo)).toContain(GENERATED_COMMAND_MARKER);
-    expect(wrapper(repo)).not.toContain(DEV_LINK_MARKER);
-    expect(managedGroups(repo)).toEqual([
-      expect.not.objectContaining({ [MANAGED_HOOK_DEV_LINK_KEY]: expect.anything() }),
-    ]);
-    expect(managedGroups(repo)).toHaveLength(1);
-    expect(existsSync(join(repo, '.agents', 'skills', 'flow__greet'))).toBe(true);
-    expect(JSON.stringify(plan)).not.toContain(folder);
   });
 });

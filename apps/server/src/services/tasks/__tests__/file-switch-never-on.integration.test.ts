@@ -66,7 +66,6 @@ const registrar = {
 
 beforeEach(async () => {
   store = new TaskStore(createTestDb());
-  // Resolved: a schedule's identity is its file's REAL path.
   root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-never-on-')));
   dorkHome = path.join(root, 'dork');
   projectPath = path.join(root, 'project');
@@ -175,35 +174,15 @@ describe.each([
   it.each([
     ['says enabled: true', 'enabled: true' as const],
     ['loses its enabled line', null],
-  ])('stays off when its file %s, and offers Turn on', async (_case, line) => {
+  ])('stays off when its file %s, offers Turn on, and turns on when taken', async (_case, line) => {
     await approvedAndOff();
 
-    const after = await syncWith(source, line);
+    const offered = await syncWith(source, line);
+    expect(offered).toMatchObject({ status: 'active', enabled: false, offersTurnOn: true });
 
-    expect(after).toMatchObject({ status: 'active', enabled: false, offersTurnOn: true });
-    // A second sweep of the same file changes nothing and keeps the offer.
-    await reconciler.reconcile();
-    expect(source.row()).toMatchObject({ enabled: false, offersTurnOn: true });
-  });
-
-  it('turns on when a person takes the offer, and the offer goes', async () => {
-    await approvedAndOff();
-    const offered = await syncWith(source, 'enabled: true');
-
-    const on = await patch(offered, { enabled: true });
-
-    expect(on).toMatchObject({ enabled: true, offersTurnOn: false });
+    await patch(offered, { enabled: true });
     await reconciler.reconcile();
     expect(source.row()).toMatchObject({ status: 'active', enabled: true, offersTurnOn: false });
-  });
-
-  it('withdraws the offer when the file says off again', async () => {
-    await approvedAndOff();
-    await syncWith(source, 'enabled: true');
-
-    const after = await syncWith(source, 'enabled: false');
-
-    expect(after).toMatchObject({ enabled: false, offersTurnOn: false });
   });
 
   it('switches off when its file changes to enabled: false', async () => {

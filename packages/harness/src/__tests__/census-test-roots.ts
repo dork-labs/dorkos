@@ -74,11 +74,13 @@ export const TEST_ROOTS: readonly CensusTestRoot[] = [
     match: /^(?:scan-skill-commands|skill-parity)\.test\.ts$/,
     least: 2,
   },
-  { dir: 'apps/server/src/routes/__tests__', match: /^harness\.test\.ts$/, least: 1 },
+  // Split by subject into harness/ (adopt, status, sync), so match every piece.
+  { dir: 'apps/server/src/routes/__tests__', match: /^harness(?:\.[a-z-]+)?\.test\.ts$/, least: 1 },
   // A room worktree's turn retires the old seeding (TR-05, spec `agent-home-desk` §5.9).
   {
     dir: 'apps/server/src/services/rooms/repo/__tests__',
-    match: /^room-worktree-manager\.test\.ts$/,
+    // Split by subject (ensure, legacy, reap), so match every piece.
+    match: /^room-worktree-manager(?:\.[a-z-]+)?\.test\.ts$/,
     least: 1,
   },
   { dir: 'apps/e2e/tests/harness', match: /\.spec\.ts$/, least: 1 },

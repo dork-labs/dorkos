@@ -112,7 +112,11 @@ export function startResultFrom(
 ): StartResult {
   const body: unknown = JSON.parse(answer.content[0]?.text ?? '{}');
   if (!answer.isError) {
-    return { kind: 'started', sessionId: (body as SessionStartResult).sessionId, accountId };
+    const started = body as SessionStartResult;
+    // A queued start has no calling chat, so it never reads a claim off its brief and never
+    // meets another chat's (DOR-3690). Were it to, that chat is not one the item started.
+    if (started.status === 'already-running') return { kind: 'refused', message: started.note };
+    return { kind: 'started', sessionId: started.sessionId, accountId };
   }
   const { code, error } = body as { code?: string; error?: string };
   switch (code) {

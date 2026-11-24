@@ -198,24 +198,16 @@ describe('movesStoredSecrets', () => {
     });
   });
 
-  it('refuses the move for a marked turn, and says why', () => {
-    expect(
-      markedTurnSecretRefusal({
-        enabled: true,
-        writer: 'agent',
-        turnMarked: true,
-        typedSecret: false,
-        movesSecrets: true,
-      })
-    ).toMatchObject({ code: 'marked_turn_moves_secret' });
-    expect(
-      markedTurnSecretRefusal({
-        enabled: true,
-        writer: 'agent',
-        turnMarked: false,
-        typedSecret: false,
-        movesSecrets: true,
-      })
-    ).toBeNull();
+  it('refuses the move for a marked turn only, and says why', () => {
+    const move = {
+      enabled: true,
+      writer: 'agent' as const,
+      typedSecret: false,
+      movesSecrets: true,
+    };
+    expect(markedTurnSecretRefusal({ ...move, turnMarked: true })).toMatchObject({
+      code: 'marked_turn_moves_secret',
+    });
+    expect(markedTurnSecretRefusal({ ...move, turnMarked: false })).toBeNull();
   });
 });

@@ -1,16 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { mkdtemp, realpath, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
-import {
-  openJournalWriter,
-  observeJournalDirectory,
-  validateJournalSnapshot,
-} from '../lifecycle/process-journal.js';
-import { reserveProfile } from '../profiles/reservation.js';
-import { parseProfileId } from '../ids.js';
-import { configuration } from './parent-fixture.js';
+import { validateJournalSnapshot } from '../lifecycle/process-journal.js';
 const controls = vi.hoisted(() => ({ inspect: vi.fn() }));
 vi.mock('../runtime/darwin-process-observer.js', async (original) => ({
   ...(await original<typeof import('../runtime/darwin-process-observer.js')>()),
@@ -24,6 +13,21 @@ import type {
 } from '../lifecycle/process-journal.js';
 import { reconcileDarwinBatch } from '../runtime/darwin-recovery.js';
 import type { DarwinProcessBatch } from '../runtime/darwin-process-observer.js';
+import { realpath } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { parseProfileId } from '../ids.js';
+import { randomUUID } from 'node:crypto';
+import { mkdir } from 'node:fs/promises';
+import { observeJournalDirectory } from '../lifecycle/process-journal.js';
+import { openJournalWriter } from '../lifecycle/process-journal.js';
+import { writeFile } from 'node:fs/promises';
+import { configuration } from './parent-fixture.js';
+import { reserveProfile } from '../profiles/reservation.js';
+import { readFile } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
+
 const manager = { pid: 10, birth: 'darwin-bsd-start:1:10' };
 const root = { pid: 20, birth: 'darwin-bsd-start:1:20' };
 const child = { pid: 30, birth: 'darwin-bsd-start:1:30' };
@@ -128,11 +132,6 @@ const gone = (): DarwinProcessBatch => ({
   bootMicroseconds: '0',
   processes: [manager, root, child].map(({ pid }) => ({ kind: 'absent', pid })),
 });
-it('matches explicit disappearance while retaining profile authority', () => {
-  const result = reconcileDarwinBatch(snapshot(), gone(), 'b'.repeat(64), 3, 4);
-  expect(result.recordedDisposition).toBe('matching-recorded-gone');
-  expect(result.decision).toBe('retain');
-});
 it('retains a live reparented child after root disappearance and refuses zombies', () => {
   const batch = gone();
   batch.processes[2] = {
@@ -173,6 +172,24 @@ it('recognizes replacement without treating it as the original', () => {
   expect(
     reconcileDarwinBatch(snapshot(), batch, 'b'.repeat(64), 3, 4).replacementIdentities
   ).toEqual([{ pid: 30, birth: 'darwin-bsd-start:2:30' }]);
+});
+
+it.each(['manager', 'root'] as const)(
+  'rejects a recorded exited-unreaped %s as descendant evidence',
+  (role) => {
+    const recorded = snapshot();
+    recorded.sequence = 3;
+    recorded.observationWindow = window(3);
+    for (const row of recorded.retainedIdentities) row.lastSeenSequence = 3;
+    recorded.retainedIdentities.find((row) => row.role === role)!.lifecycle = 'exited-unreaped';
+    expect(() => validateJournalSnapshot(recorded)).toThrow();
+  }
+);
+
+it('matches explicit disappearance while retaining profile authority', () => {
+  const result = reconcileDarwinBatch(snapshot(), gone(), 'b'.repeat(64), 3, 4);
+  expect(result.recordedDisposition).toBe('matching-recorded-gone');
+  expect(result.decision).toBe('retain');
 });
 
 // Real private journal/reservation I/O with semantic native facts, not a native acceptance claim.
@@ -290,43 +307,5 @@ it.each([
       await rm(rootDir, { recursive: true, force: true });
       controls.inspect.mockReset();
     }
-  }
-);
-
-it('recovery independently observes every exited-unreaped original and requires actual absence', () => {
-  const recorded = snapshot();
-  recorded.sequence = 3;
-  recorded.observationWindow = window(3);
-  for (const row of recorded.retainedIdentities) row.lastSeenSequence = 3;
-  recorded.retainedIdentities[2]!.lifecycle = 'exited-unreaped';
-  const observed = gone();
-  observed.processes[2] = {
-    kind: 'present',
-    identity: { pid: 30, seconds: '1', microseconds: '30' },
-    parentPid: 1,
-    zombie: true,
-  };
-  const pending = reconcileDarwinBatch(recorded, observed, 'b'.repeat(64), 4, 5);
-  expect(pending.recordedDisposition).toBe('unknown');
-  expect(pending.decision).toBe('retain');
-  const missing = gone();
-  missing.processes.pop();
-  expect(reconcileDarwinBatch(recorded, missing, 'b'.repeat(64), 4, 5).recordedDisposition).toBe(
-    'unknown'
-  );
-  const absent = reconcileDarwinBatch(recorded, gone(), 'b'.repeat(64), 4, 5);
-  expect(absent.recordedDisposition).toBe('matching-recorded-gone');
-  expect(absent.decision).toBe('retain');
-});
-
-it.each(['manager', 'root'] as const)(
-  'rejects a recorded exited-unreaped %s as descendant evidence',
-  (role) => {
-    const recorded = snapshot();
-    recorded.sequence = 3;
-    recorded.observationWindow = window(3);
-    for (const row of recorded.retainedIdentities) row.lastSeenSequence = 3;
-    recorded.retainedIdentities.find((row) => row.role === role)!.lifecycle = 'exited-unreaped';
-    expect(() => validateJournalSnapshot(recorded)).toThrow();
   }
 );

@@ -43,7 +43,6 @@ import type { HttpBindings } from '@hono/node-server';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import type { AuditActorContext } from '../services/audit/audit-context.js';
 import { runWithAuditActor } from '../services/audit/audit-context.js';
@@ -72,7 +71,7 @@ import {
 } from '../services/core/auth/oauth-callback-arrival.js';
 import { currentServerRole } from '../lib/server-role.js';
 import type { ClientFilesHandler } from './client-files.js';
-import { underMount, type BodyRule } from '@dorkos/http-kit';
+import { sendProblem, underMount, type BodyRule } from '@dorkos/http-kit';
 import { apiRequestBody } from './request-body.js';
 import { answerUnclaimed } from './unclaimed.js';
 import { wifiLevelMiddleware } from '../services/core/auth/sessions/wifi-level.js';
@@ -135,8 +134,8 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
   app.notFound(answerUnclaimed(options.clientFiles));
 
   // Hono hands only thrown `Error`s to `onError`; anything else escapes as a
-  // bare text 500. Answer a thrown non-Error with the generic JSON 500 instead,
-  // which an empty message produces (`errorReply`).
+  // bare text 500. Answer a thrown non-Error with the generic problem 500
+  // instead, which an empty message produces (`errorReply`).
   app.use(async (_c, next) => {
     try {
       await next();
@@ -361,5 +360,5 @@ function answerError(err: Error, c: Context<ApiEnv>): Response {
     return new Response(null, { headers: RESPONSE_ALREADY_SENT.headers });
   }
   const reply = errorReply(err);
-  return c.json(reply.body, reply.status as ContentfulStatusCode);
+  return sendProblem(c, reply.body);
 }

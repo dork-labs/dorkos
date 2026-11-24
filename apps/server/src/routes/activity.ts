@@ -5,10 +5,10 @@
  */
 import { Hono } from 'hono';
 import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
-import { validationFailureBody } from '../lib/route-utils.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
+import { validationProblem } from '@dorkos/http-kit';
 
 /**
  * The `/api/activity` routes: the list endpoint.
@@ -21,7 +21,7 @@ export function createActivityRoutes(activityService: ActivityService): Hono<Api
 
   router.get('/', async (c) => {
     const query = ListActivityQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
 
     try {
       const result = await activityService.list(query.data);

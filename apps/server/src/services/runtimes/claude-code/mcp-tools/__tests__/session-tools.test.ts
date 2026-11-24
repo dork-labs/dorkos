@@ -203,6 +203,10 @@ import { StartWorkService, setStartWorkService } from '../../../../extensions/st
 import { queuedChatCaller } from '../../../../work-queue/work-queue-wiring.js';
 import { WorkClaimService } from '../../../../session/claims/work-claim-service.js';
 import { setWorkClaims } from '../../../../session/claims/work-claim-current.js';
+import {
+  initSessionVisibility,
+  resetSessionVisibility,
+} from '../../../../audit/session-visibility.js';
 import { handRegisteredInSessionTools } from '../index.js';
 import { SessionStore } from '../../sessions/session-store.js';
 import {
@@ -2335,7 +2339,7 @@ describe('session_start claims the work it starts (DOR-4019)', () => {
     ]);
   });
 
-  it('asks first: a key another chat of the agent holds is refused, and nothing starts', async () => {
+  it('refuses a key another chat holds without naming it when the caller cannot read it, and nothing starts', async () => {
     claims.claim('a1', 'other-chat', 'DOR-1');
     const result = await asScout()({ ...BASE, claim: 'DOR-1' });
     expect(result.isError).toBe(true);
@@ -2413,5 +2417,158 @@ describe('session_start gives back a claim when the chat never runs (DOR-4019)',
     expect(claims.check('a1')).toEqual([
       expect.objectContaining({ key: 'DOR-6', sessionId: `canon-${minted}` }),
     ]);
+  });
+});
+
+describe('session_start hands back the chat already on the work (DOR-3690)', () => {
+  let claims: WorkClaimService;
+  const fromCoordinator = () =>
+    createSessionStartHandler(makeDeps(), () => ({
+      agentPath: AGENT_HOME,
+      sessionId: 'coordinator',
+    }));
+
+  beforeEach(() => {
+    claims = new WorkClaimService({ db: createTestDb() });
+    setWorkClaims(claims);
+    // Agent work every member reads, as a spin-off of this agent's is.
+    initSessionVisibility((ids) => new Map(ids.map((id) => [id, 'space' as const])));
+  });
+
+  afterEach(() => {
+    setWorkClaims(undefined);
+    resetSessionVisibility();
+  });
+
+  it('returns the running chat for a named key instead of starting a second one', async () => {
+    claims.claim('a1', 'other-chat', 'DOR-10');
+    const result = await fromCoordinator()({ ...BASE, claim: 'DOR-10' });
+    expect(result.isError).toBeFalsy();
+    const payload = payloadOf(result);
+    expect(payload).toMatchObject({
+      status: 'already-running',
+      sessionId: 'other-chat',
+      claim: 'DOR-10',
+    });
+    expect(payload.link).toContain('other-chat');
+    expect(payload.note).toMatch(/^Already running: \[/);
+    expect(payload.note).toMatch(/startAnyway: true/);
+    expect(dispatchMessage).not.toHaveBeenCalled();
+    expect(runtimeRegistry.saveSessionSettings).not.toHaveBeenCalled();
+  });
+
+  it('reads the ticket off the title when no claim is named', async () => {
+    claims.claim('a1', 'other-chat', 'DOR-11');
+    const result = await fromCoordinator()({ ...BASE, title: 'DOR-11: fix the flaky test' });
+    expect(payloadOf(result)).toMatchObject({ status: 'already-running', sessionId: 'other-chat' });
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
+  it('claims a key only the first message names, for the chat it starts', async () => {
+    const result = await fromCoordinator()({ ...BASE, prompt: 'Land PR #3405 through the queue.' });
+    expect(payloadOf(result).status).toBe('started');
+    const minted = vi.mocked(dispatchMessage).mock.calls[0]![0].sessionId;
+    expect(claims.check('a1')).toEqual([
+      expect.objectContaining({ key: 'PR #3405', sessionId: `canon-${minted}` }),
+    ]);
+  });
+
+  it('never hands a chat back for a key only the first message names', async () => {
+    // A brief often names the work it relates to, not the work it is.
+    claims.claim('a1', 'other-chat', 'PR #3405');
+    const result = await fromCoordinator()({
+      ...BASE,
+      title: 'Docs lane',
+      prompt: 'Write the docs. PR #3405 has the code.',
+    });
+    expect(payloadOf(result).status).toBe('started');
+    expect(claims.check('a1')).toEqual([expect.objectContaining({ sessionId: 'other-chat' })]);
+  });
+
+  it('reads nothing off the brief of a start no chat made, so a person’s queued work never meets a claim', async () => {
+    // "A claim never blocks a person": the work queue starts with no calling chat.
+    claims.claim('a1', 'other-chat', 'DOR-20');
+    const queued = createSessionStartHandler(makeDeps(), queuedChatCaller(AGENT_HOME));
+    const result = await queued({ ...BASE, title: 'DOR-20 follow-up' });
+    expect(result.isError).toBeFalsy();
+    expect(payloadOf(result).status).toBe('started');
+    expect(claims.check('a1')).toEqual([expect.objectContaining({ sessionId: 'other-chat' })]);
+  });
+
+  it('starts a parallel lane on a ticket the calling chat itself holds, and keeps its claim', async () => {
+    claims.claim('a1', 'coordinator', 'DOR-21');
+    const result = await fromCoordinator()({ ...BASE, title: 'DOR-21 tests lane' });
+    expect(payloadOf(result).status).toBe('started');
+    expect(claims.check('a1')).toEqual([
+      expect.objectContaining({ key: 'DOR-21', sessionId: 'coordinator' }),
+    ]);
+  });
+
+  it('goes ahead when only another agent’s chat holds the ticket', async () => {
+    claims.claim('a2', 'their-chat', 'DOR-22');
+    const result = await fromCoordinator()({ ...BASE, title: 'DOR-22 lane' });
+    expect(payloadOf(result).status).toBe('started');
+    expect(claims.check('a1')).toEqual([expect.objectContaining({ key: 'DOR-22' })]);
+  });
+
+  it('claims the key it was given over one the brief names', async () => {
+    const result = await fromCoordinator()({ ...BASE, title: 'DOR-23 lane', claim: 'DOR-24' });
+    expect(payloadOf(result).status).toBe('started');
+    expect(claims.check('a1').map((claim) => claim.key)).toEqual(['DOR-24']);
+  });
+
+  it('claims a ticket read off the brief for the chat it starts', async () => {
+    const result = await fromCoordinator()({ ...BASE, title: 'DOR-12 build lane' });
+    expect(result.isError).toBeFalsy();
+    expect(payloadOf(result).status).toBe('started');
+    const minted = vi.mocked(dispatchMessage).mock.calls[0]![0].sessionId;
+    expect(claims.check('a1')).toEqual([
+      expect.objectContaining({ key: 'DOR-12', sessionId: `canon-${minted}` }),
+    ]);
+  });
+
+  it('starts a second chat when told to, and the first keeps the work', async () => {
+    claims.claim('a1', 'other-chat', 'DOR-13');
+    const result = await fromCoordinator()({
+      ...BASE,
+      title: 'DOR-13 second look',
+      startAnyway: true,
+    });
+    expect(payloadOf(result).status).toBe('started');
+    expect(claims.check('a1')).toEqual([expect.objectContaining({ sessionId: 'other-chat' })]);
+  });
+
+  it('leaves a start for different work alone', async () => {
+    claims.claim('a1', 'other-chat', 'DOR-14');
+    const result = await fromCoordinator()({ ...BASE, title: 'DOR-15 lane' });
+    expect(payloadOf(result).status).toBe('started');
+  });
+
+  it('claims nothing from a brief that names two pieces of work', async () => {
+    claims.claim('a1', 'other-chat', 'DOR-16');
+    const result = await fromCoordinator()({ ...BASE, title: 'DOR-16 and DOR-17' });
+    expect(payloadOf(result).status).toBe('started');
+    expect(claims.check('a1')).toEqual([expect.objectContaining({ sessionId: 'other-chat' })]);
+  });
+
+  it('refuses without naming the chat when the caller may not read it', async () => {
+    resetSessionVisibility();
+    claims.claim('a1', 'other-chat', 'DOR-18');
+    const result = await fromCoordinator()({ ...BASE, title: 'DOR-18 lane' });
+    expect(result.isError).toBe(true);
+    const payload = payloadOf(result);
+    expect(payload.code).toBe('CLAIMED');
+    expect(payload.error).toMatch(/^DOR-18 is already claimed by a private chat of yours since /);
+    expect(JSON.stringify(payload)).not.toContain('other-chat');
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
+  it('lets one of two racing starts on one inferred key through, and hands the other back', async () => {
+    const results = await Promise.all([
+      fromCoordinator()({ ...BASE, title: 'DOR-19 lane' }),
+      fromCoordinator()({ ...BASE, title: 'DOR-19 lane' }),
+    ]);
+    const statuses = results.map((r) => payloadOf(r).status).sort();
+    expect(statuses).toEqual(['already-running', 'started']);
   });
 });

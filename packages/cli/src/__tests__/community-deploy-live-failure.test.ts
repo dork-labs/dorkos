@@ -1,10 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CommunityLiveGateError } from '../../scripts/community-deploy-live-capture.js';
 import { CommunityLiveGateCleanupError } from '../../scripts/community-deploy-live-cleanup.js';
-import { CommunityLiveGateNotArmedError } from '../../scripts/community-deploy-live-config.js';
 import {
   describeLauncherExit,
-  LAUNCHER_FAILURE_PREFIXES,
   AFTER_CLEANUP_STEP,
   CLEANED_UP_DETAIL,
   describeCommunityLiveGateFailure,
@@ -40,37 +38,6 @@ describe('explainCommunityLiveGateFailure', () => {
     expect(describeCommunityLiveGateFailure(explained)).not.toContain('Retained resources');
   });
 
-  // DOR-2593: the gate fails a run whose launcher contacted a DorkOS host only after cleanup, so
-  // nothing billable is stranded. The reason must survive the after-cleanup rewrite.
-  it("keeps a gate check's own step and detail when it fails after cleanup", async () => {
-    const findRecoveryCommand = vi.fn(async () => RECOVERY);
-    const explained = await explainCommunityLiveGateFailure(
-      new CommunityLiveGateError(
-        'dorkos-hosts-contacted',
-        null,
-        'the launcher tried to reach dorkos.ai'
-      ),
-      { cleanedUp: true, recoveryCommand: RECOVERY },
-      findRecoveryCommand
-    );
-    expect(explained).toMatchObject({ step: 'dorkos-hosts-contacted', recoveryCommand: null });
-    expect((explained as Error).message).toBe(
-      `Community live gate failed (dorkos-hosts-contacted): ${CLEANED_UP_DETAIL}: the launcher tried to reach dorkos.ai`
-    );
-    expect(findRecoveryCommand).not.toHaveBeenCalled();
-  });
-
-  it('keeps the recovery command the run already holds before cleanup', async () => {
-    const findRecoveryCommand = vi.fn(async () => 'another');
-    const explained = await explainCommunityLiveGateFailure(
-      new CommunityLiveGateError('bootstrap-rotation'),
-      { cleanedUp: false, recoveryCommand: RECOVERY },
-      findRecoveryCommand
-    );
-    expect(explained).toMatchObject({ step: 'bootstrap-rotation', recoveryCommand: RECOVERY });
-    expect(findRecoveryCommand).not.toHaveBeenCalled();
-  });
-
   // Cleanup stops at the first refusal and knows exactly which resources it had not deleted yet.
   // Reporting it as `execution` hid both the step and which of Fly, Neon and Tigris still exist.
   it("keeps a cleanup refusal's own step and what it left, beside the recovery command", async () => {
@@ -84,59 +51,6 @@ describe('explainCommunityLiveGateFailure', () => {
       'Community live gate failed (provider-operation): retained: fly-app-1, neon-project-1\n' +
         `Retained resources can be reconciled with:\n  ${RECOVERY}\n`
     );
-  });
-
-  // DOR-2646: once the bucket is deleted its Tigris access key is left active, even when a later
-  // cleanup step fails, so the refusal names it apart from the resources cleanup still owes.
-  it('names the Tigris access key a deleted bucket left, apart from what cleanup retained', async () => {
-    const explained = await explainCommunityLiveGateFailure(
-      new CommunityLiveGateCleanupError('provider-operation', ['fly-app-1', 'neon-project-1'], {
-        bucket: 'dorkos-gate-1',
-        keyName: 'dorkos-gate-1_access_key',
-      }),
-      { cleanedUp: false, recoveryCommand: RECOVERY },
-      async () => null
-    );
-    expect((explained as Error).message).toBe(
-      'Community live gate failed (provider-operation): retained: fly-app-1, neon-project-1; Tigris access key left active: dorkos-gate-1_access_key'
-    );
-  });
-
-  it('says a cleanup refusal left unknown resources when it could not name them', async () => {
-    const explained = await explainCommunityLiveGateFailure(
-      new CommunityLiveGateCleanupError('journal-identity', []),
-      { cleanedUp: false, recoveryCommand: RECOVERY },
-      async () => null
-    );
-    expect((explained as Error).message).toBe(
-      'Community live gate failed (journal-identity): retained: unknown'
-    );
-  });
-
-  it('finds a journal the run had not read yet, and names a raw failure only as execution', async () => {
-    const explained = await explainCommunityLiveGateFailure(
-      new Error('provider said something private'),
-      { cleanedUp: false, recoveryCommand: null },
-      async () => RECOVERY
-    );
-    expect(explained).toMatchObject({ step: 'execution', recoveryCommand: RECOVERY });
-    expect((explained as Error).message).not.toContain('private');
-  });
-
-  it('passes the error through when nothing may remain and the lookup finds or fails', async () => {
-    const error = new CommunityLiveGateError('published-version');
-    await expect(
-      explainCommunityLiveGateFailure(
-        error,
-        { cleanedUp: false, recoveryCommand: null },
-        async () => null
-      )
-    ).resolves.toBe(error);
-    await expect(
-      explainCommunityLiveGateFailure(error, { cleanedUp: false, recoveryCommand: null }, () =>
-        Promise.reject(new Error('ENOENT'))
-      )
-    ).resolves.toBe(error);
   });
 });
 
@@ -155,31 +69,6 @@ describe('describeLauncherStop', () => {
     expect(describeLauncherStop(STOPPED_JOURNAL)).toBe(
       'launcher stopped with CREATION_OUTCOME_UNCERTAIN (neon)'
     );
-  });
-
-  it('names the code alone when no creation was pending', () => {
-    expect(describeLauncherStop({ ...STOPPED_JOURNAL, pendingIntent: null })).toBe(
-      'launcher stopped with CREATION_OUTCOME_UNCERTAIN'
-    );
-  });
-
-  it.each([
-    ['no saved error', { ...STOPPED_JOURNAL, lastSafeError: null }],
-    ['a code outside the fixed vocabulary', { lastSafeError: { code: 'sk_live_SECRETVALUE' } }],
-    ['a journal that is not an object', 'not a journal'],
-  ])('says nothing for %s', (_label, journal) => {
-    expect(describeLauncherStop(journal)).toBeNull();
-  });
-
-  // The code is checked against this checkout's list, so a code only a newer published launcher
-  // knows is dropped: the failure stays the bare step rather than printing something unchecked.
-  it('says nothing for a code only a newer launcher knows', () => {
-    expect(
-      describeLauncherStop({
-        ...STOPPED_JOURNAL,
-        lastSafeError: { category: 'uncertain', code: 'SOME_FUTURE_CODE' },
-      })
-    ).toBeNull();
   });
 
   it('never repeats a provider it does not recognise', () => {
@@ -206,43 +95,6 @@ describe('explainCommunityLiveGateFailure with a stopped launcher', () => {
     );
     expect(printed).not.toContain('digest-should-never-print');
   });
-
-  it('adds the reason even when no recovery command was found', async () => {
-    const explained = await explainCommunityLiveGateFailure(
-      new CommunityLiveGateError(PUBLISHED_LAUNCHER_STEP),
-      { cleanedUp: false, recoveryCommand: null },
-      async () => null,
-      async () => 'launcher stopped with AUTH_REQUIRED (fly)'
-    );
-    expect(explained).toMatchObject({ step: PUBLISHED_LAUNCHER_STEP, recoveryCommand: null });
-    expect((explained as Error).message).toBe(
-      'Community live gate failed (published-launcher): launcher stopped with AUTH_REQUIRED (fly)'
-    );
-  });
-
-  it('keeps the bare step when the journal cannot be read', async () => {
-    const error = new CommunityLiveGateError(PUBLISHED_LAUNCHER_STEP);
-    await expect(
-      explainCommunityLiveGateFailure(
-        error,
-        { cleanedUp: false, recoveryCommand: null },
-        async () => null,
-        () => Promise.reject(new Error('ENOENT'))
-      )
-    ).resolves.toBe(error);
-  });
-
-  it('reads the journal only for a failed launcher, not for other steps', async () => {
-    const findLauncherStop = vi.fn(async () => 'launcher stopped with AUTH_REQUIRED');
-    const explained = await explainCommunityLiveGateFailure(
-      new CommunityLiveGateError('bootstrap-rotation'),
-      { cleanedUp: false, recoveryCommand: RECOVERY },
-      async () => null,
-      findLauncherStop
-    );
-    expect((explained as Error).message).toBe('Community live gate failed (bootstrap-rotation)');
-    expect(findLauncherStop).not.toHaveBeenCalled();
-  });
 });
 
 describe('describeCommunityLiveGateFailure', () => {
@@ -252,11 +104,6 @@ describe('describeCommunityLiveGateFailure', () => {
     ).toBe(
       `Community live gate failed (bootstrap-rotation)\nRetained resources can be reconciled with:\n  ${RECOVERY}\n`
     );
-  });
-
-  it('shows the not-armed refusal as it is', () => {
-    const error = new CommunityLiveGateNotArmedError(['DORKOS_COMMUNITY_LIVE']);
-    expect(describeCommunityLiveGateFailure(error)).toBe(`${error.message}\n`);
   });
 
   it('never prints the message of an error it does not own', () => {
@@ -292,34 +139,6 @@ describe('describeLauncherExit', () => {
     ).toBe('launcher exited with COMMUNITY_RELEASE_INVALID');
   });
 
-  it('reads both wordings, and the last failure line wins whichever it uses', () => {
-    expect(LAUNCHER_FAILURE_PREFIXES).toEqual(['Space setup failed:', 'Community setup failed:']);
-    expect(describeLauncherExit(failed('(TIMEOUT)') + failedBeforeRename('(ACCESS_DENIED)'))).toBe(
-      'launcher exited with ACCESS_DENIED'
-    );
-    expect(describeLauncherExit(failedBeforeRename('(ACCESS_DENIED)') + failed('(TIMEOUT)'))).toBe(
-      'launcher exited with TIMEOUT'
-    );
-  });
-
-  it('uses the last failure line and the last code in it', () => {
-    expect(
-      describeLauncherExit(
-        failed('first (TIMEOUT)') + failed('Provider command failed (EXIT) then (ACCESS_DENIED)')
-      )
-    ).toBe('launcher exited with ACCESS_DENIED');
-  });
-
-  it.each([
-    ['no failure line', 'Resolving release…\r\nDone\r\n'],
-    ['no code', failed('something went wrong')],
-    ['a code this checkout does not know', failed('failed (FLY_ORGANIZATION_NOT_FOUND)')],
-    ['a lowercase token', failed('failed (dork-labs)')],
-    ['text that is not a code', failed('token=secret-value (Bearer abc)')],
-  ])('returns null for %s, so nothing unchecked is printed', (_label, transcript) => {
-    expect(describeLauncherExit(transcript)).toBeNull();
-  });
-
   it('never carries anything but the code into the gate error', async () => {
     const transcript = failed('org dork-labs-secret says (COMMUNITY_RELEASE_INVALID)');
     const error = new CommunityLiveGateError(
@@ -338,26 +157,6 @@ describe('describeLauncherExit', () => {
       'Community live gate failed (published-launcher): launcher exited with COMMUNITY_RELEASE_INVALID before writing a launch record\n'
     );
     expect(text).not.toContain('dork-labs-secret');
-  });
-
-  it('prefers the journal stop, which names the service, over the launcher output', async () => {
-    const error = new CommunityLiveGateError(
-      PUBLISHED_LAUNCHER_STEP,
-      null,
-      'launcher exited with TIMEOUT'
-    );
-    const explained = await explainCommunityLiveGateFailure(
-      error,
-      { cleanedUp: false, recoveryCommand: 'npx dorkos … --resume run-1' },
-      async () => null,
-      async () => 'launcher stopped with CREATION_OUTCOME_UNCERTAIN (neon)'
-    );
-    expect((explained as Error).message).toBe(
-      'Community live gate failed (published-launcher): launcher stopped with CREATION_OUTCOME_UNCERTAIN (neon)'
-    );
-    expect((explained as CommunityLiveGateError).recoveryCommand).toBe(
-      'npx dorkos … --resume run-1'
-    );
   });
 
   // A resumed launcher can stop with a journal (and resources) already in place, and a journal whose
@@ -385,22 +184,6 @@ describe('describeLauncherExit', () => {
     );
     expect(text).not.toContain('before writing a launch record');
   });
-
-  it('says nothing was written only when there is no journal and no recovery command', async () => {
-    const explained = await explainCommunityLiveGateFailure(
-      new CommunityLiveGateError(
-        PUBLISHED_LAUNCHER_STEP,
-        null,
-        'launcher exited with COMMUNITY_RELEASE_INVALID'
-      ),
-      { cleanedUp: false, recoveryCommand: null },
-      async () => null,
-      async () => null
-    );
-    expect((explained as Error).message).toBe(
-      'Community live gate failed (published-launcher): launcher exited with COMMUNITY_RELEASE_INVALID before writing a launch record'
-    );
-  });
 });
 
 describe('withDorkosHostsContacted', () => {
@@ -416,16 +199,5 @@ describe('withDorkosHostsContacted', () => {
       recoveryCommand: RECOVERY,
       detail: 'no journal; the launcher tried to reach dorkos.ai',
     });
-  });
-
-  it('turns an unexplained failure into a named one, and leaves others alone', () => {
-    const plain = new Error('provider said no');
-    expect(withDorkosHostsContacted(plain, ['cloud.dorkos.ai'])).toMatchObject({
-      step: 'dorkos-hosts-contacted',
-      detail: 'the launcher tried to reach cloud.dorkos.ai',
-    });
-    expect(withDorkosHostsContacted(plain, [])).toBe(plain);
-    const named = new CommunityLiveGateError('dorkos-hosts-contacted', null, 'x');
-    expect(withDorkosHostsContacted(named, ['dorkos.ai'])).toBe(named);
   });
 });

@@ -29,9 +29,9 @@ import {
   SetReadCursorPositionRequestSchema,
   type ReadCursorResponse,
 } from '@dorkos/shared/read-cursor-schemas';
-import { errorBody, validationFailureBody } from '../lib/route-utils.js';
+import { errorBody } from '../lib/route-utils.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { getReadCursorService } from '../services/core/read-cursor-service.js';
 import {
@@ -84,10 +84,10 @@ const router = new Hono<ApiEnv>();
  */
 router.put('/:kind/:id', (c) => {
   const parsedParams = ReadCursorParamsSchema.safeParse(c.req.param());
-  if (!parsedParams.success) return c.json(validationFailureBody(parsedParams.error), 400);
+  if (!parsedParams.success) return validationProblem(c, parsedParams.error);
   const params = parsedParams.data;
   const parsedBody = SetReadCursorPositionRequestSchema.safeParse(readJsonBody(c));
-  if (!parsedBody.success) return c.json(validationFailureBody(parsedBody.error), 400);
+  if (!parsedBody.success) return validationProblem(c, parsedBody.error);
   const body = parsedBody.data;
 
   const caller = personOrRefuse(c);
@@ -147,7 +147,7 @@ router.put('/:kind/:id', (c) => {
  */
 router.get('/:kind/:id', (c) => {
   const parsedParams = ReadCursorParamsSchema.safeParse(c.req.param());
-  if (!parsedParams.success) return c.json(validationFailureBody(parsedParams.error), 400);
+  if (!parsedParams.success) return validationProblem(c, parsedParams.error);
   const params = parsedParams.data;
 
   const caller = personOrRefuse(c);

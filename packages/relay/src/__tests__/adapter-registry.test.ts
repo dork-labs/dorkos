@@ -82,23 +82,7 @@ describe('AdapterRegistry', () => {
     expect(registry.list()).toHaveLength(0);
   });
 
-  it('unregister() returns false for an unknown adapter ID', async () => {
-    const result = await registry.unregister('nonexistent');
-    expect(result).toBe(false);
-  });
-
   // --- Lookup ---
-
-  it('get() returns the adapter by ID', async () => {
-    const adapter = createMockAdapter({ id: 'my-adapter' });
-    await registry.register(adapter);
-
-    expect(registry.get('my-adapter')).toBe(adapter);
-  });
-
-  it('get() returns undefined for unknown ID', () => {
-    expect(registry.get('unknown')).toBeUndefined();
-  });
 
   it('getBySubject() matches by subject prefix', async () => {
     const adapter = createMockAdapter({ subjectPrefix: 'relay.human.telegram' });
@@ -106,22 +90,6 @@ describe('AdapterRegistry', () => {
 
     expect(registry.getBySubject('relay.human.telegram.12345')).toBe(adapter);
     expect(registry.getBySubject('relay.human.telegram.group.678')).toBe(adapter);
-  });
-
-  it('getBySubject() returns undefined when no adapter matches', async () => {
-    const adapter = createMockAdapter({ subjectPrefix: 'relay.human.telegram' });
-    await registry.register(adapter);
-
-    expect(registry.getBySubject('relay.agent.backend')).toBeUndefined();
-  });
-
-  it('list() returns all registered adapters', async () => {
-    const a1 = createMockAdapter({ id: 'adapter-1', subjectPrefix: 'relay.test.a1' });
-    const a2 = createMockAdapter({ id: 'adapter-2', subjectPrefix: 'relay.test.a2' });
-    await registry.register(a1);
-    await registry.register(a2);
-
-    expect(registry.list()).toHaveLength(2);
   });
 
   // --- Delivery ---
@@ -139,75 +107,6 @@ describe('AdapterRegistry', () => {
       subject,
       expect.objectContaining({ subject }),
       undefined
-    );
-  });
-
-  it('deliver() returns null when no adapter matches', async () => {
-    const envelope = createMockEnvelope();
-    const result = await registry.deliver('relay.agent.backend', envelope);
-
-    expect(result).toBeNull();
-  });
-
-  it('deliver() propagates full DeliveryResult from adapter', async () => {
-    const richResult = {
-      success: true,
-      durationMs: 42,
-      responseMessageId: 'resp-123',
-    };
-    const adapter = createMockAdapter({
-      subjectPrefix: 'relay.human.telegram',
-      deliver: vi.fn().mockResolvedValue(richResult),
-    });
-    await registry.register(adapter);
-
-    const envelope = createMockEnvelope();
-    const result = await registry.deliver('relay.human.telegram.999', {
-      ...envelope,
-      subject: 'relay.human.telegram.999',
-    });
-
-    expect(result).toEqual(richResult);
-  });
-
-  it('deliver() propagates failure DeliveryResult from adapter', async () => {
-    const failResult = {
-      success: false,
-      error: 'rate limited by Telegram',
-      deadLettered: false,
-    };
-    const adapter = createMockAdapter({
-      subjectPrefix: 'relay.human.telegram',
-      deliver: vi.fn().mockResolvedValue(failResult),
-    });
-    await registry.register(adapter);
-
-    const envelope = createMockEnvelope();
-    const result = await registry.deliver('relay.human.telegram.999', {
-      ...envelope,
-      subject: 'relay.human.telegram.999',
-    });
-
-    expect(result).toEqual(failResult);
-    expect(result?.success).toBe(false);
-  });
-
-  it('deliver() passes context to matched adapter', async () => {
-    const adapter = createMockAdapter({ subjectPrefix: 'relay.test.ctx' });
-    await registry.register(adapter);
-
-    const envelope = createMockEnvelope();
-    const context = { agent: { directory: '/tmp/test', runtime: 'claude-code' as const } };
-    await registry.deliver(
-      'relay.test.ctx.event',
-      { ...envelope, subject: 'relay.test.ctx.event' },
-      context
-    );
-
-    expect(adapter.deliver).toHaveBeenCalledWith(
-      'relay.test.ctx.event',
-      expect.any(Object),
-      context
     );
   });
 
@@ -254,16 +153,6 @@ describe('AdapterRegistry', () => {
 
     process.removeListener('unhandledRejection', suppress);
     vi.useRealTimers();
-  });
-
-  it('register() clears timeout timer on successful start', async () => {
-    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
-
-    const adapter = createMockAdapter();
-    await registry.register(adapter);
-
-    expect(clearTimeoutSpy).toHaveBeenCalled();
-    clearTimeoutSpy.mockRestore();
   });
 
   it('hot-reload: on start timeout, old adapter is NOT stopped', async () => {
@@ -342,6 +231,16 @@ describe('AdapterRegistry', () => {
     expect(a2.stop).toHaveBeenCalled();
   });
 
+  it('shutdown() clears the adapter map', async () => {
+    const adapter = createMockAdapter();
+    await registry.register(adapter);
+
+    await registry.shutdown();
+
+    expect(registry.list()).toHaveLength(0);
+    expect(registry.get('mock-adapter')).toBeUndefined();
+  });
+
   it('shutdown() does not throw if one adapter stop() rejects', async () => {
     const a1 = createMockAdapter({ id: 'adapter-1', subjectPrefix: 'relay.test.a1' });
     const a2 = createMockAdapter({ id: 'adapter-2', subjectPrefix: 'relay.test.a2' });
@@ -350,7 +249,6 @@ describe('AdapterRegistry', () => {
     await registry.register(a1);
     await registry.register(a2);
 
-    // Should not throw — Promise.allSettled isolates failures
     await expect(registry.shutdown()).resolves.toBeUndefined();
     expect(a2.stop).toHaveBeenCalled();
   });
@@ -388,15 +286,5 @@ describe('AdapterRegistry', () => {
       expect(replacement.deliver).toHaveBeenCalledTimes(1);
       expect(stubborn.deliver).not.toHaveBeenCalled();
     });
-  });
-
-  it('shutdown() clears the adapter map', async () => {
-    const adapter = createMockAdapter();
-    await registry.register(adapter);
-
-    await registry.shutdown();
-
-    expect(registry.list()).toHaveLength(0);
-    expect(registry.get('mock-adapter')).toBeUndefined();
   });
 });

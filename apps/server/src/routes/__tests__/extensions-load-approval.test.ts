@@ -680,8 +680,8 @@ describe('POST /api/extensions/:id/approve', () => {
       const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toBe(
-        'This instance does not answer to pages from "null". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.'
+      expect(res.body.detail).toBe(
+        'This instance does not answer to pages from this address. If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.'
       );
       expect(manager.approveToRun).not.toHaveBeenCalled();
       expect(state.extensions.approvedToRun).toEqual([]);

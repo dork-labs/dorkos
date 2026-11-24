@@ -21,6 +21,7 @@ import type {
   ClaimUnclaimedChatResponse,
 } from '@dorkos/shared/relay-schemas';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
+import { responseError } from '../response-error';
 
 /** Create all Relay methods bound to a base URL. */
 export function createRelayMethods(baseUrl: string, getClientId: () => string) {
@@ -143,8 +144,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
         }),
       });
       if (res.status !== 202 && !res.ok) {
-        const error = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(error.error || `HTTP ${res.status}`);
+        throw await responseError(res);
       }
       return res.json();
     },

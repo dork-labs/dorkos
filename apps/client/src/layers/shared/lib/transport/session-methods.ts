@@ -50,6 +50,7 @@ import {
   parsePendingInteractionsResponse,
   parseRecentSessionsResponse,
 } from './tolerant-session-frames';
+import { responseError } from '../response-error';
 
 // Interaction requests use a longer timeout (10 min) to match the server-side
 // INTERACTION_TIMEOUT_MS: an approval or a question waits on a person, and the
@@ -224,8 +225,7 @@ export function createSessionMethods(
       }
 
       if (!res.ok) {
-        const error = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(error.error || `HTTP ${res.status}`);
+        throw await responseError(res);
       }
 
       const data = (await res.json()) as HistoryRead;
@@ -282,22 +282,10 @@ export function createSessionMethods(
         // before starting this session" is actionable; "HTTP 400" is a dead end
         // with a Retry button under it that can only fail the same way. The
         // status is the fallback for a body that carried no reason.
-        const body = (await response.json().catch(() => ({}))) as {
-          error?: string;
-          code?: string;
-        };
         // The code and body ride along, as `fetchJSON`'s errors carry them: a
         // refusal such as `AGENT_PAUSED` names what the app can offer instead
         // of Retry (spec `audit-trail` PR5).
-        const failure = new Error(body.error || `HTTP ${response.status}`) as Error & {
-          code?: string;
-          status?: number;
-          body?: unknown;
-        };
-        failure.code = body.code;
-        failure.status = response.status;
-        failure.body = body;
-        throw failure;
+        throw await responseError(response, `HTTP ${response.status}`);
       }
 
       // Trigger-only, accept-only contract: the turn (or the queue place) is

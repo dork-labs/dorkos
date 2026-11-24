@@ -4,7 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { is } from 'drizzle-orm';
+import { getTableConfig, SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { createDb, runMigrations } from '../index';
+import * as schema from '../schema/index';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DRIZZLE_DIR = path.join(__dirname, '../../drizzle');
@@ -99,13 +102,6 @@ function migrationsFolderThrough(idx: number): string {
 }
 
 describe('Database Migrations', () => {
-  it('applies all migrations to a fresh database without errors', () => {
-    expect(() => {
-      const db = createDb(':memory:');
-      runMigrations(db);
-    }).not.toThrow();
-  });
-
   it('migrations are idempotent — running twice does not throw', () => {
     const db = createDb(':memory:');
     runMigrations(db);
@@ -191,315 +187,54 @@ describe('Database Migrations', () => {
     }
   });
 
-  it('creates all expected tables', () => {
+  it('has exactly the tables and columns the schema declares', () => {
+    // The schema is what the app queries; the migrations are what an install
+    // actually has. `db:check` compares the schema with drizzle-kit's snapshots,
+    // never with the SQL that runs, so a hand-edited migration that drops or
+    // misnames a table or column is caught only here.
     const db = createDb(':memory:');
     runMigrations(db);
 
-    const result = db.$client
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__drizzle%' ORDER BY name"
-      )
-      .all() as { name: string }[];
-    const tableNames = result.map((r) => r.name).sort();
-
-    expect(tableNames).toEqual([
-      'a2a_tasks',
-      // Better Auth identity tables (accounts-and-auth P1, migration 0019).
-      'account',
-      'activity_events',
-      // Named Agent browser profiles and the agents a person let use them (DOR-3218).
-      // The server signs each binding, because agents can reach this file.
-      'agent_browser_profile_agents',
-      'agent_browser_profiles',
-      // Stable provider-neutral connection attachments. Drizzle creates the
-      // legacy inputs for old-install upgrades; the application migration
-      // retires them only after its verified backfill commits.
-      'agent_connection_attachments',
-      // Standing, agent-level connector consent — row existence IS the
-      // attachment (connection-scoping spec §Part 1, migration 0048).
-      'agent_connector_attachments',
-      'agent_denials',
-      // Hashed per-agent identity tokens, keyed on the stable agentPath so the
-      // mesh reconciler's rebuild-from-files cannot orphan them
-      // (agent-trust spec §3.1, migration 0030).
-      'agent_identity_tokens',
-      // Agents paused everywhere, current state only; history is audit rows
-      // (spec audit-trail PR5).
-      'agent_pauses',
-      // An agent's ordered work, and how its queue runs (DOR-3462); `work_queue_control` below.
-      'agent_work_items',
-      'agent_work_queues',
-      'agents',
-      'apikey',
-      // Approval records for capability invocations that need a person's
-      // consent; the token lives here only as a hash (agent-trust spec §3.3,
-      // migration 0031).
-      'approvals',
-      // The append-only, hash-chained audit log (spec audit-trail §3.1).
-      'audit_events',
-      // Opaque author identities keyed on (kind, natural_key) — an agent's
-      // agentPath, never its manifest ULID (ADR 260726-170126, migration 0034).
-      'authors',
-      'browser_attachments',
-      'browser_instances',
-      'browser_profiles',
-      // Durable document channels, route authority, input outcomes and recovery
-      // evidence (spec `doc-channel`, migration 0137). These survive physical
-      // document removal so closure and accepted delivery history stay intact.
-      'canvas_doc_batches',
-      'canvas_doc_channels',
-      'canvas_doc_deliveries',
-      'canvas_doc_events',
-      'canvas_doc_file_save_intents',
-      'canvas_doc_grants',
-      'canvas_doc_identity_intents',
-      'canvas_doc_write_intents',
-      // The documents a room's members have put on its shared canvas — server
-      // owned, so every viewer sees one table (spec `room-canvas`, migration
-      // 0096). Cascades with its room; archiving one keeps the rows and freezes
-      // them.
-      'canvas_documents',
-      // The DM chat one agent keeps with another, the messages chats send each
-      // other (the server's record of who sent what), and how far one chat has
-      // read another (spec spin-off-chats §1-§2).
-      'chat_agent_dms',
-      'chat_messages',
-      'chat_read_cursors',
-      'codex_threads',
-      // Remote community enrollment, mirrored history, and durable delivery.
-      'community_agent_enrollments',
-      'community_entry_origins',
-      'community_mirror_access',
-      'community_mirror_entries',
-      'community_mirror_redactions',
-      'community_outbox',
-      'community_room_mirrors',
-      // Derived cache binding a ConnectionId → owning connector provider
-      // (connector-gateway spec §Detailed Design 2, migration 0029).
-      'connected_accounts',
-      // The access level the owner chose, kept as intent, and when DorkOS
-      // last followed it on its own (migration 0132).
-      'connection_access_levels',
-      'connection_grant_changes',
-      'connection_grant_exclusions',
-      'connection_level_follows',
-      // Provider instances, stable DorkOS connections, immutable operation
-      // revisions, exact grants, event delivery, review/resume state, usage,
-      // and the application-backfill ledger (Connections P1, migration 0086).
-      'connection_operation_grants',
-      'connections',
-      'connector_agent_requests',
-      'connector_application_migrations',
-      'connector_authentication_flows',
-      'connector_event_bindings',
-      'connector_event_consent_commands',
-      'connector_event_definitions',
-      'connector_event_inbox',
-      'connector_event_provider_settings',
-      'connector_event_receipts',
-      'connector_event_subscriptions',
-      'connector_legacy_agent_revocations',
-      'connector_managed_authority_outbox',
-      'connector_managed_authority_scopes',
-      'connector_managed_receipt_recoveries',
-      'connector_managed_usage_mirrors',
-      'connector_operation_revisions',
-      'connector_provider_instances',
-      'connector_reconciliation_agents',
-      'connector_reconciliation_candidates',
-      'connector_reconciliation_defaults',
-      'connector_reconciliation_previews',
-      'connector_review_requests',
-      'connector_runtime_bindings',
-      'connector_usage_attempts',
-      'connector_usage_terminal_receipts',
-      // The chat an extension keeps with each agent it messages, and every
-      // message it sent with ctx.agent.send (DOR-2683).
-      'extension_agent_chats',
-      'extension_agent_sends',
-      'extension_connection_approvals',
-      // Decisions an extension raised in the inbox (spec flow-multiproject
-      // §7.2, migration 0131).
-      'extension_decisions',
-      'extension_person_records',
-      'handle_tombstones',
-      // Heartbeats: each agent's beat facts, one row per beat, and what beats
-      // raised until it reaches its reader (spec heartbeats §11), and what
-      // waits for each agent's next report (§9.3).
-      'heartbeat_beats',
-      'heartbeat_outbox',
-      'heartbeat_report_items',
-      'heartbeat_state',
-      // The project registry (spec flow-multiproject §6.1, migration 0129).
-      'known_project_reporters',
-      'known_projects',
-      'mesh_namespace_rules',
-      // The message-search index and its frontier: a derived, rebuildable
-      // projection of what was said, never a store (ADR 260728-214214,
-      // migration 0037).
-      'messages',
-      // `messages_fts` is the FTS5 virtual table; the four `messages_fts_*`
-      // entries are the shadow tables SQLite creates to back it, and they are
-      // listed rather than filtered out so that dropping the virtual table
-      // cannot pass unnoticed. There is no `messages_fts_content` — this is an
-      // external-content index, which is exactly why it stores no second copy
-      // of the text and needs the three sync triggers in 0037.
+    const missing: string[] = [];
+    const declared = new Set<string>();
+    for (const value of Object.values(schema)) {
+      if (!is(value, SQLiteTable)) continue;
+      const { name, columns } = getTableConfig(value);
+      declared.add(name);
+      const actual = new Set(
+        (db.$client.pragma(`table_info("${name}")`) as Array<{ name: string }>).map((c) => c.name)
+      );
+      if (actual.size === 0) missing.push(name);
+      else
+        for (const column of columns)
+          if (!actual.has(column.name)) missing.push(`${name}.${column.name}`);
+    }
+    // Tables the server reads with raw SQL and the schema barrel does not
+    // export: message search's FTS5 index (`services/search`) and the three
+    // legacy connector tables `legacy-connection-migration.ts` still reads on
+    // upgrade (declared in `schema/connected-accounts.ts` and
+    // `schema/connector-attachments.ts`, just left out of the barrel).
+    const extra = [
       'messages_fts',
-      'messages_fts_config',
-      'messages_fts_data',
-      'messages_fts_docsize',
-      'messages_fts_idx',
-      // The Inbox and its per-channel delivery ledger. Activity notifications
-      // are rows here; standing "needs you" conditions stay derived and write
-      // one row only when they RESOLVE, carrying the outcome
-      // (ADR 260819-234828, migration 0068).
-      'notification_deliveries',
-      'notifications',
-      // Durable DorkOS-id <-> OpenCode-session-id bindings so OpenCode
-      // session ids survive a server restart (DOR-251, migration 0027).
-      'opencode_sessions',
-      'owner_factors',
-      'pulse_dispatch_log',
-      'pulse_runs',
-      'pulse_schedules',
-      // Browsers that asked to be pushed to when DorkOS is not open. Declared
-      // with the rest of the notification storage so the domain landed as one
-      // migration; its writer arrives with web push (migration 0068).
-      'push_subscriptions',
-      // How far each PERSON has read in each thread — the one user-side
-      // read-state store, keyed `(user_id, thread_kind, thread_id)`. The
-      // agent-side cursor stays on `room_members.last_read_seq`
-      // (ADR 260808-140956, migration 0060).
-      'read_cursors',
-      'relay_delivery_receipts',
-      'relay_index',
-      'relay_receipt_observer_owner',
-      'relay_traces',
-      // Managed remote access (DOR-2086): every leased Cloud command, journaled
-      // before it acts, and the activity batches waiting to be reported.
-      'remote_command_journal',
-      'remote_event_outbox',
-      // Files uploaded into a room, bound to the entry that carries them inside
-      // that entry's own transaction — nullable `entry_id` is the "uploaded,
-      // not yet posted" state (room-attachments spec, migration 0058).
-      'room_attachments',
-      // A room's durable bridge identity and its platform-message external-ref
-      // table — the chats-as-channels foundation (spec §3.1, §6.3, migration
-      // 0047, DOR-865).
-      'room_bridge_messages',
-      'room_bridges',
-      // The channel seats an unregistered agent held, replayed if the same
-      // agent is registered again (DOR-2095, migration 0113).
-      'room_departed_seats',
-      // The room primitive: a membership-scoped durable stream, its roster, its
-      // never-trimmed log, and the per-(room, agent) session bindings
-      // (ADR 260726-170125, migration 0034).
-      'room_entries',
-      'room_entry_reactions',
-      'room_handoff_outbox',
-      'room_members',
-      'room_report_outbox',
-      // The cache of which rooms have a git repo of their own. Truth is the
-      // `room-repo.json` sidecar in each room's home directory; this table is
-      // rebuildable from it (migration 0081, DOR-1591).
-      'room_repos',
-      // The seat a session held before the seat moved, so a report can follow it (DOR-3720).
-      'room_seat_launch_requirements',
-      'room_seat_moves',
-      // The two coordination counters a restart used to erase: which session ids
-      // a runtime has renamed away from, and the hour of automatic turns already
-      // spent (migration 0067, DOR-1205).
-      'room_session_retirements',
-      'room_sessions',
-      'room_turn_spend',
-      'rooms',
-      // The indexer's frontier — one row per container, recording what has
-      // already been read (migration 0037).
-      'search_sources',
-      'session',
-      'session_birth_allocations',
-      'session_connection_overrides',
-      // Per-session connector-attachment overrides — a tombstone table (state
-      // 'attached'|'detached'), never a plain delete (connection-scoping spec
-      // §Part 1, migration 0048).
+      'connected_accounts',
+      'agent_connector_attachments',
       'session_connector_attachments',
-      // Each session's last context reading, so it shows on open and after a
-      // restart (spec claude-account-fleet §6 U, migration 0118).
-      'session_context',
-      'session_draft_sources',
-      // Durable completed-turn event stream for log-backed runtimes
-      // (DOR-189, migration 0026).
-      'session_events',
-      // How each limit below ended, kept after its row is gone so the
-      // transcript can say what happened (spec claude-account-ui §7.1,
-      // migration 0120).
-      'session_limit_history',
-      // A session's hard usage limit, kept across a restart until its next
-      // turn starts (spec claude-account-fleet D4, migration 0117).
-      'session_limits',
-      // Owner-scoped opaque locations keep private directories out of links.
-      'session_locations',
-      // Stable proof that a protected source was accepted for one session.
-      'session_message_acceptance_receipts',
-      // Messages typed while a session was busy, waiting their turn — the
-      // server-owned queue that survives a refresh, a second window, and a
-      // restart (spec persistent-session-runtime §3.1, migration 0064).
-      'session_message_queue',
-      'session_metadata',
-      // Verified native cwd/account source survives an app restart.
-      'session_native_bindings',
-      // Words staged for a session that the runtime could not append to its own
-      // transcript, waiting to ride the next dispatch. Durable because the
-      // "Added context for the next reply" receipt already is (DOR-1324,
-      // migration 0073).
-      'session_staged_context',
-      // Who started a chat that no person typed into, and the counter for an
-      // extension's start limits (spec flow-multiproject §7.7, migration 0135).
-      'session_started_by',
-      // When the person last opened or wrote in each chat, so Today and the
-      // agent click agree on every device (spec your-activity-first D1).
-      'session_touches',
-      // The monthly spend limit on paid app actions (DOR-4204 PR 2).
-      'spending_prices',
-      'spending_runs',
-      'spending_settings',
-      // What the to-do caps count (DOR-3088): each to-do an agent handed a person, and every
-      // agent turn a to-do started, queued, held or will retry.
-      'todo_person_asks',
-      'todo_turns',
-      // Every to-do, an agent's own promises included (spec heartbeats §12, DOR-3088); named
-      // `commitments` until DOR-3933.
-      'todos',
-      // What each turn actually handed its runtime: bodies stored once by hash,
-      // a row per turn and its ordered parts (context viewer phase 1).
-      'turn_context_bodies',
-      'turn_context_parts',
-      'turn_contexts',
-      // The durable claim feed for inbound chats with no binding — metadata
-      // only, never a message body (connection-scoping spec §Part 3,
-      // migration 0048).
-      'unclaimed_chats',
-      'user',
-      'verification',
-      // Work one agent's chats have claimed, so two never take the same job (DOR-4019).
-      'work_claims',
-      'work_queue_control',
-      // Who queued a work item, at what level, and its first-run ceiling (VR-A).
-      'work_queue_item_authority',
-      'workspaces',
-    ]);
-  });
-
-  it('adds what the out-of-usage flow keeps (spec claude-account-fleet D9, migration 0119)', () => {
-    const db = createDb(':memory:');
-    runMigrations(db);
-    const columnsOf = (table: string) =>
-      (db.$client.pragma(`table_info(${table})`) as Array<{ name: string }>).map((c) => c.name);
-
-    expect(columnsOf('session_metadata')).toContain('launch_origin');
-    expect(columnsOf('session_limits')).toEqual(
-      expect.arrayContaining(['cwd', 'model_fallback', 'all_out', 'claimed_by'])
-    );
+    ];
+    for (const name of extra) {
+      const found = db.$client
+        .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
+        .get(name);
+      if (!found) missing.push(name);
+    }
+    // And the reverse: a table the migrations leave behind that nothing declares.
+    const present = db.$client
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`)
+      .all() as Array<{ name: string }>;
+    for (const { name } of present) {
+      if (/^(sqlite_|__drizzle|messages_fts_)/.test(name)) continue;
+      if (!declared.has(name) && !extra.includes(name)) missing.push(`unexpected table: ${name}`);
+    }
+    expect(missing).toEqual([]);
   });
 
   it('adds the limit history over a database that already holds a live limit (migration 0120)', () => {
@@ -539,17 +274,6 @@ describe('Database Migrations', () => {
     expect(insert.run('b').changes).toBe(0);
   });
 
-  it('adds the automatic-resume record (spec claude-account-fleet D9, migration 0121)', () => {
-    const db = createDb(':memory:');
-    runMigrations(db);
-    const columns = (
-      db.$client.pragma('table_info(session_metadata)') as Array<{ name: string }>
-    ).map((c) => c.name);
-
-    // One automatic resume per window reset; outlives the session_limits row.
-    expect(columns).toContain('last_auto_resume_for');
-  });
-
   it('foreign key constraint is enforced on pulse_runs.schedule_id', () => {
     const db = createDb(':memory:');
     runMigrations(db);
@@ -561,16 +285,6 @@ describe('Database Migrations', () => {
         )
         .run();
     }).toThrow(/FOREIGN KEY/);
-  });
-
-  it('WAL mode is enabled', () => {
-    const db = createDb(':memory:');
-    const mode = db.$client.pragma('journal_mode') as {
-      journal_mode: string;
-    }[];
-    // In-memory databases use 'memory' journal mode, but the pragma was set.
-    // For file-based databases it would be 'wal'. For :memory: we just verify no error.
-    expect(mode).toBeDefined();
   });
 
   it('foreign keys pragma is enabled', () => {

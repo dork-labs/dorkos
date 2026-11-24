@@ -47,7 +47,7 @@ import {
   describeRuntimeError,
   type RuntimeErrorCopy,
 } from '@dorkos/shared/runtime-error-classification';
-import { SESSIONS } from '../../../../config/constants.js';
+import { PENDING_APPROVAL_TIMING } from '../../shared/timing/pending-approval-timing.js';
 import { logger } from '../../../../lib/logger.js';
 
 /** The error name OpenCode stamps on interrupts — suppressed, not surfaced. */
@@ -287,7 +287,7 @@ export function mapPermissionAsked(
           ...metadata,
           dorkosSearchRoot: searchRoot,
         }),
-        timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
+        timeoutMs: PENDING_APPROVAL_TIMING.attended.countdownMs,
         startedAt: Date.now(),
         ...(typeof filepath === 'string' ? { blockedPath: filepath } : {}),
         hasSuggestions: false,

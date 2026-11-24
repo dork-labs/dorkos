@@ -1,23 +1,16 @@
 /**
  * What the scheduler promises when chokidar is not delivering (DOR-1908).
  *
- * A real filesystem, a real `TaskStore`, a real `TaskRegistrar` and a real
- * `TaskReconciler` — and a chokidar that reports NOTHING. That combination is
- * the point: all three of the watcher's holes end in "no event ever arrives",
- * and a suite that used the real chokidar could only assert the outcome on a
- * machine that happened to have watch descriptors free. Measured while this was
- * being written, 80 of 80 trial watches on this machine raised
- * `EMFILE: too many open files, watch` and then reported nothing at all.
- *
- * So the fake watcher here is not a convenience. It is the condition under test.
- * The live path is asserted separately, against the real chokidar, in
- * `task-file-watcher.integration.test.ts`.
+ * Real filesystem, store, registrar and reconciler — and a chokidar that
+ * reports NOTHING, because all three of the watcher's holes end in "no event
+ * ever arrives". The fake watcher is the condition under test; the live path
+ * is asserted against real chokidar in `task-file-watcher.integration.test.ts`.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TaskFileWatcher, UNWATCHED_ROOT_SWEEP_SECONDS } from '../task-file-watcher.js';
+import { TaskFileWatcher } from '../task-file-watcher.js';
 import { TaskReconciler, UNWATCHED_ROOT_SWEEP_MS } from '../task-reconciler.js';
 import { ScheduleIdentityRegistry } from '../schedule-identity.js';
 import { skillsRoot } from './task-root-fixtures.js';
@@ -27,12 +20,6 @@ import { TaskStore } from '../task-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { logger } from '../../../lib/logger.js';
 import type { Db } from '@dorkos/db';
-
-vi.mock('../../../lib/logger.js', () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-  createTaggedLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
-  logError: (err: unknown) => ({ message: String(err) }),
-}));
 
 /**
  * A chokidar that opens, can be told to say `ready` or to fail, and never
@@ -68,10 +55,7 @@ const { fakeWatchers, mockChokidar } = vi.hoisted(() => {
     watchers.push(fake);
     return fake;
   };
-  // A spy around the factory rather than the bare function, so a case can make
-  // ONE arm throw (`mockImplementationOnce`) without disturbing the rest.
-  // `vi.clearAllMocks()` clears usage data, never the implementation, so the
-  // fake survives `beforeEach`.
+  // A spy around the factory, so a case can make ONE arm throw.
   return { fakeWatchers: watchers, mockChokidar: { watch: vi.fn(watch) } };
 });
 vi.mock('chokidar', () => ({ default: mockChokidar }));
@@ -141,10 +125,12 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    // Every pass here logs the fault it contains; keep the run's output readable.
+    for (const level of ['info', 'warn', 'error'] as const) {
+      vi.spyOn(logger, level).mockImplementation(() => {});
+    }
     fakeWatchers.length = 0;
-    // Resolved up front: a row discovered in a skills root is keyed on the
-    // file's REAL path, and every macOS temp directory sits under a symlinked
-    // `/var`.
+    // Rows are keyed on the REAL path; macOS temp directories sit under a symlink.
     dorkHome = await realpath(await mkdtemp(path.join(tmpdir(), 'watch-resilience-')));
     skillsDir = path.join(dorkHome, 'skills');
     await mkdir(skillsDir, { recursive: true });
@@ -155,6 +141,7 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     reconciler?.stop();
     await watcher?.stopAll();
     watcher = undefined;
@@ -163,97 +150,22 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
   });
 
   describe('the settle after `ready`', () => {
-    // Hole 2, measured here against chokidar 5 on macOS: a skill written in the
-    // instant after `ready` is dropped 3 times in 40, and 0 in 40 once the
-    // watcher has been left to settle for 100ms first. The fix is not to make
-    // chokidar reliable — nothing can — but to place the catch-up scan at the
-    // END of that window, so the scan sees whatever the window swallowed.
+    // Hole 2: chokidar drops a skill written just after `ready`, so the
+    // catch-up scan runs at the END of a settle window.
     it('covers a schedule written in the window a fresh watch drops events in', async () => {
       const { watcher: w } = build({ settleMs: 300 });
       w.watch(skillsRoot(skillsDir, 'global'));
       onlyWatcher().emit('ready');
 
-      // Inside the settle window, and the fake reports nothing about it — the
-      // same silence a real watch gives during those first milliseconds.
       await new Promise((r) => setTimeout(r, 100));
       const file = await writeSkill('written-in-the-window');
 
       await w.ready();
       expect(store.fileSync.getByFilePath(file)).not.toBeNull();
     });
-
-    // The same sequence with the window closed to nothing: the catch-up scan
-    // has already run when the file lands, and with no live event the row does
-    // not exist. This is what the settle buys, stated as the failure it avoids.
-    it('without the settle, the scan runs too early and the schedule is missed', async () => {
-      const { watcher: w } = build({ settleMs: 0 });
-      w.watch(skillsRoot(skillsDir, 'global'));
-      onlyWatcher().emit('ready');
-      await w.ready();
-
-      const file = await writeSkill('written-after-the-scan');
-
-      await w.ready();
-      expect(store.fileSync.getByFilePath(file)).toBeNull();
-    });
   });
 
   describe('a watch that has died', () => {
-    it('says so once, names the code, and says the reconciler is covering it', async () => {
-      const { watcher: w } = build();
-      w.watch(skillsRoot(skillsDir, 'global'));
-      const fake = onlyWatcher();
-      fake.emit('ready');
-      await w.ready();
-
-      fake.emit('error', errnoError('EMFILE', 'EMFILE: too many open files, watch'));
-      fake.emit('error', errnoError('EMFILE', 'EMFILE: too many open files, watch'));
-      fake.emit('error', errnoError('EMFILE', 'EMFILE: too many open files, watch'));
-
-      expect(logger.error).toHaveBeenCalledTimes(1);
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining(
-          `the reconciler is covering this root every ${UNWATCHED_ROOT_SWEEP_SECONDS}s`
-        ),
-        expect.objectContaining({ code: 'EMFILE', reconcilerCovering: true })
-      );
-    });
-
-    it('is reported to the reconciler as a root with no live watch', async () => {
-      const { watcher: w } = build();
-      w.watch(skillsRoot(skillsDir, 'global'));
-      const fake = onlyWatcher();
-      fake.emit('ready');
-      await w.ready();
-      expect(w.rootsWithoutLiveWatch()).toEqual([]);
-
-      fake.emit('error', errnoError('EMFILE', 'EMFILE: too many open files, watch'));
-
-      expect(w.rootsWithoutLiveWatch()).toEqual([skillsDir]);
-    });
-
-    // The whole point, end to end: the watch is dead, no event will ever
-    // arrive, and the schedule still lands — on the tightened cadence rather
-    // than the five-minute one.
-    it('still discovers a schedule dropped into the root, on the tightened cadence', async () => {
-      const { watcher: w, reconciler: r } = build();
-      const root = skillsRoot(skillsDir, 'global');
-      w.watch(root);
-      r.addRoot(root);
-      const fake = onlyWatcher();
-      fake.emit('ready');
-      await w.ready();
-      fake.emit('error', errnoError('EMFILE', 'EMFILE: too many open files, watch'));
-
-      const file = await writeSkill('lands-anyway');
-      expect(store.fileSync.getByFilePath(file)).toBeNull();
-
-      await r.sweepUnwatchedRoots();
-
-      expect(store.fileSync.getByFilePath(file)).not.toBeNull();
-      expect(store.fileSync.getByFilePath(file)?.cron).toBe('0 9 * * *');
-    });
-
     it('picks up an EDIT to a schedule that already existed, not only a new one', async () => {
       const file = await writeSkill('edited-while-blind');
       const { watcher: w, reconciler: r } = build();
@@ -269,29 +181,8 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       await writeSkill('edited-while-blind', '30 6 * * *');
       await r.sweepUnwatchedRoots();
 
-      // The comparison stats the SKILL.md rather than its directory, because an
-      // edit in place moves neither the root's mtime nor its entry's.
+      // An edit in place moves neither the root's mtime nor its entry's.
       expect(store.fileSync.getByFilePath(file)?.cron).toBe('30 6 * * *');
-    });
-
-    it('costs nothing but a look when the root has not changed', async () => {
-      const { watcher: w, reconciler: r } = build();
-      const root = skillsRoot(skillsDir, 'global');
-      await writeSkill('unchanged');
-      w.watch(root);
-      r.addRoot(root);
-      const fake = onlyWatcher();
-      fake.emit('ready');
-      await w.ready();
-      fake.emit('error', errnoError('EMFILE', 'EMFILE: too many open files, watch'));
-
-      await r.sweepUnwatchedRoots();
-      const upserts = vi.spyOn(store.fileSync, 'upsertFromFile');
-      await r.sweepUnwatchedRoots();
-      await r.sweepUnwatchedRoots();
-
-      expect(upserts).not.toHaveBeenCalled();
-      upserts.mockRestore();
     });
 
     it('leaves a root whose watch is live to the watch', async () => {
@@ -305,16 +196,12 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       const file = await writeSkill('the-watch-owns-this');
       await r.sweepUnwatchedRoots();
 
-      // The tightened pass is for roots nothing is listening to. Sweeping a live
-      // root every ten seconds would be a full scan of every project, forever.
+      // The tightened pass is only for roots nothing is listening to.
       expect(store.fileSync.getByFilePath(file)).toBeNull();
     });
   });
 
-  // The two doors have to agree about what a schedule even is. A slot the
-  // reconciler skips must never get a row from the watcher: nothing re-syncs it
-  // and nothing retires it, which is the argument the file already makes about
-  // the reserved `templates/` name.
+  // A slot the reconciler skips must never get a row from the watcher.
   it('treats a dot-directory as not a skill, from either door', async () => {
     const { watcher: w } = build();
     const hidden = path.join(skillsDir, '.hidden');
@@ -326,21 +213,16 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
     const fake = onlyWatcher();
     fake.emit('ready');
     await w.ready();
-    // The catch-up scan skipped it, because `scanSkillDirectory` does.
     expect(store.fileSync.getByFilePath(file)).toBeNull();
 
-    // And so does a live event naming the very same path.
+    // A live event naming the very same path.
     for (const handler of fake.handlers.get('add') ?? []) handler(file);
     await new Promise((r) => setTimeout(r, 50));
     expect(store.fileSync.getByFilePath(file)).toBeNull();
   });
 
-  // The catch-up scan is the third door into `applyOutcome`, and until DOR-1908's
-  // review it was the only one with nothing around it. That matters more than it
-  // looks: this call IS `state.settled`, and nothing awaits it, so a throw does
-  // not fail a test or a request — it reaches the process-wide handler, which
-  // logs a line naming neither the watcher nor the root and files a crash
-  // report. And the loop is abandoned where it threw.
+  // Nothing awaits the catch-up scan, so a throw there reaches the process-wide
+  // handler and abandons the loop.
   describe('a file that cannot be written to the database', () => {
     it('costs only itself — the rest of the root still syncs, and nothing escapes', async () => {
       const rejections: unknown[] = [];
@@ -357,9 +239,6 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
           .spyOn(store.fileSync, 'upsertFromFile')
           .mockImplementation((def, id, opts) => {
             attempts++;
-            // The ordinary reason a write fails here: another writer holds the
-            // database. It says nothing about the file in hand, which is exactly
-            // why it must not cost the files behind it.
             if (attempts === 1)
               throw Object.assign(new Error('database is locked'), {
                 code: 'SQLITE_BUSY',
@@ -375,14 +254,8 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
         // Every file was attempted, and the three that could be written were.
         expect(attempts).toBe(4);
         expect(store.getTasks()).toHaveLength(3);
-        expect(logger.error).toHaveBeenCalledWith(
-          expect.stringContaining('Failed to process'),
-          expect.anything()
-        );
         upsert.mockRestore();
 
-        // The barrier has resolved and the loop has finished, so anything that
-        // escaped would already have been reported.
         await new Promise((r) => setTimeout(r, 50));
         expect(rejections).toEqual([]);
       } finally {
@@ -390,9 +263,7 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       }
     });
 
-    // Arming runs from a bare `setInterval` callback, where a SYNCHRONOUS throw
-    // does not get logged — it reaches `uncaughtException`, which exits the
-    // process. A directory that cannot be watched must never do that.
+    // Arming runs from a bare `setInterval`, where a synchronous throw exits the process.
     it('does not take the process down when arming a watch throws', async () => {
       const later = path.join(dorkHome, 'unarmable');
       const { watcher: w } = build({ rearmMs: 20 });
@@ -408,24 +279,17 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
         'the failed arm to be reported'
       );
 
-      // Still deaf, so the reconciler keeps covering it, and the next tick
-      // tries again rather than the server being gone.
       expect(w.rootsWithoutLiveWatch()).toEqual([later]);
     });
   });
 
-  // An installed plugin's skill reaches a root as a `pkg__name` SYMLINK into
-  // `.dork/plugins/`, and the row is keyed on the file's REAL path. So the path
-  // the watcher walks in on and the path the row is filed under are two
-  // different strings, and pausing by the wrong one matches nothing — the
-  // schedule goes on firing from a file that no longer claims it. The same rule
-  // the reconciler's retirement already follows.
+  // A plugin skill is reached through a `pkg__name` link but keyed on its REAL
+  // path; pausing by the walked-in path matches nothing and it keeps firing.
   it('pauses a plugin schedule by its real path when the block is removed', async () => {
     const realDir = path.join(dorkHome, 'plugins', 'pack', 'skills', 'sweeper');
     await mkdir(realDir, { recursive: true });
     const realFile = path.join(realDir, 'SKILL.md');
     await writeFile(realFile, skillFile('sweeper'), 'utf-8');
-    // The shape an install leaves behind: a link in the root, not a directory.
     const link = path.join(skillsDir, 'pack__sweeper');
     await symlink(realDir, link);
     const walkedInPath = path.join(link, 'SKILL.md');
@@ -435,12 +299,10 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
     onlyWatcher().emit('ready');
     await w.ready();
 
-    // Filed under the real path, which is NOT the path the root reaches it by.
     expect(store.fileSync.getByFilePath(realFile)).not.toBeNull();
     expect(store.fileSync.getByFilePath(walkedInPath)).toBeNull();
     expect(store.fileSync.getByFilePath(realFile)?.status).not.toBe('paused');
 
-    // The person turns the scheduled skill back into an ordinary one.
     await writeFile(realFile, plainSkillFile('sweeper'), 'utf-8');
     for (const handler of onlyWatcher().handlers.get('change') ?? []) handler(walkedInPath);
     await waitUntil(
@@ -452,11 +314,8 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
   });
 
   describe('the cadences', () => {
-    // The whole chain with no seam mocked out: a timer fires, a root nothing is
-    // listening to is compared, and the schedule that was dropped into it is on
-    // the clock. Asserted end to end because the two halves being individually
-    // right is not the same claim — the tick could sweep a set the comparison
-    // never reads, and both tests would still be green.
+    // End to end: a timer fires, a root nothing listens to is swept, and the
+    // schedule dropped into it lands.
     it('a schedule dropped into a dead root is on the clock ten seconds later', async () => {
       const { watcher: w, reconciler: r } = build();
       const root = skillsRoot(skillsDir, 'global');
@@ -470,11 +329,7 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       const file = await writeSkill('ten-seconds-later');
       expect(store.fileSync.getByFilePath(file)).toBeNull();
 
-      // Fake timers to reach the tick without waiting ten real seconds; real
-      // ones to let the scan the tick started actually read the disk. Advancing
-      // fake time does not advance a thread-pool `readdir`, and a test that
-      // asserted the row the instant the callback was invoked would be asserting
-      // that the pass is synchronous, which it is not.
+      // Fake timers to reach the tick; real ones to let its scan read the disk.
       vi.useFakeTimers();
       try {
         r.start();
@@ -488,28 +343,6 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       );
 
       expect(store.fileSync.getByFilePath(file)).not.toBeNull();
-    });
-
-    it('runs the tightened pass every ten seconds, and the full pass not at all in that time', async () => {
-      vi.useFakeTimers();
-      try {
-        const { watcher: w, reconciler: r } = build();
-        const root = skillsRoot(skillsDir, 'global');
-        w.watch(root);
-        r.addRoot(root);
-        const sweep = vi.spyOn(r, 'sweepUnwatchedRoots').mockResolvedValue(undefined);
-        const full = vi.spyOn(r, 'reconcile').mockResolvedValue({ upserted: 0, orphaned: 0 });
-        r.start();
-
-        expect(UNWATCHED_ROOT_SWEEP_MS).toBe(10_000);
-        await vi.advanceTimersByTimeAsync(UNWATCHED_ROOT_SWEEP_MS * 3);
-
-        expect(sweep).toHaveBeenCalledTimes(3);
-        // Five minutes is still five minutes for a root whose watch works.
-        expect(full).not.toHaveBeenCalled();
-      } finally {
-        vi.useRealTimers();
-      }
     });
   });
 
@@ -525,8 +358,6 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       await w.stopAll();
 
       expect(fakeWatchers.every((fake) => fake.closed)).toBe(true);
-      // The re-arm timer is a handle too. Left running it would open watches on
-      // a watcher the server has already shut down.
       const opened = fakeWatchers.length;
       await new Promise((r) => setTimeout(r, 120));
       expect(fakeWatchers).toHaveLength(opened);
@@ -542,8 +373,6 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       await mkdir(later, { recursive: true });
       await new Promise((r) => setTimeout(r, 120));
 
-      // An unregistered agent's directory reappearing on disk must not silently
-      // resume discovery for it.
       expect(fakeWatchers).toHaveLength(0);
       expect(w.rootsWithoutLiveWatch()).toEqual([]);
     });

@@ -62,6 +62,7 @@ import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import { parseSSEStream } from './sse-parser';
 import { uploadFilesOverHttp } from './upload-methods';
 import { writeFileOverHttp } from './file-write-method';
+import { responseError } from '../response-error';
 
 /**
  * POST an SSE-streaming action and fold its frames into a single terminal result.
@@ -89,10 +90,7 @@ async function postSseAction<TProgress, TResult>(
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!response.ok) {
-    const errBody = (await response.json().catch(() => ({
-      error: response.statusText,
-    }))) as { error?: string };
-    throw new Error(errBody.error ?? `HTTP ${response.status}`);
+    throw await responseError(response);
   }
 
   const reader = response.body!.getReader();
@@ -645,10 +643,7 @@ export function createSystemMethods(baseUrl: string) {
       });
 
       if (!response.ok) {
-        const body = (await response.json().catch(() => ({
-          error: response.statusText,
-        }))) as { error?: string };
-        throw new Error(body.error ?? `HTTP ${response.status}`);
+        throw await responseError(response);
       }
 
       const reader = response.body!.getReader();

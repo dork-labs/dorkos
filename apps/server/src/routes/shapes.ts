@@ -28,10 +28,9 @@
 import { Hono, type Context } from 'hono';
 import { ZodError } from 'zod';
 import { ForkShapeRequestSchema } from '@dorkos/shared/schemas';
-import { validationFailureBody } from '../lib/route-utils.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { APPROVAL_TOKEN_HEADER, trustedCaller } from '../services/core/capabilities/index.js';
 import {
@@ -265,7 +264,7 @@ export function createShapesRoutes(deps: ShapesRouterDeps): Hono<ApiEnv> {
     // An empty POST has no body at all; every field is optional, so default to
     // `{}` (fork with all defaults).
     const parsed = ForkShapeRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const body = parsed.data;
     // A malformed target name is a client error (400), not a conflict (409) —
     // the fork service's own slug check stays as defense in depth.

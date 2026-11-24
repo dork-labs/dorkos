@@ -21,7 +21,7 @@ import {
   type GateDay,
   type Snapshot,
 } from '../data.ts';
-import { canaryRuns, mainCommits } from '../series.ts';
+import { canaryRuns, mainCommits, trimRun } from '../series.ts';
 
 const CANARY_WORKFLOWS = ['test.yml', 'browser-test.yml', 'typecheck.yml', 'lint.yml'];
 
@@ -79,6 +79,37 @@ describe('which runs are canary results', () => {
       run({ path: '.github/workflows/test.yml', event: 'workflow_dispatch', head_branch: 'spike' }),
     ];
     expect(canaryRuns(runs, 'main', CANARY_WORKFLOWS)).toEqual([]);
+  });
+
+  it('leaves out a rolling-bisect dispatch, which tests an older merge than main head', () => {
+    const runs = [
+      {
+        ...run({
+          path: '.github/workflows/browser-test.yml',
+          event: 'workflow_dispatch',
+          conclusion: 'failure',
+        }),
+        bisect: true as const,
+      },
+      run({ path: '.github/workflows/test.yml', event: 'workflow_dispatch' }),
+    ];
+    expect(canaryRuns(runs, 'main', CANARY_WORKFLOWS).map((c) => c.workflow)).toEqual(['test.yml']);
+  });
+
+  it('marks a run as a bisect from its title only', () => {
+    const base = {
+      id: 1,
+      path: 'p',
+      event: 'workflow_dispatch',
+      created_at: 'x',
+      updated_at: 'x',
+      head_sha: 'a',
+    };
+    expect(trimRun({ ...base, display_title: `bisect ${'b'.repeat(40)} for run 77` }).bisect).toBe(
+      true
+    );
+    expect(trimRun({ ...base, display_title: 'browser-test' }).bisect).toBeUndefined();
+    expect(trimRun(base).bisect).toBeUndefined();
   });
 
   it('records a failure as red, and drops a cancelled or unfinished run rather than calling it green', () => {

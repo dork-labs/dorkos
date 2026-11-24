@@ -41,6 +41,7 @@ export const REPO_WIDE_SUITES = [
   '__tests__/check-boundary.test.ts',
   '__tests__/check-design-tokens.test.ts',
   '__tests__/check-own-mocks.test.ts',
+  '__tests__/check-test-ratio.test.ts',
   '__tests__/check-vocab-gate.test.ts',
   '__tests__/ci-apt-resilience.test.ts',
   '__tests__/code-only.test.ts',
@@ -87,6 +88,8 @@ export const REPO_WIDE_SUITES = [
   '__tests__/text-only-scope.test.ts',
   '__tests__/tsconfig-extends-resolve.test.ts',
   '__tests__/vitest-projects.test.ts',
+  // Imports packages/shared/src/provenance.ts: a change there can turn it red (DOR-5047).
+  'provenance/__tests__/provenance-line.test.ts',
   'release-checks/__tests__/chromium-age.test.ts',
   // Import packages/cli/scripts/release-branch/rules.ts: the release commit must
   // pass the release-branch-contents rule, so a change there can turn these red.

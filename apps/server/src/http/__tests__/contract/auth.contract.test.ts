@@ -9,6 +9,7 @@
  * A request CORS refuses never reaches it, so it counts for nothing.
  */
 import { contractSuite, SERVER_ORIGIN } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const OWNER = { email: 'owner' + '@' + 'dork.test', password: 'correct-horse-battery-staple' };
 /** A host the server answers to, as if reached through a TLS-terminating proxy. */
@@ -117,10 +118,9 @@ contractSuite(
       expect: {
         status: 403,
         headers: { 'set-cookie': null, 'ratelimit-limit': null },
-        body: {
-          error: `This instance does not answer to pages from "https://${PROXIED_HOST}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`,
-          code: 'ORIGIN_NOT_ALLOWED',
-        },
+        body: problemBody('origin_not_allowed', {
+          detail: `This instance does not answer to pages from this address. If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`,
+        }),
       },
     },
     {
@@ -185,11 +185,10 @@ contractSuite(
       headers: { origin: 'https://evil.example' },
       expect: {
         status: 403,
-        body: {
-          error:
-            'This instance does not answer to pages from "https://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
-          code: 'ORIGIN_NOT_ALLOWED',
-        },
+        body: problemBody('origin_not_allowed', {
+          detail:
+            'This instance does not answer to pages from this address. If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
+        }),
       },
     },
   ],

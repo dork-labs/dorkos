@@ -28,18 +28,14 @@ import type { Context } from 'hono';
 import { DevtoolsRecordingUploadSchema } from '@dorkos/shared/schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '@dorkos/http-kit';
-import {
-  parseUploadForm,
-  UploadLimitError,
-  type UploadedFile,
-  type UploadForm,
-} from '../http/uploads.js';
+import { parseUploadForm, type UploadedFile, type UploadForm } from '../http/uploads.js';
 import { devtoolsCaptureStore } from '../services/session/index.js';
 import { configManager } from '../services/core/config-manager.js';
 import { sniffImageContentType } from '../services/identity/image-sniff.js';
 import { pathErrorReply, resolveWithinCwd } from '../lib/file-route-guards.js';
 import { errorBody, parseSessionId } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
+import { uploadRefusalProblem } from '../http/problems/upload-refusal.js';
 
 /** The lease an upload holds while it writes. */
 type RecordingUploadLease = NonNullable<
@@ -98,12 +94,10 @@ export async function sessionDevtoolsRecordingHandler(c: Context<ApiEnv>): Promi
       },
     });
   } catch (err) {
-    if (err instanceof UploadLimitError && err.code === 'LIMIT_FILE_SIZE') {
-      const megabytes = configManager.get('uploads').maxFileSize / 1024 / 1024;
-      return c.json(errorBody(`Recording too large (max ${megabytes}MB)`, err.code), 413);
-    }
-    const message = err instanceof Error ? err.message : 'Invalid recording upload';
-    return c.json(errorBody(message, 'RECORDING_UPLOAD_INVALID'), 400);
+    const megabytes = configManager.get('uploads').maxFileSize / 1024 / 1024;
+    return uploadRefusalProblem(c, err, {
+      tooLargeDetail: `Recording too large (max ${megabytes}MB)`,
+    });
   }
   return finish(c, form);
 }

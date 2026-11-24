@@ -18,7 +18,6 @@
  */
 import { Hono } from 'hono';
 import path from 'node:path';
-import { z } from 'zod';
 import {
   DiffBaselineQuerySchema,
   AdvanceDiffBaselineRequestSchema,
@@ -41,7 +40,7 @@ import {
 } from '../services/diff/index.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { canReadSession, SESSION_NOT_FOUND_BODY } from './audit-reader.js';
@@ -59,7 +58,7 @@ const router = new Hono<ApiEnv>();
 router.get('/baseline', async (c) => {
   const parsed = DiffBaselineQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { cwd, path: relPath, sessionId, mode } = parsed.data;
   if (!canReadSession(honoRequestFacts(c), sessionId)) return c.json(SESSION_NOT_FOUND_BODY, 404);
@@ -102,7 +101,7 @@ router.get('/baseline', async (c) => {
 router.post('/baseline/advance', async (c) => {
   const parsed = AdvanceDiffBaselineRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { cwd, path: relPath, sessionId } = parsed.data;
   if (!canReadSession(honoRequestFacts(c), sessionId)) return c.json(SESSION_NOT_FOUND_BODY, 404);
@@ -135,7 +134,7 @@ router.post('/baseline/advance', async (c) => {
 router.get('/pending', async (c) => {
   const parsed = DiffPendingQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { cwd, sessionId } = parsed.data;
   if (!canReadSession(honoRequestFacts(c), sessionId)) return c.json(SESSION_NOT_FOUND_BODY, 404);
@@ -179,7 +178,7 @@ router.get('/pending', async (c) => {
 router.get('/baseline/raw', async (c) => {
   const parsed = DiffBaselineRawQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { cwd, path: relPath, sessionId } = parsed.data;
   if (!canReadSession(honoRequestFacts(c), sessionId)) return c.json(SESSION_NOT_FOUND_BODY, 404);
@@ -254,7 +253,7 @@ router.get('/baseline/raw', async (c) => {
 router.post('/revert', async (c) => {
   const parsed = RevertDiffBaselineRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { cwd, path: relPath, sessionId } = parsed.data;
   if (!canReadSession(honoRequestFacts(c), sessionId)) return c.json(SESSION_NOT_FOUND_BODY, 404);

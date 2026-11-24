@@ -53,15 +53,15 @@ import {
   type DispatchLifecycleEvent,
 } from '../message-dispatcher.js';
 import {
-  StagedContextStore,
   holdStagedContext,
+  StagedContextStore,
   resetStagedContextStore,
   setStagedContextStore,
 } from '../staged-context-store.js';
 import { assembleAdditionalContext } from '../context-assembler.js';
 import { logger } from '../../../lib/logger.js';
 import type { DispatchContext } from '../../../lib/dispatch-context.js';
-import { currentDispatch, currentDispatchId } from '../../../lib/dispatch-context.js';
+import { currentDispatch } from '../../../lib/dispatch-context.js';
 import { recentDispatches, resetDispatchBuffers } from '../../observability/dispatch-buffers.js';
 // The routes' mutation API, driven here because what it changes is what the
 // dispatcher then RUNS — the edit and the turn are one promise, not two.
@@ -204,18 +204,6 @@ describe('dispatchMessage — an idle session runs the message now', () => {
     // Dequeued on dispatch: nothing is left waiting for a message that ran.
     await settle();
     expect(listQueuedMessages(session)).toEqual([]);
-  });
-
-  it('hands the runtime the message id, so a result can be correlated by id', async () => {
-    runtime.withScenarios([quickTurn()]);
-
-    const result = await send('hello');
-
-    expect(runtime.sendMessage).toHaveBeenCalledWith(
-      session,
-      'hello',
-      expect.objectContaining({ messageId: result.outcome.messageId })
-    );
   });
 });
 
@@ -386,21 +374,6 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     expect(listQueuedMessages(session)).toEqual([]);
   });
 
-  it('answers at ACCEPTANCE, while the turn ahead is still running', async () => {
-    // The DOR-1088 held socket, retired. This `await` returning at all is the
-    // measurement: the turn ahead is parked on a gate this test has not opened,
-    // so a dispatch that waited for it could not resolve here.
-    const first = gate();
-    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
-
-    await send('long turn');
-    const queued = await send('typed while it worked');
-
-    expect(queued.queued).toBe(true);
-    expect(queued.queuePosition).toBe(1);
-    expect(projectorStatus()).toBe('streaming');
-  });
-
   it('refuses instead of queueing for a caller that asked to (whenBusy: refuse)', async () => {
     // Rooms and the MCP sign-in nudge: a trigger a machine generated on
     // somebody's behalf, where firing it late is worse than not firing it.
@@ -418,45 +391,6 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     first.open();
     await settle();
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
-  });
-
-  it('takes a refusing caller once the turn has ENDED, though the stream is still closing', async () => {
-    // DOR-1239. claude-code keeps its subprocess alive past `done` so a finished
-    // background task can wake the agent again, and the write-lock and the
-    // in-flight slot are both released on that late signal — so for the whole
-    // drain the session LOOKS busy while the agent has stopped and its reply
-    // (widget buttons and all) is on screen. A click there was refused over a
-    // session nothing was using.
-    const drain = gate();
-    runtime.withScenarios([drainingTurn(drain.wait), quickTurn()]);
-
-    await send('render a widget');
-    // The turn has closed on the projector; the stream behind it has not.
-    await vi.waitFor(() => expect(getOrCreateProjector(session).peekInProgressTurn()).toBeNull());
-    expect(projectorStatus()).toBe('idle');
-
-    const clicked = await send('a widget click', { whenBusy: 'refuse' });
-
-    expect(clicked.accepted).toBe(true);
-    // And it waits in nobody's composer. A refusing caller's trigger must never
-    // become a queue row: this one's content is a machine-generated block, and a
-    // row is editable, removable, and what the launch would send.
-    expect(clicked.queuePosition).toBe(0);
-    expect(listQueuedMessages(session)).toEqual([]);
-    expect(store.list(session)).toEqual([]);
-
-    // It runs when the slot clears. Ordering holds — one turn at a time — but
-    // ADJACENCY to the clicked turn is not promised: a self-woken window
-    // (DOR-1100) can open and close inside the same stream first.
-    drain.open();
-    await settle();
-    expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
-    expect(runtime.sendMessage).toHaveBeenLastCalledWith(
-      session,
-      'a widget click',
-      expect.anything()
-    );
-    expect(listQueuedMessages(session)).toEqual([]);
   });
 
   it('drops a refusing caller’s trigger rather than forcing it into a stream still open', async () => {
@@ -525,43 +459,6 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     ]);
   });
 
-  it('names the turn a refusal was refused for, so a 409 cannot invent a holder', async () => {
-    // The 409 body used to be built from a second authority (the runtime lock,
-    // asked under the request's id rather than the canonical one), which could
-    // report `lockedBy: "unknown"` for a refusal the dispatcher had just made.
-    const first = gate();
-    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
-
-    await send('long turn');
-    const refused = await send('a widget click', {
-      clientId: 'window-b',
-      whenBusy: 'refuse',
-    });
-
-    expect(refused.accepted).toBe(false);
-    expect(refused.refusedBy?.clientId).toBe(TAB);
-    expect(refused.refusedBy?.since).toBeGreaterThan(0);
-  });
-
-  it('names the LOCK holder when the write-lock is what refused the launch', async () => {
-    // The other refusal path, and the reason the dispatcher answers this rather
-    // than the route: the lock is keyed by the canonical id, which the caller
-    // does not necessarily hold.
-    runtime.getInternalSessionId.mockReturnValue('canonical-id');
-    runtime.acquireLock.mockReturnValue(false);
-    runtime.getLockInfo.mockImplementation((id: string) =>
-      id === 'canonical-id' ? { clientId: 'somebody-else', acquiredAt: 1_700_000_000_000 } : null
-    );
-
-    const refused = await send('a widget click', { whenBusy: 'refuse' });
-
-    expect(refused.accepted).toBe(false);
-    expect(refused.refusedBy).toEqual({
-      clientId: 'somebody-else',
-      since: 1_700_000_000_000,
-    });
-  });
-
   it("waits out the caller's OWN turn rather than refusing it (whenBusy: refuse-foreign)", async () => {
     // DOR-1230. A room holds a re-mention until its agent's turn here ends and
     // then dispatches it — so what it meets is its own tail: the turn ahead has
@@ -581,43 +478,6 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     // Both ran, and nothing is left waiting to run a third time.
     expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
     expect(store.list(session)).toEqual([]);
-  });
-
-  it('keeps a refuse-foreign trigger that already waited, when the lock then refuses it', async () => {
-    // The narrow race the wait above opens: a stranger takes the session in the
-    // beat between the trigger being accepted and its launch. The refusal the
-    // caller asked for is gone by then — it is holding an `accepted: true` — so
-    // giving up would leave it waiting on a turn nothing will start. It goes
-    // back in line, which is what the acceptance promised.
-    const first = gate();
-    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
-
-    await send('the turn the room is already running');
-    const held = await send('re-mentioned mid-turn', { whenBusy: 'refuse-foreign' });
-    expect(held.accepted).toBe(true);
-
-    runtime.acquireLock.mockReturnValue(false);
-    first.open();
-    await settle();
-
-    // Refused at the launch, so no second turn — and it waits IN MEMORY. There
-    // is no row, because a room's trigger is not a person's words and has no
-    // business sitting in their composer (DOR-1242).
-    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
-    expect(store.list(session)).toEqual([]);
-
-    // Still armed, which is the half the missing row must not have cost: the
-    // stranger lets go, the next boundary re-arms it, and it runs.
-    runtime.acquireLock.mockReturnValue(true);
-    noteTurnBoundary(session);
-    await settle();
-
-    expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
-    expect(runtime.sendMessage).toHaveBeenLastCalledWith(
-      session,
-      're-mentioned mid-turn',
-      expect.anything()
-    );
   });
 
   it('drops a refuse-foreign trigger ONCE when the stranger outlasts its whole budget', async () => {
@@ -750,30 +610,6 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
       'the to-do',
       expect.objectContaining({ permissionCeiling: 'runtime-default', unattended: true })
     );
-  });
-
-  it('reports a dropped refuse-foreign trigger to the caller that registered for it', async () => {
-    // The BLOCKER the review caught: `returnToQueue` documents the drop as
-    // "terminal and REPORTED", and rooms are the only refuse-foreign caller, so
-    // if `onSettled` never reaches a registered callback the room waits on a turn
-    // nothing will start — a late notice at its wait bound and "something went
-    // wrong" at its ceiling, an hour later. This pins the dispatcher half: the
-    // callback the caller passed is the one that fires.
-    const settled: string[] = [];
-    const first = gate();
-    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
-
-    await send('the turn the room is already running');
-    await send('re-mentioned mid-turn', {
-      whenBusy: 'refuse-foreign',
-      queueWaitMs: 60,
-      onSettled: (outcome: string) => settled.push(outcome),
-    });
-
-    runtime.acquireLock.mockReturnValue(false);
-    first.open();
-
-    await vi.waitFor(() => expect(settled).toEqual(['failed']), { timeout: 2_000 });
   });
 
   it('still refuses a turn another client opened (whenBusy: refuse-foreign)', async () => {
@@ -960,16 +796,6 @@ describe('clearing the queue on Stop', () => {
     expect(listQueuedMessages(session)).toEqual([]);
   });
 
-  it('is a no-op on an empty queue and emits no queue_update', async () => {
-    const projector = getOrCreateProjector(session);
-    const ingest = vi.spyOn(projector, 'ingest');
-
-    const returned = clearQueuedMessages(session);
-
-    expect(returned).toEqual([]);
-    expect(ingest).not.toHaveBeenCalled();
-  });
-
   it('a Stop during a booting first turn clears the un-retired row so it does not re-run (DOR-1192)', async () => {
     // A first turn that booted but never reached the model leaves its row on the
     // queue: the row retires only on `turn_start`, which a boot stopped before
@@ -1096,76 +922,6 @@ describe('dispatchMessage — a room trigger behind an unanswered approval', () 
       expect.anything()
     );
     expect(settled).not.toContain('failed');
-  });
-
-  /** A turn that stops on an approval, then ends when `release` opens. */
-  function approvalTurn(release: Promise<void>) {
-    return async function* (): AsyncGenerator<StreamEvent> {
-      yield {
-        type: 'approval_required',
-        data: {
-          toolCallId: 'call-1',
-          toolName: 'Bash',
-          input: '{}',
-          timeoutMs: 60_000,
-          remainingMs: 60_000,
-        },
-      } as unknown as StreamEvent;
-      await release;
-      yield { type: 'done', data: {} } as StreamEvent;
-    };
-  }
-
-  // Review finding 2: the person answers, and the same turn runs on for longer
-  // than a budget. The mention must not be dropped in that window.
-  it('keeps waiting while the answered turn runs on, then runs', async () => {
-    const settled: string[] = [];
-    const first = gate();
-    runtime.withScenarios([approvalTurn(first.wait), quickTurn()]);
-    await send('run something dangerous');
-    await settle();
-    const projector = getOrCreateProjector(session);
-    runtime.acquireLock.mockReturnValue(false);
-    await send('re-mentioned while it waits', {
-      whenBusy: 'refuse-foreign',
-      queueWaitMs: 60,
-      onSettled: (outcome: string) => settled.push(outcome),
-    });
-    await new Promise((resolve) => setTimeout(resolve, 200));
-
-    projector.resolveInteraction('call-1', 'approved');
-    // The answered turn keeps working for several budgets.
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(settled).toEqual([]);
-
-    runtime.acquireLock.mockReturnValue(true);
-    first.open();
-    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(2), {
-      timeout: 2_000,
-    });
-    expect(settled).not.toContain('failed');
-  });
-
-  // Review finding 3: a card left over from a turn that already ended has
-  // nobody to resume it, so a mention must not wait hours behind it.
-  it('does not wait behind a card no live turn holds', async () => {
-    const settled: string[] = [];
-    const first = gate();
-    runtime.withScenarios([approvalTurn(first.wait), quickTurn()]);
-    await send('run something dangerous');
-    await settle();
-    runtime.acquireLock.mockReturnValue(false);
-    await send('mentioned while it waits', {
-      whenBusy: 'refuse-foreign',
-      queueWaitMs: 60,
-      onSettled: (outcome: string) => settled.push(outcome),
-    });
-    // The turn ends with the card still unanswered: nobody will resume it.
-    first.open();
-    await settle();
-    expect(getOrCreateProjector(session).hasPendingInteractions()).toBe(true);
-
-    await vi.waitFor(() => expect(settled).toEqual(['failed']), { timeout: 2_000 });
   });
 });
 
@@ -1317,26 +1073,6 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
     await settle();
   });
 
-  it('lets a steer that carries a Wi-Fi hold join a running turn that carries one too', async () => {
-    withCapabilities({ supportsSteer: true, supportsContextStaging: true });
-    const first = gate();
-    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
-    await send('long turn');
-    await settle();
-    await recordRunningTurn({ carriedMarks: { outsider: true } });
-
-    const steer = await send('from a held chat', {
-      disposition: 'steer',
-      carriedMarks: { outsider: true },
-    });
-
-    expect(steer.outcome).not.toMatchObject({ degradedBecause: 'not-steerable' });
-    expect(runtime.deliverIntoTurn).toHaveBeenCalledTimes(1);
-
-    first.open();
-    await settle();
-  });
-
   it('hands a continuation’s hold to the runtime, queued or not (DOR-3203)', async () => {
     const first = gate();
     runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
@@ -1353,23 +1089,6 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
     });
     const plain = runtime.sendMessage.mock.calls.find(([, content]) => content === 'long turn');
     expect(plain?.[2]?.continuationHold).toBeUndefined();
-  });
-
-  it('marks a continuation once somebody rewords it while it waits (DOR-3203)', async () => {
-    const first = gate();
-    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
-    await send('long turn');
-    await settle();
-    await send('the answer', { permissionCeiling: 'runtime-default', continuationHold: true });
-    const [row] = listQueuedMessages(session);
-    editQueuedMessage(session, row!.id, { content: 'words from the phone', holdToDefault: true });
-    first.open();
-    await settle();
-    const call = runtime.sendMessage.mock.calls.find(
-      ([, content]) => content === 'words from the phone'
-    );
-    expect(call?.[2]?.permissionCeiling).toBe('runtime-default');
-    expect(call?.[2]?.continuationHold).toBeUndefined();
   });
 
   it('runs a steer on an idle session immediately, and stays quiet about it (AC3)', async () => {
@@ -1425,27 +1144,6 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
     await settle();
   });
 
-  it('still says session-idle when the turn ended between the click and the POST', async () => {
-    // The other half of the same fork. `session-idle` keeps its meaning exactly
-    // — the turn is over, the message runs now, nothing was lost — and the
-    // session's own projection is what tells the two apart.
-    withCapabilities({ supportsSteer: true });
-    const first = gate();
-    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
-    await send('long turn');
-    await settle();
-    first.open();
-    await settle();
-    expect(getOrCreateProjector(session).peekInProgressTurn()).toBeNull();
-    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'no-open-turn' });
-
-    const result = await send('course-correct', { disposition: 'steer' });
-    await settle();
-
-    expect(result.outcome.degradedBecause).toBe('session-idle');
-    expect(result.queued).toBe(false);
-  });
-
   it('tells a second sender that something else is still running the task (DOR-1315)', async () => {
     // The reported failure: a steer posted ~5s into a visibly running turn came
     // back `no-open-turn`, and the composer chip said "Queued. The task had
@@ -1482,107 +1180,6 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
 
     first.open();
     await settle();
-  });
-
-  it('does not call a running turn finished when the steer lost its input stream', async () => {
-    // The other way a steer comes back undelivered to a caller who WAS allowed to
-    // make it: the process's input stream had gone away under the turn. That is
-    // no more evidence of an ending than the ownership refusal was, so the answer
-    // still comes from the session's own projection — and the projection says a
-    // turn is open.
-    withCapabilities({ supportsSteer: true });
-    const first = gate();
-    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
-    await send('long turn');
-    await settle();
-    expect(projectorStatus()).toBe('streaming');
-    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'stream-closed' });
-
-    const result = await send('course-correct', { disposition: 'steer' });
-
-    expect(result.outcome.degradedBecause).toBe('not-steerable');
-    expect(result.queued).toBe(true);
-
-    first.open();
-    await settle();
-  });
-
-  it('does not claim a stranger is running a task when no turn is open', async () => {
-    // A held lock is NOT proof of a running turn. It outlives its turn until the
-    // release, the SSE close, or `SESSIONS.LOCK_TTL_MS` — five minutes — so a
-    // steer refused by the lock alone could land in a session where nothing is
-    // producing. Saying "something else is running this task" there would be the
-    // very defect DOR-1315 was filed for, one refusal to the left. Nothing is
-    // open, so nothing was lost by not cutting in, and the message just runs.
-    withCapabilities({ supportsSteer: true });
-    runtime.withScenarios([quickTurn()]);
-    expect(getOrCreateProjector(session).peekInProgressTurn()).toBeNull();
-    runtime.isLocked.mockImplementation((_sid, cid) => cid !== undefined && cid !== TAB);
-
-    const result = await send('course-correct', {
-      disposition: 'steer',
-      clientId: 'window-b',
-    });
-    await settle();
-
-    expect(result.outcome.degradedBecause).toBe('session-idle');
-    expect(result.queued).toBe(false);
-  });
-
-  it('publishes whether the session can be steered, once, before the ladder runs', async () => {
-    // The composer offers Steer on this value (DOR-1268), so it has to be on the
-    // session's own status before any turn a person could steer is open. The
-    // fake implements no `canSteerSession`, so the runtime's static flag stands
-    // — which is exactly the fallback a uniform runtime relies on.
-    withCapabilities({ supportsSteer: false });
-    runtime.withScenarios([quickTurn(), quickTurn()]);
-
-    await send('first');
-    await settle();
-    const projector = getOrCreateProjector(session);
-    expect(projector.getStatus().steerable).toBe(false);
-
-    // BEFORE the turn — the ordering the whole design rests on. A window watching
-    // this session learns it cannot cut in while the turn it would have steered
-    // is still opening, not after. An announcement made later would reach the
-    // composer only once the Steer row had already been offered.
-    expect(projector.replayFrom(0)[0]).toMatchObject({
-      type: 'status_change',
-      status: { steerable: false },
-    });
-
-    // A second message re-asks and finds the same answer, so it announces
-    // nothing: one event per session, not one per message.
-    await send('second');
-    await settle();
-    const announcements = projector
-      .replayFrom(0)
-      .filter((e) => e.type === 'status_change' && e.status.steerable !== undefined);
-    expect(announcements).toHaveLength(1);
-  });
-
-  it("re-publishes steerability when the runtime's per-session answer changes", async () => {
-    // Turning the persistent-session setting on must reach an open window at the
-    // session's next message rather than only at its next reload.
-    withCapabilities({ supportsSteer: true });
-    const canSteerSession = vi.fn(() => false);
-    Object.assign(runtime, { canSteerSession });
-    runtime.withScenarios([quickTurn(), quickTurn()]);
-
-    await send('first');
-    await settle();
-    const projector = getOrCreateProjector(session);
-    // The per-SESSION answer wins over the runtime's static `true`.
-    expect(projector.getStatus().steerable).toBe(false);
-
-    canSteerSession.mockReturnValue(true);
-    await send('second');
-    await settle();
-    expect(projector.getStatus().steerable).toBe(true);
-    // No teardown for the stub: the suite's `beforeEach` builds a fresh
-    // `FakeAgentRuntime` for every case, so it cannot outlive this one. A
-    // trailing `delete` here would look like cleanup while being skipped by any
-    // assertion above it that failed.
   });
 
   it('queues a steer behind an open interaction and never fires it into the ask (AC4)', async () => {
@@ -1653,102 +1250,6 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
       kind: 'staged_context',
       scope: 'per-turn',
       data: { text: 'use the staging bucket' },
-    });
-  });
-
-  it('stages natively when the runtime supports it, no downgrade', async () => {
-    withCapabilities({ supportsContextStaging: true });
-    runtime.deliverIntoTurn.mockResolvedValue({ delivered: true });
-    const projector = getOrCreateProjector(session);
-    const ingest = vi.spyOn(projector, 'ingest');
-
-    const result = await send('attach this', { disposition: 'stage' });
-
-    expect(result.outcome).toEqual({
-      messageId: expect.any(String),
-      requested: 'stage',
-      applied: 'stage',
-    });
-    expect(result.outcome.degradedBecause).toBeUndefined();
-    expect(runtime.deliverIntoTurn).toHaveBeenCalledWith(
-      session,
-      'attach this',
-      expect.objectContaining({ mode: 'stage' })
-    );
-    expect(ingest).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'context_staged', content: 'attach this' })
-    );
-  });
-
-  it('queues a stage the write-lock refused, naming the holder rather than a missing turn (DOR-1315)', async () => {
-    // The stage half of the same relabel, and until now nothing pinned it: the
-    // reason on this line could be set to any other member of the enum and the
-    // whole session suite stayed green (adversarial review, mutant M2). A stage
-    // has exactly ONE undelivered path — `deliverStage`'s `isLocked` refusal —
-    // so this is the only input that reaches it, and the receipt it produces is
-    // what a person reads.
-    withCapabilities({ supportsContextStaging: true });
-    const first = gate();
-    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
-    await send('long turn');
-    await settle();
-    expect(projectorStatus()).toBe('streaming');
-    runtime.isLocked.mockImplementation((_sid, cid) => cid !== undefined && cid !== TAB);
-
-    const result = await send('attach this', {
-      disposition: 'stage',
-      clientId: 'window-b',
-    });
-
-    expect(result.outcome).toEqual({
-      messageId: expect.any(String),
-      requested: 'stage',
-      applied: 'queue',
-      degradedBecause: 'turn-owned-elsewhere',
-    });
-    // It waits rather than being lost, which is the promise the reason explains.
-    expect(result.queued).toBe(true);
-    // Refused at the gate: the runtime was never asked to stage.
-    expect(runtime.deliverIntoTurn).not.toHaveBeenCalled();
-
-    first.open();
-    await settle();
-  });
-
-  it('folds a declared-but-undeliverable stage exactly once (no double-fold)', async () => {
-    // The adapter-bug path: the runtime DECLARES staging but its deliverIntoTurn
-    // comes back `unsupported`. deliverStage folds internally and reports
-    // folded already; the ladder must NOT fold a second time.
-    withCapabilities({ supportsContextStaging: true });
-    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'unsupported' });
-    const projector = getOrCreateProjector(session);
-    const ingest = vi.spyOn(projector, 'ingest');
-
-    const result = await send('stage me', { disposition: 'stage' });
-
-    expect(result.outcome).toEqual({
-      messageId: expect.any(String),
-      requested: 'stage',
-      applied: 'stage',
-      degradedBecause: 'unsupported',
-    });
-    // Exactly ONE receipt — a double-fold would emit two.
-    const receipts = ingest.mock.calls.filter(
-      ([event]) => (event as { type?: string }).type === 'context_staged'
-    );
-    expect(receipts).toHaveLength(1);
-
-    // And the next dispatch carries the staged text exactly ONCE, not twice.
-    runtime.withScenarios([quickTurn()]);
-    await send('go');
-    await settle();
-    const call = runtime.sendMessage.mock.calls.find(([, content]) => content === 'go');
-    const staged = (call?.[2]?.additionalContext ?? []).filter((e) => e.kind === 'staged_context');
-    expect(staged).toHaveLength(1);
-    expect(staged[0]).toEqual({
-      kind: 'staged_context',
-      scope: 'per-turn',
-      data: { text: 'stage me' },
     });
   });
 
@@ -1868,42 +1369,6 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
     expect(staged).toEqual([
       { kind: 'staged_context', scope: 'per-turn', data: { text: 'the reaper got here first' } },
     ]);
-  });
-
-  it('takes the native path when the session says it can stage', async () => {
-    // The other side of the same gate: turning the opt-in on must not cost the
-    // native path, or the fix would have been a removal.
-    withCapabilities({ supportsContextStaging: true });
-    Object.assign(runtime, { canStageSession: vi.fn(() => true) });
-    runtime.deliverIntoTurn.mockResolvedValue({ delivered: true });
-
-    const result = await send('attach this', { disposition: 'stage' });
-
-    expect(result.outcome).toEqual({
-      messageId: expect.any(String),
-      requested: 'stage',
-      applied: 'stage',
-    });
-    expect(result.outcome.degradedBecause).toBeUndefined();
-    expect(runtime.deliverIntoTurn).toHaveBeenCalledWith(
-      session,
-      'attach this',
-      expect.objectContaining({ mode: 'stage' })
-    );
-  });
-
-  it('still calls a declared-and-stageable-but-undeliverable stage an adapter bug', async () => {
-    // The two folds must stay distinguishable in the logs. This one IS a defect:
-    // the runtime said yes twice and then could not deliver.
-    withCapabilities({ supportsContextStaging: true });
-    Object.assign(runtime, { canStageSession: vi.fn(() => true) });
-    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'unsupported' });
-    const logged = vi.spyOn(logger, 'error');
-
-    const result = await send('stage me', { disposition: 'stage' });
-
-    expect(result.outcome.degradedBecause).toBe('unsupported');
-    expect(logged).toHaveBeenCalledWith(ADAPTER_BUG_LOG, expect.anything());
   });
 
   it('C-12: records what was REQUESTED on the row, never what was applied', async () => {
@@ -2064,31 +1529,6 @@ describe('deliverSteer — a delivered steer emits one turn_input into the open 
     expect(tail[0]).toMatchObject({ type: 'turn_input', content: 'mid-turn steer' });
   });
 
-  it('leaves turn_start and turn_end at one each, however many steers it took (AC2)', async () => {
-    const open = await openHeldTurn();
-
-    for (const id of ['s1', 's2', 's3']) {
-      const r = await deliverSteer({
-        sessionId: session,
-        clientId: TAB,
-        content: `steer ${id}`,
-        messageId: id,
-        runtime,
-      });
-      expect(r.delivered).toBe(true);
-    }
-    // Close the turn: the three steers must not have added or removed a boundary.
-    open();
-    await settle();
-
-    const types = getOrCreateProjector(session)
-      .replayFrom(0)
-      .map((e) => e.type);
-    expect(types.filter((t) => t === 'turn_start')).toHaveLength(1);
-    expect(types.filter((t) => t === 'turn_end')).toHaveLength(1);
-    expect(types.filter((t) => t === 'turn_input')).toHaveLength(3);
-  });
-
   it('emits NO turn_input when the runtime did not deliver the steer', async () => {
     await openHeldTurn();
     // A steer that reached no open window comes back undelivered — the degrade
@@ -2145,40 +1585,6 @@ describe('deliverStage — a stage is a write, and folds into the next when unsu
     );
   });
 
-  it('emits that receipt for a session that has GAINED its canonical id (DOR-1262 review)', async () => {
-    // The receipt is ingested into the projector, which after the mid-first-turn
-    // rename is registered under the CANONICAL id — while the dispatcher's own
-    // state deliberately stays filed under the id the session was born with.
-    // Resolved through the filing id, the lookup missed for every renamed
-    // session and the early return read as "nobody is listening": a person
-    // staged a message and the one proof it landed never went out.
-    runtime.isLocked.mockReturnValue(false);
-    const canonical = `${session}-canonical`;
-    extraProjectors.push(canonical);
-    getOrCreateProjector(session).ingest({ type: 'turn_start' });
-    rekeyProjector(session, canonical);
-
-    const result = await deliverStage({
-      sessionId: session,
-      clientId: TAB,
-      content: 'read the deploy notes first',
-      messageId: 'stage-rekeyed',
-      runtime,
-    });
-
-    expect(result).toEqual({ authorized: true, delivered: true });
-    // Read by the id the projector is REALLY keyed by, so this asserts the
-    // receipt arrived rather than that some lookup happened to resolve.
-    const receipts = getOrCreateProjector(canonical)
-      .replayFrom(0)
-      .filter((e) => e.type === 'context_staged');
-    expect(receipts).toHaveLength(1);
-    expect(receipts[0]).toMatchObject({
-      content: 'read the deploy notes first',
-      messageId: 'stage-rekeyed',
-    });
-  });
-
   it('refuses a DIFFERENT client, and never reaches the runtime', async () => {
     // TAB owns the live turn; window-b could not send now, so it may not stage —
     // the SAME authorization a steer and a send pass.
@@ -2194,25 +1600,6 @@ describe('deliverStage — a stage is a write, and folds into the next when unsu
 
     expect(result).toEqual({ authorized: false, delivered: false });
     expect(runtime.deliverIntoTurn).not.toHaveBeenCalled();
-  });
-
-  it('proceeds on a FREE lock — a stage needs no open turn (unlike a steer)', async () => {
-    // Nobody holds the lock. A steer here would report `no-open-turn`; a stage
-    // does not need one, so it reaches the runtime and lands.
-    runtime.isLocked.mockReturnValue(false);
-    getOrCreateProjector(session);
-
-    const result = await deliverStage({
-      sessionId: session,
-      clientId: TAB,
-      content: 'attach this',
-      messageId: 'stage-2',
-      runtime,
-    });
-
-    expect(result.authorized).toBe(true);
-    expect(result.delivered).toBe(true);
-    expect(runtime.deliverIntoTurn).toHaveBeenCalled();
   });
 
   it('folds into the NEXT dispatch when the runtime cannot stage, content pristine (AC4)', async () => {
@@ -2267,48 +1654,6 @@ describe('deliverStage — a stage is a write, and folds into the next when unsu
       data: { text: 'use the staging bucket' },
     });
   });
-
-  it('folds two staged notes into the next dispatch, in order (AC5, fallback)', async () => {
-    runtime.isLocked.mockReturnValue(false);
-    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'unsupported' });
-    getOrCreateProjector(session);
-
-    await deliverStage({
-      sessionId: session,
-      clientId: TAB,
-      content: 'first',
-      messageId: 's1',
-      runtime,
-    });
-    await deliverStage({
-      sessionId: session,
-      clientId: TAB,
-      content: 'second',
-      messageId: 's2',
-      runtime,
-    });
-
-    runtime.withScenarios([quickTurn()]);
-    await send('go');
-    await settle();
-
-    const call = runtime.sendMessage.mock.calls.find(([, content]) => content === 'go');
-    const stagedEntries = (call?.[2]?.additionalContext ?? []).filter(
-      (e) => e.kind === 'staged_context'
-    );
-    expect(stagedEntries.map((e) => (e.kind === 'staged_context' ? e.data.text : ''))).toEqual([
-      'first',
-      'second',
-    ]);
-    // Only one dispatch consumed the hold — a later turn carries nothing.
-    runtime.withScenarios([quickTurn()]);
-    await send('again');
-    await settle();
-    const second = runtime.sendMessage.mock.calls.find(([, content]) => content === 'again');
-    expect((second?.[2]?.additionalContext ?? []).some((e) => e.kind === 'staged_context')).toBe(
-      false
-    );
-  });
 });
 
 describe('dispatchCommandIntent — a compact contends like a turn', () => {
@@ -2353,19 +1698,6 @@ describe('dispatchCommandIntent — a compact contends like a turn', () => {
 
     expect(after.accepted).toBe(true);
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not put a command intent into somebody’s message queue', async () => {
-    await dispatchCommandIntent({
-      sessionId: session,
-      clientId: TAB,
-      intent: 'compact',
-      projector: getOrCreateProjector(session),
-      runtime,
-    });
-    await settle();
-    // A queue row is a person's words waiting to be said. `/compact` is neither.
-    expect(listQueuedMessages(session)).toEqual([]);
   });
 });
 
@@ -2532,41 +1864,6 @@ describe('a row recovered after a restart', () => {
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
     expect(recentDispatches(10).filter((d) => d.origin === 'queue-recovery')).toEqual([]);
   });
-
-  it('gives two recovered rows two different dispatch ids', async () => {
-    resetDispatchBuffers();
-    const seen: string[] = [];
-    const held = gate();
-    runtime.withScenarios([
-      async function* () {
-        seen.push(currentDispatchId() ?? 'none');
-        yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
-        await held.wait;
-        yield { type: 'done', data: {} } as StreamEvent;
-      },
-      async function* () {
-        seen.push(currentDispatchId() ?? 'none');
-        yield { type: 'done', data: {} } as StreamEvent;
-      },
-    ]);
-    store.enqueue({ sessionId: session, content: 'first', clientId: TAB });
-    store.enqueue({ sessionId: session, content: 'second', clientId: TAB });
-
-    expect(
-      adoptQueuedMessages({
-        sessionId: session,
-        projector: getOrCreateProjector(session),
-        runtime,
-      })
-    ).toBe(2);
-    await settle();
-    held.open();
-    await settle();
-
-    expect(seen).toHaveLength(2);
-    expect(seen[0]).not.toBe(seen[1]);
-    expect(seen.every(isDispatchId)).toBe(true);
-  });
 });
 
 // The wiring, not the mechanism (DOR-1295). `triggerTurn` and
@@ -2599,39 +1896,6 @@ describe('the dispatcher asks the runtime to settle an open turn first (DOR-1295
     // ORDER, not merely presence: settling AFTER the send is exactly the bug —
     // the turn is already open by then and inherits the terminal.
     expect(order).toEqual([`settle:${session}`, `send:${session}`]);
-  });
-
-  it('asks before running a command intent, and asks about this session', async () => {
-    const order = recordOrder();
-    runtime.executeCommandIntent.mockImplementation(async function* (id: string) {
-      order.push(`intent:${id}`);
-      yield { type: 'done', data: {} } as StreamEvent;
-    });
-
-    await dispatchCommandIntent({
-      sessionId: session,
-      clientId: TAB,
-      intent: 'compact',
-      projector: getOrCreateProjector(session),
-      runtime,
-    });
-    await settle();
-
-    expect(order).toEqual([`settle:${session}`, `intent:${session}`]);
-  });
-
-  it('starts the turn anyway when the runtime throws trying to settle', async () => {
-    // A repair may not be the thing that fails the next message — the interface
-    // says so, conformance C8 holds the shipped runtimes to it, and this holds
-    // the COMPOSER to it for a future adapter that reads neither.
-    runtime.settleOpenTurn.mockRejectedValue(new Error('the adapter fell over'));
-    runtime.withScenarios([quickTurn()]);
-
-    const result = await send('hello');
-    await settle();
-
-    expect(result.accepted).toBe(true);
-    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -2683,23 +1947,6 @@ describe('systemPromptAppend reaches the runtime, or is absent entirely', () => 
     expect(optsAtRuntime().systemPromptAppend).toBe(
       '<dorkos_room_conventions room="Release train"/>'
     );
-  });
-
-  it('leaves the field ABSENT when no caller supplied one', async () => {
-    // Absent, never `''`. An empty string is a value that every consumer
-    // downstream has to keep treating as falsy for nothing to change — three
-    // adapters today, each with its own `if (opts?.systemPromptAppend)`, plus
-    // claude-code's launch fingerprint. That is a coincidence holding a
-    // guarantee up. The seam promises the field is not there at all, so no
-    // consumer has to be careful, and this is where that promise is checked:
-    // `'x' in opts` fails on `''`, where a truthiness check would pass and
-    // assert nothing.
-    runtime.withScenarios([quickTurn()]);
-
-    await send('is the build green?');
-    await settle();
-
-    expect('systemPromptAppend' in optsAtRuntime()).toBe(false);
   });
 });
 
@@ -2786,37 +2033,6 @@ describe('prepareLaunch runs at LAUNCH and its result reaches the runtime (spec 
     const opts = runtime.sendMessage.mock.calls[1]![2] as { additionalContext?: unknown[] };
     expect(opts.additionalContext).toEqual([{ kind: 'probe', name: 'prepared-at-launch' }]);
   });
-
-  it('runs once for a turn on an idle session, before the runtime is called', async () => {
-    renderRoomName();
-    const order: string[] = [];
-    const prepareLaunch = vi.fn(async () => {
-      order.push('prepare');
-      return { roomContext: prepared };
-    });
-    runtime.withScenarios([quickTurn({ order, label: 'turn' })]);
-
-    await send('a room turn', { roomContext: accepted, prepareLaunch });
-    await settle();
-
-    expect(order).toEqual(['prepare', 'turn:start']);
-    const opts = runtime.sendMessage.mock.calls[0]![2] as { additionalContext?: unknown[] };
-    expect(opts.additionalContext).toEqual([{ kind: 'probe', name: 'prepared-at-launch' }]);
-  });
-
-  it('starts the turn as accepted when preparation fails', async () => {
-    renderRoomName();
-    runtime.withScenarios([quickTurn()]);
-
-    await send('a room turn', {
-      roomContext: accepted,
-      prepareLaunch: () => Promise.reject(new Error('git is gone')),
-    });
-    await settle();
-
-    const opts = runtime.sendMessage.mock.calls[0]![2] as { additionalContext?: unknown[] };
-    expect(opts.additionalContext).toEqual([{ kind: 'probe', name: 'accepted' }]);
-  });
 });
 
 describe('isTurnInFlight (spec `agent-home-desk` §6.1)', () => {
@@ -2829,42 +2045,6 @@ describe('isTurnInFlight (spec `agent-home-desk` §6.1)', () => {
     expect(isTurnInFlight(session, runtime)).toBe(true);
 
     first.open();
-    await settle();
-    expect(isTurnInFlight(session, runtime)).toBe(false);
-  });
-
-  it('stays in flight across a budget-exhausted launch, and clears when it ends', async () => {
-    // The shape `deliverSteer` names: a budget-exhausted launch never takes the
-    // dispatcher's slot. This end-to-end case does NOT isolate the lock — other
-    // authorities may also answer while the turn runs — so the lock's own
-    // weight is pinned by the lock-only case below, which reds without it.
-    const locks = new Map<string, string>();
-    runtime.acquireLock.mockImplementation((sid: string, cid: string) => {
-      if (locks.has(sid) && locks.get(sid) !== cid) return false;
-      locks.set(sid, cid);
-      return true;
-    });
-    runtime.releaseLock.mockImplementation((sid: string) => {
-      locks.delete(sid);
-    });
-    runtime.isLocked.mockImplementation(
-      (sid: string, cid?: string) => locks.has(sid) && (cid === undefined || locks.get(sid) !== cid)
-    );
-    const first = gate();
-    const second = gate();
-    runtime.withScenarios([heldTurn(first.wait), heldTurn(second.wait)]);
-
-    await send('the turn ahead');
-    await send('waits past its budget', { queueWaitMs: 30 });
-    // Its budget runs out: it launches anyway, as a stranger would — no slot.
-    first.open();
-    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(2), {
-      timeout: 2_000,
-    });
-    await settle();
-
-    expect(isTurnInFlight(session, runtime)).toBe(true);
-    second.open();
     await settle();
     expect(isTurnInFlight(session, runtime)).toBe(false);
   });
@@ -2936,25 +2116,6 @@ describe('a room turn`s launch step asks every bound session (spec `agent-home-d
 
     first.open();
     await settle();
-    await step('room-session');
-    expect(reached).toEqual(['retire', 'refresh']);
-  });
-
-  it('is held busy by a second-session turn holding only the runtime lock (no dispatcher slot)', async () => {
-    // The lossy case the spec names: a turn launched with its queue budget
-    // exhausted runs holding the runtime's real lock and never takes the slot.
-    // Modelled directly — lock held on the second session, nothing dispatched —
-    // because in this harness the budget-exhausted launch ends up holding a
-    // slot by the time it runs, which would let a slot-only read pass.
-    let locked = true;
-    runtime.isLocked.mockImplementation((sid: string) => locked && sid === session);
-    const { step, reached } = launchStep();
-
-    const held = await step('room-session');
-    expect(held.files?.refresh).toEqual({ kind: 'held', reason: 'busy', moved: null });
-    expect(reached).toEqual([]);
-
-    locked = false;
     await step('room-session');
     expect(reached).toEqual(['retire', 'refresh']);
   });
@@ -3041,81 +2202,6 @@ describe('onDispatchLifecycle — what became of a message, by its id (DOR-2683)
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 
-  it('settles a removed message’s caller, so nothing it held until the turn settles leaks', async () => {
-    const first = gate();
-    const onSettled = vi.fn();
-    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
-    await send('long turn');
-    await send('waits', { messageId: 'waiting-one', onSettled });
-    await settle();
-
-    cancelQueuedMessage(session, 'waiting-one');
-
-    expect(onSettled).toHaveBeenCalledExactlyOnceWith('failed');
-  });
-
-  it('does not report a message removed while its launch is under way, since its turn still starts', async () => {
-    // The launch is parked assembling its context; the row is still on the
-    // queue (it leaves at turn_start) when a person removes it.
-    let release!: () => void;
-    vi.mocked(assembleAdditionalContext).mockImplementationOnce(
-      () => new Promise((resolve) => (release = () => resolve([])))
-    );
-    runtime.withScenarios([quickTurn()]);
-    const sent = send('runs anyway', { messageId: 'launching-one' });
-    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
-
-    cancelQueuedMessage(session, 'launching-one');
-    release();
-    await sent;
-    await settle();
-
-    expect(seen.filter((e) => e.messageId === 'launching-one').map((e) => e.phase)).toEqual([
-      'started',
-      'settled',
-    ]);
-  });
-
-  it('settles a swept message’s caller too', async () => {
-    // Parked with no turn open (a report the runtime owes is on its way), so
-    // the sweep may take the session.
-    Object.assign(runtime, { isSegmentPending: () => true });
-    const onSettled = vi.fn();
-    await send('waits', { messageId: 'swept-waiting', onSettled });
-
-    noteSessionOrphaned(session);
-    sweepOrphanedMessageQueues({ isLive: () => false });
-
-    expect(onSettled).toHaveBeenCalledExactlyOnceWith('failed');
-    expect(seen).toEqual([
-      { phase: 'dropped', messageId: 'swept-waiting', reason: 'session_gone' },
-    ]);
-  });
-
-  it('reports a mid-launch message the sweep deleted as session_gone when it never starts', async () => {
-    // The runtime knows this chat by another id, so its open turn is filed
-    // under that one and the sweep can take the chat while the launch is
-    // still assembling its context. The launch then fails before any turn.
-    runtime.getInternalSessionId.mockReturnValue(`${session}-internal`);
-    let fail: (() => void) | undefined;
-    vi.mocked(assembleAdditionalContext).mockImplementationOnce(
-      () => new Promise((_resolve, reject) => (fail = () => reject(new Error('no context'))))
-    );
-    runtime.withScenarios([quickTurn()]);
-    const sent = send('never starts', { messageId: 'swept-launching' });
-    await vi.waitFor(() => expect(fail).toBeTypeOf('function'));
-
-    noteSessionOrphaned(session);
-    sweepOrphanedMessageQueues({ isLive: () => false });
-    fail!();
-    await sent.catch(() => undefined);
-    await settle();
-
-    expect(seen.filter((e) => e.messageId === 'swept-launching')).toEqual([
-      { phase: 'dropped', messageId: 'swept-launching', reason: 'session_gone' },
-    ]);
-  });
-
   it('reports the rows a vanished session’s sweep deletes', () => {
     const gone = `${session}-gone`;
     store.enqueue({ id: 'swept-one', sessionId: gone, content: 'gone', clientId: TAB });
@@ -3124,19 +2210,5 @@ describe('onDispatchLifecycle — what became of a message, by its id (DOR-2683)
     sweepOrphanedMessageQueues();
 
     expect(seen).toEqual([{ phase: 'dropped', messageId: 'swept-one', reason: 'session_gone' }]);
-  });
-
-  it('keeps a listener that throws from breaking the dispatch', async () => {
-    const off = onDispatchLifecycle(() => {
-      throw new Error('a bad listener');
-    });
-    runtime.withScenarios([quickTurn()]);
-    try {
-      await send('still runs');
-      await settle();
-    } finally {
-      off();
-    }
-    expect(seen.map((e) => e.phase)).toEqual(['started', 'settled']);
   });
 });

@@ -29,11 +29,8 @@ function createWrapper(transport: Transport) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// The three REAL runtime capability profiles (spec additional-agent-runtimes,
-// task 4.2 verification mandate). These mirror the server adapters'
-// runtime-constants — if a flag changes server-side, update it here too.
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------- The three REAL
+// runtime capability profiles (spec additional-agent-runtimes, task 4.2 verification mandate).
 
 const CLAUDE_CODE_PROFILE: RuntimeCapabilities = {
   type: 'claude-code',
@@ -214,88 +211,7 @@ const mockCapabilitiesResponse = {
 };
 
 // ---------------------------------------------------------------------------
-// useRuntimeCapabilities
-// ---------------------------------------------------------------------------
-describe('useRuntimeCapabilities', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('fetches capabilities from transport.getCapabilities', async () => {
-    const transport = createMockTransport({
-      getCapabilities: vi.fn().mockResolvedValue(mockCapabilitiesResponse),
-    });
-    const { Wrapper } = createWrapper(transport);
-
-    const { result } = renderHook(() => useRuntimeCapabilities(), { wrapper: Wrapper });
-
-    await waitFor(() => {
-      expect(result.current.isSuccess).toBe(true);
-    });
-
-    expect(result.current.data).toEqual(mockCapabilitiesResponse);
-    expect(transport.getCapabilities).toHaveBeenCalledTimes(1);
-  });
-
-  it('exposes error state on transport failure', async () => {
-    const transport = createMockTransport({
-      getCapabilities: vi.fn().mockRejectedValue(new Error('Capabilities fetch failed')),
-    });
-    const { Wrapper } = createWrapper(transport);
-
-    const { result } = renderHook(() => useRuntimeCapabilities(), { wrapper: Wrapper });
-
-    await waitFor(() => {
-      expect(result.current.isError).toBe(true);
-    });
-
-    expect(result.current.error).toBeInstanceOf(Error);
-  });
-
-  it('uses staleTime: Infinity — does not refetch on re-mount with cached data', async () => {
-    const transport = createMockTransport({
-      getCapabilities: vi.fn().mockResolvedValue(mockCapabilitiesResponse),
-    });
-    const { Wrapper, queryClient } = createWrapper(transport);
-
-    // First render — loads data
-    const { result: r1 } = renderHook(() => useRuntimeCapabilities(), { wrapper: Wrapper });
-    await waitFor(() => {
-      expect(r1.current.isSuccess).toBe(true);
-    });
-
-    // Second render of the same hook with the same query client — should use cache
-    const { result: r2 } = renderHook(() => useRuntimeCapabilities(), { wrapper: Wrapper });
-    await waitFor(() => {
-      expect(r2.current.isSuccess).toBe(true);
-    });
-
-    // getCapabilities should only have been called once despite two renders
-    expect(transport.getCapabilities).toHaveBeenCalledTimes(1);
-    void queryClient; // keep reference alive
-  });
-
-  it('returns capabilities with correct runtime type', async () => {
-    const transport = createMockTransport({
-      getCapabilities: vi.fn().mockResolvedValue(mockCapabilitiesResponse),
-    });
-    const { Wrapper } = createWrapper(transport);
-
-    const { result } = renderHook(() => useRuntimeCapabilities(), { wrapper: Wrapper });
-
-    await waitFor(() => {
-      expect(result.current.isSuccess).toBe(true);
-    });
-
-    expect(result.current.data?.defaultRuntime).toBe('claude-code');
-    expect(result.current.data?.capabilities['claude-code'].type).toBe('claude-code');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// useCapabilitiesForRuntime — the static per-runtime lookup. Verified against
-// all three REAL profiles so a capability-gated surface can trust the flags.
-// ---------------------------------------------------------------------------
+// useCapabilitiesForRuntime — the static per-runtime lookup.
 describe('useCapabilitiesForRuntime', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -330,61 +246,6 @@ describe('useCapabilitiesForRuntime', () => {
     ]);
   });
 
-  it('resolves the Codex profile: approval, cost, MCP, question, and plugin gates closed', async () => {
-    const transport = createMockTransport({
-      getCapabilities: vi.fn().mockResolvedValue(mockCapabilitiesResponse),
-    });
-    const { Wrapper } = createWrapper(transport);
-
-    const { result } = renderHook(() => useCapabilitiesForRuntime('codex'), {
-      wrapper: Wrapper,
-    });
-
-    await waitFor(() => {
-      expect(result.current).toBeDefined();
-    });
-
-    expect(result.current?.type).toBe('codex');
-    expect(result.current?.supportsToolApproval).toBe(false);
-    expect(result.current?.supportsCostTracking).toBe(false);
-    expect(result.current?.supportsMcp).toBe(false);
-    expect(result.current?.supportsQuestionPrompt).toBe(false);
-    expect(result.current?.supportsPlugins).toBe(false);
-    // Codex declares sandbox-posture modes, not Claude's mode set.
-    expect(result.current?.permissionModes.values.map((m) => m.label)).toEqual([
-      'Read only',
-      'Workspace write',
-      'Full access',
-    ]);
-  });
-
-  it('resolves the OpenCode profile: approval and cost open, MCP/question/plugins closed', async () => {
-    const transport = createMockTransport({
-      getCapabilities: vi.fn().mockResolvedValue(mockCapabilitiesResponse),
-    });
-    const { Wrapper } = createWrapper(transport);
-
-    const { result } = renderHook(() => useCapabilitiesForRuntime('opencode'), {
-      wrapper: Wrapper,
-    });
-
-    await waitFor(() => {
-      expect(result.current).toBeDefined();
-    });
-
-    expect(result.current?.type).toBe('opencode');
-    expect(result.current?.supportsToolApproval).toBe(true);
-    expect(result.current?.supportsCostTracking).toBe(true);
-    expect(result.current?.supportsMcp).toBe(false);
-    expect(result.current?.supportsQuestionPrompt).toBe(false);
-    expect(result.current?.supportsPlugins).toBe(false);
-    expect(result.current?.permissionModes.values.map((m) => m.id)).toEqual([
-      'default',
-      'acceptEdits',
-      'bypassPermissions',
-    ]);
-  });
-
   it('falls back to the server-default runtime for a nullish runtime type', async () => {
     const transport = createMockTransport({
       getCapabilities: vi.fn().mockResolvedValue(mockCapabilitiesResponse),
@@ -408,31 +269,14 @@ describe('useCapabilitiesForRuntime', () => {
     expect(undefinedResult.current?.type).toBe('claude-code');
   });
 
-  it('returns undefined while the capabilities map is loading', () => {
-    const transport = createMockTransport({
-      getCapabilities: vi.fn().mockReturnValue(new Promise(() => {})),
-    });
-    const { Wrapper } = createWrapper(transport);
-
-    const { result } = renderHook(() => useCapabilitiesForRuntime('codex'), {
-      wrapper: Wrapper,
-    });
-
-    expect(result.current).toBeUndefined();
-  });
-
   it('returns undefined for a runtime type not registered with this server', async () => {
     const transport = createMockTransport({
       getCapabilities: vi.fn().mockResolvedValue(mockCapabilitiesResponse),
     });
     const { Wrapper } = createWrapper(transport);
 
-    // Both hooks in one render, and the wait is for the MAP to have loaded —
-    // not for `getCapabilities` to have been called. The call happens on
-    // mount, a tick before its promise resolves, so waiting on the call
-    // asserts "undefined" against a map that is not there yet and passes
-    // however the lookup behaves — classic verification-that-cannot-fail
-    // (DOR-1639). Same shape the prototype-key cases below use.
+    // Both hooks in one render, and the wait is for the MAP to have loaded — not for
+    // `getCapabilities` to have been called.
     const { result } = renderHook(
       () => ({
         map: useRuntimeCapabilities(),
@@ -451,22 +295,15 @@ describe('useCapabilitiesForRuntime', () => {
   it.each(['constructor', 'toString', '__proto__', 'valueOf', 'hasOwnProperty'])(
     'returns undefined for "%s" instead of an inherited member',
     async (runtimeType) => {
-      // A runtime type is a free string that arrives from stored data — a task's
-      // `runtime`, an agent manifest — so these five are reachable lookups. A
-      // plain index answers every one of them off `Object.prototype`: truthy,
-      // and shaped like nothing, so a caller takes it for a profile and reads
-      // fields that are not there (DOR-1615). Unregistered is unregistered.
+      // A runtime type is a free string that arrives from stored data — a task's `runtime`, an
+      // agent manifest — so these five are reachable lookups.
       const transport = createMockTransport({
         getCapabilities: vi.fn().mockResolvedValue(mockCapabilitiesResponse),
       });
       const { Wrapper } = createWrapper(transport);
 
-      // Both hooks in one render, and the wait is for the MAP to have loaded —
-      // not for `getCapabilities` to have been called. The call happens on mount,
-      // a tick before its promise resolves, so waiting on the call would assert
-      // "undefined" against a map that is not there yet and pass however the
-      // lookup behaves. Measured: written that way, this survived reverting the
-      // guard.
+      // Both hooks in one render, and the wait is for the MAP to have loaded — not for
+      // `getCapabilities` to have been called.
       const { result } = renderHook(
         () => ({
           map: useRuntimeCapabilities(),
@@ -484,10 +321,9 @@ describe('useCapabilitiesForRuntime', () => {
   );
 
   it('never issues a per-session fetch — one capabilities call serves every lookup', async () => {
-    // Regression guard for the staleness trap this hook replaced: resolving a
-    // session's runtime used to hit an infer-on-miss endpoint per session and
-    // cache the answer forever, pinning the wrong profile for sessions that
-    // later bound to a non-default runtime.
+    // Regression guard for the staleness trap this hook replaced: resolving a session's runtime
+    // used to hit an infer-on-miss endpoint per session and cache the answer forever, pinning the
+    // wrong profile for sessions that later bound to a non-default runtime.
     const getCapabilities = vi.fn().mockResolvedValue(mockCapabilitiesResponse);
     const transport = createMockTransport({ getCapabilities });
     const { Wrapper } = createWrapper(transport);

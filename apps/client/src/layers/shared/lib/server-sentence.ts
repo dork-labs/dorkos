@@ -5,11 +5,14 @@
  * network failure reads "Failed to fetch" or "Load failed", and a response
  * with no JSON body falls back to its status text or "HTTP 500". Only a
  * message the server wrote is passed through — the request got an answer (a
- * numeric `status`), the answer's own JSON `error` field is the message, and
- * it is a sentence (status texts and bare codes never end in one).
+ * numeric `status`), the answer's own words about this failure are the
+ * message (a problem document's `detail`, or the older body's `error`; never a
+ * problem's generic `title`), and it is a sentence (status texts and bare codes
+ * never end in one).
  *
  * @module shared/lib/server-sentence
  */
+import { isProblem } from '@dorkos/shared/problem';
 
 /**
  * The server's own sentence for a failed request, or `null`.
@@ -23,9 +26,21 @@ export function serverSentence(error: unknown): string | null {
     typeof status === 'number' &&
     typeof body === 'object' &&
     body !== null &&
-    (body as { error?: unknown }).error === error.message &&
+    writtenSentenceOf(body) === error.message &&
     /[.!?]$/.test(error.message.trim());
   return written ? error.message : null;
+}
+
+/**
+ * What the server wrote about THIS failure: a problem document's `detail`, or
+ * the older body's `error`. Never a problem's `title`, which is the same
+ * generic line for every failure with that code, so a surface's own fallback
+ * reads better than it ("DorkOS hit an error on its side." for every 500).
+ */
+function writtenSentenceOf(body: object): string | undefined {
+  if (isProblem(body)) return body.detail;
+  const said = (body as { error?: unknown }).error;
+  return typeof said === 'string' ? said : undefined;
 }
 
 /**

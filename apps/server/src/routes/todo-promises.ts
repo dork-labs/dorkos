@@ -27,9 +27,9 @@ import {
 } from '@dorkos/shared/todo-promise-schemas';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { presentsProgramCredential } from '../lib/caller-authority.js';
-import { errorBody, validationFailureBody } from '../lib/route-utils.js';
+import { errorBody } from '../lib/route-utils.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
@@ -163,7 +163,7 @@ export function createTodoPromisesRoutes(deps: TodoPromiseRouterDeps): Hono<ApiE
 
   router.get('/', (c) => {
     const query = ListTodoPromisesQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
     const { limit, ...filter } = query.data;
     const list = deps.service.list(filter, limit);
     const owner = deps.isOwner(honoRequestFacts(c));
@@ -174,7 +174,7 @@ export function createTodoPromisesRoutes(deps: TodoPromiseRouterDeps): Hono<ApiE
 
   router.patch('/:id', (c) => {
     const body = UpdateTodoPromiseRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     const caller = actorOf(c, deps);
     if ('refused' in caller) return caller.refused;
     try {
@@ -188,7 +188,7 @@ export function createTodoPromisesRoutes(deps: TodoPromiseRouterDeps): Hono<ApiE
   // same owner bar as PATCH holds. An agent caller is refused (DOR-3034).
   router.post('/:id/confirm', (c) => {
     const body = ConfirmTodoPromiseRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     const caller = actorOf(c, deps);
     if ('refused' in caller) return caller.refused;
     try {
@@ -221,7 +221,7 @@ export function createAgentTodoPromisesRoutes(deps: TodoPromiseRouterDeps): Hono
     }
     if (!deps.isOwner(facts)) return c.json(errorBody(NOT_YOUR_AGENT, 'NOT_YOURS'), 403);
     const body = CreateTodoPromiseRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     // Mounted under `/api/agents/:id/todo-promises`: the parent path's parameter.
     const agentId = c.req.param('id') as string;
     if (!deps.agentExists(agentId)) {

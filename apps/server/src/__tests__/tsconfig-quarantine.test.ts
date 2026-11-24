@@ -91,10 +91,12 @@ const STRUCTURAL_EXCLUDES = [
  * standing permissions it tested; Always allow's route tests type-check.
  * DOR-2810 moved `extension-proxy.test.ts` to `services/extensions/http/` with
  * the proxy, and fixed its one mistyped mock there, so it type-checks.
+ * The tasks/relay test sweep split `adapter-manager.test.ts` and
+ * `binding-router.test.ts` into folders of pieces that type-check.
  * **Only ever lower this.** Lowering it means a file was fixed and freed; raising
  * it means a test file was given up on, which needs a reason in review.
  */
-const QUARANTINE_BASELINE = 101;
+const QUARANTINE_BASELINE = 96;
 
 /**
  * The `exclude` array from the server tsconfig.

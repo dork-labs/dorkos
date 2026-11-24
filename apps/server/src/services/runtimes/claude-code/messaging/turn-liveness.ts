@@ -37,6 +37,23 @@
  * (observed in every capture), so a turn keyed on live agents alone would have
  * nothing outstanding at the very `result` that precedes the delivery segment.
  *
+ * **Not every settle is owed a delivery (DOR-3755).** The CLI emits
+ * `task_notification` for every task it registers. Two kinds are never
+ * delivered: a FOREGROUND task (its `task_started` said `is_backgrounded:
+ * false`), whose result already went back inline as the tool result its call
+ * waited on, and a task the CLI keeps out of the transcript (`skip_transcript`,
+ * such as its own housekeeping). A debt for either was one no delivery segment
+ * would ever clear, so the turn, or the next message into a warm chat, waited
+ * out the whole thirty-second deadline. A start with no `is_backgrounded` at
+ * all (an older CLI) still owes, so the hold is never dropped on a guess.
+ *
+ * **A task is paired with its RUN.** A resumed task keeps its `task_id` and
+ * gets a new `run_id`, and the run ids of one task sort in the order the runs
+ * opened (`sdk.d.ts`). Keyed on the task id alone, a late settle from an
+ * earlier run deleted the newer run's live entry, and a helper still working
+ * read as gone. So a settle ends a live entry only when it is not from an
+ * earlier run, and each run's settle is its own debt.
+ *
  * **How a delivery actually shows up on the stream.** Not as a user message.
  * The `<task-notification>` user message DOR-1149 keyed on exists only in the
  * JSONL transcript — it is never yielded on the SDK stream, which was proved
@@ -178,6 +195,12 @@ const TASK_NOTIFICATION = 'task_notification';
 /** Lifecycle subtype carrying the full set of live background tasks. */
 const BACKGROUND_TASKS_CHANGED = 'background_tasks_changed';
 
+/** Lifecycle subtype announcing a task, in the foreground or the background. */
+const TASK_STARTED = 'task_started';
+
+/** Lifecycle subtype patching a task; `is_backgrounded: true` moves one to the background. */
+const TASK_UPDATED = 'task_updated';
+
 /** The subtype that opens a query segment. The SECOND one is a delivery segment. */
 const INIT = 'init';
 
@@ -199,22 +222,80 @@ const SEGMENT_RUNNING: LivenessChange = { segmentRunning: true };
  */
 const MODEL_ACTIVITY: ReadonlySet<string> = new Set(['assistant', 'stream_event']);
 
+/** One live task, as the latest level frame named it. */
+interface LiveTask {
+  /** The `task_type` the level frame stamped on it, or '' when it named none. */
+  type: string;
+  /** The run it is on, when the CLI says. */
+  runId?: string;
+}
+
+/** The fields of a task lifecycle frame this module reads, all unverified. */
+interface TaskFrame {
+  task_id?: unknown;
+  run_id?: unknown;
+  is_backgrounded?: unknown;
+  skip_transcript?: unknown;
+  patch?: { is_backgrounded?: unknown } | null;
+}
+
+/** A frame's `run_id`, when it carries a usable one. */
+function runIdOf(frame: TaskFrame): string | undefined {
+  return typeof frame.run_id === 'string' ? frame.run_id : undefined;
+}
+
+/** One run of one task: the key a debt is filed under. */
+function runKey(taskId: string, runId: string | undefined): string {
+  return `${taskId}\u0000${runId ?? ''}`;
+}
+
+/**
+ * Whether a frame naming `runId` is from an earlier run than the one `liveRunId`
+ * names. Run ids of one task sort, as plain strings, in the order the runs
+ * opened (`sdk.d.ts`); with either id missing nothing can be said, so the
+ * answer is the old one: not late.
+ */
+function isEarlierRun(runId: string | undefined, liveRunId: string | undefined): boolean {
+  return runId !== undefined && liveRunId !== undefined && runId < liveRunId;
+}
+
 /**
  * Create a liveness tracker for ONE CLI process — one `executeSdkQuery` frame,
  * or one pump launch. The level signal is per-process and is not replayed at
  * startup, so a tracker must never outlive the process it was fed by.
  */
 export function createTurnLiveness(): TurnLiveness {
-  /** Live task id to the `task_type` the level frame stamped on it. */
-  const liveTasks = new Map<string, string>();
-  const owed = new Set<string>();
+  /** Live task id to the type and run the level frame named for it. */
+  const liveTasks = new Map<string, LiveTask>();
+  /**
+   * Debts, one per settled run ({@link runKey}) to its task id. A Map iterates
+   * in insertion order, so "oldest first" needs no second structure.
+   */
+  const owed = new Map<string, string>();
+  /**
+   * Tasks whose latest start was in the foreground and that have not since
+   * moved to the background. By task id, not run: a resumed run always starts
+   * in the background, and its own start says so.
+   */
+  const foreground = new Set<string>();
   let resultsSeen = 0;
 
   /** How many live tasks are background SUBAGENTS — the resume path's question. */
   const agentCount = (): number => {
     let agents = 0;
-    for (const type of liveTasks.values()) if (type === AGENT_TASK_TYPE) agents += 1;
+    for (const task of liveTasks.values()) if (task.type === AGENT_TASK_TYPE) agents += 1;
     return agents;
+  };
+
+  /** A task settled: end its live entry unless the settle is late, and owe what is owed. */
+  const settle = (frame: TaskFrame, taskId: string): void => {
+    const runId = runIdOf(frame);
+    const key = runKey(taskId, runId);
+    // A task that has reported is no longer running — unless the report is
+    // from an earlier run, and the entry is the run that replaced it.
+    if (!isEarlierRun(runId, liveTasks.get(taskId)?.runId)) liveTasks.delete(taskId);
+    if (foreground.delete(taskId) || frame.skip_transcript === true) return;
+    owed.set(key, taskId);
   };
 
   return {
@@ -238,20 +319,29 @@ export function createTurnLiveness(): TurnLiveness {
             // invisible to the quiet predicate, and throwing away work is the
             // failure this module exists to prevent.
             const taskType = typeof task.task_type === 'string' ? task.task_type : '';
-            liveTasks.set(task.task_id, taskType);
+            const runId = runIdOf(task as TaskFrame);
+            liveTasks.set(task.task_id, { type: taskType, runId });
+            // In the level set means in the background, whatever its start said.
+            foreground.delete(task.task_id);
           }
           return UNCHANGED;
         }
+        const frame = message as TaskFrame;
+        // An unidentifiable task cannot be matched to anything, so counting its
+        // settle would only risk holding to the deadline for nothing.
+        const taskId = typeof frame.task_id === 'string' ? frame.task_id : undefined;
         if (message.subtype === TASK_NOTIFICATION) {
-          const taskId = (message as { task_id?: unknown }).task_id;
-          // An unidentifiable settle cannot be matched to its delivery, so
-          // counting it would only risk holding to the deadline for nothing.
-          if (typeof taskId === 'string') {
-            owed.add(taskId);
-            // Belt and braces: the level frame that drops a settled task
-            // precedes this in every capture, but a task that has reported is
-            // definitionally no longer running.
-            liveTasks.delete(taskId);
+          if (taskId !== undefined) settle(frame, taskId);
+          return UNCHANGED;
+        }
+        if (message.subtype === TASK_STARTED || message.subtype === TASK_UPDATED) {
+          if (taskId === undefined) return UNCHANGED;
+          // Only an explicit `false` is foreground: a start that does not say
+          // keeps the old answer, and owes. A move to the background ends it.
+          if (message.subtype === TASK_STARTED && frame.is_backgrounded === false) {
+            foreground.add(taskId);
+          } else if (frame.is_backgrounded === true || frame.patch?.is_backgrounded === true) {
+            foreground.delete(taskId);
           }
           return UNCHANGED;
         }
@@ -289,7 +379,7 @@ export function createTurnLiveness(): TurnLiveness {
     liveAgentCount: agentCount,
     liveTaskCounts: () => {
       const counts: LiveTaskCounts = { agents: 0, shells: 0, other: 0 };
-      for (const type of liveTasks.values()) {
+      for (const { type } of liveTasks.values()) {
         if (type === AGENT_TASK_TYPE) counts.agents += 1;
         else if (type === SHELL_TASK_TYPE) counts.shells += 1;
         else counts.other += 1;
@@ -299,16 +389,14 @@ export function createTurnLiveness(): TurnLiveness {
     liveTaskIds: () => [...liveTasks.keys()],
     owedCount: () => owed.size,
     expireOwed: () => {
-      const abandoned = [...owed];
+      const abandoned = [...owed.values()];
       owed.clear();
       return abandoned;
     },
     clearOldestOwed: (count) => {
-      // A Set iterates in insertion order, so "oldest first" needs no second
-      // structure to track when each settle arrived.
       const cleared = [...owed].slice(0, Math.max(0, count));
-      for (const id of cleared) owed.delete(id);
-      return cleared;
+      for (const [key] of cleared) owed.delete(key);
+      return cleared.map(([, taskId]) => taskId);
     },
   };
 }

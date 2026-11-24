@@ -1,0 +1,191 @@
+name: rolling-bisect
+
+# Finds the merge that broke a ROLLING main run (DOR-5122, under DOR-5098:
+# release fast, fix forward). browser-test's push run keeps one run in flight
+# on main (DOR-5130), so one run covers several merges, and auto-revert.yml can
+# blame a merge only when its parent had its own green run, which a rolling run
+# almost never has. scripts/rolling-bisect.sh has the rules.
+#
+# When the push run fails at H and still fails after auto-revert's one re-run
+# (attempt 2), this binary-searches the merges since the last green push run
+# (G): it dispatches the same workflow on main with `bisect_sha=<merge>`, which
+# checks that merge out and runs the full suite on it, titled
+# "bisect <sha> for run <id>". Each bisect run's completion wakes this
+# workflow again, which reads every run so far and dispatches the next
+# midpoint. At most ceil(log2(N)) dispatches for N merges (N <= 16, so at
+# most 4), plus one re-run of the failed jobs of a bisect run that fails, so
+# a flake never blames anyone. The suite is not narrowed to the failed specs:
+# the balanced-shard reporter and the fan-in's every-spec-ran check need the
+# whole spec set.
+#
+# The verdict:
+#   - culprit: the merge failed twice in the same job as H and the merge before
+#     it passed. after-merge-alert.sh comments on its PR and on the failure-
+#     group issues; when the repo variable AUTO_REVERT is `on`, auto-revert.sh's
+#     revert path opens the revert PR (never the release commit), exactly as
+#     auto-revert.yml does.
+#   - inconclusive (flaky, budget exhausted, more than 16 merges, the workflow
+#     file changed since G, ...): said once on the failure-group issues. Never
+#     a revert on doubt.
+# Bisecting and reporting run whatever AUTO_REVERT says.
+#
+# Add a workflow to `workflows:` below when its push run becomes rolling AND it
+# takes the `bisect_sha` / `bisect_of` dispatch inputs (see browser-test.yml).
+#
+# If a wake-up is ever lost, the next rolling failure (or a dispatch of this
+# workflow with the run id) resumes: every decision is rebuilt from the runs.
+#
+# A `workflow_run` workflow runs the default branch's copy, and every job
+# checks out main, so a PR cannot change it. Nothing from a bisected tree runs
+# here.
+
+on:
+  workflow_run:
+    workflows: [browser-test]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: A failed rolling push run, or one of its bisect runs, to resume
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  next:
+    # A push run on main that failed after its re-run, or a bisect run.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.head_branch == github.event.repository.default_branch &&
+      ((github.event.workflow_run.event == 'push' &&
+      contains(fromJSON('["failure","timed_out"]'), github.event.workflow_run.conclusion) &&
+      github.event.workflow_run.run_attempt >= 2) ||
+      (github.event.workflow_run.event == 'workflow_dispatch' &&
+      startsWith(github.event.workflow_run.display_title, 'bisect '))))
+    # One decision at a time per workflow, so two wake-ups never dispatch the
+    # same merge twice. Never cancelled: a waiting decision is rebuilt from the
+    # runs, so the newest one covers any it replaced.
+    concurrency:
+      group: rolling-bisect-${{ github.event.workflow_run.workflow_id || 'manual' }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      # To dispatch a bisect run and to re-run a bisect run's failed jobs.
+      actions: write
+    outputs:
+      decision: ${{ steps.decide.outputs.decision }}
+      origin: ${{ steps.decide.outputs.origin }}
+      workflow: ${{ steps.decide.outputs.workflow }}
+      url: ${{ steps.decide.outputs.url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/rolling-bisect.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Decide, and dispatch or re-run
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+        run: |
+          bash scripts/rolling-bisect.sh facts "$RUN_ID" >facts.json
+          jq -c 'del(.points)' facts.json
+          decision=$(bash scripts/rolling-bisect.sh decide facts.json)
+          echo "Decision: $decision"
+          {
+            echo "decision=$decision"
+            echo "origin=$(jq -r .origin facts.json)"
+            echo "workflow=$(jq -r .workflow facts.json)"
+            echo "url=$(jq -r .url facts.json)"
+          } >>"$GITHUB_OUTPUT"
+          file=$(jq -r .workflowFile facts.json)
+          origin=$(jq -r .origin facts.json)
+          case "$decision" in
+            dispatch\ *)
+              gh workflow run "$file" --repo "$REPO" --ref main \
+                -f bisect_sha="${decision#dispatch }" -f bisect_of="$origin"
+              ;;
+            rerun\ *)
+              gh run rerun "${decision#rerun }" --failed --repo "$REPO" ||
+                echo "::warning::could not re-run ${decision#rerun }"
+              ;;
+          esac
+
+  report:
+    needs: next
+    if: startsWith(needs.next.outputs.decision, 'culprit ') || startsWith(needs.next.outputs.decision, 'inconclusive ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/after-merge-alert.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Name the merge, or say why not
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DECISION: ${{ needs.next.outputs.decision }}
+          ORIGIN: ${{ needs.next.outputs.origin }}
+          WORKFLOW: ${{ needs.next.outputs.workflow }}
+          RUN_URL: ${{ needs.next.outputs.url }}
+        run: |
+          read -r verdict a _ <<<"$DECISION"
+          if [ "$verdict" = culprit ]; then
+            bash scripts/after-merge-alert.sh blame "$ORIGIN" "$a" "$WORKFLOW" "$RUN_URL"
+          else
+            bash scripts/after-merge-alert.sh note "$ORIGIN" "$WORKFLOW" "$RUN_URL" \
+              "Bisect stopped without naming a merge ($a), so nothing is reverted (DOR-5122)."
+          fi
+
+  revert:
+    needs: next
+    if: startsWith(needs.next.outputs.decision, 'culprit ') && vars.AUTO_REVERT == 'on'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Mint the merge-tail app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
+
+      # Whole history without blobs: the culprit is a merge main has moved past.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          filter: blob:none
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Open the revert PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          DECISION: ${{ needs.next.outputs.decision }}
+          WORKFLOW: ${{ needs.next.outputs.workflow }}
+          RUN_URL: ${{ needs.next.outputs.url }}
+          ANYWHERE: '1'
+        run: |
+          read -r _ sha pr <<<"$DECISION"
+          bash scripts/auto-revert.sh revert "$sha" "$pr" "$WORKFLOW" "$RUN_URL"

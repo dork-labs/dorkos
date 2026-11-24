@@ -229,7 +229,7 @@ describe('/api/profile/avatar', () => {
         .attach('avatar', THREE_MB, { filename: 'huge.png', contentType: 'image/png' });
 
       expect(res.status).toBe(413);
-      expect(res.body.code).toBe('AVATAR_TOO_LARGE');
+      expect(res.body.code).toBe('request_too_large');
       await expect(readdir(path.join(dorkHome, 'avatars'))).rejects.toThrow();
       expect(registry.getById(ownerAuthor.id)?.imageUrl).toBeNull();
     });

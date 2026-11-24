@@ -288,17 +288,23 @@ export interface PumpCrash {
 
 /**
  * Why a pump was torn down (`SessionPump.teardown`), for whoever decides what
- * survives it (DOR-2065).
+ * survives it (DOR-2065). Every caller names one; there is no default.
  *
- * - `evict` — a caller ended it for good (a person's pause, a credits unlink)
- *   or a dispatch is relaunching the process.
+ * - `stop` — somebody ended it on purpose: a person's pause, or a credits
+ *   unlink.
+ * - `replace` — a dispatch is relaunching the process for the turn it is
+ *   about to run.
  * - `sweep` — DorkOS's own clean-up let the session record go: the idle sweep
- *   or a record reclaimed at capacity. Survives like `evict`; kept apart so a
- *   turn ended by the 16-hour limit can say so, and one a person ended does
- *   not (DOR-2705).
+ *   or a record reclaimed at capacity. Kept apart so a turn ended by the
+ *   16-hour limit can say so, and one a person ended does not (DOR-2705).
  * - `shutdown` — the server is stopping; the next boot picks up what is owed.
+ *
+ * `stop`, `replace` and `sweep` end the process the same way. The first two
+ * are labels: the stopped-timers rule (`dispatch/session-timers.ts`) reads
+ * them so the agent is told its timers were taken only when DorkOS's own
+ * upkeep took them (DOR-3755).
  */
-export type PumpTeardownReason = 'evict' | 'sweep' | 'shutdown';
+export type PumpTeardownReason = 'stop' | 'replace' | 'sweep' | 'shutdown';
 
 /** One message being dispatched into the pump. */
 export interface PumpDispatch {

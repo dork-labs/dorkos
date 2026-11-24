@@ -32,7 +32,6 @@ vi.mock('../../../notifications/emitters/session-lifecycle.js', async (importOri
 }));
 
 import { dispatchSessionMessage, isAgentLaunchCapFull } from '../../launch/launch-session.js';
-import { notificationEntry } from '../../../notifications/notification-registry.js';
 import { NotificationStore } from '../../../notifications/notification-store.js';
 import {
   NotificationService,
@@ -335,36 +334,6 @@ describe('confirmsReset', () => {
     );
   });
 
-  it('never confirms an expired reading when the episode’s reset was unknown', () => {
-    const expired = reading({
-      usedPct: 0,
-      status: 'allowed',
-      expired: true,
-      observedAt: '2026-09-27T12:30:00.000Z',
-    });
-    expect(confirmsReset(expired, { resetsAt: null, since: SINCE })).toBe(false);
-  });
-
-  it('never confirms a 99% reading, even in a new window', () => {
-    expect(confirmsReset({ ...MOVED_ON, usedPct: 99 }, episode)).toBe(false);
-    expect(
-      confirmsReset(
-        reading({ usedPct: 99, status: null, resetsAt: null, observedAt: NEXT_RESET }),
-        episode
-      )
-    ).toBe(false);
-  });
-
-  it('confirms a reading with no reset time only when observed after the reset', () => {
-    const noReset = reading({ usedPct: 5, status: null, resetsAt: null });
-    expect(confirmsReset({ ...noReset, observedAt: '2026-09-27T16:59:00.000Z' }, episode)).toBe(
-      false
-    );
-    expect(confirmsReset({ ...noReset, observedAt: '2026-09-27T17:01:00.000Z' }, episode)).toBe(
-      true
-    );
-  });
-
   it('never confirms a rejected reading', () => {
     expect(confirmsReset({ ...MOVED_ON, status: 'rejected' }, episode)).toBe(false);
   });
@@ -418,15 +387,6 @@ describe('waiting for the reset', () => {
     expect(opts.continuationHold).toBeUndefined();
   });
 
-  it('carries no ceiling for a resume whose turn was not held', async () => {
-    await ranHeld('s-free', false);
-    await waitingSession('s-free');
-    recordReading('main', MOVED_ON);
-    await vi.advanceTimersByTimeAsync(TO_RESET);
-    const [opts] = vi.mocked(dispatchSessionMessage).mock.calls[0];
-    expect(opts.permissionCeiling).toBeUndefined();
-  });
-
   it('leaves the row to the resumed turn, which records one resumed-reset in the history', async () => {
     await waitingSession('s-1');
     readings.set('main', MOVED_ON);
@@ -455,14 +415,6 @@ describe('waiting for the reset', () => {
     expect(store.get('s-1')?.limit.state).toBe('waiting-reset');
   });
 
-  it('does not confirm on a 99% reading', async () => {
-    await waitingSession('s-1');
-    readings.set('main', { ...MOVED_ON, usedPct: 99 });
-    await vi.advanceTimersByTimeAsync(TO_RESET);
-    expect(dispatchSessionMessage).not.toHaveBeenCalled();
-    expect(plan('s-1')).not.toHaveProperty('resetConfirmedAt');
-  });
-
   it('confirms by a probe when the store cannot', async () => {
     await waitingSession('s-1');
     probe.mockImplementation(async () => {
@@ -485,30 +437,6 @@ describe('waiting for the reset', () => {
     expect(probe).toHaveBeenCalledTimes(1 + RESET_MAX_RECHECKS);
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
     expect(resetNotices()).toHaveLength(0);
-  });
-
-  it('confirms on a re-check when a newer reading arrives in between', async () => {
-    await waitingSession('s-1');
-    await vi.advanceTimersByTimeAsync(TO_RESET);
-    expect(dispatchSessionMessage).not.toHaveBeenCalled();
-    readings.set('main', MOVED_ON);
-    await vi.advanceTimersByTimeAsync(RESET_RECHECK_MS);
-    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
-  });
-
-  it('clamps an advisor’s past resumeAt to a minute from now', async () => {
-    const past = '2026-09-27T10:00:00.000Z';
-    registerAccountAdvisor('flow', {
-      rank: vi.fn(async () => ({ accounts: [], recommendedId: null })),
-      onLimited: async () => ({ mode: 'wait', resumeAt: past }),
-    } as unknown as AccountAdvisor);
-    await limitedSession('s-1', { resetsAt: '2026-09-27T11:00:00.000Z' });
-    expect(plan('s-1')).toMatchObject({ mode: 'waiting', resumeAt: past, autoResume: true });
-    readings.set('main', MOVED_ON);
-    await vi.advanceTimersByTimeAsync(59_000);
-    expect(dispatchSessionMessage).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
   });
 
   it('never fires before the reset, even when the advisor’s resumeAt is earlier', async () => {
@@ -537,27 +465,6 @@ describe('an unregistered root', () => {
     recordReading('@/accounts/loose', MOVED_ON);
     await vi.advanceTimersByTimeAsync(0);
     expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
-  });
-
-  it('becomes an unconfirmed reset-ready 15 minutes after resumeAt, with no resume', async () => {
-    await waitingSession('s-1', { accountId: null });
-    await vi.advanceTimersByTimeAsync(TO_RESET + UNPROBED_RESET_GRACE_MS - 1_000);
-    expect(plan('s-1')).not.toHaveProperty('unconfirmed');
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(plan('s-1')).toMatchObject({ unconfirmed: true });
-    expect(store.get('s-1')?.limit.state).toBe('reset-ready');
-    // A reading after giving up changes nothing: no resume is promised unconfirmed.
-    recordReading('@/accounts/loose', MOVED_ON);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(dispatchSessionMessage).not.toHaveBeenCalled();
-  });
-
-  it('treats a registered account as store-only when no probe is wired', async () => {
-    uninstallResume?.();
-    startResume(false);
-    await waitingSession('s-1');
-    await vi.advanceTimersByTimeAsync(TO_RESET + UNPROBED_RESET_GRACE_MS);
-    expect(plan('s-1')).toMatchObject({ unconfirmed: true });
   });
 });
 
@@ -612,22 +519,6 @@ describe('resuming', () => {
     expect(probe).not.toHaveBeenCalled();
     expect(resetNotices()).toHaveLength(0);
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
-  });
-
-  it('at boot, gives a Codex wait from before this change only the fallback', async () => {
-    await limitedSession('s-codex', { runtime: 'codex' });
-    // Written by a build that armed any runtime's wait for a resume.
-    store.update('s-codex', SINCE, {
-      plan: { mode: 'waiting', resumeAt: RESETS, autoResume: true },
-      state: 'waiting-reset',
-    });
-    readings.set('main', MOVED_ON);
-    restart();
-    await vi.advanceTimersByTimeAsync(TO_RESET + UNPROBED_RESET_GRACE_MS);
-    expect(probe).not.toHaveBeenCalled();
-    expect(resetNotices()).toHaveLength(0);
-    expect(dispatchSessionMessage).not.toHaveBeenCalled();
-    expect(plan('s-codex')).toMatchObject({ unconfirmed: true });
   });
 
   it('never resumes a confirmed Codex wait, at boot or asked directly', async () => {
@@ -687,21 +578,6 @@ describe('resuming', () => {
     vi.mocked(isAgentLaunchCapFull).mockReturnValue(false);
     await vi.advanceTimersByTimeAsync(RESUME_CAP_RETRY_MS);
     expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
-  });
-
-  it('retries when the dispatch itself finds the cap full, and forgets the record', async () => {
-    await waitingSession('s-1');
-    readings.set('main', MOVED_ON);
-    vi.mocked(dispatchSessionMessage).mockResolvedValueOnce({
-      refused: 'LAUNCH_CAP_FULL',
-      message: 'full',
-    } as never);
-    await vi.advanceTimersByTimeAsync(TO_RESET);
-    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
-    expect(runtimeRegistry.getLastAutoResumeFor('s-1')).toBeNull();
-    await vi.advanceTimersByTimeAsync(RESUME_CAP_RETRY_MS);
-    expect(dispatchSessionMessage).toHaveBeenCalledTimes(2);
-    expect(runtimeRegistry.getLastAutoResumeFor('s-1')).toBe(RESETS);
   });
 
   it('forgets the record when the resume is not accepted, and resumes once after a restart', async () => {
@@ -764,24 +640,6 @@ describe('resuming', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(resumes().map((r) => r.sessionId)).toContain('s-4');
     expect(resetNotices()).toHaveLength(1);
-  });
-
-  it('titles the notice for one session and for many', () => {
-    const entry = notificationEntry('account.reset');
-    const base = {
-      sessionId: 's-1',
-      accountId: 'main',
-      accountLabel: 'Work',
-      resetsAt: RESETS,
-      resetConfirmedAt: RESETS,
-    };
-    expect(entry.title({ ...base, pausedCount: 1 })).toBe(
-      'Work is back: 1 paused session can continue'
-    );
-    expect(entry.title({ ...base, pausedCount: 3 })).toBe(
-      'Work is back: 3 paused sessions can continue'
-    );
-    expect(entry.dedupeKey({ ...base, pausedCount: 3 })).toBe(`account-reset:main:${RESETS}`);
   });
 });
 

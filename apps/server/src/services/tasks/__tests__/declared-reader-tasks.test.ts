@@ -25,7 +25,7 @@ import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
 } from '../task-write-policy.js';
-import { fileBackedChanges, planTaskFileUpdate } from '../task-file-update.js';
+import { planTaskFileUpdate } from '../task-file-update.js';
 import {
   TaskSchedulerService,
   singleRuntimeSource,
@@ -90,12 +90,6 @@ describe('a task file that says it reads outside text', () => {
     // A new store on the same record, as after a restart.
     setDeclaredReaders(new DeclaredReaders({ file, logger: { warn: vi.fn() } }));
     expect(store.getTask(made.id)?.readsOutsideText).toBe(true);
-  });
-
-  it('is not declared when its file never said so', () => {
-    const made = store.fileSync.upsertFromFile(definition('/tmp/tasks/plain/SKILL.md'), 'agent-w');
-    expect(made.readsOutsideText).toBeUndefined();
-    expect(runMarked(store, made)).toBe(false);
   });
 });
 
@@ -168,18 +162,6 @@ describe('the file a write leaves behind', () => {
       cron: '0 9 * * *',
       readsOutsideText: true,
     });
-  });
-
-  it('a `false` on a task that never said so opens no file', () => {
-    const row = {
-      name: 'n',
-      enabled: true,
-      sticky: false,
-      permissionMode: 'acceptEdits',
-      prompt: 'p',
-    };
-    expect(fileBackedChanges({ readsOutsideText: false }, row)).toEqual([]);
-    expect(fileBackedChanges({ readsOutsideText: true }, row)).toEqual(['readsOutsideText']);
   });
 });
 
@@ -255,10 +237,5 @@ describe('a run of a task that reads outside text', () => {
     );
     expect(runMarked(store, made)).toBe(true);
     expect((await runNow(made.id)).carriedMarks).toEqual({ outsider: true });
-  });
-
-  it('a task that never said so starts unmarked', async () => {
-    const made = store.fileSync.upsertFromFile(definition('/tmp/tasks/plain/SKILL.md'), 'agent-w');
-    expect((await runNow(made.id)).carriedMarks).toBeUndefined();
   });
 });

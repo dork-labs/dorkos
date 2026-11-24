@@ -517,6 +517,22 @@
       "types": "./src/dispatch-id.ts",
       "default": "./dist/dispatch-id.js"
     },
+    "./dork-ref": {
+      "types": "./src/dork-ref.ts",
+      "default": "./dist/dork-ref.js"
+    },
+    "./dork-address": {
+      "types": "./src/dork-address.ts",
+      "default": "./dist/dork-address.js"
+    },
+    "./entity-ref": {
+      "types": "./src/entity-ref.ts",
+      "default": "./dist/entity-ref.js"
+    },
+    "./provenance": {
+      "types": "./src/provenance.ts",
+      "default": "./dist/provenance.js"
+    },
     "./terminal-schemas": {
       "types": "./src/terminal-schemas.ts",
       "default": "./dist/terminal-schemas.js"
