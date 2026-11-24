@@ -5,19 +5,20 @@
  *
  * What it holds, and what it never does:
  *
- * - **Append-only.** It inserts and reads; there is no update or delete. An
- *   exact repeat of an edge is the same fact and records nothing new.
- * - **Ids and names only.** Both ends are entity references
- *   (`@dorkos/shared/entity-ref`), stored by `./work-link-ref`. No path, no
- *   hostname and no message text ever reaches it: a worktree is its folder
- *   name, and an edge carries no free text at all.
+ * - **Append-only.** It inserts and reads; there is no update or delete, and
+ *   the table's triggers refuse both. An exact repeat of an edge is the same
+ *   fact and records nothing new.
+ * - **Ids and refs only.** Both ends are entity references
+ *   (`@dorkos/shared/entity-ref`), stored by `./work-link-ref`, and an edge
+ *   carries no free text. A worktree is its folder name, never a path. A
+ *   branch name is stored as given, so write sites must not pass private names.
  * - **Not the audit trail and not the lock.** The audit trail records actions;
  *   this records their results. `work_claims` stays the exclusivity lock.
  *
  * It lives in this computer's SQLite store for now. Its move to the space store
  * is DOR-5139 (ADR 261122-173853). The store is space data; turn code reaches
  * it only through hooks or events, so DOR-5139 is a store move, not a rewrite
- * (`__tests__/work-graph-boundary.test.ts` holds runtime and session code to it).
+ * (the `work-graph/stay-out` lint rule holds runtime and session code to it).
  *
  * @module services/work-graph/work-link-store
  */
@@ -249,7 +250,9 @@ export class WorkLinkStore {
   /**
    * The id a chat is known by now, following `rekeyed_from` edges from an
    * older id to the newest one (ADR-0267: a new chat's first id gives way to
-   * its runtime's). Survives a restart, which the in-memory redirect does not.
+   * its runtime's). The edges outlive a restart, so an old id can be resolved
+   * after one, which the in-memory redirect cannot do. Nothing reads this in
+   * production yet; the `/r/` link resolver (DOR-5046) is its first reader.
    *
    * Bounded and cycle-safe: it follows at most {@link REKEY_MAX_DEPTH} steps
    * and stops at the last id before any id would repeat. Where one id was
@@ -264,12 +267,12 @@ export class WorkLinkStore {
     const seen = new Set([chatId]);
     let current = chatId;
     for (let step = 0; step < REKEY_MAX_DEPTH; step += 1) {
+      const toRef = encodeWorkLinkRef({ kind: 'chat', id: current });
+      if (toRef === null) return current;
       const row = this.db
         .select({ fromRef: workLinks.fromRef })
         .from(workLinks)
-        .where(
-          and(eq(workLinks.toRef, `dork:chat:${current}`), eq(workLinks.relation, 'rekeyed_from'))
-        )
+        .where(and(eq(workLinks.toRef, toRef), eq(workLinks.relation, 'rekeyed_from')))
         .orderBy(desc(workLinks.recordedAt), desc(workLinks.id))
         .get();
       const next = row ? decodeWorkLinkRef(row.fromRef) : null;

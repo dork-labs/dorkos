@@ -7,7 +7,7 @@
  * projector registry, so the edge is proved to land where every caller's
  * re-key is made durable, not only when the participant is called by hand.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sql, workLinks, type Db } from '@dorkos/db';
 import type { SseResponse } from '@dorkos/shared/agent-runtime';
@@ -18,6 +18,7 @@ import {
   peekProjector,
   rekeyProjector,
 } from '../../session/index.js';
+import { onDurableSessionRekey } from '../../session/turn-identity/durable-rekey.js';
 import {
   getWorkLinkStore,
   installWorkLinkStore,
@@ -67,10 +68,11 @@ beforeEach(() => {
 
 afterEach(() => {
   uninstallWorkLinkStore();
+  vi.restoreAllMocks();
 });
 
 describe('the re-key write site', () => {
-  it('records the new id rekeyed_from the old one, so the old id resolves after a restart', () => {
+  it('records the new id rekeyed_from the old one, so the old id can be resolved after a restart', () => {
     const { requestId, canonicalId } = ids();
     expect(rekeyTurn(requestId, canonicalId)).toBe(canonicalId);
     expect(getWorkLinkStore()!.from({ kind: 'chat', id: canonicalId })).toEqual([
@@ -86,10 +88,17 @@ describe('the re-key write site', () => {
     expect(new WorkLinkStore({ db }).resolveRekey(requestId)).toBe(canonicalId);
   });
 
-  it('still re-keys the chat when the edge cannot be written', () => {
+  it('still re-keys the chat, and runs the participants after it, when the edge cannot be written', () => {
+    const later: Array<[string, string]> = [];
+    const stopLater = onDurableSessionRekey((oldId, newId) => later.push([oldId, newId]));
     db.run(sql`DROP TABLE work_links`);
     const { requestId, canonicalId } = ids();
-    expect(rekeyTurn(requestId, canonicalId)).toBe(canonicalId);
+    try {
+      expect(rekeyTurn(requestId, canonicalId)).toBe(canonicalId);
+    } finally {
+      stopLater();
+    }
+    expect(later).toEqual([[requestId, canonicalId]]);
     const moved = peekProjector(canonicalId);
     expect(moved).toBeDefined();
     // The old id now only redirects to the moved projector.
@@ -108,10 +117,12 @@ describe('the re-key write site', () => {
   it('registers its participant once however often the store is installed', () => {
     installWorkLinkStore(db);
     installWorkLinkStore(db);
+    // Rows cannot tell: an exact repeat lands no second row. The calls can.
+    const record = vi.spyOn(WorkLinkStore.prototype, 'record');
     const { requestId, canonicalId } = ids();
     rekeyTurn(requestId, canonicalId);
     disposeProjector(canonicalId);
-    expect(db.select().from(workLinks).all()).toHaveLength(1);
+    expect(record).toHaveBeenCalledTimes(1);
   });
 });
 

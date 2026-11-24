@@ -184,7 +184,7 @@ describe('WorkLinkStore', () => {
       expect(store.resolveRekey('resumed-id')).toBe('resumed-id');
     });
 
-    it('survives a restart: a new store over the same database resolves the old id', () => {
+    it('can be resolved after a restart: a new store over the same database finds the old id', () => {
       rekey('request-id', 'sdk-id');
       expect(new WorkLinkStore({ db }).resolveRekey('request-id')).toBe('sdk-id');
     });

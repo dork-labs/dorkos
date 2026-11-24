@@ -2,11 +2,13 @@
  * What `work_links` refuses on its own (DOR-4968): an unknown relation, an
  * empty or oversized end, an edge from a thing to itself, a bad source, and a
  * second row for one edge. The spelling of each end is the server store's
- * (`apps/server/src/services/work-graph/work-link-ref.ts`).
+ * (`apps/server/src/services/work-graph/work-link-ref.ts`). Two hand-written
+ * triggers keep it append-only.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createDb, runMigrations, type Db } from '../index.js';
-import { workLinks } from '../schema/work-graph/work-links.js';
+import { eq } from 'drizzle-orm';
+import { WORK_LINK_RELATIONS, workLinks } from '../schema/work-graph/work-links.js';
 
 type Row = typeof workLinks.$inferInsert;
 
@@ -51,18 +53,8 @@ describe('work_links', () => {
   });
 
   it('takes every relation it names', () => {
-    for (const relation of [
-      'started',
-      'claims',
-      'opened',
-      'works_on',
-      'belongs_to',
-      'produced',
-      'forked_from',
-      'rekeyed_from',
-    ] as const)
-      insert({ relation });
-    expect(db.select().from(workLinks).all()).toHaveLength(8);
+    for (const relation of WORK_LINK_RELATIONS) insert({ relation });
+    expect(db.select().from(workLinks).all()).toHaveLength(WORK_LINK_RELATIONS.length);
   });
 
   it('refuses a relation it does not name', () => {
@@ -90,6 +82,17 @@ describe('work_links', () => {
     expect(() => insert({ recordingChatId: 'c'.repeat(65) })).toThrow(
       /work_links_recording_chat_length/
     );
+  });
+
+  it('refuses every UPDATE and DELETE: the table is append-only', () => {
+    insert();
+    expect(() =>
+      db.update(workLinks).set({ source: 'flow' }).where(eq(workLinks.source, 'server')).run()
+    ).toThrow(/work links are append-only/);
+    expect(() => db.delete(workLinks).run()).toThrow(/work links are append-only/);
+    expect(db.select().from(workLinks).all()).toEqual([
+      expect.objectContaining({ source: 'server' }),
+    ]);
   });
 
   it('keeps one row per edge', () => {

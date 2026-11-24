@@ -22,7 +22,7 @@
  * space store is DOR-5139 (ADR 261122-173853). The store is space data; turn
  * code reaches it only through hooks or events, so DOR-5139 is a store move,
  * not a rewrite. Nothing under `services/runtimes/` or `services/session/`
- * imports this domain (`__tests__/work-graph-boundary.test.ts`): the re-key
+ * imports this domain (the `work-graph/stay-out` lint rule): the re-key
  * write registers itself on the session's hook, and the fork write is called
  * by the route, since a fork raises no event.
  *
@@ -60,7 +60,7 @@ let stopRekeyWrites: (() => void) | null = null;
  */
 export function installWorkLinkStore(db: Db): WorkLinkStore {
   store = new WorkLinkStore({ db });
-  stopRekeyWrites ??= onDurableSessionRekey((fromId, toId) => recordChatRekey(fromId, toId));
+  stopRekeyWrites ??= onDurableSessionRekey((oldId, newId) => recordChatRekey(oldId, newId));
   return store;
 }
 
@@ -78,12 +78,14 @@ export function getWorkLinkStore(): WorkLinkStore | null {
 
 /**
  * Record one chat-to-chat edge, never throwing. A refusal or a database
- * failure is logged with the ids and dropped.
+ * failure is logged with `ids` (named for the action: `oldId`/`newId` for a
+ * re-key, `sourceId`/`forkId` for a fork) and dropped.
  */
 function recordChatLink(
   relation: 'rekeyed_from' | 'forked_from',
   fromChatId: string,
-  toChatId: string
+  toChatId: string,
+  ids: Record<string, string>
 ): void {
   if (store === null) return;
   const from = entityRef('chat', fromChatId);
@@ -91,8 +93,7 @@ function recordChatLink(
   if (!from.ok || !to.ok) {
     logger.warn('[work-graph] a chat id has no reference form; edge not recorded', {
       relation,
-      fromChatId,
-      toChatId,
+      ...ids,
     });
     return;
   }
@@ -100,40 +101,34 @@ function recordChatLink(
   try {
     const result = store.record(input);
     if (!result.ok)
-      logger.warn('[work-graph] edge refused', {
-        relation,
-        fromChatId,
-        toChatId,
-        reason: result.reason,
-      });
+      logger.warn('[work-graph] edge refused', { relation, ...ids, reason: result.reason });
   } catch (err) {
     logger.warn('[work-graph] could not record an edge', {
       relation,
-      fromChatId,
-      toChatId,
+      ...ids,
       error: err instanceof Error ? err.message : String(err),
     });
   }
 }
 
 /**
- * Record that a chat's id `toId` replaced its older id `fromId` (ADR-0267), so
- * an old reference resolves after a restart. Never throws.
+ * Record that a chat's id `newId` replaced its older id `oldId` (ADR-0267), so
+ * an old reference can be resolved after a restart. Never throws.
  *
- * @param fromId - The id the chat had.
- * @param toId - The id it has now.
+ * @param oldId - The id the chat had.
+ * @param newId - The id it has now.
  */
-export function recordChatRekey(fromId: string, toId: string): void {
-  recordChatLink('rekeyed_from', toId, fromId);
+export function recordChatRekey(oldId: string, newId: string): void {
+  recordChatLink('rekeyed_from', newId, oldId, { oldId, newId });
 }
 
 /**
  * Record that `forkId` is a fork of `sourceId`, so a roll-up over a chat and
  * its children still finds the fork. Never throws.
  *
- * @param sourceId - The chat that was forked, as its caller named it.
+ * @param sourceId - The chat that was forked: the runtime's id for it, the one actually forked.
  * @param forkId - The new chat's id.
  */
 export function recordChatFork(sourceId: string, forkId: string): void {
-  recordChatLink('forked_from', forkId, sourceId);
+  recordChatLink('forked_from', forkId, sourceId, { sourceId, forkId });
 }

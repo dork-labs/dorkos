@@ -42,18 +42,22 @@ const relationList = sql.raw(WORK_LINK_RELATIONS.map((relation) => `'${relation}
  * claims, opened, works on or produced that thing", written once, at the moment
  * of the action, by the code that performs it.
  *
- * Append-only: rows are inserted and read, never changed. An exact repeat of an
- * edge (same `from_ref`, `relation` and `to_ref`) is the same fact and lands no
- * second row (`work_links_edge_unique`); its first `recorded_at` stands.
+ * Append-only: rows are inserted and read, never changed. Two triggers, written
+ * by hand in migration `20261124150052_dor4968_work_links`, refuse every UPDATE
+ * and DELETE, as `audit_events` does. Drizzle does not know they exist, so a
+ * later migration that rebuilds this table must recreate them. An exact repeat
+ * of an edge (same `from_ref`, `relation` and `to_ref`) is the same fact and
+ * lands no second row (`work_links_edge_unique`); its first `recorded_at` stands.
  *
  * Both ends are stored as one canonical text spelling of an entity reference
  * (`@dorkos/shared/entity-ref`), encoded and decoded by the server's
- * `work-link-store.ts`: `dork:chat:<id>` for a DorkOS kind, `DOR-1234`,
+ * `services/work-graph/work-link-ref.ts`: `dork:chat:<id>` for a DorkOS kind, `DOR-1234`,
  * `owner/repo#42` or `PR #42` for a ticket or pull request, and
  * `branch:<name>` or `worktree:<name>` for the two kinds that have no
  * self-describing text form.
  *
- * Holds ids and names only: never a path, a hostname or message text.
+ * Holds ids and refs only, never message text. A branch name is stored as
+ * given, so write sites must not pass private names.
  *
  * Lives in this computer's store for now; its move to the space store is
  * DOR-5139 (ADR 261122-173853).

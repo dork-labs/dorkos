@@ -554,7 +554,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
     try {
       const forked = await runtime.forkSession(cwd, internalSessionId, parsed.data);
       if (!forked) return sessionNotFound(c, 'Nothing was forked.');
-      recordChatFork(sessionId, forked.id);
+      recordChatFork(internalSessionId, forked.id);
       return c.json(forked, 201);
     } catch {
       return problem(c, 'internal_error', { detail: 'The fork failed. Try again.' });
