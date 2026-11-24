@@ -1003,6 +1003,12 @@ jobs:
     # at a time, so 8GB for that one process is safe headroom.
     env:
       NODE_OPTIONS: --max-old-space-size=8192
+      # TRIAL (DOR-5130, ledger 261124-114526): vitest picks 3 workers on
+      # these 4-core runners; this asks for one per core. vitest reads the
+      # variable over any config, and it is on turbo's globalPassThroughEnv,
+      # so no task hash moves. Local runs are untouched:
+      # scripts/local-vitest-workers.sh still prints nothing under CI.
+      VITEST_MAX_WORKERS: '4'
     steps:
       # A canary run is against `main` or it is nothing.
       #
