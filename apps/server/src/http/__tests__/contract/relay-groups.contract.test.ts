@@ -165,7 +165,7 @@ contractSuite('the Relay groups, login off, nothing set up', [
       body: {
         error:
           'Sender "relay.system.console" is a reserved server principal and cannot be asserted ' +
-          'by a client. Send from your own principal (e.g. relay.human.console).',
+          'by a client. Send from your own principal (e.g. relay.external.<name>).',
         code: 'RESERVED_SENDER',
       },
     },
