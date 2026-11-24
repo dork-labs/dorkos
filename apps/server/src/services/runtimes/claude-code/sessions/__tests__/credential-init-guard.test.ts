@@ -53,7 +53,7 @@ describe('a slow start is not a sign-in that cannot be read (DOR-3670)', () => {
     expect(credentialReadHealth(ROOT).state).toBe('healthy');
     query.endStream();
     await vi.advanceTimersByTimeAsync(0);
-    await pump.teardown();
+    await pump.teardown('stop');
   });
 
   it('calls a start that never comes slow, never unreadable, when no sign-in read hung', async () => {
@@ -77,7 +77,7 @@ describe('a slow start is not a sign-in that cannot be read (DOR-3670)', () => {
       subtype: 'error_during_execution',
       errors: ['The agent took too long to start. It will try again.'],
     });
-    await pump.teardown();
+    await pump.teardown('stop');
   });
 
   it('still names an unreadable sign-in when a sign-in read is known to have hung', async () => {
@@ -101,7 +101,7 @@ describe('a slow start is not a sign-in that cannot be read (DOR-3670)', () => {
       subtype: 'credentials_unreadable',
       errors: ["Agents can't read their sign-in. Check this Mac for a password prompt."],
     });
-    await pump.teardown();
+    await pump.teardown('stop');
   });
 
   it('keeps a known-hung account cooling down after its start times out, and leaves a slow one alone', async () => {
@@ -124,8 +124,8 @@ describe('a slow start is not a sign-in that cannot be read (DOR-3670)', () => {
     expect(credentialReadCoolingDown(ROOT)).toBe(true);
     expect(credentialReadCoolingDown(OTHER)).toBe(false);
     expect(credentialReadHealth(OTHER).state).toBe('healthy');
-    await hung.teardown();
-    await slow.teardown();
+    await hung.teardown('stop');
+    await slow.teardown('stop');
   });
 
   it('does not borrow another account’s hung read to diagnose this one', async () => {
@@ -140,7 +140,7 @@ describe('a slow start is not a sign-in that cannot be read (DOR-3670)', () => {
     await vi.advanceTimersByTimeAsync(INIT_TIMEOUT_MS);
     await failure;
     expect(credentialReadHealth(ROOT).state).toBe('unknown');
-    await pump.teardown();
+    await pump.teardown('stop');
   });
 });
 
@@ -158,7 +158,7 @@ describe('how long a start takes (DOR-3670)', () => {
     });
     query.endStream();
     await vi.advanceTimersByTimeAsync(0);
-    await pump.teardown();
+    await pump.teardown('stop');
   });
 });
 

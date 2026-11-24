@@ -33,6 +33,7 @@ export function renderDoeContextEntry(entry: AdditionalContextEntry): string {
     case 'approval_verdict':
     case 'direct_notes':
     case 'turn_cutoff':
+    case 'timers_stopped':
     case 'new_since_last_run':
       return renderProseContextBlock(entry);
     case 'accounts_access':

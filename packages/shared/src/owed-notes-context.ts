@@ -81,6 +81,31 @@ export const TurnCutoffDataSchema = z.union([
   }),
 ]);
 
+/**
+ * DorkOS ended the Claude Code process this session's timers lived in
+ * (DOR-3755): to free a slot for another chat, at the four-hour ceiling, or on
+ * a record sweep. A session timer (CronCreate, ScheduleWakeup, /loop) fires
+ * only inside a running process, and no process runs for the chat again until
+ * its next turn, so a timer that came due in between did not fire, and for a
+ * one-shot CronCreate nothing else tells the agent.
+ *
+ * Its own note, not a turn cutoff: both can be owed at once (a turn the stall
+ * guard ended, whose process a reclaim then took), and the next turn needs
+ * both. SERVER-derived from the Claude Code process lifecycle.
+ */
+export interface TimersStoppedData {
+  /** How many session timers the CLI named pending at the last turn end. */
+  timers: number;
+  /** When the process ended, as epoch ms. */
+  at: number;
+}
+
+/** Zod schema for {@link TimersStoppedData}. */
+export const TimersStoppedDataSchema = z.object({
+  timers: z.number().int().positive(),
+  at: z.number().int().nonnegative(),
+});
+
 /** Compiled release facts owed to an agent's first ordinary turn after an update. */
 export interface NewSinceData {
   previousVersion: string;

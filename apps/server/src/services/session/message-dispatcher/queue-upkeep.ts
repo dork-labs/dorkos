@@ -21,6 +21,7 @@ import { getStagedContextStore } from '../staged-context-store.js';
 import { deleteTurnContextForSessions } from '../turn-context/record-turn-context.js';
 import { forgetContextWarning } from '../agent-compaction/context-warning.js';
 import { forgetTurnCutoff } from '../turn-cutoff/turn-cutoff.js';
+import { forgetTimersStopped } from '../turn-cutoff/timers-stopped.js';
 import { logger } from '../../../lib/logger.js';
 import { isChatClientId } from '../chat-messages/chat-client-id.js';
 import {
@@ -119,6 +120,7 @@ export function sweepOrphanedMessageQueues(opts?: {
     if (compaction) dropCompaction(id, compaction, 'its session went away');
     forgetContextWarning(id);
     forgetTurnCutoff(id);
+    forgetTimersStopped(id);
   }
   // The rename bookkeeping goes with them. Two entries are added per renamed
   // session and nothing has ever removed one, so a long-lived server accumulates
