@@ -88,19 +88,14 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
     expect(machine.setShowSetup).toHaveBeenCalledWith(false);
   });
 
-  it('shows the field problem a rejected patch names, not "Validation failed"', async () => {
+  it('shows the field problem a rejected patch names', async () => {
     const { transport, machine, actions } = setup();
-    // The REAL 400: `applyConfigPatch` answers with the constant headline
-    // `'Validation failed'` and puts the per-field text in `details[]`, so the
-    // only useful sentence is in the body. `fetchJSON` builds `.message` from
-    // `error`, which is the headline.
+    // The REAL 400: a problem document whose `detail` names the first field and
+    // what was wrong with it, which `fetchJSON` makes the message.
     vi.mocked(transport.updateConfig).mockRejectedValue(
-      Object.assign(new Error('Validation failed'), {
+      Object.assign(new Error('tunnel.authtoken: Expected string, received number'), {
         status: 400,
-        body: {
-          error: 'Validation failed',
-          details: ['tunnel.authtoken: Expected string, received number'],
-        },
+        code: 'invalid_request',
       })
     );
 
@@ -113,9 +108,8 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
     expect(machine.setTokenError).not.toHaveBeenCalledWith('Couldn’t save token. Try again.');
   });
 
-  it('shows a 4xx’s own sentence when it wrote one instead of details', async () => {
+  it('shows a 4xx’s own sentence', async () => {
     const { transport, machine, actions } = setup();
-    // `applyConfigPatch`'s other 400 sends a real sentence and no `details`.
     vi.mocked(transport.updateConfig).mockRejectedValue(
       Object.assign(new Error('Request body must be a JSON object'), { status: 400 })
     );
@@ -224,9 +218,9 @@ describe('useTunnelActions — handleSaveDomain no longer swallows failures', ()
   it('shows the field problem a rejected domain patch names', async () => {
     const { transport, machine, actions } = setup();
     vi.mocked(transport.updateConfig).mockRejectedValue(
-      Object.assign(new Error('Validation failed'), {
+      Object.assign(new Error('tunnel.domain: must be a hostname'), {
         status: 400,
-        body: { error: 'Validation failed', details: ['tunnel.domain: must be a hostname'] },
+        code: 'invalid_request',
       })
     );
 

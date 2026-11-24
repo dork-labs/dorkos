@@ -54,7 +54,7 @@ export const ONLY_PROJECTS_FAILED = 'Could not save which projects this account 
 export const NO_AUTO_MOVE_FAILED = 'Could not save whether agents move to this account.';
 
 /**
- * The 409 for a change judged as narrowing on a rule that has since changed,
+ * The 412 `precondition_failed` for a change judged as narrowing on a rule that has since changed,
  * re-read inside the write (Security S5 on DOR-4355 M3): it would widen now.
  *
  * @param c - The request.

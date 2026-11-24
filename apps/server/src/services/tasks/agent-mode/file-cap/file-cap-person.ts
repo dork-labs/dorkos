@@ -20,7 +20,7 @@ import { FILE_CAP_ACTION } from './run-cap.js';
 
 /** What either act answers. */
 export type FileCapPersonOutcome =
-  { ok: true; task: Task } | { ok: false; status: 404 | 409 | 412; body: Record<string, unknown> };
+  { ok: true; task: Task } | { ok: false; status: 404 | 412; body: Record<string, unknown> };
 
 /** Where the acts read and write. */
 type PersonStore = Pick<TaskStore, 'getTask' | 'approvals' | 'updateTask'>;

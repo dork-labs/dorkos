@@ -4,6 +4,7 @@ covers:
   - 'fix(api): review round 1 on the extensions-and-packages problem switch (DOR-4979)'
   - 'refactor(api): one error code per problem (DOR-4979)'
   - 'fix(api): review round 1 on the combined problem switch (DOR-4979)'
+  - 'fix(api): review round 2 nits on the combined problem switch (DOR-4979)'
 ---
 
 ### Changed

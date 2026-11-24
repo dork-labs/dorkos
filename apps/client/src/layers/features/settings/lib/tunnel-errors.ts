@@ -17,7 +17,6 @@ const PERSON_ONLY = 'person_only';
 interface TransportFailure {
   code?: string;
   status?: number;
-  body?: { details?: string[] };
 }
 
 /**
@@ -25,27 +24,21 @@ interface TransportFailure {
  *
  * ## What `PATCH /api/config` actually sends, exit by exit
  *
- * The rule below is shaped around the real bodies rather than a wish about them,
- * because the obvious rule — "always prefer the server's own sentence" — turns
- * out to have nothing to prefer on two of these four exits:
+ * Every refusal is a problem document, whose `detail` becomes `.message`:
  *
- * | Exit | `error` (becomes `.message`) | Where the useful text is |
- * | --- | --- | --- |
- * | Schema reject (400) | `'Validation failed'` | `body.details[]`, one entry per field |
- * | Bad body / guard (4xx) | a real sentence | `.message` |
- * | Anything thrown (500) | `'Internal server error'` | nowhere |
- * | Never reached the server | `'Failed to fetch'`, or the timeout line | nowhere |
+ * | Exit | Where the useful text is |
+ * | --- | --- |
+ * | Schema reject (400 `invalid_request`) | `.message`: `detail` names the first field and what was wrong (`issues` lists them all) |
+ * | Bad body / guard (4xx) | `.message`, a sentence about this request |
+ * | Anything thrown (500 `internal_error`) | nowhere useful to a person |
+ * | Never reached the server | nowhere: `'Failed to fetch'`, or the timeout line |
  *
  * So the sentence is taken from a **4xx** only, where the server is describing
- * something about THIS request: `body.details[0]` first, because a 400's
- * `.message` is the constant `'Validation failed'` and the field problem is the
- * whole point, then `.message` for the 4xx exits that do write one.
+ * something about THIS request.
  *
- * A 500 and a network throw both fall back. That is deliberate and it is the
- * narrow case where showing the server's string would be WORSE than the generic
- * line it replaced: "Internal server error" and "Failed to fetch" are jargon
- * that tell a person nothing they can act on, and the second is not even the
- * server speaking.
+ * A 500 and a network throw both fall back. That is deliberate: a fault says
+ * nothing a person can act on, and "Failed to fetch" is not even the server
+ * speaking.
  *
  * ## The not-a-person refusal is decided before any of that
  *
@@ -71,8 +64,6 @@ export function describeTunnelWriteFailure(err: unknown, fallback: string): stri
 
   const status = failure.status;
   if (typeof status === 'number' && status >= 400 && status < 500) {
-    const detail = failure.body?.details?.[0];
-    if (detail) return detail;
     if (err instanceof Error && err.message) return err.message;
   }
 
