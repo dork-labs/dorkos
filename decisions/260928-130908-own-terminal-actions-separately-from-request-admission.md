@@ -1,7 +1,7 @@
 ---
 id: 260928-130908
 title: Own terminal actions separately from request admission
-status: proposed
+status: accepted
 created: 2026-09-28
 spec: terminal-request-admission
 superseded-by: null
@@ -10,6 +10,8 @@ superseded-by: null
 # 260928-130908. Own terminal actions separately from request admission
 
 ## Status
+
+Accepted (2026-11-24, on review): admission adopted (PR #2338, now in the Hono chain through `apps/server/src/services/core/lifecycle/main-request-admission.ts`). Exclusive terminal actions wait for the restart design in [261124-150517](261124-150517-turns-survive-restarts-run-record-outbox-capped-recovery.md), which replaces DOR-2482's proposal.
 
 Proposed from [terminal request admission](../specs/terminal-request-admission/02-specification.md), DOR-2481. Design only; no production adoption is claimed. This does not supersede the current restart mechanism or certify database/lock handoff.
 

@@ -108,7 +108,10 @@ it('terminal promise exists before observer callback entry', async () => {
 
 // Read only the controlled source literal. Never collect or execute the native fixture body.
 function currentCleanupTab(r: BrowserRecord, pageFixture = fakePage()): TabRecord {
-  const source = readFileSync(new URL('./lifecycle-cleanup.test.ts', import.meta.url), 'utf8');
+  const source = readFileSync(
+    new URL('./lifecycle-cleanup/lifecycle-cleanup.test.ts', import.meta.url),
+    'utf8'
+  );
   const literal = /record\.tabs\.set\(tabId, ([\s\S]*?)\);/.exec(source)?.[1];
   expect(literal).toBeDefined();
   const code = transpileModule(`return (${literal});`, {

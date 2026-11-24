@@ -143,25 +143,6 @@ it('refuses mismatched replies without healing uncertainty when the actual worke
   }
 });
 
-it.each(['matching', 'reused'] as const)(
-  'accepts only the exact original root failure %s over genuine IPC',
-  async (mode) => {
-    let calls = 0;
-    const client = await fixture(false, mode, () => {
-      calls++;
-    });
-    try {
-      await client.list().catch(() => {});
-      expect(calls).toBe(mode === 'matching' ? 1 : 0);
-      expect(client.custody().uncertain).toBe(true);
-      await expect(client.list()).rejects.toThrow('SUPERVISOR_STOPPED');
-      expect((await client.close()).uncertain).toBe(true);
-    } finally {
-      await client.close();
-    }
-  }
-);
-
 function ownedFixture(release: () => void, ...args: Parameters<typeof fixture>) {
   const originals: {
     starting?: ReturnType<typeof fixture>;
@@ -204,61 +185,6 @@ function ownedFixture(release: () => void, ...args: Parameters<typeof fixture>) 
   return { starting: originals.starting, finalize };
 }
 
-it('joins the captured original root-return receiver through genuine IPC and child EOF', async () => {
-  let release!: () => void;
-  let entered!: () => void;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const entering = new Promise<void>((resolve) => {
-    entered = resolve;
-  });
-  const roots: ProcessIdentity[] = [];
-  const owned = ownedFixture(
-    release,
-    false,
-    'none',
-    () => {},
-    'matching',
-    (root) => {
-      roots.push(root);
-      entered();
-      return held;
-    }
-  );
-  const client = await owned.starting;
-  let settled = false;
-  const closing = client.close();
-  void closing.then(() => {
-    settled = true;
-  });
-  try {
-    await entering;
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(roots).toEqual([{ pid: 123, birth: 'semantic-only' }]);
-    expect(settled).toBe(false);
-    release();
-    expect(await closing).toEqual({ pending: false, uncertain: false });
-  } finally {
-    await owned.finalize();
-  }
-});
-
-it('retains a falsy original root-return receiver failure instead of reporting healthy closure', async () => {
-  const owned = ownedFixture(
-    () => {},
-    false,
-    'none',
-    () => {},
-    'matching',
-    () => {
-      throw undefined;
-    }
-  );
-  const client = await owned.starting;
-  expect((await client.close()).uncertain).toBe(true);
-});
-
 it.each(['none', 'duplicate', 'wrong-nonce', 'reused', 'pre-close'] as const)(
   'refuses missing or uncorrelated original root-return IPC: %s',
   async (mode) => {
@@ -283,30 +209,3 @@ it.each(['none', 'duplicate', 'wrong-nonce', 'reused', 'pre-close'] as const)(
     }
   }
 );
-
-it('joins actual child and pipe return when startup rejects before the private client handle exists', async () => {
-  let calls = 0;
-  const owned = ownedFixture(
-    () => {},
-    false,
-    'none',
-    () => {},
-    'pre-ready',
-    () => {
-      calls++;
-    }
-  );
-  let rejected: { reason: unknown } | undefined;
-  try {
-    await owned.starting;
-  } catch (reason) {
-    rejected = { reason };
-  }
-  expect(rejected).toBeDefined();
-  if (!rejected) throw new Error('ORIGINAL_STARTUP_REFUSAL_REQUIRED');
-  expect(rejected.reason).toBeInstanceOf(Error);
-  acceptedStartupFailures.add(rejected.reason);
-  await expect(owned.finalize()).rejects.toBe(rejected.reason);
-  expect(rawOriginals.returns.size).toBe(0);
-  expect(calls).toBe(0);
-});

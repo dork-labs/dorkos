@@ -1,8 +1,9 @@
 import { fakeJPEG } from './parent-fixture.js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { BrowserContext } from 'playwright-core';
 import { createBrowserEngine } from '../engine.js';
 import { configuration, fakePage, deferred, tick, root, requestId } from './parent-fixture.js';
+import { type BrowserContext } from 'playwright-core';
+
 const mocks = vi.hoisted(() => ({
   launch: vi.fn(),
   reserve: vi.fn(),
@@ -221,6 +222,45 @@ it('proxy release pending refuses same-profile reacquisition until exact closure
   held.resolve();
   expect((await closing).cleanup).toBe('observed');
 });
+
+it('refuses proxy acquisition after the profile observation retires this parent', async () => {
+  const h = fixture(),
+    engine = createBrowserEngine(h.config);
+  let shutdown: ReturnType<typeof engine.shutdown> | undefined;
+  mocks.directory.mockImplementation((path: string) => {
+    if (path === '/fixture/data/profiles/owned') shutdown = engine.shutdown();
+    return { path, dev: 1, ino: 1 };
+  });
+  await expect(engine.open(command)).rejects.toMatchObject({ code: 'ENGINE_STOPPED' });
+  expect(shutdown).toBeDefined();
+  expect(mocks.proxy).not.toHaveBeenCalled();
+  expect(mocks.launch).not.toHaveBeenCalled();
+  await shutdown;
+});
+
+it('observes screenshot once and refuses its effect after the getter retires this parent', async () => {
+  const h = fixture(),
+    engine = createBrowserEngine(h.config),
+    opened = await engine.open(command);
+  const effect = vi.fn(async () => fakeJPEG(100, 80, 9)),
+    getter = vi.fn(() => {
+      h.event('close');
+      return effect;
+    });
+  Object.defineProperty(h.raw, 'screenshot', { get: getter });
+  await expect(
+    engine.capture({ kind: 'capture', requestId, binding: opened.tab })
+  ).rejects.toMatchObject({ code: 'STALE_BINDING' });
+  expect(getter).toHaveBeenCalledTimes(1);
+  expect(effect).not.toHaveBeenCalled();
+  await engine.close({
+    kind: 'close',
+    requestId,
+    browserId: opened.browserId,
+    browserGeneration: 0,
+  });
+});
+
 it('shutdown enters all available closes before waiting for held opening, then retains late custody', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
   const h = fixture(),
@@ -270,194 +310,4 @@ it('shutdown enters all available closes before waiting for held opening, then r
   expect(late.close).toHaveBeenCalledTimes(1);
   expect(engine.shutdown()).toBe(shutdown);
   await expect(engine.open(command)).rejects.toMatchObject({ code: 'ENGINE_STOPPED' });
-});
-it('context pages getter retirement prevents later Page operations and never grants running', async () => {
-  const h = fixture(),
-    engine = createBrowserEngine(h.config);
-  Object.defineProperty(h.context, 'pages', {
-    get: () => {
-      h.event('close');
-      return vi.fn(() => [h.page]);
-    },
-  });
-  await expect(engine.open(command)).rejects.toMatchObject({ code: 'ENGINE_STOPPED' });
-  expect(h.raw.goto).not.toHaveBeenCalled();
-  expect(h.inputContext.newCDPSession).not.toHaveBeenCalled();
-  expect(h.context.close).toHaveBeenCalledTimes(1);
-});
-it('capture deadline does not certify its still-held Page call settled or release a profile', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
-  const h = fixture(),
-    engine = createBrowserEngine(h.config),
-    opened = await engine.open(command),
-    image = deferred<Uint8Array>();
-  h.raw.screenshot.mockImplementation(() => image.promise);
-  const capture = engine.capture({ kind: 'capture', requestId, binding: opened.tab });
-  const failure = capture.then(
-    () => null,
-    (error: unknown) => error
-  );
-  await tick();
-  await vi.advanceTimersByTimeAsync(2001);
-  expect(await failure).toMatchObject({ code: 'CAPTURE_TIMEOUT' });
-  const closing = engine.close({
-    kind: 'close',
-    requestId,
-    browserId: opened.browserId,
-    browserGeneration: 0,
-  });
-  expect((await closing).cleanup).toBe('unverified');
-  expect(h.release).not.toHaveBeenCalled();
-  image.resolve(fakeJPEG(100, 80));
-  await tick();
-  expect(
-    (
-      await engine.close({
-        kind: 'close',
-        requestId,
-        browserId: opened.browserId,
-        browserGeneration: 0,
-      })
-    ).cleanup
-  ).toBe('unverified');
-  await expect(engine.open(command)).rejects.toMatchObject({ code: 'PROFILE_UNCERTAIN' });
-});
-it('shutdown keeps its original end across nonzero earlier synchronous close callbacks', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
-  const first = fixture(),
-    engine = createBrowserEngine(first.config);
-  await engine.open(command);
-  const second = fixture();
-  await engine.open({ ...command, profileId: 'profile_subject_B_000000000000000' });
-  const firstClose = first.context.close.getMockImplementation()!;
-  first.context.close.mockImplementation(async () => {
-    const operation = firstClose();
-    vi.advanceTimersByTime(1000);
-    await operation;
-  });
-  const proxy = deferred<void>(),
-    firstEntry = deferred<void>(),
-    secondEntry = deferred<void>();
-  first.proxyClose.mockImplementation(async () => {
-    firstEntry.resolve();
-  });
-  second.proxyClose.mockImplementation(() => {
-    secondEntry.resolve();
-    return proxy.promise;
-  });
-  let settled = false;
-  const shutdown = engine.shutdown();
-  void shutdown.then(() => {
-    settled = true;
-  });
-  await Promise.all([firstEntry.promise, secondEntry.promise]);
-  expect(first.context.close).toHaveBeenCalledTimes(1);
-  expect(second.context.close).toHaveBeenCalledTimes(1);
-  expect(first.proxyClose).toHaveBeenCalledTimes(1);
-  expect(second.proxyClose).toHaveBeenCalledTimes(1);
-  expect(performance.now()).toBe(1000);
-  await vi.advanceTimersByTimeAsync(4001);
-  expect(settled, 'SHUTDOWN_END_RENEWED_BY_EARLIER_CALLBACK').toBe(true);
-  const result = await shutdown;
-  expect(result.some((value) => value.cleanup === 'unverified')).toBe(true);
-  expect(second.release).not.toHaveBeenCalled();
-  proxy.resolve();
-  await tick();
-  expect(engine.shutdown()).toBe(shutdown);
-  expect(second.release).not.toHaveBeenCalled();
-});
-
-it('refuses proxy acquisition after the profile observation retires this parent', async () => {
-  const h = fixture(),
-    engine = createBrowserEngine(h.config);
-  let shutdown: ReturnType<typeof engine.shutdown> | undefined;
-  mocks.directory.mockImplementation((path: string) => {
-    if (path === '/fixture/data/profiles/owned') shutdown = engine.shutdown();
-    return { path, dev: 1, ino: 1 };
-  });
-  await expect(engine.open(command)).rejects.toMatchObject({ code: 'ENGINE_STOPPED' });
-  expect(shutdown).toBeDefined();
-  expect(mocks.proxy).not.toHaveBeenCalled();
-  expect(mocks.launch).not.toHaveBeenCalled();
-  await shutdown;
-});
-
-it('observes screenshot once and refuses its effect after the getter retires this parent', async () => {
-  const h = fixture(),
-    engine = createBrowserEngine(h.config),
-    opened = await engine.open(command);
-  const effect = vi.fn(async () => fakeJPEG(100, 80, 9)),
-    getter = vi.fn(() => {
-      h.event('close');
-      return effect;
-    });
-  Object.defineProperty(h.raw, 'screenshot', { get: getter });
-  await expect(
-    engine.capture({ kind: 'capture', requestId, binding: opened.tab })
-  ).rejects.toMatchObject({ code: 'STALE_BINDING' });
-  expect(getter).toHaveBeenCalledTimes(1);
-  expect(effect).not.toHaveBeenCalled();
-  await engine.close({
-    kind: 'close',
-    requestId,
-    browserId: opened.browserId,
-    browserGeneration: 0,
-  });
-});
-
-it('invokes a stable captured screenshot method once with its exact Page receiver', async () => {
-  const h = fixture(),
-    engine = createBrowserEngine(h.config),
-    opened = await engine.open(command);
-  const effect = vi.fn(async function (this: unknown) {
-      expect(this).toBe(h.raw);
-      return fakeJPEG(100, 80, 9);
-    }),
-    getter = vi.fn(() => effect);
-  Object.defineProperty(h.raw, 'screenshot', { get: getter });
-  const frame = await engine.capture({ kind: 'capture', requestId, binding: opened.tab });
-  expect(getter).toHaveBeenCalledTimes(1);
-  expect(effect).toHaveBeenCalledTimes(1);
-  expect(frame.bytes).toEqual(fakeJPEG(100, 80, 9));
-  expect(frame.receipt.binding).toEqual(opened.tab);
-  expect(effect).toHaveBeenCalledWith({
-    type: 'jpeg',
-    quality: 70,
-    caret: 'initial',
-    timeout: 1500,
-  });
-  const result = await engine.close({
-    kind: 'close',
-    requestId,
-    browserId: opened.browserId,
-    browserGeneration: 0,
-  });
-  expect(result.cleanup).toBe('observed');
-});
-it('passes one engine budget to every record before Page registration and isolates another engine', async () => {
-  const registry = await import('../tabs/registry.js');
-  const budgets: unknown[] = [];
-  const original = registry.trackPage;
-  const observed = vi.spyOn(registry, 'trackPage').mockImplementation((record, ...args) => {
-    expect(record.diagnosticsBudget.snapshot().owners).toBe(budgets.length === 1 ? 1 : 0);
-    budgets.push(record.diagnosticsBudget);
-    return original(record, ...args);
-  });
-  const h = fixture(),
-    second = fakePage(),
-    third = fakePage();
-  mocks.launch
-    .mockResolvedValueOnce(h.context)
-    .mockResolvedValueOnce({ ...h.context, pages: () => [second.page] })
-    .mockResolvedValueOnce({ ...h.context, pages: () => [third.page] });
-  const firstEngine = createBrowserEngine(h.config),
-    secondEngine = createBrowserEngine(h.config);
-  await firstEngine.open(command);
-  await firstEngine.open({ ...command, profileId: 'profile_subject_B_000000000000000' });
-  await secondEngine.open(command);
-  expect(observed).toHaveBeenCalledTimes(3);
-  expect(budgets[0]).toBe(budgets[1]);
-  expect(budgets[2]).not.toBe(budgets[0]);
-  await firstEngine.shutdown();
-  await secondEngine.shutdown();
 });

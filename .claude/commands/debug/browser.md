@@ -33,7 +33,7 @@ Work the issue as an evidence-driven loop. **Never edit code you haven't read, a
    - Client code lives in `apps/client/src/` (FSD layers under `apps/client/src/layers/`).
    - **Visual issues**: load the `designing-frontend` skill for the design-system audit criteria and `styling-with-tailwind-shadcn` for token/component specs — don't re-derive the design system from memory. Take targeted element screenshots to compare against spec.
    - **Interaction issues**: attempt the interaction via browser tools, capture new console errors, then trace the event handler in the component.
-   - **Data issues**: trace component → TanStack Query hook (`apps/client/src/layers/entities/*/model/`) → Express route (`apps/server/src/routes/`) → service (`apps/server/src/services/`); check server logs for the failing request. For deep data-flow work, switch to `/debug:api`.
+   - **Data issues**: trace component → TanStack Query hook (`apps/client/src/layers/entities/*/model/`) → Hono route (`apps/server/src/routes/`, `http/hono-api.ts`) → service (`apps/server/src/services/`); check server logs for the failing request. For deep data-flow work, switch to `/debug:api`.
    - **Responsive issues**: resize to 375×667, 768×1024, and 1280×800 and snapshot each; check `sm:`/`md:`/`lg:` class usage and 44px touch targets.
    - For library behavior questions, query context7 (`resolve-library-id` → `query-docs`). For multi-file hunts, dispatch a `code-search` agent; for gnarly type errors mid-fix, `typescript-expert`; for CSS/layout expertise, `react-tanstack-expert`.
 

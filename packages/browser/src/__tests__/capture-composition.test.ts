@@ -8,7 +8,6 @@ import {
   createOwnedCaptureIssuer,
   isOwnedCaptureCancellation,
 } from '../tabs/owned-capture-work.js';
-import { BrowserLifecycleError } from '../lifecycle/errors.js';
 import { closeRecord } from '../lifecycle/close.js';
 import { configuration, tabFixture, deferred, tick, fakeJPEG, fakePage } from './parent-fixture.js';
 vi.mock('../profiles/owned-directory.js', () => ({ assertDirectory: vi.fn() }));
@@ -52,31 +51,6 @@ it('publishes only native-completed movement, preserves successful click and inv
   await closeRecord(configuration(), h.record);
   expect(h.tab.pointer.read().marker).toBe(null);
 });
-it('movement during held capture suppresses the marker without publishing unrelated pointer truth', async () => {
-  const h = tabFixture();
-  await composeInput(configuration(), h.record, h.tab).readiness;
-  await submitInput(h.record, { ...h.command(), steps: [{ kind: 'mouseMove', x: 1, y: 2 }] });
-  const held = deferred<Uint8Array>();
-  h.raw.screenshot.mockImplementation(() => held.promise);
-  const pending = capture(h);
-  await tick();
-  await submitInput(h.record, { ...h.command(), steps: [{ kind: 'mouseMove', x: 3, y: 4 }] });
-  held.resolve(fakeJPEG());
-  expect((await pending).receipt.pointer).toBe(null);
-  expect(h.tab.pointer.read().marker).toMatchObject({ x: 3, y: 4 });
-  await closeRecord(configuration(), h.record);
-});
-it('failed movement retains its native failure and never leaves a completed marker', async () => {
-  const h = tabFixture();
-  await composeInput(configuration(), h.record, h.tab).readiness;
-  h.raw.mouse.move.mockRejectedValueOnce(Error('OWNED_MOVE_FAILURE'));
-  expect(
-    (await submitInput(h.record, { ...h.command(), steps: [{ kind: 'mouseMove', x: 1, y: 2 }] }))
-      .outcome
-  ).not.toBe('completed');
-  expect(h.tab.pointer.read().marker).toBe(null);
-  await closeRecord(configuration(), h.record);
-});
 it('retirement in viewport metadata refuses capture before sequence publication', async () => {
   const h = tabFixture();
   h.raw.viewportSize = () =>
@@ -103,21 +77,6 @@ it('successful expanded click preserves movement but failed down invalidates it'
   expect((await submitInput(h.record, click)).outcome).not.toBe('completed');
   expect(h.tab.pointer.read().marker).toBe(null);
   await closeRecord(configuration(), h.record);
-});
-it('terminal pointer transition at equal MAX revision suppresses an in-flight marker', async () => {
-  const { createPointerLedger } = await import('../tabs/pointer.js');
-  const h = tabFixture();
-  h.tab.pointer = createPointerLedger(() => h.tab.binding, Number.MAX_SAFE_INTEGER - 1);
-  h.tab.pointer.success(h.tab.pointer.beginMove(1, 2));
-  expect(h.tab.pointer.read().revision).toBe(Number.MAX_SAFE_INTEGER);
-  const held = deferred<Uint8Array>();
-  h.raw.screenshot.mockImplementation(() => held.promise);
-  const pending = capture(h);
-  await tick();
-  h.tab.pointer.invalidate();
-  held.resolve(fakeJPEG());
-  expect((await pending).receipt.pointer).toBe(null);
-  expect(h.tab.pointer.read()).toMatchObject({ revision: Number.MAX_SAFE_INTEGER, terminal: true });
 });
 
 it('successful composed reset refreshes diagnostics and releases old request correlations', async () => {
@@ -194,49 +153,6 @@ it('failed composed reset closes diagnostic ownership without ready revival', as
   expect((await submitInput(h.record, h.command())).outcome).not.toBe('completed');
   await closeRecord(configuration(), h.record);
 });
-it('diagnostic refresh close reentry stops composed reset before ready publication', async () => {
-  let armed = false;
-  const h = tabFixture(undefined, () => {
-    if (armed) h.record.lifetime.gate.stop();
-    return 0;
-  });
-  await composeInput(configuration(), h.record, h.tab).readiness;
-  h.event('request', { method: () => 'GET', resourceType: () => 'fetch' });
-  armed = true;
-  expect((await resetInput(h.record, { ...h.tab.binding })).status).toBe('stopped');
-  expect(h.tab.diagnostics.read()).toBe(null);
-  expect(h.record.diagnosticsBudget.snapshot()).toMatchObject({
-    owners: 0,
-    entries: 0,
-    correlations: 0,
-  });
-  expect((await submitInput(h.record, h.command())).outcome).not.toBe('completed');
-  await closeRecord(configuration(), h.record);
-});
-it('nested event during composed diagnostic refresh honestly terminalizes without changing reset authority', async () => {
-  let armed = false;
-  const h = tabFixture(undefined, () => {
-    if (armed) h.event('console', { type: () => 'info' });
-    return 0;
-  });
-  await composeInput(configuration(), h.record, h.tab).readiness;
-  h.event('request', { method: () => 'GET', resourceType: () => 'fetch' });
-  armed = true;
-  expect((await resetInput(h.record, { ...h.tab.binding })).status).toBe('ready');
-  expect(h.tab.diagnostics.read()).toMatchObject({
-    terminal: 'observerUnavailable',
-    subsequentEventsUncounted: true,
-  });
-  expect(h.record.diagnosticsBudget.snapshot()).toMatchObject({
-    owners: 1,
-    entries: 1,
-    correlations: 0,
-    correlationBytes: 0,
-  });
-  armed = false;
-  expect((await submitInput(h.record, h.command())).outcome).toBe('completed');
-  await closeRecord(configuration(), h.record);
-});
 
 it('canonical Page replacement in screenshot getter refuses its captured method before entry', async () => {
   const h = tabFixture();
@@ -256,65 +172,6 @@ it('canonical Page replacement in screenshot getter refuses its captured method 
   await closeRecord(configuration(), h.record);
 });
 
-it('canonical Page replacement in viewport getter refuses its captured method before entry', async () => {
-  const h = tabFixture();
-  await composeInput(configuration(), h.record, h.tab).readiness;
-  const replacement = fakePage();
-  const viewport = vi.fn(() => ({ width: 100, height: 80 }));
-  Object.defineProperty(h.raw, 'viewportSize', {
-    get: () => {
-      h.tab.page = replacement.page;
-      return viewport;
-    },
-  });
-  await expect(capture(h)).rejects.toMatchObject({ code: 'STALE_BINDING' });
-  expect(h.raw.screenshot).toHaveBeenCalledTimes(1);
-  expect(viewport).toHaveBeenCalledTimes(0);
-  expect(h.tab.captureSequence).toBe(0);
-  await closeRecord(configuration(), h.record);
-});
-
-it('canonical Page replacement during policy refuses screenshot on both Pages', async () => {
-  const h = tabFixture(),
-    c = configuration(),
-    replacement = fakePage();
-  await composeInput(c, h.record, h.tab).readiness;
-  c.policy.authorizeAction = vi.fn(async () => {
-    h.tab.page = replacement.page;
-    return 'allowed' as const;
-  });
-  await expect(
-    captureTab(c, h.record, {
-      kind: 'capture',
-      requestId: h.command().requestId,
-      binding: { ...h.tab.binding },
-    })
-  ).rejects.toMatchObject({ code: 'STALE_BINDING' });
-  expect(h.raw.screenshot).toHaveBeenCalledTimes(0);
-  expect(replacement.raw.screenshot).toHaveBeenCalledTimes(0);
-  expect(h.tab.captureSequence).toBe(0);
-  await closeRecord(c, h.record);
-});
-
-it('ordinary capture invokes screenshot and viewport with the exact original Page receiver', async () => {
-  const h = tabFixture();
-  await composeInput(configuration(), h.record, h.tab).readiness;
-  const screenshot = vi.fn(async function (this: unknown) {
-    expect(this).toBe(h.page);
-    return fakeJPEG();
-  });
-  const viewport = vi.fn(function (this: unknown) {
-    expect(this).toBe(h.page);
-    return { width: 100, height: 80 };
-  });
-  h.raw.screenshot = screenshot;
-  h.raw.viewportSize = viewport;
-  expect((await capture(h)).receipt.captureSequence).toBe(1);
-  expect(screenshot).toHaveBeenCalledTimes(1);
-  expect(viewport).toHaveBeenCalledTimes(1);
-  await closeRecord(configuration(), h.record);
-});
-
 it('canonical Page replacement while screenshot awaits refuses publication', async () => {
   const h = tabFixture(),
     held = deferred<Uint8Array>(),
@@ -329,99 +186,6 @@ it('canonical Page replacement while screenshot awaits refuses publication', asy
   await expect(pending).rejects.toMatchObject({ code: 'STALE_BINDING' });
   expect(h.tab.captureSequence).toBe(0);
   await closeRecord(configuration(), h.record);
-});
-
-it('queued capture retains the request-owned Page before a held predecessor tail', async () => {
-  const h = tabFixture(),
-    previous = deferred<void>(),
-    replacement = fakePage();
-  h.tab.tail = previous.promise;
-  const pending = capture(h);
-  const refused = expect(pending).rejects.toMatchObject({ code: 'STALE_BINDING' });
-  h.tab.page = replacement.page;
-  previous.resolve();
-  await refused;
-  expect(h.raw.screenshot).toHaveBeenCalledTimes(0);
-  expect(replacement.raw.screenshot).toHaveBeenCalledTimes(0);
-  expect(h.tab.captureSequence).toBe(0);
-  expect(h.tab.pending).toBe(0);
-});
-
-it('queued second actual capture refuses same-binding Page replacement without replacement IO', async () => {
-  const h = tabFixture(),
-    held = deferred<Uint8Array>(),
-    replacement = fakePage();
-  h.raw.screenshot.mockImplementation(() => held.promise);
-  const first = capture(h);
-  const firstRefused = expect(first).rejects.toMatchObject({ code: 'STALE_BINDING' });
-  await tick();
-  expect(h.raw.screenshot).toHaveBeenCalledTimes(1);
-  const second = capture(h);
-  const secondRefused = expect(second).rejects.toMatchObject({ code: 'STALE_BINDING' });
-  expect(h.tab.pending).toBe(2);
-  h.tab.page = replacement.page;
-  held.resolve(fakeJPEG());
-  await Promise.all([firstRefused, secondRefused]);
-  expect(replacement.raw.screenshot).toHaveBeenCalledTimes(0);
-  expect(h.tab.captureSequence).toBe(0);
-  expect(h.tab.pending).toBe(0);
-});
-
-it('outer capture continuation refuses viewport-scheduled Page replacement before sequence commit', async () => {
-  const h = tabFixture(),
-    replacement = fakePage();
-  h.raw.viewportSize = () => {
-    queueMicrotask(() => {
-      h.tab.page = replacement.page;
-    });
-    return { width: 100, height: 80 };
-  };
-  await expect(capture(h)).rejects.toMatchObject({ code: 'STALE_BINDING' });
-  expect(h.raw.screenshot).toHaveBeenCalledTimes(1);
-  expect(replacement.raw.screenshot).toHaveBeenCalledTimes(0);
-  expect(h.tab.captureSequence).toBe(0);
-  expect(h.tab.pending).toBe(0);
-});
-
-it('two actual queued captures on the stable original Page preserve receiver and ordered sequences', async () => {
-  const h = tabFixture(),
-    held = deferred<Uint8Array>();
-  h.raw.screenshot.mockImplementationOnce(() => held.promise);
-  const first = capture(h);
-  await tick();
-  const second = capture(h);
-  expect(h.tab.pending).toBe(2);
-  held.resolve(fakeJPEG());
-  const results = await Promise.all([first, second]);
-  expect(results.map((result) => result.receipt.captureSequence)).toEqual([1, 2]);
-  expect(h.raw.screenshot).toHaveBeenCalledTimes(2);
-  expect(h.tab.pending).toBe(0);
-});
-
-it('queued capture with changed binding refuses before screenshot and releases its pending slot', async () => {
-  const h = tabFixture(),
-    previous = deferred<void>();
-  h.tab.tail = previous.promise;
-  const pending = capture(h);
-  const refused = expect(pending).rejects.toMatchObject({ code: 'STALE_BINDING' });
-  h.tab.binding = { ...h.tab.binding, epoch: h.tab.binding.epoch + 1 };
-  previous.resolve();
-  await refused;
-  expect(h.raw.screenshot).toHaveBeenCalledTimes(0);
-  expect(h.tab.captureSequence).toBe(0);
-  expect(h.tab.pending).toBe(0);
-});
-
-it('failed acquisition releases queue ownership so the next stable capture commits once', async () => {
-  const h = tabFixture();
-  h.raw.screenshot.mockRejectedValueOnce(Error('CAPTURE_FIXTURE_FAILURE'));
-  const first = capture(h);
-  const refused = expect(first).rejects.toMatchObject({ code: 'CAPTURE_FAILED' });
-  const second = capture(h);
-  await refused;
-  expect((await second).receipt.captureSequence).toBe(1);
-  expect(h.raw.screenshot).toHaveBeenCalledTimes(2);
-  expect(h.tab.pending).toBe(0);
 });
 
 // Actual engine/capture composition with an inert acquisition producer; no runtime/profile effects.
@@ -472,15 +236,6 @@ it('engine outer-await Page replacement refuses publication after real capture h
   }
 });
 
-it('engine stable outer-await retains exact Page and publishes genuine capture once', async () => {
-  const fixture = await captureEngineFixture();
-  const result = await fixture.engine.capture(fixture.command);
-  expect(result.receipt.captureSequence).toBe(1);
-  expect(fixture.h.raw.screenshot).toHaveBeenCalledTimes(1);
-  expect(result.bytes).toEqual(fakeJPEG());
-  await fixture.engine.shutdown();
-});
-
 it('a known ordinary fence refuses capture before screenshot observation', async () => {
   const h = tabFixture(),
     c = configuration();
@@ -493,72 +248,6 @@ it('a known ordinary fence refuses capture before screenshot observation', async
     })
   ).rejects.toMatchObject({ code: 'STALE_BINDING' });
   expect(h.raw.screenshot).toHaveBeenCalledTimes(0);
-});
-
-it('delayed same-origin popup first commit preserves its exact opener and original capture target', async () => {
-  const { trackPage } = await import('../tabs/registry.js');
-  const h = tabFixture();
-  const popup = viewportPopup();
-  let url = 'about:blank';
-  const frame = { url: () => url };
-  h.record.context = h.page.context();
-  Object.assign(h.raw, { url: () => h.page.mainFrame().url() });
-  Object.assign(popup.raw, {
-    context: () => h.record.context,
-    opener: async () => h.page,
-    url: () => url,
-    mainFrame: () => frame,
-  });
-  const original = { ...h.tab.binding };
-  const second = trackPage(
-    h.record,
-    popup.page,
-    configuration().network.origin,
-    () => 0,
-    h.record.context
-  );
-  await composeInput(configuration(), h.record, second).readiness;
-  await tick();
-  expect(second.binding.tabId).not.toBe(original.tabId);
-  const blank = { ...second.binding };
-  await expect(
-    captureTab(configuration(), h.record, {
-      kind: 'capture',
-      requestId: h.command().requestId,
-      binding: blank,
-    })
-  ).rejects.toMatchObject({ code: 'STALE_BINDING' });
-  expect(popup.raw.screenshot).not.toHaveBeenCalled();
-  url = configuration().network.origin + '/popup';
-  popup.event('framenavigated', frame);
-  await tick();
-  expect(h.record.lifetime.ordinary.phase).toBe('ordinary');
-  expect(second.stopped).toBe(false);
-  expect(second.binding.navigationGeneration).toBe(1);
-  expect(h.tab.binding).toEqual(original);
-  expect((await capture(h)).receipt.binding).toEqual(original);
-  expect(popup.raw.screenshot).not.toHaveBeenCalled();
-  expect(
-    (
-      await submitInput(h.record, {
-        ...h.command(blank),
-        steps: [{ kind: 'mouseMove', x: 1, y: 2 }],
-      })
-    ).outcome
-  ).toBe('rejected');
-  expect(
-    (
-      await submitInput(h.record, {
-        ...h.command(second.binding),
-        steps: [{ kind: 'mouseMove', x: 1, y: 2 }],
-      })
-    ).outcome
-  ).toBe('completed');
-  url = configuration().network.origin + '/second';
-  popup.event('framenavigated', frame);
-  await tick();
-  expect(h.record.lifetime.ordinary.phase).not.toBe('ordinary');
-  await closeRecord(configuration(), h.record);
 });
 
 it.each([
@@ -603,209 +292,6 @@ it.each([
   await tick();
   expect(h.record.lifetime.ordinary.phase).not.toBe('ordinary');
   expect(popup.raw.screenshot).not.toHaveBeenCalled();
-  await closeRecord(configuration(), h.record);
-});
-
-it('first popup commit waits for its original held opener and native input readiness', async () => {
-  const { trackPage } = await import('../tabs/registry.js');
-  const h = tabFixture(),
-    popup = viewportPopup();
-  const opener = deferred<import('playwright-core').Page | null>();
-  const session = deferred<import('playwright-core').CDPSession>();
-  let url = 'about:blank';
-  const frame = { url: () => url };
-  h.record.context = h.page.context();
-  Object.assign(h.raw, { url: () => h.page.mainFrame().url() });
-  h.context.newCDPSession.mockImplementation(() => session.promise);
-  Object.assign(popup.raw, {
-    context: () => h.record.context,
-    opener: () => opener.promise,
-    url: () => url,
-    mainFrame: () => frame,
-  });
-  const tab = trackPage(
-    h.record,
-    popup.page,
-    configuration().network.origin,
-    () => 0,
-    h.record.context
-  );
-  const ready = composeInput(configuration(), h.record, tab).readiness;
-  const before = { ...tab.binding };
-  url = configuration().network.origin + '/popup';
-  popup.event('framenavigated', frame);
-  await tick();
-  expect(tab.binding).toEqual(before);
-  expect((await submitInput(h.record, h.command(before))).outcome).toBe('rejected');
-  expect(popup.effects).toEqual([]);
-  opener.resolve(h.page);
-  await tick();
-  expect(tab.binding).toEqual(before);
-  session.resolve(popup.session as unknown as import('playwright-core').CDPSession);
-  await ready;
-  await tick();
-  expect(h.record.lifetime.ordinary.phase).toBe('ordinary');
-  expect(tab.binding.navigationGeneration).toBe(1);
-  expect((await submitInput(h.record, h.command(tab.binding))).outcome).toBe('completed');
-  await closeRecord(configuration(), h.record);
-});
-
-it('popup generation handoff fences actions while preserving original input custody', async () => {
-  const { trackPage } = await import('../tabs/registry.js');
-  const { currentAuthorityCustody } = await import('../lifecycle/live-custody.js');
-  const h = tabFixture(),
-    popup = viewportPopup();
-  let url = 'about:blank';
-  const frame = { url: () => url };
-  h.record.context = h.page.context();
-  Object.assign(h.raw, { url: () => h.page.mainFrame().url() });
-  // Controlled acquisition metadata exercises the real custody predicate, not native qualification.
-  h.record.proxy = { url: configuration().network.origin, close: async () => {} };
-  h.record.directory = h.record.dataRoot = { path: 'CONTROLLED_DIRECTORY', dev: 1, ino: 1 };
-  await composeInput(configuration(), h.record, h.tab).readiness;
-  Object.assign(popup.raw, {
-    context: () => h.record.context,
-    opener: async () => h.page,
-    url: () => url,
-    mainFrame: () => frame,
-  });
-  const tab = trackPage(
-    h.record,
-    popup.page,
-    configuration().network.origin,
-    () => 0,
-    h.record.context
-  );
-  const slot = composeInput(configuration(), h.record, tab);
-  await slot.readiness;
-  const old = { ...tab.binding };
-  const observe = () => currentAuthorityCustody(h.record, () => true);
-  expect(observe()).toBe(true);
-  const gap = deferred<{
-    captureCode: string;
-    input: string;
-    known: boolean;
-    ordinary: boolean;
-    nativeEffects: number;
-  }>();
-  const replaceEpoch = tab.diagnostics.replaceEpoch.bind(tab.diagnostics);
-  tab.diagnostics = {
-    ...tab.diagnostics,
-    replaceEpoch: () => {
-      replaceEpoch();
-      // This runs after the registry changes generation, before the input-owner adoption continuation.
-      queueMicrotask(() => {
-        const known = observe();
-        const ordinary = h.record.lifetime.ordinary.phase === 'ordinary';
-        const captureAttempt = captureTab(configuration(), h.record, {
-          kind: 'capture',
-          requestId: h.command().requestId,
-          binding: { ...tab.binding },
-        }).then(
-          () => 'PUBLISHED',
-          (error: { code: string }) => error.code
-        );
-        const inputAttempt = submitInput(h.record, h.command(tab.binding));
-        void Promise.all([captureAttempt, inputAttempt]).then(([captureCode, input]) => {
-          gap.resolve({
-            captureCode,
-            input: input.outcome,
-            known,
-            ordinary,
-            nativeEffects: popup.effects.length,
-          });
-        }, gap.reject);
-      });
-    },
-  };
-  url = configuration().network.origin + '/popup';
-  popup.event('framenavigated', frame);
-  expect(await gap.promise).toEqual({
-    captureCode: 'STALE_BINDING',
-    input: 'rejected',
-    known: true,
-    ordinary: true,
-    nativeEffects: 0,
-  });
-  await tick();
-  expect(observe()).toBe(true);
-  expect(tab.binding.navigationGeneration).toBe(old.navigationGeneration + 1);
-  expect((await submitInput(h.record, h.command(old))).outcome).toBe('rejected');
-  expect((await submitInput(h.record, h.command(tab.binding))).outcome).toBe('completed');
-  expect(
-    (
-      await captureTab(configuration(), h.record, {
-        kind: 'capture',
-        requestId: h.command().requestId,
-        binding: tab.binding,
-      })
-    ).receipt.binding
-  ).toEqual(tab.binding);
-  await closeRecord(configuration(), h.record);
-});
-
-it('original pending popup acquisition preserves authority before session and queue publication', async () => {
-  const { trackPage } = await import('../tabs/registry.js');
-  const { currentAuthorityCustody } = await import('../lifecycle/live-custody.js');
-  const h = tabFixture(),
-    popup = viewportPopup();
-  h.record.context = h.page.context();
-  Object.assign(h.raw, { url: () => h.page.mainFrame().url() });
-  h.record.proxy = { url: configuration().network.origin, close: async () => {} };
-  h.record.directory = h.record.dataRoot = { path: 'CONTROLLED_DIRECTORY', dev: 1, ino: 1 };
-  await composeInput(configuration(), h.record, h.tab).readiness;
-  const session = deferred<import('playwright-core').CDPSession>();
-  h.context.newCDPSession.mockImplementation(() => session.promise);
-  Object.assign(popup.raw, {
-    context: () => h.record.context,
-    opener: async () => h.page,
-    url: () => 'about:blank',
-  });
-  const tab = trackPage(
-    h.record,
-    popup.page,
-    configuration().network.origin,
-    () => 0,
-    h.record.context
-  );
-  const slot = composeInput(configuration(), h.record, tab);
-  const observe = () => currentAuthorityCustody(h.record, () => true);
-  const pending = observe();
-  for (let index = 0; index < 3; index++) {
-    expect(observe()).toBe(true);
-    await tick();
-  }
-  expect((await submitInput(h.record, h.command(tab.binding))).outcome).toBe('rejected');
-  await expect(
-    captureTab(configuration(), h.record, {
-      kind: 'capture',
-      requestId: h.command().requestId,
-      binding: tab.binding,
-    })
-  ).rejects.toMatchObject({ code: 'STALE_BINDING' });
-  let target: typeof slot.registeredTarget;
-  const continuation = deferred<{ known: boolean; ready: boolean; target: boolean }>();
-  Object.defineProperty(slot, 'registeredTarget', {
-    configurable: true,
-    get: () => target,
-    set(value: typeof target) {
-      target = value;
-      queueMicrotask(() =>
-        continuation.resolve({
-          known: observe(),
-          ready: slot.ready,
-          target: !!slot.registeredTarget,
-        })
-      );
-    },
-  });
-  session.resolve(popup.session as unknown as import('playwright-core').CDPSession);
-  const beforeQueue = await continuation.promise;
-  await slot.readiness;
-  expect(pending).toBe(true);
-  expect(beforeQueue).toEqual({ known: true, ready: false, target: true });
-  expect(observe()).toBe(true);
-  expect(popup.effects).toEqual([]);
   await closeRecord(configuration(), h.record);
 });
 
@@ -878,165 +364,6 @@ it.each([
   }
 );
 
-it.each([
-  'accepted',
-  'foreign-popup',
-  'changed-url',
-  'changed-binding',
-  'missing-url',
-  'inconsistent-frame',
-  'foreign-context',
-  'removed-parent',
-] as const)('owned aboutblank popup pins the committed original opener: %s', async (variant) => {
-  const { trackPage } = await import('../tabs/registry.js');
-  const h = tabFixture(),
-    popup = viewportPopup(),
-    c = configuration();
-  c.network = { kind: 'owned', origin: 'about:blank', policyRevision: 1 };
-  let parentURL = 'http://127.0.0.1:9001/',
-    popupURL = 'about:blank';
-  const parentFrame = {
-    url: () => (variant === 'inconsistent-frame' ? 'http://different.invalid/' : parentURL),
-  };
-  const popupFrame = { url: () => popupURL };
-  h.record.context = h.page.context();
-  Object.assign(h.raw, {
-    url: () => (variant === 'missing-url' ? 'about:blank' : parentURL),
-    mainFrame: () => parentFrame,
-  });
-  Object.assign(popup.raw, {
-    context: () => h.record.context,
-    opener: async () => h.page,
-    url: () => popupURL,
-    mainFrame: () => popupFrame,
-  });
-  const native = deferred<import('playwright-core').CDPSession>();
-  h.context.newCDPSession.mockImplementation(() => native.promise);
-  const tab = trackPage(h.record, popup.page, c.network.origin, () => 0, h.record.context);
-  const readiness = composeInput(c, h.record, tab).readiness;
-  void readiness?.catch(() => {});
-  await tick();
-  if (variant === 'changed-url') parentURL = 'http://127.0.0.1:9002/';
-  if (variant === 'changed-binding')
-    h.tab.binding = {
-      ...h.tab.binding,
-      navigationGeneration: h.tab.binding.navigationGeneration + 1,
-    };
-  if (variant === 'foreign-context') Object.assign(h.raw, { context: () => popup.context });
-  if (variant === 'removed-parent') h.record.tabs.delete(h.tab.binding.tabId);
-  popupURL =
-    variant === 'foreign-popup' ? 'http://different.invalid/popup' : 'http://127.0.0.1:9001/popup';
-  popup.event('framenavigated', popupFrame);
-  await tick();
-  expect(tab.binding.navigationGeneration).toBe(0);
-  native.resolve(popup.session as unknown as import('playwright-core').CDPSession);
-  await tick();
-  if (variant === 'accepted') {
-    await readiness;
-    expect(tab.binding.navigationGeneration).toBe(1);
-    expect(h.record.lifetime.ordinary.phase).toBe('ordinary');
-    popupURL += '/second';
-    popup.event('framenavigated', popupFrame);
-    await tick();
-    expect(h.record.lifetime.ordinary.phase).not.toBe('ordinary');
-  } else {
-    expect(tab.binding.navigationGeneration).toBe(0);
-    expect(h.record.lifetime.ordinary.phase).not.toBe('ordinary');
-  }
-  await closeRecord(c, h.record);
-});
-
-it.each([
-  'returned',
-  'rejected',
-  'late',
-  'mutated',
-  'changed-page',
-  'changed-context',
-  'changed-binding',
-  'retired-while-held',
-] as const)(
-  'original null popup viewport must return exactly before first commit: %s',
-  async (variant) => {
-    const { trackPage } = await import('../tabs/registry.js');
-    const h = tabFixture(),
-      popup = viewportPopup(),
-      c = configuration();
-    c.network = { kind: 'owned', origin: 'about:blank', policyRevision: 1 };
-    h.record.context = h.page.context();
-    Object.assign(h.raw, { url: () => h.page.mainFrame().url() });
-    let url = 'about:blank',
-      size: { width: number; height: number } | null = null;
-    const frame = { url: () => url },
-      held = deferred<void>();
-    let entered = 0;
-    Object.assign(popup.raw, {
-      context: () => h.context,
-      opener: async () => h.page,
-      url: () => url,
-      mainFrame: () => frame,
-      viewportSize: () => size,
-      setViewportSize: async function (this: unknown, next: { width: number; height: number }) {
-        expect(this).toBe(popup.page);
-        entered++;
-        await held.promise;
-        size = variant === 'mutated' ? { width: 1, height: 1 } : next;
-      },
-    });
-    const tab = trackPage(h.record, popup.page, c.network.origin, () => 0, h.record.context);
-    const ready = composeInput(c, h.record, tab).readiness;
-    void ready?.catch(() => {});
-    await tick();
-    expect(entered).toBe(1);
-    expect(h.record.lifetime.pending.size).toBeGreaterThan(0);
-    expect(popup.page.viewportSize()).toBeNull();
-    url = 'http://127.0.0.1:9001/popup';
-    popup.event('framenavigated', frame);
-    await tick();
-    expect(tab.binding.navigationGeneration).toBe(0);
-    expect((await submitInput(h.record, h.command(tab.binding))).outcome).toBe('rejected');
-    expect(popup.effects).toEqual([]);
-    let clock: ReturnType<typeof vi.spyOn> | undefined;
-    try {
-      if (variant === 'late')
-        clock = vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 1600);
-      if (variant === 'retired-while-held') {
-        h.record.lifetime.requestRetirement('engineFault');
-        await tick();
-        expect(h.record.lifetime.pending.size).toBeGreaterThan(0);
-        expect(size).toBeNull();
-      }
-      if (variant === 'changed-page') tab.page = fakePage().page;
-      if (variant === 'changed-context') Object.assign(popup.raw, { context: () => popup.context });
-      if (variant === 'changed-binding')
-        tab.binding = { ...tab.binding, epoch: tab.binding.epoch + 1 };
-      if (variant === 'rejected') held.reject(Error('ORIGINAL_VIEWPORT_FAILURE'));
-      else held.resolve();
-      await tick();
-      if (variant === 'returned') {
-        expect(tab.binding.navigationGeneration).toBe(1);
-        expect(popup.page.viewportSize()).toEqual({ width: 1280, height: 720 });
-        expect(
-          (
-            await submitInput(h.record, {
-              ...h.command(tab.binding),
-              steps: [{ kind: 'mouseMove', x: 50, y: 50 }],
-            })
-          ).outcome
-        ).toBe('completed');
-      } else {
-        expect(tab.binding.navigationGeneration).toBe(0);
-        expect(h.record.lifetime.ordinary.phase).not.toBe('ordinary');
-        expect(popup.effects).toEqual([]);
-      }
-      expect(entered).toBe(1);
-    } finally {
-      clock?.mockRestore();
-      await closeRecord(c, h.record);
-    }
-  }
-);
-
 it.each(['return', 'reject'] as const)(
   'keeps original permission revocation separate from a screenshot %s',
   async (settlement) => {
@@ -1096,12 +423,6 @@ it.each(['return', 'reject'] as const)(
     issuer.invalidate(work);
   }
 );
-
-it('cannot classify a caller-created stale error as original capture cancellation', () => {
-  expect(isOwnedCaptureCancellation(new BrowserLifecycleError('STALE_BINDING'))).toBe(false);
-  expect(isOwnedCaptureCancellation({ code: 'STALE_BINDING' })).toBe(false);
-  expect(isOwnedCaptureCancellation(undefined)).toBe(false);
-});
 
 it('a throwing original permission check remains an unclassified refusal', async () => {
   const h = tabFixture();

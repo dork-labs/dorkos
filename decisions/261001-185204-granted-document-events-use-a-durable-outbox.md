@@ -1,7 +1,7 @@
 ---
 id: 261001-185204
 title: Granted document events use a durable outbox and remain untrusted
-status: proposed
+status: accepted
 created: 2026-10-01
 spec: doc-channel
 superseded-by: null
@@ -11,6 +11,8 @@ amends: 260911-200302
 # 261001-185204. Granted document events use a durable outbox and remain untrusted
 
 ## Status
+
+Accepted (2026-11-24, on review: built; the Doc Channel programme, DOR-2665, PRs #2464, #3102, #3104 and #3140: `apps/server/src/services/canvas/doc-channel/grants.ts`, `grant-revalidation.ts`, `delivery/*` and `writes/reservation-outbox.ts`).
 
 Proposed (extracted from [doc-channel](../specs/doc-channel/02-specification.md)).
 This record proposes a narrow amendment; the accepted parent remains in force

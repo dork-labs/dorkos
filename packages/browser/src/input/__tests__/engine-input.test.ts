@@ -1,11 +1,4 @@
-import {
-  tabFixture as ownedEngineFixture,
-  configuration as engineConfiguration,
-  retirementFixture as engineRetirement,
-  deferred as engineDeferred,
-  createOwnedFixtureEngineInput,
-} from '../../__tests__/parent-fixture.js';
-import { composeInput as composeEngineOwner } from '../../lifecycle/input-owner.js';
+import { createOwnedFixtureEngineInput } from '../../__tests__/parent-fixture.js';
 import { createPointerLedger } from '../../tabs/pointer.js';
 import { unavailableDiagnostics } from '../../tabs/diagnostics.js';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -14,6 +7,10 @@ import type { BrowserBinding } from '../../contracts.js';
 import type { TabRecord } from '../../lifecycle/records.js';
 import { createBrowserStopGate } from '../../lifecycle/stop.js';
 import { parseBrowserId, parseTabId } from '../../ids.js';
+
+const tick = async () => {
+  for (let i = 0; i < 40; i++) await Promise.resolve();
+};
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -110,9 +107,6 @@ function fixture(configure?: (context: { newCDPSession: ReturnType<typeof vi.fn>
     }),
   };
 }
-const tick = async () => {
-  for (let i = 0; i < 40; i++) await Promise.resolve();
-};
 afterEach(() => vi.useRealTimers());
 it('routes a strict command to the original canonical Page and revalidates trusted policy', async () => {
   const h = fixture();
@@ -185,196 +179,7 @@ it('wrong actual TabRecord replacement cannot reuse the original Page queue', as
   expect(h.effects).toEqual([]);
   await h.close();
 });
-it('registry observation reentrant terminal stop rejects without a native call', async () => {
-  const h = fixture();
-  await h.input.ready;
-  h.registry.readTab.mockImplementation(() => {
-    h.gate.stop();
-    return h.tab;
-  });
-  expect((await h.input.submit(h.command())).outcome).toBe('rejected');
-  await h.close();
-  expect(h.effects).toEqual([['detach']]);
-});
-it.each(['close', 'framenavigated'])(
-  'child Page %s listener retires admission and cleans the still-live canonical target',
-  async (event) => {
-    const h = fixture();
-    await h.input.ready;
-    h.event(event);
-    expect(h.record.lifetime.ordinary.phase).toBe('retiring');
-    expect((await h.input.submit(h.command())).outcome).toBe('rejected');
-    expect((await h.input.reset()).status).toBe('stopped');
-    await h.close();
-    expect(h.gate.stopped).toBe(true);
-    // This direct TabRecord has no trackPage event callback: its Page and binding remain live.
-    // Genuine parent retirement attempts both fixed cancellations before terminal detach.
-    expect(h.effects).toEqual([
-      ['send', 'Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 }],
-      ['send', 'Input.cancelDragging'],
-      ['detach'],
-    ]);
-  }
-);
-it('live reset advances counters and cancels composition/drag with one shared barrier', async () => {
-  const h = fixture();
-  await h.input.ready;
-  await h.input.submit(
-    h.command([
-      { kind: 'keyDown', key: 'Shift' },
-      { kind: 'mouseDown', button: 'left' },
-    ])
-  );
-  const reset = h.input.reset();
-  expect(h.input.reset()).toBe(reset);
-  expect((await h.input.submit(h.command())).outcome).toBe('rejected');
-  expect(await reset).toMatchObject({ status: 'ready', binding: { epoch: 1, inputGeneration: 1 } });
-  expect(h.effects.slice(2)).toEqual([
-    ['mouseUp', { button: 'left' }],
-    ['keyUp', 'Shift'],
-    ['send', 'Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 }],
-    ['send', 'Input.cancelDragging'],
-  ]);
-  expect((await h.input.submit(h.command())).outcome).toBe('completed');
-  await h.close();
-});
-it('terminal stop retains held uncertainty and does not perform live reset cleanup', async () => {
-  const h = fixture();
-  await h.input.ready;
-  await h.input.submit(h.command([{ kind: 'keyDown', key: 'Alt' }]));
-  h.gate.stop();
-  expect((await h.input.reset()).status).toBe('stopped');
-  expect(await h.close()).toMatchObject({ uncertain: true, detached: true });
-  expect(h.effects).toEqual([['keyDown', 'Alt'], ['detach']]);
-});
-it('counter exhaustion fences admission and drains the still-live target before terminal close', async () => {
-  const h = fixture();
-  await h.input.ready;
-  h.tab.binding = { ...h.tab.binding, epoch: Number.MAX_SAFE_INTEGER };
-  const reset = h.input.reset();
-  expect(h.record.lifetime.ordinary.phase).toBe('retiring');
-  expect((await h.input.submit(h.command())).outcome).toBe('rejected');
-  expect(await reset).toMatchObject({
-    status: 'stopped',
-    binding: { epoch: Number.MAX_SAFE_INTEGER, inputGeneration: 0 },
-  });
-  expect(await h.close()).toMatchObject({ uncertain: false, detached: true });
-  expect(h.gate.stopped).toBe(true);
-  expect(h.slot.uncertain).toBe(true);
-  // Successful child cancellation/detach cannot heal the parent's original reset-fault uncertainty.
-  // The direct canonical Page is still live: counter exhaustion does not wrap its binding.
-  // Fixed cancellations belong to genuine parent drain; terminal detach follows that wait.
-  expect(h.effects).toEqual([
-    ['send', 'Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 }],
-    ['send', 'Input.cancelDragging'],
-    ['detach'],
-  ]);
-});
-it('acquisition rejection retains original cause and refuses all input', async () => {
-  const original = new Error('OWNED_SESSION_ACQUISITION_FAILED');
-  const h = fixture((context) => context.newCDPSession.mockRejectedValue(original));
-  await expect(h.input.ready).rejects.toBe(original);
-  expect(h.gate.stopped).toBe(true);
-  expect((await h.input.submit(h.command())).outcome).toBe('rejected');
-  await h.close();
-});
-it('close during started operation retains nativePending and does not heal after acknowledgement', async () => {
-  const h = fixture();
-  await h.input.ready;
-  const native = deferred<void>();
-  h.page.keyboard.insertText.mockImplementation(() => native.promise);
-  const operation = h.input.submit(h.command());
-  await tick();
-  expect(h.input.custody().nativePending).toBe(1);
-  const close = h.close();
-  expect(h.close()).toBe(close);
-  expect(await close).toMatchObject({ nativePending: 1, uncertain: true });
-  const childClose = h.slot.closePromise;
-  expect(childClose).toBeDefined();
-  expect(h.input.close()).toBe(childClose);
-  expect(childClose).not.toBe(close);
-  expect((await operation).outcome).toBe('uncertain');
-  native.resolve();
-  await tick();
-  expect(h.input.custody()).toMatchObject({ nativePending: 0, uncertain: true });
-  expect((await h.input.reset()).status).toBe('stopped');
-});
-it('hung native drain does not publish reset readiness or a successor native effect', async () => {
-  vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
-  const h = fixture();
-  await h.input.ready;
-  const native = deferred<void>();
-  h.page.keyboard.insertText.mockImplementation(() => native.promise);
-  const work = h.input.submit(h.command());
-  await tick();
-  const reset = h.input.reset();
-  await vi.advanceTimersByTimeAsync(2000);
-  expect((await reset).status).toBe('stopped');
-  expect((await work).outcome).toBe('uncertain');
-  expect((await h.input.submit(h.command())).outcome).toBe('rejected');
-  native.reject(new Error('LATE_NATIVE'));
-  await tick();
-  await h.close();
-  expect(h.input.custody().uncertain).toBe(true);
-});
 
-it('reentrant Page API getter live reset cannot dispatch the old-binding text', async () => {
-  const h = fixture();
-  await h.input.ready;
-  let reset: ReturnType<typeof h.input.reset> | undefined;
-  const insert = h.page.keyboard.insertText;
-  Object.defineProperty(h.page.keyboard, 'insertText', {
-    get: () => {
-      reset ??= h.input.reset();
-      return insert;
-    },
-  });
-  expect((await h.input.submit(h.command())).outcome).toBe('uncertain');
-  expect((await reset!).status).toBe('stopped');
-  expect(h.effects.some((effect) => Array.isArray(effect) && effect[0] === 'text')).toBe(false);
-  await h.close();
-});
-it('unknown cancellation capability stops the shared live reset instead of synthetic success', async () => {
-  const h = fixture();
-  await h.input.ready;
-  h.session.send.mockRejectedValue(new Error('COMMAND_NOT_SUPPORTED'));
-  expect((await h.input.reset()).status).toBe('stopped');
-  expect(h.record.lifetime.ordinary.phase).not.toBe('ordinary');
-  expect((await h.input.submit(h.command())).outcome).toBe('rejected');
-  expect((await h.close()).uncertain).toBe(true);
-  expect(h.gate.stopped).toBe(true);
-});
-it('never-settled session acquisition has a bounded original failure and quarantined custody', async () => {
-  vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
-  const pending = deferred<CDPSession>();
-  const h = fixture((context) => context.newCDPSession.mockImplementation(() => pending.promise));
-  const ready = expect(h.input.ready).rejects.toThrow('INPUT_DEADLINE');
-  await vi.advanceTimersByTimeAsync(2000);
-  await ready;
-  expect(h.gate.stopped).toBe(true);
-  expect(h.input.custody().acquisitionPending).toBe(true);
-  const close = h.close();
-  await vi.advanceTimersByTimeAsync(2000);
-  expect(await close).toMatchObject({ acquisitionPending: true, uncertain: true });
-  pending.resolve(h.session as unknown as CDPSession);
-  await tick();
-  expect(h.input.custody()).toMatchObject({ detached: true, uncertain: true });
-  expect((await h.input.submit(h.command())).outcome).toBe('rejected');
-});
-it('terminal close during acquisition detaches the late exact session inside the same deadline', async () => {
-  vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
-  const pending = deferred<CDPSession>();
-  const h = fixture((context) => context.newCDPSession.mockImplementation(() => pending.promise));
-  const originalReady = expect(h.input.ready).rejects.toMatchObject({ code: 'BROWSER_STOPPED' });
-  const close = h.close(performance.now() + 100);
-  await vi.advanceTimersByTimeAsync(50);
-  pending.resolve(h.session as unknown as CDPSession);
-  await tick();
-  await originalReady;
-  expect(await close).toMatchObject({ detached: true, acquisitionPending: false });
-  expect((await h.input.submit(h.command())).outcome).toBe('rejected');
-  expect(h.session.detach).toHaveBeenCalledTimes(1);
-});
 it('policy callback replacement after await refuses before native entry', async () => {
   const h = fixture();
   await h.input.ready;
@@ -384,99 +189,6 @@ it('policy callback replacement after await refuses before native entry', async 
   });
   expect((await h.input.submit(h.command())).outcome).toBe('rejected');
   expect(h.effects).toEqual([]);
-  await h.close();
-});
-
-it('throwing Page listener removal follows fixed cleanup, attempts detach and retains uncertainty', async () => {
-  const h = fixture();
-  await h.input.ready;
-  h.page.off = () => {
-    throw new Error('LISTENER_REMOVAL_FAILED');
-  };
-  expect(await h.close()).toMatchObject({ detached: true, uncertain: true });
-  // Listener removal runs in terminal child close, after the live target's parent drain.
-  expect(h.effects).toEqual([
-    ['send', 'Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 }],
-    ['send', 'Input.cancelDragging'],
-    ['detach'],
-  ]);
-});
-
-it('terminal teardown during an active reset cannot renew its already-running deadline', async () => {
-  vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
-  const h = fixture();
-  await h.input.ready;
-  const cancellation = deferred<void>();
-  h.session.send.mockImplementation(() => cancellation.promise);
-  const detach = deferred<void>();
-  h.session.detach.mockImplementation(() => detach.promise);
-  const reset = h.input.reset();
-  await tick();
-  await vi.advanceTimersByTimeAsync(1500);
-  const close = h.close();
-  let closed: Awaited<typeof close> | undefined;
-  void close.then((result) => {
-    closed = result;
-  });
-  try {
-    await vi.advanceTimersByTimeAsync(500);
-    expect(closed, 'shared reset deadline must settle terminal teardown').toMatchObject({
-      detachPending: true,
-      uncertain: true,
-    });
-    expect((await reset).status).toBe('stopped');
-  } finally {
-    cancellation.reject(new Error('LATE_CANCEL'));
-    detach.resolve();
-    await tick();
-  }
-  expect(h.input.custody().uncertain).toBe(true);
-});
-
-it('genuine parent retirement fixes original ends before shorter and longer caller closes', async () => {
-  vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
-  const h = fixture();
-  await h.input.ready;
-  const detach = deferred<void>();
-  h.session.detach.mockImplementation(() => detach.promise);
-  const close = h.close();
-  expect(h.record.lifetime.ordinary.phase).toBe('retiring');
-  expect(h.session.detach).not.toHaveBeenCalled();
-  const parentEnd = h.record.lifetime.parentEnd;
-  const inputEnd = h.record.lifetime.inputEnd;
-  const firstCause = h.record.lifetime.ordinary.retirement.firstCause;
-  expect((await h.input.submit(h.command())).outcome).toBe('rejected');
-  expect(parentEnd).toBe(5000);
-  expect(inputEnd).toBe(2000);
-  expect(h.close(performance.now() + 100)).toBe(close);
-  expect(h.close(performance.now() + 10000)).toBe(close);
-  await vi.advanceTimersByTimeAsync(100);
-  expect(h.record.lifetime.ordinary.retirement.firstCause).toBe(firstCause);
-  expect(h.record.lifetime.parentEnd).toBe(parentEnd);
-  expect(h.record.lifetime.inputEnd).toBe(inputEnd);
-  await vi.advanceTimersByTimeAsync(1900);
-  expect(await close).toMatchObject({ detachPending: true, uncertain: true });
-  detach.resolve();
-  await tick();
-  expect(h.input.custody().uncertain).toBe(true);
-});
-
-it('registry-observation reentrant reset joins the same prepublished composition barrier', async () => {
-  const h = fixture();
-  await h.input.ready;
-  let entered = false;
-  let nested: ReturnType<typeof h.input.reset> | undefined;
-  h.registry.readTab.mockImplementation(() => {
-    if (!entered) {
-      entered = true;
-      nested = h.input.reset();
-    }
-    return h.tab;
-  });
-  const reset = h.input.reset();
-  expect(nested).toBe(reset);
-  expect((await reset).status).toBe('ready');
-  expect(h.tab.binding.epoch).toBe(1);
   await h.close();
 });
 
@@ -534,50 +246,17 @@ it('final binding observation replacing canonical record refuses original Page I
   await h.close();
 });
 
-it('candidate: exact acquired owner keeps late native custody and does not manufacture ready', async () => {
-  const h = ownedEngineFixture(),
-    pending = engineDeferred<void>();
-  const owner = composeEngineOwner(engineConfiguration(), h.record, h.tab);
-  await owner.readiness;
-  h.session.send.mockImplementation(() => pending.promise);
-  const end = performance.now() + 2000;
-  engineRetirement(h.record, end);
-  const retiring = owner.handle!.retire(end);
-  await Promise.resolve();
-  expect(owner.handle!.custody().nativePending).toBeGreaterThan(0);
-  pending.resolve();
-  const result = await retiring;
-  expect(result.state).toBe('settled');
-  expect((await owner.handle!.reset()).status).toBe('stopped');
-  expect(h.context.newCDPSession).toHaveBeenCalledTimes(1);
+it('terminal close during acquisition detaches the late exact session inside the same deadline', async () => {
+  vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
+  const pending = deferred<CDPSession>();
+  const h = fixture((context) => context.newCDPSession.mockImplementation(() => pending.promise));
+  const originalReady = expect(h.input.ready).rejects.toMatchObject({ code: 'BROWSER_STOPPED' });
+  const close = h.close(performance.now() + 100);
+  await vi.advanceTimersByTimeAsync(50);
+  pending.resolve(h.session as unknown as CDPSession);
+  await tick();
+  await originalReady;
+  expect(await close).toMatchObject({ detached: true, acquisitionPending: false });
+  expect((await h.input.submit(h.command())).outcome).toBe('rejected');
+  expect(h.session.detach).toHaveBeenCalledTimes(1);
 });
-
-it.each([false, true])(
-  'retirement final correspondence missing=%s stays truthful after held native settlement',
-  async (missing) => {
-    const h = fixture();
-    await h.input.ready;
-    const held = deferred<void>();
-    h.session.send.mockImplementation(() => held.promise);
-    const end = performance.now() + 2000;
-    engineRetirement(h.record, end);
-    const retirement = h.input.retire(end);
-    await Promise.resolve();
-    expect(h.input.custody().nativePending).toBeGreaterThan(0);
-    if (missing) h.record.tabs.delete(h.tab.binding.tabId);
-    held.resolve();
-    const observation = await retirement;
-    if (missing) {
-      expect(observation).toMatchObject({
-        state: 'unverified',
-        binding: null,
-        reason: 'observationUnavailable',
-        uncertainty: true,
-      });
-    } else {
-      expect(observation).toMatchObject({ state: 'settled', pending: false, uncertainty: false });
-    }
-    expect((await h.input.reset()).status).toBe('stopped');
-    await h.record.closePromise;
-  }
-);

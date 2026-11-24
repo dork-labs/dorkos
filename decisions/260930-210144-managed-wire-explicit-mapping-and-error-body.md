@@ -1,7 +1,7 @@
 ---
 id: 260930-210144
 title: Build managed wire responses by explicit mapping and share one legacy error body
-status: proposed
+status: accepted
 created: 2026-09-30
 spec: managed-cloud-error-honesty
 superseded-by: null
@@ -12,7 +12,9 @@ amends: null
 
 ## Status
 
-Proposed (2026-10-06 review): `draft` is not a lifecycle status; the spec is specified and the fix is not built yet.
+Accepted (2026-11-24, on review: built; PR #2430, DOR-2622: `ManagedConnectorErrorBodySchema` in `packages/connector-providers/src/connector-managed-schemas.ts`, used by `apps/server/src/services/core/auth/cloud-link-client.ts`, with explicit mappers and a wire-mapping test).
+
+Proposed (2026-10-06 review): `draft` is not a lifecycle status; the spec is specified and the fix is not built yet. (Corrected 2026-11-24: that last clause was wrong; PR #2430 had already built the fix.)
 
 Originally: Draft (extracted from `managed-cloud-error-honesty`).
 

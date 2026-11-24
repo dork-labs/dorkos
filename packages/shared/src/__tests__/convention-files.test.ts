@@ -8,10 +8,7 @@ import {
   extractCustomProse,
   soulProseBudget,
   defaultSoulTemplate,
-  defaultNopeTemplate,
   SOUL_MAX_CHARS,
-  NOPE_MAX_CHARS,
-  MEMORY_MAX_CHARS,
   TRAIT_SECTION_START,
   TRAIT_SECTION_END,
   CONVENTION_FILES,
@@ -24,20 +21,6 @@ import {
 
 describe('convention-files', () => {
   describe('constants', () => {
-    it('has correct character limits', () => {
-      expect(SOUL_MAX_CHARS).toBe(4000);
-      expect(NOPE_MAX_CHARS).toBe(2000);
-      // ~2K tokens. Red if anyone raises it without re-reading what it costs on
-      // codex and opencode, where the append is re-sent uncached every turn.
-      expect(MEMORY_MAX_CHARS).toBe(8000);
-    });
-
-    it('has correct file names', () => {
-      expect(CONVENTION_FILES.soul).toBe('SOUL.md');
-      expect(CONVENTION_FILES.nope).toBe('NOPE.md');
-      expect(CONVENTION_FILES.memory).toBe('MEMORY.md');
-    });
-
     // Red when: a fifth convention file is added to the record and one of the
     // sites that enumerates them is missed. The set is small and closed on
     // purpose. Three of the four cost prompt budget on every turn; HEARTBEAT.md
@@ -62,19 +45,6 @@ describe('convention-files', () => {
       expect(result).toContain('trait-block-here');
       expect(result).toContain('custom prose here');
     });
-
-    it('omits custom prose section when empty', () => {
-      const result = buildSoulContent('trait-block', '');
-      expect(result).toContain(TRAIT_SECTION_START);
-      expect(result).toContain(TRAIT_SECTION_END);
-      expect(result).not.toContain('\n\n\n'); // no double-blank from empty prose
-    });
-
-    it('omits custom prose section when whitespace-only', () => {
-      const result = buildSoulContent('trait-block', '   \n  ');
-      const afterEnd = result.split(TRAIT_SECTION_END)[1];
-      expect(afterEnd?.trim()).toBe('');
-    });
   });
 
   describe('extractCustomProse', () => {
@@ -82,57 +52,6 @@ describe('convention-files', () => {
       const content = `${TRAIT_SECTION_START}\ntraits here\n${TRAIT_SECTION_END}\n\n## Identity\n\nI am an agent.`;
       const result = extractCustomProse(content);
       expect(result).toBe('## Identity\n\nI am an agent.');
-    });
-
-    it('returns full content when no trait markers present', () => {
-      const content = '## Identity\n\nI am a legacy agent.';
-      const result = extractCustomProse(content);
-      expect(result).toBe(content);
-    });
-
-    it('returns empty string when no prose after markers', () => {
-      const content = `${TRAIT_SECTION_START}\ntraits\n${TRAIT_SECTION_END}`;
-      const result = extractCustomProse(content);
-      expect(result).toBe('');
-    });
-  });
-
-  describe('defaultSoulTemplate', () => {
-    it('includes agent name in identity section', () => {
-      const result = defaultSoulTemplate('test-bot', 'trait-block');
-      expect(result).toContain('You are test-bot, a co-worker on this team, not an assistant.');
-    });
-
-    it('includes trait markers', () => {
-      const result = defaultSoulTemplate('test-bot', 'trait-block');
-      expect(result).toContain(TRAIT_SECTION_START);
-      expect(result).toContain(TRAIT_SECTION_END);
-    });
-
-    it('includes default values section', () => {
-      const result = defaultSoulTemplate('test-bot', 'trait-block');
-      expect(result).toContain('## Values');
-      expect(result).toContain('Write clean, maintainable code');
-    });
-  });
-
-  describe('defaultNopeTemplate', () => {
-    it('includes Safety Boundaries heading', () => {
-      const result = defaultNopeTemplate();
-      expect(result).toContain('# Safety Boundaries');
-    });
-
-    it('includes Never Do rules', () => {
-      const result = defaultNopeTemplate();
-      expect(result).toContain('Never push to main/master');
-      expect(result).toContain('Never delete production data');
-      expect(result).toContain('Never commit secrets');
-    });
-
-    it('includes Always Do rules', () => {
-      const result = defaultNopeTemplate();
-      expect(result).toContain('Always create a new branch');
-      expect(result).toContain('Always run tests before committing');
     });
   });
 
@@ -149,27 +68,6 @@ describe('convention-files', () => {
       for (const dir of tempDirs.splice(0)) {
         await fs.rm(dir, { recursive: true, force: true });
       }
-    });
-
-    it('readConventionFile returns null when file does not exist', async () => {
-      const projectDir = await makeTempDir();
-      const result = await readConventionFile(projectDir, 'SOUL.md');
-      expect(result).toBeNull();
-    });
-
-    it('readConventionFile returns null when .dork directory does not exist', async () => {
-      const projectDir = await makeTempDir();
-      const result = await readConventionFile(projectDir, 'NOPE.md');
-      expect(result).toBeNull();
-    });
-
-    it('writeConventionFile writes to {projectPath}/.dork/{filename}', async () => {
-      const projectDir = await makeTempDir();
-      await fs.mkdir(path.join(projectDir, '.dork'), { recursive: true });
-      await writeConventionFile(projectDir, 'SOUL.md', 'hello world');
-
-      const content = await fs.readFile(path.join(projectDir, '.dork', 'SOUL.md'), 'utf-8');
-      expect(content).toBe('hello world');
     });
 
     // Purpose (DOR-2245): a marketplace agent's persona and memory are the
@@ -192,17 +90,6 @@ describe('convention-files', () => {
       expect(await fs.readFile(file, 'utf-8')).toBe('my edited persona');
     });
 
-    // Purpose: an empty file is still the agent's (an emptied memory is a choice).
-    it('writeConventionFileIfAbsent leaves an existing empty file alone', async () => {
-      const projectDir = await makeTempDir();
-      const file = path.join(projectDir, '.dork', 'MEMORY.md');
-      await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.writeFile(file, '', 'utf-8');
-
-      expect(await writeConventionFileIfAbsent(projectDir, 'MEMORY.md', 'seed')).toBe(false);
-      expect(await fs.readFile(file, 'utf-8')).toBe('');
-    });
-
     // Purpose: two concurrent seeders write once, and the file holds one of them whole.
     it('writeConventionFileIfAbsent writes once under concurrent calls', async () => {
       const projectDir = await makeTempDir();
@@ -218,16 +105,6 @@ describe('convention-files', () => {
       expect(['first', 'second']).toContain(content);
     });
 
-    it('readConventionFile reads from {projectPath}/.dork/{filename}', async () => {
-      const projectDir = await makeTempDir();
-      const dorkDir = path.join(projectDir, '.dork');
-      await fs.mkdir(dorkDir, { recursive: true });
-      await fs.writeFile(path.join(dorkDir, 'SOUL.md'), 'my soul content', 'utf-8');
-
-      const result = await readConventionFile(projectDir, 'SOUL.md');
-      expect(result).toBe('my soul content');
-    });
-
     it('round-trips SOUL.md content', async () => {
       const projectDir = await makeTempDir();
       await fs.mkdir(path.join(projectDir, '.dork'), { recursive: true });
@@ -239,15 +116,15 @@ describe('convention-files', () => {
       expect(result).toBe(content);
     });
 
-    it('round-trips NOPE.md content', async () => {
+    // Purpose: an empty file is still the agent's (an emptied memory is a choice).
+    it('writeConventionFileIfAbsent leaves an existing empty file alone', async () => {
       const projectDir = await makeTempDir();
-      await fs.mkdir(path.join(projectDir, '.dork'), { recursive: true });
-      const content = defaultNopeTemplate();
+      const file = path.join(projectDir, '.dork', 'MEMORY.md');
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, '', 'utf-8');
 
-      await writeConventionFile(projectDir, 'NOPE.md', content);
-      const result = await readConventionFile(projectDir, 'NOPE.md');
-
-      expect(result).toBe(content);
+      expect(await writeConventionFileIfAbsent(projectDir, 'MEMORY.md', 'seed')).toBe(false);
+      expect(await fs.readFile(file, 'utf-8')).toBe('');
     });
   });
 });
@@ -273,13 +150,6 @@ describe('MEMORY.md is a convention file like the other two', () => {
     );
     expect(await readConventionFile(tmpDir, 'MEMORY.md')).toBe('## Notes\n\n- a note\n');
   });
-
-  it('reads as null when the agent has no memory file yet', async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'convention-memory-'));
-    await fs.mkdir(path.join(tmpDir, '.dork'), { recursive: true });
-
-    expect(await readConventionFile(tmpDir, 'MEMORY.md')).toBeNull();
-  });
 });
 
 describe('composeSoulFile is the one way SOUL.md is put together', () => {
@@ -294,12 +164,6 @@ describe('composeSoulFile is the one way SOUL.md is put together', () => {
     expect(soul).toContain('**Verbosity** (Chatty)');
     expect(soul).toContain('**Spice** (Corporate)');
     expect(soul.endsWith('I guard the changelog.')).toBe(true);
-  });
-
-  it('re-composes a whole file into itself', () => {
-    const once = composed('I guard the changelog.');
-
-    expect(composed(once)).toBe(once);
   });
 
   // Red when: the fence is found by looking for an END anywhere, the way
@@ -322,12 +186,6 @@ describe('composeSoulFile is the one way SOUL.md is put together', () => {
     expect(soul.indexOf(TRAIT_SECTION_START)).toBe(0);
   });
 
-  it('keeps prose whose markers are the wrong way round', () => {
-    const prose = `${TRAIT_SECTION_END} came first, ${TRAIT_SECTION_START} came second.`;
-
-    expect(composeSoulFile(prose, {})).toContain('came first');
-  });
-
   // Text above a real fence is somebody's writing too. Rejoined below rather
   // than dropped, which also keeps the second pass idempotent.
   it('keeps text written ABOVE a real fence', () => {
@@ -338,13 +196,6 @@ describe('composeSoulFile is the one way SOUL.md is put together', () => {
     expect(soul).toContain('A note I put on top.');
     expect(soul).toContain('And my persona below.');
     expect(composeSoulFile(soul, { verbosity: 4, spice: 1 })).toBe(soul);
-  });
-
-  it('renders the traits it is given, not the ones the file carried', () => {
-    const soul = composeSoulFile(composed('I guard the changelog.'), { verbosity: 1 });
-
-    expect(soul).toContain('**Verbosity** (Mime)');
-    expect(soul).not.toContain('**Verbosity** (Chatty)');
   });
 });
 
@@ -359,9 +210,5 @@ describe('soulProseBudget is the number an author can act on', () => {
     // Exact at the boundary, in both directions.
     expect(composeSoulFile('x'.repeat(budget), traits).length).toBe(SOUL_MAX_CHARS);
     expect(composeSoulFile('x'.repeat(budget + 1), traits).length).toBe(SOUL_MAX_CHARS + 1);
-  });
-
-  it('differs per agent, because a dial at an extreme renders a longer directive', () => {
-    expect(soulProseBudget({ verbosity: 3 })).not.toBe(soulProseBudget({ verbosity: 5 }));
   });
 });

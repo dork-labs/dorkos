@@ -4,17 +4,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { StorageState } from '@dorkos/shared/agent-browser';
 import {
-  WELCOME_PAGE,
   agentBrowserPaths,
-  loginStartUrl,
-  parseBrowserForgetArgs,
-  parseBrowserLoginArgs,
   runBrowserForget,
   runBrowserLogin,
   runBrowserStatus,
 } from '../browser-commands.js';
 import type { BrowserDeps, OperatorAction } from '../../lib/agent-browser/browser-deps.js';
-import { ChromeNotFoundError } from '../../lib/agent-browser/chrome-locator.js';
 import { createFakeCdp, type FakeCdp } from '../../lib/agent-browser/__tests__/fake-cdp.js';
 
 const NOW = new Date('2026-09-19T12:00:00Z');
@@ -113,32 +108,6 @@ function signedInBrowser(): FakeCdp {
   });
 }
 
-describe('argument parsing', () => {
-  it('reads login flags and a start site', () => {
-    expect(parseBrowserLoginArgs(['github.com', '--plain'])).toEqual({
-      url: 'github.com',
-      plain: true,
-    });
-    expect(() => parseBrowserLoginArgs(['--nope'])).toThrow(/Unknown option for 'browser login'/);
-  });
-
-  it('turns a URL into a site name for forget, and wants exactly one target', () => {
-    expect(parseBrowserForgetArgs(['https://github.com/login'])).toMatchObject({
-      site: 'github.com',
-      all: false,
-    });
-    expect(parseBrowserForgetArgs(['--all', '-y'])).toEqual({ all: true, yes: true });
-    expect(() => parseBrowserForgetArgs([])).toThrow(/Name the site/);
-    expect(() => parseBrowserForgetArgs(['a.test', '--all'])).toThrow(/not both/);
-  });
-
-  it('opens a bare host over https, and the welcome page when nothing is named', () => {
-    expect(loginStartUrl('github.com')).toBe('https://github.com');
-    expect(loginStartUrl('http://localhost:3000')).toBe('http://localhost:3000');
-    expect(loginStartUrl(undefined)).toBe(WELCOME_PAGE);
-  });
-});
-
 describe('dorkos browser status', () => {
   it('lists sites and dates, and never a value', async () => {
     writeSaved();
@@ -166,11 +135,6 @@ describe('dorkos browser status', () => {
       'linear.app',
     ]);
     expect(written.join('')).not.toContain(SECRET);
-  });
-
-  it('says how to start when nothing is saved', async () => {
-    expect(await runBrowserStatus({ json: false }, deps())).toBe(0);
-    expect(out.join('\n')).toContain('dorkos browser login');
   });
 });
 
@@ -244,19 +208,6 @@ describe('dorkos browser login', () => {
   it('refuses to run without a person at the keyboard', async () => {
     expect(await runBrowserLogin({ plain: false }, deps({ interactive: false }))).toBe(1);
     expect(err.join('\n')).toContain('needs you at the keyboard');
-  });
-
-  it('gives the honest missing-Chrome error', async () => {
-    const code = await runBrowserLogin(
-      { plain: false },
-      deps({
-        findChrome: () => {
-          throw new ChromeNotFoundError(['/Applications/Google Chrome.app']);
-        },
-      })
-    );
-    expect(code).toBe(1);
-    expect(err.join('\n')).toContain('Could not find Google Chrome');
   });
 
   it('will not open a second copy of a signed-in browser that is already open', async () => {

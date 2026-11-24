@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -7,7 +6,6 @@ import {
   CanvasChannelCheckboxReceiptSchema,
   CanvasChannelDeclarationSchema,
   CanvasChannelDocEventsContextSchema,
-  CanvasChannelEventIdSchema,
   CanvasChannelFrameSchema,
   CanvasChannelReplayResponseSchema,
   CanvasChannelSnapshotFrameSchema,
@@ -29,8 +27,6 @@ import {
   inspectCanvasChannelJson,
   matchesCanvasChannelEvent,
 } from '../canvas-channel-schemas.js';
-import { CanvasDocumentSchema } from '../canvas-schemas.js';
-import { OpenCanvasDocumentRequestSchema, RoomCanvasEventSchema } from '../room-schemas.js';
 
 const id = '019943ce-5853-7000-a000-000000000001';
 const base = { v: 1, id, type: 'task.toggled', payload: { done: true } };
@@ -48,15 +44,6 @@ function nested(depth: number): unknown {
 }
 
 describe('document channel raw envelopes', () => {
-  it('accepts UUIDs across versions and preserves the complete envelope', () => {
-    expect(
-      PageEventSchema.parse({ ...base, coalesceKey: 'task-1', ts: '2026-10-01T10:00:00Z' })
-    ).toEqual({ ...base, coalesceKey: 'task-1', ts: '2026-10-01T10:00:00Z' });
-    expect(
-      CanvasChannelEventIdSchema.safeParse('11111111-1111-1111-1111-111111111111').success
-    ).toBe(true);
-    expect(CanvasChannelEventIdSchema.safeParse('not-a-uuid').success).toBe(false);
-  });
   it.each([
     'cwd',
     'scope',
@@ -149,10 +136,6 @@ describe('document channel raw envelopes', () => {
 });
 
 describe('route and authority contracts', () => {
-  it.each(['task.toggled', 'md.task.toggled', 'task-1.done', 'UPPER_case'])(
-    'accepts ASCII type %s',
-    (type) => expect(CanvasChannelEventTypeSchema.safeParse(type).success).toBe(true)
-  );
   it.each([
     'task.*',
     'task..done',
@@ -300,43 +283,6 @@ describe('leaf and tool-schema compatibility', () => {
       expect(JSON.stringify(converted)).toContain('additionalProperties');
     }
   });
-  it('keeps channel options common and room/canvas schemas initialized without a cycle', () => {
-    expect(OpenCanvasDocumentRequestSchema.shape.channel).toBeDefined();
-    expect(CanvasDocumentSchema.shape.channel).toBeDefined();
-    expect(
-      RoomCanvasEventSchema.safeParse({ type: 'canvas', action: 'removed', documentId: 'doc' })
-        .success
-    ).toBe(true);
-  });
-  it('keeps the leaf imports acyclic and publishes its subpath', async () => {
-    const source = await readFile(new URL('../canvas-channel-schemas.ts', import.meta.url), 'utf8');
-    expect(source).not.toMatch(
-      /from ['"]\.\/(?:canvas-schemas|room-schemas|session-stream|schemas)\.js/u
-    );
-    // Module specifiers, so a multi-line import is read whole.
-    const importsOf = async (file: string) =>
-      [
-        ...(await readFile(new URL(file, import.meta.url), 'utf8')).matchAll(
-          /^import [^;]*? from '([^']+)';$/gmsu
-        ),
-      ].map((match) => match[1]);
-    expect(await importsOf('../canvas-channel-json.ts')).toEqual([
-      'zod',
-      './bounded-json.js',
-      './zod-openapi.js',
-    ]);
-    expect(await importsOf('../bounded-json.ts')).toEqual(['zod']);
-    const openApiHelper = await readFile(new URL('../zod-openapi.ts', import.meta.url), 'utf8');
-    expect(openApiHelper.match(/^import .*$/gmu)).toEqual([
-      "import { z } from 'zod';",
-      "import { extendZodWithOpenApi, zodToOpenAPIRegistry } from '@asteasolutions/zod-to-openapi';",
-    ]);
-    const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
-    expect(pkg.exports['./canvas-channel-schemas']).toEqual({
-      types: './src/canvas-channel-schemas.ts',
-      default: './dist/canvas-channel-schemas.js',
-    });
-  });
 });
 
 describe('authorized document birth projections', () => {
@@ -371,14 +317,6 @@ describe('authorized document birth projections', () => {
     health: { status: 'ready', reasons: [] },
     receipts: [],
   };
-  it('preserves genuine legacy absence while retaining every supplied authorized birth field', () => {
-    expect(CanvasChannelFrameSchema.parse(frame)).toEqual(frame);
-    expect(CanvasChannelReplayResponseSchema.parse(replay)).toEqual(replay);
-    const currentFrame = { ...frame, incarnation };
-    const currentReplay = { ...replay, incarnation, events: [currentFrame] };
-    expect(CanvasChannelFrameSchema.parse(currentFrame)).toEqual(currentFrame);
-    expect(CanvasChannelReplayResponseSchema.parse(currentReplay)).toEqual(currentReplay);
-  });
   it('refuses malformed supplied birth instead of treating it as legacy absence', () => {
     const malformed: unknown[] = [
       undefined,

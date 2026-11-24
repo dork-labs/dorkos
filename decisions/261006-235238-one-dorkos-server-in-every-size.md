@@ -20,6 +20,8 @@ Accepted (operator decision, 2026-10-06; Linear DOR-2735). Direction: the merge 
 
 **Amended by** [261122-173853](261122-173853-one-space-model.md) (one space model, 2026-11-22): step 9 ("a Mac can host spaces") gains a PGlite gate and a second use: after launch the private space becomes a tenant on the space store, domain by domain, agents last. A hub is a one-tenant space server, and whether a server runs agents is a role setting.
 
+**Amended by** [261124-150515](261124-150515-sequence-work-for-the-best-product-not-toward-dates.md) (accepted 2026-11-24): the Status line "Direction: the merge starts before launch (Dorian, 2026-10-12), with a go/no-go on November 16. If its before-launch part is not ready by then, launch runs on today's space server and it finishes right after launch" is retired, along with every launch date. Work is now ordered by what it needs and what it unlocks. One program in every size, moving work by push, and "only one place runs an agent at a time" all stand.
+
 **Amends** (each stays Accepted):
 
 - [260727-184933](260727-184933-the-community-server-never-runs-a-members-agent.md): retires "hosted DorkOS is three distinct products", "the community server never executes a member's agent", "presence follows the install" and the deliberately incomplete web client. Today's code still keeps the community server agent-free until the merge lands. Its single-person install is retired separately by [261006-235239](261006-235239-people-and-agents-hold-equal-accounts.md).

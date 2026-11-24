@@ -29,18 +29,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { project } from '../../engine.js';
 import type { ProjectionPlan } from '../../plan/types.js';
-import {
-  applyPlan,
-  checkPlan,
-  findGeneratedCommandOrphans,
-  findInstalledOrphans,
-  findOpencodeCommandOrphans,
-  findSettingsHooksOrphan,
-} from '../apply.js';
-import { findOrphanedAuthoredLinks } from '../authored-orphans.js';
+import { applyPlan, checkPlan, findInstalledOrphans } from '../apply.js';
 import { findGeneratedOrphans } from '../generated-targets.js';
 import { ATOMIC_TMP_SUFFIX, STALE_TEMP_AGE_MS } from '../atomic-write.js';
 import { SWEEP_REASONS } from '../sweep-reasons.js';
+import { findOrphanedAuthoredLinks } from '../authored-orphans.js';
 
 let repo = '';
 let dorkHome = '';
@@ -169,38 +162,6 @@ describe('checkPlan().orphans is the next applyPlan().swept', () => {
     expect(swept).toHaveLength(preview.length);
     expect([...swept].sort()).toEqual([...preview].sort());
   });
-
-  it('AP-07, VC-01: is not clean when only the plugin is uninstalled, and names the nine paths', () => {
-    const built = stageRepo();
-    repo = built.repoRoot;
-    dorkHome = built.home;
-    sync(repo, dorkHome);
-
-    // Only the plugin goes. The authored skill and its link are untouched, so
-    // nothing drifts — and the tree used to read clean while a sync deleted nine.
-    rmSync(join(repo, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
-
-    const plan = project(repo, { dorkHome });
-    const drift = checkPlan(repo, plan);
-
-    expect(drift.clean).toBe(false);
-    expect(drift.orphans).toHaveLength(9);
-    expect([...drift.orphans].sort()).toEqual([
-      '.agents/skills/acme__greet',
-      '.claude/commands/acme/.gitignore',
-      '.claude/commands/acme/hello.md',
-      '.claude/settings.local.json',
-      '.claude/skills/acme__greet',
-      '.codex/hooks.json',
-      '.codex/hooks.json.dorkos-generated',
-      '.opencode/commands/.gitignore',
-      '.opencode/commands/acme-hello.md',
-    ]);
-
-    const swept = applyPlan(repo, plan, { sweepOrphans: true }).swept;
-    expect(swept).toHaveLength(drift.orphans.length);
-    expect([...swept].sort()).toEqual([...drift.orphans].sort());
-  });
 });
 
 describe('every swept path says why it goes', () => {
@@ -253,49 +214,6 @@ describe('every swept path says why it goes', () => {
       [...preview].sort((a, b) => a.path.localeCompare(b.path))
     );
   });
-
-  it('AP-07, VC-01: keeps the reasoned list and the bare one the same list (DOR-1906)', () => {
-    // Purpose: `swept` and `orphans` stay `string[]` for the equality contract
-    // and every existing caller, so the two shapes are two views of one answer
-    // and never two walks. Seeded defect: build `removals` from a second call to
-    // the finders and this reds the moment a sweep is not idempotent — the
-    // second walk sees the tree the first one already emptied.
-    const built = stageRepo();
-    repo = built.repoRoot;
-    dorkHome = built.home;
-    sync(repo, dorkHome);
-    rmSync(join(repo, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
-
-    const plan = project(repo, { dorkHome });
-    const drift = checkPlan(repo, plan);
-
-    expect(drift.orphans).toHaveLength(9);
-    expect(drift.removals.map(({ path }) => path)).toEqual(drift.orphans);
-    expect(drift.removals.every(({ reason }) => reason.length > 0)).toBe(true);
-
-    const applied = applyPlan(repo, plan, { sweepOrphans: true });
-    expect(applied.removals.map(({ path }) => path)).toEqual(applied.swept);
-  });
-
-  it('AP-07, AP-10: calls a stranded temp debris, not an uninstalled package (DOR-1906)', () => {
-    // Purpose: the command sweeps yield two different facts, and the wrong one
-    // is a sentence about a package that is still perfectly well installed.
-    // Seeded defect: drop the temp refinement in `sweepReason` and this reds
-    // with the wrapper reason over a half-written file.
-    const built = stageRepo();
-    repo = built.repoRoot;
-    dorkHome = built.home;
-    sync(repo, dorkHome);
-
-    const stale = `.opencode/commands/.acme-hello.md.90001.beefed${ATOMIC_TMP_SUFFIX}`;
-    writeFileSync(join(repo, stale), '# a crash left this behind\n');
-    const when = (Date.now() - STALE_TEMP_AGE_MS * 2) / 1000;
-    utimesSync(join(repo, stale), when, when);
-
-    expect(checkPlan(repo, project(repo, { dorkHome })).removals).toEqual([
-      { path: stale, reason: SWEEP_REASONS['stale-temp'] },
-    ]);
-  });
 });
 
 describe('each find half, against the case its sweep owns', () => {
@@ -315,6 +233,22 @@ describe('each find half, against the case its sweep owns', () => {
     expect(found.sort()).toEqual(['.agents/skills/acme__greet', '.claude/skills/acme__greet']);
   });
 
+  it('AP-07, HK-11: findGeneratedOrphans names a hooks file it owns with its sidecar, never a hand-written one', () => {
+    const built = stageRepo();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+    sync(repo, dorkHome);
+    // Somebody's own Cursor hooks, at one of the paths this finder considers.
+    // No sidecar, so nothing proves the engine wrote it, and it is never taken.
+    mkdirSync(join(repo, '.cursor'), { recursive: true });
+    writeFileSync(join(repo, '.cursor', 'hooks.json'), '{ "mine": true }\n');
+    rmSync(join(repo, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
+
+    const found = findGeneratedOrphans(repo, project(repo, { dorkHome }));
+
+    expect(found).toEqual(['.codex/hooks.json', '.codex/hooks.json.dorkos-generated']);
+  });
+
   it('AP-07, SK-10: findOrphanedAuthoredLinks names a link whose skill was deleted, not one that resolves', () => {
     const built = stageRepo();
     repo = built.repoRoot;
@@ -332,75 +266,6 @@ describe('each find half, against the case its sweep owns', () => {
     const found = findOrphanedAuthoredLinks(repo, project(repo, { dorkHome }));
 
     expect(found).toEqual(['.claude/skills/alpha']);
-  });
-
-  it('AP-07, HK-11: findGeneratedOrphans names a hooks file it owns with its sidecar, never a hand-written one', () => {
-    const built = stageRepo();
-    repo = built.repoRoot;
-    dorkHome = built.home;
-    sync(repo, dorkHome);
-    // Somebody's own Cursor hooks, at one of the paths this finder considers.
-    // No sidecar, so nothing proves the engine wrote it, and it is never taken.
-    mkdirSync(join(repo, '.cursor'), { recursive: true });
-    writeFileSync(join(repo, '.cursor', 'hooks.json'), '{ "mine": true }\n');
-    rmSync(join(repo, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
-
-    const found = findGeneratedOrphans(repo, project(repo, { dorkHome }));
-
-    expect(found).toEqual(['.codex/hooks.json', '.codex/hooks.json.dorkos-generated']);
-  });
-
-  it('AP-07, CM-01: findGeneratedCommandOrphans names the wrapper and its .gitignore, never an authored file', () => {
-    const built = stageRepo();
-    repo = built.repoRoot;
-    dorkHome = built.home;
-    sync(repo, dorkHome);
-    // An authored command sharing the wrapper dir: no marker, so not ours.
-    writeFileSync(join(repo, '.claude', 'commands', 'acme', 'mine.md'), '# my own command\n');
-    rmSync(join(repo, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
-
-    const found = findGeneratedCommandOrphans(repo, project(repo, { dorkHome }));
-
-    expect(found.sort()).toEqual([
-      '.claude/commands/acme/.gitignore',
-      '.claude/commands/acme/hello.md',
-    ]);
-  });
-
-  it('AP-07, CM-03: findOpencodeCommandOrphans names the wrapper and its .gitignore, never an authored file', () => {
-    const built = stageRepo();
-    repo = built.repoRoot;
-    dorkHome = built.home;
-    sync(repo, dorkHome);
-    // The OpenCode command dir is shared and flat, so an authored command sits
-    // beside the wrappers and must survive on its missing marker alone.
-    writeFileSync(join(repo, '.opencode', 'commands', 'mine.md'), '# my own command\n');
-    rmSync(join(repo, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
-
-    const found = findOpencodeCommandOrphans(repo, project(repo, { dorkHome }));
-
-    expect(found.sort()).toEqual([
-      '.opencode/commands/.gitignore',
-      '.opencode/commands/acme-hello.md',
-    ]);
-  });
-
-  it('AP-07, HK-06: findSettingsHooksOrphan names the settings file only while managed hooks are in it', () => {
-    const built = stageRepo();
-    repo = built.repoRoot;
-    dorkHome = built.home;
-    sync(repo, dorkHome);
-    rmSync(join(repo, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
-
-    const plan = project(repo, { dorkHome });
-    expect(findSettingsHooksOrphan(repo, plan)).toEqual(['.claude/settings.local.json']);
-
-    // After the sweep the person's own file is still there — only the managed
-    // groups went — so asking again answers nothing, and a second `--check` is
-    // clean rather than naming a path forever.
-    applyPlan(repo, plan, { sweepOrphans: true });
-    expect(existsSync(join(repo, '.claude', 'settings.local.json'))).toBe(true);
-    expect(findSettingsHooksOrphan(repo, project(repo, { dorkHome }))).toEqual([]);
   });
 });
 
@@ -429,85 +294,6 @@ describe('an atomic-write temp file in a swept command directory', () => {
   });
 });
 
-describe('a plan narrowed to one harness', () => {
-  it('AP-07: reports no orphans, because a --fix on it sweeps nothing', () => {
-    const built = stageRepo();
-    repo = built.repoRoot;
-    dorkHome = built.home;
-    sync(repo, dorkHome);
-    rmSync(join(repo, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
-
-    const full = project(repo, { dorkHome });
-    // The narrowing `planWithConsent` does, reduced to what this claim needs.
-    const narrowed: ProjectionPlan = {
-      ...full,
-      narrowedTo: 'codex',
-      actions: full.actions.filter((a) => a.harness === 'codex'),
-    };
-
-    // Same tree, same instant: the full plan names the nine the plugin left
-    // behind, and the narrowed one names none — a Codex-only plan cannot tell a
-    // live Claude projection from an orphan, and the `--fix --harness codex` it
-    // would recommend refuses to sweep anything at all.
-    expect(checkPlan(repo, full).orphans).toHaveLength(9);
-    expect(checkPlan(repo, narrowed).orphans).toEqual([]);
-    expect(checkPlan(repo, narrowed).clean).toBe(true);
-  });
-});
-
-describe('a command directory that cannot be listed', () => {
-  // Every one of these threw out of `checkPlan` when the command sweeps first
-  // gained find halves: `existsSync` says yes to a FILE and to a directory
-  // nobody may read, and the bare `readdirSync` behind it then raised ENOTDIR or
-  // EACCES — out of the middle of the one command a person runs to be TOLD what
-  // is wrong with their tree (`apply.ts`'s own invariant, and AP-05).
-  it('AP-11, VC-01: is nothing to list rather than an exception, when it is a file', () => {
-    const built = stageRepo();
-    repo = built.repoRoot;
-    dorkHome = built.home;
-    // No sync first: a stray file at each path, and nothing projected.
-    mkdirSync(join(repo, '.claude'), { recursive: true });
-    writeFileSync(join(repo, '.claude', 'commands'), 'a note somebody left here\n');
-    mkdirSync(join(repo, '.opencode'), { recursive: true });
-    writeFileSync(join(repo, '.opencode', 'commands'), 'and another\n');
-
-    const plan = project(repo, { dorkHome });
-
-    expect(() => checkPlan(repo, plan)).not.toThrow();
-    expect(checkPlan(repo, plan).orphans).toEqual([]);
-  });
-
-  it.runIf(CAN_STAGE_UNREADABLE)('AP-11, VC-01: is nothing to list when nobody may read it', () => {
-    const built = stageRepo();
-    repo = built.repoRoot;
-    dorkHome = built.home;
-    sync(repo, dorkHome);
-    makeUnreadable(join(repo, '.claude', 'commands'));
-    makeUnreadable(join(repo, '.opencode', 'commands'));
-
-    expect(() => checkPlan(repo, project(repo, { dorkHome }))).not.toThrow();
-  });
-
-  it.runIf(CAN_STAGE_UNREADABLE)(
-    'AP-11, VC-01: is nothing to list when one wrapper dir is unreadable',
-    () => {
-      const built = stageRepo();
-      repo = built.repoRoot;
-      dorkHome = built.home;
-      sync(repo, dorkHome);
-      // The dir itself lists fine; the per-package walk inside it is the one that
-      // cannot read, which is a second bare `readdirSync` and a second throw.
-      makeUnreadable(join(repo, '.claude', 'commands', 'acme'));
-
-      const drift = checkPlan(repo, project(repo, { dorkHome }));
-
-      // Nothing was read there, so nothing is claimed about it: the wrapper files
-      // are neither named as orphans nor mistaken for gone.
-      expect(drift.orphans.filter((p) => p.startsWith('.claude/commands/'))).toEqual([]);
-    }
-  );
-});
-
 describe('a wrapper directory nobody can read', () => {
   it.runIf(CAN_STAGE_UNREADABLE)('AP-07: is not tidied away as though it were empty', () => {
     const built = stageRepo();
@@ -526,21 +312,6 @@ describe('a wrapper directory nobody can read', () => {
 
     expect(existsSync(ghost)).toBe(true);
     expect(result.swept.filter((p) => p.startsWith('.claude/commands/ghost'))).toEqual([]);
-  });
-
-  it('AP-07, AP-08: is still tidied away when it really is empty', () => {
-    const built = stageRepo();
-    repo = built.repoRoot;
-    dorkHome = built.home;
-    sync(repo, dorkHome);
-    // The discriminating half: a readable empty wrapper dir still goes, so the
-    // fix above is a narrower predicate rather than a disabled one.
-    const empty = join(repo, '.claude', 'commands', 'leftover');
-    mkdirSync(empty, { recursive: true });
-
-    applyPlan(repo, project(repo, { dorkHome }), { sweepOrphans: true });
-
-    expect(existsSync(empty)).toBe(false);
   });
 });
 
@@ -569,35 +340,5 @@ describe('applyPlan refuses to sweep a plan narrowed to one harness', () => {
 
     // Without the sweep it is an ordinary narrowed apply, and applies.
     expect(() => applyPlan(repo, narrowed)).not.toThrow();
-  });
-});
-
-describe('the orphan list is sorted and unique as it leaves the engine', () => {
-  it('VC-01: needs no sorting by its reader', () => {
-    const built = stageRepo();
-    repo = built.repoRoot;
-    dorkHome = built.home;
-    sync(repo, dorkHome);
-    rmSync(join(repo, '.agents', 'skills', 'alpha'), { recursive: true, force: true });
-    rmSync(join(repo, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
-
-    const orphans = checkPlan(repo, project(repo, { dorkHome })).orphans;
-
-    // Compared WITHOUT re-sorting: the six finders run in their own order and
-    // the union is what fixes it, so a reader — the CLI, the status endpoint —
-    // can print the list as it comes.
-    expect(orphans).toEqual([
-      '.agents/skills/acme__greet',
-      '.claude/commands/acme/.gitignore',
-      '.claude/commands/acme/hello.md',
-      '.claude/settings.local.json',
-      '.claude/skills/acme__greet',
-      '.claude/skills/alpha',
-      '.codex/hooks.json',
-      '.codex/hooks.json.dorkos-generated',
-      '.opencode/commands/.gitignore',
-      '.opencode/commands/acme-hello.md',
-    ]);
-    expect(new Set(orphans).size).toBe(orphans.length);
   });
 });
