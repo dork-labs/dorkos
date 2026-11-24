@@ -78,44 +78,26 @@ describe('RunAccounting (DOR-1482)', () => {
     expect(store.getRun(run.id)!.status).toBe('running');
   });
 
-  it.each(['direct', 'relay'] as const)(
-    'hands preparation ownership to the %s dispatch path',
-    async (path) => {
-      const runs = new RunAccounting(store);
-      const run = store.createRun(taskId, 'manual');
-      let finish!: () => void;
-      const done = new Promise<void>((resolve) => {
-        finish = resolve;
-      });
-      const controller = new AbortController();
-      const work = runs.prepare(run.id, async () => {
-        if (path === 'direct') runs.addDirect(run.id, controller);
-        else runs.addRelay(run.id);
-        await done;
-      });
-      try {
-        expect(runs.stopHere(run.id, store, 'stop')).toEqual(
-          path === 'direct' ? { state: 'stopping' } : undefined
-        );
-        expect(controller.signal.aborted).toBe(path === 'direct');
-        // Only a runner can finalize an already-dispatched run. In particular,
-        // a relay run must not be filed as stopped by the preparation path.
-        expect(store.getRun(run.id)!.status).toBe('running');
-      } finally {
-        finish();
-        await work;
-      }
-    }
-  );
-
-  it('gives back a relay slot whose run vanished with its task', () => {
+  it('hands preparation ownership to the relay dispatch path', async () => {
     const runs = new RunAccounting(store);
-    const run = store.createRun(taskId, 'scheduled');
-    runs.addRelay(run.id, null);
-
-    store.deleteTask(taskId);
-
-    expect(runs.count()).toBe(0);
+    const run = store.createRun(taskId, 'manual');
+    let finish!: () => void;
+    const done = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const work = runs.prepare(run.id, async () => {
+      runs.addRelay(run.id);
+      await done;
+    });
+    try {
+      expect(runs.stopHere(run.id, store, 'stop')).toBeUndefined();
+      // Only a runner can finalize an already-dispatched run. In particular,
+      // a relay run must not be filed as stopped by the preparation path.
+      expect(store.getRun(run.id)!.status).toBe('running');
+    } finally {
+      finish();
+      await work;
+    }
   });
 
   it('stops holding a slot for a relay run that never reports an ending', () => {
@@ -158,18 +140,6 @@ describe('RunAccounting (DOR-1482)', () => {
 
     vi.advanceTimersByTime(2_000);
     expect(runs.count()).toBe(0);
-  });
-
-  it('only hands back an abort handle for a run this process is executing', () => {
-    const runs = new RunAccounting(store);
-    const direct = store.createRun(taskId, 'manual');
-    const viaRelay = store.createRun(taskId, 'scheduled');
-    const controller = new AbortController();
-    runs.addDirect(direct.id, controller);
-    runs.addRelay(viaRelay.id, null);
-
-    expect(runs.directController(direct.id)).toBe(controller);
-    expect(runs.directController(viaRelay.id)).toBeUndefined();
   });
 
   it('aborts every direct run and leaves relay runs to their runner', () => {

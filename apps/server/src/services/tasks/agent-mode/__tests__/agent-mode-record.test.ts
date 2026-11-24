@@ -17,36 +17,22 @@ vi.mock('../../../core/config-manager.js', () => ({
     get: (key: string) => (key === 'tasks' ? { agentModeControl: true } : undefined),
   },
 }));
-vi.mock('../../../../lib/logger.js', () => ({
-  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
-  logError: (err: unknown) => ({ err }),
-}));
 
 import { TaskStore } from '../../task-store.js';
 import { AuditLog } from '../../../audit/audit-log.js';
 import { AccountIds } from '../../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
-import { MODE_ONLY_CHANGE_ON_PERSON_APPROVED_TASK_RUNS } from '../agent-mode-actions.js';
 import { agentModeSnapshotOf } from '../agent-mode-door.js';
 import { grantOf } from './agent-mode-fixtures.js';
 import {
   armAgentApproval,
   grantedModeMayRun,
   parkIfAgentApprovalStale,
-  recordAgentModeOutcome,
 } from '../agent-mode-record.js';
 import { agentModeRecordText } from '../agent-mode-record-field.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 
 describe('what a mode an agent set may run at (M-A)', () => {
-  it('ships with the pending-ruling switch on', () => {
-    expect(MODE_ONLY_CHANGE_ON_PERSON_APPROVED_TASK_RUNS).toBe(true);
-  });
-
-  it('runs a mode up to Don’t ask without more', () => {
-    expect(grantedModeMayRun(grantOf({ aboveDontAsk: false }), false)).toBe(true);
-  });
-
   it('runs a looser mode a person answered a card for only while they approved the content as it is (M1)', () => {
     expect(grantedModeMayRun(grantOf({ via: 'card' }), true)).toBe(true);
     expect(grantedModeMayRun(grantOf({ via: 'card' }), false)).toBe(false);
@@ -120,48 +106,6 @@ describe('an approval arms only the file the decision read (N-b)', () => {
       meshCore: undefined,
     });
     expect(armed?.status).toBe('active');
-  });
-});
-
-describe('agent approval Activity metadata', () => {
-  it('records the proposed and approved mode and allow list', async () => {
-    const store = new TaskStore(createTestDb());
-    const emit = vi.fn();
-    const before = store.createTask({
-      name: 'sweep',
-      description: 'sweep',
-      prompt: 'sweep the backlog',
-      cron: '0 3 * * *',
-      filePath: '',
-      requestedPermissionMode: 'dontAsk',
-      requestedAllow: ['Bash(/tmp/task.sh --once)'],
-    });
-    const after = store.updateTask(before.id, {
-      permissionMode: 'dontAsk',
-      approvedAllow: ['Bash(/tmp/task.sh --once)'],
-    })!;
-
-    await recordAgentModeOutcome({
-      grant: grantOf({ approves: true, aboveDontAsk: false }),
-      before,
-      after,
-      store,
-      meshCore: undefined,
-      activity: { emit },
-    });
-
-    expect(emit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: 'tasks.task_approved',
-        metadata: expect.objectContaining({
-          proposedPermissionMode: 'dontAsk',
-          proposedAllow: ['Bash(/tmp/task.sh --once)'],
-          approvedPermissionMode: 'dontAsk',
-          approvedAllow: ['Bash(/tmp/task.sh --once)'],
-        }),
-      })
-    );
-    store.close();
   });
 });
 

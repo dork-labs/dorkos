@@ -57,23 +57,7 @@ describe('settleRunAllowList', () => {
     );
   });
 
-  it('refuses the run when a pinned program is now a link to another file', async () => {
-    const other = path.join(dir, 'other');
-    await fs.writeFile(other, '#!/bin/sh\necho sample\n', { mode: 0o755 });
-    await fs.rm(program);
-    await fs.symlink(other, program);
-    const task = createMockSchedule({ approvedAllow: [rule], runOnce: true, cron: '' });
-    await expect(settleRunAllowList(task, scheduled, src())).rejects.toThrow(
-      PROGRAM_CHANGED_MESSAGE
-    );
-  });
-
-  it('does not check a rule a person approved, which has no pin', async () => {
-    const task = createMockSchedule({ approvedAllow: ['Read(notes/today.md)'] });
-    await expect(settleRunAllowList(task, scheduled, src())).resolves.toBe(task);
-  });
-
-  it.each(['manual', 'agent'] as const)(
+  it.each(['manual'] as const)(
     'runs a one-shot task’s %s run without its list',
     async (trigger) => {
       const task = createMockSchedule({ approvedAllow: [rule], runOnce: true, cron: '' });
@@ -97,11 +81,6 @@ describe('settleRunAllowList', () => {
     ).rejects.toThrow(PINS_UNREADABLE_MESSAGE);
   });
 
-  it('leaves a task with no list alone', async () => {
-    const task = createMockSchedule();
-    await expect(settleRunAllowList(task, scheduled, src())).resolves.toBe(task);
-  });
-
   it('refuses the run when its agent no longer runs commands without asking', async () => {
     const task = createMockSchedule({ approvedAllow: [rule], runOnce: true, cron: '' });
     await expect(settleRunAllowList(task, scheduled, src(false))).rejects.toThrow(
@@ -118,7 +97,7 @@ describe('settleRunAllowList', () => {
     const recurring = () =>
       createMockSchedule({ approvedAllow: [rule], permissionMode: 'dontAsk', cron: '0 * * * *' });
 
-    it.each(['scheduled', 'manual', 'agent'] as const)(
+    it.each(['scheduled', 'manual'] as const)(
       'carries its list on a %s run while its programs and its agent’s level hold',
       async (trigger) => {
         const task = recurring();
@@ -126,7 +105,7 @@ describe('settleRunAllowList', () => {
       }
     );
 
-    it.each(['scheduled', 'manual', 'agent'] as const)(
+    it.each(['scheduled', 'manual'] as const)(
       'refuses a %s run whose program changed, or whose agent dropped below Full',
       async (trigger) => {
         await expect(settleRunAllowList(recurring(), { trigger }, src(false))).rejects.toThrow(

@@ -101,7 +101,7 @@ describe('a schedule waiting for approval can still be run once', () => {
     return store.updateTask(task.id, { status: 'pending_approval' })!;
   }
 
-  it('runs it, and records the run as a manual one', async () => {
+  it('runs it as a manual run, and decides nothing about the approval', async () => {
     const task = parkedTask();
     const service = new TaskSchedulerService(store, agent, CONFIG);
     await service.start();
@@ -118,20 +118,20 @@ describe('a schedule waiting for approval can still be run once', () => {
     const [sessionId, prompt] = vi.mocked(agent.sendMessage).mock.calls[0]!;
     expect(sessionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(prompt).toContain('sweep the backlog');
+    await vi.waitFor(() =>
+      expect(store.listRuns({ taskId: task.id })[0]!.status).not.toBe('running')
+    );
 
-    await service.stop();
-  });
-
-  it('does not arm the cron', async () => {
-    const task = parkedTask();
-    const service = new TaskSchedulerService(store, agent, CONFIG);
-    await service.start();
-
-    await service.triggerManualRun(task.id);
-    await vi.waitFor(() => expect(agent.sendMessage).toHaveBeenCalledOnce());
-
+    // A trial is not a decision: no cron armed, nothing approved, and the
+    // standing condition and its escalation clock left alone.
     expect(service.isRegistered(task.id)).toBe(false);
     expect(service.getNextRun(task.id)).toBeNull();
+    const after = store.getTask(task.id)!;
+    expect(after.status).toBe('pending_approval');
+    expect(after.enabled).toBe(task.enabled);
+    expect(after.reason).toBe(task.reason);
+    expect(resolveStanding).not.toHaveBeenCalled();
+    expect(cancelEscalationByKey).not.toHaveBeenCalled();
 
     await service.stop();
   });
@@ -167,42 +167,5 @@ describe('a schedule waiting for approval can still be run once', () => {
       await service.stop();
       await fs.rm(folder, { recursive: true, force: true });
     }
-  });
-
-  it('does not approve the schedule', async () => {
-    const task = parkedTask();
-    const service = new TaskSchedulerService(store, agent, CONFIG);
-    await service.start();
-
-    await service.triggerManualRun(task.id);
-    await vi.waitFor(() => expect(agent.sendMessage).toHaveBeenCalledOnce());
-
-    const after = store.getTask(task.id)!;
-    expect(after.status).toBe('pending_approval');
-    expect(after.enabled).toBe(task.enabled);
-    // The case the agent made for it survives the trial run untouched.
-    expect(after.reason).toBe(task.reason);
-
-    await service.stop();
-  });
-
-  it('leaves the standing approval condition standing (nothing decides the approval)', async () => {
-    const task = parkedTask();
-    const service = new TaskSchedulerService(store, agent, CONFIG);
-    await service.start();
-
-    await service.triggerManualRun(task.id);
-    await vi.waitFor(() => expect(agent.sendMessage).toHaveBeenCalledOnce());
-    // Let the run reach its terminal write, where the notification hooks live.
-    await vi.waitFor(() =>
-      expect(store.listRuns({ taskId: task.id })[0]!.status).not.toBe('running')
-    );
-
-    // Trying a proposal is not deciding it: the operator still owes an answer,
-    // so nothing may record one and nothing may stop the escalation clock.
-    expect(resolveStanding).not.toHaveBeenCalled();
-    expect(cancelEscalationByKey).not.toHaveBeenCalled();
-
-    await service.stop();
   });
 });

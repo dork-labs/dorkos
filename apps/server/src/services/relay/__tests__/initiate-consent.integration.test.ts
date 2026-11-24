@@ -57,95 +57,43 @@ function watchOutbound(): RelayEnvelope[] {
 }
 
 describe('DOR-277 — canInitiate enforced at the delivery layer', () => {
-  it('BLOCKS an agent publish to a human subject when canInitiate is off', async () => {
-    await bindingStore.create({ adapterId: 'tg1', agentId: 'agent-1', canInitiate: false });
-    const delivered = watchOutbound();
-
-    const result = await relay.publish(
-      HUMAN,
-      { text: 'unsolicited' },
-      { from: 'relay.agent.ns.agent-1' }
-    );
-
-    expect(result.deliveredTo).toBe(0);
-    expect(result.rejected?.[0]?.reason).toBe('initiate_denied');
-    expect(delivered).toHaveLength(0);
-    const dead = await relay.getDeadLetters();
-    expect(dead.some((d) => d.envelope?.subject === HUMAN)).toBe(true);
-  });
-
-  it('ALLOWS the agent send once canInitiate is turned on', async () => {
+  it('blocks an agent send until canInitiate is on, dead-lettering the refused one', async () => {
     const binding = await bindingStore.create({
       adapterId: 'tg1',
       agentId: 'agent-1',
       canInitiate: false,
     });
     const delivered = watchOutbound();
-
-    // Blocked before consent...
-    const blocked = await relay.publish(
-      HUMAN,
-      { text: 'first try' },
-      { from: 'relay.agent.ns.agent-1' }
-    );
+    const blocked = await relay.publish(HUMAN, { text: 'first try' }, { from: AGENT_SUBJECT });
     expect(blocked.deliveredTo).toBe(0);
-
-    // ...flows after the user flips the switch on.
+    expect(blocked.rejected?.[0]?.reason).toBe('initiate_denied');
+    expect((await relay.getDeadLetters()).some((d) => d.envelope?.subject === HUMAN)).toBe(true);
     await bindingStore.update(binding.id, { canInitiate: true });
-    const allowed = await relay.publish(
-      HUMAN,
-      { text: 'now allowed' },
-      { from: 'relay.agent.ns.agent-1' }
-    );
-
-    expect(allowed.deliveredTo).toBe(1);
+    expect(
+      (await relay.publish(HUMAN, { text: 'now allowed' }, { from: AGENT_SUBJECT })).deliveredTo
+    ).toBe(1);
     expect(delivered.map((e) => (e.payload as { text: string }).text)).toEqual(['now allowed']);
   });
 
-  it('ALWAYS delivers an automatic reply (agent: principal), even with canInitiate off', async () => {
-    await bindingStore.create({ adapterId: 'tg1', agentId: 'agent-1', canInitiate: false });
-    const delivered = watchOutbound();
+  // Replies and the task notifier resolved consent upstream; the gate exempts them.
+  it.each([['agent:sess-1'], ['relay.system.tasks.notifier']])(
+    'always delivers from %s, even with canInitiate off',
+    async (from) => {
+      await bindingStore.create({ adapterId: 'tg1', agentId: 'agent-1', canInitiate: false });
+      const delivered = watchOutbound();
+      expect((await relay.publish(HUMAN, { text: 'reply' }, { from })).deliveredTo).toBe(1);
+      expect(delivered).toHaveLength(1);
+    }
+  );
 
-    // The runtime adapter forwards a turn's reply under the `agent:` principal.
-    const result = await relay.publish(
-      HUMAN,
-      { text: 'here is your answer' },
-      { from: 'agent:sess-1' }
-    );
-
-    expect(result.deliveredTo).toBe(1);
-    expect(delivered).toHaveLength(1);
-  });
-
-  it('ALWAYS delivers a task-completion notification (system principal), even with canInitiate off', async () => {
-    await bindingStore.create({ adapterId: 'tg1', agentId: 'agent-1', canInitiate: false });
-    const delivered = watchOutbound();
-
-    // The run-completion path resolved consent upstream and publishes as the
-    // trusted system principal; the delivery gate exempts it.
-    const result = await relay.publish(
-      HUMAN,
-      { text: '✅ done' },
-      { from: 'relay.system.tasks.notifier' }
-    );
-
-    expect(result.deliveredTo).toBe(1);
-    expect(delivered).toHaveLength(1);
-  });
-
-  it('BLOCKS a DIFFERENT agent from riding a consenting binding', async () => {
-    // The consent belongs to agent-1 on this channel. agent-2 is another agent
-    // on the same machine and has been granted nothing here.
+  it('blocks a DIFFERENT agent from riding a consenting binding', async () => {
     await bindingStore.create({ adapterId: 'tg1', agentId: 'agent-1', canInitiate: true });
     const delivered = watchOutbound();
-
     const result = await relay.publish(
       HUMAN,
-      { text: 'not my channel' },
+      { text: 'not mine' },
       { from: 'relay.agent.ns.agent-2' }
     );
-
-    expect(result.deliveredTo).toBe(0);
     expect(result.rejected?.[0]?.reason).toBe('initiate_denied');
     expect(delivered).toHaveLength(0);
   });

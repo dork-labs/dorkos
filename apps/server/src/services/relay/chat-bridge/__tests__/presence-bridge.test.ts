@@ -1,27 +1,9 @@
 /**
- * The presence forwarder, exercised through the REAL dispatcher
- * (chats-as-channels spec §6.8) — the acceptance test A6.8 asks for: a turn
- * claim in a bridged room produces a Telegram typing action via the
- * `progress` branch, and releasing the claim clears it.
- *
- * **What "real" means here, and where the boundary sits.** `RoomService`, its
- * `RoomTriggerDispatcher`, `BridgeStore`, and `ChatBridgePresence` are all the
- * genuine article (`createRoomHarness` — only the turn runner is scripted,
- * because the alternative is a model call). The signal transport is a real
- * `@dorkos/relay` `SignalEmitter` — the exact class `RelayCore.signal` /
- * `RelayCore.onSignal` delegate to internally — subscribed with the identical
- * one-line routing rule `telegram-adapter.ts` wires at start ("`typing` or
- * `progress` reaches the typing loop"). What is NOT re-run here is
- * `handleTypingSignal` itself and the grammy `sendChatAction` call it
- * makes — that function is `packages/relay`'s own internal, not exported
- * across the package boundary (`@dorkos/relay`'s public surface is `.` and
- * `./testing` only; see `packages/relay/package.json`'s `exports`), and its
- * `'active'` → start / anything else → stop contract is `packages/relay`'s
- * own suite's job to pin. This test proves the half chats-as-channels adds:
- * that a real claim/release in a BRIDGED room reaches the relay signal bus,
- * on the right subject, carrying exactly the `state` values that contract
- * keys off — and that an unbridged room's identical claim/release reaches it
- * not at all.
+ * The presence forwarder through the REAL dispatcher (chats-as-channels §6.8,
+ * A6.8): a turn claim in a bridged room produces a `progress` signal on the
+ * chat's subject, and releasing the claim clears it. The signal bus is a real
+ * `@dorkos/relay` `SignalEmitter` with the same routing rule the Telegram
+ * adapter wires; `handleTypingSignal` itself is pinned by `packages/relay`.
  */
 import { describe, it, expect } from 'vitest';
 import { SignalEmitter } from '@dorkos/relay';

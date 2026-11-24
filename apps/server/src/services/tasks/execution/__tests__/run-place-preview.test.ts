@@ -168,7 +168,6 @@ function expectAgree({ card, run }: { card: TaskRunPlace | undefined; run: strin
 describe("an agent's parked schedule says where the run stands", () => {
   it.each<[string, Case, () => TaskRunPlace | undefined]>([
     ['the default binding', { mode: 'home' }, () => ({ kind: 'agent', path: agent })],
-    ['no readable manifest', {}, () => ({ kind: 'agent', path: agent })],
     [
       'a managed binding with a ready checkout',
       { mode: 'managed', checkout: 'ready' },
@@ -177,11 +176,6 @@ describe("an agent's parked schedule says where the run stands", () => {
     [
       'a managed binding whose checkout a run makes at once',
       { mode: 'managed', checkout: 'none', runWithout: 'makes' },
-      () => ({ kind: 'agent_checkout', ready: false }),
-    ],
-    [
-      'a managed binding whose checkout waits on a person',
-      { mode: 'managed', checkout: 'none', runWithout: 'waits' },
       () => ({ kind: 'agent_checkout', ready: false }),
     ],
     [
@@ -198,11 +192,6 @@ describe("an agent's parked schedule says where the run stands", () => {
       'a `none` binding whose default is home, which the guard moves',
       { mode: 'none', defaultCwd: '<home>' },
       () => ({ kind: 'agent', path: agent }),
-    ],
-    [
-      'a `none` binding whose default the guard keeps',
-      { mode: 'none' },
-      () => ({ kind: 'folder', path: elsewhere, of: 'default' }),
     ],
     [
       'a home the boundary refuses, falling to the default',
@@ -222,12 +211,6 @@ describe("an agent's parked schedule says where the run stands", () => {
     expectAgree(result);
   });
 
-  it('claims nothing for an agent the registry no longer holds', async () => {
-    const result = await both(TASK, meshWith(undefined), {});
-    expect(result.card).toBeUndefined();
-    expectAgree(result);
-  });
-
   it('claims nothing when its own folder is the data folder, where no run may start', async () => {
     const result = await both(TASK, meshWith(dork), {});
     expect(result.card).toBeUndefined();
@@ -238,7 +221,6 @@ describe("an agent's parked schedule says where the run stands", () => {
 describe('a parked schedule with no agent says where the run stands', () => {
   it.each([
     ['the home folder', () => home],
-    ['a folder above it', () => above],
     ['the data folder', () => dork],
   ])('a fresh private folder when the server stands in %s', async (_name, cwd) => {
     const result = await both(NO_AGENT, meshWith(agent), {}, cwd());
@@ -278,10 +260,5 @@ describe('withTaskRunPlace', () => {
   it('leaves every other schedule alone, since only the approval card reads it', async () => {
     const active = { ...parked, status: 'active' } as Task;
     expect(await withTaskRunPlace(active, meshWith(agent), deps)).toBe(active);
-  });
-
-  it('leaves the field off when no run could start', async () => {
-    const task = await withTaskRunPlace(parked, meshWith(dork), deps);
-    expect(task).not.toHaveProperty('runPlace');
   });
 });

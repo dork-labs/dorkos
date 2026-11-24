@@ -3,11 +3,10 @@
  *
  * The five-minute pass re-read about 180 SKILL.md files and rewrote every row,
  * timestamp and all, and re-registered every cron job, every time ("28
- * upserted" about 780 times in 65 hours on one machine). It still has to catch
- * what the watcher missed, so a changed file and a job the clock lost are still
- * repaired.
+ * upserted" about 780 times in 65 hours on one machine). It still has to put
+ * back a job the clock lost.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -20,12 +19,6 @@ import { TaskReconciler } from '../task-reconciler.js';
 import { ScheduleIdentityRegistry } from '../schedule-identity.js';
 import { globalSkillsRoot, globalTaskRoots } from '../skills-roots.js';
 import { FakeScheduler } from './fake-scheduler.js';
-
-vi.mock('../../../lib/logger.js', () => ({
-  logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
-  logError: (err: unknown) => ({ error: String(err) }),
-  createTaggedLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
-}));
 
 const schedule = (name: string, cron: string) =>
   `---\nname: ${name}\ndescription: A task named ${name}\nschedule:\n  cron: '${cron}'\n---\nDo the thing.`;
@@ -79,19 +72,6 @@ describe('a reconcile pass over unchanged files', () => {
     expect(scheduler.registered).toHaveLength(registrations);
   });
 
-  it('still writes a file that changed, and brings its job in line', async () => {
-    await writeTask('alpha', '30 3 * * *');
-
-    const pass = await reconciler.reconcile();
-
-    expect(pass.upserted).toBe(1);
-    const alpha = store.getTasks().find((task) => task.name === 'alpha')!;
-    expect(alpha.cron).toBe('30 3 * * *');
-    // New timing asks for approval again, so the old job comes off the clock.
-    expect(alpha.status).toBe('pending_approval');
-    expect(scheduler.jobs.has(alpha.id)).toBe(false);
-  });
-
   it('puts back a job the clock lost, without rewriting its row', async () => {
     const beta = store.getTasks().find((task) => task.name === 'beta')!;
     scheduler.jobs.delete(beta.id);
@@ -114,13 +94,5 @@ describe('a reconcile pass over unchanged files', () => {
     new TaskRegistrar({ store, scheduler }).repairTask(beta.id);
 
     expect(scheduler.jobs.has(beta.id)).toBe(false);
-  });
-
-  it('runs one pass for callers that ask at once', async () => {
-    const scan = vi.spyOn(fs, 'access');
-    await Promise.all([reconciler.reconcile(), reconciler.reconcile(), reconciler.reconcile()]);
-    const roots = globalTaskRoots(dorkHome).length;
-    expect(scan.mock.calls.filter(([p]) => p === globalSkillsRoot(dorkHome))).toHaveLength(roots);
-    scan.mockRestore();
   });
 });

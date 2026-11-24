@@ -254,7 +254,7 @@ describe('a task write tells the world it happened', () => {
     expect(broadcastTasksChangedCount()).toBe(1);
   });
 
-  it('MCP tasks_create broadcasts tasks_changed too (DOR-1380)', async () => {
+  it('MCP tasks_create broadcasts tasks_changed and records the parked status (DOR-1380)', async () => {
     // Reverses the earlier "deliberately absent" call: the Tasks list needs
     // this signal to show an agent's proposed schedule as it is written.
     const result = await tools['tasks_create']!.handler(
@@ -270,22 +270,10 @@ describe('a task write tells the world it happened', () => {
 
     expect(result.isError).not.toBe(true);
     expect(broadcastTasksChangedCount()).toBe(1);
-  });
 
-  it('MCP tasks_create writes an activity event with the parked status attached', async () => {
-    const result = await tools['tasks_create']!.handler(
-      {
-        name: 'agent-proposed',
-        prompt: 'do a thing',
-        cron: '0 3 * * *',
-        target: 'global',
-        reason: 'The nightly sweep keeps the backlog honest.',
-      },
-      undefined
-    );
-    expect(result.isError).not.toBe(true);
+    // The activity entry carries the parked status, so the feed can tell a
+    // proposal from a live schedule without a second lookup.
     await flush();
-
     const rows = db.select().from(activityEvents).all();
     const created = rows.find((r) => r.eventType === 'tasks.task_created');
     expect(created).toBeDefined();
@@ -294,28 +282,6 @@ describe('a task write tells the world it happened', () => {
     expect(JSON.parse(created!.metadata!) as Record<string, unknown>).toEqual({
       status: 'pending_approval',
     });
-
-    // The REST route's own creation of a TRUSTED (immediately active) task
-    // writes the same eventType with no status in its metadata — this is
-    // the distinguishing signal a consumer needs to tell the two apart
-    // without a second lookup.
-    const restRes = await request(fixtureServer).post('/api/tasks').send({
-      name: 'Operator created',
-      description: 'do stuff',
-      prompt: 'do stuff',
-      cron: '0 2 * * *',
-      target: 'global',
-    });
-    expect(restRes.status).toBe(201);
-    await flush();
-    const restEvent = db
-      .select()
-      .from(activityEvents)
-      .all()
-      .find((r) => r.eventType === 'tasks.task_created' && r.resourceId === restRes.body.id);
-    expect(restEvent).toBeDefined();
-    expect(restEvent!.actorType).toBe('user');
-    expect(restEvent!.metadata).toBeNull();
   });
 
   it('stays quiet when the write did not happen', async () => {

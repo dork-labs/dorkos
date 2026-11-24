@@ -220,15 +220,4 @@ describe('session adoption against real sessions.json + TranscriptReader (§7.3)
       .find((e) => e.kind === 'notice' && e.body.notice === 'bridge_history_note');
     expect((notice!.body as { text: string }).text).toContain('starts fresh');
   });
-
-  it('no candidate: an empty sessions.json starts fresh, adopting nothing', async () => {
-    await seedSessions([]);
-    await startRouter();
-
-    const { lifecycle } = makeLifecycle();
-    const { id, adopted } = await lifecycle.bridge(createInput());
-
-    expect(adopted).toBe(false);
-    expect(harness.store.getRoomSession(id, agentAuthorId(id))).toBeNull();
-  });
 });

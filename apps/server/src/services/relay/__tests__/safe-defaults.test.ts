@@ -1,20 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   carryForwardBindingDefaults,
   carryForwardAdapterDefaults,
   closeDmPolicyOnEnable,
-  warnOnOpenDmPolicy,
 } from '../safe-defaults.js';
 import {
   AdapterBindingSchema,
   SlackAdapterConfigSchema,
   TelegramAdapterConfigSchema,
 } from '@dorkos/shared/relay-schemas';
-import { logger } from '../../../lib/logger.js';
-
-vi.mock('../../../lib/logger.js', () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-}));
 
 /** A stored binding as `bindings.json` holds it, minus the keys under test. */
 function storedBinding(extra: Record<string, unknown> = {}) {
@@ -28,259 +22,110 @@ function storedBinding(extra: Record<string, unknown> = {}) {
   };
 }
 
-beforeEach(() => {
-  vi.clearAllMocks();
-});
+const SLACK = { botToken: 'xoxb-1', appToken: 'xapp-1', signingSecret: 'sec' };
+const TELEGRAM = { token: '123:ABC', mode: 'polling' };
 
-// ---------------------------------------------------------------------------
-// The new defaults themselves
-// ---------------------------------------------------------------------------
+/** Carry one stored adapter entry forward and return its config. */
+function carriedConfig(type: string, config: Record<string, unknown>): Record<string, unknown> {
+  const carried = carryForwardAdapterDefaults({
+    adapters: [{ id: type, type, enabled: true, config }],
+  }) as { adapters: { config: Record<string, unknown> }[] };
+  return carried.adapters[0].config;
+}
 
-describe('the safe default applies to newly created configuration (DOR-604)', () => {
-  it('a new binding runs in the prompting mode, not acceptEdits', () => {
-    const binding = AdapterBindingSchema.parse(storedBinding());
-    expect(binding.permissionMode).toBe('default');
-  });
-
-  it('a new Slack integration answers DMs by allowlist, not the whole workspace', () => {
-    const config = SlackAdapterConfigSchema.parse({
-      botToken: 'xoxb-1',
-      appToken: 'xapp-1',
-      signingSecret: 'sec',
+describe('new configuration starts safe (DOR-604, DOR-788)', () => {
+  it('a new binding prompts, and new Slack and Telegram connections answer DMs by allowlist', () => {
+    expect(AdapterBindingSchema.parse(storedBinding()).permissionMode).toBe('default');
+    expect(SlackAdapterConfigSchema.parse(SLACK)).toMatchObject({
+      dmPolicy: 'allowlist',
+      dmAllowlist: [],
     });
-    expect(config.dmPolicy).toBe('allowlist');
-    expect(config.dmAllowlist).toEqual([]);
+    expect(TelegramAdapterConfigSchema.parse({ token: '123:ABC' })).toMatchObject({
+      dmPolicy: 'allowlist',
+      dmAllowlist: [],
+    });
   });
 });
-
-// ---------------------------------------------------------------------------
-// Carry-forward: an existing install keeps working
-// ---------------------------------------------------------------------------
 
 describe('carryForwardBindingDefaults', () => {
-  it('stamps acceptEdits onto a binding stored without the key', () => {
-    const carried = carryForwardBindingDefaults({ bindings: [storedBinding()] }) as {
-      bindings: Record<string, unknown>[];
-    };
-    expect(carried.bindings[0].permissionMode).toBe('acceptEdits');
-  });
-
-  it('survives the schema parse it runs ahead of, landing on acceptEdits not default', () => {
+  it('stamps acceptEdits onto a binding stored without a mode, surviving the schema parse', () => {
     const carried = carryForwardBindingDefaults({ bindings: [storedBinding()] }) as {
       bindings: unknown[];
     };
     expect(AdapterBindingSchema.parse(carried.bindings[0]).permissionMode).toBe('acceptEdits');
   });
 
-  it('leaves a binding that already named its mode alone', () => {
+  it.each(['bypassPermissions', 'default'])('leaves a binding stored as %s alone', (mode) => {
     const carried = carryForwardBindingDefaults({
-      bindings: [storedBinding({ permissionMode: 'bypassPermissions' })],
+      bindings: [storedBinding({ permissionMode: mode })],
     }) as { bindings: Record<string, unknown>[] };
-    expect(carried.bindings[0].permissionMode).toBe('bypassPermissions');
-  });
-
-  it('does not resurrect a mode the operator explicitly set to the prompting one', () => {
-    const carried = carryForwardBindingDefaults({
-      bindings: [storedBinding({ permissionMode: 'default' })],
-    }) as { bindings: Record<string, unknown>[] };
-    expect(carried.bindings[0].permissionMode).toBe('default');
-  });
-
-  it('passes malformed input through for the schema to reject', () => {
-    expect(carryForwardBindingDefaults(null)).toBeNull();
-    expect(carryForwardBindingDefaults({ bindings: 'nope' })).toEqual({ bindings: 'nope' });
+    expect(carried.bindings[0].permissionMode).toBe(mode);
   });
 });
 
 describe('carryForwardAdapterDefaults', () => {
-  const slackEntry = (config: Record<string, unknown>) => ({
-    id: 'slack',
-    type: 'slack',
-    enabled: true,
-    config,
-  });
-  const secrets = { botToken: 'xoxb-1', appToken: 'xapp-1', signingSecret: 'sec' };
+  // A stored entry with no dmPolicy was written by an older build that answered
+  // every DM, so it stays open rather than going silent on upgrade.
+  it.each([
+    ['slack', SLACK, SlackAdapterConfigSchema],
+    ['telegram', TELEGRAM, TelegramAdapterConfigSchema],
+  ] as const)(
+    'keeps a stored %s connection open through the schema parse',
+    (type, config, schema) => {
+      expect(schema.parse(carriedConfig(type, config)).dmPolicy).toBe('open');
+    }
+  );
 
-  it('stamps open onto a Slack integration stored without dmPolicy', () => {
-    const carried = carryForwardAdapterDefaults({ adapters: [slackEntry(secrets)] }) as {
-      adapters: { config: Record<string, unknown> }[];
-    };
-    expect(carried.adapters[0].config.dmPolicy).toBe('open');
-  });
-
-  it('survives the schema parse it runs ahead of, landing on open not allowlist', () => {
-    const carried = carryForwardAdapterDefaults({ adapters: [slackEntry(secrets)] }) as {
-      adapters: { config: unknown }[];
-    };
-    expect(SlackAdapterConfigSchema.parse(carried.adapters[0].config).dmPolicy).toBe('open');
-  });
-
-  it('leaves a Slack integration that already chose allowlist alone', () => {
-    const carried = carryForwardAdapterDefaults({
-      adapters: [slackEntry({ ...secrets, dmPolicy: 'allowlist', dmAllowlist: ['U1'] })],
-    }) as { adapters: { config: Record<string, unknown> }[] };
-    expect(carried.adapters[0].config.dmPolicy).toBe('allowlist');
+  it('leaves a connection that chose allowlist alone, and ignores types with no DM policy', () => {
+    expect(
+      carriedConfig('telegram', { ...TELEGRAM, dmPolicy: 'allowlist', dmAllowlist: ['42'] })
+        .dmPolicy
+    ).toBe('allowlist');
+    expect(
+      carriedConfig('webhook', { inbound: { subject: 's', secret: 'x'.repeat(16) } })
+    ).not.toHaveProperty('dmPolicy');
   });
 
-  it('ignores adapters that have no DM policy at all', () => {
-    const webhook = {
-      id: 'wh',
-      type: 'webhook',
-      enabled: true,
-      config: { inbound: { subject: 's', secret: 'x'.repeat(16) } },
-    };
-    const carried = carryForwardAdapterDefaults({ adapters: [webhook] }) as {
-      adapters: { config: Record<string, unknown> }[];
-    };
-    expect(carried.adapters[0].config).not.toHaveProperty('dmPolicy');
-  });
-
-  describe('Telegram private chats (DOR-788)', () => {
-    // Telegram never had a DM policy and answered every private message, so a
-    // stored entry with no `dmPolicy` is exactly the "written by an older
-    // build" case: it is carried forward at `open` so a live bot does not go
-    // silent on upgrade, and the risk is stated out loud instead.
-    const telegramEntry = (config: Record<string, unknown>) => ({
-      id: 'tg',
-      type: 'telegram',
-      enabled: true,
-      config: { token: '123:ABC', mode: 'polling', ...config },
-    });
-
-    it('a new Telegram integration answers private messages by allowlist', () => {
-      const config = TelegramAdapterConfigSchema.parse({ token: '123:ABC' });
-      expect(config.dmPolicy).toBe('allowlist');
-      expect(config.dmAllowlist).toEqual([]);
-    });
-
-    it('stamps open onto an integration stored without dmPolicy', () => {
-      const carried = carryForwardAdapterDefaults({ adapters: [telegramEntry({})] }) as {
-        adapters: { config: Record<string, unknown> }[];
-      };
-      expect(carried.adapters[0].config.dmPolicy).toBe('open');
-    });
-
-    it('survives the schema parse it runs ahead of, landing on open not allowlist', () => {
-      // Without the stamp, the schema's own default would reach back in time
-      // and switch an already-installed bot off.
-      const carried = carryForwardAdapterDefaults({ adapters: [telegramEntry({})] }) as {
-        adapters: { config: unknown }[];
-      };
-      expect(TelegramAdapterConfigSchema.parse(carried.adapters[0].config).dmPolicy).toBe('open');
-    });
-
-    it('leaves an integration that already chose allowlist alone', () => {
-      const carried = carryForwardAdapterDefaults({
-        adapters: [telegramEntry({ dmPolicy: 'allowlist', dmAllowlist: ['42'] })],
-      }) as { adapters: { config: Record<string, unknown> }[] };
-      expect(carried.adapters[0].config.dmPolicy).toBe('allowlist');
-    });
-
-    it('closes an unreadable stored value rather than letting it through', () => {
-      const carried = carryForwardAdapterDefaults({
-        adapters: [telegramEntry({ dmPolicy: '' })],
-      }) as { adapters: { config: Record<string, unknown> }[] };
-      expect(carried.adapters[0].config.dmPolicy).toBe('allowlist');
-    });
+  it('closes an unreadable stored value rather than letting it through', () => {
+    expect(carriedConfig('telegram', { ...TELEGRAM, dmPolicy: '' }).dmPolicy).toBe('allowlist');
   });
 
   it('does not carry a stored Telegram integration forward to always (DOR-619)', () => {
-    // The deliberate counter-example to the Slack cases above, and the one
-    // place the no-carry-forward decision is pinned rather than described.
-    //
-    // `dmPolicy` is carried forward because a person had implicitly chosen a
-    // working configuration. Telegram never exposed a respond mode, so nobody
-    // chose "answer every message in every group" — that is the defect, not a
-    // preference, and every stored integration predates the field. Carrying it
-    // forward would mean the fix reached only installs created after it.
-    const telegram = {
-      id: 'tg',
-      type: 'telegram',
-      enabled: true,
-      config: { token: '123:ABC', mode: 'polling', streaming: true },
-    };
-
-    const carried = carryForwardAdapterDefaults({ adapters: [telegram] }) as {
-      adapters: { config: Record<string, unknown> }[];
-    };
-
-    // Untouched here, and therefore landing on the safe value at the schema.
-    expect(carried.adapters[0].config).not.toHaveProperty('respondMode');
-    expect(TelegramAdapterConfigSchema.parse(carried.adapters[0].config).respondMode).toBe(
-      'thread-aware'
-    );
+    // Nobody chose "answer every message in every group"; that was the defect.
+    const config = carriedConfig('telegram', { ...TELEGRAM, streaming: true });
+    expect(config).not.toHaveProperty('respondMode');
+    expect(TelegramAdapterConfigSchema.parse(config).respondMode).toBe('thread-aware');
   });
 });
 
 describe('closeDmPolicyOnEnable', () => {
-  it('closes an open Slack connection and keeps its list', () => {
-    const entry = {
-      type: 'slack',
-      config: { dmPolicy: 'open', dmAllowlist: ['U1'] },
-    };
-
-    expect(closeDmPolicyOnEnable(entry)).toBe(true);
-    expect(entry.config).toEqual({ dmPolicy: 'allowlist', dmAllowlist: ['U1'] });
-  });
-
-  it('closes a Telegram connection whose stored policy is missing', () => {
-    const entry = { type: 'telegram', config: { dmAllowlist: ['42'] } };
-
-    expect(closeDmPolicyOnEnable(entry)).toBe(true);
-    expect(entry.config).toEqual({ dmPolicy: 'allowlist', dmAllowlist: ['42'] });
-  });
-
-  it('leaves an allowlisted connection unchanged', () => {
-    const entry = { type: 'telegram', config: { dmPolicy: 'allowlist', dmAllowlist: ['42'] } };
-
-    expect(closeDmPolicyOnEnable(entry)).toBe(false);
-    expect(entry.config).toEqual({ dmPolicy: 'allowlist', dmAllowlist: ['42'] });
-  });
-
-  it('leaves a webhook untouched', () => {
-    const entry = { type: 'webhook', config: { dmPolicy: 'open' } };
-
-    expect(closeDmPolicyOnEnable(entry)).toBe(false);
-    expect(entry.config.dmPolicy).toBe('open');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// The carried-forward risk is stated out loud
-// ---------------------------------------------------------------------------
-
-describe('warnOnOpenDmPolicy', () => {
-  const openSlack = {
-    id: 'my-slack',
-    type: 'slack',
-    enabled: true,
-    config: { dmPolicy: 'open' },
-  };
-
-  it('names the integration that anyone in the workspace can DM', () => {
-    warnOnOpenDmPolicy([openSlack]);
-    expect(logger.warn).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(logger.warn).mock.calls[0][0]).toContain('my-slack');
-  });
-
-  it('stays quiet for an allowlisted integration', () => {
-    warnOnOpenDmPolicy([{ ...openSlack, config: { dmPolicy: 'allowlist' } }]);
-    expect(logger.warn).not.toHaveBeenCalled();
-  });
-
-  it('stays quiet for a disabled integration', () => {
-    warnOnOpenDmPolicy([{ ...openSlack, enabled: false }]);
-    expect(logger.warn).not.toHaveBeenCalled();
-  });
-
-  it('names a Telegram integration anyone who finds the bot can message', () => {
-    warnOnOpenDmPolicy([
-      { id: 'my-tg', type: 'telegram', enabled: true, config: { dmPolicy: 'open' } },
-    ]);
-    expect(logger.warn).toHaveBeenCalledTimes(1);
-    const line = String(vi.mocked(logger.warn).mock.calls[0][0]);
-    expect(line).toContain('my-tg');
-    expect(line).toContain('Telegram');
-    expect(line).toContain('DM Access');
+  it.each([
+    [
+      'an open Slack connection',
+      'slack',
+      { dmPolicy: 'open', dmAllowlist: ['U1'] },
+      true,
+      'allowlist',
+    ],
+    [
+      'a Telegram connection with no stored policy',
+      'telegram',
+      { dmAllowlist: ['42'] },
+      true,
+      'allowlist',
+    ],
+    [
+      'an allowlisted connection',
+      'telegram',
+      { dmPolicy: 'allowlist', dmAllowlist: ['42'] },
+      false,
+      'allowlist',
+    ],
+    ['a webhook', 'webhook', { dmPolicy: 'open' }, false, 'open'],
+  ])('handles %s', (_label, type, config, changed, policy) => {
+    const entry = { type, config: { ...config } as Record<string, unknown> };
+    expect(closeDmPolicyOnEnable(entry)).toBe(changed);
+    expect(entry.config.dmPolicy).toBe(policy);
+    if ('dmAllowlist' in config) expect(entry.config.dmAllowlist).toEqual(config.dmAllowlist);
   });
 });

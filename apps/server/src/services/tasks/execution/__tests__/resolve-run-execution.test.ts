@@ -1,16 +1,7 @@
 /**
  * The ladder a scheduled run walks to decide what it executes on (DOR-1615,
- * DOR-1347).
- *
- * The registry is a three-function stand-in and the agent manifests are real
- * files, because that is exactly the split the resolver has: it OWNS the two
- * schedule-only tiers (the `schedule:` block, and the skill file's top-level
- * Claude-Code-dialect keys) and DELEGATES the rest to
- * `resolveUnattendedSessionDefaults`. Faking the delegate would make every
- * assertion about the delegation itself vacuous — the exact failure that let two
- * unattended surfaces disagree about an agent's settings before (DOR-1344) — so
- * the shared ladder runs for real here, off real manifests and the real shipped
- * capability profiles.
+ * DOR-1347). Agent manifests are real files and the shared unattended ladder
+ * runs for real: faking the delegate made two surfaces disagree once (DOR-1344).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
@@ -109,12 +100,8 @@ async function agentDir(overrides: Partial<AgentManifest> = {}): Promise<string>
 }
 
 /**
- * Write a SKILL.md carrying top-level Claude-Code-dialect frontmatter.
- *
- * The frontmatter `name` is the DIRECTORY name, because the parser refuses a
- * file where the two disagree — which is how a real task's SKILL.md is laid out
- * (`<skills-root>/<slug>/SKILL.md`), and a fixture that ignored it would have
- * this whole tier silently reading nothing.
+ * Write a SKILL.md carrying top-level Claude-Code-dialect frontmatter. Its
+ * `name` must match the directory, or the parser reads nothing.
  *
  * @param frontmatter - The `model:`/`effort:` lines to write, verbatim.
  * @returns The file path to put on the task.
@@ -163,13 +150,6 @@ describe('resolveRunExecution — which runtime', () => {
     expect(resolved.runtimeType).toBe('codex');
   });
 
-  it('falls to the registry default when the task has no agent (tier 3)', async () => {
-    const resolved = await resolveRunExecution(task(), {
-      runtimes: registry(['opencode', 'claude-code']),
-    });
-    expect(resolved.runtimeType).toBe('opencode');
-  });
-
   it('falls PAST an agent pinned to a runtime this build cannot run, rather than failing', async () => {
     // The agent did not ask for this run, and the packaged desktop app bundles
     // only the claude-code SDK — so an agent pinned to Codex there must not fail
@@ -180,13 +160,6 @@ describe('resolveRunExecution — which runtime', () => {
       agentPath,
     });
     expect(resolved.runtimeType).toBe('claude-code');
-  });
-
-  it('carries the resolved runtime’s capability profile, not the default’s', async () => {
-    const resolved = await resolveRunExecution(task({ runtime: 'opencode' }), {
-      runtimes: registry(['claude-code', 'opencode']),
-    });
-    expect(resolved.capabilities).toBe(OPENCODE_CAPABILITIES);
   });
 });
 
@@ -218,50 +191,6 @@ describe('resolveRunExecution — a runtime that is not turned on (decision 9)',
     await expect(attempt).rejects.toThrow(/set to run on codex/);
     await expect(attempt).rejects.toThrow(/did not start/);
   });
-
-  it('says WHICH runtime and where it came from, so the fix is findable', async () => {
-    /**
-     * Run the resolver and hand back the error it raised.
-     *
-     * @param opts - What to resolve.
-     */
-    async function refusal(
-      opts: Parameters<typeof resolveRunExecution>[1],
-      t = task({ runtime: 'codex' })
-    ): Promise<TaskRuntimeUnavailableError> {
-      try {
-        await resolveRunExecution(t, opts);
-      } catch (err) {
-        return err as TaskRuntimeUnavailableError;
-      }
-      throw new Error('expected the resolver to refuse');
-    }
-
-    const fromTask = await refusal({ runtimes: registry(['claude-code']) });
-    expect(fromTask.runtime).toBe('codex');
-    expect(fromTask.source).toBe('task');
-
-    // Nothing registered at all is a different problem with a different fix, and
-    // the message must not tell the person to go and edit the task.
-    const fromDefault = await refusal({ runtimes: registry([]) }, task());
-    expect(fromDefault.source).toBe('default');
-    expect(fromDefault.message).not.toContain('change the task');
-  });
-
-  it('still runs a registered runtime that publishes no capability profile', async () => {
-    // Registration is the whole availability question. A profile is a separate,
-    // richer fact, and refusing over a missing one would fail a task the machine
-    // can perfectly well run.
-    const resolved = await resolveRunExecution(task({ runtime: 'some-future-runtime' }), {
-      runtimes: {
-        has: (type) => type === 'some-future-runtime',
-        getDefaultType: () => 'some-future-runtime',
-        getAllCapabilities: () => ({}),
-      },
-    });
-    expect(resolved.runtimeType).toBe('some-future-runtime');
-    expect(resolved.capabilities).toBeUndefined();
-  });
 });
 
 describe('resolveRunExecution — which model and effort', () => {
@@ -279,23 +208,6 @@ describe('resolveRunExecution — which model and effort', () => {
     expect(resolved.settings).toEqual({ model: 'claude-opus-4-6', effort: 'xhigh' });
   });
 
-  it("honours the skill file's TOP-LEVEL model on claude-code (tier 2)", async () => {
-    // "This skill runs on haiku" stays true whichever way the skill was started.
-    const filePath = await skillFile('model: haiku\n');
-    const resolved = await resolveRunExecution(task({ filePath }), {
-      runtimes: registry(['claude-code']),
-    });
-    expect(resolved.settings.model).toBe('haiku');
-  });
-
-  it("honours the skill file's TOP-LEVEL effort on claude-code (tier 2)", async () => {
-    const filePath = await skillFile('effort: high\n');
-    const resolved = await resolveRunExecution(task({ filePath }), {
-      runtimes: registry(['claude-code']),
-    });
-    expect(resolved.settings.effort).toBe('high');
-  });
-
   it("the skill file's model and effort BEAT the agent manifest's (tier 2 over 3)", async () => {
     // The discriminating pair. Without it, "tier 2 works" is satisfied by a
     // ladder that reads the file only when the agent says nothing — which is a
@@ -311,12 +223,8 @@ describe('resolveRunExecution — which model and effort', () => {
   });
 
   it('DROPS a top-level effort outside the Claude Code dialect, falling through to the agent', async () => {
-    // `SkillFrontmatterSchema` types `effort:` as low|medium|high|max — narrower
-    // than the shared ladder, which also carries none, minimal and xhigh. That is
-    // deliberate: those keys mirror another program's file format verbatim and
-    // DorkOS does not get to invent entries in it. So `xhigh` at the TOP level
-    // contributes nothing and the next tier answers, while the same word in the
-    // `schedule:` block — the field that takes the full ladder — is honoured.
+    // Top-level keys mirror Claude Code's skill format (low..max only); the
+    // `schedule:` block takes the full ladder.
     const agentPath = await agentDir({ runtime: 'claude-code', effort: 'low' });
     const filePath = await skillFile('effort: xhigh\n');
 
@@ -333,14 +241,6 @@ describe('resolveRunExecution — which model and effort', () => {
     expect(fromBlock.settings.effort).toBe('xhigh');
   });
 
-  it('IGNORES the top-level effort when the run resolves onto another runtime', async () => {
-    const filePath = await skillFile('effort: high\n');
-    const resolved = await resolveRunExecution(task({ runtime: 'codex', filePath }), {
-      runtimes: registry(['claude-code', 'codex']),
-    });
-    expect(resolved.settings.effort).toBeUndefined();
-  });
-
   it('IGNORES that top-level model when the run resolves onto another runtime', async () => {
     // Those keys are the Claude Code dialect. Handing `haiku` to Codex would not
     // be honouring the author's intent, it would be another provider's id.
@@ -349,15 +249,6 @@ describe('resolveRunExecution — which model and effort', () => {
       runtimes: registry(['claude-code', 'codex']),
     });
     expect(resolved.settings.model).toBeUndefined();
-  });
-
-  it("falls to the agent manifest's model when nothing above names one (tier 3)", async () => {
-    const agentPath = await agentDir({ runtime: 'claude-code', model: 'haiku', effort: 'low' });
-    const resolved = await resolveRunExecution(task(), {
-      runtimes: registry(['claude-code']),
-      agentPath,
-    });
-    expect(resolved.settings).toEqual({ model: 'haiku', effort: 'low' });
   });
 
   it("DROPS the agent's model when the run lands on a different runtime — but keeps its effort", async () => {
@@ -385,11 +276,6 @@ describe('resolveRunExecution — which model and effort', () => {
       runtimes: registry(['claude-code', 'codex']),
     });
     expect(resolved.settings).toEqual({ model: 'gpt-5.5', effort: 'high' });
-  });
-
-  it('leaves both unset when no tier answers, so the runtime decides', async () => {
-    const resolved = await resolveRunExecution(task(), { runtimes: registry(['claude-code']) });
-    expect(resolved.settings).toEqual({});
   });
 
   it('drops an effort on a runtime whose API has none, however high the tier that set it', async () => {

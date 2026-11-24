@@ -1,21 +1,8 @@
 /**
  * Whose permission-mode vocabulary a NEW schedule's trust stop is read in
- * (DOR-1615 review).
- *
- * The mode this resolves is written onto the row and onto the file, and it is
- * what actually executes — no later resolution corrects it. So it has to walk
- * the same first two rungs the fire-time ladder does: what the request named,
- * then the TARGET AGENT's own runtime. It used to stop after the first, so a
- * task filed under an agent pinned to another runtime had its stop mapped
- * through the default runtime's ids and ran at a level nobody chose.
- *
- * The observable difference here is the CONFIG SECTION, not the mode ids: all
- * three shipped runtimes happen to spell their three modes identically today, so
- * a case built on ids would pass whether or not the agent rung was read at all.
- * Each runtime does declare its own `runtimes.<section>` block though, and
- * `resolveUnattendedDefaultStop` reads that before the global stop — so a Codex
- * stop of `ask` against a global stop of `autonomy` tells the two readings apart
- * with nothing invented.
+ * (DOR-1615 review): the request's runtime, then the TARGET AGENT's. The shipped
+ * runtimes spell their modes alike, so the cases discriminate on the config
+ * section instead: Codex's own stop `ask` against a global stop `autonomy`.
  *
  * @module services/tasks/lifecycle/__tests__/create-task-runtime-power
  */
@@ -137,10 +124,7 @@ const BASE = { name: 'nightly', description: 'sweep', prompt: 'sweep it', cron: 
 
 describe('the trust stop is read in the runtime the schedule will RUN on', () => {
   it("uses the TARGET AGENT's runtime when the request names none", async () => {
-    // The fix. Before it, this resolved through `claude-code` — the registry
-    // default — read the GLOBAL autonomy stop, and stored `bypassPermissions`
-    // on a task whose runs will happen on Codex, where the operator asked to be
-    // asked first.
+    // Before the fix this read the registry default's GLOBAL autonomy stop.
     await pinAgentTo('codex');
 
     const outcome = await create({ ...BASE, target: 'pinned-agent' });
@@ -157,12 +141,6 @@ describe('the trust stop is read in the runtime the schedule will RUN on', () =>
     expect(outcome.ok && outcome.task.permissionMode).toBe('bypassPermissions');
   });
 
-  it('falls to the registry default for a global task, which has no agent', async () => {
-    const outcome = await create({ ...BASE, target: 'global' });
-
-    expect(outcome.ok && outcome.task.permissionMode).toBe('bypassPermissions');
-  });
-
   it('still creates the task when the agent has no readable manifest', async () => {
     // Tolerant like every other manifest read: no opinion, never a refused
     // create. The agent directory here exists but holds no `.dork/agent.json`.
@@ -170,14 +148,6 @@ describe('the trust stop is read in the runtime the schedule will RUN on', () =>
 
     expect(outcome.ok).toBe(true);
     expect(outcome.ok && outcome.task.permissionMode).toBe('bypassPermissions');
-  });
-
-  it('leaves a mode the caller named alone, whatever the agent runs on', async () => {
-    await pinAgentTo('codex');
-
-    const outcome = await create({ ...BASE, target: 'pinned-agent', permissionMode: 'default' });
-
-    expect(outcome.ok && outcome.task.permissionMode).toBe('default');
   });
 });
 

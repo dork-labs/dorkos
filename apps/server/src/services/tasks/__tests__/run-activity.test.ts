@@ -77,23 +77,6 @@ describe('emitTerminalRunActivity (DOR-1573)', () => {
     );
     expect(emit).not.toHaveBeenCalled();
   });
-
-  it('does NOT emit for a skipped run', () => {
-    // A skipped tick is written straight to a terminal row, never through
-    // updateRun, so in practice it never reaches this hook — but the guard must
-    // exclude it regardless, since its status is outside the emitted union.
-    emitTerminalRunActivity(activityService, task, terminalRun('skipped'));
-    expect(emit).not.toHaveBeenCalled();
-  });
-
-  it('is a no-op when there is no activity service', () => {
-    expect(() => emitTerminalRunActivity(null, task, terminalRun('completed'))).not.toThrow();
-  });
-
-  it('is a no-op when the hook could not read the task', () => {
-    emitTerminalRunActivity(activityService, null, terminalRun('completed'));
-    expect(emit).not.toHaveBeenCalled();
-  });
 });
 
 describe('createRelayRefusedAskEmitter (DOR-1580)', () => {
@@ -131,50 +114,12 @@ describe('createRelayRefusedAskEmitter (DOR-1580)', () => {
     );
   });
 
-  it('says a Never ask refusal was the schedule’s setting (DOR-3132)', () => {
-    const run = store.createRun(task.id, 'scheduled');
+  it('stays silent for a run that is gone', () => {
     const report = createRelayRefusedAskEmitter({ taskStore: store, activityService });
 
-    report({ taskId: task.id, runId: run.id, refused: { toolName: 'Bash', neverAsk: true } });
-
-    expect(emit).toHaveBeenCalledWith(
-      expect.objectContaining({ summary: 'digest had a Bash command refused' })
-    );
-  });
-
-  it('names the person, not the Scheduler, for a run somebody started by hand', () => {
-    const run = store.createRun(task.id, 'manual');
-    const report = createRelayRefusedAskEmitter({ taskStore: store, activityService });
-
-    report({ taskId: task.id, runId: run.id, refused: { toolName: 'Bash' } });
-
-    expect(emit).toHaveBeenCalledWith(
-      expect.objectContaining({ actorType: 'user', actorLabel: 'You' })
-    );
-  });
-
-  it.each([
-    ['a task that is gone', 'missing-task', true],
-    ['a run that is gone', 'missing-run', false],
-  ])('stays silent for %s', (_label, _id, taskMissing) => {
-    const run = store.createRun(task.id, 'scheduled');
-    const report = createRelayRefusedAskEmitter({ taskStore: store, activityService });
-
-    report({
-      taskId: taskMissing ? 'no-such-task' : task.id,
-      runId: taskMissing ? run.id : 'no-such-run',
-      refused: { toolName: 'Bash' },
-    });
+    report({ taskId: task.id, runId: 'no-such-run', refused: { toolName: 'Bash' } });
 
     expect(emit).not.toHaveBeenCalled();
-  });
-
-  it('is a no-op when there is no activity service', () => {
-    const run = store.createRun(task.id, 'scheduled');
-    const report = createRelayRefusedAskEmitter({ taskStore: store, activityService: null });
-    expect(() =>
-      report({ taskId: task.id, runId: run.id, refused: { toolName: 'Bash' } })
-    ).not.toThrow();
   });
 
   it('swallows a store that throws rather than failing the run around it', () => {

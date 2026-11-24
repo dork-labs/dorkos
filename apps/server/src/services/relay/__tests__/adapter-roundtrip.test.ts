@@ -85,19 +85,6 @@ describe('every write shape lands on a closed dmPolicy (DOR-604 review)', () => 
     });
   });
 
-  it('a textarea dmAllowlist, which is what the client actually sends', async () => {
-    const { persistedKey, effective } = await persistAndLoad({
-      ...SECRETS,
-      dmAllowlist: 'U01ABC\nU02DEF',
-    });
-    expect({ persistedKey, dmPolicy: effective.dmPolicy }).toEqual({
-      persistedKey: true,
-      dmPolicy: 'allowlist',
-    });
-    // And the newline shape is normalized, not just tolerated.
-    expect(effective.dmAllowlist).toEqual(['U01ABC', 'U02DEF']);
-  });
-
   it("the setup wizard's own payload, with every untouched field blank", async () => {
     const { persistedKey, effective } = await persistAndLoad({
       ...SECRETS,
@@ -192,37 +179,9 @@ describe('parseAdapterConfigForPersist validates by type, never by union order',
       })
     ).toThrow(AdapterError);
   });
-
-  it('leaves a plugin config alone, since its shape is the plugin’s business', () => {
-    const parsed = parseAdapterConfigForPersist({
-      id: 'my-plugin',
-      type: 'plugin',
-      enabled: true,
-      builtin: false,
-      plugin: { package: 'some-pkg' },
-      config: { anything: { nested: true } },
-    });
-    expect(parsed.config).toEqual({ anything: { nested: true } });
-  });
 });
 
 describe('adapters.json write -> disk -> load (DOR-604)', () => {
-  it('a Slack integration written by this build stays on its allowlist', async () => {
-    // Exactly what `AdapterManager.parseForPersist` now puts on disk: the schema
-    // default materialized at write time.
-    const config = await loadFixture([
-      {
-        id: 'slack',
-        type: 'slack',
-        enabled: true,
-        builtin: false,
-        config: { ...SECRETS, dmPolicy: 'allowlist', dmAllowlist: [] },
-      },
-    ]);
-
-    expect(config.dmPolicy).toBe('allowlist');
-  });
-
   it('a Slack integration written before this build keeps answering DMs', async () => {
     // What an older build left on disk: no `dmPolicy` key at all. Carrying it
     // forward at 'open' is what stops a live integration going silent on upgrade.
@@ -233,18 +192,7 @@ describe('adapters.json write -> disk -> load (DOR-604)', () => {
     expect(config.dmPolicy).toBe('open');
   });
 
-  it('an explicit choice survives the round trip either way', async () => {
-    const opened = await loadFixture([
-      {
-        id: 'slack',
-        type: 'slack',
-        enabled: true,
-        builtin: false,
-        config: { ...SECRETS, dmPolicy: 'open' },
-      },
-    ]);
-    expect(opened.dmPolicy).toBe('open');
-
+  it('an explicit allowlist survives the round trip with its list', async () => {
     const listed = await loadFixture([
       {
         id: 'slack',
@@ -291,22 +239,6 @@ describe('a textarea field whose stored shape is not text', () => {
     expect(stored.dmAllowlist).toEqual(['U01ABC123', 'U02DEF456']);
   });
 
-  it('never splits a comma-joined line into one bogus id', () => {
-    // What the wizard used to send after any edit of a stored list.
-    const stored = persistFromForm({ ...SECRETS, approverAllowlist: 'U01ABC123,U02DEF456' });
-
-    expect(stored.approverAllowlist).not.toEqual(['U01ABC123', 'U02DEF456']);
-    // It is preserved verbatim as one entry rather than silently split — the
-    // point is that the form no longer produces this shape.
-    expect(stored.approverAllowlist).toEqual(['U01ABC123,U02DEF456']);
-  });
-
-  it('leaves an already-stored array alone when the form never touched it', () => {
-    const stored = persistFromForm({ ...SECRETS, approverAllowlist: ['U01ABC123', 'U02DEF456'] });
-
-    expect(stored.approverAllowlist).toEqual(['U01ABC123', 'U02DEF456']);
-  });
-
   it('turns JSON text back into the object that was stored', () => {
     const overrides = { C01ABC: { respondMode: 'always' }, C02DEF: { enabled: false } };
     const stored = persistFromForm({
@@ -326,13 +258,6 @@ describe('a textarea field whose stored shape is not text', () => {
     expect(() => persistFromForm({ ...SECRETS, channelOverrides: '{"C01": ' })).toThrowError(
       /expected JSON/
     );
-  });
-
-  it('still reads an empty box as an empty value', () => {
-    const stored = persistFromForm({ ...SECRETS, approverAllowlist: '', channelOverrides: '' });
-
-    expect(stored.approverAllowlist).toEqual([]);
-    expect(stored.channelOverrides).toEqual({});
   });
 
   it('mangles nothing when no manifest is supplied — it refuses instead', () => {

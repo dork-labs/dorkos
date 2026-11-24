@@ -1,155 +1,63 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createDb, runMigrations, type Db } from '@dorkos/db';
+import { createDb, runMigrations } from '@dorkos/db';
 import { UnclaimedChatStore } from '../unclaimed-chat-store.js';
 
 describe('UnclaimedChatStore', () => {
-  let db: Db;
   let store: UnclaimedChatStore;
 
   beforeEach(() => {
-    db = createDb(':memory:');
+    const db = createDb(':memory:');
     runMigrations(db);
     store = new UnclaimedChatStore(db);
   });
 
-  it('AC3.1: the first sighting creates a row and reports isFirstSighting: true', () => {
-    const { chat, isFirstSighting } = store.recordSighting({
-      adapterId: 'tg-bot',
-      chatId: '123',
-      chatKind: 'dm',
-      senderName: 'Miguel',
-    });
-    expect(isFirstSighting).toBe(true);
-    expect(chat).toMatchObject({
-      adapterId: 'tg-bot',
-      chatId: '123',
-      chatKind: 'dm',
-      senderName: 'Miguel',
-      status: 'pending',
-      messageCount: 1,
-    });
+  /** Record a sighting in `tg-bot`'s DM `chatId`. */
+  const sight = (chatId: string, extra: Record<string, unknown> = {}) =>
+    store.recordSighting({ adapterId: 'tg-bot', chatId, chatKind: 'dm', ...extra });
+
+  it('AC3.1/AC3.2: the first sighting creates a pending row; a second is damped onto it', () => {
+    const first = sight('123', { senderName: 'Miguel' });
+    expect(first.isFirstSighting).toBe(true);
+    expect(first.chat).toMatchObject({ senderName: 'Miguel', status: 'pending', messageCount: 1 });
+    const second = sight('123');
+    expect(second.isFirstSighting).toBe(false);
+    expect(second.chat.messageCount).toBe(2);
     expect(store.list('pending')).toHaveLength(1);
   });
 
-  it('AC3.2: a second sighting of the same chat is damped — same row, bumped counter, isFirstSighting: false', () => {
-    store.recordSighting({ adapterId: 'tg-bot', chatId: '123', chatKind: 'dm' });
-    const { chat, isFirstSighting } = store.recordSighting({
-      adapterId: 'tg-bot',
-      chatId: '123',
-      chatKind: 'dm',
-    });
-    expect(isFirstSighting).toBe(false);
-    expect(chat.messageCount).toBe(2);
-    expect(store.list('pending')).toHaveLength(1);
-  });
-
-  // DOR-907: the raw platform chat type is captured at sighting and survives a
-  // reload (getById re-reads from SQLite through `toDomain`), so a binding
-  // claimed from this row later carries the real type. A group and a broadcast
-  // stay distinguishable here even though both fold to `chatKind: 'group'`.
-  it('DOR-907: persists the raw platformChatType and round-trips it through the DB', () => {
-    const group = store.recordSighting({
-      adapterId: 'tg-bot',
-      chatId: 'g1',
-      channelType: 'group',
-      chatKind: 'group',
-      platformChatType: 'supergroup',
-    }).chat;
-    const broadcast = store.recordSighting({
-      adapterId: 'tg-bot',
-      chatId: 'c1',
-      channelType: 'group',
+  it('DOR-907: keeps the raw platform chat type and title through a reload, null when absent', () => {
+    const broadcast = sight('c1', {
       chatKind: 'group',
       platformChatType: 'channel',
+      chatTitle: 'Weekend Trip Planning',
     }).chat;
-
-    // Present on the returned row...
-    expect(group.platformChatType).toBe('supergroup');
-    expect(broadcast.platformChatType).toBe('channel');
-    // ...and after a fresh read from SQLite (proves it was actually persisted).
-    expect(store.getById(group.id)?.platformChatType).toBe('supergroup');
-    expect(store.getById(broadcast.id)?.platformChatType).toBe('channel');
-    // Both fold to the same coarse chatKind — the raw type is the only thing
-    // that tells them apart.
-    expect(store.getById(group.id)?.chatKind).toBe('group');
-    expect(store.getById(broadcast.id)?.chatKind).toBe('group');
-  });
-
-  it('DOR-907: a sighting with no platformChatType (e.g. Slack) persists it as null', () => {
-    const chat = store.recordSighting({
-      adapterId: 'slack-bot',
-      chatId: 's1',
-      chatKind: 'dm',
-    }).chat;
-    expect(chat.platformChatType).toBeNull();
-    expect(store.getById(chat.id)?.platformChatType).toBeNull();
-  });
-
-  it('a sighting on a different chatId creates a separate row', () => {
-    store.recordSighting({ adapterId: 'tg-bot', chatId: '123', chatKind: 'dm' });
-    store.recordSighting({ adapterId: 'tg-bot', chatId: '456', chatKind: 'dm' });
-    expect(store.list('pending')).toHaveLength(2);
-  });
-
-  it('isBlocked is false for a never-seen chat and for a pending one', () => {
-    expect(store.isBlocked('tg-bot', '123')).toBe(false);
-    store.recordSighting({ adapterId: 'tg-bot', chatId: '123', chatKind: 'dm' });
-    expect(store.isBlocked('tg-bot', '123')).toBe(false);
-  });
-
-  it('AC3.5: ignore and block are idempotent and change no other chat', () => {
-    const a = store.recordSighting({ adapterId: 'tg-bot', chatId: 'a', chatKind: 'dm' }).chat;
-    const b = store.recordSighting({ adapterId: 'tg-bot', chatId: 'b', chatKind: 'dm' }).chat;
-
-    store.ignore(a.id);
-    store.ignore(a.id); // idempotent
-    expect(store.getById(a.id)?.status).toBe('ignored');
-    expect(store.getById(b.id)?.status).toBe('pending');
-
-    store.block(b.id);
-    store.block(b.id); // idempotent
-    expect(store.getById(b.id)?.status).toBe('blocked');
-    expect(store.isBlocked('tg-bot', 'b')).toBe(true);
-    expect(store.getById(a.id)?.status).toBe('ignored'); // unchanged by b's block
-  });
-
-  it('AC3.6: once blocked, isBlocked is true and the row is untouched by further recordSighting calls the caller is expected to skip', () => {
-    const chat = store.recordSighting({ adapterId: 'tg-bot', chatId: '123', chatKind: 'dm' }).chat;
-    store.block(chat.id);
-    const before = store.getById(chat.id)!;
-    // The router is responsible for checking isBlocked BEFORE calling
-    // recordSighting again; this asserts the store-level contract that
-    // isBlocked is authoritative and the row's counters are exactly what
-    // block() left them at.
-    expect(store.isBlocked('tg-bot', '123')).toBe(true);
-    expect(before.messageCount).toBe(1);
-    expect(before.lastSeenAt).toBe(before.firstSeenAt);
-  });
-
-  it('claim marks the chat claimed with the decided agent', () => {
-    const chat = store.recordSighting({ adapterId: 'tg-bot', chatId: '123', chatKind: 'dm' }).chat;
-    store.claim(chat.id, 'agent-a');
-    const claimed = store.getById(chat.id)!;
-    expect(claimed.status).toBe('claimed');
-    expect(claimed.decidedAgentId).toBe('agent-a');
-    expect(claimed.decidedAt).not.toBeNull();
-    expect(store.list('pending')).toHaveLength(0);
-    expect(store.list('claimed')).toHaveLength(1);
-  });
-
-  it('AC3.3 (store-level): no field in the persisted row can carry a message body — the sighting struct has no body-shaped field to begin with', () => {
-    const sentinel = 'THE-MESSAGE-BODY-MUST-NEVER-APPEAR-HERE';
-    const { chat } = store.recordSighting({
-      adapterId: 'tg-bot',
-      chatId: '123',
-      chatKind: 'dm',
-      senderName: 'not the sentinel',
+    expect(store.getById(broadcast.id)).toMatchObject({
+      chatKind: 'group',
+      platformChatType: 'channel',
+      chatTitle: 'Weekend Trip Planning',
     });
-    expect(JSON.stringify(chat)).not.toContain(sentinel);
-    // Structural: the store's own row shape has exactly these keys — a body
-    // field cannot be silently threaded through even by a future caller
-    // mistake, because the row schema does not have one.
-    expect(Object.keys(chat).sort()).toEqual(
+    const slack = sight('s1').chat;
+    expect(store.getById(slack.id)).toMatchObject({ platformChatType: null, chatTitle: null });
+  });
+
+  it('AC3.5: ignore, block and claim are idempotent and touch no other chat', () => {
+    const a = sight('a').chat;
+    const b = sight('b').chat;
+    const c = sight('c').chat;
+    store.ignore(a.id);
+    store.ignore(a.id);
+    store.block(b.id);
+    store.block(b.id);
+    store.claim(c.id, 'agent-a');
+    expect(store.getById(a.id)?.status).toBe('ignored');
+    expect(store.isBlocked('tg-bot', 'a')).toBe(false);
+    expect(store.isBlocked('tg-bot', 'b')).toBe(true);
+    expect(store.getById(c.id)).toMatchObject({ status: 'claimed', decidedAgentId: 'agent-a' });
+    expect(store.list('pending')).toHaveLength(0);
+  });
+
+  it('AC3.3: the row has no field that could carry a message body', () => {
+    expect(Object.keys(sight('123').chat).sort()).toEqual(
       [
         'id',
         'adapterId',
@@ -170,104 +78,53 @@ describe('UnclaimedChatStore', () => {
     );
   });
 
-  it('MINOR 12: chatTitle is recorded when the sighting carries one, and null otherwise', () => {
-    const withTitle = store.recordSighting({
-      adapterId: 'tg-bot',
-      chatId: 'group-1',
-      chatKind: 'group',
-      chatTitle: 'Weekend Trip Planning',
-    }).chat;
-    expect(withTitle.chatTitle).toBe('Weekend Trip Planning');
-
-    const withoutTitle = store.recordSighting({
-      adapterId: 'tg-bot',
-      chatId: 'dm-1',
-      chatKind: 'dm',
-    }).chat;
-    expect(withoutTitle.chatTitle).toBeNull();
-  });
-
-  it('MINOR 11: senderName and chatTitle are truncated to 200 chars — stranger-controlled input', () => {
+  it('truncates stranger-controlled names to 200 characters', () => {
     const long = 'x'.repeat(500);
-    const chat = store.recordSighting({
-      adapterId: 'tg-bot',
-      chatId: '123',
-      chatKind: 'group',
-      senderName: long,
-      chatTitle: long,
-    }).chat;
+    const chat = sight('123', { senderName: long, chatTitle: long }).chat;
     expect(chat.senderName).toHaveLength(200);
     expect(chat.chatTitle).toHaveLength(200);
   });
 
-  it('MAJOR 4: caps pending rows at 200, evicting the oldest to make room for new sightings', () => {
-    for (let i = 0; i < 205; i++) {
-      store.recordSighting({ adapterId: 'tg-bot', chatId: `chat-${i}`, chatKind: 'dm' });
-    }
+  it('MAJOR 4: caps PENDING rows at 200, evicting the oldest, and never counts decided ones', () => {
+    for (let i = 0; i < 205; i++) sight(`chat-${i}`);
     expect(store.list('pending')).toHaveLength(200);
-    // The five oldest by insertion should be the ones gone.
-    for (let i = 0; i < 5; i++) {
-      expect(store.isBlocked('tg-bot', `chat-${i}`)).toBe(false); // never existed / evicted
-    }
+    expect(store.list('pending').some((c) => c.chatId === 'chat-0')).toBe(false);
+    store.ignore(store.list('pending')[0]!.id);
+    sight('chat-new');
+    expect(store.list('pending')).toHaveLength(200);
+    expect(store.list('ignored')).toHaveLength(1);
   });
 
-  it('the cap only evicts PENDING rows — claimed/ignored/blocked chats are never counted against it', () => {
-    // Fill to exactly the cap with pending chats.
-    for (let i = 0; i < 200; i++) {
-      store.recordSighting({ adapterId: 'tg-bot', chatId: `chat-${i}`, chatKind: 'dm' });
-    }
-    // Decide a few — they leave the pending pool.
-    const first = store.getById(store.list('pending')[0]!.id)!;
-    store.ignore(first.id);
-    expect(store.list('pending')).toHaveLength(199);
-
-    // One more sighting is under the cap now — no eviction needed.
-    store.recordSighting({ adapterId: 'tg-bot', chatId: 'chat-new', chatKind: 'dm' });
-    expect(store.list('pending')).toHaveLength(200);
-  });
-
-  // DOR-2608: removing a connection deletes every chat it recorded, whatever
-  // its status, and matches the whole id rather than a prefix of it.
+  // DOR-2608: removing a connection deletes every chat it recorded, matching the whole id.
   describe('deleteForConnection', () => {
     it('deletes every status for that connection and reports how many went', () => {
       for (const chatId of ['p', 'c', 'i', 'b']) {
-        store.recordSighting({ adapterId: 'tg', chatId, chatKind: 'dm', senderName: 'Miguel' });
+        store.recordSighting({ adapterId: 'tg', chatId, chatKind: 'dm' });
       }
-      const idOf = (chatId: string) =>
-        store.list('pending').find((chat) => chat.chatId === chatId)!.id;
+      const idOf = (chatId: string) => store.list('pending').find((c) => c.chatId === chatId)!.id;
       store.claim(idOf('c'), 'agent-1');
       store.ignore(idOf('i'));
       store.block(idOf('b'));
-
       expect(store.deleteForConnection('tg')).toBe(4);
-
       for (const status of ['pending', 'claimed', 'ignored', 'blocked'] as const) {
         expect(store.list(status)).toEqual([]);
       }
-      expect(store.isBlocked('tg', 'b')).toBe(false);
     });
 
     it('leaves a connection whose id only starts with, or looks like a pattern for, the removed one', () => {
-      store.recordSighting({ adapterId: 'tg', chatId: '1', chatKind: 'dm' });
-      store.recordSighting({ adapterId: 'tg-2', chatId: '1', chatKind: 'dm' });
-      store.recordSighting({ adapterId: 'tgx', chatId: '1', chatKind: 'dm' });
-
+      for (const adapterId of ['tg', 'tg-2', 'tgx']) {
+        store.recordSighting({ adapterId, chatId: '1', chatKind: 'dm' });
+      }
       expect(store.deleteForConnection('tg')).toBe(1);
       expect(store.deleteForConnection('tg%')).toBe(0);
       expect(store.deleteForConnection('t_')).toBe(0);
-
+      expect(store.deleteForConnection('slack')).toBe(0);
       expect(
         store
           .list('pending')
-          .map((chat) => chat.adapterId)
+          .map((c) => c.adapterId)
           .sort()
       ).toEqual(['tg-2', 'tgx']);
-    });
-
-    it('deletes nothing for a connection that recorded nothing', () => {
-      store.recordSighting({ adapterId: 'tg', chatId: '1', chatKind: 'dm' });
-      expect(store.deleteForConnection('slack')).toBe(0);
-      expect(store.list('pending')).toHaveLength(1);
     });
   });
 });
