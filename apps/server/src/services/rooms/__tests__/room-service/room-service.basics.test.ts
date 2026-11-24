@@ -238,6 +238,12 @@ describe('RoomService', () => {
       expect(root.threadRootEntryId).toBeNull();
     });
 
+    it('leaves an ordinary post at the top level', () => {
+      const plain = service.post(roomId, { authorId: human, text: 'unrelated' });
+      expect(plain.parentEntryId).toBeNull();
+      expect(plain.threadRootEntryId).toBeNull();
+    });
+
     it('refuses a reply whose root is itself a reply, and writes nothing', () => {
       const before = service.listEntries(roomId, human, { limit: 50 }).length;
       const reply = service.post(roomId, {
@@ -360,6 +366,17 @@ describe('RoomService', () => {
 
       expect(store.getMember(roomId, bo)?.lastReadSeq).toBe(3);
       expect(readCursors.get(bo, 'room', roomId)).toBeNull();
+    });
+
+    it("never lets a person's reading touch an agent's cursor", () => {
+      // The one way to break RP3 from the user side, asserted as its own case.
+      service.addMember(roomId, human, { agentPath: '/agents/bo' });
+      const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+      const before = store.getMember(roomId, bo)?.lastReadSeq;
+
+      service.setReadCursor(roomId, human, 3);
+
+      expect(store.getMember(roomId, bo)?.lastReadSeq).toBe(before);
     });
 
     it('gives two people in one room independent cursors', () => {
