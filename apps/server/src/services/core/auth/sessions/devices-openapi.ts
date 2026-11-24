@@ -31,6 +31,11 @@ const PEOPLE_ONLY = json(
 );
 const SIGNED_OUT = json(ErrorSchema, 'Not signed in');
 
+/** The passkey check a 428 hands back: one named component for both routes that send it. */
+const PasskeyCheckRequiredSchema = z
+  .object({ code: z.string(), options: z.unknown() })
+  .openapi('PasskeyCheckRequired');
+
 /**
  * Register the devices routes.
  *
@@ -117,7 +122,7 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
       404: json(ErrorSchema, 'No live Wi-Fi sign-in of yours has that id'),
       409: json(ErrorSchema, 'Add a passkey on this computer first'),
       428: json(
-        z.object({ code: z.string(), options: z.unknown() }),
+        PasskeyCheckRequiredSchema,
         'Run this passkey check, then call again with its response'
       ),
     },
@@ -162,7 +167,7 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
       404: json(ErrorSchema, 'That request has ended'),
       409: json(ErrorSchema, 'Add a passkey on this computer first'),
       428: json(
-        z.object({ code: z.string(), options: z.unknown() }),
+        PasskeyCheckRequiredSchema,
         'Run this passkey check, then call again with its response'
       ),
     },
