@@ -21,6 +21,14 @@ opt-out, global" section of 260713-143958 is reversed. Everything else in that A
 unchanged: the two-plane split, the Tier 2 opt-in rules, the anonymisation bar, the site's hybrid
 cookieless posture, the owned ingest and shared event registry, and all of Plane 2.
 
+**Amendment proposed by** [261122-133041](261122-133041-telemetry-defaults-follow-the-build-channel.md)
+(proposed, awaiting Security review). Once accepted, it retires "`telemetry.install`,
+`telemetry.heartbeat` and `telemetry.usage` default to `false`" for stamped official release
+builds (Mac and Windows apps, npm CLI, Homebrew, official Docker image); the off default still
+governs source builds. The account link joins those three; `errorReporting` and `aiMetadata` stay
+opt-in. The Positive bullet "nothing leaves the machine unless you say so" falls with it outside the
+gated regions (EU, EEA, UK, Switzerland, or an unknown region). Everything else here still stands, including that an explicit choice is never touched.
+
 ## Context
 
 260713-143958 made the anonymous aggregate channels — `install`, `heartbeat`, and later `usage` —

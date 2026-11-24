@@ -19,6 +19,13 @@ governing decision: the two-plane split, Tier 2's opt-in rules, the anonymisatio
 hybrid cookieless posture, the owned ingest and shared event registry, and all of Plane 2. Read the
 Tier 1 section as history; read the rest as current.
 
+**Amendment proposed by** [261122-133041](261122-133041-telemetry-defaults-follow-the-build-channel.md)
+(proposed, awaiting Security review). Once accepted, it retires Tier 2's requirement that
+`identify()` with the account UUID needs its own opt-in: an install linked to a DorkOS account
+sends a one-time alias whenever telemetry is on, disclosed on the first-run card. The pseudonymous
+account UUID (never email or name), the merge at device link, deletion with the account, and the
+opt-in rule for AI-run metadata still stand.
+
 (Status corrected 2026-08-06: this ADR spent three weeks marked `superseded` while 45+ source
 files cited it as governing — the partial replacement is now recorded as an `amends` relation on
 the amending ADR, and this one stays accepted.)
