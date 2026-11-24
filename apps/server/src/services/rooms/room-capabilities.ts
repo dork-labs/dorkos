@@ -180,7 +180,7 @@ import { z } from 'zod';
 import path from 'node:path';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { canvasSourcePath, readCanvasFileText, type CanvasFileText } from '../canvas/index.js';
-import type { CanvasDocument } from '@dorkos/shared/room-schemas';
+import { ReactionEmojiSchema, type CanvasDocument } from '@dorkos/shared/room-schemas';
 import {
   directMessageTitle,
   MERGE_SUMMARY_MAX_CHARS,
@@ -497,7 +497,7 @@ export const roomsDomain: CapabilityDomain = {
               'one for every message it shows and names the message you are answering; outside ' +
               'one, read the room history and use the entryId it returns.'
           ),
-        emoji: z.string().min(1).max(16).describe('One emoji, e.g. 👍.'),
+        emoji: ReactionEmojiSchema.describe('One emoji, e.g. 👍.'),
         on: z
           .boolean()
           .optional()

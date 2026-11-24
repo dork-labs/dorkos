@@ -10,6 +10,12 @@
 import { describe, it, expect } from 'vitest';
 import { defuseSystemTags, sanitizeIdentity, IDENTITY_MAX_LENGTH } from '../untrusted-text.js';
 
+/** Letters spelled the way a subdivision flag spells its region. */
+const flagLetters = (letters: string) =>
+  [...letters].map((c) => String.fromCodePoint(0xe0000 + c.charCodeAt(0))).join('');
+/** One subdivision flag: the black flag, its region letters and the end mark. */
+const flagOf = (letters: string) => `\u{1F3F4}${flagLetters(letters)}\u{E007F}`;
+
 /** The tags a room turn defuses, matching `CONTEXT_TAG` plus the reminder block. */
 const TAGS = [
   'git_status',
@@ -86,6 +92,24 @@ describe('defuseSystemTags', () => {
       // `env` is a tag; `<environment>` and `<envelope>` are not.
       expect(defuse('<environment> and <envelope>')).toBe('<environment> and <envelope>');
     });
+
+    it('keeps the subdivision flags', () => {
+      const text = `go ${flagOf('gbeng')} ${flagOf('gbsct')} ${flagOf('gbwls')}`;
+      expect(defuse(text)).toBe(text);
+    });
+  });
+
+  describe('characters that render as nothing', () => {
+    it('removes them from a body', () => {
+      expect(defuse(`ship it${flagLetters('ok')}\u{E007F} today`)).toBe('ship it today');
+      expect(defuse(`\u{1F44D}${flagLetters('gbeng')}\u{E007F}`)).toBe('\u{1F44D}');
+    });
+
+    it('removes a flag-like sequence that isn’t one, down to its visible flag', () => {
+      expect(defuse(`${flagOf('usca')} hi`)).toBe('\u{1F3F4} hi');
+      expect(defuse(`\u{1F3F4}${flagLetters('gbeng')} hi`)).toBe('\u{1F3F4} hi');
+      expect(defuse(`${flagOf('gbeng')}${flagLetters('ok')}`)).toBe(flagOf('gbeng'));
+    });
   });
 
   describe('a body that must not be able to stall the server', () => {
@@ -159,6 +183,17 @@ describe('sanitizeIdentity', () => {
   it('drops invisible characters that hide inside a word', () => {
     expect(sanitizeIdentity('an​a')).toBe('ana');
     expect(sanitizeIdentity('an‮a')).toBe('ana');
+  });
+
+  it('removes characters that render as nothing, and keeps subdivision flags', () => {
+    expect(sanitizeIdentity(`Ana${flagLetters('admin')}`)).toBe('Ana');
+    expect(sanitizeIdentity(`Team ${flagOf('gbwls')}`)).toBe(`Team ${flagOf('gbwls')}`);
+    expect(sanitizeIdentity(`${flagLetters('hi')}\u{E007F}`)).toBeUndefined();
+  });
+
+  it('does not leave part of a flag behind when it caps the length', () => {
+    const capped = sanitizeIdentity(`${'x'.repeat(IDENTITY_MAX_LENGTH - 6)}${flagOf('gbeng')}`);
+    expect(capped).toBe(`${'x'.repeat(IDENTITY_MAX_LENGTH - 6)}\u{1F3F4}`);
   });
 
   it('caps at the default length, and at a caller override', () => {

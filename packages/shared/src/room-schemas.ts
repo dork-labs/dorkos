@@ -30,6 +30,7 @@ import { ResponseModeSchema } from './mesh-schemas.js';
 import { SignalTypeSchema } from './relay-envelope-schemas.js';
 import { UiCanvasContentSchema } from './schemas.js';
 import { SessionActivitySchema, type SessionActivity } from './session-stream.js';
+import { stripStrayFlagLetters } from './untrusted-text.js';
 
 extendZodWithOpenApiOnce();
 
@@ -1449,19 +1450,6 @@ const REACTION_EMOJI_ONLY = /^(?:\p{Extended_Pictographic}|\p{Emoji_Component})+
 const REACTION_EMOJI_PICTURE = /[\p{Extended_Pictographic}\p{Regional_Indicator}\u{20E3}]/u;
 
 /**
- * The three subdivision flags emoji pickers offer: England, Scotland and Wales.
- *
- * Each is the black flag, the letters of its region code, and an end mark, and
- * they are the only emoji spelled with those letters. So the letters are allowed
- * in exactly these three spellings and nowhere else ({@link REACTION_FLAG_LETTER}).
- */
-const REACTION_SUBDIVISION_FLAG =
-  /\u{1F3F4}\u{E0067}\u{E0062}(?:\u{E0065}\u{E006E}\u{E0067}|\u{E0073}\u{E0063}\u{E0074}|\u{E0077}\u{E006C}\u{E0073})\u{E007F}/gu;
-
-/** The letters and end mark a subdivision flag is spelled with. */
-const REACTION_FLAG_LETTER = /[\u{E0000}-\u{E007F}]/u;
-
-/**
  * Whether a string may be stored as a reaction: emoji, and nothing else.
  *
  * **The bar this clears is "not a text label".** A reaction row renders as a
@@ -1495,7 +1483,7 @@ const REACTION_FLAG_LETTER = /[\u{E0000}-\u{E007F}]/u;
 export function isReactionEmoji(value: string): boolean {
   const codePoints = [...value];
   if (codePoints.length === 0 || codePoints.length > REACTION_EMOJI_MAX_CODE_POINTS) return false;
-  if (REACTION_FLAG_LETTER.test(value.replace(REACTION_SUBDIVISION_FLAG, ''))) return false;
+  if (stripStrayFlagLetters(value) !== value) return false;
   return REACTION_EMOJI_ONLY.test(value) && REACTION_EMOJI_PICTURE.test(value);
 }
 

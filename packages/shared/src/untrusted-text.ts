@@ -40,6 +40,30 @@ export const IDENTITY_MAX_LENGTH = 80;
  */
 const INVISIBLE_FORMAT = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff\ufff9-\ufffb]/g;
 
+/**
+ * A subdivision flag emoji pickers offer (England, Scotland, Wales), or one of
+ * the letters such a flag is spelled with standing anywhere else.
+ *
+ * Those letters draw nothing on their own: a person sees them only as part of
+ * one of these three flags. So a real flag is kept whole and every other letter
+ * of that kind is dropped, which leaves the text reading exactly as it looks.
+ */
+const FLAG_OR_STRAY_FLAG_LETTER =
+  /(\u{1F3F4}\u{E0067}\u{E0062}(?:\u{E0065}\u{E006E}\u{E0067}|\u{E0073}\u{E0063}\u{E0074}|\u{E0077}\u{E006C}\u{E0073})\u{E007F})|[\u{E0000}-\u{E007F}]/gu;
+
+/**
+ * Drop the flag letters that are not part of a real subdivision flag.
+ *
+ * Used by both sanitizers below, and by `isReactionEmoji`, which refuses any
+ * value this would change.
+ *
+ * @param text - Any text.
+ * @returns The text with only its real subdivision flags' letters left in it.
+ */
+export function stripStrayFlagLetters(text: string): string {
+  return text.replace(FLAG_OR_STRAY_FLAG_LETTER, (_match, flag?: string) => flag ?? '');
+}
+
 /** C0 controls, DEL and the C1 range — CR, LF and NEL (U+0085) among them. */
 // eslint-disable-next-line no-control-regex -- stripping control characters is the point
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
@@ -80,14 +104,15 @@ export function sanitizeIdentity(
   value: string,
   maxLength: number = IDENTITY_MAX_LENGTH
 ): string | undefined {
-  const collapsed = value
+  const collapsed = stripStrayFlagLetters(value)
     .replace(INVISIBLE_FORMAT, '')
     .replace(CONTROL_CHARS, ' ')
     .replace(/[<>]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   if (collapsed.length === 0) return undefined;
-  return collapsed.slice(0, maxLength);
+  // Stripped again after the cap, so a flag cut in half leaves no letters behind.
+  return stripStrayFlagLetters(collapsed.slice(0, maxLength));
 }
 
 /**
@@ -177,7 +202,7 @@ function systemTagPattern(names: readonly string[]): RegExp {
  * @param tagNames - Tags that mean something to a runtime.
  */
 export function defuseSystemTags(text: string, tagNames: readonly string[]): string {
-  return text
+  return stripStrayFlagLetters(text)
     .replace(INVISIBLE_FORMAT, '')
     .replace(systemTagPattern(tagNames), (match) => `&lt;${match.slice(1)}`);
 }

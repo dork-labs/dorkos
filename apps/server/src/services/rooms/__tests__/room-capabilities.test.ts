@@ -775,6 +775,15 @@ describe('the rooms capability domain', () => {
       ).resolves.toEqual({ reacted: false });
       expect(service.reactionsFor(channel.id, entry.id)).toEqual([]);
     });
+
+    it('checks the emoji with the same rule as the app, before it runs', () => {
+      const react = roomsDomain.capabilities.find((c) => c.id === 'rooms.react');
+      const input = (emoji: string) => ({ roomId: 'r', entryId: 'e', emoji });
+      expect(react?.input.safeParse(input('\u{1F44D}')).success).toBe(true);
+      for (const emoji of ['lol', '\u{1F44D} nice', '0123']) {
+        expect(react?.input.safeParse(input(emoji)).success, emoji).toBe(false);
+      }
+    });
   });
 
   describe('the history tools', () => {
