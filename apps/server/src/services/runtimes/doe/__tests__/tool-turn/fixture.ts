@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { vi } from 'vitest';
+import { vi, type MockInstance } from 'vitest';
 import type { Db } from '@dorkos/db';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
@@ -44,8 +44,28 @@ interface FixtureOptions {
   beforeResourceLoad?: () => Promise<void>;
 }
 
+type FixtureEngine = ReturnType<typeof scriptedEngine>;
+
+interface ToolTurnFixture {
+  home: string;
+  desk: string;
+  db: Db;
+  sessions: RuntimeRegistry;
+  runtime: DoeRuntime;
+  engine: FixtureEngine;
+  opens: MockInstance<ConnectorRuntimePrincipalService['openTurn']>;
+  start(opts?: MessageOpts): Promise<{
+    events: StreamEvent[];
+    finished: Promise<void>;
+    native: FixtureEngine['runs'][number];
+  }>;
+  makeStream(opts?: MessageOpts): ReturnType<DoeRuntime['sendMessage']>;
+  caller(index?: number): ReturnType<ConnectorRuntimePrincipalService['resolveToolTurn']>;
+  close(): Promise<void>;
+}
+
 /** Real host, MCP closures/listener, registry, identity and authority; only model execution is scripted. */
-export async function toolTurnFixture(options: FixtureOptions = {}) {
+export async function toolTurnFixture(options: FixtureOptions = {}): Promise<ToolTurnFixture> {
   const home = await realpath(await mkdtemp(path.join(tmpdir(), 'doe-tool-turn-')));
   const cleanup: Array<() => unknown | Promise<unknown>> = [
     () => rm(home, { recursive: true, force: true }),
