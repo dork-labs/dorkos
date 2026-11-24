@@ -126,7 +126,10 @@ describe('Shape apply confirmation', () => {
       .call('post', '/api/shapes/northwind-ghost/apply', 'own-tunnel')
       .send({});
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: "Shape 'northwind-ghost' is not installed" });
+    expect(res.body).toMatchObject({
+      code: 'not_found',
+      detail: "No Shape called 'northwind-ghost' is installed.",
+    });
   });
 
   it('forks one at once', async () => {

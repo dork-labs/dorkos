@@ -484,7 +484,7 @@ describe('who may answer a prompt', () => {
           .send(route.body);
 
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+        expect(res.body.code).toBe('person_only');
         expect(fakeRuntime.approveTool).not.toHaveBeenCalled();
         expect(fakeRuntime.submitAnswers).not.toHaveBeenCalled();
         expect(fakeRuntime.submitElicitation).not.toHaveBeenCalled();
@@ -499,7 +499,7 @@ describe('who may answer a prompt', () => {
           .send(route.body);
 
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('REQUESTER_CANNOT_DECIDE');
+        expect(res.body.code).toBe('person_only');
       });
 
       it('answers 401 under login-on when nothing proved who is calling', async () => {
@@ -512,7 +512,7 @@ describe('who may answer a prompt', () => {
           .send(route.body);
 
         expect(res.status).toBe(401);
-        expect(res.body.code).toBe('AUTH_REQUIRED');
+        expect(res.body.code).toBe('unauthenticated');
       });
 
       it('refuses a per-user API key while login is on', async () => {
@@ -527,8 +527,8 @@ describe('who may answer a prompt', () => {
           .send(route.body);
 
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('operator_cookie_required');
-        expect(res.body.error).toContain('Open DorkOS and answer it there.');
+        expect(res.body.code).toBe('person_only');
+        expect(res.body.detail).toContain('Open DorkOS and answer it there.');
       });
 
       it('lets a signed-in person with a session cookie answer while login is on', async () => {

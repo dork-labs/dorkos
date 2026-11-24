@@ -332,14 +332,14 @@ describe('room files routes', () => {
       // all. An outsider cannot tell them apart.
       for (const res of answers) {
         expect(res.status).toBe(404);
-        expect(res.body.code).toBe('ROOM_NOT_FOUND');
+        expect(res.body.code).toBe('room_not_found');
       }
       const contents = await request(testServer)
         .get(`/api/rooms/${roomId}/files/content`)
         .query({ path: 'ROOM.md' })
         .set('X-DorkOS-Agent', token);
       expect(contents.status).toBe(404);
-      expect(contents.body.code).toBe('ROOM_NOT_FOUND');
+      expect(contents.body.code).toBe('room_not_found');
     });
 
     it('refuses a token this machine cannot verify, before any room is looked up', async () => {
@@ -350,7 +350,7 @@ describe('room files routes', () => {
         .set('X-DorkOS-Agent', 'not-a-real-token');
 
       expect(res.status).toBe(401);
-      expect(res.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+      expect(res.body.code).toBe('agent_identity_unverified');
     });
 
     it('still serves an archived room, because archiving keeps every byte', async () => {
@@ -385,7 +385,7 @@ describe('room files routes', () => {
         .set('X-DorkOS-Agent', 'not-a-real-token');
 
       expect(res.status).toBe(401);
-      expect(res.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+      expect(res.body.code).toBe('agent_identity_unverified');
     });
 
     it('tells a MEMBER that a room has no files of its own', async () => {
@@ -394,7 +394,7 @@ describe('room files routes', () => {
       const res = await request(testServer).get(`/api/rooms/${roomId}/files`);
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('ROOM_HAS_NO_REPO');
+      expect(res.body.code).toBe('room_has_no_repo');
     });
   });
 
@@ -407,7 +407,7 @@ describe('room files routes', () => {
           .get(`/api/rooms/${roomId}/files/content`)
           .query({ path: bad });
         expect(res.status).toBeGreaterThanOrEqual(400);
-        expect(['ROOM_FILE_PATH_INVALID', 'ROOM_FILE_NOT_FOUND']).toContain(res.body.code);
+        expect(['room_file_path_invalid', 'room_file_not_found']).toContain(res.body.code);
       }
     });
 
@@ -419,8 +419,8 @@ describe('room files routes', () => {
         .query({ path: 'secrets' });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('ROOM_FILE_NOT_READABLE');
-      expect(res.body.error).toContain('link');
+      expect(res.body.code).toBe('room_file_not_readable');
+      expect(res.body.detail).toContain('link');
       expect(JSON.stringify(res.body)).not.toContain('root:');
     });
 
@@ -450,7 +450,7 @@ describe('room files routes', () => {
         .query({ path: 'docs/nope.md' });
 
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('ROOM_FILE_NOT_FOUND');
+      expect(res.body.code).toBe('room_file_not_found');
     });
 
     describe('a picture, as its bytes (DOR-4179)', () => {
@@ -493,7 +493,7 @@ describe('room files routes', () => {
             .get(`/api/rooms/${roomId}/files/raw`)
             .query({ path: filePath });
           expect(res.status, filePath).toBe(400);
-          expect(res.body.code, filePath).toBe('ROOM_FILE_NOT_READABLE');
+          expect(res.body.code, filePath).toBe('room_file_not_readable');
           expect(JSON.stringify(res.body), filePath).not.toContain('script');
         }
       });
@@ -509,14 +509,14 @@ describe('room files routes', () => {
           .query({ path: 'logo.png' })
           .set('X-DorkOS-Agent', outsider);
         expect(hidden.status).toBe(404);
-        expect(hidden.body.code).toBe('ROOM_NOT_FOUND');
+        expect(hidden.body.code).toBe('room_not_found');
 
         maxFileBytes = 3;
         const big = await request(testServer)
           .get(`/api/rooms/${roomId}/files/raw`)
           .query({ path: 'logo.png' });
         expect(big.status).toBe(400);
-        expect(big.body.code).toBe('ROOM_FILE_NOT_READABLE');
+        expect(big.body.code).toBe('room_file_not_readable');
       });
     });
 
@@ -579,7 +579,7 @@ describe('room files routes', () => {
       // one-writer rule undone. A 403 because it is a member of a room it can
       // see — there is nothing left to hide.
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('PEOPLE_ONLY');
+      expect(res.body.code).toBe('person_only');
       expect((await readFileAt(roomId, 'docs/plan.md')).text).toBe('# Plan\n');
     });
 
@@ -598,7 +598,7 @@ describe('room files routes', () => {
       // Membership is asked before anything else, so being refused says nothing
       // about whether the room has files — or exists.
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('ROOM_NOT_FOUND');
+      expect(res.body.code).toBe('room_not_found');
     });
 
     it('refuses a save whose file moved, and hands back what to do about it', async () => {
@@ -616,7 +616,7 @@ describe('room files routes', () => {
         .send({ path: 'docs/plan.md', baseCommit: opened.commit, text: '# Plan\n\nMine.\n' });
 
       expect(mine.status).toBe(409);
-      expect(mine.body.code).toBe('FILE_CHANGED');
+      expect(mine.body.code).toBe('file_changed');
       // The payload is what the reload / keep-mine choice is drawn from — a
       // code and a sentence have nowhere to put it.
       expect(mine.body.conflict).toMatchObject({
@@ -648,7 +648,7 @@ describe('room files routes', () => {
         .send({ path: 'docs/plan.md', baseCommit: opened.commit, text: 'after the fact\n' });
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('ROOM_ARCHIVED');
+      expect(res.body.code).toBe('room_archived');
     });
 
     it('answers a save too large for one request with 413, not a server error', async () => {
@@ -675,7 +675,7 @@ describe('room files routes', () => {
         .put(`/api/rooms/${bare}/files/content`)
         .send({ path: 'ROOM.md', baseCommit: null, text: 'x\n' });
       expect(noFiles.status).toBe(409);
-      expect(noFiles.body.code).toBe('ROOM_HAS_NO_REPO');
+      expect(noFiles.body.code).toBe('room_has_no_repo');
 
       const roomId = await roomWithFiles();
       // A base commit that is not a commit id never becomes a git argument.
@@ -772,8 +772,8 @@ describe('room files routes', () => {
         .attach('files', Buffer.from('mine\n'), { filename: 'plan.md' });
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('ROOM_FILE_EXISTS');
-      expect(res.body.error).toContain('docs/plan.md');
+      expect(res.body.code).toBe('room_file_exists');
+      expect(res.body.detail).toContain('docs/plan.md');
       expect(await stagingLeft()).toEqual([]);
     });
 
@@ -787,7 +787,7 @@ describe('room files routes', () => {
         .attach('files', Buffer.alloc(64, 1), { filename: 'big.bin' });
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('FILE_TOO_LARGE');
+      expect(res.body.code).toBe('file_too_large');
       expect(await stagingLeft()).toEqual([]);
     });
 
@@ -801,7 +801,7 @@ describe('room files routes', () => {
       const res = await req;
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('ROOM_UPLOAD_TOO_MANY_FILES');
+      expect(res.body.code).toBe('room_upload_too_many_files');
       expect(await stagingLeft()).toEqual([]);
     });
 
@@ -831,7 +831,7 @@ describe('room files routes', () => {
 
       for (const res of answers) {
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('PEOPLE_ONLY');
+        expect(res.body.code).toBe('person_only');
       }
       expect(await headOf(roomId)).toBe(base);
       expect(await stagingLeft()).toEqual([]);
@@ -872,7 +872,7 @@ describe('room files routes', () => {
         .send({ from: 'docs', to: 'old-docs', baseCommit: opened });
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('FILE_CHANGED');
+      expect(res.body.code).toBe('file_changed');
       expect(res.body.conflict).toMatchObject({ path: 'docs/plan.md', commit: theirs.body.commit });
     });
 
@@ -922,7 +922,7 @@ describe('room files routes', () => {
           .attach('files', Buffer.from('overwritten\n'), { filename: NFD });
 
         expect(res.status).toBe(409);
-        expect(res.body.code).toBe('ROOM_FILE_EXISTS');
+        expect(res.body.code).toBe('room_file_exists');
         expect(await cafe(roomId)).toBe('mine\n');
       });
 
@@ -933,7 +933,7 @@ describe('room files routes', () => {
           .send({ path: NFD, baseCommit: null, text: 'overwritten\n' });
 
         expect(res.status).toBe(409);
-        expect(res.body.code).toBe('FILE_CHANGED');
+        expect(res.body.code).toBe('file_changed');
         expect(res.body.conflict.path).toBe(NFC);
         expect(await cafe(roomId)).toBe('mine\n');
       });
@@ -949,7 +949,7 @@ describe('room files routes', () => {
           .attach('files', Buffer.from('x'), { filename: '.git::$INDEX_ALLOCATION' });
 
         expect(res.status).toBe(400);
-        expect(res.body.code).toBe('ROOM_FILE_PATH_INVALID');
+        expect(res.body.code).toBe('room_file_path_invalid');
         expect(await headOf(roomId)).toBe(base);
         expect(await git(roomId, ['status', '--porcelain=v1'])).toBe('');
         expect(await cafe(roomId)).toBe('mine\n');
@@ -1022,9 +1022,9 @@ describe('room files routes', () => {
         const res = await request(testServer).get(`/api/rooms/${roomId}/files`);
 
         expect(res.status).toBe(409);
-        expect(res.body.code).toBe('ROOM_REPO_CONFIG_UNSAFE');
-        expect(res.body.error).toContain(KEY);
-        expect(res.body.error).toContain(configFile);
+        expect(res.body.code).toBe('room_repo_config_unsafe');
+        expect(res.body.detail).toContain(KEY);
+        expect(res.body.detail).toContain(configFile);
         // The command rides in its own field, so no renderer of the sentence
         // can mangle it. It is the real one, quoted for a shell: run it as the
         // operator would paste it, and the room reads again.
@@ -1053,10 +1053,12 @@ describe('room files routes', () => {
 
         for (const res of answers) {
           expect(res.status).toBe(409);
-          expect(res.body).toEqual({
-            code: 'ROOM_REPO_CONFIG_UNSAFE',
-            error: ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
+          expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+          expect(res.body).toMatchObject({
+            code: 'room_repo_config_unsafe',
+            detail: ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
           });
+          expect(res.body).not.toHaveProperty('command');
           expect(JSON.stringify(res.body)).not.toContain(dorkHome);
           expect(JSON.stringify(res.body)).not.toContain(KEY);
         }
@@ -1122,7 +1124,7 @@ describe('room files routes', () => {
             .post(`/api/rooms/${roomId}/files/from-attachment`)
             .send({ attachmentId, dir: '', baseCommit: base });
           expect(res.status).toBe(404);
-          expect(res.body.code).toBe('ATTACHMENT_NOT_FOUND');
+          expect(res.body.code).toBe('attachment_not_found');
         }
         expect(await headOf(roomId)).toBe(base);
       });

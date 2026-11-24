@@ -10,11 +10,10 @@
  * @module routes/runtimes-doe-setup
  */
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { DoeInferenceConfigSchema, type DoeInferenceConfig } from '@dorkos/shared/config-schema';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { refuseFrontDoorChange, refuseUnlessAccountOwner } from '../lib/caller-authority.js';
@@ -30,6 +29,7 @@ import { storeDoeCredential } from '../services/runtimes/connect/doe-credentials
 import { ConnectError } from '../services/runtimes/connect/connect-error.js';
 import { doeCreditsInUse, peekDoeCreditsPick } from '../services/runtimes/doe/auto-model.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { connectErrorProblem, frontDoorProblem } from './runtimes-http.js';
 
 // Preserve the persisted schema's validations while keeping key references server-owned.
 const inferenceMetadataSchema = DoeInferenceConfigSchema.safeExtend({
@@ -40,7 +40,7 @@ const inferenceMetadataSchema = DoeInferenceConfigSchema.safeExtend({
 /** The 403 for a caller that is not at this computer, or `undefined` when it is. */
 function refuseNonLoopback(c: Context<ApiEnv>): Response | undefined {
   if (isAtThisComputer(honoRequestFacts(c))) return undefined;
-  return c.json({ error: 'Model setup is only available on this computer.' }, 403);
+  return problem(c, 'operator_only', { detail: 'Model setup is only available on this computer.' });
 }
 
 /** Credential and billing choices require the local owner, not merely a loopback socket. */
@@ -49,12 +49,14 @@ function refuseNonOwner(c: Context<ApiEnv>): Response | undefined {
   if (notLocal) return notLocal;
   const refusal = refuseUnlessAccountOwner(honoRequestFacts(c));
   if (refusal) {
-    return c.json({ error: 'Only the owner can change model settings.', code: refusal }, 403);
+    return problem(c, refusal === 'not-the-owner' ? 'owner_only' : 'person_only', {
+      detail: 'Only the owner can change model settings.',
+    });
   }
   // Then the front-door bar (DOR-2969), which the owner bar leaves open in one
   // posture: with the gate open, a bearer the gate never read is a program.
   const frontDoor = refuseFrontDoorChange(honoRequestFacts(c), 'model settings');
-  return frontDoor ? c.json({ error: frontDoor.error, code: frontDoor.code }, 403) : undefined;
+  return frontDoor ? frontDoorProblem(c, frontDoor) : undefined;
 }
 
 /**
@@ -73,7 +75,7 @@ export function createDoeSetupRoutes(): Hono<ApiEnv> {
       .enum(['anthropic-messages', 'openai-chat-completions', 'openai-responses'])
       .safeParse(readQuery(c).protocol);
     if (!protocol.success) {
-      return c.json({ error: 'Choose a model protocol.' }, 400);
+      return validationProblem(c, protocol.error, { detail: 'Choose a model protocol.' });
     }
     try {
       const models = await creditsModelsFor(protocol.data);
@@ -91,7 +93,9 @@ export function createDoeSetupRoutes(): Hono<ApiEnv> {
         })),
       });
     } catch {
-      return c.json({ error: 'DorkOS credits models are unavailable.' }, 503);
+      return problem(c, 'temporarily_unavailable', {
+        detail: 'DorkOS credits models are unavailable.',
+      });
     }
   });
 
@@ -112,7 +116,9 @@ export function createDoeSetupRoutes(): Hono<ApiEnv> {
     if (refused) return refused;
     const parsed = inferenceMetadataSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'Check the model, endpoint, and token limits.' }, 400);
+      return validationProblem(c, parsed.error, {
+        detail: 'Check the model, endpoint, and token limits.',
+      });
     }
     const runtimes = configManager.get('runtimes');
     const previous = runtimes.doe.inference;
@@ -140,15 +146,16 @@ export function createDoeSetupRoutes(): Hono<ApiEnv> {
       .strict()
       .safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'Enter an API key and model settings.' }, 400);
+      return validationProblem(c, parsed.error, {
+        detail: 'Enter an API key and model settings.',
+      });
     }
     try {
       await storeDoeCredential(parsed.data.inference, parsed.data.secret);
       return c.json({ ok: true, hasKey: true });
     } catch (error) {
-      if (error instanceof ConnectError)
-        return c.json({ error: error.message }, error.status as ContentfulStatusCode);
-      return c.json({ error: 'Could not save the API key.' }, 500);
+      if (error instanceof ConnectError) return connectErrorProblem(c, error);
+      return problem(c, 'internal_error', { detail: 'Could not save the API key.' });
     }
   });
 

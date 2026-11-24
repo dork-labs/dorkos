@@ -310,18 +310,20 @@ describe('document metrics through the full app', () => {
       label: 'malformed JSON',
       body: '{',
       status: 400,
-      code: 'INVALID_DOC_EVENT',
+      problem: problemBody('malformed_request', {
+        detail: 'The document event is not valid JSON.',
+      }),
       reason: 'invalid',
-      error: 'The document event is not valid.',
       variant: 'EVENTS',
     },
     {
       label: 'oversized JSON',
       body: JSON.stringify({ text: 'x'.repeat(17000) }),
       status: 413,
-      code: 'DOC_EVENT_TOO_LARGE',
+      problem: problemBody('request_too_large', {
+        detail: 'The document event is too large. Send a smaller one.',
+      }),
       reason: 'too_large',
-      error: 'The document event is too large.',
       variant: 'EvEnTs',
     },
   ] as const)('counts parser refusals for $label case variants', async (scenario) => {
@@ -334,7 +336,8 @@ describe('document metrics through the full app', () => {
         .set('Content-Type', 'application/json')
         .send(scenario.body);
       expect(response.status).toBe(scenario.status);
-      expect(response.body).toEqual({ code: scenario.code, error: scenario.error });
+      expect(response.headers['content-type']).toContain('application/problem+json');
+      expect(response.body).toEqual(scenario.problem);
     }
     expect(attempts().rejectedRequestsByClass[scenario.reason]).toBe(2);
     // Valid JSON reaches schema validation on the route itself. Routes match
@@ -346,10 +349,7 @@ describe('document metrics through the full app', () => {
       .set('Cookie', cookies)
       .send({});
     expect(valid.status).toBe(400);
-    expect(valid.body).toEqual({
-      code: 'INVALID_DOC_EVENT',
-      error: 'The document event or query is not valid.',
-    });
+    expect(valid.body).toMatchObject({ code: 'invalid_request' });
     const uppercase = await request(server)
       .post(`${endpoint()}/EVENTS`)
       .set('Cookie', cookies)
@@ -423,7 +423,9 @@ describe('document metrics through the full app', () => {
     };
     const unavailable = await post(event());
     expect(unavailable.status).toBe(503);
-    expect(unavailable.body.code).toBe('DOC_CHANNEL_UNAVAILABLE');
+    expect(unavailable.body).toMatchObject({
+      code: 'temporarily_unavailable',
+    });
     expect(attempts().rejectedRequestsByClass).toMatchObject({ authority: 1, unavailable: 1 });
   });
   it('counts only actual retention reset responses, including repeated reset attempts', async () => {

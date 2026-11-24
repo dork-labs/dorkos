@@ -168,10 +168,18 @@ describe('HttpTransport search', () => {
 
   it('preserves a refused query’s code, status and body', async () => {
     const refusal = {
-      error: 'Search needs a word of at least 2 letters to look for.',
-      code: 'INVALID_SEARCH_QUERY',
+      type: 'urn:dorkos:problem:invalid_request',
+      title: 'The request didn’t pass its checks.',
+      status: 400,
+      code: 'invalid_request',
+      detail: 'Search needs a word of at least 2 letters to look for.',
     };
-    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(refusal), { status: 400 }));
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify(refusal), {
+        status: 400,
+        headers: { 'Content-Type': 'application/problem+json' },
+      })
+    );
 
     const overHttp = await new HttpTransport(BASE_URL)
       .search({ q: 'a' })
@@ -188,8 +196,8 @@ describe('HttpTransport search', () => {
     // transport it is on, so the whole carried shape has to match — not just
     // the fact that something threw.
     expect(shapeOf(overHttp)).toEqual({
-      message: refusal.error,
-      code: 'INVALID_SEARCH_QUERY',
+      message: refusal.detail,
+      code: 'invalid_request',
       status: 400,
       body: refusal,
     });

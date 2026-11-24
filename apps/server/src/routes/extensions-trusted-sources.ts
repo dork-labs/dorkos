@@ -23,29 +23,22 @@ import { normalizeTrustedSource } from '../services/marketplace/lib/trusted-sour
 import { logger } from '../lib/logger.js';
 import { configManager } from '../services/core/config-manager.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import { refuseFrontDoorChange } from '../lib/caller-authority.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 
-/** The code every refusal to change trusted sources carries. */
-export const TRUSTED_SOURCE_PERSON_ONLY_CODE = 'trusted_source_person_only';
-
 /** What the trusted-source routes say when the bar refuses them. */
 const TRUST_BAR: PersonBarCopy = {
-  error: 'Only a person can choose which sources DorkOS trusts',
-  code: TRUSTED_SOURCE_PERSON_ONLY_CODE,
+  code: 'person_only',
   subject: 'which code sources DorkOS trusts',
-  crossSite: (origin) =>
-    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
-    `Trusting a source lets its extensions run without asking, so only a person in their ` +
-    `own copy of the app can do it.`,
-  agent:
-    `DorkOS changed nothing. Trusting a source lets every extension from it run without ` +
-    `asking, and that is a decision only a person makes. Ask the person to turn the ` +
-    `extension on in DorkOS; the app offers to trust its source right after.`,
+  crossSite: (origin) => `Nothing changed. ${origin} isn’t DorkOS. Trust sources in the app.`,
+  agent: 'Nothing changed. Only a person trusts a source, in the app.',
 };
+
+/** What a failed trust says. */
+const TRUST_FAILED = 'Couldn’t trust that source. Try again.';
 
 /**
  * The front-door bar (DOR-2969): which sources DorkOS trusts is a package
@@ -53,7 +46,7 @@ const TRUST_BAR: PersonBarCopy = {
  */
 function refuseAwayFromTheComputer(c: Context<ApiEnv>): Response | undefined {
   const refusal = refuseFrontDoorChange(honoRequestFacts(c), 'which sources DorkOS trusts');
-  return refusal ? c.json({ error: refusal.error, code: refusal.code }, 403) : undefined;
+  return refusal ? problem(c, 'operator_only', { detail: refusal.error }) : undefined;
 }
 
 /**
@@ -84,7 +77,9 @@ export function registerTrustedSourceRoutes(
       const body = TrustedSourceRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
       const source = body.success ? normalizeTrustedSource(body.data.source) : null;
       if (!source) {
-        return c.json({ error: 'Send the source to trust, like owner/repo' }, 400);
+        return problem(c, 'invalid_request', {
+          detail: 'Send the source to trust, like owner/repo.',
+        });
       }
 
       return runFrontDoorWrite(c, {
@@ -97,13 +92,9 @@ export function registerTrustedSourceRoutes(
           try {
             const result = await extensionManager.trustSource(source);
             if (result === 'unproven') {
-              return c.json(
-                {
-                  error: `DorkOS hasn't installed anything from ${source}, so there is nothing to trust yet.`,
-                  code: 'unproven_source',
-                },
-                409
-              );
+              return problem(c, 'conflict', {
+                detail: `Nothing from ${source} is installed yet, so there’s nothing to trust.`,
+              });
             }
             if (result === 'added') {
               await activity?.emit({
@@ -119,13 +110,13 @@ export function registerTrustedSourceRoutes(
             return c.json({ sources: configManager.get('extensions').trustedSources ?? [] });
           } catch (err) {
             logger.error('[Extensions] Failed to trust a source', err);
-            return c.json({ error: 'Failed to trust that source' }, 500);
+            return problem(c, 'internal_error', { detail: TRUST_FAILED });
           }
         },
       });
     } catch (err) {
       logger.error('[Extensions] Failed to trust a source', err);
-      return c.json({ error: 'Failed to trust that source' }, 500);
+      return problem(c, 'internal_error', { detail: TRUST_FAILED });
     }
   });
 
@@ -138,12 +129,14 @@ export function registerTrustedSourceRoutes(
       const body = TrustedSourceRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
       const source = body.success ? normalizeTrustedSource(body.data.source) : null;
       if (!source) {
-        return c.json({ error: 'Send the source to stop trusting, like owner/repo' }, 400);
+        return problem(c, 'invalid_request', {
+          detail: 'Send the source to stop trusting, like owner/repo.',
+        });
       }
 
       const removed = await extensionManager.untrustSource(source);
       if (!removed) {
-        return c.json({ error: `${source} isn't a trusted source` }, 404);
+        return problem(c, 'not_found', { detail: `${source} isn’t a trusted source.` });
       }
       await activity?.emit({
         ...readActivityActor(honoRequestFacts(c)),
@@ -157,7 +150,9 @@ export function registerTrustedSourceRoutes(
       return c.json({ sources: configManager.get('extensions').trustedSources ?? [] });
     } catch (err) {
       logger.error('[Extensions] Failed to stop trusting a source', err);
-      return c.json({ error: 'Failed to stop trusting that source' }, 500);
+      return problem(c, 'internal_error', {
+        detail: 'Couldn’t stop trusting that source. Try again.',
+      });
     }
   });
 }

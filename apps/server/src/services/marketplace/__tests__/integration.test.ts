@@ -44,7 +44,7 @@ import {
 import { buildInstallerForTests } from './installer-harness.js';
 import { ConflictError } from '../installer/errors.js';
 import { AdapterError } from '../../relay/adapter-error.js';
-import { mapErrorToStatus } from '../../../routes/marketplace/shared.js';
+import { mapErrorToProblem } from '../../../routes/marketplace/shared.js';
 import { MarketplaceSourceManager } from '../sources/marketplace-source-manager.js';
 import { UpdateFlow } from '../flows/update.js';
 import { pickInstallation } from '../flows/update-selection.js';
@@ -327,7 +327,12 @@ describe('marketplace install pipeline — integration', () => {
         (err: unknown) => err
       );
     expect(forced).toBeInstanceOf(AdapterError);
-    expect(mapErrorToStatus(forced)).toEqual({ status: 409, body: { error: plain } });
+    expect(mapErrorToProblem(forced)).toMatchObject({
+      status: 409,
+      code: 'conflict',
+      detail:
+        'An app with that name is already connected. Remove or rename it, then install again.',
+    });
     expect(spies.adapterRemove).not.toHaveBeenCalled();
   });
 

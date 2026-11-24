@@ -462,7 +462,7 @@ it('preserves the winning allocation and refuses inaccessible saved folders', as
   mintChatId.mockReturnValueOnce(winner);
   const refused = await allocate(ref);
   expect(refused.status).toBe(409);
-  expect(refused.body).toMatchObject({ code: 'SESSION_ID_CONFLICT' });
+  expect(refused.body).toMatchObject({ code: 'conflict' });
   expect(refused.body).not.toHaveProperty('sessionId');
   expect(mintChatId).toHaveBeenCalledTimes(1);
   expect(allocations()).toEqual(before);

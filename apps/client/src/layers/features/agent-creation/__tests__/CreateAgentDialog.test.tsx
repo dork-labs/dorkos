@@ -751,7 +751,7 @@ describe('CreateAgentDialog', () => {
       .mockRejectedValueOnce(
         Object.assign(new Error('review'), {
           status: 409,
-          body: { code: 'template_needs_review', template: brings },
+          body: { code: 'needs_review', template: brings },
         })
       )
       .mockResolvedValueOnce({

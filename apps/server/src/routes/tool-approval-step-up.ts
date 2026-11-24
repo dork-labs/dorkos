@@ -1,5 +1,6 @@
 /** Remote runtime-tool approvals, bound to the full pending request. */
 import type { Context } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import type { AlwaysAllowBreadth } from '@dorkos/shared/schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
@@ -49,15 +50,17 @@ export function holdRemoteToolApproval(
 ): Response | undefined {
   const facts = honoRequestFacts(c);
   const wifi = refuseApprovalYesFromWifi(facts);
-  if (wifi) return c.json(wifi, 403);
+  if (wifi) return problem(c, 'not_from_wifi', { detail: wifi.error });
   if (!grantsPower({ kind: action.always ? 'runtime-tool-always' : 'runtime-tool-once' }))
     return undefined;
   if (deskGoesOnWithoutSheet(facts)) return undefined;
   if (facts.user && (facts.user.credential !== 'cookie' || !facts.user.sessionId)) {
-    return c.json({ error: 'Sign in to DorkOS to decide an approval.', code: 'not-a-person' }, 403);
+    return problem(c, 'person_only', { detail: 'Sign in to DorkOS to decide an approval.' });
   }
   const hash = pendingToolApprovalHash(action.sessionId, action.ids);
-  if (!hash) return c.json({ error: 'No pending approval', code: 'NO_PENDING_APPROVAL' }, 404);
+  if (!hash) {
+    return problem(c, 'not_found', { detail: 'No request is waiting for an answer here.' });
+  }
   const pending = peekProjector(action.sessionId)!.getPendingInteractions();
   const reason = action.ids
     .map((id) => {

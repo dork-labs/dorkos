@@ -227,7 +227,7 @@ describe('GET /api/agents/:id/heartbeat', () => {
     for (const days of ['0', '91', 'soon']) {
       const res = await request(target.server).get(`/api/agents/agent-juno/heartbeat?days=${days}`);
       expect(res.status, days).toBe(400);
-      expect(res.body.code).toBe('INVALID_DAYS');
+      expect(res.body.code).toBe('invalid_request');
     }
   });
 });

@@ -6,17 +6,13 @@
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { ErrorResponseSchema } from '@dorkos/shared/schemas';
 import {
   ApprovalSetResultSchema,
   ApproveExtensionSetRequestSchema,
   ExtensionApprovalSetSchema,
 } from '@dorkos/shared/extension-approval-schemas';
 
-const error = (description: string) => ({
-  description,
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-});
+import { problemResponse as error } from '../../core/openapi/problem-openapi.js';
 
 /**
  * Register the approval-set routes.
@@ -42,7 +38,7 @@ export function registerExtensionApprovalSetOpenApi(registry: OpenAPIRegistry): 
           'application/json': { schema: z.object({ sets: z.array(ExtensionApprovalSetSchema) }) },
         },
       },
-      500: error('The sets could not be read'),
+      500: error('`internal_error`: the sets could not be read'),
     },
   });
 
@@ -74,13 +70,19 @@ export function registerExtensionApprovalSetOpenApi(registry: OpenAPIRegistry): 
           },
         },
       },
-      400: error('The body is not a set'),
-      401: error('Login is enabled and the caller is not signed in'),
-      403: error('Refused: an agent or another site cannot allow extensions'),
+      400: error('`invalid_request`: the body is not a set'),
+      401: error('`unauthenticated`: login is on and the caller is not signed in'),
+      403: error(
+        '`person_only` (an agent or another site), `not_from_wifi`, or `forbidden` (several at ' +
+          'once from another device)'
+      ),
       409: error(
-        'Nothing was turned on: a member was not installed by this plugin (`not_in_set`), the ' +
-          'set or a member’s files or permissions changed (`stale_set`), or more than 10 wait ' +
-          '(`too_many_in_set`)'
+        '`conflict`, nothing was turned on: a member was not installed by this plugin, or more ' +
+          'than 10 wait (`detail` says which)'
+      ),
+      412: error(
+        '`precondition_failed`, nothing was turned on: the set or a member’s files or ' +
+          'permissions changed since the card'
       ),
     },
   });

@@ -294,7 +294,7 @@ describe('POST /:id/messages from an agent', () => {
   it("refuses A starting a chat in B's home, and dispatches nothing", async () => {
     const res = await post('/messages', { content: 'x', create: true, cwd: homeB }, AS_A);
     expect(res.status).toBe(403);
-    expect(await codeOf(res)).toBe('DESK_NOT_OWN');
+    expect(await codeOf(res)).toBe('desk_not_own');
     expect(dispatchMessage).not.toHaveBeenCalled();
     expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
   });
@@ -302,7 +302,7 @@ describe('POST /:id/messages from an agent', () => {
   it("refuses A naming B's home as the chat's agent", async () => {
     const res = await post('/messages', { content: 'x', create: true, agentPath: homeB }, AS_A);
     expect(res.status).toBe(403);
-    expect(await codeOf(res)).toBe('DESK_NOT_OWN');
+    expect(await codeOf(res)).toBe('desk_not_own');
     expect(dispatchMessage).not.toHaveBeenCalled();
   });
 
@@ -337,7 +337,7 @@ describe('POST /:id/messages from an agent', () => {
 
     const res = await post('/messages', { content: 'do it as B' }, AS_A);
     expect(res.status).toBe(403);
-    expect(await codeOf(res)).toBe('DESK_NOT_OWN');
+    expect(await codeOf(res)).toBe('desk_not_own');
     expect(dispatchMessage).not.toHaveBeenCalled();
   });
 
@@ -384,7 +384,7 @@ describe('POST /:id/messages from a caller DorkOS cannot name', () => {
   it("refuses a token-less caller starting a chat in an agent's home", async () => {
     const res = await post('/messages', { content: 'x', create: true, cwd: homeB });
     expect(res.status).toBe(403);
-    expect(await codeOf(res)).toBe('DESK_NOT_OWN');
+    expect(await codeOf(res)).toBe('desk_not_own');
     expect(dispatchMessage).not.toHaveBeenCalled();
   });
 
@@ -443,7 +443,7 @@ describe('POST /:id/fork', () => {
   it("refuses A forking a chat into B's home", async () => {
     const res = await post(`/fork?cwd=${encodeURIComponent(homeB)}`, {}, AS_A);
     expect(res.status).toBe(403);
-    expect(await codeOf(res)).toBe('DESK_NOT_OWN');
+    expect(await codeOf(res)).toBe('desk_not_own');
     expect(fakeRuntime.forkSession).not.toHaveBeenCalled();
   });
 
@@ -476,7 +476,7 @@ describe('a message waiting in a chat (DOR-3644 S1)', () => {
   it("refuses A rewording or moving one in B's chat", async () => {
     const res = await post('/queue/m-1', { content: 'now as B' }, AS_A, 'PATCH');
     expect(res.status).toBe(403);
-    expect(await codeOf(res)).toBe('DESK_NOT_OWN');
+    expect(await codeOf(res)).toBe('desk_not_own');
   });
 
   it("refuses A removing one from B's chat", async () => {
@@ -518,7 +518,7 @@ describe('a message waiting in its own chat, while the agent is under limits (DO
       aTurnUnderLimits();
       const res = await post('/queue/m-1', body, AS_A, method);
       expect(res.status).toBe(403);
-      expect(await codeOf(res)).toBe('LIMITED_TURN');
+      expect(await codeOf(res)).toBe('forbidden');
     }
   );
 
@@ -562,18 +562,18 @@ describe('a launch or fork that names no folder, when the default is home (DOR-4
   it('refuses a token-less new chat with PROTECTED_FOLDER and says to name a folder', async () => {
     const res = await post('/messages', { content: 'x', create: true });
     expect(res.status).toBe(403);
-    const body = (await res.json()) as { code?: string; error?: string };
-    expect(body.code).toBe('PROTECTED_FOLDER');
-    expect(body.error).toBe(PROTECTED_DEFAULT_FOLDER_MESSAGE);
+    const body = (await res.json()) as { code?: string; detail?: string };
+    expect(body.code).toBe('protected_folder');
+    expect(body.detail).toBe(PROTECTED_DEFAULT_FOLDER_MESSAGE);
     expect(dispatchMessage).not.toHaveBeenCalled();
   });
 
   it('refuses a token-less fork the same way', async () => {
     const res = await post('/fork', {});
     expect(res.status).toBe(403);
-    const body = (await res.json()) as { code?: string; error?: string };
-    expect(body.code).toBe('PROTECTED_FOLDER');
-    expect(body.error).toBe(PROTECTED_DEFAULT_FOLDER_MESSAGE);
+    const body = (await res.json()) as { code?: string; detail?: string };
+    expect(body.code).toBe('protected_folder');
+    expect(body.detail).toBe(PROTECTED_DEFAULT_FOLDER_MESSAGE);
     expect(fakeRuntime.forkSession).not.toHaveBeenCalled();
   });
 
@@ -590,8 +590,8 @@ describe('a launch or fork that names no folder, when the default is home (DOR-4
 
   it('names the plain refusal, not the hint, when a folder was named', async () => {
     const res = await post('/messages', { content: 'x', create: true, cwd: DEFAULT_CWD });
-    const body = (await res.json()) as { code?: string; error?: string };
-    expect(body.code).toBe('PROTECTED_FOLDER');
-    expect(body.error).toBe(PROTECTED_FOLDER_MESSAGE);
+    const body = (await res.json()) as { code?: string; detail?: string };
+    expect(body.code).toBe('protected_folder');
+    expect(body.detail).toBe(PROTECTED_FOLDER_MESSAGE);
   });
 });

@@ -29,7 +29,7 @@ _openapi:
           gets the same 404 an unknown room gets, so a room id is never a
           capability, and an agent that IS a member may read, because a room''s
           files are what its members are working on together. A member of a room
-          that has no files of its own gets 409 `ROOM_HAS_NO_REPO`, and that
+          that has no files of its own gets 409 `room_has_no_repo`, and that
           question is asked strictly AFTER membership so that nobody can learn
           which rooms are project rooms by probing ids. Each entry carries the
           last commit that touched it — author, time and subject — from one

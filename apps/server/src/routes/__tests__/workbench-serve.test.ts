@@ -95,6 +95,11 @@ describe('POST /api/workbench/sign', () => {
       .post('/api/workbench/sign')
       .send({ kind: 'serve', cwd: outside });
     expect(res.status).toBe(403);
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body).toMatchObject({
+      code: 'outside_boundary',
+      detail: 'Pick a folder inside the ones DorkOS may use.',
+    });
   });
 
   it('rejects a proxy port outside the valid range — no arbitrary target (400)', async () => {
@@ -224,7 +229,11 @@ describe('GET /api/workbench/serve/:token/*', () => {
     );
     const res = await request(testServer).get(`/api/workbench/serve/${expired}/index.html`);
     expect(res.status).toBe(401);
-    expect(res.body.code).toBe('EXPIRED');
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body).toMatchObject({
+      code: 'unauthenticated',
+      detail: 'This preview link expired. Open the preview again.',
+    });
   });
 
   it('rejects a FORGED token (tampered signature) with 403', async () => {
@@ -256,6 +265,10 @@ describe('GET /api/workbench/serve/:token/*', () => {
     const proxyToken = workbenchTokenSigner.mint({ kind: 'proxy', port: 5173 });
     const res = await request(testServer).get(`/api/workbench/serve/${proxyToken}/index.html`);
     expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({
+      code: 'forbidden',
+      detail: 'This link isn’t a file preview link.',
+    });
   });
 });
 
@@ -554,7 +567,8 @@ describe('GET /api/workbench/serve never serves a protected file (DOR-4060)', ()
 
     const refused = await request(testServer).get(servePath.replace(/index\.html$/, 'host.key'));
     expect(refused.status).toBe(403);
-    expect(refused.body.code).toBe('PROTECTED_FILE');
+    expect(refused.headers['content-type']).toContain('application/problem+json');
+    expect(refused.body.code).toBe('forbidden');
     expect(refused.text).not.toContain('dor-4060-dummy-canary');
 
     expect((await request(testServer).get(servePath)).status).toBe(200);

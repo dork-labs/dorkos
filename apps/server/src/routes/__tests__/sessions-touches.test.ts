@@ -172,7 +172,7 @@ describe('session touches', () => {
     it('refuses an id that is not a session id', async () => {
       const res = await request(server).post('/api/sessions/not-a-uuid/opened').set(APP_WINDOW);
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('INVALID_SESSION_ID');
+      expect(res.body.code).toBe('invalid_request');
     });
   });
 

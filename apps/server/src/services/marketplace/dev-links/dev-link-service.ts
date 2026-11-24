@@ -62,7 +62,7 @@ import {
   planLinkConsent,
   type DevLinkConsentStore,
 } from './consent.js';
-import { DevLinkError } from './errors.js';
+import { DevLinkError, notItsRealPath } from './errors.js';
 import { canonicalSlotPath, devLinkStateOf, readDevLinks, updateDevLinks } from './registry.js';
 import { describePlan, onlyNarrowed, type LinkCardSets } from './permission-card-description.js';
 
@@ -619,16 +619,7 @@ export class DevLinkService {
     if (real === null) {
       throw new DevLinkError('dev_link_path_not_allowed', 400, "That folder doesn't exist.");
     }
-    if (real !== candidate) {
-      throw new DevLinkError(
-        'dev_link_path_not_real',
-        400,
-        `That path is a link. Use ${real} instead.`,
-        {
-          realPath: real,
-        }
-      );
-    }
+    if (real !== candidate) throw notItsRealPath(real, (this.deps.boundary ?? getBoundary)());
     const isDir = await stat(real)
       .then((stats) => stats.isDirectory())
       .catch(() => false);

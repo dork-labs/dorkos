@@ -57,8 +57,8 @@ describe('/api/rooms members', () => {
         .send({ handle: 'not a handle' });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('INVALID_HANDLE');
-      expect(res.body.error).toMatch(/lowercase letters, numbers, dots/);
+      expect(res.body.code).toBe('invalid_handle');
+      expect(res.body.detail).toMatch(/lowercase letters, numbers, dots/);
     });
 
     it('409s a handle live on another author, and one reserved to somebody else', async () => {
@@ -70,7 +70,7 @@ describe('/api/rooms members', () => {
         .patch(`/api/rooms/authors/${me}/handle`)
         .send({ handle: 'ana' });
       expect(live.status).toBe(409);
-      expect(live.body.code).toBe('HANDLE_TAKEN');
+      expect(live.body.code).toBe('handle_taken');
 
       // Ana releases `ana`. It stays hers, forever.
       await request(testServer)
@@ -80,7 +80,7 @@ describe('/api/rooms members', () => {
         .patch(`/api/rooms/authors/${me}/handle`)
         .send({ handle: 'ana' });
       expect(reserved.status).toBe(409);
-      expect(reserved.body.code).toBe('HANDLE_RESERVED');
+      expect(reserved.body.code).toBe('handle_reserved');
     });
 
     it('refuses an AGENT presenting its own identity — handle changes are human-only', async () => {
@@ -95,7 +95,7 @@ describe('/api/rooms members', () => {
         .send({ handle: 'stolen' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OPERATOR_ONLY');
+      expect(res.body.code).toBe('operator_only');
     });
 
     it('404s an author that does not exist', async () => {
@@ -104,7 +104,7 @@ describe('/api/rooms members', () => {
         .send({ handle: 'nobody' });
 
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('MEMBER_NOT_FOUND');
+      expect(res.body.code).toBe('not_found');
     });
   });
 
@@ -128,7 +128,7 @@ describe('/api/rooms members', () => {
         .send({ agentPath: '/agents/ghost' });
 
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('AGENT_NOT_FOUND');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('changes a response mode, and refuses one outside the shared enum', async () => {
@@ -172,7 +172,7 @@ describe('/api/rooms members', () => {
         .get(`/api/rooms/${room.id}`)
         .set('X-DorkOS-Agent', await outsiderToken());
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('ROOM_NOT_FOUND');
+      expect(res.body.code).toBe('room_not_found');
     });
 
     it('404s the history of a room the caller is not in', async () => {
@@ -249,8 +249,8 @@ describe('/api/rooms members', () => {
           .send({ agentPath: BO_PATH });
 
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('OPERATOR_ONLY');
-        expect(res.body.error).toBe('Only you can change who is in a room');
+        expect(res.body.code).toBe('operator_only');
+        expect(res.body.detail).toBe('Only you can change who is in a room');
         expect(await rosterSize(room.id)).toBe(2);
       });
 
@@ -264,8 +264,8 @@ describe('/api/rooms members', () => {
           .set('X-DorkOS-Agent', token);
 
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('OPERATOR_ONLY');
-        expect(res.body.error).toBe('Only you can change who is in a room');
+        expect(res.body.code).toBe('operator_only');
+        expect(res.body.detail).toBe('Only you can change who is in a room');
         expect(await rosterSize(room.id)).toBe(2);
       });
 
@@ -289,9 +289,9 @@ describe('/api/rooms members', () => {
           .set('X-DorkOS-Agent', token);
 
         expect(added.status).toBe(403);
-        expect(added.body.code).toBe('OPERATOR_ONLY');
+        expect(added.body.code).toBe('operator_only');
         expect(removed.status).toBe(403);
-        expect(removed.body.code).toBe('OPERATOR_ONLY');
+        expect(removed.body.code).toBe('operator_only');
         expect(await rosterSize(room.id)).toBe(2);
       });
 

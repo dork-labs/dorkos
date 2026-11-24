@@ -108,7 +108,8 @@
  * @module routes/extensions-person-bar
  */
 import type { Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { problemBody, sendProblem } from '@dorkos/http-kit';
+import type { Problem, ProblemCode } from '@dorkos/shared/problem';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
@@ -122,37 +123,40 @@ import {
  * What one surface calls itself when it refuses, so the reader is told what
  * DorkOS did not do and what to do instead — never a bare code.
  *
- * Passed in rather than derived, because the two surfaces answer with different
- * vocabularies on purpose: approving is a security decision and answers with
- * `extension_not_approved_to_run`, while turning one on is an operator-only
- * config write and answers with `operator_only_config`, the same code
- * `PATCH /api/config` gives for the same paths.
+ * Passed in rather than derived, because surfaces answer with different codes
+ * on purpose: a change to which code this copy of DorkOS runs answers
+ * `operator_only`, the same code `PATCH /api/config` gives for the same paths,
+ * while most others answer `person_only`.
  */
 export interface PersonBarCopy {
-  /** The headline, the same for every refusal from this surface. */
-  error: string;
   /** Machine-readable code for the origin and agent bars. */
-  code: string;
+  code: ProblemCode;
   /**
    * What the cookie bar names as the thing being changed, as a noun phrase that
    * completes "only a person signed in to DorkOS can change …".
    */
   subject: string;
   /**
-   * The body for a request that arrived from another site, given that site's
-   * origin. Say what the page tried to do, in the person's words.
+   * The `detail` for a request that arrived from another site, given that
+   * site's origin. Say what the page tried to do, in the person's words.
    */
   crossSite: (origin: string) => string;
-  /** The body for a caller that named itself an agent. */
+  /** The `detail` for a caller that named itself an agent. */
   agent: string;
 }
 
 /** A refusal {@link assessPerson} decided on, not yet written. */
 export interface PersonRefusal {
-  /** The HTTP status to answer with. */
-  status: 403;
-  /** The JSON body to answer with. */
-  body: { error: string; code: string; message: string };
+  /** The HTTP status to answer with: the problem's own `status`. */
+  status: number;
+  /** The problem document to answer with (`application/problem+json`). */
+  body: Problem;
+}
+
+/** A refusal with a code and a sentence, its status taken from the code. */
+function refusal(code: ProblemCode, detail: string): PersonRefusal {
+  const body = problemBody(code, { detail });
+  return { status: body.status, body };
 }
 
 /**
@@ -170,23 +174,15 @@ export interface PersonRefusal {
 export function assessPerson(facts: RequestFacts, copy: PersonBarCopy): PersonRefusal | null {
   const origin = facts.headers.origin;
   if (origin && !resolveTrustedOrigins().includes(origin)) {
-    return {
-      status: 403,
-      body: { error: copy.error, code: copy.code, message: copy.crossSite(origin) },
-    };
+    return refusal(copy.code, copy.crossSite(origin));
   }
 
+  // A caller that is not a signed-in person while login is on: `person_only`,
+  // whichever code the surface gives its other bars.
   const cookieRefusal = requireOperatorCookieUnderLogin(facts, copy.subject);
-  if (cookieRefusal) {
-    return {
-      status: cookieRefusal.status,
-      body: { error: copy.error, code: cookieRefusal.code, message: cookieRefusal.error },
-    };
-  }
+  if (cookieRefusal) return refusal('person_only', `${cookieRefusal.error}.`);
 
-  if (!trustedCaller(readCallerAuthority(facts))) {
-    return { status: 403, body: { error: copy.error, code: copy.code, message: copy.agent } };
-  }
+  if (!trustedCaller(readCallerAuthority(facts))) return refusal(copy.code, copy.agent);
 
   return null;
 }
@@ -204,6 +200,6 @@ export function refusedNotAPerson(
   c: Context<RequestFactsEnv>,
   copy: PersonBarCopy
 ): Response | undefined {
-  const refusal = assessPerson(honoRequestFacts(c), copy);
-  return refusal ? c.json(refusal.body, refusal.status as ContentfulStatusCode) : undefined;
+  const refused = assessPerson(honoRequestFacts(c), copy);
+  return refused ? sendProblem(c, refused.body) : undefined;
 }

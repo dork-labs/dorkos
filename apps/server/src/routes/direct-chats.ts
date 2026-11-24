@@ -15,7 +15,7 @@
 import { Hono } from 'hono';
 import { OpenDirectChatRequestSchema } from '@dorkos/shared/room-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { getDirectChats, type DirectChat } from '../services/rooms/direct-chat/index.js';
 import { RoomError } from '../services/rooms/index.js';
 import { isOwnerCaller } from './room-error-response.js';
@@ -43,17 +43,17 @@ export function createDirectChatRoutes(mesh: () => DirectChatMesh | undefined): 
         throw new RoomError('OPERATOR_ONLY', 'Only the person who owns DorkOS has Direct chats.');
       }
       const chats = getDirectChats();
-      if (!chats) return c.json({ error: 'Rooms are not running', code: 'ROOMS_UNAVAILABLE' }, 503);
+      if (!chats) return problem(c, 'temporarily_unavailable', { detail: 'Rooms aren’t running.' });
       if ('agentPath' in body) {
         // Only an agent Mesh registered: a directory is an identity here.
         const agent = mesh()?.getByPath(body.agentPath);
-        if (!agent) return c.json({ error: 'No such agent', code: 'AGENT_NOT_FOUND' }, 404);
+        if (!agent) return problem(c, 'not_found', { detail: 'No agent lives in that folder.' });
         const chat = chats.ensureForAgent(body.agentPath, agent.displayName ?? agent.name);
         return c.json(wire(chat));
       }
       const chat = chats.ensureForRoom(body.roomId);
       if (!chat) {
-        return c.json({ error: 'That room is not a Direct chat', code: 'NOT_A_DIRECT_CHAT' }, 409);
+        return problem(c, 'conflict', { detail: 'That room isn’t a Direct chat.' });
       }
       return c.json(wire(chat));
     });
@@ -70,7 +70,7 @@ export function createDirectChatRoutes(mesh: () => DirectChatMesh | undefined): 
         throw new RoomError('OPERATOR_ONLY', 'Only the person who owns DorkOS has Direct chats.');
       }
       const chat = getDirectChats()?.forSession(c.req.param('sessionId'));
-      if (!chat) return c.json({ error: 'Not a Direct chat', code: 'NOT_A_DIRECT_CHAT' }, 404);
+      if (!chat) return problem(c, 'not_found', { detail: 'That chat isn’t a Direct chat.' });
       return c.json(wire(chat));
     })
   );

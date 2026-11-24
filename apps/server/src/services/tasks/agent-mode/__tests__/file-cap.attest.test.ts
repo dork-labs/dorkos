@@ -317,7 +317,7 @@ describe('what attests a SKILL file (round 8, DOR-5060)', () => {
         const id = await reBodiedBySync();
         await rawEdit(id, 'changed after the review was drawn');
         const outcome = await approveFileAsItIs(env.store, id, bodyHash('triage the new inbox'));
-        expect(outcome).toMatchObject({ ok: false, status: 409 });
+        expect(outcome).toMatchObject({ ok: false, status: 412 });
         expect(env.store.approvals.agentModeColumnOf(id).fileAttest).toBeUndefined();
       });
 
@@ -326,7 +326,7 @@ describe('what attests a SKILL file (round 8, DOR-5060)', () => {
         await nextRun(id);
         expect(env.store.approvals.agentModeColumnOf(id).fileCap).toBeDefined();
         const outcome = await approveFileAsItIs(env.store, id, bodyHash('triage the new inbox'));
-        expect(outcome).toMatchObject({ ok: false, status: 409 });
+        expect(outcome).toMatchObject({ ok: false, status: 412 });
       });
     });
   });

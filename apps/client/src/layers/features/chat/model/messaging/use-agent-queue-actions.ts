@@ -43,12 +43,12 @@ export interface AgentQueueActions {
 
 /** A queue call that failed only because the message already left the queue. */
 function isGone(err: unknown): boolean {
-  return (err as { code?: string })?.code === 'QUEUED_MESSAGE_NOT_FOUND';
+  return (err as { code?: string })?.code === 'queued_message_not_found';
 }
 
 /** A queue call refused because the message is already on its way into a turn. */
 function isOnItsWay(err: unknown): boolean {
-  return (err as { code?: string })?.code === 'QUEUED_MESSAGE_LAUNCHING';
+  return (err as { code?: string })?.code === 'queued_message_launching';
 }
 
 /**

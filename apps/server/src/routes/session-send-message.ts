@@ -6,8 +6,8 @@ import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { askForPersonBeforeChat } from '../http/person-session-refusal.js';
-import { readJsonBody } from '@dorkos/http-kit';
-import { errorBody, parseSessionId } from '../lib/route-utils.js';
+import { readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
+import { parseSessionId } from '../lib/route-utils.js';
 import {
   dispatchSessionMessage,
   isSessionLaunchRefusal,
@@ -24,7 +24,12 @@ import {
   preparePersonChat,
   personChatMissing,
 } from './session-person-birth.js';
-import { launchRefusalReply } from './session-route-replies.js';
+import {
+  invalidSessionId,
+  launchRefusalReply,
+  ownerRefusalReply,
+  sessionNotFound,
+} from './session-route-replies.js';
 import { workspaceCallerOf } from './session-workspace-caller.js';
 import type { SessionRouteDeps } from './sessions.js';
 import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
@@ -71,19 +76,17 @@ export function mountSessionSendMessage(
   // with every other surface that starts a session from a message.
   router.post('/:id/messages', askForPersonBeforeChat(), async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+    if (!sessionId) return invalidSessionId(c);
 
     const parsed = SendMessageRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) {
-      return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
-    }
+    if (!parsed.success) return validationProblem(c, parsed.error);
 
     // Naming DorkOS credits for a new session spends the DorkOS account's money,
     // so only the owner of this DorkOS may name it (DOR-2652). Any other
     // account, or none, is the runtime's own business and stays open.
     if (parsed.data.account === CREDITS_ACCOUNT_ID) {
       const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), RUN_ON_CREDITS);
-      if (refusal) return c.json(refusal, 403);
+      if (refusal) return ownerRefusalReply(c, refusal);
     }
 
     const db = personBirthDb ?? deps.personBirthDb;
@@ -92,13 +95,7 @@ export function mountSessionSendMessage(
     // used to start a stranger session on the default runtime in the default
     // folder. Starting a chat is said out loud with `create: true`.
     if (parsed.data.create !== true && !(await sessionExists(sessionId, parsed.data.cwd))) {
-      return c.json(
-        errorBody(
-          'No session has this id. To start a new one, send create: true.',
-          'SESSION_NOT_FOUND'
-        ),
-        404
-      );
+      return sessionNotFound(c, 'No session has this id. To start a new one, send create: true.');
     }
 
     // Read X-Client-Id header, or generate UUID if missing
@@ -123,20 +120,18 @@ export function mountSessionSendMessage(
       !source && parsed.data.create === true && launch.launcher.kind === 'person'
         ? observeOwnerRoomSeat(sessionId, facts, deps.roomSessionPlace)
         : undefined;
-    if (source && launch.launcher.kind !== 'person')
-      return c.json(personChatMissing.body, personChatMissing.status);
+    if (source && launch.launcher.kind !== 'person') return sendProblem(c, personChatMissing.body);
     const prepared =
       db && source
         ? await preparePersonChat(db, sessionId, facts, source, deps.meshCore, parsed.data.cwd)
         : undefined;
-    if (prepared && 'refusal' in prepared)
-      return c.json(prepared.refusal.body, prepared.refusal.status);
+    if (prepared && 'refusal' in prepared) return sendProblem(c, prepared.refusal.body);
     if (
       prepared?.registeredAgentPath !== undefined &&
       parsed.data.agentPath !== undefined &&
       prepared.registeredAgentPath !== parsed.data.agentPath
     )
-      return c.json(personChatMissing.body, personChatMissing.status);
+      return sendProblem(c, personChatMissing.body);
     const request = prepared
       ? {
           ...parsed.data,
@@ -162,7 +157,7 @@ export function mountSessionSendMessage(
       if (chatBirthSource && isPersonChatWriteRefusal(error)) return null;
       throw error;
     });
-    if (!result) return c.json(personChatMissing.body, personChatMissing.status);
+    if (!result) return sendProblem(c, personChatMissing.body);
     if (isSessionLaunchRefusal(result)) return launchRefusalReply(c, result);
 
     // Accepted, so it counts as you writing here (spec `your-activity-first`

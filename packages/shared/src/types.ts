@@ -113,7 +113,6 @@ export type {
   ServerConfig,
   GitStatusResponse,
   GitStatusError,
-  SessionLockedError,
   ConfigPatchRequest,
   ConfigPatchResponse,
   TaskStatus,

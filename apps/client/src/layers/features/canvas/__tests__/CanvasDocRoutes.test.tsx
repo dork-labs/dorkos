@@ -160,7 +160,16 @@ describe('CanvasDocRoutes', () => {
 
   it('reads the review again after the route changed, and allows nothing until it arrives', async () => {
     vi.mocked(transport.approveCanvasDocRoute).mockRejectedValueOnce(
-      Object.assign(new Error('changed'), { code: 'ROUTE_CHANGED', status: 409 })
+      Object.assign(new Error('This route changed. Review it again.'), {
+        code: 'precondition_failed',
+        status: 412,
+        body: {
+          title: 'Refused.',
+          status: 412,
+          code: 'precondition_failed',
+          detail: 'This route changed. Review it again.',
+        },
+      })
     );
     show([route()]);
     const panel = await openPanel();
@@ -188,7 +197,16 @@ describe('CanvasDocRoutes', () => {
 
   it('says why an approval was refused and keeps the review open', async () => {
     vi.mocked(transport.approveCanvasDocRoute).mockRejectedValue(
-      Object.assign(new Error('changed'), { code: 'ROUTE_CHANGED', status: 409 })
+      Object.assign(new Error('This route changed. Review it again.'), {
+        code: 'precondition_failed',
+        status: 412,
+        body: {
+          title: 'Refused.',
+          status: 412,
+          code: 'precondition_failed',
+          detail: 'This route changed. Review it again.',
+        },
+      })
     );
     show([route()]);
     const panel = await openPanel();
@@ -203,7 +221,16 @@ describe('CanvasDocRoutes', () => {
 
   it('shows a review refusal with a way to retry', async () => {
     vi.mocked(transport.reviewCanvasDocRoute).mockRejectedValue(
-      Object.assign(new Error('no target'), { code: 'TARGET_UNAVAILABLE', status: 403 })
+      Object.assign(new Error('The agent for this route isn’t available.'), {
+        code: 'forbidden',
+        status: 403,
+        body: {
+          title: 'Refused.',
+          status: 403,
+          code: 'forbidden',
+          detail: 'The agent for this route isn’t available.',
+        },
+      })
     );
     show([route()]);
     const panel = await openPanel();

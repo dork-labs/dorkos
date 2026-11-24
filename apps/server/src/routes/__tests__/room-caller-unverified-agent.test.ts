@@ -108,7 +108,7 @@ const ANA_PATH = '/agents/ana';
 const UNVERIFIABLE = 'dork_agent_this-token-resolves-to-nothing';
 
 /** The refusal every room route now gives that token. */
-const REFUSAL_CODE = 'AGENT_IDENTITY_UNVERIFIED';
+const REFUSAL_CODE = 'agent_identity_unverified';
 
 /** Register an agent so a room can resolve it by directory. */
 function registerAgent(db: Db, name: string, projectPath: string): void {
@@ -206,7 +206,7 @@ describe('an unverifiable agent token on a room route', () => {
         .attach('files', Buffer.from('notes'), 'notes.txt');
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('PEOPLE_ONLY');
+      expect(res.body.code).toBe('person_only');
     });
   });
 
@@ -241,7 +241,7 @@ describe('an unverifiable agent token on a room route', () => {
         .send({ handle: 'stolen' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OPERATOR_ONLY');
+      expect(res.body.code).toBe('operator_only');
     });
   });
 
@@ -273,7 +273,7 @@ describe('an unverifiable agent token on a room route', () => {
       const res = await request(server).post(`/api/rooms/${id}/halt`).set('X-DorkOS-Agent', token);
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('PEOPLE_ONLY');
+      expect(res.body.code).toBe('person_only');
     });
   });
 

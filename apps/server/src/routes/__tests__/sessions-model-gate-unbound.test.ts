@@ -262,8 +262,8 @@ describe('PATCH /api/sessions/:id — the model gate on an unbound session', () 
     const res = await patch(UNBOUND, { model: OPENCODE_MODEL, runtime: 'claude-code' });
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('UNSUPPORTED_MODEL');
-    expect(res.body.error).toContain('claude-code');
+    expect(res.body.code).toBe('invalid_request');
+    expect(res.body.detail).toContain('claude-code');
     expect(rowFor(UNBOUND)).toBeUndefined();
   });
 
@@ -273,8 +273,8 @@ describe('PATCH /api/sessions/:id — the model gate on an unbound session', () 
     const res = await patch(BOUND_OPENCODE, { model: CLAUDE_MODEL });
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('UNSUPPORTED_MODEL');
-    expect(res.body.error).toContain('opencode');
+    expect(res.body.code).toBe('invalid_request');
+    expect(res.body.detail).toContain('opencode');
   });
 
   it('ignores a hint that disagrees with an owner, and judges against the owner', async () => {
@@ -285,7 +285,7 @@ describe('PATCH /api/sessions/:id — the model gate on an unbound session', () 
     const res = await patch(BOUND_CLAUDE, { model: OPENCODE_MODEL, runtime: 'opencode' });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain('claude-code');
+    expect(res.body.detail).toContain('claude-code');
     expect(rowFor(BOUND_CLAUDE)?.runtime).toBe('claude-code');
   });
 
@@ -483,8 +483,8 @@ describe('PATCH /api/sessions/:id — the model gate on a catalog that admits it
     const res = await patch(BOUND_OPENCODE, { model: CUT_MODEL });
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('UNSUPPORTED_MODEL');
-    expect(res.body.error).toContain('opencode');
+    expect(res.body.code).toBe('invalid_request');
+    expect(res.body.detail).toContain('opencode');
     expect(rowFor(BOUND_OPENCODE)?.model).toBeNull();
   });
 
@@ -581,9 +581,9 @@ describe('PATCH /api/sessions/:id — the model menu and the write door agree', 
     const res = await patch(BOUND_OPENCODE, { model: 'ollama/gemma4:latest' });
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('UNSUPPORTED_MODEL');
+    expect(res.body.code).toBe('invalid_request');
     // And the instruction it gives is now true: the menu really does not have it.
-    expect(res.body.error).toContain('Pick one from the model menu');
+    expect(res.body.detail).toContain('Pick one from the model menu');
     expect(rowFor(BOUND_OPENCODE)?.model).toBeFalsy();
   });
 
@@ -647,8 +647,8 @@ describe('PATCH /api/sessions/:id — the model gate on DorkOS credits', () => {
     for (const model of [CLAUDE_MODEL, 'md_gpt_like']) {
       const res = await patch(BOUND_CLAUDE, { model });
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('UNSUPPORTED_MODEL');
-      expect(res.body.error).toMatch(/DorkOS credits don’t cover that model/);
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.detail).toMatch(/DorkOS credits don’t cover that model/);
     }
     expect(rowFor(BOUND_CLAUDE)?.model ?? null).toBeNull();
   });
@@ -692,7 +692,7 @@ describe('PATCH /api/sessions/:id — the model gate on DorkOS credits', () => {
       account: 'work',
     });
     expect(own.status).toBe(400);
-    expect(own.body.error).toContain('claude-code');
+    expect(own.body.detail).toContain('claude-code');
   });
 
   it('judges by the runtime’s own catalog while the service says nothing about protocols', async () => {

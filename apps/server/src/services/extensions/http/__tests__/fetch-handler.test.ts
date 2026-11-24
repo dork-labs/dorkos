@@ -134,7 +134,10 @@ describe('an extension served with a fetch handler', () => {
       .send('x'.repeat(1024 * 1024 + 1));
 
     expect(res.status).toBe(413);
-    expect(res.body).toEqual({ error: 'That request is too large.' });
+    expect(res.body).toMatchObject({
+      code: 'request_too_large',
+      detail: 'That request is too large.',
+    });
     expect(handler).not.toHaveBeenCalled();
   });
 
@@ -309,9 +312,11 @@ describe('who is asking, as a fetch handler is told', () => {
         ok: false,
         status: 403,
         body: {
-          error: "Only a person can change My Extension's settings.",
-          code: 'extension_person_required',
-          message: expect.stringContaining('Only a person can change My Extension'),
+          type: 'urn:dorkos:problem:person_only',
+          title: expect.any(String),
+          status: 403,
+          code: 'person_only',
+          detail: expect.stringContaining('Only a person can change My Extension'),
         },
       },
     });
@@ -357,9 +362,10 @@ describe('a Hono app as the fetch handler', () => {
       .set('x-dorkos-agent', 'agent-1');
 
     expect(settings.status).toBe(403);
+    expect(settings.headers['content-type']).toBe('application/problem+json');
     expect(settings.body).toMatchObject({
-      error: "Only a person can change My Extension's settings.",
-      code: 'extension_person_required',
+      code: 'person_only',
+      detail: expect.stringContaining("Only a person can change My Extension's settings."),
     });
     expect(other.status).toBe(403);
     expect(route).not.toHaveBeenCalled();

@@ -6,12 +6,7 @@
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { ErrorResponseSchema } from '@dorkos/shared/schemas';
-
-const error = (description: string) => ({
-  description,
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-});
+import { problemResponse as error } from '../openapi/problem-openapi.js';
 
 /** The bar every route here carries, said once. */
 const PERSON_BAR =
@@ -63,7 +58,7 @@ export function registerConfigBackupsOpenApi(registry: OpenAPIRegistry): void {
       },
       401: error('Login is enabled and the caller is not signed in'),
       403: error(
-        'Refused: only a person can see this (`person_only`), or only at this computer (`not_at_this_computer`)'
+        'Refused: only a person can see this (`person_only`), or only at this computer (`operator_only`)'
       ),
     },
   });
@@ -86,12 +81,11 @@ export function registerConfigBackupsOpenApi(registry: OpenAPIRegistry): void {
       401: error('Login is enabled and the caller is not signed in'),
       403: error(
         'Refused: only a person can remove a backup (`person_only`), or only at this computer ' +
-          '(`not_at_this_computer`)'
+          '(`operator_only`)'
       ),
       404: error('No such older copy (`not_found`)'),
-      409: error(
-        'DorkOS manages it (`managed`), a write is in progress (`busy`), or it changed (`changed`)'
-      ),
+      409: error('`conflict`: DorkOS manages it, or a write is in progress'),
+      412: error('`precondition_failed`: it changed since the list was read'),
     },
   });
 
@@ -128,24 +122,22 @@ export function registerConfigBackupsOpenApi(registry: OpenAPIRegistry): void {
         },
       },
       400: error(
-        'The destination does not exist (`destination_invalid`), is neither inside the directory ' +
-          'boundary nor on an external drive (`destination_outside`), is the data folder or ' +
-          'inside it (`destination_in_data_folder`), or is the backup folder ' +
-          '(`destination_is_backups`)'
+        '`invalid_request`: the destination does not exist, is neither inside the directory ' +
+          'boundary nor on an external drive, is the data folder or inside it, or is the ' +
+          'backup folder'
       ),
       401: error('Login is enabled and the caller is not signed in'),
       403: error(
         'Refused: only a person can move a backup (`person_only`), or only at this computer ' +
-          '(`not_at_this_computer`); or DorkOS cannot write to the destination ' +
-          '(`destination_not_writable`). The original stays.'
+          '(`operator_only`); or DorkOS cannot write to the destination ' +
+          '(`forbidden`). The original stays.'
       ),
       404: error('No such older copy (`not_found`)'),
       409: error(
-        'DorkOS manages it (`managed`), it is busy (`busy`) or changed (`changed`), a file of ' +
-          'that name is already there (`destination_exists`), the copy could not be written ' +
-          '(`copy_failed`), or it failed its check (`verify_failed`). The original stays.'
+        '`conflict`: DorkOS manages it, it is busy or changed, a file of that name is already ' +
+          'there, the copy could not be written, or it failed its check. The original stays.'
       ),
-      507: error('The destination’s disk is full (`destination_full`). The original stays.'),
+      507: error('The destination’s disk is full (`internal_error`). The original stays.'),
     },
   });
 }

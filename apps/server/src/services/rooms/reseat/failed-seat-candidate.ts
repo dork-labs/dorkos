@@ -1,4 +1,4 @@
-/** Strict live producer + durable failed room-turn evidence, never preference fallback. */
+/** Strict producer record + durable failed room-turn evidence, never preference fallback. */
 import { resolve } from 'node:path';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { resolveLaunchAccountRoot } from '../../runtimes/claude-code/claude-config-dir.js';
@@ -13,6 +13,7 @@ import { agentPause } from '../../mesh/pause/agent-pause.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { mayAutoPickClaudeFolder } from '../../core/usage/account-ranking.js';
 import type { RecoveryAuthority } from './required-launch-store.js';
+import { failedSeatLedger } from './failed-seat-record.js';
 import type { Seat } from './seat-mover.js';
 
 /** A positive historical witness, with current guard revalidation owned by its runtime. */
@@ -26,7 +27,7 @@ export interface FailedSeatCandidate {
 interface ClaudeFailureReader {
   readFailedSeatAuthority(
     sessionId: string
-  ): (RecoveryAuthority & { dispatchId: string; entryId: string }) | null;
+  ): (RecoveryAuthority & { dispatchId: string; entryId: string; restored?: true }) | null;
 }
 
 /** Resolve only a proven Claude candidate with an intact transcript and current guards. */
@@ -102,10 +103,16 @@ export async function failedSeatCandidate(seat: Seat): Promise<FailedSeatCandida
         now.billing === authority.billing &&
         now.inference === authority.inference &&
         now.accountId === authority.accountId &&
+        now.restored === authority.restored &&
+        // A restored authority stands only inside the attempt that spent its record (DOR-4626).
+        (authority.restored !== true || failedSeatLedger()?.holdsClaim(sessionId) === true) &&
         pause !== undefined &&
         !pause.isPaused(seat.agentPath) &&
-        projector !== undefined &&
-        !projector.hasPendingInteractions() &&
+        // A later process holds no projector for a chat it never ran; nothing can wait on a
+        // person there. Live memory must still name one (DOR-4626).
+        (projector === undefined
+          ? authority.restored === true
+          : !projector.hasPendingInteractions()) &&
         !isTurnInFlight(sessionId, runtime) &&
         !runtime.holdsBackgroundWork?.(sessionId) &&
         !runtime.isHelperWorking?.(sessionId) &&

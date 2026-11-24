@@ -64,7 +64,7 @@ describe('/api/rooms entries', () => {
         .post(`/api/rooms/${room.id}/entries`)
         .send({ text: 'hi' });
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('ROOM_ARCHIVED');
+      expect(res.body.code).toBe('room_archived');
     });
 
     it('does not let the body choose an author', async () => {
@@ -247,7 +247,7 @@ describe('/api/rooms entries', () => {
 
       const nested = await reply(room.id, first.body.entryId, 'deeper');
       expect(nested.status).toBe(400);
-      expect(nested.body.code).toBe('NESTED_THREAD');
+      expect(nested.body.code).toBe('invalid_request');
 
       expect((await reply(room.id, root)).status).toBe(400);
     });
@@ -256,7 +256,7 @@ describe('/api/rooms entries', () => {
       const room = await createChannel();
       const res = await reply(room.id, 'no-such-entry', 'orphan');
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('ENTRY_NOT_FOUND');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('409s a reply into an archived room', async () => {
@@ -267,7 +267,7 @@ describe('/api/rooms entries', () => {
 
       const res = await reply(room.id, root, 'too late');
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('ROOM_ARCHIVED');
+      expect(res.body.code).toBe('room_archived');
     });
   });
 
@@ -324,7 +324,7 @@ describe('/api/rooms entries', () => {
     it('404s a room that is not there', async () => {
       const res = await request(testServer).post('/api/rooms/no-such-room/halt');
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('ROOM_NOT_FOUND');
+      expect(res.body.code).toBe('room_not_found');
     });
   });
 
@@ -372,7 +372,7 @@ describe('/api/rooms entries', () => {
         .set('X-DorkOS-Agent', token);
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('PEOPLE_ONLY');
+      expect(res.body.code).toBe('person_only');
       expect(await haltedIn(room.id)).toHaveLength(0);
     });
 
@@ -390,7 +390,7 @@ describe('/api/rooms entries', () => {
         .set('X-DorkOS-Agent', token);
 
       expect(unseen.status).toBe(404);
-      expect(unseen.body.code).toBe('ROOM_NOT_FOUND');
+      expect(unseen.body.code).toBe('room_not_found');
       expect(unseen.body).toEqual(missing.body);
     });
 
@@ -399,12 +399,12 @@ describe('/api/rooms entries', () => {
 
       const stranger = await request(testServer).post(`/api/rooms/${room.id}/halt/01NOSUCHAUTHOR`);
       expect(stranger.status).toBe(404);
-      expect(stranger.body.code).toBe('MEMBER_NOT_FOUND');
+      expect(stranger.body.code).toBe('not_found');
 
       // A PERSON on the roster is refused by the same code.
       const person = await request(testServer).post(`/api/rooms/${room.id}/halt/${room.me}`);
       expect(person.status).toBe(404);
-      expect(person.body.code).toBe('MEMBER_NOT_FOUND');
+      expect(person.body.code).toBe('not_found');
       expect(await haltedIn(room.id)).toHaveLength(0);
     });
 

@@ -11,7 +11,7 @@ function refused(message: string, code?: string): Error {
 }
 
 describe('awayFromTheComputerSentence', () => {
-  it.each(['NOT_FROM_WIFI', 'NEEDS_PERSON_AT_THIS_COMPUTER'])(
+  it.each(['not_from_wifi', 'NOT_FROM_WIFI', 'operator_only', 'NEEDS_PERSON_AT_THIS_COMPUTER'])(
     'passes the sentence of %s',
     (code) => {
       expect(
@@ -22,7 +22,7 @@ describe('awayFromTheComputerSentence', () => {
 
   it('is null for any other refusal, a bare code, or a non-error', () => {
     expect(
-      awayFromTheComputerSentence(refused('Too many terminals.', 'TERMINAL_LIMIT'))
+      awayFromTheComputerSentence(refused('Too many terminals.', 'terminal_limit'))
     ).toBeNull();
     expect(awayFromTheComputerSentence(refused('HTTP 403', 'NOT_FROM_WIFI'))).toBeNull();
     expect(awayFromTheComputerSentence(refused('Forbidden.'))).toBeNull();

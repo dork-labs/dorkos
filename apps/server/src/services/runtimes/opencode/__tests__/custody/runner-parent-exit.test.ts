@@ -59,6 +59,9 @@ function nestedFixture(mode: RunnerExitMode): () => Promise<void> {
   return async () => {
     const deadline = Date.now() + 30_000;
     const silent = mode === 'silent-worker';
+    // End self-exit observations at the existing success cutoff, leaving time to report failure.
+    const successCutoff = deadline - 1000;
+    const observationDeadline = silent ? deadline : successCutoff;
     let root: string | undefined;
     let output: FileHandle | undefined;
     let closed = false;
@@ -264,9 +267,14 @@ function nestedFixture(mode: RunnerExitMode): () => Promise<void> {
           diagnostics.cleanupObservedAt = observedAt;
         };
       } else {
-        expect(await until(done, deadline)).toEqual({ code: 23, signal: null });
+        // The main may exit before its output pipes close. Read the native receipts first.
+        diagnostics.phase = 'runner-exit';
+        const actualExit = await until(exited, observationDeadline);
+        diagnostics.exit = actualExit;
+        expect(actualExit).toEqual({ code: 23, signal: null });
       }
 
+      diagnostics.phase = 'runner-receipts';
       await noOrdinaryCleanup();
       const ready = await json('pinned-ready.json');
       expect(ready.ready).toBe(true);
@@ -285,8 +293,9 @@ function nestedFixture(mode: RunnerExitMode): () => Promise<void> {
       });
       expect(ready.target.kind).toBe('spawned');
       expect(ready.target.pid).toBeGreaterThan(0);
+      diagnostics.phase = 'native-cleanup-receipt';
       let stat = await output.stat({ bigint: true });
-      while (stat.size === 0n && Date.now() < deadline) {
+      while (stat.size === 0n && Date.now() < observationDeadline) {
         await wait(25);
         stat = await output.stat({ bigint: true });
       }
@@ -327,21 +336,34 @@ function nestedFixture(mode: RunnerExitMode): () => Promise<void> {
         expect(await until(done, deadline)).toEqual({ code: 23, signal: null });
         diagnostics.terminal = receipt;
       }
-      const worker = await waitForJson('worker-exit.json', deadline);
+      diagnostics.phase = 'worker-exit-receipt';
+      const worker = await waitForJson('worker-exit.json', observationDeadline);
       expect(worker.version).toBe(1);
       expect(worker.workerPid).toBe(ready.workerPid);
       expect(worker.mainPid).toBe(runner.pid);
       expect(Number.isInteger(worker.code)).toBe(true);
       expect(worker.code).toBeGreaterThanOrEqual(0);
       expect(worker.code).toBeLessThanOrEqual(255);
+      if (!silent) {
+        diagnostics.phase = 'runner-close';
+        expect(await until(done, observationDeadline)).toEqual({ code: 23, signal: null });
+      }
       await noOrdinaryCleanup();
-      expect(Date.now()).toBeLessThan(deadline - 1000);
+      expect(Date.now()).toBeLessThan(successCutoff);
       expect(logs.stdout.truncated || logs.stderr.truncated).toBe(false);
+      diagnostics.phase = 'socket-cleanup';
       expect(await socket.remove()).toBe('closed');
       diagnostics.phase = 'verified';
       clean = true;
     } catch (error) {
       errors.push(error);
+      if (!silent) {
+        diagnostics.failedPhase = diagnostics.phase;
+        console.warn(
+          '[opencode-custody-self-exit]',
+          JSON.stringify({ phase: diagnostics.failedPhase, exit: diagnostics.exit, closed })
+        );
+      }
       diagnostics.phase = 'failed';
     } finally {
       if (silent && root && !released) {

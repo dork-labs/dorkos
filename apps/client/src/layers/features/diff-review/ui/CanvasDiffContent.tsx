@@ -33,13 +33,13 @@ function baseName(pathLike: string): string {
 function loadErrorMessage(error: unknown): string {
   const code = (error as { code?: string } | null)?.code;
   switch (code) {
-    case 'TOO_LARGE':
+    case 'too_large':
       return 'This file is too large to diff here.';
-    case 'BINARY_FILE':
+    case 'binary_file':
       return 'This file isn’t text, so it can’t be shown as a text diff.';
-    case 'NOT_FOUND':
+    case 'not_found':
       return 'This file doesn’t exist.';
-    case 'NOT_A_FILE':
+    case 'not_a_file':
       return 'This path is a directory, not a file.';
     default:
       return 'This file’s changes couldn’t be loaded.';

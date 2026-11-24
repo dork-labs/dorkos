@@ -122,7 +122,8 @@ describe('wired into the extension proxy', () => {
     }
 
     expect(res.status).toBe(429);
-    expect(res.body.code).toBe('PROXY_RATE_LIMITED');
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body).toMatchObject({ code: 'rate_limited', status: 429 });
     expect(res.headers['retry-after']).toMatch(/^\d+$/);
   });
 });

@@ -309,7 +309,7 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
   it('404s an entry that is not in this room', async () => {
     const res = await react('👍', 'no-such-entry');
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('ENTRY_NOT_FOUND');
+    expect(res.body.code).toBe('not_found');
   });
 
   it('404s an unknown room', async () => {
@@ -323,7 +323,7 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
     await request(testServer).patch(`/api/rooms/${roomId}`).send({ archived: true });
     const res = await react('👍');
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('ROOM_ARCHIVED');
+    expect(res.body.code).toBe('room_archived');
   });
 
   it('is in the OpenAPI export the app serves', async () => {

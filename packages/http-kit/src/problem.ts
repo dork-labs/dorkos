@@ -40,6 +40,35 @@ export interface ProblemOptions {
   retryAfterMs?: number;
   /** What failed validation; {@link validationProblem} fills it. */
   issues?: ProblemIssues;
+  /**
+   * Extension members (RFC 9457 §3.2): extra fields a client acts on, such as
+   * the id of a held action, named in camelCase. A standard member's name here
+   * is ignored; the standard member wins. Never a `reason`: what went wrong is
+   * the `code`, one per refusal, so a second name for it does not compile.
+   */
+  extensions?: Readonly<Record<string, unknown>> & { readonly reason?: never };
+}
+
+/** The members RFC 9457 and this API define, which an extension may not reuse. */
+const STANDARD_MEMBERS = new Set([
+  'type',
+  'title',
+  'status',
+  'code',
+  'detail',
+  'instance',
+  'retryAfterMs',
+  'issues',
+]);
+
+/** A sender's extension members, without any that reuse a standard member's name. */
+function extensionMembers(
+  extensions: Readonly<Record<string, unknown>> | undefined
+): Record<string, unknown> {
+  if (extensions === undefined) return {};
+  return Object.fromEntries(
+    Object.entries(extensions).filter(([name]) => !STANDARD_MEMBERS.has(name))
+  );
 }
 
 /**
@@ -52,6 +81,7 @@ export interface ProblemOptions {
 export function problemBody(code: ProblemCode, options: ProblemOptions = {}): Problem {
   const definition = PROBLEM_CODES[code];
   return {
+    ...extensionMembers(options.extensions),
     type: problemType(code),
     title: definition.title,
     status: options.status ?? definition.status,

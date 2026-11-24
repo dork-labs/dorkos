@@ -24,7 +24,7 @@ import {
   AuditTimelineQuerySchema,
   AuditVerifyQuerySchema,
 } from '@dorkos/shared/audit-schemas';
-import { errorBody } from '../lib/route-utils.js';
+import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
@@ -89,7 +89,7 @@ export function createAuditRoutes(deps: AuditRouterDeps): Hono<ApiEnv> {
   router.get('/:id', (c) => {
     const reader = readerOfRequest(honoRequestFacts(c), deps.accounts);
     const found = readAuditEvent(deps.log, c.req.param('id'), reader, readableTo(reader));
-    if (!found) return c.json(errorBody('No audit event with that id.', 'NOT_FOUND'), 404);
+    if (!found) return problem(c, 'not_found', { detail: 'No audit event with that id.' });
     return c.json(found);
   });
 

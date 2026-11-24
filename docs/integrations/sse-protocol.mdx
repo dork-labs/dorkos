@@ -38,7 +38,7 @@ X-Client-Id: your-client-uuid
 { "content": "Hello, Claude", "cwd": "/path/to/project", "create": true }
 ```
 
-`create: true` says this message may start a new chat under that id. Send it on the first message. Without it, an id the server doesn't know gets `404 SESSION_NOT_FOUND` and nothing starts, so a stale or mistyped id can never open a stray chat. It is harmless on a chat that already exists.
+`create: true` says this message may start a new chat under that id. Send it on the first message. Without it, an id the server doesn't know gets `404 session_not_found` and nothing starts, so a stale or mistyped id can never open a stray chat. It is harmless on a chat that already exists.
 
 `X-Client-Id` is optional. Omit it and the server generates a UUID for you, but then it can't tell your own reconnects apart from a fresh client, so you lose track of which queued messages are yours across a page reload. Send a stable id if your integration reconnects.
 
@@ -255,7 +255,7 @@ Content-Type: application/json
   The tool call is auto-denied only when that runs out.
 </Callout>
 
-Both `/approve`, `/deny`, and `/submit-answers` may return `409` with `{ code: "INTERACTION_ALREADY_RESOLVED" }` if the SDK resolved the interaction before the request arrived. Treat this as success.
+Both `/approve`, `/deny`, and `/submit-answers` may return `409` with a problem document whose `code` is `already_resolved` if the SDK resolved the interaction before the request arrived. Treat this as success.
 
 </Tab>
 
@@ -349,7 +349,7 @@ Three routes read and change it. Each answers with the queue as it now stands, s
 
 `GET` is redundant with the snapshot on purpose: opening a stream to read one small list is a poor trade for a script or a quick round of debugging.
 
-A move names another message to land before or after, never an index. An index means something different to every client the moment anyone else edits the queue, and two clients editing one queue is exactly what this surface is for. A `PATCH` that names neither `content` nor `move` is refused as `400`; an id this queue does not hold — including a move anchored to one — is `404 QUEUED_MESSAGE_NOT_FOUND`.
+A move names another message to land before or after, never an index. An index means something different to every client the moment anyone else edits the queue, and two clients editing one queue is exactly what this surface is for. A `PATCH` that names neither `content` nor `move` is refused as `400`; an id this queue does not hold — including a move anchored to one — is `404 queued_message_not_found`.
 
 Removing a message removes its pending run with it, so a message you withdraw does not surface later.
 

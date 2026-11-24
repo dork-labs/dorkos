@@ -48,19 +48,19 @@ const STRAY_KIND_LABEL: Record<RoomStrayChange['kind'], string> = {
 
 /** The sentence for each refusal a repair can come back with. */
 const REPAIR_REFUSAL_COPY = new Map<string, string>([
-  ['OPERATOR_ONLY', 'Only the owner of this DorkOS can keep or discard these.'],
+  ['operator_only', 'Only the owner of this DorkOS can keep or discard these.'],
   [
-    'ROOM_FILE_NOT_FOUND',
+    'room_file_not_found',
     'One of those changes is gone, so nothing was discarded. The list is refreshed.',
   ],
   [
-    'MERGE_IN_FLIGHT',
+    'merge_in_flight',
     'Something else is writing to these files. Nothing changed. Try again in a moment.',
   ],
-  ['MAIN_CHECKOUT_DIRTY', 'These files are on another branch. Switch them back to main yourself.'],
-  ['ROOM_REPO_GIT_UNAVAILABLE', 'Room files need git, and git isn’t installed on this computer.'],
-  ['ROOM_HAS_NO_REPO', 'This room no longer has its own files.'],
-  ['ROOM_REPOS_DISABLED', 'Room files are turned off on this install.'],
+  ['main_checkout_dirty', 'These files are on another branch. Switch them back to main yourself.'],
+  ['room_repo_git_unavailable', 'Room files need git, and git isn’t installed on this computer.'],
+  ['room_has_no_repo', 'This room no longer has its own files.'],
+  ['room_repos_disabled', 'Room files are turned off on this install.'],
 ]);
 
 /** What {@link RoomMainWarning} watches. */

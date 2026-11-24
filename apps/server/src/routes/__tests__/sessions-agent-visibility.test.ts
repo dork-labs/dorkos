@@ -172,7 +172,7 @@ describe('an agent reading sessions', () => {
     const res = await request(server).get(path(PRIVATE)).set(AGENT);
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('SESSION_NOT_FOUND');
+    expect(res.body.code).toBe('session_not_found');
     expect(fakeRuntime.getMessageHistory).not.toHaveBeenCalled();
     expect(fakeRuntime.getSessionTasks).not.toHaveBeenCalled();
   });
@@ -248,13 +248,13 @@ describe('the diff routes', () => {
     async (verb, tail, extra) => {
       const res = await call(verb, tail, extra, PRIVATE);
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('SESSION_NOT_FOUND');
+      expect(res.body.code).toBe('session_not_found');
     }
   );
 
   it.each(diffRoutes)('%s %s on agent work passes the check', async (verb, tail, extra) => {
     const res = await call(verb, tail, extra, WORK);
-    expect(res.body.code).not.toBe('SESSION_NOT_FOUND');
+    expect(res.body.code).not.toBe('session_not_found');
   });
 });
 
@@ -283,7 +283,7 @@ describe('the guard in front of every session route', () => {
       .send({ content: 'hello' });
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('SESSION_NOT_FOUND');
+    expect(res.body.code).toBe('session_not_found');
   });
 
   // `/limit-history` answers its own 404 for a session that never hit a limit.
@@ -294,7 +294,7 @@ describe('the guard in front of every session route', () => {
       .set(AGENT)
       .send({ content: 'hello' });
 
-    expect(res.body.code).not.toBe('SESSION_NOT_FOUND');
+    expect(res.body.code).not.toBe('session_not_found');
   });
 
   it('lets an agent start a new chat, and not reuse a private id to do it', async () => {
@@ -313,7 +313,7 @@ describe('the guard in front of every session route', () => {
       .set(AGENT)
       // An ordinary project folder: the default one can hold the data folder (DOR-4060).
       .send({ content: 'hello', create: true, cwd: '/mock/home/project' });
-    expect(fresh.body.code).not.toBe('SESSION_NOT_FOUND');
+    expect(fresh.body.code).not.toBe('session_not_found');
     // Its own work, not a person's chat, so it can read what it started.
     expect(vi.mocked(runtimeRegistry.persistSessionRuntime)).toHaveBeenCalledWith(
       NEW,
@@ -348,7 +348,7 @@ describe('a session route nobody listed', () => {
     const res = await probe(PRIVATE, agent);
 
     expect(res.status).toBe(404);
-    expect(((await res.json()) as { code: string }).code).toBe('SESSION_NOT_FOUND');
+    expect(((await res.json()) as { code: string }).code).toBe('session_not_found');
   });
 
   it('lets agent work, the owner and an id that is not a session through', async () => {
@@ -361,7 +361,7 @@ describe('a session route nobody listed', () => {
     const res = await probe(PRIVATE, agent, '/zz-nothing');
 
     expect(res.status).toBe(404);
-    expect(await res.text()).not.toContain('SESSION_NOT_FOUND');
+    expect(await res.text()).not.toContain('session_not_found');
   });
 
   it('runs the guard once per request', async () => {

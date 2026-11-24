@@ -62,29 +62,37 @@ const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json$/ };
 const NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
 });
-const SESSION_NOT_FOUND = { error: 'Session not found', code: 'SESSION_NOT_FOUND' };
-const SESSION_CWD_REQUIRED = {
-  error:
-    "Could not determine this session's working directory. Pass ?cwd= with the session's project directory.",
-  code: 'SESSION_CWD_REQUIRED',
-};
-const INVALID_SESSION_ID = { error: 'Invalid session ID', code: 'INVALID_SESSION_ID' };
-const INVALID_REQUEST = { error: 'Invalid request', code: 'VALIDATION_ERROR' };
+const SESSION_NOT_FOUND = problemBody('session_not_found');
+const SESSION_CWD_REQUIRED = problemBody('session_not_found', {
+  detail: "Couldn't place this chat. Pass ?cwd= with its project folder.",
+});
+/** A body that failed its schema, as a problem document: the fields ride in `issues`. */
+const SCHEMA_REFUSED = z
+  .object({
+    code: z.literal('invalid_request'),
+    status: z.literal(400),
+    issues: z.object({}).loose(),
+  })
+  .loose();
+/** A chat id that does not parse, from a route that answers problem documents. */
+const BAD_CHAT_ID = problemBody('invalid_request', { detail: 'That chat id isn’t valid.' });
+/** A canvas document the session does not hold. */
+const NO_SUCH_DOCUMENT = problemBody('not_found', { detail: 'No such document on this canvas' });
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
-const AGENT_UNVERIFIED = {
-  error:
-    'That agent identity could not be verified. Its token may have been revoked, or it may have expired.',
-  code: 'AGENT_IDENTITY_UNVERIFIED',
-};
 const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
-const OUTSIDE_BOUNDARY = {
-  error: 'Access denied: path outside directory boundary',
-  code: 'OUTSIDE_BOUNDARY',
-};
+const OUTSIDE_BOUNDARY = problemBody('outside_boundary', {
+  detail: 'This chat is outside the allowed directory.',
+});
+/** What a chat that never ran out of usage answers a continue, a wait or a cancel. */
+const NO_LIMIT = problemBody('conflict', {
+  detail: 'This chat has not run out of usage, so there is nothing to continue.',
+});
+/** A queued message id this queue does not hold. */
+const NOT_QUEUED = problemBody('queued_message_not_found');
 const ISO = /^\d{4}-\d\d-\d\dT[\d:.]+Z$/;
 /** The 202 every accepted message answers with. */
 const ACCEPTED = z
@@ -158,14 +166,14 @@ contractSuite('the session routes, login off, nothing started', [
     path: `${S}?runtime=nope`,
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      body: { error: 'Unknown runtime: nope', code: 'UNKNOWN_RUNTIME' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('invalid_request', { detail: 'Unknown runtime: nope' }),
     },
   },
   {
     name: 'GET /api/sessions in a folder outside the boundary is a 403',
     path: `${S}?cwd=${encodeURIComponent('/etc')}`,
-    expect: { status: 403, headers: JSON_TYPE, body: OUTSIDE_BOUNDARY },
+    expect: { status: 403, headers: PROBLEM_TYPE, body: OUTSIDE_BOUNDARY },
   },
   {
     name: 'GET /api/sessions/recent across every agent',
@@ -219,12 +227,12 @@ contractSuite('the session routes, login off, nothing started', [
   {
     name: 'GET /api/sessions/:id with an id that is not one is a 400',
     path: `${S}/not-a-uuid`,
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_SESSION_ID },
+    expect: { status: 400, headers: PROBLEM_TYPE, body: BAD_CHAT_ID },
   },
   {
     name: 'GET /api/sessions/:id nobody started is a 404',
     path: `${S}/${UNKNOWN}`,
-    expect: { status: 404, headers: JSON_TYPE, body: SESSION_NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: SESSION_NOT_FOUND },
   },
   {
     name: 'GET /api/sessions/:id/runtime-type infers the owner, writing nothing',
@@ -234,7 +242,7 @@ contractSuite('the session routes, login off, nothing started', [
   {
     name: 'GET /api/sessions/:id/runtime-type with a bad id is a 400',
     path: `${S}/nope/runtime-type`,
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_SESSION_ID },
+    expect: { status: 400, headers: PROBLEM_TYPE, body: BAD_CHAT_ID },
   },
   {
     name: 'GET /api/sessions/:id/settings with nothing stored is null',
@@ -244,7 +252,7 @@ contractSuite('the session routes, login off, nothing started', [
   {
     name: 'GET /api/sessions/:id/settings with a bad id is a 400',
     path: `${S}/nope/settings`,
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_SESSION_ID },
+    expect: { status: 400, headers: PROBLEM_TYPE, body: BAD_CHAT_ID },
   },
   {
     name: 'GET /api/sessions/:id/tasks of a session nobody started has none',
@@ -254,14 +262,14 @@ contractSuite('the session routes, login off, nothing started', [
   {
     name: 'GET /api/sessions/:id/tasks in a folder outside the boundary is a 403',
     path: `${S}/${UNKNOWN}/tasks?cwd=${encodeURIComponent('/etc')}`,
-    expect: { status: 403, headers: JSON_TYPE, body: OUTSIDE_BOUNDARY },
+    expect: { status: 403, headers: PROBLEM_TYPE, body: OUTSIDE_BOUNDARY },
   },
   {
     // The runtime knows each chat's folder, as Claude Code does (DOR-5035), so an id it never
     // ran has no folder to read from, and the caller is told to name one.
     name: 'GET /api/sessions/:id/messages of a session nobody started asks for its folder',
     path: `${S}/${UNKNOWN}/messages`,
-    expect: { status: 404, headers: JSON_TYPE, body: SESSION_CWD_REQUIRED },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: SESSION_CWD_REQUIRED },
   },
   {
     name: 'GET /api/sessions/:id/messages of a session nobody started, with its folder, is empty',
@@ -271,7 +279,7 @@ contractSuite('the session routes, login off, nothing started', [
   {
     name: 'GET /api/sessions/:id/messages in a folder outside the boundary is a 403',
     path: `${S}/${UNKNOWN}/messages?cwd=${encodeURIComponent('/etc')}`,
-    expect: { status: 403, headers: JSON_TYPE, body: OUTSIDE_BOUNDARY },
+    expect: { status: 403, headers: PROBLEM_TYPE, body: OUTSIDE_BOUNDARY },
   },
   {
     name: 'GET /api/sessions/:id/chat-messages: nothing sent, nothing stopped',
@@ -281,15 +289,15 @@ contractSuite('the session routes, login off, nothing started', [
   {
     name: 'GET /api/sessions/:id/limit-history of a session this server does not know is a 404',
     path: `${S}/${UNKNOWN}/limit-history`,
-    expect: { status: 404, headers: JSON_TYPE, body: SESSION_NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: SESSION_NOT_FOUND },
   },
   {
     name: 'GET /api/sessions/:id/attachments/:file nobody wrote is a 404',
     path: `${S}/${UNKNOWN}/attachments/abc.png`,
     expect: {
       status: 404,
-      headers: JSON_TYPE,
-      body: { error: 'No such image.', code: 'ATTACHMENT_NOT_FOUND' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('not_found', { detail: 'No such image.' }),
     },
   },
   {
@@ -310,14 +318,14 @@ contractSuite('the session routes, login off, nothing started', [
     method: 'PATCH',
     path: `${S}/${UNKNOWN}`,
     body: { title: 5 },
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_REQUEST },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: SCHEMA_REFUSED },
   },
   {
     name: 'PATCH /api/sessions/:id with a bad id is a 400',
     method: 'PATCH',
     path: `${S}/nope`,
     body: { title: 'x' },
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_SESSION_ID },
+    expect: { status: 400, headers: PROBLEM_TYPE, body: BAD_CHAT_ID },
   },
   {
     name: 'PATCH /api/sessions/:id naming a mode the runtime does not declare is a 400',
@@ -326,8 +334,8 @@ contractSuite('the session routes, login off, nothing started', [
     body: { permissionMode: 'no-such-mode' },
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      schema: z.object({ code: z.literal('UNSUPPORTED_PERMISSION_MODE') }).loose(),
+      headers: PROBLEM_TYPE,
+      schema: z.object({ code: z.literal('invalid_request'), detail: z.string() }).loose(),
     },
   },
   {
@@ -335,7 +343,7 @@ contractSuite('the session routes, login off, nothing started', [
     method: 'PATCH',
     path: `${S}/${fresh()}?cwd=${encodeURIComponent('/etc')}`,
     body: { title: 'x' },
-    expect: { status: 403, headers: JSON_TYPE, body: OUTSIDE_BOUNDARY },
+    expect: { status: 403, headers: PROBLEM_TYPE, body: OUTSIDE_BOUNDARY },
   },
 
   // ---- fork, plugins ---------------------------------------------------------
@@ -344,7 +352,7 @@ contractSuite('the session routes, login off, nothing started', [
     method: 'POST',
     path: `${S}/${UNKNOWN}/fork`,
     body: { upToMessageId: 5 },
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_REQUEST },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: SCHEMA_REFUSED },
   },
   {
     name: 'POST /api/sessions/:id/fork of a session nobody started is a 404',
@@ -353,8 +361,8 @@ contractSuite('the session routes, login off, nothing started', [
     body: {},
     expect: {
       status: 404,
-      headers: JSON_TYPE,
-      body: { error: 'Session not found or fork failed', code: 'FORK_FAILED' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('session_not_found', { detail: 'Nothing was forked.' }),
     },
   },
   {
@@ -362,7 +370,7 @@ contractSuite('the session routes, login off, nothing started', [
     method: 'POST',
     path: `${S}/${UNKNOWN}/fork?cwd=${encodeURIComponent('/etc')}`,
     body: {},
-    expect: { status: 403, headers: JSON_TYPE, body: OUTSIDE_BOUNDARY },
+    expect: { status: 403, headers: PROBLEM_TYPE, body: OUTSIDE_BOUNDARY },
   },
   {
     name: 'POST /api/sessions/:id/reload-plugins with nothing running is a 409',
@@ -370,11 +378,8 @@ contractSuite('the session routes, login off, nothing started', [
     path: `${S}/${UNKNOWN}/reload-plugins`,
     expect: {
       status: 409,
-      headers: JSON_TYPE,
-      body: {
-        error: 'No active query — send a message first to establish a session',
-        code: 'NO_ACTIVE_QUERY',
-      },
+      headers: PROBLEM_TYPE,
+      body: problemBody('conflict', { detail: 'Send a message first, then reload plugins.' }),
     },
   },
 
@@ -383,21 +388,21 @@ contractSuite('the session routes, login off, nothing started', [
     name: 'POST /api/sessions/:id/messages with no body is a 400',
     method: 'POST',
     path: `${S}/${UNKNOWN}/messages`,
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_REQUEST },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: SCHEMA_REFUSED },
   },
   {
     name: 'POST /api/sessions/:id/messages with an empty message is a 400',
     method: 'POST',
     path: `${S}/${UNKNOWN}/messages`,
     body: { content: '' },
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_REQUEST },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: SCHEMA_REFUSED },
   },
   {
     name: 'POST /api/sessions/:id/messages with a bad id is a 400',
     method: 'POST',
     path: `${S}/nope/messages`,
     body: { content: 'hi' },
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_SESSION_ID },
+    expect: { status: 400, headers: PROBLEM_TYPE, body: BAD_CHAT_ID },
   },
   {
     name: 'POST /api/sessions/:id/messages to an id nobody started, without create, is a 404',
@@ -406,11 +411,10 @@ contractSuite('the session routes, login off, nothing started', [
     body: { content: 'hi' },
     expect: {
       status: 404,
-      headers: JSON_TYPE,
-      body: {
-        error: 'No session has this id. To start a new one, send create: true.',
-        code: 'SESSION_NOT_FOUND',
-      },
+      headers: PROBLEM_TYPE,
+      body: problemBody('session_not_found', {
+        detail: 'No session has this id. To start a new one, send create: true.',
+      }),
     },
   },
   {
@@ -444,7 +448,7 @@ contractSuite('the session routes, login off, nothing started', [
     name: 'POST /api/sessions/:id/opened with a bad id is a 400',
     method: 'POST',
     path: `${S}/nope/opened`,
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_SESSION_ID },
+    expect: { status: 400, headers: PROBLEM_TYPE, body: BAD_CHAT_ID },
   },
 
   // ---- the queue -------------------------------------------------------------
@@ -458,7 +462,7 @@ contractSuite('the session routes, login off, nothing started', [
     method: 'PATCH',
     path: `${S}/${UNKNOWN}/queue/m1`,
     body: { content: 5 },
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_REQUEST },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: SCHEMA_REFUSED },
   },
   {
     name: 'PATCH /api/sessions/:id/queue/:messageId nobody queued is a 404',
@@ -467,8 +471,8 @@ contractSuite('the session routes, login off, nothing started', [
     body: { content: 'x' },
     expect: {
       status: 404,
-      headers: JSON_TYPE,
-      body: { error: 'No such queued message', code: 'QUEUED_MESSAGE_NOT_FOUND' },
+      headers: PROBLEM_TYPE,
+      body: NOT_QUEUED,
     },
   },
   {
@@ -477,8 +481,8 @@ contractSuite('the session routes, login off, nothing started', [
     path: `${S}/${UNKNOWN}/queue/m1`,
     expect: {
       status: 404,
-      headers: JSON_TYPE,
-      body: { error: 'No such queued message', code: 'QUEUED_MESSAGE_NOT_FOUND' },
+      headers: PROBLEM_TYPE,
+      body: NOT_QUEUED,
     },
   },
 
@@ -488,14 +492,14 @@ contractSuite('the session routes, login off, nothing started', [
     method: 'POST',
     path: `${S}/${UNKNOWN}/${route}`,
     body: {},
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_REQUEST },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: SCHEMA_REFUSED },
   })),
   ...(['batch-approve', 'batch-deny'] as const).map((route) => ({
     name: `POST /api/sessions/:id/${route} with a body it cannot read is a 400`,
     method: 'POST',
     path: `${S}/${UNKNOWN}/${route}`,
     body: {},
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_REQUEST },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: SCHEMA_REFUSED },
   })),
   {
     name: 'POST /api/sessions/:id/approve with nothing pending is a 404',
@@ -504,8 +508,8 @@ contractSuite('the session routes, login off, nothing started', [
     body: { toolCallId: 't1' },
     expect: {
       status: 404,
-      headers: JSON_TYPE,
-      body: { error: 'No pending approval', code: 'NO_PENDING_APPROVAL' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('not_found', { detail: 'No request is waiting for an answer here.' }),
     },
   },
   {
@@ -515,8 +519,8 @@ contractSuite('the session routes, login off, nothing started', [
     body: { toolCallId: 't1', reason: '  ' },
     expect: {
       status: 404,
-      headers: JSON_TYPE,
-      body: { error: 'No pending approval', code: 'NO_PENDING_APPROVAL' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('not_found', { detail: 'No request is waiting for an answer here.' }),
     },
   },
   {
@@ -553,8 +557,8 @@ contractSuite('the session routes, login off, nothing started', [
     body: { toolCallId: 't1', answers: {} },
     expect: {
       status: 404,
-      headers: JSON_TYPE,
-      body: { error: 'No pending question', code: 'NO_PENDING_QUESTION' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('not_found', { detail: 'No question is waiting for an answer here.' }),
     },
   },
   {
@@ -564,8 +568,8 @@ contractSuite('the session routes, login off, nothing started', [
     body: { interactionId: 'i1', action: 'decline' },
     expect: {
       status: 404,
-      headers: JSON_TYPE,
-      body: { error: 'No pending elicitation', code: 'NO_PENDING_ELICITATION' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('not_found', { detail: 'No form is waiting for an answer here.' }),
     },
   },
   {
@@ -573,7 +577,7 @@ contractSuite('the session routes, login off, nothing started', [
     method: 'POST',
     path: `${S}/nope/approve`,
     body: { toolCallId: 't1' },
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_SESSION_ID },
+    expect: { status: 400, headers: PROBLEM_TYPE, body: BAD_CHAT_ID },
   },
 
   // ---- widget actions and command intents ------------------------------------
@@ -584,11 +588,10 @@ contractSuite('the session routes, login off, nothing started', [
     body: {},
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      body: {
-        error: 'Invalid input: expected string, received undefined',
-        code: 'VALIDATION_ERROR',
-      },
+      headers: PROBLEM_TYPE,
+      schema: SCHEMA_REFUSED.and(
+        z.object({ detail: z.string().regex(/expected string, received undefined/) }).loose()
+      ),
     },
   },
   {
@@ -596,7 +599,7 @@ contractSuite('the session routes, login off, nothing started', [
     method: 'POST',
     path: `${S}/${fresh()}/ui-action`,
     body: { actionId: 'a', widgetId: 'w', toolCallId: 't' },
-    expect: { status: 404, headers: JSON_TYPE, body: SESSION_NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: SESSION_NOT_FOUND },
   },
   {
     name: 'POST /api/sessions/:id/command-intents/:intent that is not one is a 422',
@@ -604,8 +607,11 @@ contractSuite('the session routes, login off, nothing started', [
     path: `${S}/${UNKNOWN}/command-intents/bogus`,
     expect: {
       status: 422,
-      headers: JSON_TYPE,
-      body: { error: 'Unknown command intent: bogus', code: 'INVALID_COMMAND_INTENT' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('invalid_request', {
+        detail: 'Unknown command intent: bogus',
+        status: 422,
+      }),
     },
   },
   {
@@ -615,15 +621,15 @@ contractSuite('the session routes, login off, nothing started', [
     body: { instructions: 5 },
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      body: { error: 'Invalid request body', code: 'VALIDATION_ERROR' },
+      headers: PROBLEM_TYPE,
+      schema: SCHEMA_REFUSED,
     },
   },
   {
     name: 'POST /api/sessions/:id/command-intents/compact on a session that exists nowhere is a 404',
     method: 'POST',
     path: `${S}/${fresh()}/command-intents/compact`,
-    expect: { status: 404, headers: JSON_TYPE, body: SESSION_NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: SESSION_NOT_FOUND },
   },
 
   // ---- the session canvas ----------------------------------------------------
@@ -651,53 +657,37 @@ contractSuite('the session routes, login off, nothing started', [
     method: 'POST',
     path: `${S}/${fresh()}/canvas`,
     body: { content: { type: 'markdown', title: 'Notes', content: '# Notes' } },
-    expect: { status: 404, headers: JSON_TYPE, body: SESSION_NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: problemBody('session_not_found') },
   },
   {
     name: 'GET /api/sessions/:id/canvas/:documentId nobody opened is a 404',
     path: `${S}/${UNKNOWN}/canvas/doc1`,
-    expect: {
-      status: 404,
-      headers: JSON_TYPE,
-      body: { error: 'No such document on this canvas', code: 'CANVAS_DOCUMENT_NOT_FOUND' },
-    },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NO_SUCH_DOCUMENT },
   },
   {
     name: 'PATCH /api/sessions/:id/canvas/:documentId nobody opened is a 404',
     method: 'PATCH',
     path: `${S}/${UNKNOWN}/canvas/doc1`,
     body: {},
-    expect: {
-      status: 404,
-      headers: JSON_TYPE,
-      body: { error: 'No such document on this canvas', code: 'CANVAS_DOCUMENT_NOT_FOUND' },
-    },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NO_SUCH_DOCUMENT },
   },
   {
     name: 'DELETE /api/sessions/:id/canvas/:documentId nobody opened is a 404',
     method: 'DELETE',
     path: `${S}/${UNKNOWN}/canvas/doc1`,
-    expect: {
-      status: 404,
-      headers: JSON_TYPE,
-      body: { error: 'No such document on this canvas', code: 'CANVAS_DOCUMENT_NOT_FOUND' },
-    },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NO_SUCH_DOCUMENT },
   },
   {
     name: 'POST /api/sessions/:id/canvas/:documentId/editing nobody opened is a 404',
     method: 'POST',
     path: `${S}/${UNKNOWN}/canvas/doc1/editing`,
     body: { editing: true },
-    expect: {
-      status: 404,
-      headers: JSON_TYPE,
-      body: { error: 'No such document on this canvas', code: 'CANVAS_DOCUMENT_NOT_FOUND' },
-    },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NO_SUCH_DOCUMENT },
   },
   {
     name: 'GET /api/sessions/:id/canvas with a bad id is a 400',
     path: `${S}/nope/canvas`,
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_SESSION_ID },
+    expect: { status: 400, headers: PROBLEM_TYPE, body: BAD_CHAT_ID },
   },
 
   // ---- continuing on another account -----------------------------------------
@@ -706,11 +696,8 @@ contractSuite('the session routes, login off, nothing started', [
     path: `${S}/${UNKNOWN}/continue-options`,
     expect: {
       status: 409,
-      headers: JSON_TYPE,
-      body: {
-        error: 'This chat has not run out of usage, so there is nothing to continue.',
-        code: 'NO_LIMIT',
-      },
+      headers: PROBLEM_TYPE,
+      body: NO_LIMIT,
     },
   },
   {
@@ -718,7 +705,7 @@ contractSuite('the session routes, login off, nothing started', [
     method: 'POST',
     path: `${S}/${UNKNOWN}/continue`,
     body: { account: 5 },
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_REQUEST },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: SCHEMA_REFUSED },
   },
   {
     name: 'POST /api/sessions/:id/continue naming nothing to continue on is a 400',
@@ -727,8 +714,10 @@ contractSuite('the session routes, login off, nothing started', [
     body: {},
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      body: { error: 'Choose an account or a model to continue on.', code: 'VALIDATION_ERROR' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('invalid_request', {
+        detail: 'Choose an account or a model to continue on.',
+      }),
     },
   },
   {
@@ -737,11 +726,8 @@ contractSuite('the session routes, login off, nothing started', [
     path: `${S}/${UNKNOWN}/continue/cancel`,
     expect: {
       status: 409,
-      headers: JSON_TYPE,
-      body: {
-        error: 'This chat has not run out of usage, so there is nothing to continue.',
-        code: 'NO_LIMIT',
-      },
+      headers: PROBLEM_TYPE,
+      body: NO_LIMIT,
     },
   },
   {
@@ -751,17 +737,14 @@ contractSuite('the session routes, login off, nothing started', [
     body: {},
     expect: {
       status: 409,
-      headers: JSON_TYPE,
-      body: {
-        error: 'This chat has not run out of usage, so there is nothing to continue.',
-        code: 'NO_LIMIT',
-      },
+      headers: PROBLEM_TYPE,
+      body: NO_LIMIT,
     },
   },
   {
     name: 'GET /api/sessions/:id/continue-options with a bad id is a 400',
     path: `${S}/nope/continue-options`,
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_SESSION_ID },
+    expect: { status: 400, headers: PROBLEM_TYPE, body: BAD_CHAT_ID },
   },
 
   // ---- the DevTools sinks and the recording upload ---------------------------
@@ -772,8 +755,8 @@ contractSuite('the session routes, login off, nothing started', [
     body: {},
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      body: { error: 'Invalid DevTools ingest batch', code: 'VALIDATION_ERROR' },
+      headers: PROBLEM_TYPE,
+      schema: SCHEMA_REFUSED,
     },
   },
   {
@@ -783,8 +766,8 @@ contractSuite('the session routes, login off, nothing started', [
     body: {},
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      body: { error: 'Invalid DevTools action result', code: 'VALIDATION_ERROR' },
+      headers: PROBLEM_TYPE,
+      schema: SCHEMA_REFUSED,
     },
   },
   {
@@ -792,11 +775,7 @@ contractSuite('the session routes, login off, nothing started', [
     method: 'POST',
     path: `${S}/${UNKNOWN}/devtools/recording`,
     body: {},
-    expect: {
-      status: 400,
-      headers: JSON_TYPE,
-      body: { error: 'Invalid recording upload', code: 'VALIDATION_ERROR' },
-    },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: SCHEMA_REFUSED },
   },
   {
     name: 'POST /api/sessions/:id/devtools/recording nobody is waiting for is a 404',
@@ -811,8 +790,8 @@ contractSuite('the session routes, login off, nothing started', [
     ),
     expect: {
       status: 404,
-      headers: JSON_TYPE,
-      body: { error: 'No recording is waiting for that upload', code: 'RECORDING_NOT_PENDING' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('not_found', { detail: 'No recording is waiting for that upload.' }),
     },
   },
   {
@@ -898,7 +877,7 @@ contractSuite('the session routes, login off, nothing started', [
     method: 'POST',
     path: `${S}/${UNKNOWN}/mcp-app/resource`,
     body: {},
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_REQUEST },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: SCHEMA_REFUSED },
   },
   {
     name: 'POST /api/sessions/:id/mcp-app/resource outside the ui:// scheme is a 400',
@@ -907,8 +886,8 @@ contractSuite('the session routes, login off, nothing started', [
     body: { serverName: 's', uri: 'http://x' },
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      body: { error: 'Resource URI must use the ui:// scheme', code: 'INVALID_URI' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('invalid_request', { detail: 'Resource URI must use the ui:// scheme' }),
     },
   },
   {
@@ -916,7 +895,7 @@ contractSuite('the session routes, login off, nothing started', [
     method: 'POST',
     path: `${S}/${fresh()}/mcp-app/resource`,
     body: { serverName: 's', uri: 'ui://x' },
-    expect: { status: 404, headers: JSON_TYPE, body: SESSION_NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: SESSION_NOT_FOUND },
   },
 
   // ---- stopping --------------------------------------------------------------
@@ -924,7 +903,7 @@ contractSuite('the session routes, login off, nothing started', [
     name: 'POST /api/sessions/:id/tasks/:taskId/stop of a session nobody started is a 404',
     method: 'POST',
     path: `${S}/${fresh()}/tasks/t1/stop`,
-    expect: { status: 404, headers: JSON_TYPE, body: SESSION_NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: SESSION_NOT_FOUND },
   },
   {
     name: 'POST /api/sessions/:id/process/switch with no agent running switches nothing',
@@ -949,19 +928,19 @@ contractSuite('the session routes, login off, nothing started', [
     name: 'POST /api/sessions/:id/interrupt with a bad id is a 400',
     method: 'POST',
     path: `${S}/nope/interrupt`,
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_SESSION_ID },
+    expect: { status: 400, headers: PROBLEM_TYPE, body: BAD_CHAT_ID },
   },
 
   // ---- the stream's refusals -------------------------------------------------
   {
     name: 'GET /api/sessions/:id/events with a bad id is a 400',
     path: `${S}/nope/events`,
-    expect: { status: 400, headers: JSON_TYPE, body: INVALID_SESSION_ID },
+    expect: { status: 400, headers: PROBLEM_TYPE, body: BAD_CHAT_ID },
   },
   {
     name: 'GET /api/sessions/:id/events in a folder outside the boundary is a 403',
     path: `${S}/${UNKNOWN}/events?cwd=${encodeURIComponent('/etc')}`,
-    expect: { status: 403, headers: JSON_TYPE, body: OUTSIDE_BOUNDARY },
+    expect: { status: 403, headers: PROBLEM_TYPE, body: OUTSIDE_BOUNDARY },
   },
 
   // ---- the chain -------------------------------------------------------------
@@ -1409,7 +1388,7 @@ describe('contract: the session routes, driven by hand (login off)', { timeout: 
       await call(server, 'POST', `${S}/${agents}/process/switch`, undefined, AGENT)
     ).toMatchObject({
       status: 403,
-      json: { error: 'Only you can switch now, from the DorkOS app.', code: 'person_only' },
+      json: { detail: 'Only you can switch now, from the DorkOS app.', code: 'person_only' },
     });
     expect(
       await call(
@@ -1422,15 +1401,17 @@ describe('contract: the session routes, driven by hand (login off)', { timeout: 
     ).toMatchObject({
       status: 403,
       json: {
-        error: 'Only you can run a chat on your DorkOS credits, from the DorkOS app.',
+        detail: 'Only you can run a chat on your DorkOS credits, from the DorkOS app.',
         code: 'person_only',
       },
     });
-    for (const url of [`${S}/${agents}/canvas`, `${S}/${agents}/continue-options`]) {
+    for (const url of [`${S}/${agents}/continue-options`]) {
       const answer = await call(server, 'GET', url, undefined, AGENT);
       expect(answer.status, url).toBe(401);
-      expect(answer.json, url).toEqual(AGENT_UNVERIFIED);
+      expect(answer.json, url).toMatchObject({ code: 'agent_identity_unverified' });
     }
+    const canvas = await call(server, 'GET', `${S}/${agents}/canvas`, undefined, AGENT);
+    expect(canvas).toMatchObject({ status: 401, json: { code: 'agent_identity_unverified' } });
   });
 
   it('answers a prompt for a person, never for an agent', async () => {
@@ -1460,15 +1441,15 @@ describe('contract: the session routes, driven by hand (login off)', { timeout: 
       await call(server, 'POST', `${S}/${asked}/approve`, { toolCallId: 'gated-edit-1' })
     ).toMatchObject({
       status: 409,
-      json: { error: 'Interaction already resolved', code: 'INTERACTION_ALREADY_RESOLVED' },
+      json: { code: 'already_resolved' },
     });
 
     // An agent's own chat asks too, and the agent still cannot answer it.
     const agents = await startChat(server, { scenario: 'approval-gated', headers: AGENT });
     await until(server, agents, 'blocked', AGENT);
     const refused = {
-      error: 'Approvals are decided by a person in DorkOS, not by an agent',
-      code: 'AGENT_CANNOT_DECIDE',
+      detail: 'Approvals are decided by a person in DorkOS, not by an agent',
+      code: 'person_only',
     };
     for (const [route, body] of [
       ['approve', { toolCallId: 'gated-edit-1' }],
@@ -1518,8 +1499,9 @@ describe('contract: the session routes, driven by hand (login off)', { timeout: 
     );
     expect(locked.status).toBe(409);
     expect(locked.json).toEqual({
-      error: 'Session locked',
-      code: 'SESSION_LOCKED',
+      ...problemBody('session_locked', {
+        detail: 'Wait for the reply to finish, then try again.',
+      }),
       lockedBy: 'window-one',
       lockedAt: expect.stringMatching(ISO),
     });
@@ -1695,7 +1677,7 @@ describe('contract: the session routes, driven by hand (login off)', { timeout: 
       name: 'an agent asking for a person’s stream',
       path: `${S}/${person}/events`,
       headers: AGENT,
-      expect: { status: 404, headers: JSON_TYPE, body: SESSION_NOT_FOUND },
+      expect: { status: 404, headers: PROBLEM_TYPE, body: SESSION_NOT_FOUND },
     });
 
     // Its own chat is readable, so the stream opens; the document channel then
@@ -1802,6 +1784,6 @@ describe('contract: the session routes with login on', { timeout: 60_000 }, () =
     // Answering is the person's, by cookie; there is nothing pending here.
     expect(
       await call(server, 'POST', `${S}/${sessionId}/approve`, { toolCallId: 't' }, cookie)
-    ).toMatchObject({ status: 409, json: { code: 'INTERACTION_ALREADY_RESOLVED' } });
+    ).toMatchObject({ status: 409, json: { code: 'already_resolved' } });
   });
 });

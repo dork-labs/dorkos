@@ -219,8 +219,11 @@ test.describe('Agent browser Back and Forward in the panel', () => {
     const { browser, steps } = await panelWithHistory(page, chatPage, () => ({
       status: 409,
       json: {
-        error: 'DorkOS doesn’t open that page here, so you stayed on this one.',
+        type: 'urn:dorkos:problem:history_refused',
+        title: 'DorkOS doesn’t open that page here.',
+        status: 409,
         code: 'history_refused',
+        detail: 'DorkOS doesn’t open that page here, so you stayed on this one.',
       },
     }));
     await browser.controls.getByRole('button', { name: 'Back', exact: true }).click();

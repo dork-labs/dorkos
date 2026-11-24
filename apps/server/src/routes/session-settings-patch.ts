@@ -4,11 +4,11 @@ import { UpdateSessionRequestSchema } from '@dorkos/shared/schemas';
 import type { Hono } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import { personOnlyModeChange } from '../http/person-session-refusal.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
-import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
+import { boundaryRefusal, parseSessionId } from '../lib/route-utils.js';
 import { sessionRunsOnCredits } from '../services/core/cloud/credits-model-gate.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import {
@@ -28,7 +28,12 @@ import {
   preparePersonChat,
   personChatMissing,
 } from './session-person-birth.js';
-import { notePersonMode, wifiModeRaiseReply } from './session-route-replies.js';
+import {
+  invalidSessionId,
+  notePersonMode,
+  sessionNotFound,
+  wifiModeRaiseReply,
+} from './session-route-replies.js';
 import type { SessionRouteDeps } from './sessions.js';
 
 const PREPARED_SETTINGS_RUNTIMES = new Set([
@@ -55,13 +60,13 @@ export function mountSessionSettingsPatch(
   // PATCH /api/sessions/:id - Update session settings
   router.patch('/:id', personOnlyModeChange(), async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+    if (!sessionId) return invalidSessionId(c);
 
     const cwdParam = readQuery(c).cwd;
     const requestedCwd = typeof cwdParam === 'string' ? cwdParam : undefined;
     const parsed = UpdateSessionRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
+      return validationProblem(c, parsed.error);
     }
     const {
       permissionMode: requestedMode,
@@ -82,15 +87,14 @@ export function mountSessionSettingsPatch(
       db && source
         ? await preparePersonChat(db, sessionId, facts, source, deps.meshCore, requestedCwd)
         : undefined;
-    if (prepared && 'refusal' in prepared)
-      return c.json(prepared.refusal.body, prepared.refusal.status);
+    if (prepared && 'refusal' in prepared) return sendProblem(c, prepared.refusal.body);
     const settingsSource = roomSeat ? { birth: roomSeat } : prepared?.binding;
     const cwd = prepared?.cwd ?? (requestedCwd || roomSeat?.agentPath || DEFAULT_CWD);
     // The registration establishes who owns the draft. The normal folder
     // boundary still governs the effective place named for the settings read.
     if (prepared?.registeredAgentPath || roomSeat) {
       const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
-      if (outside) return c.json(outside, 403);
+      if (outside) return sendProblem(c, outside);
     }
 
     // Fail-closed by construction: an unresolvable session throws here, before
@@ -120,7 +124,7 @@ export function mountSessionSettingsPatch(
     // the turn then ran at the agent's level (DOR-4411).
     const modeRuntime = sessionModeAuthority(runtime, bound, runtimeHint);
     const modeError = requestedMode && rejectUndeclaredPermissionMode(modeRuntime, requestedMode);
-    if (modeError) return c.json(errorBody(modeError, 'UNSUPPORTED_PERMISSION_MODE'), 400);
+    if (modeError) return problem(c, 'invalid_request', { detail: modeError });
     // From Wi-Fi a chat's mode may go down, never up (DOR-3037), judged by the same runtime.
     const raise = await wifiModeRaiseReply(c, modeRuntime, sessionId, requestedMode);
     if (raise) return raise;
@@ -154,7 +158,7 @@ export function mountSessionSettingsPatch(
       const modelError = authority
         ? await rejectUnknownModel(authority, model, { onCredits, sessionId })
         : null;
-      if (modelError) return c.json(errorBody(modelError, 'UNSUPPORTED_MODEL'), 400);
+      if (modelError) return problem(c, 'invalid_request', { detail: modelError });
     }
     // Past the gate the id is one THIS runtime declares, so it is a real mode by
     // the only definition that matters — and it travels on as the runtime-declared
@@ -169,14 +173,14 @@ export function mountSessionSettingsPatch(
     // the chosen mode is persisted and applies on the next turn, so there is no
     // 422 path — a failed live switch is not a request error.
     if (settingsSource && (bound || internalSessionId !== sessionId))
-      return c.json(personChatMissing.body, personChatMissing.status);
+      return sendProblem(c, personChatMissing.body);
     const hasSettings =
       requestedMode !== undefined ||
       model !== undefined ||
       fastMode !== undefined ||
       (runtime.type !== 'opencode' && effort !== undefined);
     if (settingsSource && hasSettings && !PREPARED_SETTINGS_RUNTIMES.has(runtime.type))
-      return c.json(personChatMissing.body, personChatMissing.status);
+      return sendProblem(c, personChatMissing.body);
     const update = () =>
       runtime.updateSession(internalSessionId, {
         permissionMode: requestedMode,
@@ -196,12 +200,12 @@ export function mountSessionSettingsPatch(
         throw error;
       }
     })();
-    if (!updated.updated) return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
+    if (!updated.updated) return sessionNotFound(c);
     if (!roomSeat) notePersonMode(sessionId, requestedMode);
 
     if (!settingsSource) {
       const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
-      if (outside) return c.json(outside, 403);
+      if (outside) return sendProblem(c, outside);
     }
 
     // Persist custom title to JSONL via SDK's renameSession()

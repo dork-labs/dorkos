@@ -58,7 +58,7 @@ checkout another agent is working in (DOR-1056).
   `workspace.json` `after_create` and `before_remove` commands, which run from
   the server with no permission prompt. Then the gate decides:
   - **A person** is shown a workspace that brings anything (409
-    `workspace_needs_review` on `POST /api/workspaces`) and sends back
+    `needs_review` on `POST /api/workspaces`) and sends back
     `approvedReviewHash`.
   - **An agent** gets a `workspaces.create` approval card for every clone and
     for a worktree whose source runs hooks. It retries with
@@ -73,7 +73,7 @@ checkout another agent is working in (DOR-1056).
   hooks `remove` runs. `before_run` and `after_run` are parsed but never run.
   - **A workspace made before `removeHooks` existed.** A person removing one
     whose source declares `before_remove` gets a 409
-    `remove_hooks_need_review` listing the commands. They can run exactly
+    `needs_review` listing the commands. They can run exactly
     those with `?approvedRemoveHooks=<reviewHash>`, or skip them with
     `?skipRemoveHooks=true`. Any other caller, and `sweep`, skips them. The
     result lists whatever was skipped in `skippedHooks`.

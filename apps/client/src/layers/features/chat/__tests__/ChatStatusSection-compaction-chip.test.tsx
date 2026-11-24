@@ -201,7 +201,7 @@ describe('ChatStatusSection — inline compact action percent (DOR-112)', () => 
   });
 
   it('offers no compact affordance mid-turn, however full the window is', () => {
-    // Purpose: `/compact` mid-turn can only 409 (`SESSION_LOCKED`), so DOR-112
+    // Purpose: `/compact` mid-turn can only 409 (`session_locked`), so DOR-112
     // requirement 1 is that the affordance HIDES rather than shows and relies on
     // the error toast. The percent is over the action threshold and the runtime
     // supports compact, so the only thing withholding the button is `isStreaming` —

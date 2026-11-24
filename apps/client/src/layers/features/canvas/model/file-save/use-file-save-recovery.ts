@@ -1,10 +1,6 @@
 /** Finite UI observation of the original hook's serialized proof lane; no replay owner or polling. */
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import type {
-  DocSaveRefusalReason,
-  FileSaveDiscovery,
-  FileSaveRecoveryEntry,
-} from '@dorkos/shared/file-save/recovery';
+import type { FileSaveDiscovery, FileSaveRecoveryEntry } from '@dorkos/shared/file-save/recovery';
 import type { FileSaveRecoveryActions } from './recovery-ui-types';
 import type { FileSaveBinding } from './receipt-operation';
 type Observation = 'pending' | 'ready' | 'unavailable';
@@ -13,15 +9,12 @@ type State = {
   phase: 'pending' | 'ready' | 'unavailable' | 'refused' | 'local_uncertain';
   discovery?: FileSaveDiscovery;
   historical?: FileSaveRecoveryEntry;
-  /** Which check refused, while the phase is `refused` and the server said (DOR-4442). */
-  refusal?: DocSaveRefusalReason;
+  /** The server's sentence for which check refused, while the phase is `refused` (DOR-4442). */
+  refusal?: string;
   busy: boolean;
 };
 /** The phase, and any refusal reason, a call that observed nothing leaves behind. */
-function failed(result: {
-  status: string;
-  reason?: DocSaveRefusalReason;
-}): Pick<State, 'phase' | 'refusal'> {
+function failed(result: { status: string; reason?: string }): Pick<State, 'phase' | 'refusal'> {
   if (result.status === 'refused')
     return { phase: 'refused', ...(result.reason ? { refusal: result.reason } : {}) };
   return { phase: result.status === 'local_uncertain' ? 'local_uncertain' : 'unavailable' };

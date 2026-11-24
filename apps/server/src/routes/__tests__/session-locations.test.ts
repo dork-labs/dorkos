@@ -14,7 +14,9 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 vi.mock('../extensions-person-bar.js', () => ({
   assessPerson: (facts: RequestFacts) =>
-    facts.headers['x-dorkos-agent'] ? { status: 403, body: { error: 'Person required' } } : null,
+    facts.headers['x-dorkos-agent']
+      ? { status: 403, body: { title: 'Person required', status: 403, code: 'person_only' } }
+      : null,
 }));
 // The routes are served through the `/api` chain, whose host guard and session
 // gate read the login setting: off, as on a fresh install.
@@ -165,6 +167,7 @@ describe('opaque session locations', () => {
       .post('/api/session-locations')
       .set('sec-fetch-site', 'cross-site')
       .send({ cwd: root })
+      .expect('content-type', /application\/problem\+json/)
       .expect(403);
     await request(app())
       .post('/api/session-locations')

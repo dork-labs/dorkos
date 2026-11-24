@@ -184,13 +184,22 @@ describe('runMarketplaceKeepFiles', () => {
         .fn()
         .mockResolvedValueOnce(mockResponse(200, { packages: [{ ...ROW, heldBack: undefined }] }))
         .mockResolvedValueOnce(
-          mockResponse(403, { error: 'sign-in', code: 'operator_cookie_required' })
+          mockResponse(403, {
+            type: 'urn:dorkos:problem:person_only',
+            title: 'Only a person can do that, not an agent.',
+            status: 403,
+            code: 'person_only',
+            detail: 'sign-in',
+          })
         )
         .mockResolvedValueOnce(mockResponse(200, { packages: [{ ...ROW, heldBack: undefined }] }))
         .mockResolvedValueOnce(
           mockResponse(409, {
-            error: 'The files flow kept changed since you looked, so nothing was changed.',
-            code: 'kept_files_changed',
+            type: 'urn:dorkos:problem:conflict',
+            title: 'That clashes with a change made meanwhile.',
+            status: 409,
+            code: 'conflict',
+            detail: 'The files flow kept changed since you looked, so nothing was changed.',
           })
         )
     );

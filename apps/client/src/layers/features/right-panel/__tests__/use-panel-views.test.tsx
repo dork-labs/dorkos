@@ -286,7 +286,7 @@ describe('relevant panel views', () => {
   it('keeps receipt ownership through a held 404 retry and disposes a genuinely canceled held write', async () => {
     const { resolve, transport } = deferredDocument();
     vi.mocked(transport.openSessionCanvasDocument).mockRejectedValueOnce({
-      code: 'SESSION_NOT_FOUND',
+      code: 'session_not_found',
     });
     useAppStore.getState().loadCanvasForSession('one');
     const { result } = renderHook(() => usePanelViews(contributions, '/session'));
@@ -317,7 +317,7 @@ describe('relevant panel views', () => {
     expect(result.current.visible.map((view) => view.id)).not.toContain('resource/actual-new');
 
     vi.mocked(transport.openSessionCanvasDocument).mockRejectedValueOnce({
-      code: 'SESSION_NOT_FOUND',
+      code: 'session_not_found',
     });
     useAppStore.getState().loadCanvasForSession('canceled');
     await act(async () =>

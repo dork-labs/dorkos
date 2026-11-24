@@ -72,14 +72,22 @@ it('rejects malformed recovery and retains HTTP refusal as failure', async () =>
   vi.mocked(fetch)
     .mockResolvedValueOnce(new Response('{}', { status: 200 }))
     .mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: 'Original birth retired', code: 'DOC_CLOSED' }), {
-        status: 409,
-      })
+      new Response(
+        JSON.stringify({
+          type: 'urn:dorkos:problem:temporarily_unavailable',
+          title: 'That’s not available right now. Try again soon.',
+          status: 503,
+          code: 'temporarily_unavailable',
+          detail: 'Save evidence isn’t available right now. Try again soon.',
+        }),
+        { status: 503, headers: { 'Content-Type': 'application/problem+json' } }
+      )
     );
   const port = new HttpTransport('/api').originalFileSaveRecovery;
   await expect(port.recover(birth.documentId, eventId, birth)).rejects.toThrow();
   await expect(port.recover(birth.documentId, eventId, birth)).rejects.toMatchObject({
-    status: 409,
-    code: 'DOC_CLOSED',
+    status: 503,
+    code: 'temporarily_unavailable',
+    message: 'Save evidence isn’t available right now. Try again soon.',
   });
 });

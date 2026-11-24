@@ -138,7 +138,10 @@ export function registerSessionApprovalStepUpCases(): void {
         .set('Origin', origin)
         .send({ toolCallIds: ['tool-one', 'tool-two'] });
       expect(batch.status).toBe(403);
-      expect(batch.body.code).toBe('APPROVALS_REQUIRE_SEPARATE_CONFIRMATION');
+      expect(batch.body).toMatchObject({
+        code: 'forbidden',
+        detail: 'Confirm each request separately.',
+      });
       const single = await request(app())
         .post(`/api/sessions/${sessionId}/batch-approve`)
         .set('Origin', origin)

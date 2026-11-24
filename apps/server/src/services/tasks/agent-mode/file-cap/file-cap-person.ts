@@ -20,7 +20,7 @@ import { FILE_CAP_ACTION } from './run-cap.js';
 
 /** What either act answers. */
 export type FileCapPersonOutcome =
-  { ok: true; task: Task } | { ok: false; status: 404 | 409; body: Record<string, unknown> };
+  { ok: true; task: Task } | { ok: false; status: 404 | 412; body: Record<string, unknown> };
 
 /** Where the acts read and write. */
 type PersonStore = Pick<TaskStore, 'getTask' | 'approvals' | 'updateTask'>;
@@ -31,7 +31,7 @@ const NOT_FOUND = { ok: false, status: 404, body: { error: 'Scheduled task not f
 function changedSince(task: Task, message: string): FileCapPersonOutcome {
   return {
     ok: false,
-    status: 409,
+    status: 412,
     body: { error: 'Nothing to change', code: 'file_changed_since', message, taskId: task.id },
   };
 }

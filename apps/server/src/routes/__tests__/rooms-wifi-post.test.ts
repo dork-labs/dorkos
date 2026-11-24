@@ -143,7 +143,7 @@ describe('a person’s room post', () => {
       .set('x-test-via', 'wifi')
       .send({ text: 'from nobody' });
     expect(res.status).toBe(401);
-    expect(res.body.code).toBe('PERSON_SESSION_REQUIRED');
+    expect(res.body.code).toBe('person_session_required');
     expect(vi.mocked(getRoomService().post)).not.toHaveBeenCalled();
   });
 

@@ -5737,17 +5737,6 @@ export const ErrorResponseSchema = z
 
 export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
 
-export const SessionLockedErrorSchema = z
-  .object({
-    error: z.literal('Session locked'),
-    code: z.literal('SESSION_LOCKED'),
-    lockedBy: z.string(),
-    lockedAt: z.string(),
-  })
-  .openapi('SessionLockedError');
-
-export type SessionLockedError = z.infer<typeof SessionLockedErrorSchema>;
-
 // === Tasks Scheduler Types ===
 
 export const TaskStatusSchema = z

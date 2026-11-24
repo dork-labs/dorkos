@@ -45,7 +45,7 @@ describe('PATCH /api/config', () => {
       .patch('/api/config')
       .send([{ server: { port: 5000 } }])
       .expect(400);
-    expect(response.body.error).toContain('JSON object');
+    expect(response.body.detail).toContain('JSON object');
   });
 
   it.each([
@@ -54,8 +54,8 @@ describe('PATCH /api/config', () => {
     ['an unknown theme', { ui: { theme: 'invalid-theme' } }, 'ui.theme'],
   ])('refuses %s with the schema errors', async (_label, body, leaf) => {
     const response = await request(server).patch('/api/config').send(body).expect(400);
-    expect(response.body.error).toBe('Validation failed');
-    expect(response.body.details.join('\n')).toContain(leaf);
+    expect(response.body.code).toBe('invalid_request');
+    expect(response.body.detail).toContain(leaf);
   });
 
   it('warns once for each sensitive key the patch stores', async () => {
@@ -343,7 +343,7 @@ describe('PATCH /api/config', () => {
         .patch('/api/config')
         .send({ cloud: { remote: { mode: 'managed' } } });
       expect(response.status).toBe(400);
-      expect(response.body.code).toBe('USE_REMOTE_ACCESS_API');
+      expect(response.body.code).toBe('invalid_request');
       expect((await store()).get('cloud').remote.mode).toBe('off');
     });
   });
@@ -368,6 +368,6 @@ describe('PUT /api/config/agents/defaultAgent', () => {
     ['not a string', { value: 123 }],
   ])('refuses a value that is %s', async (_label, body) => {
     const res = await request(server).put('/api/config/agents/defaultAgent').send(body).expect(400);
-    expect(res.body.error).toContain('non-empty');
+    expect(res.body.detail).toContain('non-empty');
   });
 });
