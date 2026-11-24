@@ -255,6 +255,30 @@
           "invalid_handle",
           "identity_not_external",
           "chat_already_bound",
+          "reserved_sender",
+          "reserved_subject",
+          "room_conversation",
+          "broadcast_not_bridgeable",
+          "chat_type_unknown",
+          "chat_route_paused",
+          "invalid_signature",
+          "connection_id_taken",
+          "connection_saved_not_started",
+          "cloud_link_required",
+          "cloud_unavailable",
+          "cloud_refused",
+          "app_not_set_up",
+          "app_not_supported",
+          "account_cleanup_pending",
+          "still_connected",
+          "other_agent_chat",
+          "app_off_in_chat",
+          "destination_unavailable",
+          "updates_unavailable",
+          "updates_changed",
+          "invalid_filter",
+          "request_open_elsewhere",
+          "review_resolving",
           "avatar_missing",
           "avatar_type_unsupported",
           "attachment_not_found",
@@ -3528,23 +3552,45 @@
           "holdId"
         ]
       },
-      "CancelHeldActionError": {
+      "AdapterCreateRequest": {
         "type": "object",
         "properties": {
-          "error": {
-            "type": "string"
-          },
-          "code": {
+          "type": {
             "type": "string",
-            "enum": [
-              "HOLD_NOT_FOUND",
-              "HOLD_REQUESTER"
-            ]
+            "minLength": 1
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
           }
         },
         "required": [
-          "error",
-          "code"
+          "type",
+          "id",
+          "config"
+        ]
+      },
+      "AdapterConfigUpdate": {
+        "type": "object",
+        "properties": {
+          "config": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "config"
         ]
       },
       "ConnectorGrantExclusionList": {
@@ -23226,16 +23272,44 @@
             }
           },
           "400": {
-            "description": "An agent or cursor is invalid."
+            "description": "An agent or cursor is invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "401": {
-            "description": "The API key is missing or no longer active."
+            "description": "The API key is missing or no longer active.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Agent runtime credentials cannot act as a program API key."
+            "description": "Agent runtime credentials cannot act as a program API key.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "404": {
-            "description": "The agent is not owned by this API key user."
+            "description": "The agent is not owned by this API key user.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "connectors.listAccessibleSubscriptions",
@@ -23370,13 +23444,34 @@
             }
           },
           "403": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "503": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "connectors.listConnectionsEventsDefinitions"
@@ -23592,13 +23687,34 @@
             }
           },
           "403": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "503": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "connectors.listConnectionsEventsSubscriptions"
@@ -24013,13 +24129,34 @@
             }
           },
           "403": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -24043,7 +24180,14 @@
             }
           },
           "503": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "connectors.createConnectionsEventsSubscriptions"
@@ -24113,13 +24257,34 @@
             }
           },
           "403": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "503": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "connectors.getConnectionsEventsSource"
@@ -24213,13 +24378,34 @@
             }
           },
           "400": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -24243,7 +24429,14 @@
             }
           },
           "503": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "connectors.updateConnectionsEventsSource"
@@ -24280,13 +24473,34 @@
             "description": "Local receive authority is closed; upstream cleanup may still be pending."
           },
           "403": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "503": {
-            "description": "Notifications are unavailable or the owner decision changed."
+            "description": "Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "connectors.deleteConnectionsEventsSubscriptions"
@@ -24538,10 +24752,24 @@
             }
           },
           "400": {
-            "description": "The amount is below $0.01, above the maximum, or not a number."
+            "description": "`invalid_request`: the amount is below $0.01, above the maximum, or not a number.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Only the person who owns this DorkOS can change spending."
+            "description": "`person_only` or `owner_only`: only the person who owns this DorkOS can change spending.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -24711,10 +24939,24 @@
             }
           },
           "400": {
-            "description": "The amount is below $0.01, above the maximum, or not a number."
+            "description": "`invalid_request`: the amount is below $0.01, above the maximum, or not a number.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Only the person who owns this DorkOS can change spending."
+            "description": "`person_only` or `owner_only`: only the person who owns this DorkOS can change spending.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -33272,27 +33514,279 @@
             }
           },
           "403": {
-            "description": "The caller is the agent that asked for the action (`HOLD_REQUESTER`)",
+            "description": "`forbidden`: the caller is the agent that asked for the action",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CancelHeldActionError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No action is waiting under that id: it already ran, was already cancelled, or DorkOS restarted (`HOLD_NOT_FOUND`)",
+            "description": "`not_found`: no action is waiting under that id. It already ran, was cancelled, or DorkOS restarted",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CancelHeldActionError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           }
         },
         "operationId": "connectors.cancelHolds"
+      }
+    },
+    "/api/relay/adapters": {
+      "post": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "Add a chat connection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdapterCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Added and started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the body or a setting failed its checks. `fields` lists the refused settings by key (`token`, `inbound.subject`), never their values.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "The keys of the settings to fix, as the connection type names them."
+                        }
+                      }
+                    }
+                  ],
+                  "description": "The error document every failed API request is answered with (RFC 9457)."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`forbidden`, `person_only` or `owner_only`: this caller may not make that change, or a turn DorkOS can’t vouch for tried to enter a secret.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`connection_id_taken`: a connection with that id already exists.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Always `no-store`: the held action is for this request only.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpRequired"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`connection_saved_not_started`: it was saved, but it couldn’t connect. Fix its token, then turn it on.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "relay.createAdapters"
+      }
+    },
+    "/api/relay/adapters/{id}/config": {
+      "patch": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "Save a chat connection’s settings",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdapterConfigUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the body or a setting failed its checks. `fields` lists the refused settings by key (`token`, `inbound.subject`), never their values.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "The keys of the settings to fix, as the connection type names them."
+                        }
+                      }
+                    }
+                  ],
+                  "description": "The error document every failed API request is answered with (RFC 9457)."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`forbidden`, `person_only` or `owner_only`: this caller may not make that change, or a turn DorkOS can’t vouch for tried to enter a secret.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found`: no connection with that id.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: who may reach your agents here changed since an agent asked.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Always `no-store`: the held action is for this request only.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpRequired"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "relay.updateAdaptersConfig"
       }
     },
     "/api/connectors/connections/{connectionId}/exclusions": {
@@ -33325,23 +33819,11 @@
             }
           },
           "404": {
-            "description": "No such app account here, or it belongs to someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
+            "description": "`not_found`: no such app account here, it belongs to someone else, or no such agent",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -33389,23 +33871,11 @@
             }
           },
           "404": {
-            "description": "No such app account here, or it belongs to someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
+            "description": "`not_found`: no such app account here, it belongs to someone else, or no such agent",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -33451,23 +33921,11 @@
             }
           },
           "404": {
-            "description": "No such app account here, or it belongs to someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
+            "description": "`not_found`: no such app account here, it belongs to someone else, or no such agent",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -33579,23 +34037,11 @@
             }
           },
           "404": {
-            "description": "No such change on your apps (`UNDO_NOT_FOUND`)",
+            "description": "`not_found`: no such change on your apps",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -33634,45 +34080,21 @@
             }
           },
           "404": {
-            "description": "Nothing to undo under that id (`UNDO_NOT_FOUND`)",
+            "description": "`not_found`: nothing to undo under that id",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
-          "409": {
-            "description": "Access changed since (`UNDO_STALE`)",
+          "412": {
+            "description": "`precondition_failed`: access changed since",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -33732,23 +34154,11 @@
             }
           },
           "404": {
-            "description": "No such app account here, or it belongs to someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
+            "description": "`not_found`: no such app account here, it belongs to someone else, or no such agent",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -33796,51 +34206,29 @@
           "400": {
             "description": "The body is invalid, or turns it on without the confirmation",
             "content": {
-              "application/json": {
-                "schema": {}
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
               }
             }
           },
           "404": {
-            "description": "No such app account here, or it belongs to someone else (`connection_not_found`)",
+            "description": "`not_found`: no such app account here, or it belongs to someone else",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "422": {
-            "description": "The switch is not offered for this app, because its changes can reach other people (`writes_back_unsupported_app`)",
+            "description": "`app_not_supported`: the switch is not offered for this app, because its changes can reach other people",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -33889,7 +34277,14 @@
             }
           },
           "403": {
-            "description": "Not the owner at the app: an agent, a program or another site."
+            "description": "Not the owner at the app: an agent, a program or another site.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "connectors.getMiniAppAccess"
@@ -33925,10 +34320,24 @@
             }
           },
           "403": {
-            "description": "Not the owner at the app."
+            "description": "Not the owner at the app.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "404": {
-            "description": "No live yes under that id (`MINI_APP_ACCESS_NOT_FOUND`)."
+            "description": "`not_found`: no live yes under that id.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "connectors.revokeMiniAppAccess"
@@ -51181,11 +51590,11 @@
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "`invalid_request`: the body failed its checks, or the bus refused the message before accepting it.",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -51201,78 +51610,21 @@
             }
           },
           "403": {
-            "description": "Reserved sender, destination or reply address, or a person's address from someone other than the person",
+            "description": "`reserved_sender`, `reserved_subject` (a destination or reply address DorkOS keeps), `room_conversation` (post in the room instead), `person_only` (a person's address, sent by someone other than the person) or `not_from_wifi`.",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Publication refused before acceptance",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Receipt storage/observer/caller transaction unavailable before acceptance, or response unavailable after durable acceptance. A retained locator does not permit replay.",
+            "description": "`temporarily_unavailable`: delivery status storage is unavailable before acceptance, or the answer is unavailable after it. After acceptance the problem carries `messageId` and `statusUrl`; a retained locator does not permit replay.",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "string"
-                        },
-                        "code": {
-                          "type": "string",
-                          "enum": [
-                            "RELAY_RECEIPT_TRANSACTION_ACTIVE",
-                            "RELAY_RECEIPT_OBSERVER_BUSY",
-                            "RELAY_RECEIPT_STORAGE_UNAVAILABLE"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error",
-                        "code"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "string"
-                        },
-                        "code": {
-                          "type": "string",
-                          "enum": [
-                            "RELAY_RECEIPT_RESPONSE_UNAVAILABLE"
-                          ]
-                        },
-                        "messageId": {
-                          "$ref": "#/components/schemas/RelayMessageId"
-                        },
-                        "statusUrl": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "error",
-                        "code",
-                        "messageId",
-                        "statusUrl"
-                      ]
-                    }
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -51401,11 +51753,11 @@
             }
           },
           "400": {
-            "description": "INVALID_RELAY_MESSAGE_ID after authentication",
+            "description": "`invalid_request`: not a message id (checked after authentication).",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -51421,38 +51773,21 @@
             }
           },
           "404": {
-            "description": "RELAY_RECEIPT_NOT_FOUND: unknown, expired, untracked and other-owner locators have the same response",
+            "description": "`not_found`: unknown, expired, untracked and other-owner locators have the same response.",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Receipt observer/storage/caller transaction unavailable",
+            "description": "`temporarily_unavailable`: delivery status storage is unavailable.",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "RELAY_RECEIPT_TRANSACTION_ACTIVE",
-                        "RELAY_RECEIPT_OBSERVER_BUSY",
-                        "RELAY_RECEIPT_STORAGE_UNAVAILABLE"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -51582,9 +51917,9 @@
           "404": {
             "description": "Message not found",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -51667,9 +52002,9 @@
           "400": {
             "description": "Validation error",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -51716,9 +52051,9 @@
           "404": {
             "description": "Endpoint not found",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -51845,9 +52180,9 @@
           "404": {
             "description": "Endpoint not found",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -62188,9 +62523,9 @@
           "400": {
             "description": "Unknown provider or empty secret",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -62298,9 +62633,9 @@
           "400": {
             "description": "Unknown provider",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -63010,9 +63345,9 @@
           "400": {
             "description": "Invalid catalog query or cursor",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -63078,9 +63413,9 @@
           "404": {
             "description": "The app has no logo, or its logo could not be fetched just now",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -63516,9 +63851,9 @@
           "403": {
             "description": "Verified operator authority is required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -63887,9 +64222,19 @@
           "403": {
             "description": "Verified operator authority is required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`app_not_set_up`: no working way to reach this app, so there is nothing to sign in to.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -63897,19 +64242,9 @@
           "409": {
             "description": "The idempotency key belongs to a different request",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Authentication is unavailable for the selected provider route",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -64274,9 +64609,9 @@
           "404": {
             "description": "Flow absent or owned by someone else",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -65198,9 +65533,9 @@
           "404": {
             "description": "Connection absent or owned by someone else",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -65362,9 +65697,9 @@
           "404": {
             "description": "Connection absent or owned by someone else",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -65507,9 +65842,9 @@
           "404": {
             "description": "Connection absent or owned by someone else",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -65660,9 +65995,9 @@
           "400": {
             "description": "Invalid app id or query",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -65670,9 +66005,9 @@
           "403": {
             "description": "Only the owner can read this, from the DorkOS app",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -65680,9 +66015,9 @@
           "404": {
             "description": "The named way of reaching apps is not set up",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -65690,9 +66025,9 @@
           "502": {
             "description": "The service could not list the app’s actions just now",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -65766,9 +66101,9 @@
           "404": {
             "description": "Connection absent or owned by someone else",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -65801,9 +66136,9 @@
           "404": {
             "description": "Account absent or owned by someone else",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -65811,9 +66146,9 @@
           "409": {
             "description": "Account must finish disconnecting before removal",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -66179,9 +66514,9 @@
           "404": {
             "description": "Connection absent or owned by someone else",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -66189,9 +66524,9 @@
           "409": {
             "description": "The idempotency key belongs to a different request",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -66356,9 +66691,9 @@
           "404": {
             "description": "Connection absent or owned by someone else",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -66502,9 +66837,9 @@
           "404": {
             "description": "Connection absent or owned by someone else",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -66834,9 +67169,9 @@
           "404": {
             "description": "Agent absent or owned by someone else",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -67169,9 +67504,9 @@
           "404": {
             "description": "Session absent or owned by someone else",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -67433,9 +67768,9 @@
           "400": {
             "description": "Invalid request body or connection id",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -67443,9 +67778,9 @@
           "403": {
             "description": "Refused: agents and programs cannot make account decisions",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -67453,19 +67788,19 @@
           "404": {
             "description": "Session absent, or the agent was not given that app account-wide",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Refused: turning it on would drop a limit the owner set on this chat for another agent (`session_access_other_agent`)",
+            "description": "`other_agent_chat`: turning it on would drop a limit the owner set on this chat for another agent.",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -73914,9 +74249,9 @@
           "401": {
             "description": "A verified program credential is required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -73924,9 +74259,9 @@
           "403": {
             "description": "Agent identity or an unverified operator is refused",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -80185,9 +80520,9 @@
           "404": {
             "description": "Review absent or belongs to another requester",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -86088,9 +86423,9 @@
           "404": {
             "description": "Review absent or owned by someone else",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -92017,9 +92352,9 @@
           "409": {
             "description": "Review is no longer pending or the target changed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -92307,9 +92642,9 @@
           "409": {
             "description": "The connection must be reconciled before it can be edited",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -92365,9 +92700,9 @@
           "404": {
             "description": "Connection absent or owned by someone else",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -92599,9 +92934,9 @@
           "409": {
             "description": "The preview was consumed, expired, or superseded",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -92778,9 +93113,9 @@
           "401": {
             "description": "A verified program credential is required",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -92898,9 +93233,9 @@
           "404": {
             "description": "Connection absent, ungranted, or owned by someone else",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -93703,9 +94038,9 @@
           "400": {
             "description": "Unknown agent",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -93713,9 +94048,9 @@
           "404": {
             "description": "Unknown binding",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -93823,9 +94158,9 @@
           "400": {
             "description": "Unknown agent",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -93833,9 +94168,9 @@
           "404": {
             "description": "Unknown unclaimed chat",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -93843,9 +94178,9 @@
           "409": {
             "description": "The chat was bound by something else in the meantime",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -93899,9 +94234,9 @@
           "404": {
             "description": "Unknown unclaimed chat",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -93934,9 +94269,9 @@
           "404": {
             "description": "Unknown unclaimed chat",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -112066,124 +112401,6 @@
           }
         },
         "operationId": "relay.testAdapters"
-      }
-    },
-    "/api/relay/adapters": {
-      "post": {
-        "tags": [
-          "Access"
-        ],
-        "summary": "Confirm a lasting access or account change",
-        "description": "The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {}
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The action completed",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "403": {
-            "description": "This caller cannot change access here"
-          },
-          "428": {
-            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
-            "headers": {
-              "Cache-Control": {
-                "description": "Always `no-store`: the held action is for this request only.",
-                "schema": {
-                  "type": "string",
-                  "enum": [
-                    "no-store"
-                  ]
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepUpRequired"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "relay.createAdapters"
-      }
-    },
-    "/api/relay/adapters/{id}/config": {
-      "patch": {
-        "tags": [
-          "Access"
-        ],
-        "summary": "Confirm a lasting access or account change",
-        "description": "The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {}
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The action completed",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "403": {
-            "description": "This caller cannot change access here"
-          },
-          "428": {
-            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
-            "headers": {
-              "Cache-Control": {
-                "description": "Always `no-store`: the held action is for this request only.",
-                "schema": {
-                  "type": "string",
-                  "enum": [
-                    "no-store"
-                  ]
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepUpRequired"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "relay.updateAdaptersConfig"
       }
     },
     "/api/relay/adapters/{id}/enable": {
