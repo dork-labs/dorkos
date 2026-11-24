@@ -26,7 +26,7 @@ export default function PrivacyPolicyPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Privacy Policy</h1>
-          <p className="text-warm-gray text-lg">Last updated: October 12, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: November 21, 2026</p>
           <p className="text-warm-gray leading-relaxed">
             DorkOS is made by {company.legalName}. When this page says “we,” that is who we mean.
           </p>
@@ -98,8 +98,19 @@ export default function PrivacyPolicyPage() {
             event, and only if feature-usage data is on.
           </p>
           <p className="text-warm-gray leading-relaxed">
-            The first time you run DorkOS, it shows a notice explaining this and sends nothing on
-            that first run. You can turn it off any time in three ways: run{' '}
+            Crash reports and AI run summaries (the model, token counts, time, and cost of each
+            agent turn) are separate choices, each off until you turn it on. Feature-usage events,
+            crash reports, and AI run summaries go to dorkos.ai, which passes them to PostHog, our
+            analytics service. The heartbeat and install counts stay in our own database. Every
+            channel carries the same random install id.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
+            If you send feedback from the app, it carries your message, anything you chose to
+            include (such as a picture or recent chat messages), and the same install id.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
+            The first time you run DorkOS, it shows a notice explaining this and sends no usage data
+            on that first run. You can turn it off any time in three ways: run{' '}
             <span className="font-mono">dorkos telemetry disable</span>, set the environment
             variable <span className="font-mono">DO_NOT_TRACK=1</span>, or use the Privacy and Data
             tab in settings. Crash reporting is a separate choice and stays off until you turn it
@@ -256,6 +267,11 @@ export default function PrivacyPolicyPage() {
                 If analytics is off, we do not.
               </li>
               <li>
+                When you link a device, you can also choose to link its usage data to your account.
+                It is off by default. If you turn it on, the device’s usage data, your account, and
+                your signed-in website activity become one analytics record.
+              </li>
+              <li>
                 You can delete your account from your account page. This removes the account and its
                 active hosted account-access data. Required security and audit records, temporary
                 cleanup records, and records held by other services can remain. We also ask PostHog
@@ -269,12 +285,14 @@ export default function PrivacyPolicyPage() {
               When you install from the Marketplace
             </h3>
             <p className="text-warm-gray leading-relaxed">
-              We count installs so we can show how popular a package is. We record the package name,
-              whether the install worked, how long it took, and a random one-time ID.
+              If you turn on install counts in the app, we count installs so we can show how popular
+              a package is. We record the package name, whether the install worked, how long it
+              took, and your install’s random id, the same one every app channel uses.
             </p>
             <p className="text-warm-gray leading-relaxed">
               We do not record your name, IP address, username, computer name, or which folder you
-              installed into. The count is anonymous, and we cannot tie it back to you.
+              installed into. The count is anonymous unless you link the device’s usage data to your
+              account.
             </p>
           </div>
 
@@ -283,8 +301,13 @@ export default function PrivacyPolicyPage() {
             <p className="text-warm-gray leading-relaxed">
               We use PostHog, a privacy-friendly analytics tool, to understand how the website is
               used. We count page visits, desktop app downloads, and a few clicks, like copying the
-              install command. There is no session recording, we do not log what you type, and we do
-              not use tracking that follows you to other sites.
+              install command. When you open the marketplace, the visit event notes whether a search
+              was active and roughly how many packages matched, not the search words. If a page
+              breaks, we record the error type and where in our code it happened, never the error
+              text. Page addresses are recorded without their search words. There is no recording of
+              your screen, and we do not log what you type, with one exception: when you sign up for
+              the newsletter, the signup event notes your email’s domain (like gmail.com), never the
+              rest of the address. We do not use tracking that follows you to other sites.
             </p>
             <p className="text-warm-gray leading-relaxed">
               How we ask depends on where you are. In the EU, the EEA, the UK, and Switzerland, we
@@ -315,10 +338,11 @@ export default function PrivacyPolicyPage() {
               new for each copy. It holds a random code and, if the link that brought you had one,
               its campaign tag. We record the same tag with your copy. If you later turn on
               feature-usage data in the app, we can count how many copies led to an install by
-              matching the tag. Matching the tag ties that one copy to that one install. Nothing
-              merges your website visits with the app or with an account. Your name, email, and IP
-              address are never part of it. Without analytics cookies, or with Do Not Track or
-              Global Privacy Control on, the command you copy has no tag. The desktop downloads and{' '}
+              matching the tag. Matching the tag ties that one copy to that one install. The tag on
+              its own does not merge your website visits with the app or with an account; linking
+              usage data to your account, above, does. Your name, email, and IP address are never
+              part of it. Without analytics cookies, or with Do Not Track or Global Privacy Control
+              on, the command you copy has no tag. The desktop downloads and{' '}
               <span className="font-mono">npm install -g</span> never carry one.
             </p>
 
