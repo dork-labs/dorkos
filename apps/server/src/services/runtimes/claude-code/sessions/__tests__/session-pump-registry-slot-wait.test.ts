@@ -6,7 +6,7 @@
  * pin the replacement: a launch with nothing to reclaim waits for a slot, says
  * so once, and is refused only when the wait runs out.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 
 import {
   SessionPumpRegistry,
@@ -16,6 +16,11 @@ import {
 import { FakeQuery, initMessage } from './fake-pump-query.js';
 
 const identity = (sessionId: string): string => sessionId;
+
+/** Poll a real signal every millisecond rather than sleeping a guessed time. */
+function until(check: () => void): Promise<void> {
+  return vi.waitFor(check, { interval: 1, timeout: 2000 });
+}
 
 /** Acquire options for a ceiling of one, with a launcher that inits on demand. */
 function launchOpts(overrides: Partial<AcquirePumpOptions> = {}): AcquirePumpOptions {
@@ -53,7 +58,7 @@ describe('SessionPumpRegistry, when every slot is mid-turn', () => {
       .warm();
     let started = false;
     void waiting.then(() => (started = true));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await until(() => expect(registry.isWaitingForSlot('next')).toBe(true));
 
     expect(started).toBe(false);
     expect(waits).toBe(1);
@@ -94,7 +99,7 @@ describe('SessionPumpRegistry, when every slot is mid-turn', () => {
     await busy.dispatch([{ content: 'a', messageId: 'msg-a' }]);
 
     const waiting = registry.acquire('gone', launchOpts()).warm();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await until(() => expect(registry.isWaitingForSlot('gone')).toBe(true));
     await registry.evict('gone', 'stop');
 
     await expect(waiting).rejects.toMatchObject({ reason: 'process-gone' });
@@ -124,10 +129,15 @@ describe('SessionPumpRegistry, when every slot is mid-turn', () => {
       .acquire('b', launchOpts())
       .dispatch([{ content: 'b', messageId: 'msg-b2' }])
       .then(() => outcomes.push('b'));
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await until(() => {
+      expect(registry.isWaitingForSlot('a')).toBe(true);
+      expect(registry.isWaitingForSlot('b')).toBe(true);
+    });
 
     busy.endTurn();
     await Promise.race([a, b]);
+    // An absence check: nothing signals "the second waiter did not start", so
+    // give it a short real window in which a wrong release would show.
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(outcomes).toHaveLength(1);
@@ -147,7 +157,7 @@ describe('SessionPumpRegistry, when every slot is mid-turn', () => {
     expect(registry.stopSlotWait('busy')).toBe(false);
 
     const waiting = registry.acquire('next', launchOpts()).warm();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await until(() => expect(registry.isWaitingForSlot('next')).toBe(true));
     expect(registry.stopSlotWait('next')).toBe(true);
 
     await expect(waiting).rejects.toMatchObject({ reason: 'process-gone' });
@@ -187,7 +197,9 @@ describe('SessionPumpRegistry, when every slot is mid-turn', () => {
         () => results.push('refused')
       );
     });
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await until(() => {
+      for (let i = 0; i < N; i += 1) expect(registry.isWaitingForSlot(`mention-${i}`)).toBe(true);
+    });
     expect(results).toEqual([]);
     expect(registry.liveCount()).toBe(K);
 
@@ -212,14 +224,13 @@ describe('SessionPumpRegistry, when every slot is mid-turn', () => {
     const firstDone = first.dispatch([{ content: '1', messageId: 'msg-1' }]).then(() => {
       order.push('first');
     });
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await until(() => expect(registry.isWaitingForSlot('first')).toBe(true));
     const second = registry.acquire('second', launchOpts());
     const secondDone = second.dispatch([{ content: '2', messageId: 'msg-2' }]).then(() => {
       order.push('second');
     });
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await until(() => expect(registry.isWaitingForSlot('second')).toBe(true));
     expect(registry.isWaitingForSlot('first')).toBe(true);
-    expect(registry.isWaitingForSlot('second')).toBe(true);
 
     busy.endTurn();
     await firstDone;
@@ -272,16 +283,16 @@ describe('SessionPumpRegistry, when every slot is mid-turn', () => {
       })
     );
     const warming = pump.warm();
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await until(() => expect(registry.isWaitingForSlot('staged')).toBe(true));
     const dispatching = pump.dispatch([{ content: 'the turn', messageId: 'msg-turn' }]);
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    // The turn joins while the launch is still waiting, which is the case.
+    expect(registry.isWaitingForSlot('staged')).toBe(true);
 
     busy.endTurn();
     await warming;
     await dispatching;
-    await new Promise((resolve) => setTimeout(resolve, 5));
     expect(pump.state).toBe('running');
-    expect(received.join(' ')).toContain('the turn');
+    await until(() => expect(received.join(' ')).toContain('the turn'));
   });
 
   // Purpose: a process that is closing frees its slot in seconds. A launch
