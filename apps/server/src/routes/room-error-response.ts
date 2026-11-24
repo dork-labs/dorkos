@@ -134,6 +134,7 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // A 400: the 👀 receipt is the room's own, so an agent's request for it is
   // malformed rather than refused for lack of a credential.
   RECEIPT_EMOJI_RESERVED: 400,
+  INVALID_REACTION: 400,
   NO_SURVIVING_BRIDGE: 409,
   ATTACHMENT_NOT_FOUND: 404,
   ATTACHMENT_ALREADY_POSTED: 409,
