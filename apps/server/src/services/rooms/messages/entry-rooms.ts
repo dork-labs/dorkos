@@ -11,7 +11,7 @@
  *
  * @module services/rooms/messages/entry-rooms
  */
-import { eq, roomEntries, type Db } from '@dorkos/db';
+import { asc, eq, roomEntries, type Db } from '@dorkos/db';
 
 /** Where one message sits: its room, its place there, and the thread it is in. */
 export interface EntryLocation {
@@ -31,11 +31,14 @@ export interface EntryLocation {
 const MAX_ENTRY_ROOMS = 4;
 
 /**
- * Every room that holds a message with this id.
+ * Every room that holds a message with this id, in room order then log order,
+ * so the capped answer is the same on every call.
  *
- * `room_entries` is keyed by room, so this reads the table rather than an
- * index. That is acceptable for a link, which is opened by a person's click,
- * and it is the reason nothing on a hot path may call it.
+ * **It scans `room_entries`.** The table is keyed by room, and nothing indexes
+ * an entry id on its own, so every call reads the whole table. Any caller can
+ * reach it: a person opening a `/r/` link, and an agent through the
+ * `resolve_link` tool or `GET /api/links/target`. Nothing on a hot path may
+ * call it. A follow-up adds an index on `room_entries(id)`.
  *
  * @param db - The server database.
  * @param entryId - The message's id, exactly as minted.
@@ -50,6 +53,7 @@ export function entryLocations(db: Db, entryId: string): EntryLocation[] {
     })
     .from(roomEntries)
     .where(eq(roomEntries.id, entryId))
+    .orderBy(asc(roomEntries.roomId), asc(roomEntries.seq))
     .limit(MAX_ENTRY_ROOMS)
     .all();
 }

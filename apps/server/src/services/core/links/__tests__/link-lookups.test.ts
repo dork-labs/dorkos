@@ -215,6 +215,23 @@ describe('the live link lookups', () => {
       expect(await resolve(`dork:entry:${said.id}`, AS_BO)).toEqual(NOT_FOUND);
       expect(await resolve('dork:entry:01JD3H000000000000000NOPE', AS_BO)).toEqual(NOT_FOUND);
     });
+
+    it('is not found for an agent that joined the room after it was said', async () => {
+      const said = harness.service.post(anaOnlyRoomId, {
+        authorId: harness.human,
+        text: 'The seed order goes in on Friday.',
+      });
+      harness.service.addMember(anaOnlyRoomId, harness.human, { agentPath: '/agents/bo' });
+      // Bo is in the room now and may open it, but not a message from before he joined:
+      // an agent reads a room only from its join onwards, as its own room tools do.
+      expect(await resolve(`dork:room:${anaOnlyRoomId}`, AS_BO)).toEqual({
+        kind: 'room',
+        roomId: anaOnlyRoomId,
+      });
+      expect(await resolve(`dork:entry:${said.id}`, AS_BO)).toEqual(NOT_FOUND);
+      // The person, for whom the room alone decides, still opens it.
+      expect(await resolve(`dork:entry:${said.id}`, PERSON)).toMatchObject({ kind: 'entry' });
+    });
   });
 
   describe('an agent', () => {

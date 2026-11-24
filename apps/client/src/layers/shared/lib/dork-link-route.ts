@@ -23,7 +23,12 @@ import type { Transport } from '@dorkos/shared/transport';
 import { appRoutes } from './route-factory';
 import { toSession } from './session-link';
 
-/** Whether an error is the server's "nothing here" answer. */
+/**
+ * Whether an error is the server's "nothing here" answer. Decided by the HTTP
+ * status alone, never by the body's code: the code is `LINK_NOT_FOUND` in
+ * today's refusal and `not_found` once capability refusals are problem
+ * documents, and a 404 means the same either way.
+ */
 function isNotFound(error: unknown): boolean {
   return !!error && typeof error === 'object' && 'status' in error && error.status === 404;
 }

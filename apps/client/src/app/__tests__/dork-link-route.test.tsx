@@ -124,6 +124,26 @@ describe('the /r/ link route', () => {
     expect(await screen.findByTestId('landed')).toHaveTextContent(/^\/$/);
   });
 
+  it('asks the server nothing on a hover preload, and still opens the link on the click', async () => {
+    const { transport, resolveDorkLink } = transportAnswering({
+      kind: 'chat',
+      sessionId: '7c1e4b2a-runtime',
+    });
+    const { router } = buildRouter(transport, '/');
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByTestId('landed')).toHaveTextContent('/');
+
+    // What `defaultPreload: 'intent'` does when a pointer rests on the link.
+    await router.preloadRoute({ to: '/r/$', params: { _splat: 'dork:chat:7c1e4b2a' } } as never);
+    expect(resolveDorkLink).not.toHaveBeenCalled();
+
+    await router.navigate({ href: '/r/dork:chat:7c1e4b2a' });
+    expect(await screen.findByTestId('landed')).toHaveTextContent(
+      '/session?session=7c1e4b2a-runtime'
+    );
+    expect(resolveDorkLink).toHaveBeenCalledTimes(1);
+  });
+
   it('opens a room', async () => {
     await open('/r/dork:room:01JD3G', { kind: 'room', roomId: '01JD3G' });
     expect(await screen.findByTestId('landed')).toHaveTextContent('/channels?id=01JD3G');
