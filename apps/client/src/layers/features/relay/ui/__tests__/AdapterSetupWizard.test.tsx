@@ -798,7 +798,7 @@ describe('AdapterSetupWizard', () => {
     mockTransport.addRelayAdapter = vi
       .fn()
       .mockRejectedValue(Object.assign(new Error('Something else.'), { code, status: 409 }));
-    mockTransport.createBinding = vi.fn();
+    mockTransport.createBinding = vi.fn().mockResolvedValue({ binding: { id: 'b-1' } });
 
     render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
       wrapper: Wrapper,
@@ -818,18 +818,29 @@ describe('AdapterSetupWizard', () => {
 
     await waitFor(() => expect(mockTransport.addRelayAdapter).toHaveBeenCalled());
     if (outcome === 'toast') {
+      // Saved, so setup finishes: the agent is linked, and the person is told
+      // to fix the token rather than left with a connection nobody answers.
+      await waitFor(() => {
+        expect(mockTransport.createBinding).toHaveBeenCalledWith(
+          expect.objectContaining({ adapterId: 'slack', agentId: 'agent-1' })
+        );
+      });
       await waitFor(() => {
         expect(toastError).toHaveBeenCalledWith(
           expect.stringContaining('Couldn’t reach'),
-          expect.objectContaining({ description: expect.stringMatching(/token and network/) })
+          expect.objectContaining({
+            description: expect.stringMatching(
+              /go to My Agent once it connects\. Check your token/
+            ),
+          })
         );
       });
     } else {
       await waitFor(() => {
         expect(screen.getByLabelText(/api token/i)).toBeInTheDocument();
       });
+      expect(mockTransport.createBinding).not.toHaveBeenCalled();
     }
-    expect(mockTransport.createBinding).not.toHaveBeenCalled();
   });
 
   // A refused setting comes back by key, and the form marks that field (DOR-4979).

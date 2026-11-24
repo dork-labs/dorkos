@@ -85,12 +85,9 @@ export function createRelayWebhookRoutes(adapterManager: AdapterManager): Hono<A
     }
     // Raw parsing skips requests without a content type. A cast cannot turn
     // an absent body (or a body consumed by an earlier parser) back into bytes.
+    // Refused flat, as a missing connection is, so it can't probe which ids run.
     const rawBody = readJsonBody(c);
-    if (!Buffer.isBuffer(rawBody)) {
-      return problem(c, 'malformed_request', {
-        detail: 'Send a request body with a content type.',
-      });
-    }
+    if (!Buffer.isBuffer(rawBody)) return refused();
     const webhookAdapter = adapter as WebhookAdapter;
     const result = await webhookAdapter.handleInbound(
       rawBody,

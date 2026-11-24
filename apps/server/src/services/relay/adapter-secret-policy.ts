@@ -226,11 +226,17 @@ export function assertSecretReferences(
         ? 'names a stored secret. Enter the secret itself'
         : referenceRefusal(adapterId, label, value, writer === 'person');
     if (refusal) {
-      // A secret map's entry (`headers.Authorization`) is marked on its field (`headers`).
-      const field =
-        secretFieldKeys(manifest).find((key) => label === key || label.startsWith(`${key}.`)) ??
-        label;
-      throw new AdapterError(`Field '${label}' ${refusal}.`, 'INVALID_CONFIG', adapterId, [field]);
+      // A secret map's entry (`headers.Authorization`) is marked on its manifest
+      // field (`headers`): the entry's own name was typed by a person, so it never goes back.
+      const field = secretFieldKeys(manifest).find(
+        (key) => label === key || label.startsWith(`${key}.`)
+      );
+      throw new AdapterError(
+        `Field '${label}' ${refusal}.`,
+        'INVALID_CONFIG',
+        adapterId,
+        field === undefined ? [] : [field]
+      );
     }
   }
 }

@@ -38,6 +38,17 @@ describe('1. an adapter naming file:anthropic', () => {
     }
   });
 
+  // A header's name is typed by a person, so `fields` names the manifest field only.
+  it('marks a refused header on its field, never by the name a person typed', () => {
+    const config = webhook('wh', {
+      secret: 'outbound-secret-16chars',
+      headers: { 'X-Private-Name': 'file:anthropic' },
+    }).config;
+    expect(() => assertSecretReferences('wh', config, WEBHOOK_MANIFEST, 'person')).toThrow(
+      expect.objectContaining({ fields: ['outbound.headers'] })
+    );
+  });
+
   it('is refused at resolve, before the store is read, in a header too', async () => {
     const config = webhook('wh', {
       secret: 'outbound-secret-16chars',

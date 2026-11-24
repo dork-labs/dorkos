@@ -188,23 +188,29 @@ function toJsonObject(key: string, value: unknown): unknown {
 }
 
 /**
- * The config field keys a schema refused (`token`, `inbound.subject`), for the
- * form to mark: keys only, never a value (DOR-4979).
+ * The manifest field keys a schema refused (`token`, `inbound.subject`), for
+ * the form to mark (DOR-4979). Only a key the manifest declares is sent: a
+ * path into a list or a free-form map (a header's name, which a person typed)
+ * is marked on the field that owns it, and anything else is dropped.
  *
  * @param error - The refusal.
  * @param skip - Leading path segments that are not the config's own: `1` for the
  *   entry envelope, whose config fields sit under `config`.
+ * @param manifest - The adapter type's manifest; without one, nothing is named.
  */
-function configFieldKeys(error: z.ZodError, skip: number): string[] {
+function configFieldKeys(
+  error: z.ZodError,
+  skip: number,
+  manifest: AdapterManifest | undefined
+): string[] {
+  const declared = (manifest?.configFields ?? []).map((field) => field.key);
   const keys = error.issues
     .filter((issue) => skip === 0 || issue.path[0] === 'config')
-    // A list item (`allowFrom.0`) is marked on its field (`allowFrom`).
     .map((issue) => {
-      const path = issue.path.slice(skip);
-      const end = path.findIndex((part) => typeof part === 'number');
-      return (end === -1 ? path : path.slice(0, end)).map(String).join('.');
+      const path = issue.path.slice(skip).map(String).join('.');
+      return declared.find((key) => path === key || path.startsWith(`${key}.`));
     })
-    .filter((key) => key !== '');
+    .filter((key): key is string => key !== undefined);
   return [...new Set(keys)];
 }
 
@@ -250,7 +256,7 @@ export function parseAdapterConfigForPersist(
       `Invalid adapter entry: ${z.prettifyError(envelope.error)}`,
       'INVALID_CONFIG',
       undefined,
-      configFieldKeys(envelope.error, 1)
+      configFieldKeys(envelope.error, 1, manifest)
     );
   }
 
@@ -266,7 +272,7 @@ export function parseAdapterConfigForPersist(
       `Invalid ${envelope.data.type} configuration: ${z.prettifyError(config.error)}`,
       'INVALID_CONFIG',
       undefined,
-      configFieldKeys(config.error, 0)
+      configFieldKeys(config.error, 0, manifest)
     );
   }
   return { ...envelope.data, config: config.data } as AdapterConfig;

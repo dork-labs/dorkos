@@ -78,9 +78,6 @@ const RECEIPT_NOT_FOUND = problemBody('not_found', {
 const INVALID_SIGNATURE = problemBody('invalid_signature', {
   detail: 'The signature, time or nonce didn’t check out.',
 });
-const BODY_WITHOUT_TYPE = problemBody('malformed_request', {
-  detail: 'Send a request body with a content type.',
-});
 /** Any problem document with this code. */
 const problemWith = (code: string) =>
   z.object({ code: z.literal(code), detail: z.string() }).loose();
@@ -422,7 +419,7 @@ contractSuite('the Relay groups, login off, nothing set up', [
       // The refused settings by key, for the form to mark; never their values.
       body: problemBody('invalid_request', {
         detail: 'Check this connection’s settings, then save again.',
-        extensions: { fields: ['inbound.subject', 'inbound.secret', 'outbound'] },
+        extensions: { fields: ['inbound.subject', 'inbound.secret'] },
       }),
     },
   },
@@ -1006,7 +1003,8 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       path: url,
       headers: untyped,
       body,
-      expect: { status: 400, body: BODY_WITHOUT_TYPE },
+      // Flat, as every unverified refusal is, so it can't probe which ids run.
+      expect: { status: 401, body: INVALID_SIGNATURE },
     });
   });
 

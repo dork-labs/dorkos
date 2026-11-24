@@ -231,11 +231,9 @@ describe('signed Relay JSON through the finalized application', () => {
       .set(signed())
       .send(EXACT.toString('utf8'))
       .unset('Content-Type');
-    expect(response.status).toBe(400);
-    expect(response.body).toMatchObject({
-      code: 'malformed_request',
-      detail: 'Send a request body with a content type.',
-    });
+    // The flat refusal every unverified request gets, so it can't probe which ids run.
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual(INVALID_SIGNATURE);
     expect(inbound).toHaveBeenCalledTimes(0);
     expect(publish).toHaveBeenCalledTimes(0);
     expect((await send()).status).toBe(200);
@@ -473,7 +471,7 @@ describe('signed Relay JSON through the finalized application', () => {
     expect(inbound).toHaveBeenCalledTimes(1);
     expect(inbound.mock.calls[0]![0]).toEqual(empty);
     const untyped = await request(target.server).post(URL).set(signed(empty));
-    expect(untyped.status).toBe(400);
+    expect(untyped.status).toBe(401);
     expect(inbound).toHaveBeenCalledTimes(1);
     expect(publish).toHaveBeenCalledTimes(0);
   });

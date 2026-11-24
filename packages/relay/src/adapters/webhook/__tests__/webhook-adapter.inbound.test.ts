@@ -169,6 +169,19 @@ describe('WebhookAdapter inbound', () => {
       expect(result.status).toBe(503);
     });
 
+    // An unsigned caller must not learn the connection exists but isn't running.
+    it('answers an unsigned request to an unstarted adapter as any bad signature', async () => {
+      const unstartedAdapter = makeAdapter();
+      const body = '{"x":1}';
+      const result = await unstartedAdapter.handleInbound(
+        Buffer.from(body),
+        buildHeaders(body, 'not-the-secret-at-all')
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.status).toBeUndefined();
+    });
+
     it('returns error when relay.publish() throws', async () => {
       vi.mocked(relay.publish).mockRejectedValueOnce(new Error('Relay unavailable'));
 

@@ -194,6 +194,40 @@ describe('Adapter routes', () => {
       expect(res.body.code).toBe('invalid_signature');
     });
 
+    // DOR-3650 / DOR-4979 review: everything before a verified signature looks
+    // the same, so an unsigned caller can't tell which ids exist or run.
+    it('answers every unverified refusal with the same status and body', async () => {
+      const unknown = await request(server)
+        .post('/api/relay/webhooks/wh-nobody')
+        .set('Content-Type', 'application/json')
+        .send('{}');
+
+      const registry = adapterManager.getRegistry();
+      vi.mocked(registry.get).mockReturnValueOnce(undefined);
+      const stopped = await request(server)
+        .post('/api/relay/webhooks/wh-github')
+        .set('Content-Type', 'application/json')
+        .send('{}');
+
+      const untyped = await request(server).post('/api/relay/webhooks/wh-github');
+
+      vi.mocked(adapterManager._mockWebhookAdapter.handleInbound).mockResolvedValue({
+        ok: false,
+        error: 'Invalid signature',
+      });
+      const badSignature = await request(server)
+        .post('/api/relay/webhooks/wh-github')
+        .set('Content-Type', 'application/json')
+        .send('{}');
+
+      for (const res of [stopped, untyped, badSignature]) {
+        expect(res.status).toBe(unknown.status);
+        expect(res.body).toEqual(unknown.body);
+      }
+      expect(unknown.status).toBe(401);
+      expect(unknown.body.code).toBe('invalid_signature');
+    });
+
     it.each([
       [503, 'temporarily_unavailable'],
       [500, 'internal_error'],

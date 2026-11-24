@@ -259,8 +259,6 @@ export class WebhookAdapter extends BaseRelayAdapter {
     if (this.invalidSubject) {
       return { ok: false, error: WEBHOOK_SERVER_SUBJECT_REFUSAL, status: 403 };
     }
-    if (!this.relay) return { ok: false, error: 'Adapter not started', status: 503 };
-
     const signature = normalizeHeader(headers['x-signature']);
     const timestamp = normalizeHeader(headers['x-timestamp']);
     const nonce = normalizeHeader(headers['x-nonce']);
@@ -297,6 +295,11 @@ export class WebhookAdapter extends BaseRelayAdapter {
       return { ok: false, error: 'Invalid signature' };
     }
 
+    // Only a verified caller learns the connection isn't running (DOR-4979):
+    // before this, every refusal is the same flat answer.
+    const relay = this.relay;
+    if (!relay) return { ok: false, error: 'Adapter not started', status: 503 };
+
     // 5. Register nonce with TTL
     this.nonceMap.set(nonceKey, Date.now() + NONCE_TTL_MS);
 
@@ -317,7 +320,7 @@ export class WebhookAdapter extends BaseRelayAdapter {
         responseContext: { platform: 'webhook' },
       };
 
-      const result = await this.relay.publish(this.config.inbound.subject, payload, {
+      const result = await relay.publish(this.config.inbound.subject, payload, {
         from: `relay.webhook.${this.id}`,
         ...(this.continuedBudget(headers) ?? {}),
       });
