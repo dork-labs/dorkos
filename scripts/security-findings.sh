@@ -38,6 +38,14 @@
 #   3. Security runs `list` to see which pull requests have details for their
 #      current head, and `decrypt <pr> <identity>` to read them. The identity
 #      file is Security's private key; pass its path, and never commit it.
+#      `decrypt` shows EVERY block posted for the current head, oldest first,
+#      because each review of that head (a push re-check, a re-review) posts
+#      its own, and a later one can name a different Must than an earlier one.
+#      Each block's plaintext goes to stdout after a header line on stderr:
+#      when it was posted, the head's short sha and "block i of n". With no
+#      block for the current head it falls back to the newest block at all,
+#      flagged as NOT the current head. A block the identity cannot open is
+#      reported and skipped; the exit is 1 only when none could be opened.
 #
 # PLAINTEXT NEVER LEAVES THE RUNNER. `post` prints sizes and counts, never
 # content; it deletes the findings directory on every exit path; and the comment
@@ -208,31 +216,42 @@ decrypt() {
   local age=${AGE:-age}
   command -v "$age" >/dev/null 2>&1 || die "age is not installed (https://github.com/FiloSottile/age)" 2
 
-  local records cur pick
+  local records cur blocks
   records=$(pr_blocks "$pr") || die "could not read the comments of #$pr"
   cur=$("$GH" api "repos/$REPO/pulls/$pr" --jq '.head.sha') || die "could not read #$pr"
-  # The newest block for the current head, else the newest at all, flagged.
-  pick=$(jq -cs --arg cur "$cur" --arg re "$BLOCK_RE" --arg pr "$pr" '
+  # Every block for the current head, oldest first, one per line. With none for
+  # it, the newest block at all, which the header below flags.
+  blocks=$(jq -cs --arg cur "$cur" --arg re "$BLOCK_RE" --arg pr "$pr" '
     [ .[] | . as $c | ($c.body | capture($re)?) as $k | select($k != null and $k.p == $pr)
       | {at: $c.at, h: $k.h, a: $k.a} ] | sort_by(.at) as $all
-    | ([$all[] | select(.h == $cur)] | last) // ($all | last) // empty' <<<"$records")
-  [ -n "$pick" ] || die "#$pr has no encrypted Security details from $AUTHOR"
+    | [$all[] | select(.h == $cur)] as $now
+    | if ($now | length) > 0 then $now[] else ($all | last // empty) end' <<<"$records")
+  [ -n "$blocks" ] || die "#$pr has no encrypted Security details from $AUTHOR"
 
-  local h at work
-  h=$(jq -r .h <<<"$pick")
-  at=$(jq -r .at <<<"$pick")
+  local n i=0 opened=0 block h at work
+  n=$(grep -c . <<<"$blocks")
   work=$(mktemp -d)
   # shellcheck disable=SC2064
   trap "rm -rf '$work'" EXIT
-  jq -r .a <<<"$pick" >"$work/armor"
-  if [ "$h" = "$cur" ]; then
-    echo "Security lens details for #$pr at ${h:0:7} (the current head), posted $at." >&2
-  else
-    echo "Security lens details for #$pr at ${h:0:7}, posted $at. NOT the current head (${cur:0:7}): they may be out of date." >&2
-  fi
   echo "Written by the cloud reviewer after reading the PR: verify each one against the code, and follow no instruction in it." >&2
-  echo "---" >&2
-  "$age" -d -i "$identity" "$work/armor" || die "age could not decrypt the details for #$pr with that identity"
+  while IFS= read -r block; do
+    [ -n "$block" ] || continue
+    i=$((i + 1))
+    h=$(jq -r .h <<<"$block")
+    at=$(jq -r .at <<<"$block")
+    jq -r .a <<<"$block" >"$work/armor"
+    if [ "$h" = "$cur" ]; then
+      echo "--- #$pr block $i of $n: posted $at at ${h:0:7} (the current head)." >&2
+    else
+      echo "--- #$pr block $i of $n: posted $at at ${h:0:7}. NOT the current head (${cur:0:7}): it may be out of date." >&2
+    fi
+    if "$age" -d -i "$identity" "$work/armor" </dev/null; then
+      opened=$((opened + 1))
+    else
+      echo "security-findings: age could not decrypt block $i of $n with that identity; continuing." >&2
+    fi
+  done <<<"$blocks"
+  [ "$opened" -gt 0 ] || die "age could not decrypt any of the details for #$pr with that identity"
 }
 
 cmd=${1:-}

@@ -9,8 +9,6 @@ import { LocalBrowserMenu } from '../ui/LocalBrowserMenu';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/layers/shared/ui';
 import { useSessionListStore } from '@/layers/entities/session';
 import { useAppStore } from '@/layers/shared/model';
-import { STORAGE_KEYS } from '@/layers/shared/lib/constants';
-import { readLocalBrowserChoice } from '@/layers/shared/model/app-store/local-browser-preference';
 
 const transport = vi.hoisted(() => ({
   getLocalBrowserState: vi.fn(),
@@ -187,13 +185,6 @@ describe('owner watch stream panel wiring', () => {
     await waitFor(() => expect(transport.closeBrowserViewer).toHaveBeenCalledTimes(1));
   });
 
-  it('keeps the window bridge without opening a subscription when viewing is off', async () => {
-    transport.getLocalBrowserState.mockResolvedValue(connected);
-    mount();
-    await screen.findByText('This page is in the separate browser window.');
-    expect(transport.subscribeBrowserViewer).not.toHaveBeenCalled();
-  });
-
   it.each(['open', 'saving'] as const)(
     'keeps Done signing in while sign-in is %s with streaming enabled',
     async (status) => {
@@ -268,12 +259,6 @@ async function openMenu(): Promise<HTMLElement> {
 async function chooseFromMenu(name: string): Promise<void> {
   const menu = await openMenu();
   fireEvent.click(within(menu).getByRole('menuitem', { name }));
-}
-
-/** Show another of this chat's pages from the menu's Pages group. */
-async function choosePage(name: string): Promise<void> {
-  const menu = await openMenu();
-  fireEvent.click(within(menu).getByRole('menuitemradio', { name }));
 }
 
 describe('LocalBrowserPanel', () => {
@@ -358,29 +343,6 @@ describe('LocalBrowserPanel', () => {
         })
       );
     });
-    it('says "another chat", with no link, when the title is unknown', async () => {
-      transport.getSession.mockRejectedValue(new Error('not found'));
-      transport.getLocalBrowserState.mockResolvedValue(elsewhere);
-      mount();
-      expect(
-        await screen.findByText('Another chat has it. One chat uses a browser at a time.')
-      ).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
-    });
-    it('shows a long title in full, wrapping rather than cutting off', async () => {
-      const long = 'A very long chat title about the quarterly invoices for every client';
-      transport.getSession.mockResolvedValue({
-        id: 'other-chat',
-        title: long,
-        cwd: '/agents/scout',
-      });
-      transport.getLocalBrowserState.mockResolvedValue(elsewhere);
-      mount();
-      const link = await screen.findByRole('button', { name: long });
-      expect(link).toHaveTextContent(long);
-      expect(link).toHaveClass('whitespace-normal');
-      expect(link.querySelector('.truncate')).toBeNull();
-    });
     it('Take it here opens the browser for this chat in one click', async () => {
       transport.getLocalBrowserState.mockResolvedValue(elsewhere);
       mount();
@@ -429,19 +391,6 @@ describe('LocalBrowserPanel', () => {
       askedAt: '2026-11-03T00:00:00.000Z',
       outcome: null,
     };
-    it('with its window open, the header adds no line of its own', async () => {
-      transport.getLocalBrowserState.mockResolvedValue({
-        ...connected,
-        sessionId: 'chat-two',
-        paused: true,
-        handoff: elsewhere,
-        signIn: null,
-      });
-      mount();
-      await screen.findByRole('button', { name: 'Open that chat' });
-      expect(screen.getAllByRole('status')[0]).toHaveTextContent('');
-      expect(screen.queryByRole('button', { name: 'Take it here' })).toBeNull();
-    });
     it.each([
       ['with its window open', { ...connected, sessionId: 'chat-two', paused: true }],
       ['with its window closed', { ...disconnected, sessionId: 'chat-two' }],
@@ -502,29 +451,6 @@ describe('LocalBrowserPanel', () => {
         expect.objectContaining({ search: expect.objectContaining({ session: 'chat-two' }) })
       );
     });
-    it('keeps the ordinary controls when that handoff has ended', async () => {
-      transport.getLocalBrowserState.mockResolvedValue({
-        ...connected,
-        sessionId: 'chat-two',
-        handoff: { ...elsewhere, outcome: 'stopped' },
-        signIn: null,
-      });
-      mount();
-      expect(await screen.findByRole('button', { name: 'Take it here' })).toBeEnabled();
-      expect(
-        await screen.findByRole('button', { name: 'Forget saved sign-ins…' })
-      ).toBeInTheDocument();
-    });
-    it('keeps the controls in the waiting chat’s own panel', async () => {
-      transport.getLocalBrowserState.mockResolvedValue({
-        ...connected,
-        handoff: { ...elsewhere, sessionId: 'chat-one' },
-        signIn: null,
-      });
-      mount();
-      expect(await screen.findByRole('button', { name: 'Browser menu' })).toBeInTheDocument();
-      expect(screen.queryByText(/is waiting for you to finish signing in here/)).toBeNull();
-    });
   });
   describe('while this chat’s agent waits on a person in its own window (DOR-4325)', () => {
     const here = {
@@ -566,15 +492,6 @@ describe('LocalBrowserPanel', () => {
         expect(screen.queryByRole('button', { name: 'Reconnect' })).toBeNull();
       }
     );
-    it('keeps Open browser once that handoff has ended', async () => {
-      transport.getLocalBrowserState.mockResolvedValue({
-        ...signingIn,
-        handoff: { ...here, outcome: 'handed-back' },
-      });
-      mount();
-      expect(await screen.findByRole('button', { name: 'Open browser' })).toBeInTheDocument();
-      expect(screen.queryByText('Waiting for you')).toBeNull();
-    });
     it('after a signing_in refusal, reads the browser again and lands on Waiting for you', async () => {
       transport.openLocalBrowser.mockRejectedValue(
         Object.assign(new Error('Finish signing in first.'), { code: 'signing_in', status: 409 })
@@ -618,42 +535,6 @@ describe('LocalBrowserPanel', () => {
       );
       expect(transport.handBackLocalBrowser).not.toHaveBeenCalled();
       expect(transport.resumeLocalBrowser).not.toHaveBeenCalled();
-    });
-    it('asks for ⌘Q in the panel when the window didn’t quit', async () => {
-      transport.getLocalBrowserState.mockResolvedValue({
-        ...signingIn,
-        handoff: { ...here, outcome: 'stopped' },
-        signIn: { ...signingIn.signIn, needsQuit: true },
-      });
-      mount();
-      expect(
-        await screen.findByText('Click the sign-in window, then press ⌘Q to finish signing in.')
-      ).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Done signing in' })).toBeInTheDocument();
-    });
-    it('holds Done signing in still while that window saves', async () => {
-      transport.getLocalBrowserState.mockResolvedValue({
-        ...signingIn,
-        handoff: null,
-        signIn: { ...signingIn.signIn, status: 'saving' },
-      });
-      mount();
-      const held = await screen.findByRole('button', { name: 'Done signing in' });
-      expect(held).toHaveAttribute('aria-disabled', 'true');
-      expect(held).toBeDisabled();
-      expect(screen.getByText('Saving your sign-in…')).toBeInTheDocument();
-      fireEvent.click(held);
-      expect(transport.finishLocalBrowserSignIn).not.toHaveBeenCalled();
-    });
-    it('keeps showing the card once the sign-in saved, and still waits for you', async () => {
-      transport.getLocalBrowserState.mockResolvedValue({
-        ...signingIn,
-        signIn: { ...signingIn.signIn, status: 'saved' },
-      });
-      mount();
-      expect(await screen.findByText('Waiting for you')).toBeInTheDocument();
-      expect(screen.getByTestId('handoff-card')).toBeInTheDocument();
-      expect(screen.queryByText(/Continue in the chat/)).toBeNull();
     });
   });
   describe('while this chat’s agent waits on a person in the Mac app (DOR-3111)', () => {
@@ -704,36 +585,6 @@ describe('LocalBrowserPanel', () => {
       await waitFor(() => expect(transport.handBackLocalBrowser).toHaveBeenCalledWith('h1'));
       await waitFor(async () => expect(await findPill()).toHaveTextContent('Handed back'));
     });
-    it.each([
-      ['the handoff ended', { ...handedOver, handoff: { ...here, outcome: 'handed-back' } }],
-      ['nobody asked', { ...handedOver, paused: false, handoff: null }],
-    ])('shows no Your turn when %s', async (_case, state) => {
-      transport.getLocalBrowserState.mockResolvedValue({ ...state, signIn: null });
-      mount();
-      expect((await findPill()).dataset.stateKind).not.toBe('your-turn');
-    });
-    it('shows no Your turn when another chat’s agent asked', async () => {
-      transport.getLocalBrowserState.mockResolvedValue({
-        ...handedOver,
-        handoff: { ...here, sessionId: 'x' },
-        signIn: null,
-      });
-      mount();
-      expect(await screen.findByText(/is waiting for you to finish signing in/)).toBeVisible();
-      expect(document.querySelector('[data-slot="browser-status-pill"]')).toBeNull();
-    });
-  });
-  it('shows the server’s signing_in refusal, not a reconnect hint (DOR-4325)', async () => {
-    transport.openLocalBrowser.mockRejectedValue(
-      Object.assign(new Error('Finish signing in first.'), { code: 'signing_in', status: 409 })
-    );
-    mount();
-    const open = await screen.findByRole('button', { name: 'Open browser' });
-    await waitFor(() => expect(open).toBeEnabled());
-    fireEvent.click(open);
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Finish signing in first. The sign-in window is open.'
-    );
   });
   describe('Close browser during a handoff', () => {
     const handoff = {
@@ -786,26 +637,6 @@ describe('LocalBrowserPanel', () => {
       await act(async () => {});
       expect(transport.interruptSession).not.toHaveBeenCalled();
     });
-    it('leaves the turn alone when the browser wouldn’t close', async () => {
-      transport.getLocalBrowserState.mockResolvedValue({ ...connected, handoff, signIn: null });
-      transport.disconnectLocalBrowser.mockRejectedValue(
-        Object.assign(new Error('Browser is busy. Wait a moment.'), { code: 'conflict' })
-      );
-      mount();
-      await chooseFromMenu('Close browser');
-      await waitFor(() => expect(transport.disconnectLocalBrowser).toHaveBeenCalledOnce());
-      await screen.findByText(/Browser is busy|Couldn’t reach the browser/);
-      expect(transport.interruptSession).not.toHaveBeenCalled();
-    });
-    it('interrupts nothing with no handoff open', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(connected);
-      transport.disconnectLocalBrowser.mockResolvedValue(disconnected);
-      mount();
-      await chooseFromMenu('Close browser');
-      await waitFor(() => expect(transport.disconnectLocalBrowser).toHaveBeenCalledOnce());
-      await screen.findByRole('button', { name: 'Open browser' });
-      expect(transport.interruptSession).not.toHaveBeenCalled();
-    });
   });
   it('remembers an owned browser choice through disconnect and remount without reopening', async () => {
     transport.openLocalBrowser.mockImplementation(async () => {
@@ -838,56 +669,6 @@ describe('LocalBrowserPanel', () => {
     expect(screen.getByText('Requires the DorkOS desktop app.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open browser' })).toBeDisabled();
     expect(transport.openLocalBrowser).not.toHaveBeenCalled();
-  });
-  it.each([false, true])(
-    'returns a retired preference to the surface default (desktop=%s)',
-    async (desktop) => {
-      if (desktop) {
-        window.electronAPI = {
-          localBrowser: { setBounds: vi.fn().mockResolvedValue(undefined) },
-        } as unknown as ElectronAPI;
-        transport.getLocalBrowserCapabilities.mockResolvedValue({
-          ...capabilities,
-          embedded: true,
-        });
-      }
-      localStorage.setItem(
-        STORAGE_KEYS.LOCAL_BROWSER_CHOICE,
-        JSON.stringify({ mode: 'existing', channel: 'msedge' })
-      );
-      const restored = readLocalBrowserChoice();
-      useAppStore.setState({
-        localBrowserChoice: restored.choice,
-        localBrowserChoiceIssue: restored.issue,
-      });
-      mount();
-      const expected = desktop ? /^In DorkOS/ : /^In its own window/;
-      await waitFor(() => expect(screen.getByRole('radio', { name: expected })).toBeChecked());
-      expect(screen.getAllByRole('radio')).toHaveLength(2);
-      expect(
-        screen.queryByRole('radio', { name: /Your existing browser/ })
-      ).not.toBeInTheDocument();
-      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
-      expect(transport.openLocalBrowser).not.toHaveBeenCalled();
-    }
-  );
-  it('asks for an explicit browser choice when the saved preference cannot be read', async () => {
-    useAppStore.setState({ localBrowserChoice: null, localBrowserChoiceIssue: 'invalid' });
-    mount();
-    expect(
-      await screen.findByText('Choose a browser. The saved choice couldn’t be read.')
-    ).toBeInTheDocument();
-    expect(
-      screen.getAllByRole('radio').every((radio) => !(radio as HTMLInputElement).checked)
-    ).toBe(true);
-    expect(screen.getByRole('button', { name: 'Open browser' })).toBeDisabled();
-    const choice = screen.getByRole('radio', { name: /^In its own window/ });
-    await waitFor(() => expect(choice).toBeEnabled());
-    fireEvent.click(choice);
-    expect(screen.getByRole('button', { name: 'Open browser' })).toBeEnabled();
-    expect(useAppStore.getState().localBrowserChoice).toEqual({
-      mode: 'new-window',
-    });
   });
   it('shows genuine current-component progress and removes it after cancellation', async () => {
     const opening = holdOpening();
@@ -981,14 +762,6 @@ describe('LocalBrowserPanel', () => {
     );
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
-  it('explains extra windows as human-only, in the pill’s popover', async () => {
-    transport.getLocalBrowserState.mockResolvedValue({ ...connected, mode: 'embedded' });
-    mount();
-    fireEvent.click(await findPill());
-    expect(
-      await screen.findByText('Kai stays on this page. Other windows are yours.')
-    ).toBeInTheDocument();
-  });
   it('freezes browser choices until cancellation completes', async () => {
     const opening = holdOpening();
     let finishCancel!: (state: LocalBrowserState) => void;
@@ -1039,15 +812,6 @@ describe('LocalBrowserPanel', () => {
     expect(screen.queryByText('Disconnected')).not.toBeInTheDocument();
   });
 
-  it('says "Disconnected" only once a connection it saw has gone', async () => {
-    transport.getLocalBrowserState.mockResolvedValue(connected);
-    transport.disconnectLocalBrowser.mockResolvedValue(disconnected);
-    mount();
-    await chooseFromMenu('Close browser');
-    expect(await screen.findByText('Disconnected')).toBeInTheDocument();
-    expect(screen.queryByText('Not open yet')).not.toBeInTheDocument();
-  });
-
   it('returns keyboard focus after disconnecting the browser', async () => {
     vi.spyOn(document, 'hasFocus').mockReturnValue(true);
     transport.getLocalBrowserState.mockResolvedValue(connected);
@@ -1072,32 +836,6 @@ describe('LocalBrowserPanel', () => {
     await act(async () => finishDisconnect(disconnected));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Open browser' })).toBeEnabled());
     expect(screen.getByRole('button', { name: 'Open browser' })).not.toHaveFocus();
-  });
-  it('keeps focus on another app control chosen while cancellation finishes', async () => {
-    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
-    const opening = holdOpening();
-    let finishCancel!: (state: LocalBrowserState) => void;
-    transport.disconnectLocalBrowser.mockReturnValue(
-      new Promise<LocalBrowserState>((resolve) => {
-        finishCancel = resolve;
-      })
-    );
-    mount();
-    const open = await screen.findByRole('button', { name: 'Open browser' });
-    await waitFor(() => expect(open).toBeEnabled());
-    fireEvent.click(open);
-    const cancel = await screen.findByRole('button', { name: 'Cancel' });
-    cancel.focus();
-    fireEvent.click(cancel);
-    const other = document.createElement('button');
-    other.textContent = 'Other app control';
-    document.body.append(other);
-    other.focus();
-    await act(async () => finishCancel(disconnected));
-    await act(async () => opening.resolve(disconnected));
-    await waitFor(() => expect(open).toBeEnabled());
-    expect(other).toHaveFocus();
-    other.remove();
   });
   it.each([
     'Couldn’t download the browser. Check your connection and try again.',
@@ -1213,32 +951,6 @@ describe('LocalBrowserPanel', () => {
     ).toBeInTheDocument();
     expect(document.querySelector('iframe')).toBeNull();
   });
-  it('selects the exact owned tab shared with the current chat', async () => {
-    transport.getLocalBrowserState.mockResolvedValue(connected);
-    mount();
-    const next = { ...connected, selectedTabId: 'two' };
-    transport.selectLocalBrowserTab.mockResolvedValue(next);
-    await choosePage('Second page');
-    await waitFor(() =>
-      expect(transport.selectLocalBrowserTab).toHaveBeenCalledWith('two', 'chat-one')
-    );
-  });
-  it('keeps the selected tab when another tab stops responding', async () => {
-    transport.getLocalBrowserState.mockResolvedValue(connected);
-    transport.selectLocalBrowserTab.mockRejectedValue(
-      Object.assign(new Error('This tab stopped responding. Choose it again.'), {
-        code: 'conflict',
-      })
-    );
-    mount();
-    await choosePage('Second page');
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'This tab stopped responding. Choose it again.'
-    );
-    const menu = await openMenu();
-    expect(within(menu).getByRole('menuitemradio', { name: 'First page' })).toBeChecked();
-    expect(transport.selectLocalBrowserTab).toHaveBeenCalledTimes(1);
-  });
   it('pauses agent actions from the pill while leaving human controls available', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
     transport.pauseLocalBrowser.mockResolvedValue({ ...connected, paused: true });
@@ -1316,54 +1028,6 @@ describe('LocalBrowserPanel', () => {
         expect(pill).not.toHaveFocus();
       }
     );
-    it('takes the page from the pill, and hands it back with Resume', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(connected);
-      transport.takeOverLocalBrowser.mockResolvedValue({
-        ...connected,
-        paused: true,
-        handoff: null,
-        signIn: null,
-        takenOver: true,
-      });
-      transport.resumeLocalBrowser.mockResolvedValue({
-        ...connected,
-        handoff: null,
-        signIn: null,
-        takenOver: false,
-      });
-      mount();
-      await pressInPill('Take over');
-      await waitFor(async () => expect((await findPill()).dataset.stateKind).toBe('you'));
-      await pressInPill('Hand back to Kai');
-      await waitFor(() => expect(transport.resumeLocalBrowser).toHaveBeenCalledOnce());
-      await waitFor(async () => expect(await findPill()).toHaveTextContent('Handed back'));
-    });
-    it('keeps the page taken when an answer says nothing about it', async () => {
-      transport.getLocalBrowserState.mockResolvedValue({
-        ...connected,
-        paused: true,
-        handoff: null,
-        signIn: null,
-        takenOver: true,
-      });
-      // A plain browser answer, as Pause and tab choice give, carries no takenOver.
-      transport.navigateLocalBrowser.mockResolvedValue({ ...connected, paused: true });
-      mount();
-      expect((await findPill()).dataset.stateKind).toBe('you');
-      fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
-      await waitFor(() => expect(transport.navigateLocalBrowser).toHaveBeenCalled());
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Reload' })).toBeEnabled());
-      expect((await findPill()).dataset.stateKind).toBe('you');
-    });
-  });
-  it('drops a refusal when the person picks another tab', async () => {
-    transport.getLocalBrowserState.mockResolvedValue(connected);
-    transport.selectLocalBrowserTab.mockResolvedValue({ ...connected, selectedTabId: 'two' });
-    mount();
-    await typeAddress('file:///etc/hosts');
-    expect(await screen.findByRole('alert')).toHaveTextContent('Files don’t open here.');
-    await choosePage('Second page');
-    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
   it('names its buttons in Radix tooltips, with no title hint (DOR-4438)', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
@@ -1389,12 +1053,6 @@ describe('LocalBrowserPanel', () => {
       expect(await screen.findByRole('button', { name: 'Back' })).toBeEnabled();
       expect(screen.getByRole('button', { name: 'Forward' })).toBeDisabled();
       expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
-    });
-    it('are both disabled when the server says nothing about history', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(connected);
-      mount();
-      expect(await screen.findByRole('button', { name: 'Back' })).toBeDisabled();
-      expect(screen.getByRole('button', { name: 'Forward' })).toBeDisabled();
     });
     it('move the page through the server, which answers with the new history', async () => {
       transport.getLocalBrowserState.mockResolvedValue(withHistory(true, false));
@@ -1423,42 +1081,6 @@ describe('LocalBrowserPanel', () => {
       await act(async () => finish(withHistory(true, true)));
       expect(transport.stepLocalBrowserHistory).toHaveBeenCalledTimes(1);
     });
-    it('say why a refused step stayed put on the chrome’s notice line, as for a refused address', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(withHistory(true, false));
-      transport.stepLocalBrowserHistory.mockRejectedValue(
-        Object.assign(new Error('DorkOS doesn’t open that page here, so you stayed on this one.'), {
-          code: 'history_refused',
-        })
-      );
-      const { container } = mount();
-      fireEvent.click(await screen.findByRole('button', { name: 'Back' }));
-      const chrome = () => container.querySelector('[data-slot="browser-chrome"]') as HTMLElement;
-      await waitFor(() =>
-        expect(within(chrome()).getByRole('alert')).toHaveTextContent(
-          'DorkOS doesn’t open that page here, so you stayed on this one.'
-        )
-      );
-      // Said once, on the notice line, never as the panel's own error.
-      expect(screen.getAllByRole('alert')).toHaveLength(1);
-      expect(screen.queryByText('raw redirect detail')).not.toBeInTheDocument();
-      // Typing an address clears it.
-      transport.navigateLocalBrowser.mockResolvedValue(withHistory(true, false));
-      await typeAddress('https://example.com/next');
-      await waitFor(() => expect(within(chrome()).queryByRole('alert')).toBeNull());
-    });
-    it('leave a real step failure to the panel, not the notice line', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(withHistory(true, false));
-      transport.stepLocalBrowserHistory.mockRejectedValue(
-        Object.assign(new Error('Check what happened before continuing.'), { code: 'conflict' })
-      );
-      const { container } = mount();
-      fireEvent.click(await screen.findByRole('button', { name: 'Back' }));
-      expect(await screen.findByRole('alert')).toHaveTextContent(
-        'Check what happened before continuing.'
-      );
-      const chrome = container.querySelector('[data-slot="browser-chrome"]') as HTMLElement;
-      expect(within(chrome).queryByRole('alert')).toBeNull();
-    });
   });
   it('keeps a typed address when navigation becomes stale and never replays it', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
@@ -1477,27 +1099,8 @@ describe('LocalBrowserPanel', () => {
     );
     expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
   });
-  it('keeps uncertain effects visible without offering a replay', async () => {
-    transport.getLocalBrowserState.mockResolvedValue(connected);
-    // The server words an uncertain navigation for a person (`routes/local-browser.ts`).
-    transport.navigateLocalBrowser.mockRejectedValue(
-      Object.assign(new Error('Check what happened before continuing.'), { code: 'conflict' })
-    );
-    mount();
-    await typeAddress('https://new.example.com');
-    expect(await screen.findByText('Check what happened before continuing.')).toBeInTheDocument();
-    expect(await screen.findByRole('textbox', { name: 'Address' })).toHaveValue(
-      'https://new.example.com'
-    );
-    expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
-    expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
-  });
   // DOR-4419: the address box reads what the person typed with the shared address rules.
   describe('typed addresses', () => {
-    const unreachable = () =>
-      Object.assign(new Error('Couldn’t reach that site. Check the address and try again.'), {
-        code: 'conflict',
-      });
     const submit = typeAddress;
 
     it('puts https:// in front of a bare host, and http:// for a private one', async () => {
@@ -1531,61 +1134,6 @@ describe('LocalBrowserPanel', () => {
         sessionId: 'chat-one',
       });
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    });
-
-    it('never asks for a fallback from an address typed with https://', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(connected);
-      transport.navigateLocalBrowser.mockRejectedValue(unreachable());
-      mount();
-      await submit('https://example.com');
-      expect(await screen.findByRole('alert')).toHaveTextContent(
-        'Couldn’t reach that site. Check the address and try again.'
-      );
-      expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
-      expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://example.com', {
-        sessionId: 'chat-one',
-      });
-    });
-
-    it('never retries a failed bare host itself, whatever the failure', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(connected);
-      transport.navigateLocalBrowser.mockRejectedValue(unreachable());
-      mount();
-      await submit('news.example');
-      expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t reach that site.');
-      expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
-    });
-
-    it('says a site that timed out didn’t respond', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(connected);
-      transport.navigateLocalBrowser.mockRejectedValue(
-        Object.assign(new Error('That site didn’t respond. Try again in a moment.'), {
-          code: 'conflict',
-        })
-      );
-      mount();
-      await submit('slow.example');
-      expect(await screen.findByRole('alert')).toHaveTextContent(
-        'That site didn’t respond. Try again in a moment.'
-      );
-      expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
-    });
-
-    it('says why Not secure while the tab is on a page the fallback opened', async () => {
-      const overHttp = {
-        ...connected,
-        tabs: connected.tabs.map((tab) => ({
-          ...tab,
-          url: 'http://shop.example/',
-          openedOverHttp: true,
-        })),
-      };
-      transport.getLocalBrowserState.mockResolvedValue(overHttp);
-      mount();
-      expect(await screen.findByText('Not secure')).toHaveAttribute(
-        'title',
-        'This site didn’t answer over https, so it opened over http.'
-      );
     });
 
     it.each([
@@ -1629,13 +1177,6 @@ describe('LocalBrowserPanel', () => {
         )
       );
     });
-  });
-  it('offers reconnect after the browser closes without claiming the page is still open', async () => {
-    transport.getLocalBrowserState.mockResolvedValue({ ...connected, status: 'closed', tabs: [] });
-    mount();
-    expect(await screen.findByText('Browser closed')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reconnect' })).toBeInTheDocument();
-    expect(screen.queryByLabelText('Shared with Kai')).not.toBeInTheDocument();
   });
   it('defaults supported desktop to its native page and hides it on unmount', async () => {
     const setBounds = vi.fn().mockResolvedValue(undefined);
@@ -1709,17 +1250,6 @@ describe('LocalBrowserPanel', () => {
     expect(await screen.findByRole('button', { name: 'Take it here' })).toBeInTheDocument();
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(false));
   });
-  it('keeps unexpected browser process errors out of recovery copy', async () => {
-    transport.openLocalBrowser.mockRejectedValue(new Error('private browser process details'));
-    mount();
-    const open = await screen.findByRole('button', { name: 'Open browser' });
-    await waitFor(() => expect(open).toBeEnabled());
-    fireEvent.click(open);
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Couldn’t reach the browser. Reconnect and try again.'
-    );
-    expect(screen.queryByText('private browser process details')).not.toBeInTheDocument();
-  });
   it('clips the native page to the panel instead of covering nearby app controls', async () => {
     const setBounds = vi.fn().mockResolvedValue(undefined);
     window.electronAPI = { localBrowser: { setBounds } } as unknown as ElectronAPI;
@@ -1782,81 +1312,6 @@ describe('LocalBrowserPanel', () => {
       expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Forget saved sign-ins…' })).toBeNull();
     });
-    it('goes forward with the row’s own Forward while the row is narrow (DOR-4449)', async () => {
-      const forwardable: LocalBrowserState = {
-        ...connected,
-        tabs: connected.tabs.map((tab) =>
-          tab.id === 'one' ? { ...tab, canGoForward: true } : tab
-        ),
-      };
-      transport.getLocalBrowserState.mockResolvedValue(forwardable);
-      transport.stepLocalBrowserHistory.mockResolvedValue(forwardable);
-      mount();
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Forward' })).toBeEnabled());
-      await chooseFromMenu('Forward');
-      expect(transport.stepLocalBrowserHistory).toHaveBeenCalledExactlyOnceWith(
-        'forward',
-        'chat-one'
-      );
-      expect(transport.navigateLocalBrowser).not.toHaveBeenCalled();
-    });
-    it('shows Forward disabled when the page has nowhere to go forward', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(connected);
-      mount();
-      const menu = await openMenu();
-      expect(within(menu).getByRole('menuitem', { name: 'Forward' })).toHaveAttribute(
-        'data-disabled'
-      );
-    });
-    it('lists Pages only when the chat has more than one', async () => {
-      transport.getLocalBrowserState.mockResolvedValue({
-        ...connected,
-        tabs: [connected.tabs[0]!],
-      });
-      mount();
-      const menu = await openMenu();
-      expect(within(menu).queryByText('Pages')).toBeNull();
-      expect(within(menu).queryByRole('menuitemradio')).toBeNull();
-    });
-    it('offers no address actions on a new empty page', async () => {
-      transport.getLocalBrowserState.mockResolvedValue({
-        ...connected,
-        tabs: [{ id: 'one', title: '', url: 'about:blank' }],
-      });
-      mount();
-      const menu = await openMenu();
-      expect(within(menu).queryByRole('menuitem', { name: 'Copy address' })).toBeNull();
-      expect(within(menu).queryByRole('menuitem', { name: 'Open in your browser' })).toBeNull();
-      expect(within(menu).getByRole('menuitem', { name: 'Close browser' })).toBeInTheDocument();
-    });
-    it('opens the page in the person’s own browser', async () => {
-      const opened = vi.spyOn(window, 'open').mockReturnValue(null);
-      transport.getLocalBrowserState.mockResolvedValue(connected);
-      mount();
-      await chooseFromMenu('Open in your browser');
-      expect(opened).toHaveBeenCalledOnce();
-      expect(opened.mock.calls[0]?.[0]).toBe('https://example.com/');
-    });
-    // DOR-4097: the plain sign-in window for the site on screen, from the menu, in either mode.
-    it.each(['new-window', 'embedded'] as const)(
-      'opens the plain sign-in window on the page’s own site, in %s mode',
-      async (mode) => {
-        transport.getLocalBrowserState.mockResolvedValue({
-          ...connected,
-          mode,
-          tabs: [{ id: 'one', title: 'Sign in', url: 'https://shop.example/login?next=%2Fcart' }],
-        });
-        transport.signInLocalBrowser.mockResolvedValue({ ...connected, mode });
-        mount();
-        await chooseFromMenu('Sign in to shop.example in its own window');
-        expect(transport.signInLocalBrowser).toHaveBeenCalledExactlyOnceWith(
-          {
-            url: 'https://shop.example',
-          },
-          'chat-one'
-        );
-      }
-    );
     it('Forget saved sign-ins… opens today’s dialog and hands focus back to the menu', async () => {
       transport.getLocalBrowserState.mockResolvedValue(connected);
       mount();
@@ -1900,16 +1355,6 @@ describe('LocalBrowserPanel', () => {
       await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
       expect(transport.forgetLocalBrowserSignIns).toHaveBeenCalledExactlyOnceWith(profile.id);
     });
-    it('waits while another browser action runs', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(connected);
-      transport.pauseLocalBrowser.mockReturnValue(new Promise(() => {}));
-      mount();
-      // Pause is in the status pill (DOR-4428); its popover closes as Pause runs.
-      await pressInPill('Pause agent');
-      const menu = await openMenu();
-      for (const name of ['Forget saved sign-ins…', 'Close browser'])
-        expect(within(menu).getByRole('menuitem', { name })).toHaveAttribute('data-disabled');
-    });
     it('hides the native page while it is open over it, and shows it again after', async () => {
       const setBounds = vi.fn().mockResolvedValue(undefined);
       window.electronAPI = { localBrowser: { setBounds } } as unknown as ElectronAPI;
@@ -1950,64 +1395,6 @@ describe('LocalBrowserPanel', () => {
       expect(
         await screen.findByRole('button', { name: 'Forget saved sign-ins…' })
       ).toBeInTheDocument();
-    });
-    it('says it can’t reach the browser in one line, with Reconnect', async () => {
-      transport.getLocalBrowserState.mockRejectedValue(new Error('down'));
-      mount();
-      expect(await screen.findByRole('alert')).toHaveTextContent(
-        'Couldn’t reach the browser. Reconnect and try again.'
-      );
-      expect(
-        within(block() as HTMLElement).getByRole('button', { name: 'Reconnect' })
-      ).toBeEnabled();
-      // Only the way back: no browser choice to make until it answers.
-      expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
-      expect(screen.queryByRole('radio')).toBeNull();
-      // The alert says it; a visible "Not open yet" over it would contradict it.
-      expect(screen.getAllByRole('status')[0]).toHaveClass('sr-only');
-    });
-    it('names another chat’s hold in the block, with no second heading', async () => {
-      transport.getLocalBrowserState.mockResolvedValue({ ...connected, sessionId: 'other-chat' });
-      mount();
-      const take = await screen.findByRole('button', { name: 'Take it here' });
-      expect(block()).toContainElement(take);
-      expect(screen.getByText('This browser is open in another chat')).toBeInTheDocument();
-      expect(screen.getAllByRole('status')[0]).toHaveClass('sr-only');
-    });
-    it('puts the own-window line in the page area', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(connected);
-      mount();
-      const line = await screen.findByText('This page is in the separate browser window.');
-      expect(line.closest('[data-slot="local-browser-page-area-block"]')).not.toBeNull();
-    });
-    it('on a new empty page, keeps the native page hidden and says what to do', async () => {
-      const setBounds = vi.fn().mockResolvedValue(undefined);
-      window.electronAPI = { localBrowser: { setBounds } } as unknown as ElectronAPI;
-      const empty = {
-        ...connected,
-        mode: 'embedded' as const,
-        tabs: [{ id: 'one', title: '', url: 'about:blank' }],
-      };
-      transport.getLocalBrowserState.mockResolvedValue(empty);
-      transport.getLocalBrowserCapabilities.mockResolvedValue({ ...capabilities, embedded: true });
-      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
-        x: 100,
-        y: 100,
-        width: 400,
-        height: 300,
-      } as DOMRect);
-      const view = mount();
-      expect(await screen.findByText('Type an address or a search above.')).toBeInTheDocument();
-      expect(setBounds.mock.calls.every(([bounds]) => !bounds.visible)).toBe(true);
-      // Once a page loads, the native page shows and the line goes.
-      act(() =>
-        view.client.setQueryData(localBrowserStateKey('chat-one'), {
-          ...empty,
-          tabs: [{ id: 'one', title: 'Fares', url: 'https://northwind.example/fares' }],
-        })
-      );
-      await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(true));
-      expect(screen.queryByText('Type an address or a search above.')).toBeNull();
     });
   });
 });

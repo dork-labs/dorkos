@@ -42,11 +42,13 @@ bash scripts/test-assert-migrations-current.sh
 bash scripts/test-should-arm-automerge.sh
 bash scripts/test-should-arm-automerge-input.sh
 bash scripts/test-queue-repeat-guard.sh
+bash scripts/test-queue-reentry.sh
 bash scripts/test-arm-door.sh
 bash scripts/test-pr-gates-check.sh
 bash scripts/test-qa-real-data.sh
 bash scripts/test-design-ok.sh
 bash scripts/test-should-redispatch-review.sh
+bash scripts/test-review-mode.sh
 bash scripts/test-should-reap-worktree.sh
 bash scripts/test-worktree-janitor-volumes.sh
 bash scripts/test-seeded-pack-changed.sh
@@ -76,6 +78,7 @@ bash scripts/test-pr-related.sh
 bash scripts/test-auto-revert.sh
 bash scripts/test-rolling-bisect.sh
 bash scripts/test-daily-sweep.sh
+bash scripts/test-attest-pr-check.sh
 bash scripts/test-daily-release.sh
 bash scripts/test-after-merge-alert.sh
 bash scripts/test-browser-smoke-scope.sh

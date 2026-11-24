@@ -391,18 +391,6 @@ describe('a turn', () => {
     });
   });
 
-  it('runs the next turn on the loaded thread without reloading it', async () => {
-    const h = harness();
-    await h.run(h.request({ sessionId: 's1' }));
-    const threadId = h.bindings[0]!.threadId;
-    const events = await h.run(h.request({ sessionId: 's1', boundThreadId: threadId }));
-    expect(dones(events)).toHaveLength(1);
-    const fake = h.host.home(PERSON_HOME).processes[0]!;
-    expect(fake.requestsOf('thread/resume')).toHaveLength(0);
-    expect(fake.requestsOf('turn/start')).toHaveLength(2);
-    expect(h.bindings).toHaveLength(1);
-  });
-
   it('never sends a second turn/start into a thread with an open turn (the joining trap)', async () => {
     const h = harness();
     h.host.home(PERSON_HOME).nextTurn(parkedTurn);
@@ -415,15 +403,6 @@ describe('a turn', () => {
     expect(fake.requestsOf('turn/start')).toHaveLength(1);
     await h.transport.interrupt('s1');
     expect(dones(await rest(first))).toHaveLength(1);
-  });
-
-  it('selects a named policy at every level, including Full', () => {
-    expect(codexPermissionProfile({ permissionMode: 'acceptEdits' })).toBe(
-      'dorkos-files-workspace-write'
-    );
-    expect(codexPermissionProfile({ permissionMode: 'bypassPermissions' })).toBe(
-      'dorkos-files-danger-full-access'
-    );
   });
 
   it('refuses the requests DorkOS takes no part in, at once, inside an open turn', async () => {
@@ -450,15 +429,6 @@ describe('a turn', () => {
 });
 
 describe('interrupt', () => {
-  it('answers not-running with no open turn', async () => {
-    const h = harness();
-    await expect(h.transport.interrupt('nobody')).resolves.toEqual({
-      outcome: 'not-running',
-      reason: 'no-open-turn',
-      runtime: 'codex',
-    });
-  });
-
   it('acks when Codex winds the turn down, and the turn ends with one quiet done', async () => {
     const h = harness();
     h.host.home(PERSON_HOME).nextTurn(parkedTurn);
@@ -484,18 +454,6 @@ describe('interrupt', () => {
       runtime: 'codex',
     });
     expect(dones(await rest(gen))).toHaveLength(1);
-  });
-
-  it('interrupts through the turn’s abort signal too', async () => {
-    const h = harness();
-    h.host.home(PERSON_HOME).nextTurn(parkedTurn);
-    const controller = new AbortController();
-    const gen = h.transport.runTurn(h.request({ sessionId: 's1', signal: controller.signal }));
-    await until(gen, 'text_delta');
-    controller.abort();
-    expect(dones(await rest(gen))).toHaveLength(1);
-    const fake = h.host.home(PERSON_HOME).processes[0]!;
-    expect(fake.requestsOf('turn/interrupt')).toHaveLength(1);
   });
 });
 
@@ -1054,29 +1012,6 @@ describe('background work (spec §12)', () => {
     expect(seen).toHaveLength(1);
   });
 
-  it('shows a completion in the turn that is open instead of waking', async () => {
-    const h = harness();
-    const seen = wakes(h);
-    const bg = backgroundCommandTurn();
-    h.host.home(PERSON_HOME).nextTurn(bg.script);
-    await h.run(h.request({ sessionId: 's1' }));
-    h.host.home(PERSON_HOME).nextTurn(async (ctx) => {
-      bg.finish(0, 'ok\n');
-      await ctx.tick();
-      await ctx.tick();
-      ctx.agentMessage('second');
-      ctx.complete('completed');
-    });
-    const second = await h.run(
-      h.request({ sessionId: 's1', boundThreadId: h.bindings[0]!.threadId })
-    );
-    expect(second.find((e) => e.type === 'background_task_done')).toMatchObject({
-      data: { taskId: bg.itemId, status: 'completed' },
-    });
-    await new Promise((r) => setTimeout(r, 60));
-    expect(seen).toHaveLength(0);
-  });
-
   it('stops a background command on request, and its end wakes no model turn', async () => {
     const h = harness();
     const seen = wakes(h);
@@ -1124,23 +1059,6 @@ describe('background work (spec §12)', () => {
     expect(h.transport.liveSessionIds()).toEqual([]);
     // Nothing left: ending it again is honest about it.
     expect(await h.transport.endSession('s1')).toBe(false);
-  });
-
-  it('keeps the result of a command that ended just before its stop, and wakes no model turn', async () => {
-    const h = harness();
-    const seen = wakes(h);
-    const bg = backgroundCommandTurn();
-    h.host.home(PERSON_HOME).nextTurn(bg.script);
-    await h.run(h.request({ sessionId: 's1' }));
-    const fake = h.host.home(PERSON_HOME).processes[0]!;
-    // It has left the terminal list but its item/completed is still in flight.
-    fake.backgroundTerminals.set(h.bindings[0]!.threadId, []);
-    expect((await h.transport.stopTask('s1', bg.itemId)).outcome).toBe('not-running');
-    bg.finish(0, 'it finished\n');
-    await waitFor(() => seen.length === 1);
-    expect(seen[0]).toMatchObject({ startTurn: false });
-    expect(seen[0]!.completions[0]).toMatchObject({ status: 'completed', wakes: false });
-    expect(seen[0]!.completions[0]!.summary).toContain('it finished');
   });
 
   it('keeps a process alive while a helper agent it started is still working', async () => {

@@ -19,7 +19,7 @@
  * rendered only when that session actually carries the tools. `<room_context>`
  * is built from a room and a nonce and knows nothing about the session, so it
  * cannot name a tool without guessing at both its presence and its spelling.
- * The nudge belongs on the side that knows. `room-context-block.test.ts` pins
+ * The nudge belongs on the side that knows. `shared/__tests__/room-context-block/` pins
  * the negative half; this file pins the positive one, as claude-code renders it.
  */
 import { describe, it, expect, vi } from 'vitest';

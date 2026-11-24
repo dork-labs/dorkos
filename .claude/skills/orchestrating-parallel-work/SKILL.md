@@ -195,15 +195,15 @@ Each batch runs the same chain, and no step is optional:
   still the only thing that fixes it, and doing it first is how you skip the
   refusal. A worktree with no `node_modules` fails that hook; install before you
   push rather than reaching for `--no-verify`.
-- **Verify the merge is armed or queued; never assume either way.** How
-  auto-merge behaves — that a new commit drops the armed state on **every** push,
-  that the strategy flag belongs to the queue, that arming follows review — is
+- **Verify auto-merge is on or the PR is queued; never assume either way.** How
+  auto-merge behaves — that a new commit drops auto-merge on **every** push,
+  that the strategy flag belongs to the queue — is
   the **`creating-pull-requests`** skill's, and it is the one to read. The
-  parallel-specific delta is the check: after arming, confirm one of two things
+  parallel-specific delta is the check: after opening or re-queueing, confirm one of two things
   is true — the PR reports an auto-merge request, **or** it appears in the merge
   queue. A queued PR reports _no_ auto-merge request, so the first field alone
   answers wrongly. A zero exit proves nothing, and the request silently no-ops
-  while mergeability is unknown. In this repo nobody arms a PR:
+  while mergeability is unknown. In this repo nobody arms a PR by hand:
   `scripts/open-pr.sh` turns on auto-merge at open (`contributing/ci.md`, "Merging"), and
   `gh pr merge --auto <n>` is only for re-queueing once after an ejection.
 - **Rebase deliberately.** When a branch falls behind, resolve to **both

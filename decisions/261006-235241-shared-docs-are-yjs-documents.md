@@ -14,6 +14,8 @@ amends: [0293, 260911-200301]
 
 Accepted (operator decision, 2026-10-06; Linear DOR-2735). Direction: live shared docs are the last after-launch step, so today's canvas still saves whole documents.
 
+**Amended by** [261124-150515](261124-150515-sequence-work-for-the-best-product-not-toward-dates.md) (accepted 2026-11-24): the phrase "live shared docs are the last after-launch step" in the Status line is retired. The decision stands, and its place in the order is in `meta/ROADMAP.md`. Until live shared docs land, the canvas still saves whole documents.
+
 **Amends** (each stays Accepted):
 
 - [0293](0293-canvas-persistence-editor-owns-document-host-owns-file.md): retires, for docs edited together, the negative consequence "surfaces conflicts to the user (Reload or Overwrite) rather than auto-merging … not a CRDT". Editor-owns-the-document, host-owns-the-file, boundary checks and atomic writes stand.

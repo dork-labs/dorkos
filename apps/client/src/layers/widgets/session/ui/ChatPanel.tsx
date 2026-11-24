@@ -179,7 +179,7 @@ export function ChatPanel({
           result = `Please read the following uploaded file(s):\n${fileList}\n\n${result}`;
         }
 
-        fileUpload.clearFiles();
+        for (const file of fileUpload.pendingFiles) fileUpload.removeFile(file.id);
       }
 
       return result;

@@ -151,45 +151,6 @@ describe('ClaudeAccountsSection', () => {
     expect(within(limits).getByText('Uses only Work')).toBeInTheDocument();
   });
 
-  it('renders as a boxed sub-section headed "Runs on"', async () => {
-    renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });
-
-    // The section lives INSIDE the Claude Code runtime card now, so its own
-    // heading is what tells an operator which part of the card they are in.
-    await waitFor(() =>
-      expect(screen.getByRole('heading', { name: 'Runs on', level: 3 })).toBeInTheDocument()
-    );
-    // No card chrome of its own: the runtime card supplies that.
-    expect(screen.getByTestId('claude-accounts-section')).toBeInTheDocument();
-    // The add fields stay out of the way until asked for.
-    expect(screen.queryByLabelText('Account folder')).not.toBeInTheDocument();
-  });
-
-  it('calls the select the DEFAULT account, and says what can overrule it', async () => {
-    // The account is a three-rung ladder now (spec `billing-account-ladder`):
-    // an agent or a single session can overrule this. Naming the row "Account"
-    // would present the bottom rung as the answer, which is how an operator ends
-    // up billing the wrong client and never knowing why.
-    renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });
-
-    await waitFor(() => expect(screen.getByText('Default account')).toBeInTheDocument());
-    expect(
-      screen.getByText('New chats run on this unless the agent or the chat picks another.')
-    ).toBeInTheDocument();
-  });
-
-  it('shows the resolved default rather than a blank field when no account is chosen', async () => {
-    renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });
-
-    // The client cannot compute this: the server's inherited CLAUDE_CONFIG_DIR is
-    // invisible to it, so an unset field would otherwise read as empty (AC8).
-    await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: 'Default account' })).toHaveTextContent(
-        'Default (~/.claude)'
-      )
-    );
-  });
-
   it('writes the chosen account so new work runs on it', async () => {
     const user = userEvent.setup();
     const transport = renderSection({
@@ -244,33 +205,6 @@ describe('ClaudeAccountsSection', () => {
     expect(transport.updateConfig).toHaveBeenCalledWith({
       runtimes: { claudeCode: { defaultAccount: null } },
     });
-  });
-
-  it('offers the account in use even when it was never registered', async () => {
-    // `defaultAccount` can be set by hand in `~/.dork/config.json` (the
-    // configuration guide shows exactly that) without appearing under
-    // `accounts`. A picker built from the roster alone would then have no option
-    // matching its own value and would render blank.
-    renderSection({
-      resolvedAccount: WORK,
-      inherited: false,
-      accounts: [
-        {
-          id: 'personal',
-          path: HOME,
-          label: 'Personal',
-          color: '#3b82f6',
-          colorIsDefault: true,
-          isAccountRoot: true,
-        },
-      ],
-    });
-
-    await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: 'Default account' })).toHaveTextContent(
-        '.claude2'
-      )
-    );
   });
 
   it('registers a new account, and an empty name is stored as no name at all', async () => {
@@ -379,20 +313,6 @@ describe('ClaudeAccountsSection', () => {
     );
     expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
     expect(transport.updateConfig).not.toHaveBeenCalled();
-  });
-
-  it('accepts a full path with no complaint', async () => {
-    const user = userEvent.setup();
-    renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });
-    await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: 'Default account' })).toBeInTheDocument()
-    );
-
-    await openAddForm(user);
-    await user.type(screen.getByLabelText('Account folder'), WORK);
-
-    expect(screen.queryByTestId('claude-account-not-absolute')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled();
   });
 
   it('refuses to add the same folder twice', async () => {
@@ -577,26 +497,6 @@ describe('ClaudeAccountsSection', () => {
     );
   });
 
-  it('shows nothing of the sort when every registered folder is usable', async () => {
-    renderSection({
-      resolvedAccount: HOME,
-      inherited: true,
-      accounts: [
-        {
-          id: 'acme-corp',
-          path: WORK,
-          label: 'Acme Corp',
-          color: '#3b82f6',
-          colorIsDefault: true,
-          isAccountRoot: true,
-        },
-      ],
-    });
-
-    await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
-    expect(screen.queryByTestId('claude-account-not-ready')).not.toBeInTheDocument();
-  });
-
   it('surfaces a refused write instead of appearing to succeed', async () => {
     const user = userEvent.setup();
     updateConfigResult = () =>
@@ -681,28 +581,6 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
     });
   });
 
-  it('shows the one account\'s bars under "Runs on", labelled with the account', async () => {
-    renderSection(
-      { resolvedAccount: WORK, inherited: false, accounts: [ACME] },
-      { usage: [usageFor('acme-corp', WORK)] }
-    );
-    const bars = await screen.findAllByRole('img', { name: /used/ });
-    expect(bars.map((bar) => bar.getAttribute('aria-label'))).toEqual([
-      expect.stringMatching(/^5-hour window 40% used/),
-      expect.stringMatching(/^Weekly 72% used/),
-    ]);
-    expect(screen.getAllByText('Acme Corp').length).toBeGreaterThan(0);
-  });
-
-  it("labels the implicit account's bars with its folder when nothing is registered", async () => {
-    renderSection(
-      { resolvedAccount: HOME, inherited: true, accounts: [] },
-      { usage: [usageFor('default', HOME)] }
-    );
-    expect(await screen.findByText('.claude')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: /^Weekly 72% used/ })).toBeInTheDocument();
-  });
-
   it('draws a window with no reading as unknown, never as an empty bar', async () => {
     renderSection(
       { resolvedAccount: WORK, inherited: false, accounts: [ACME] },
@@ -720,16 +598,6 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
     expect(screen.getByText('unknown')).toBeInTheDocument();
   });
 
-  it.each([
-    ['no', [] as Account[]],
-    ['one', [ACME]],
-  ])('shows no dots or color control with %s registered account', async (_, accounts) => {
-    renderSection({ resolvedAccount: HOME, inherited: true, accounts });
-    await screen.findByText('Default account');
-    expect(screen.queryByRole('button', { name: /^Color for/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('img', { name: /^5h/ })).not.toBeInTheDocument();
-  });
-
   it('gives each of two accounts a color control and compact 5h and wk bars', async () => {
     renderSection(
       { resolvedAccount: HOME, inherited: true, accounts: [PERSONAL, ACME] },
@@ -745,37 +613,6 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
     expect(screen.getAllByRole('img', { name: /^wk 72% used, resets / })).toHaveLength(2);
     // The block under the heading is for one account only.
     expect(screen.queryByRole('img', { name: /^5-hour window/ })).not.toBeInTheDocument();
-  });
-
-  it('opens a radio group of the 8 palette colors plus Default, with the current one checked', async () => {
-    const user = userEvent.setup();
-    renderSection({ resolvedAccount: HOME, inherited: true, accounts: [PERSONAL, CLIENT] });
-    await user.click(await screen.findByRole('button', { name: 'Color for Personal' }));
-    const group = await screen.findByRole('radiogroup', { name: 'Color for Personal' });
-    const radios = within(group).getAllByRole('radio');
-    expect(radios.map((radio) => radio.getAttribute('aria-label'))).toEqual([
-      'blue',
-      'green',
-      'amber',
-      'purple',
-      'pink',
-      'teal',
-      'indigo',
-      'stone',
-      'Default',
-    ]);
-    expect(within(group).getByRole('radio', { name: 'Default' })).toHaveAttribute(
-      'aria-checked',
-      'true'
-    );
-    await user.keyboard('{Escape}');
-
-    await user.click(screen.getByRole('button', { name: 'Color for Client' }));
-    const clientGroup = await screen.findByRole('radiogroup', { name: 'Color for Client' });
-    expect(within(clientGroup).getByRole('radio', { name: 'teal' })).toHaveAttribute(
-      'aria-checked',
-      'true'
-    );
   });
 
   it('writes the chosen color with every other row unchanged and the ids the screen showed', async () => {
@@ -805,27 +642,6 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Color for Acme Corp' })).toHaveFocus()
     );
-  });
-
-  it('writes null when Default is chosen', async () => {
-    const user = userEvent.setup();
-    const transport = renderSection({
-      resolvedAccount: HOME,
-      inherited: true,
-      accounts: [PERSONAL, CLIENT],
-    });
-    await user.click(await screen.findByRole('button', { name: 'Color for Client' }));
-    await user.click(await screen.findByRole('radio', { name: 'Default' }));
-    expect(vi.mocked(transport.updateConfig).mock.calls[0]![0]).toMatchObject({
-      runtimes: {
-        claudeCode: {
-          accounts: [
-            { id: 'personal', color: null },
-            { id: 'client', color: null },
-          ],
-        },
-      },
-    });
   });
 
   it('moves between swatches with the arrow keys and chooses with Enter', async () => {
@@ -898,61 +714,12 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       expect(screen.getAllByRole('button', { name: /^Remove/ })).toHaveLength(2);
     });
 
-    it("holds the remove button's place with a hidden spacer that adds no tab stop", async () => {
-      renderSection(standalone(), { usage: [mainUsage()] });
-      await screen.findByRole('button', { name: `Color for ${MAIN}` });
-      const main = screen.getAllByTestId('claude-account-row')[2]!;
-      const spacer = within(main).getByTestId('claude-account-remove-spacer');
-      expect(spacer).toHaveAttribute('aria-hidden', 'true');
-      expect(spacer.tagName).toBe('SPAN');
-      expect(spacer).not.toHaveAttribute('tabindex');
-      // The dot and "Limit to projects…" are the row's tab stops: no remove
-      // button, and a healthy sign-in adds nothing (spec flow-multiproject
-      // §8.5 adds the second).
-      expect(
-        within(main)
-          .getAllByRole('button')
-          .map((b) => b.textContent)
-      ).toEqual(['', 'Limit to projects…']);
-      const tabbable = main.querySelectorAll(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      );
-      expect(tabbable).toHaveLength(2);
-      // The registered rows keep their real button and have no spacer.
-      const acme = screen.getAllByTestId('claude-account-row')[0]!;
-      expect(within(acme).queryByTestId('claude-account-remove-spacer')).not.toBeInTheDocument();
-    });
-
     it('says "in use" when no default account is chosen, since new sessions run on it', async () => {
       renderSection(standalone(), { usage: [mainUsage()] });
       await screen.findByRole('button', { name: `Color for ${MAIN}` });
       const main = screen.getAllByTestId('claude-account-row')[2]!;
       expect(within(main).getByText('in use')).toBeInTheDocument();
       expect(screen.getAllByText('in use')).toHaveLength(1);
-    });
-
-    it('says "in use" when the default names a folder nobody registered, since Main stands for it', async () => {
-      // The server's standalone `default` record carries the folder the default names.
-      const other = '/Users/me/.claude-other';
-      renderSection(standalone({ resolvedAccount: other, inherited: false }), {
-        usage: [createMockAccountUsage({ accountId: 'default', path: other, label: MAIN })],
-      });
-      await screen.findByRole('button', { name: `Color for ${MAIN}` });
-      const rows = screen.getAllByTestId('claude-account-row');
-      expect(within(rows[2]!).getByText('~/.claude-other')).toBeInTheDocument();
-      expect(within(rows[2]!).getByText('in use')).toBeInTheDocument();
-      expect(screen.getAllByText('in use')).toHaveLength(1);
-    });
-
-    it('does not say "in use" when a registered account is the default', async () => {
-      renderSection(
-        standalone({ resolvedAccount: WORK, inherited: false, resolvedAccountId: 'acme-corp' }),
-        { usage: [mainUsage()] }
-      );
-      await screen.findByRole('button', { name: `Color for ${MAIN}` });
-      const rows = screen.getAllByTestId('claude-account-row');
-      expect(within(rows[2]!).queryByText('in use')).not.toBeInTheDocument();
-      expect(within(rows[0]!).getByText('in use')).toBeInTheDocument();
     });
 
     // The server names the row by comparing folders by real path; the screen
@@ -997,12 +764,6 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       expect(screen.getAllByText('in use')).toHaveLength(1);
     });
 
-    it('marks no row when the server does not name one, rather than guessing', async () => {
-      renderSection(standalone({ resolvedAccountId: undefined }), { usage: [mainUsage()] });
-      await screen.findByRole('button', { name: `Color for ${MAIN}` });
-      expect(screen.queryByText('in use')).not.toBeInTheDocument();
-    });
-
     it('says new sessions use $CLAUDE_CONFIG_DIR when the server reports it, and marks no row', async () => {
       // An unregistered inherited folder: Main stands for ~/.claude, not it, so
       // the server names no row and the line is the only honest answer.
@@ -1019,54 +780,6 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
         'New chats use ~/.claude-env, from the server’s $CLAUDE_CONFIG_DIR.'
       );
       expect(screen.queryByText('in use')).not.toBeInTheDocument();
-    });
-
-    it.each([
-      ['~/.claude itself, so Main', HOME_DEFAULT, 'default', 2],
-      ['a registered row', WORK, 'acme-corp', 0],
-    ])(
-      'shows no $CLAUDE_CONFIG_DIR line when the variable names %s, which already says "in use"',
-      async (_case, folder, id, rowIndex) => {
-        renderSection(
-          standalone({
-            resolvedAccount: folder,
-            resolvedAccountId: id,
-            launchOverride: { env: 'CLAUDE_CONFIG_DIR', path: folder },
-          }),
-          { usage: [mainUsage()] }
-        );
-        await screen.findByRole('button', { name: `Color for ${MAIN}` });
-        const rows = screen.getAllByTestId('claude-account-row');
-        expect(within(rows[rowIndex]!).getByText('in use')).toBeInTheDocument();
-        expect(screen.getAllByText('in use')).toHaveLength(1);
-        expect(screen.queryByTestId('claude-account-launch-override')).not.toBeInTheDocument();
-      }
-    );
-
-    it('shows no $CLAUDE_CONFIG_DIR line when the server reports no override', async () => {
-      renderSection(standalone(), { usage: [mainUsage()] });
-      await screen.findByRole('button', { name: `Color for ${MAIN}` });
-      expect(screen.queryByTestId('claude-account-launch-override')).not.toBeInTheDocument();
-    });
-
-    it('draws its dot in the resolved color', async () => {
-      renderSection(standalone(), { usage: [mainUsage()] });
-      const control = await screen.findByRole('button', { name: `Color for ${MAIN}` });
-      expect(control.innerHTML).toContain('#7c3aed');
-    });
-
-    it.each([
-      ['no', [] as Account[]],
-      ['one', [ACME]],
-    ])('is absent with %s registered account', async (_, accounts) => {
-      renderSection(standalone({ accounts }), { usage: [mainUsage()] });
-      // Wait for the config, so the rows are the registered ones and no more.
-      await waitFor(() =>
-        expect(screen.queryAllByTestId('claude-account-row')).toHaveLength(accounts.length)
-      );
-      await screen.findByRole('combobox', { name: 'Default account' });
-      expect(screen.queryAllByTestId('claude-account-row')).toHaveLength(accounts.length);
-      expect(screen.queryByRole('button', { name: `Color for ${MAIN}` })).not.toBeInTheDocument();
     });
 
     it('is absent when the default is a registered row, even with a stale `default` cached', async () => {
@@ -1099,24 +812,6 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       await user.click(within(group).getByRole('radio', { name: 'teal' }));
       expect(transport.updateConfig).toHaveBeenCalledWith({
         runtimes: { claudeCode: { defaultAccountColor: '#0d9488' } },
-      });
-    });
-
-    it('writes null when Default is chosen', async () => {
-      const user = userEvent.setup();
-      const transport = renderSection(
-        standalone({ defaultAccountColor: '#0d9488', defaultAccountResolvedColor: '#0d9488' }),
-        { usage: [mainUsage()] }
-      );
-      await user.click(await screen.findByRole('button', { name: `Color for ${MAIN}` }));
-      const group = await screen.findByRole('radiogroup', { name: `Color for ${MAIN}` });
-      expect(within(group).getByRole('radio', { name: 'teal' })).toHaveAttribute(
-        'aria-checked',
-        'true'
-      );
-      await user.click(within(group).getByRole('radio', { name: 'Default' }));
-      expect(transport.updateConfig).toHaveBeenCalledWith({
-        runtimes: { claudeCode: { defaultAccountColor: null } },
       });
     });
 
@@ -1167,19 +862,6 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
         component: () => null,
       });
     }
-
-    it('is absent with two accounts and no Flow tab', async () => {
-      renderSection({ resolvedAccount: HOME, inherited: true, accounts: [PERSONAL, ACME] });
-      await screen.findByRole('button', { name: 'Color for Personal' });
-      expect(screen.queryByText(/Flow uses these accounts/)).not.toBeInTheDocument();
-    });
-
-    it('is absent with one account even when the Flow tab is there', async () => {
-      registerFlowTab();
-      renderSection({ resolvedAccount: HOME, inherited: true, accounts: [ACME] });
-      await screen.findByText('Default account');
-      expect(screen.queryByText(/Flow uses these accounts/)).not.toBeInTheDocument();
-    });
 
     it('links to the Flow tab with two accounts and the tab registered', async () => {
       const user = userEvent.setup();

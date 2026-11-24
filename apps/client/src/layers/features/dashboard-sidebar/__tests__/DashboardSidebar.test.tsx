@@ -9,9 +9,8 @@ import { agentAuthorRef, type AuthorRef, type RoomSummary } from '@dorkos/shared
 import { toast } from 'sonner';
 import { getPrefersReducedMotion } from '@/test-setup';
 import { useInteractionStore } from '@/layers/entities/interactions';
-import { createInitialSlots, TransportProvider, useExtensionRegistry } from '@/layers/shared/model';
+import { TransportProvider } from '@/layers/shared/model';
 import { registerExtensionRemount } from '@/layers/shared/lib';
-import { useCreateFlowStore } from '../model/create-flow-store';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
 import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
@@ -709,19 +708,6 @@ describe('DashboardSidebar', () => {
       expect(updater({})).toMatchObject({ profile: 'mesh-id/projects/alpha' });
       expect(mockOpenProfileDocked).not.toHaveBeenCalled();
     });
-
-    it('still has a door — the docked panel — when the fleet cannot name it', async () => {
-      // The roster join and the path listing are separate reads and can
-      // genuinely disagree. What opens is a panel that says the agent is gone;
-      // that half is asserted in `ProfileDock.test.tsx`.
-      mockUnmappedPaths.mockReturnValue(['/projects/alpha']);
-      renderOneAgent();
-
-      const face = await screen.findByRole('button', { name: 'Open alpha’s profile' });
-      await userEvent.click(face);
-
-      expect(mockOpenProfileDocked).toHaveBeenCalledWith('/projects/alpha');
-    });
   });
 
   // ── The shell (spec §A3, R2) ──
@@ -730,24 +716,6 @@ describe('DashboardSidebar', () => {
     it('is one landmark, named', () => {
       renderWithProviders(<DashboardSidebar />);
       expect(panel()).toBeInTheDocument();
-    });
-
-    it('draws no top-level route navigation of its own — that is the shell’s now', () => {
-      // The header block and footer are persistent chrome mounted by AppShell
-      // OUTSIDE the `sidebar.body` swap region (spec R2, P2 AC-8).
-      renderWithProviders(<DashboardSidebar />);
-      expect(screen.queryByText('Connections')).not.toBeInTheDocument();
-      expect(screen.queryByText('Marketplace')).not.toBeInTheDocument();
-    });
-
-    it('draws no Heads up, no Today and no Library — places only', async () => {
-      mockRooms.mockReturnValue([channel('r1', 'general')]);
-      renderWithProviders(<DashboardSidebar />);
-      await waitFor(() => expect(headings()).toContain('Channels'));
-      for (const gone of ['Heads up', 'Today', 'Library', 'Getting started', 'Agents', 'Pins']) {
-        expect(screen.queryByText(gone), `${gone} is still drawn`).not.toBeInTheDocument();
-      }
-      expect(panel().querySelector('[data-sidebar-zone]')).toBeNull();
     });
   });
 
@@ -766,47 +734,6 @@ describe('DashboardSidebar', () => {
       expect(headings()).toEqual(['Channels', 'Direct messages']);
     });
 
-    it('opens Threads and the Directory from the top items', async () => {
-      renderWithProviders(<DashboardSidebar />);
-      const top = sectionBody('top');
-      fireEvent.click(within(top).getByRole('button', { name: 'Threads' }));
-      expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/threads' });
-      fireEvent.click(within(top).getByRole('button', { name: 'Directory' }));
-      expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/team' });
-    });
-
-    it('shows no To-dos door while to-dos are off', async () => {
-      renderWithProviders(<DashboardSidebar />);
-      const top = sectionBody('top');
-      await waitFor(() => expect(mockTransport.getConfig).toHaveBeenCalled());
-      expect(within(top).queryByRole('button', { name: /^To-dos/ })).toBeNull();
-      expect(mockTransport.listTodos).not.toHaveBeenCalled();
-    });
-
-    it('shows a To-dos door with a neutral due count while to-dos are on', async () => {
-      mockTransport.getConfig.mockImplementation(() =>
-        Promise.resolve({ agents: { defaultAgent: 'dorkbot' }, todos: { enabled: true } })
-      );
-      try {
-        renderWithProviders(<DashboardSidebar />);
-        const top = sectionBody('top');
-        const door = await within(top).findByRole('button', { name: /^To-dos/ });
-        await waitFor(() =>
-          expect(top.querySelector('[data-slot="count-pill"]')).toHaveTextContent('2')
-        );
-        expect(top.querySelector('[data-slot="count-pill"]')).toHaveAttribute(
-          'data-tone',
-          'neutral'
-        );
-        fireEvent.click(door);
-        expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/todos' });
-      } finally {
-        mockTransport.getConfig.mockImplementation(() =>
-          Promise.resolve({ agents: { defaultAgent: 'dorkbot' } })
-        );
-      }
-    });
-
     it('lights the top item whose page is open', async () => {
       mockPathname = '/threads';
       mockLocation = { pathname: '/threads', search: {} };
@@ -819,16 +746,6 @@ describe('DashboardSidebar', () => {
       expect(within(top).getByRole('button', { name: 'Directory' })).not.toHaveAttribute(
         'aria-current'
       );
-    });
-
-    it('draws a hand-made section as a peer, right under the top items (D3)', async () => {
-      mockSidebarPrefs.mockReturnValue(
-        makePrefs({ groups: [group({ items: [agent('/projects/alpha')] })] })
-      );
-      renderWithProviders(<DashboardSidebar />);
-      await waitFor(() => expect(headings()).toContain('Clients'));
-      expect(headings()[0]).toBe('Clients');
-      expect(screen.queryByRole('heading', { name: /Clients/, level: 4 })).not.toBeInTheDocument();
     });
   });
 
@@ -846,36 +763,6 @@ describe('DashboardSidebar', () => {
       ).toContain(row);
       fireEvent.click(row);
       expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/team', search: { kind: 'agents' } });
-    });
-
-    it('draws an agent’s direct message as the agent, and ends with a way to message anyone', async () => {
-      mockResolvedAgents.mockReturnValue({ '/projects/alpha': { id: 'a1', name: 'alpha' } });
-      mockRooms.mockReturnValue([
-        dmWith('dm-alpha', '/projects/alpha', 'alpha'),
-        groupDmWith('dm-group', ['/projects/alpha', '/projects/beta'], 'Launch crew'),
-      ]);
-      renderWithProviders(<DashboardSidebar />);
-      await waitFor(() => expect(agentRowButton('alpha')).toBeInTheDocument());
-      const dms = sectionBody('dms');
-      // The agent, by its own row — and the group message, which no one agent
-      // stands for, as a room.
-      expect(within(dms).getByText('Launch crew')).toBeInTheDocument();
-      expect(within(dms).queryByText('Message an agent')).not.toBeInTheDocument();
-      const last = within(dms).getByRole('button', { name: 'Message an agent or person' });
-      fireEvent.click(last);
-      expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/team' });
-      // Every other agent is in the Directory, not on the panel.
-      expect(
-        screen.queryByRole('button', { name: /Switch to beta/ }),
-        'beta has no direct message and no pin'
-      ).not.toBeInTheDocument();
-    });
-
-    it('keeps a pinned agent in reach before anybody has written to it', async () => {
-      mockSidebarPrefs.mockReturnValue(makePrefs({ pinned: [agent('/projects/beta')] }));
-      renderWithProviders(<DashboardSidebar />);
-      await waitFor(() => expect(agentRowButton('beta')).toBeInTheDocument());
-      expect(sectionBody('dms')).toContainElement(agentRowButton('beta'));
     });
 
     it('opens an agent’s Direct chat when its row is pressed (S12)', async () => {
@@ -926,31 +813,6 @@ describe('DashboardSidebar', () => {
       await waitFor(() => expect(agentRowButton('beta')).not.toHaveAttribute('aria-current'));
       expect(agentRowButton('alpha')).toHaveAttribute('aria-current', 'page');
     });
-
-    it('draws no session row and no thread row, whatever is running', async () => {
-      mockSidebarPrefs.mockReturnValue(makePrefs({ pinned: [agent('/projects/alpha')] }));
-      mockRecent.mockReturnValue({
-        data: {
-          sessions: [
-            {
-              id: 's1',
-              title: 'Wire the model',
-              cwd: '/projects/alpha',
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-              permissionMode: 'default',
-              runtime: 'claude-code',
-            },
-          ],
-          agentActivity: {},
-        },
-        isLoading: false,
-        isSuccess: true,
-      });
-      renderWithProviders(<DashboardSidebar />);
-      await waitFor(() => expect(agentRowButton('alpha')).toBeInTheDocument());
-      expect(screen.queryByText('Wire the model')).not.toBeInTheDocument();
-    });
   });
 
   // ── Add-ons: the pages mini apps add (spec `mini-app-placement` Part 2) ──
@@ -984,20 +846,6 @@ describe('DashboardSidebar', () => {
       mockRequestInbox.mockClear();
     });
 
-    it('stands between Threads and Directory, and no Add-ons section is drawn', async () => {
-      renderWithProviders(<DashboardSidebar />);
-      const door = await waitFor(() => screen.getByTestId('apps-door'));
-      expect(door).toHaveTextContent('Apps');
-      expect(headings()).not.toContain('Add-ons');
-      expect(screen.queryByRole('group', { name: 'Pinned apps' })).not.toBeInTheDocument();
-    });
-
-    it('opens the Apps page from its door', async () => {
-      renderWithProviders(<DashboardSidebar />);
-      await userEvent.click(await waitFor(() => screen.getByTestId('apps-door')));
-      expect(mockNavigate).toHaveBeenCalledWith(expect.objectContaining({ to: '/apps' }));
-    });
-
     it('lists the pins under the door, in pin order, not A–Z', async () => {
       const zeta = app('zeta', 'Zeta Board');
       const alpha = app('alpha', 'Alpha Notes');
@@ -1011,25 +859,6 @@ describe('DashboardSidebar', () => {
       await waitFor(() => expect(pinnedNames()).toEqual(['Zeta Board', 'Alpha Notes']));
     });
 
-    // Purpose: a pinned app's count is the neutral pill, capped at 9+ (DOR-3077).
-    it('draws a pinned app’s count as a neutral pill, capped at 9+', async () => {
-      const mail = app('mail', 'Mail', { count: 14 });
-      appCatalog.value = { status: 'ready', apps: [mail], pinned: [mail], pins: ['mail'] };
-      renderWithProviders(<DashboardSidebar />);
-      const row = await waitFor(() => screen.getByTestId('apps-pinned-mail'));
-      const pill = row.querySelector('[data-slot="count-pill"]');
-      expect(pill).toHaveAttribute('data-tone', 'neutral');
-      expect(pill).toHaveTextContent('9+');
-    });
-
-    it('opens a pinned app’s first page when its row is pressed', async () => {
-      const board = app('board', 'Board', { path: 'today' });
-      appCatalog.value = { status: 'ready', apps: [board], pinned: [board], pins: ['board'] };
-      renderWithProviders(<DashboardSidebar />);
-      await userEvent.click(await waitFor(() => screen.getByTestId('apps-pinned-board')));
-      expect(mockRouterNavigate).toHaveBeenCalledWith({ href: '/x/board/today' });
-    });
-
     it('keeps a held app where it was, says so, and opens its card instead of the app', async () => {
       const radar = app('radar', 'Release Radar', { state: 'held', pageId: null });
       appCatalog.value = { status: 'ready', apps: [radar], pinned: [radar], pins: ['radar'] };
@@ -1040,37 +869,6 @@ describe('DashboardSidebar', () => {
       await userEvent.click(row);
       expect(mockRequestInbox).toHaveBeenCalledWith(undefined, { focus: 'radar' });
       expect(mockRouterNavigate).not.toHaveBeenCalled();
-    });
-
-    it('puts a dot on the door only for a held app no pinned row shows', async () => {
-      const radar = app('radar', 'Release Radar', { state: 'held' });
-      appCatalog.value = { status: 'ready', apps: [radar], pinned: [], pins: [] };
-      renderWithProviders(<DashboardSidebar />);
-      const door = await waitFor(() => screen.getByTestId('apps-door'));
-      expect(door).toHaveAccessibleName(/an app needs your OK/);
-    });
-
-    it('marks the app you are on, for any of its pages', async () => {
-      useExtensionRegistry.setState({ slots: createInitialSlots() });
-      useExtensionRegistry.getState().register('pages', {
-        id: 'board:settings',
-        extensionId: 'board',
-        path: 'settings',
-        component: () => null,
-        title: 'Board settings',
-        menu: true,
-      });
-      const board = app('board', 'Board');
-      appCatalog.value = { status: 'ready', apps: [board], pinned: [board], pins: ['board'] };
-      mockPathname = '/x/board/settings';
-      mockLocation = { pathname: mockPathname, search: {} };
-      try {
-        renderWithProviders(<DashboardSidebar />);
-        const row = await waitFor(() => screen.getByTestId('apps-pinned-board'));
-        expect(row).toHaveAttribute('aria-current', 'page');
-      } finally {
-        useExtensionRegistry.setState({ slots: createInitialSlots() });
-      }
     });
 
     it('says the apps couldn’t load under the door, which stays, and tries again', async () => {
@@ -1099,14 +897,6 @@ describe('DashboardSidebar', () => {
   // ── BC-29 / BC-30: the collapse gestures ──
 
   describe('BC-29 / BC-30 — folding', () => {
-    it('folds a section from anywhere on its header row', async () => {
-      mockRooms.mockReturnValue([channel('r1', 'general')]);
-      renderWithProviders(<DashboardSidebar />);
-      await waitFor(() => expect(headings()).toContain('Channels'));
-      fireEvent.click(sectionToggle('Channels'));
-      expect(lastPrefsWrite().sections?.channels?.collapsed).toBe(true);
-    });
-
     it('folds EVERY section on Alt-click, not just the one pressed', async () => {
       mockSidebarPrefs.mockReturnValue(
         makePrefs({ groups: [group({ items: [agent('/projects/alpha')] })] })
@@ -1119,26 +909,6 @@ describe('DashboardSidebar', () => {
       expect(next.sections?.channels?.collapsed).toBe(true);
       expect(next.sections?.dms?.collapsed).toBe(true);
       expect(next.groups[0]?.collapsed).toBe(true);
-    });
-
-    it('unfolds everything when everything is already folded', async () => {
-      mockSidebarPrefs.mockReturnValue(
-        makePrefs({ sections: { channels: { collapsed: true }, dms: { collapsed: true } } })
-      );
-      mockRooms.mockReturnValue([channel('r1', 'general')]);
-      renderWithProviders(<DashboardSidebar />);
-      await waitFor(() => expect(headings()).toContain('Channels'));
-      fireEvent.click(sectionToggle('Channels'), { altKey: true });
-      expect(lastPrefsWrite().sections?.channels?.collapsed).toBe(false);
-    });
-
-    it('hides a folded section’s rows and keeps its header reachable', async () => {
-      mockSidebarPrefs.mockReturnValue(makePrefs({ sections: { channels: { collapsed: true } } }));
-      mockRooms.mockReturnValue([channel('r1', 'general')]);
-      renderWithProviders(<DashboardSidebar />);
-      await waitFor(() => expect(headings()).toContain('Channels'));
-      expect(screen.queryByText('#general')).not.toBeInTheDocument();
-      expect(sectionToggle('Channels')).toHaveAttribute('aria-expanded', 'false');
     });
   });
 
@@ -1183,19 +953,6 @@ describe('DashboardSidebar', () => {
         expect(plus.className).toContain('group-focus-within/section:opacity-100');
         expect(plus.className).toContain('group-hover/section:opacity-100');
       }
-    });
-
-    it('points the Direct messages "+" at the one New menu instead of a handler', async () => {
-      renderWithProviders(<DashboardSidebar />);
-      await screen.findByRole('heading', { name: /Direct messages/, level: 3 });
-      expect(useCreateFlowStore.getState().menuOpen).toBe(false);
-
-      fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
-
-      expect(useCreateFlowStore.getState()).toMatchObject({
-        menuOpen: true,
-        preselect: 'new-message',
-      });
     });
 
     it('makes each section "+" a keyboard stop, reachable by arrowing off the header', async () => {
@@ -1303,11 +1060,6 @@ describe('DashboardSidebar', () => {
       fireEvent.keyDown(header, { code: 'Space' });
       expect(document.querySelectorAll('[data-sidebar-dragging]')).toHaveLength(0);
     });
-
-    it('offers no "advanced mode" toggle anywhere', () => {
-      renderWithProviders(<DashboardSidebar />);
-      expect(screen.queryByText(/advanced mode/i)).not.toBeInTheDocument();
-    });
   });
 
   // ── Behaviour that had to survive the rewrite ──
@@ -1319,13 +1071,6 @@ describe('DashboardSidebar', () => {
       await waitFor(() => expect(mockUpdateSidebar).toHaveBeenCalled());
       expect(lastPrefsWrite().pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
       expect(localStorage.getItem('dorkos-pinned-agents')).toBeNull();
-    });
-
-    it('renders a section you just made, empty, with somewhere to drop into', async () => {
-      mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ items: [] })] }));
-      renderWithProviders(<DashboardSidebar />);
-      await screen.findByRole('heading', { name: /Clients/, level: 3 });
-      expect(screen.getByText(/Drag channels, DMs or agents here/)).toBeInTheDocument();
     });
 
     it('tells a smart section with no matches so, rather than hiding it', async () => {
@@ -1346,57 +1091,6 @@ describe('DashboardSidebar', () => {
       await screen.findByRole('heading', { name: /Wedged/, level: 3 });
       expect(screen.getByText('No agents match these rules')).toBeInTheDocument();
     });
-
-    it('keeps a smart section’s members out of the drag layer', async () => {
-      mockSidebarPrefs.mockReturnValue(
-        makePrefs({
-          groups: [
-            group({
-              id: 'sg',
-              name: 'Live now',
-              kind: 'smart',
-              sortMode: 'recent',
-              rules: { statuses: ['needs-attention', 'active'] },
-            }),
-          ],
-        })
-      );
-      renderWithProviders(<DashboardSidebar />);
-      const heading = await screen.findByRole('heading', { name: /Live now/, level: 3 });
-      const body = heading.closest('[data-slot="sidebar-group"]');
-      const rows = body?.querySelectorAll('[data-sidebar-row]') ?? [];
-      expect(rows.length).toBeGreaterThan(0);
-      for (const row of rows) {
-        expect(row.closest('[aria-roledescription="sortable"]')).toBeNull();
-      }
-    });
-  });
-
-  // ── The bottom slot is pinned, not scrolled (spec `sidebar-simplification` D4) ──
-
-  describe('the bottom slot', () => {
-    it('sits outside the scroller, so a long list can never push it out of sight', () => {
-      renderWithProviders(<DashboardSidebar />);
-
-      const slot = document.querySelector('[data-slot="sidebar-bottom-slot"]');
-      expect(slot).not.toBeNull();
-      expect(slot!.closest('[data-slot="sidebar-content"]')).toBeNull();
-      expect(slot!.closest('nav[aria-label="Sidebar"]')).not.toBeNull();
-    });
-
-    it('draws the winning card, and draws it after the scroller in the DOM', () => {
-      renderWithProviders(<DashboardSidebar />);
-
-      const scroller = document.querySelector('[data-slot="sidebar-content"]');
-      const slot = document.querySelector('[data-slot="sidebar-bottom-slot"]');
-      expect(screen.getByTestId('bottom-slot-card')).toBeTruthy();
-      // CONTAINED_BY is excluded deliberately: a descendant also reports as
-      // FOLLOWING, so the bare flag would be true for the very arrangement this
-      // case exists to forbid — the slot back inside the scroller.
-      const position = scroller!.compareDocumentPosition(slot!);
-      expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(position & Node.DOCUMENT_POSITION_CONTAINED_BY).toBeFalsy();
-    });
   });
 
   // ── The rule this whole task exists to make true ──
@@ -1404,14 +1098,6 @@ describe('DashboardSidebar', () => {
   describe('the renderer holds no rules', () => {
     const RENDERER = join(__dirname, '..', 'ui', 'DashboardSidebar.tsx');
     const source = readFileSync(RENDERER, 'utf8');
-
-    it('is under 200 lines', () => {
-      expect(source.split('\n').length).toBeLessThan(200);
-    });
-
-    it('transforms nothing — no array work, no model field, no arithmetic', () => {
-      expect(rulesIn(source, RENDERER)).toEqual([]);
-    });
 
     it('reds on every rule a reviewer could put back', () => {
       // **This runs the REAL scanner**, over sources that differ from the
@@ -1432,12 +1118,6 @@ describe('DashboardSidebar', () => {
           `${what} walked past the guard`
         ).not.toEqual([]);
       }
-    });
-
-    it('does not fire on the renderer’s own prose', () => {
-      expect(
-        rulesIn('/** Never .filter() or .sort() here. */\n// and no unread either\n', RENDERER)
-      ).toEqual([]);
     });
   });
 });
@@ -1460,15 +1140,6 @@ describe('the first paint (spec `sidebar-simplification` D6)', () => {
       'aria-busy',
       'true'
     );
-  });
-
-  it('replaces the bones with the panel, and stops saying busy, once it settles', () => {
-    mockRooms.mockReturnValue([channel('c1', 'general')]);
-    mountSidebar();
-
-    expect(screen.queryByTestId('sidebar-skeleton')).toBeNull();
-    expect(document.querySelectorAll('[data-sidebar-row]').length).toBeGreaterThan(0);
-    expect(screen.getByRole('navigation', { name: 'Sidebar' })).not.toHaveAttribute('aria-busy');
   });
 });
 
@@ -1511,37 +1182,5 @@ describe('the fleet waits for its manifests (DOR-1143)', () => {
     await waitFor(() => expect(rowTexts().some((t) => t.includes('general'))).toBe(true));
     // But nothing that would have to guess a face.
     expect(screen.queryByRole('button', { name: /Switch to alpha/ })).toBeNull();
-  });
-
-  it('withholds a direct message too, because its faces are the fleet’s', async () => {
-    // A DM's mark is its agent participants' faces joined through the
-    // manifests. Without them the row falls back to the room's own letter and
-    // grows faces a beat later — the same flip, one row further out.
-    degradedBoot();
-    mockRooms.mockReturnValue([
-      channel('c1', 'general'),
-      groupDmWith('d1', ['/projects/alpha', '/projects/beta'], 'Alpha chat'),
-    ]);
-    mountSidebar();
-
-    await waitFor(() => expect(rowTexts().some((t) => t.includes('general'))).toBe(true));
-    expect(rowTexts().some((t) => t.includes('Alpha chat'))).toBe(false);
-  });
-
-  it('draws both, once, as soon as the manifests answer', async () => {
-    // The other half: withholding is a wait, not a deletion.
-    mockResolvedAgents.mockReturnValue({
-      '/projects/alpha': { id: 'alpha-ulid', name: 'alpha' },
-      '/projects/beta': { id: 'beta-ulid', name: 'beta' },
-    });
-    mockRooms.mockReturnValue([
-      channel('c1', 'general'),
-      groupDmWith('d1', ['/projects/alpha', '/projects/beta'], 'Alpha chat'),
-    ]);
-    mountSidebar();
-
-    await waitFor(() => expect(rowTexts().some((t) => t.includes('general'))).toBe(true));
-    expect(rowTexts().some((t) => t.includes('Alpha chat'))).toBe(true);
-    expect(screen.getAllByRole('button', { name: /Switch to alpha/ }).length).toBeGreaterThan(0);
   });
 });

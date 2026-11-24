@@ -1,16 +1,18 @@
 ---
 id: 261001-231451
 title: Share one managed page with optional viewers
-status: proposed
+status: superseded
 created: 2026-10-01
 spec: shared-browser-control
-superseded-by: null
+superseded-by: 261119-190201
 amends: 260912-025251
 ---
 
 # 261001-231451. Share one managed page with optional viewers
 
 ## Status
+
+Superseded by [261119-190201](261119-190201-one-real-chrome-per-agent-two-views.md) (2026-11-24, on review): one real Chrome per agent, with a panel that streams the same page, settles what this record proposed. That record now governs the "Shared browser" experiment setting this one created (`browser.enabled` in `packages/shared/src/config-schema.ts`). The amendment this record proposed to 260912-025251 was made by 261014-120000.
 
 Proposed, extracted from [the production contract](../specs/shared-browser-control/06-production-specification.md). This record is awaiting independent review and acceptance; it changes no accepted decision yet.
 

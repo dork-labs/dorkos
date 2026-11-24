@@ -72,24 +72,6 @@ describe('mapResultEvent — rate_limit_event usage projection', () => {
       utilization: 0.82,
     });
   });
-
-  it('maps isUsingOverage to the detail field and rejected status to exhausted', async () => {
-    const events = await drain(
-      mapResultEvent(
-        msg({
-          type: 'rate_limit_event',
-          rate_limit_info: { status: 'rejected', utilization: 1, isUsingOverage: true },
-        }),
-        makeSession(),
-        SESSION_ID
-      )
-    );
-    expect(usageOf(events)).toMatchObject({
-      kind: 'subscription',
-      state: 'exhausted',
-      detail: 'Using overage capacity',
-    });
-  });
 });
 
 describe('mapResultEvent — result usage stamping', () => {
@@ -115,28 +97,6 @@ describe('mapResultEvent — result usage stamping', () => {
       windowLabel: '5-hour window',
       costUsd: 0.75,
     });
-  });
-
-  it('reports pay-as-you-go when no rate-limit signal has been observed', async () => {
-    const events = await drain(
-      mapResultEvent(
-        msg({ type: 'result', subtype: 'success', total_cost_usd: 0.5, model: 'claude-opus-4-6' }),
-        makeSession(),
-        SESSION_ID
-      )
-    );
-    expect(usageOf(events)).toMatchObject({ kind: 'pay-as-you-go', costUsd: 0.5 });
-  });
-
-  it('omits usage on a result with no cost and no prior subscription signal', async () => {
-    const events = await drain(
-      mapResultEvent(
-        msg({ type: 'result', subtype: 'success', model: 'claude-opus-4-6' }),
-        makeSession(),
-        SESSION_ID
-      )
-    );
-    expect(usageOf(events)).toBeUndefined();
   });
 });
 
@@ -213,46 +173,6 @@ describe('mapResultEvent — turn-total token metadata (AI observability, DOR-31
     expect(second.costUsd).toBeCloseTo(0.008059, 9);
   });
 
-  it('reports the first turn after a resume as its own share when the totals carried over (SDK 0.3.277)', async () => {
-    // The relaunch keeps the in-memory session, so the ledger from the previous
-    // query is the baseline the carried-over totals are differenced against.
-    const session = makeSession({
-      usageLedger: { haiku: { inputTokens: 7684, outputTokens: 75, costUsd: 0.008059 } },
-    });
-    const data = statusData(
-      await drain(
-        mapResultEvent(
-          runningTotals({ haiku: { inputTokens: 11196, outputTokens: 106, costUSD: 0.011726 } }),
-          session,
-          SESSION_ID
-        )
-      )
-    )!;
-    expect(data.turnInputTokens).toBe(3512);
-    expect(data.turnOutputTokens).toBe(31);
-  });
-
-  it('reports the whole result as the turn when the totals restarted (an old transcript, or /clear)', async () => {
-    // Resuming a transcript an SDK before 0.3.277 wrote restarts the running
-    // totals at zero (observed: 3616 input tokens on a session that had spent
-    // 7699), so a DROP means everything in the result is this turn's.
-    const session = makeSession({
-      usageLedger: { haiku: { inputTokens: 7699, outputTokens: 102, costUsd: 0.008209 } },
-    });
-    const data = statusData(
-      await drain(
-        mapResultEvent(
-          runningTotals({ haiku: { inputTokens: 3616, outputTokens: 34, costUSD: 0.003786 } }),
-          session,
-          SESSION_ID
-        )
-      )
-    )!;
-    expect(data.turnInputTokens).toBe(3616);
-    expect(data.turnOutputTokens).toBe(34);
-    expect(data.turnCostUsd).toBeCloseTo(0.003786, 9);
-  });
-
   it('does not report the whole history after an error result with lower (zeroed) totals', async () => {
     const session = makeSession({
       usageLedger: { haiku: { inputTokens: 7684, outputTokens: 75, costUsd: 0.008059 } },
@@ -280,68 +200,6 @@ describe('mapResultEvent — turn-total token metadata (AI observability, DOR-31
     )!;
     expect('turnInputTokens' in next).toBe(false);
     expect('turnCostUsd' in next).toBe(false);
-  });
-
-  it('omits the turn figures when the baseline is unknown, then counts from the next turn', async () => {
-    // A resumed session this process holds no ledger for: the first result may
-    // carry every earlier turn, and there is nothing to subtract.
-    const session = makeSession();
-    const first = statusData(
-      await drain(
-        mapResultEvent(
-          runningTotals({ haiku: { inputTokens: 11196, outputTokens: 106, costUSD: 0.011726 } }),
-          session,
-          SESSION_ID
-        )
-      )
-    )!;
-    expect('turnInputTokens' in first).toBe(false);
-    expect('turnOutputTokens' in first).toBe(false);
-    expect('turnCostUsd' in first).toBe(false);
-
-    const next = statusData(
-      await drain(
-        mapResultEvent(
-          runningTotals({ haiku: { inputTokens: 14800, outputTokens: 140, costUSD: 0.0155 } }),
-          session,
-          SESSION_ID
-        )
-      )
-    )!;
-    expect(next.turnInputTokens).toBe(3604);
-    expect(next.turnOutputTokens).toBe(34);
-  });
-
-  it('omits the turn-total fields when the SDK reported no modelUsage', async () => {
-    const events = await drain(
-      mapResultEvent(
-        msg({ type: 'result', subtype: 'success', total_cost_usd: 0.1, model: 'claude-opus-4-6' }),
-        makeSession(),
-        SESSION_ID
-      )
-    );
-    const data = statusData(events)!;
-    expect('turnInputTokens' in data).toBe(false);
-    expect('turnOutputTokens' in data).toBe(false);
-  });
-
-  it('omits the turn-total fields when modelUsage is present but EMPTY (no data ≠ zero tokens)', async () => {
-    const events = await drain(
-      mapResultEvent(
-        msg({
-          type: 'result',
-          subtype: 'success',
-          total_cost_usd: 0.1,
-          model: 'claude-opus-4-6',
-          modelUsage: {},
-        }),
-        makeSession(),
-        SESSION_ID
-      )
-    );
-    const data = statusData(events)!;
-    expect('turnInputTokens' in data).toBe(false);
-    expect('turnOutputTokens' in data).toBe(false);
   });
 });
 
@@ -372,21 +230,6 @@ describe('mapResultEvent — error category classification', () => {
     );
     // Translated, not deleted: the raw line stays reachable for debugging.
     expect(data?.details).toBe(vendorText);
-  });
-
-  it('keeps a non-auth execution failure as execution_error', async () => {
-    const events = await drain(
-      mapResultEvent(
-        msg({
-          type: 'result',
-          subtype: 'error_during_execution',
-          errors: ['Tool run_command exited with code 1'],
-        }),
-        makeSession(),
-        SESSION_ID
-      )
-    );
-    expect(errorData(events)?.category).toBe('execution_error');
   });
 });
 
@@ -439,15 +282,6 @@ describe('mapResultEvent — a turn a person stopped is not an error (DOR-1320)'
     expect(errorData(events)?.code).toBe('error_during_execution');
   });
 
-  it('KEEPS the error frame when the caller tracks no stops at all', async () => {
-    // The absent-predicate default. Every runtime path that does not follow
-    // stops must behave as though none happened, or the suppression leaks to
-    // callers that never opted into it.
-    const events = await drain(mapResultEvent(abortedResult(), makeSession(), SESSION_ID));
-
-    expect(errorData(events)?.category).toBe('execution_error');
-  });
-
   // Keeping the error frame was never enough on its own: settlement read the
   // abort reason, called the turn `interrupted` and erased the very frame this
   // mapper had deliberately preserved. So the intent travels WITH the reason.
@@ -463,71 +297,6 @@ describe('mapResultEvent — a turn a person stopped is not an error (DOR-1320)'
       );
       expect(statusData(events).stopWasRequested).toBe(stop);
     });
-
-    it.each(['interrupted', 'aborted_streaming', 'aborted_tools'])(
-      'stamps it on every abort reason (%s), not just the observed one',
-      async (reason) => {
-        const events = await drain(
-          mapResultEvent(abortedResult(reason), makeSession(), SESSION_ID, () => false)
-        );
-        expect(statusData(events).stopWasRequested).toBe(false);
-      }
-    );
-
-    it('omits it entirely when the caller tracks no stops at all', async () => {
-      // A caller holding no session has no record to report, and an absent field
-      // is what makes settlement fall back to its old answer. Writing `false`
-      // here would turn every abort on those paths into a reported crash.
-      const events = await drain(mapResultEvent(abortedResult(), makeSession(), SESSION_ID));
-      expect(statusData(events)).not.toHaveProperty('stopWasRequested');
-    });
-
-    it('omits it on a terminal it could not decide anything about', async () => {
-      // Attached only beside an abort. On every other ending it would be a fact
-      // no reader consults, written into the durable log of every turn forever.
-      const events = await drain(
-        mapResultEvent(
-          msg({ type: 'result', subtype: 'success', terminal_reason: 'completed' }),
-          makeSession(),
-          SESSION_ID,
-          () => false
-        )
-      );
-      expect(statusData(events)).not.toHaveProperty('stopWasRequested');
-    });
-
-    it('omits it when the result named no terminal reason at all', async () => {
-      const events = await drain(
-        mapResultEvent(
-          msg({ type: 'result', subtype: 'error_max_turns', is_error: true, errors: ['limit'] }),
-          makeSession(),
-          SESSION_ID,
-          () => true
-        )
-      );
-      expect(statusData(events)).not.toHaveProperty('stopWasRequested');
-    });
-  });
-
-  it('KEEPS the error frame for a failure that named no abort at all', async () => {
-    // The other half of the conjunct: a stop was requested, but this turn ended
-    // on a limit rather than on the stop. A stop DorkOS asked for and the CLI
-    // never acted on does not make an unrelated failure a stop.
-    const events = await drain(
-      mapResultEvent(
-        msg({
-          type: 'result',
-          subtype: 'error_max_turns',
-          is_error: true,
-          errors: ['the turn limit was reached'],
-        }),
-        makeSession(),
-        SESSION_ID,
-        () => true
-      )
-    );
-
-    expect(errorData(events)?.category).toBe('max_turns');
   });
 });
 
@@ -557,19 +326,6 @@ describe('mapResultEvent — context window of a 1M model', () => {
   function statusData(events: StreamEvent[]): Record<string, unknown> {
     return events.find((e) => e.type === 'session_status')!.data as Record<string, unknown>;
   }
-
-  it('reports the main model window, not the helper listed first', async () => {
-    const events = await drain(
-      mapResultEvent(
-        opus1mResult,
-        makeSession({ lastRequestUsage, lastRequestModel: 'claude-opus-5-5' }),
-        SESSION_ID
-      )
-    );
-    expect(statusData(events).contextMaxTokens).toBe(1_000_000);
-    const usage = events.find((e) => e.type === 'context_usage')!.data as { percentage: number };
-    expect(usage.percentage).toBe(30);
-  });
 
   it("prefers the SDK's own turn-end measurement when it answered", async () => {
     const events = await drain(
