@@ -297,4 +297,95 @@ describe('ConnectorAuthenticationFlowService', () => {
     release();
     await expect(disconnecting).resolves.toMatchObject({ externalCleanup: 'complete' });
   });
+
+  it('keeps initial multi-account provider flows pending when a sibling connection closes', async () => {
+    const connectionId = insertActiveConnection(h.db);
+    const initial = await h.service.start(OWNER, {
+      providerInstanceId: PROVIDER_ID,
+      toolkit: 'gmail',
+      label: 'Another account',
+      idempotencyKey: 'initial-sibling',
+    });
+    const reconnect = await h.service.reconnect(OWNER, connectionId, 'reconnect-existing');
+    expect(initial.state).toBe('pending');
+    expect(reconnect.state).toBe('pending');
+    expect(h.service.invalidateConnectionFlows(OWNER, connectionId)).toBe(1);
+    expect(h.service.status(OWNER, initial.flowId)).toMatchObject({ state: 'pending' });
+    expect(h.service.status(OWNER, reconnect.flowId)).toMatchObject({ state: 'failed' });
+  });
+
+  it.each([
+    ['request_failed', 503],
+    ['conflict', 409],
+  ] as const)(
+    'keeps managed %s status %i ambiguous and does not replay it',
+    async (code, status) => {
+      const start = vi
+        .spyOn(h.provider, 'startConnect')
+        .mockRejectedValue(Object.assign(new Error('safe managed refusal'), { code, status }));
+      const input = {
+        providerInstanceId: PROVIDER_ID,
+        toolkit: 'gmail',
+        idempotencyKey: `ambiguous-${code}`,
+      };
+
+      const first = await h.service.start(OWNER, input);
+      const repeated = await h.service.start(OWNER, input);
+
+      expect(first).toMatchObject({ state: 'start_unknown' });
+      expect(repeated).toEqual(first);
+      expect(start).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it.each([
+    ['pending', /still ending this account’s earlier access/],
+    ['failed', /couldn’t confirm .* Remove it from your apps, then connect the app again/],
+    ['unknown', /couldn’t confirm .* Remove it from your apps, then connect the app again/],
+  ] as const)(
+    'refuses signing in again to an account whose cleanup is %s with words true to it',
+    async (state, words) => {
+      const existing = insertActiveConnection(h.db);
+      h.registry.recordDisconnect(existing);
+      h.db
+        .update(connections)
+        .set({ externalCleanupState: state })
+        .where(eq(connections.id, existing))
+        .run();
+      const refusal = await h.service
+        .reconnect(OWNER, existing, `refused-${state}`)
+        .catch((error: unknown) => error as Error);
+      expect(refusal).toMatchObject({ code: 'connection_cleanup_pending' });
+      expect((refusal as Error).message).toMatch(words);
+    }
+  );
+
+  it('lets a new sign-in to the same account win over an own-key cleanup DorkOS gave up on', async () => {
+    // The person removed the app after DorkOS couldn't end its access, then
+    // connected the same account again: it must not be blocked forever.
+    const existing = insertActiveConnection(h.db);
+    h.registry.recordDisconnect(existing);
+    h.db
+      .update(connections)
+      .set({ externalCleanupState: 'failed', removedAt: NOW.toISOString() })
+      .where(eq(connections.id, existing))
+      .run();
+    const started = await h.service.start(OWNER, {
+      providerInstanceId: PROVIDER_ID,
+      toolkit: 'gmail',
+      label: 'Original',
+      idempotencyKey: 'same-account-again',
+    });
+    await expect(h.service.poll(OWNER, started.flowId)).resolves.toMatchObject({
+      state: 'connected',
+    });
+    // The old cleanup would have ended the sign-in just made: it no longer runs.
+    expect(
+      h.db
+        .select({ state: connections.externalCleanupState })
+        .from(connections)
+        .where(eq(connections.id, existing))
+        .get()
+    ).toEqual({ state: 'not_required' });
+  });
 });

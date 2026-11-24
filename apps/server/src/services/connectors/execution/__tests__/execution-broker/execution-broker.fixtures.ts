@@ -155,23 +155,24 @@ export async function openRuntimeTurn(
 
 /** The shared per-test state and helpers every execution-broker piece uses. */
 export function useExecutionBrokerHarness() {
+  const target = ConnectorExecutionTargetSchema.parse({
+    connectionId: CONNECTION_ID,
+    operationRevisionId: REVISION_ID,
+    arguments: { message: 'hello' },
+  });
   const h = {
     db: undefined as unknown as Db,
     provider: undefined as unknown as ScriptedProvider,
     registry: undefined as unknown as ConnectorRegistry,
     authorization: undefined as unknown as ConnectorExecutionAuthorizationService,
     broker: undefined as unknown as ConnectorExecutionBroker,
-    target: ConnectorExecutionTargetSchema.parse({
-      connectionId: CONNECTION_ID,
-      operationRevisionId: REVISION_ID,
-      arguments: { message: 'hello' },
-    }),
+    target,
     destructiveTarget: ConnectorExecutionTargetSchema.parse({
-      ...h.target,
+      ...target,
       operationRevisionId: DESTRUCTIVE_REVISION_ID,
     }),
     retryTarget: ConnectorExecutionTargetSchema.parse({
-      ...h.target,
+      ...target,
       operationRevisionId: RETRY_REVISION_ID,
     }),
     principal,

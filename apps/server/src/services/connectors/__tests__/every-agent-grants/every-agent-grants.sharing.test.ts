@@ -1,3 +1,9 @@
+import { vi } from 'vitest';
+import {
+  createEveryAgentEndedRecorder,
+  setOnEveryAgentEnded,
+  EVERY_AGENT_CHANGED_EVENT,
+} from '../../every-agent-activity.js';
 import { describe, expect, it } from 'vitest';
 import { CONNECTION_READINESS_COPY } from '@dorkos/shared/connector-schemas';
 import {
@@ -384,5 +390,27 @@ describe('every-agent grants', () => {
         )
         .all()
     ).toEqual([]);
+  });
+
+  it('records sharing that ends because the account was disconnected', async () => {
+    await h.giveEveryAgent(['gmail.read']);
+    setOnEveryAgentEnded(createEveryAgentEndedRecorder(h.activity));
+    h.activity.emit.mockClear();
+    h.registry.recordDisconnect(CONNECTION_ID);
+    await vi.waitFor(() =>
+      expect(h.activity.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: EVERY_AGENT_CHANGED_EVENT,
+          resourceId: CONNECTION_ID,
+          summary:
+            'Stopped sharing Gmail (Work Gmail) with every agent because the account was disconnected',
+        })
+      )
+    );
+    // Nothing was shared on a second disconnect, so nothing more is recorded.
+    h.activity.emit.mockClear();
+    h.registry.recordDisconnect(CONNECTION_ID);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(h.activity.emit).not.toHaveBeenCalled();
   });
 });

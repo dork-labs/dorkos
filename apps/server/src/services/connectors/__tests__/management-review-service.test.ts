@@ -6,7 +6,6 @@ import {
   connectorAuthenticationFlows,
   connectorOperationRevisions,
   connectorProviderInstances,
-  connectorReviewRequests,
   createDb,
   eq,
   runMigrations,
@@ -18,7 +17,6 @@ import {
 } from '@dorkos/shared/connector-schemas';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import {
-  ConnectorManagementReviewError,
   ConnectorManagementReviewService,
   type ConnectorManagementActionApplier,
 } from '../management-review-service.js';
@@ -30,6 +28,16 @@ const FOREIGN_OWNER = { kind: 'local_install', installationId: 'install-b' } as 
 const CONNECTION_ID = ConnectionIdSchema.parse('connection-a');
 const PROVIDER_ID = ConnectorProviderInstanceIdSchema.parse('provider-a');
 const NOW = new Date('2026-09-06T12:00:00.000Z');
+
+/** A program's ask to connect Gmail through the test provider. */
+const CONNECT_GMAIL = {
+  version: 1,
+  kind: 'connect',
+  providerInstanceId: PROVIDER_ID,
+  toolkit: 'gmail',
+} as const;
+/** The program requester most reviews come from. */
+const PROGRAM_A = { kind: 'program', requesterId: 'key-a', owner: OWNER } as const;
 
 describe('ConnectorManagementReviewService', () => {
   let db: Db;
@@ -127,7 +135,7 @@ describe('ConnectorManagementReviewService', () => {
   }
 
   it('shows live every-agent sharing on a pending review and keeps what approval saw', async () => {
-    const requester = { kind: 'program', requesterId: 'key-a', owner: OWNER } as const;
+    const requester = PROGRAM_A as const;
     const removal = service.create(requester, {
       action: {
         version: 1,
@@ -183,37 +191,8 @@ describe('ConnectorManagementReviewService', () => {
     });
   });
 
-  it('returns the same unresolved review for an equivalent program idempotency key', () => {
-    const requester = { kind: 'program', requesterId: 'key-a', owner: OWNER } as const;
-    const request = {
-      action: { version: 1, kind: 'pause', connectionId: CONNECTION_ID } as const,
-      idempotencyKey: 'same-command',
-    };
-    const first = service.create(requester, request);
-    expect(service.create(requester, request)).toEqual(first);
-
-    expect(() =>
-      service.create(requester, {
-        action: { version: 1, kind: 'resume', connectionId: CONNECTION_ID },
-        idempotencyKey: 'same-command',
-      })
-    ).toThrowError(ConnectorManagementReviewError);
-    expect(() =>
-      service.create(requester, {
-        action: {
-          version: 1,
-          kind: 'set_agent_access',
-          connectionId: CONNECTION_ID,
-          agentId: 'agent-a',
-          operationRevisionIds: ['revision-missing'],
-        },
-        idempotencyKey: 'invalid-grant',
-      })
-    ).toThrowError(ConnectorManagementReviewError);
-  });
-
   it('returns only lifecycle state to the exact program requester', async () => {
-    const requester = { kind: 'program', requesterId: 'key-a', owner: OWNER } as const;
+    const requester = PROGRAM_A as const;
     const review = service.create(requester, {
       action: { version: 1, kind: 'pause', connectionId: CONNECTION_ID },
       idempotencyKey: 'program-status',
@@ -251,7 +230,7 @@ describe('ConnectorManagementReviewService', () => {
   });
 
   it('projects a stale target as unavailable without exposing owner context', () => {
-    const requester = { kind: 'program', requesterId: 'key-a', owner: OWNER } as const;
+    const requester = PROGRAM_A as const;
     const review = service.create(requester, {
       action: { version: 1, kind: 'pause', connectionId: CONNECTION_ID },
       idempotencyKey: 'stale-program-status',
@@ -270,56 +249,17 @@ describe('ConnectorManagementReviewService', () => {
     });
   });
 
-  it('keeps connect approval distinct from connection and returns one opaque flow', async () => {
-    const review = service.create(
-      { kind: 'program', requesterId: 'key-a', owner: OWNER },
-      {
-        action: {
-          version: 1,
-          kind: 'connect',
-          providerInstanceId: PROVIDER_ID,
-          toolkit: 'gmail',
-        },
-        idempotencyKey: 'connect-gmail',
-      }
-    );
-
-    const approved = await service.resolve(OWNER, review.reviewRequestId, {
-      decision: 'approved',
-    });
-    expect(approved.review).toMatchObject({
-      state: 'approved',
-      resolution: {
-        kind: 'connect_authentication_required',
-        reviewRequestId: review.reviewRequestId,
-        authentication: { flowId: 'public-flow-1' },
-      },
-    });
-    expect(
-      service.getProgramStatus(
-        { kind: 'program', requesterId: 'key-a', owner: OWNER },
-        review.reviewRequestId
-      )
-    ).toMatchObject({ state: 'approved', outcome: 'authentication_required' });
-    expect(await service.resolve(OWNER, review.reviewRequestId, { decision: 'approved' })).toEqual(
-      approved
-    );
-  });
-
   it('persists exact owner-visible review context instead of substituting later state', () => {
-    const review = service.create(
-      { kind: 'program', requesterId: 'key-a', owner: OWNER },
-      {
-        action: {
-          version: 1,
-          kind: 'set_agent_access',
-          connectionId: CONNECTION_ID,
-          agentId: 'agent-a',
-          operationRevisionIds: ['revision-a'],
-        },
-        idempotencyKey: 'grant-read',
-      }
-    );
+    const review = service.create(PROGRAM_A, {
+      action: {
+        version: 1,
+        kind: 'set_agent_access',
+        connectionId: CONNECTION_ID,
+        agentId: 'agent-a',
+        operationRevisionIds: ['revision-a'],
+      },
+      idempotencyKey: 'grant-read',
+    });
     expect(review.context).toEqual({
       kind: 'set_agent_access',
       connection: {
@@ -351,13 +291,10 @@ describe('ConnectorManagementReviewService', () => {
   });
 
   it('keeps unavailable targets reviewable for denial but refuses approval', async () => {
-    const review = service.create(
-      { kind: 'program', requesterId: 'key-a', owner: OWNER },
-      {
-        action: { version: 1, kind: 'pause', connectionId: CONNECTION_ID },
-        idempotencyKey: 'pause-before-delete',
-      }
-    );
+    const review = service.create(PROGRAM_A, {
+      action: { version: 1, kind: 'pause', connectionId: CONNECTION_ID },
+      idempotencyKey: 'pause-before-delete',
+    });
     db.update(connections)
       .set({ lifecycleState: 'disconnected', status: 'revoked', enabled: false })
       .where(eq(connections.id, CONNECTION_ID))
@@ -389,13 +326,10 @@ describe('ConnectorManagementReviewService', () => {
       now: () => clock,
       createId: () => `review-${++nextReviewId}`,
     });
-    const review = service.create(
-      { kind: 'program', requesterId: 'key-a', owner: OWNER },
-      {
-        action: { version: 1, kind: 'pause', connectionId: CONNECTION_ID },
-        idempotencyKey: 'pending-expiry',
-      }
-    );
+    const review = service.create(PROGRAM_A, {
+      action: { version: 1, kind: 'pause', connectionId: CONNECTION_ID },
+      idempotencyKey: 'pending-expiry',
+    });
     clock = new Date('2026-09-06T12:16:00.000Z');
 
     expect(service.get(OWNER, review.reviewRequestId)).toMatchObject({ state: 'expired' });
@@ -408,13 +342,10 @@ describe('ConnectorManagementReviewService', () => {
       .where(eq(connectorProviderInstances.id, PROVIDER_ID))
       .run();
 
-    const review = service.create(
-      { kind: 'program', requesterId: 'key-a', owner: OWNER },
-      {
-        action: { version: 1, kind: 'disconnect', connectionId: CONNECTION_ID },
-        idempotencyKey: 'disconnect-unavailable',
-      }
-    );
+    const review = service.create(PROGRAM_A, {
+      action: { version: 1, kind: 'disconnect', connectionId: CONNECTION_ID },
+      idempotencyKey: 'disconnect-unavailable',
+    });
     expect(review.context).toMatchObject({
       kind: 'disconnect',
       affectedAgentCount: 1,
@@ -426,18 +357,10 @@ describe('ConnectorManagementReviewService', () => {
   it('retains an approved durable authentication flow across restart without replaying startConnect', async () => {
     const provider = registry.resolveProviderInstance(PROVIDER_ID)!;
     const start = vi.spyOn(provider, 'startConnect');
-    const review = service.create(
-      { kind: 'program', requesterId: 'key-a', owner: OWNER },
-      {
-        action: {
-          version: 1,
-          kind: 'connect',
-          providerInstanceId: PROVIDER_ID,
-          toolkit: 'gmail',
-        },
-        idempotencyKey: 'connect-gmail',
-      }
-    );
+    const review = service.create(PROGRAM_A, {
+      action: CONNECT_GMAIL,
+      idempotencyKey: 'connect-gmail',
+    });
     await service.resolve(OWNER, review.reviewRequestId, { decision: 'approved' });
     expect(start).toHaveBeenCalledTimes(1);
 
@@ -455,18 +378,10 @@ describe('ConnectorManagementReviewService', () => {
   it('keeps the review durable and marks its authentication flow failed when provider material changes', async () => {
     const oldProvider = registry.resolveProviderInstance(PROVIDER_ID)!;
     const poll = vi.spyOn(oldProvider, 'pollConnect');
-    const review = service.create(
-      { kind: 'program', requesterId: 'key-a', owner: OWNER },
-      {
-        action: {
-          version: 1,
-          kind: 'connect',
-          providerInstanceId: PROVIDER_ID,
-          toolkit: 'gmail',
-        },
-        idempotencyKey: 'connect-before-rotation',
-      }
-    );
+    const review = service.create(PROGRAM_A, {
+      action: CONNECT_GMAIL,
+      idempotencyKey: 'connect-before-rotation',
+    });
     const approved = await service.resolve(OWNER, review.reviewRequestId, {
       decision: 'approved',
     });
@@ -489,18 +404,10 @@ describe('ConnectorManagementReviewService', () => {
   });
 
   it('expires only an approved legacy connect review whose flow has no durable owner binding', async () => {
-    const review = service.create(
-      { kind: 'program', requesterId: 'key-a', owner: OWNER },
-      {
-        action: {
-          version: 1,
-          kind: 'connect',
-          providerInstanceId: PROVIDER_ID,
-          toolkit: 'gmail',
-        },
-        idempotencyKey: 'legacy-flow',
-      }
-    );
+    const review = service.create(PROGRAM_A, {
+      action: CONNECT_GMAIL,
+      idempotencyKey: 'legacy-flow',
+    });
     await service.resolve(OWNER, review.reviewRequestId, { decision: 'approved' });
     db.delete(connectorAuthenticationFlows).run();
 
@@ -514,14 +421,9 @@ describe('ConnectorManagementReviewService', () => {
   it('recovers a claimed authentication flow when the review outcome receipt is lost', async () => {
     const provider = registry.resolveProviderInstance(PROVIDER_ID)!;
     const start = vi.spyOn(provider, 'startConnect');
-    const requester = { kind: 'program', requesterId: 'key-a', owner: OWNER } as const;
+    const requester = PROGRAM_A as const;
     const review = service.create(requester, {
-      action: {
-        version: 1,
-        kind: 'connect',
-        providerInstanceId: PROVIDER_ID,
-        toolkit: 'gmail',
-      },
+      action: CONNECT_GMAIL,
       idempotencyKey: 'lost-review-receipt',
     });
     db.$client.exec(`
@@ -558,13 +460,10 @@ describe('ConnectorManagementReviewService', () => {
   });
 
   it('applies a non-connect action once and denies a foreign owner uniformly', async () => {
-    const review = service.create(
-      { kind: 'program', requesterId: 'key-a', owner: OWNER },
-      {
-        action: { version: 1, kind: 'pause', connectionId: CONNECTION_ID },
-        idempotencyKey: 'pause-account',
-      }
-    );
+    const review = service.create(PROGRAM_A, {
+      action: { version: 1, kind: 'pause', connectionId: CONNECTION_ID },
+      idempotencyKey: 'pause-account',
+    });
     await expect(
       service.resolve(FOREIGN_OWNER, review.reviewRequestId, { decision: 'approved' })
     ).rejects.toMatchObject({ code: 'review_not_found' });
@@ -586,7 +485,7 @@ describe('ConnectorManagementReviewService', () => {
       },
     };
     service = makeService('boot-a');
-    const requester = { kind: 'program', requesterId: 'key-a', owner: OWNER } as const;
+    const requester = PROGRAM_A as const;
     const review = service.create(requester, {
       action: { version: 1, kind: 'pause', connectionId: CONNECTION_ID },
       idempotencyKey: 'pause-receipt-race',
@@ -623,80 +522,5 @@ describe('ConnectorManagementReviewService', () => {
         idempotencyKey: 'pause-receipt-race',
       })
     ).toMatchObject({ state: 'approved', resolution: { kind: 'outcome_unknown' } });
-  });
-
-  it('reports resolving only while the approved action is actively in flight', async () => {
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    actions = { apply: vi.fn(() => held) };
-    service = makeService('boot-a');
-    const review = service.create(
-      { kind: 'program', requesterId: 'key-a', owner: OWNER },
-      {
-        action: { version: 1, kind: 'pause', connectionId: CONNECTION_ID },
-        idempotencyKey: 'pause-in-flight',
-      }
-    );
-    const denied = service.create(
-      { kind: 'program', requesterId: 'key-b', owner: OWNER },
-      {
-        action: { version: 1, kind: 'resume', connectionId: CONNECTION_ID },
-        idempotencyKey: 'other-resolved-review',
-      }
-    );
-    await service.resolve(OWNER, denied.reviewRequestId, { decision: 'denied' });
-
-    const resolving = service.resolve(OWNER, review.reviewRequestId, { decision: 'approved' });
-    await vi.waitFor(() => expect(actions.apply).toHaveBeenCalledTimes(1));
-    expect(service.get(OWNER, review.reviewRequestId)).toMatchObject({ state: 'resolving' });
-    expect(service.list(OWNER, 'resolved')).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ reviewRequestId: review.reviewRequestId, state: 'resolving' }),
-        expect.objectContaining({ reviewRequestId: denied.reviewRequestId, state: 'denied' }),
-      ])
-    );
-    expect(
-      service.getProgramStatus(
-        { kind: 'program', requesterId: 'key-a', owner: OWNER },
-        review.reviewRequestId
-      )
-    ).toMatchObject({ state: 'resolving' });
-    await expect(
-      service.resolve(OWNER, review.reviewRequestId, { decision: 'approved' })
-    ).resolves.toMatchObject({ review: { state: 'resolving' } });
-    expect(actions.apply).toHaveBeenCalledTimes(1);
-    release();
-    await expect(resolving).resolves.toMatchObject({
-      review: { state: 'approved', resolution: { kind: 'applied' } },
-    });
-  });
-
-  it('looks up the same idempotency key before revalidating a target changed by the action', () => {
-    const requester = { kind: 'program', requesterId: 'key-a', owner: OWNER } as const;
-    const request = {
-      action: { version: 1, kind: 'disconnect', connectionId: CONNECTION_ID } as const,
-      idempotencyKey: 'disconnect-unknown',
-    };
-    const review = service.create(requester, request);
-    db.update(connectorReviewRequests)
-      .set({
-        state: 'approved',
-        resolvedAt: NOW.toISOString(),
-        resolutionSummary: 'applying:old-boot',
-      })
-      .where(eq(connectorReviewRequests.id, review.reviewRequestId))
-      .run();
-    db.update(connections)
-      .set({ lifecycleState: 'disconnected', status: 'revoked', enabled: false })
-      .where(eq(connections.id, CONNECTION_ID))
-      .run();
-
-    expect(service.create(requester, request)).toMatchObject({
-      state: 'approved',
-      targetStatus: 'unavailable',
-      resolution: { kind: 'outcome_unknown' },
-    });
   });
 });

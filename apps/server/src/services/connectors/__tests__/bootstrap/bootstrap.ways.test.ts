@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { NANGO_SECRET_KEY_REF } from '../../providers/nango.js';
+import { describe, it, expect, vi } from 'vitest';
 import { KEY_CHECK_COPY } from '@dorkos/shared/connector-schemas';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import { legacyDefaultProviderInstanceId } from '../../legacy-connection-migration.js';
@@ -6,23 +7,20 @@ import {
   TEST_CONNECTOR_API_KEY_REF,
   TEST_CONNECTOR_CREDENTIAL_NAME,
   TEST_CONNECTOR_PROVIDER_TYPE,
-  ConnectorProviderBootstrapper,
+  WAY_RECHECK_DELAYS_MS,
 } from '../../bootstrap.js';
 import { MANAGED_CUSTODY_CANONICAL_SENTENCE } from '../../custody-disclosure.js';
 import { COMPOSIO_API_KEY_REF } from '../../providers/composio.js';
 import { ComposioApiError } from '../../providers/composio-client.js';
-import { useBootstrapHarness, managedCloud } from './bootstrap.fixtures.js';
 import {
-  connectionOperationGrants,
-  connections,
-  connectorOperationRevisions,
-  connectorProviderInstances,
-  eq,
-} from '@dorkos/db';
-import type { ConnectorProvider } from '@dorkos/shared/connector-provider';
-import { ManagedCloudConnectorProvider } from '../../providers/managed/managed-cloud.js';
+  useBootstrapHarness,
+  useFreshFactsHarness,
+  VALID_ENCRYPTION_KEY,
+} from './bootstrap.fixtures.js';
+import { connectorProviderInstances, eq } from '@dorkos/db';
+import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-provider';
 
-/** Reloading a provider when its key changes, the status surface, which way new apps use, and linking again. */
+/** Reloading a provider when its key changes, the status surface, and the automatic checks of each way (DOR-2501). */
 describe('ConnectorProviderBootstrapper', () => {
   const h = useBootstrapHarness();
 
@@ -105,6 +103,64 @@ describe('ConnectorProviderBootstrapper', () => {
       expect(status.registered).toBe(false);
       expect(h.registry.resolveProvider('composio')).toBeUndefined();
     });
+
+    it('advances material generation when a confined Composio credential changes', async () => {
+      const bootstrapper = h.makeBootstrapper();
+      h.secrets.set(COMPOSIO_API_KEY_REF, 'ck-1');
+      await bootstrapper.registerBootProviders();
+      const first = h.db
+        .select({
+          digest: connectorProviderInstances.executionConfigDigest,
+          generation: connectorProviderInstances.executionConfigGeneration,
+        })
+        .from(connectorProviderInstances)
+        .where(eq(connectorProviderInstances.type, 'composio'))
+        .get()!;
+
+      h.secrets.set(COMPOSIO_API_KEY_REF, 'ck-2');
+      await bootstrapper.reload('composio');
+      const second = h.db
+        .select({
+          digest: connectorProviderInstances.executionConfigDigest,
+          generation: connectorProviderInstances.executionConfigGeneration,
+        })
+        .from(connectorProviderInstances)
+        .where(eq(connectorProviderInstances.type, 'composio'))
+        .get()!;
+
+      expect(second.digest).not.toBe(first.digest);
+      expect(second.generation).toBe(first.generation + 1);
+    });
+
+    it('clears a recorded Nango refusal once the reload succeeds', async () => {
+      h.secrets.set(NANGO_SECRET_KEY_REF, 'sk-nango-test');
+      const nangoSettings: { baseUrl: string; encryptionKey?: string } = {
+        baseUrl: 'http://localhost:3003',
+      };
+      const bootstrapper = h.makeBootstrapper({ nangoEnv: () => ({ ...nangoSettings }) });
+      await bootstrapper.registerBootProviders();
+      expect((await bootstrapper.reload('nango')).error).toMatch(/NANGO_ENCRYPTION_KEY/);
+
+      nangoSettings.encryptionKey = VALID_ENCRYPTION_KEY;
+      const healthy = await bootstrapper.reload('nango');
+      expect(healthy.registered).toBe(true);
+      expect(healthy.error).toBeUndefined();
+    });
+
+    it('takes a previously-live provider away when a reload refuses its setup', async () => {
+      h.secrets.set(NANGO_SECRET_KEY_REF, 'sk-nango-test');
+      const nangoSettings: { baseUrl: string; encryptionKey?: string } = {
+        baseUrl: 'http://localhost:3003',
+        encryptionKey: VALID_ENCRYPTION_KEY,
+      };
+      const bootstrapper = h.makeBootstrapper({ nangoEnv: () => ({ ...nangoSettings }) });
+      await bootstrapper.registerBootProviders();
+      expect(h.registry.resolveProvider('nango')).toBeDefined();
+
+      delete nangoSettings.encryptionKey;
+      await bootstrapper.reload('nango');
+      expect(h.registry.resolveProvider('nango')).toBeUndefined();
+    });
   });
 
   describe('status + route validity surface', () => {
@@ -154,300 +210,244 @@ describe('ConnectorProviderBootstrapper', () => {
     });
   });
 
-  describe('appConnections — which way new apps use', () => {
-    it('needs the one-time step on a bare install, and raw MCP is never a way', async () => {
-      const bootstrapper = h.makeBootstrapper();
-      await bootstrapper.registerBootProviders();
-      await expect(bootstrapper.appConnections()).resolves.toEqual({
-        ways: [],
-        newApps: { status: 'setup_needed', reason: 'nothing_set_up' },
+  describe('fresh way and sign-in facts (DOR-2501)', () => {
+    const f = useFreshFactsHarness(h);
+
+    it('starts from the service word at boot: a sign-in that expired while DorkOS was off reads expired', async () => {
+      const gmail = f.keepComposioAccount('ca_gmail');
+      h.secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      const bootstrapper = h.makeBootstrapper({
+        composioClient: f.scriptedComposioClient(() =>
+          Promise.resolve([{ connectedAccountId: 'ca_gmail', toolkit: 'gmail', status: 'EXPIRED' }])
+        ),
       });
-    });
 
-    it('uses the one working key silently, naming the service it signs in through', async () => {
-      h.secrets.set(COMPOSIO_API_KEY_REF, 'ck-live-test');
-      const bootstrapper = h.makeBootstrapper();
       await bootstrapper.registerBootProviders();
-      const composio = h.registry.resolveProvider('composio')!;
 
-      const result = await bootstrapper.appConnections();
-      const way = {
-        kind: 'own_key',
-        type: 'composio',
-        status: 'ready',
-        providerInstanceId: composio.instanceId,
-        canRunActions: true,
-        signInThrough: 'Composio',
-      };
-      expect(result).toEqual({ ways: [way], newApps: { status: 'ready', way } });
-      expect(JSON.stringify(result)).not.toContain('ck-live-test');
+      expect(h.registry.resolveProvider('composio')).toBeDefined();
+      expect(f.signIn(gmail)).toBe('expired');
     });
 
-    it('prefers the person’s own key over a working DorkOS account', async () => {
-      h.secrets.set(COMPOSIO_API_KEY_REF, 'ck-live-test');
+    it('checks a way that failed for a passing reason again by itself, waiting longer each time, until it answers', async () => {
+      vi.useFakeTimers();
+      h.secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      let outage = true;
+      const client = f.scriptedComposioClient(() =>
+        outage
+          ? Promise.reject(new ComposioApiError(503, 'Service unavailable'))
+          : Promise.resolve([])
+      );
+      const bootstrapper = h.makeBootstrapper({ composioClient: client });
+
+      await bootstrapper.registerBootProviders();
+      expect(client.listings).toBe(1);
+      expect((await bootstrapper.reload('composio')).error).toBe(KEY_CHECK_COPY.checkingAgain);
+      expect(client.listings).toBe(2);
+
+      // First wait: 30 seconds. Still down, so the next wait doubles.
+      await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS[0]);
+      expect(client.listings).toBe(3);
+      await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS[1] - 1);
+      expect(client.listings).toBe(3);
+
+      // The outage ends; the next automatic check brings the way back.
+      outage = false;
+      await vi.advanceTimersByTimeAsync(1);
+      expect(client.listings).toBe(4);
+      expect(h.registry.resolveProvider('composio')).toBeDefined();
+      expect(f.instanceStatus(f.composioInstance)).toBe('available');
+      expect((await bootstrapper.listStatuses()).find((s) => s.type === 'composio')?.error).toBe(
+        undefined
+      );
+
+      // Answered: nothing else is scheduled.
+      await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS.at(-1)! * 2);
+      expect(client.listings).toBe(4);
+    });
+
+    it('never re-checks a key the service refused; the person saves a working one', async () => {
+      vi.useFakeTimers();
+      h.secrets.set(COMPOSIO_API_KEY_REF, 'ck-wrong');
+      const client = f.scriptedComposioClient(() =>
+        Promise.reject(new ComposioApiError(401, 'Invalid API key'))
+      );
+      const bootstrapper = h.makeBootstrapper({ composioClient: client });
+
+      await bootstrapper.registerBootProviders();
+      await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS.at(-1)! * 3);
+
+      expect(client.listings).toBe(1);
+    });
+
+    it('stops every waiting check when the server stops', async () => {
+      vi.useFakeTimers();
+      h.secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      const client = f.scriptedComposioClient(() =>
+        Promise.reject(new ComposioApiError(503, 'Service unavailable'))
+      );
+      const bootstrapper = h.makeBootstrapper({ composioClient: client });
+      await bootstrapper.registerBootProviders();
+
+      bootstrapper.stop();
+      await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS.at(-1)! * 3);
+
+      expect(client.listings).toBe(1);
+    });
+
+    it('takes a registered way down when it still does not answer, keeps its accounts, then brings it back', async () => {
+      vi.useFakeTimers();
+      const gmail = f.keepComposioAccount('ca_gmail');
+      h.secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      let outage = false;
+      const client = f.scriptedComposioClient(() =>
+        outage
+          ? Promise.reject(new Error('Composio request timed out'))
+          : Promise.resolve([
+              { connectedAccountId: 'ca_gmail', toolkit: 'gmail', status: 'ACTIVE' },
+            ])
+      );
+      const bootstrapper = h.makeBootstrapper({ composioClient: client });
+      await bootstrapper.registerBootProviders();
+
+      outage = true;
+      await bootstrapper.recheckWay(f.composioInstance);
+
+      expect(h.registry.resolveProvider('composio')).toBeUndefined();
+      expect(f.instanceStatus(f.composioInstance)).toBe('unavailable');
+      expect((await bootstrapper.listStatuses()).find((s) => s.type === 'composio')).toMatchObject({
+        registered: false,
+        error: KEY_CHECK_COPY.checkingAgain,
+      });
+      // An outage is not a sign-in that ended.
+      expect(f.signIn(gmail)).toBe('active');
+
+      outage = false;
+      await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS[0]);
+      expect(h.registry.resolveProvider('composio')).toBeDefined();
+      expect(f.instanceStatus(f.composioInstance)).toBe('available');
+    });
+
+    it('keeps checking the DorkOS account way every 15 minutes through a long outage, and recovers with no Retry (DOR-4229)', async () => {
+      vi.useFakeTimers();
+      const instanceId = 'managed-provider' as ConnectorProviderInstanceId;
+      let outage = true;
+      let probes = 0;
       const managed = new FakeConnectorProvider({
-        instanceId: 'managed-provider' as never,
+        instanceId,
         type: 'dorkos-managed',
         custody: 'managed',
       });
+      managed.listAccounts = () => {
+        probes += 1;
+        return outage ? Promise.reject(new Error('hosted outage')) : Promise.resolve([]);
+      };
       const bootstrapper = h.makeBootstrapper({
-        managedCloud: managedCloud(
-          () => true,
-          () => managed
-        ),
+        managedCloud: {
+          instanceId,
+          configured: () => true,
+          executionConfigDigest: () => 'linked-material',
+          create: () => managed,
+        },
       });
       await bootstrapper.registerBootProviders();
 
-      const { ways, newApps } = await bootstrapper.appConnections();
-      expect(ways.map((way) => [way.kind, way.status])).toEqual([
-        ['own_key', 'ready'],
-        ['dorkos_account', 'ready'],
-      ]);
-      expect(newApps).toMatchObject({
-        status: 'ready',
-        way: { kind: 'own_key', type: 'composio' },
+      // The whole backoff runs out, then four hours more, as on Nov 12.
+      for (const delay of WAY_RECHECK_DELAYS_MS) await vi.advanceTimersByTimeAsync(delay);
+      const afterBackoff = probes;
+      const lastDelay = WAY_RECHECK_DELAYS_MS.at(-1)!;
+      await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000);
+      expect(h.registry.resolveProviderInstance(instanceId)).toBeUndefined();
+      // Still checking, once every 15 minutes, never faster.
+      expect(probes - afterBackoff).toBe((4 * 60 * 60 * 1000) / lastDelay);
+      // So the person still sees DorkOS retrying, with a time, not "press Retry".
+      expect(bootstrapper.nextWayCheckAt(instanceId)).toBeDefined();
+
+      // The service answers again: the next check brings the way back on its own.
+      outage = false;
+      await vi.advanceTimersByTimeAsync(lastDelay);
+      expect(h.registry.resolveProviderInstance(instanceId)).toBe(managed);
+      expect(bootstrapper.nextWayCheckAt(instanceId)).toBeUndefined();
+
+      // Answered: nothing else is scheduled.
+      const recoveredAt = probes;
+      await vi.advanceTimersByTimeAsync(lastDelay * 4);
+      expect(probes).toBe(recoveredAt);
+    });
+
+    it('stops checking a way that never answers, and settles on the person’s one fix', async () => {
+      vi.useFakeTimers();
+      h.secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      const client = f.scriptedComposioClient(() =>
+        Promise.reject(new Error('Composio request timed out'))
+      );
+      const bootstrapper = h.makeBootstrapper({ composioClient: client });
+      await bootstrapper.registerBootProviders();
+
+      for (const delay of WAY_RECHECK_DELAYS_MS) await vi.advanceTimersByTimeAsync(delay);
+      // One check at boot, then one per wait, then nothing more.
+      expect(client.listings).toBe(1 + WAY_RECHECK_DELAYS_MS.length);
+      expect(bootstrapper.nextWayCheckAt(f.composioInstance)).toBeUndefined();
+      expect(bootstrapper.wayHealth(f.composioInstance, 'gmail')).toEqual({
+        status: 'down',
+        problem: 'own_key_unavailable',
+        anotherWayWorks: false,
+      });
+      await vi.advanceTimersByTimeAsync(WAY_RECHECK_DELAYS_MS.at(-1)! * 4);
+      expect(client.listings).toBe(1 + WAY_RECHECK_DELAYS_MS.length);
+
+      // A check the person starts begins a fresh count.
+      await bootstrapper.reload('composio');
+      expect(bootstrapper.nextWayCheckAt(f.composioInstance)).toBeDefined();
+    });
+
+    it('counts another way only when it reaches this very app', async () => {
+      h.secrets.set(COMPOSIO_API_KEY_REF, 'ck-wrong');
+      const instanceId = 'managed-provider' as ConnectorProviderInstanceId;
+      const managed = new FakeConnectorProvider({
+        instanceId,
+        type: 'dorkos-managed',
+        custody: 'managed',
+        toolkits: [{ slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' }],
+      });
+      const bootstrapper = h.makeBootstrapper({
+        composioClient: f.scriptedComposioClient(() =>
+          Promise.reject(new ComposioApiError(401, 'Invalid API key'))
+        ),
+        managedCloud: {
+          instanceId,
+          configured: () => true,
+          executionConfigDigest: () => 'linked-material',
+          create: () => managed,
+        },
+      });
+      await bootstrapper.registerBootProviders();
+
+      // Nothing is known yet about which apps the DorkOS account reaches.
+      expect(bootstrapper.wayHealth(f.composioInstance, 'gmail')).toMatchObject({
+        anotherWayWorks: false,
+      });
+      await h.registry.readCatalog(managed, new AbortController().signal);
+      expect(bootstrapper.wayHealth(f.composioInstance, 'gmail')).toMatchObject({
+        anotherWayWorks: true,
+      });
+      // It doesn't reach Slack, so connecting Slack again that way can't help.
+      expect(bootstrapper.wayHealth(f.composioInstance, 'slack')).toMatchObject({
+        anotherWayWorks: false,
       });
     });
-    describe('after linking again', () => {
-      const AT = '2026-09-28T00:00:00.000Z';
 
-      /** A DorkOS account link whose fingerprint the test can change, as a new link does. */
-      function link(initial: string | null) {
-        const state = {
-          digest: initial,
-          provider: new FakeConnectorProvider({
-            instanceId: 'managed-provider' as never,
-            type: 'dorkos-managed',
-            custody: 'managed',
-            toolkits: [{ slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' }],
-          }) as ConnectorProvider,
-        };
-        const cloud = {
-          instanceId: 'managed-provider' as never,
-          configured: () => state.digest !== null,
-          executionConfigDigest: () => state.digest ?? undefined,
-          create: () => state.provider,
-        };
-        return { state, cloud };
-      }
-
-      function keptManagedRow(id: string, externalAccountRef: string) {
-        h.db
-          .insert(connections)
-          .values({
-            id,
-            providerInstanceId: 'managed-provider',
-            externalAccountRef,
-            toolkit: 'gmail',
-            label: id,
-            status: 'active',
-            lifecycleState: 'connected',
-            enabled: true,
-            grantReconciliationStatus: 'ready',
-            createdAt: AT,
-            updatedAt: AT,
-          })
-          .run();
-      }
-
-      function grantOn(connectionId: string) {
-        h.db
-          .insert(connectorOperationRevisions)
-          .values({
-            id: `revision-${connectionId}`,
-            providerInstanceId: 'managed-provider',
-            toolkit: 'gmail',
-            operationSlug: `gmail.list.${connectionId}`,
-            toolkitVersion: '1',
-            schemaHash: 'sha256:x',
-            capabilityClassification: 'read',
-            retryPolicy: 'never',
-            inputSchemaJson: '{}',
-            discoveredAt: AT,
-          })
-          .run();
-        h.db
-          .insert(connectionOperationGrants)
-          .values({
-            id: `grant-${connectionId}`,
-            subjectType: 'agent',
-            subjectId: 'agent-x',
-            agentId: 'agent-x',
-            connectionId,
-            operationRevisionId: `revision-${connectionId}`,
-            createdBy: 'operator',
-            createdAt: AT,
-          })
-          .run();
-      }
-
-      function row(id: string) {
-        return h.db.select().from(connections).where(eq(connections.id, id)).get()!;
-      }
-
-      /** A new hosted side for a new link, listing one account of its own. */
-      async function freshSideWithOneAccount(state: { provider: ConnectorProvider }) {
-        const fresh = new FakeConnectorProvider({
-          instanceId: 'managed-provider' as never,
-          type: 'dorkos-managed',
-          custody: 'managed',
-          toolkits: [{ slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' }],
-        });
-        const flow = await fresh.startConnect('gmail');
-        const poll = await fresh.pollConnect(flow.flowId);
-        state.provider = fresh;
-        return poll.status === 'connected' ? poll.account!.externalAccountRef : '';
-      }
-
-      it('keeps the access of an account the new link still lists, and sends refused changes again', async () => {
-        const { state, cloud } = link('link-1');
-        const relinked: string[] = [];
-        const bootstrapper = new ConnectorProviderBootstrapper({
-          ...h.bootstrapperOptions(),
-          managedCloud: cloud,
-          onRelinked: (instanceId) => relinked.push(instanceId),
-        });
-        await bootstrapper.registerBootProviders();
-        const kept = await freshSideWithOneAccount(state);
-        keptManagedRow('connection-kept', kept);
-        grantOn('connection-kept');
-        keptManagedRow('connection-other', 'managed-other-account');
-        grantOn('connection-other');
-        const fresh = state.provider;
-        // The same account, linked again: its new link lists this one account.
-        state.digest = 'link-2';
-        state.provider = fresh;
-
-        await bootstrapper.reloadManagedCloud();
-
-        // Listed: the same account, reached again, keeps what it was given.
-        expect(row('connection-kept')).toMatchObject({
-          lifecycleState: 'connected',
-          grantReconciliationStatus: 'ready',
-        });
-        // Not listed: closed exactly as before.
-        expect(row('connection-other').lifecycleState).toBe('disconnected');
-        expect(relinked).toEqual(['managed-provider']);
+    it('marks a way unavailable at boot when it worked last run and fails its check now', async () => {
+      f.keepComposioAccount('ca_gmail');
+      expect(f.instanceStatus(f.composioInstance)).toBe('available');
+      h.secrets.set(COMPOSIO_API_KEY_REF, 'ck-live');
+      const bootstrapper = h.makeBootstrapper({
+        composioProbeError: new ComposioApiError(503, 'Service unavailable'),
       });
 
-      it('closes a kept account a new link does not list, keeps one it does, and says so', async () => {
-        const { state, cloud } = link('link-1');
-        const closed: unknown[] = [];
-        const bootstrapper = new ConnectorProviderBootstrapper({
-          ...h.bootstrapperOptions(),
-          managedCloud: cloud,
-          onClosedByNewLink: (accounts) => closed.push(...accounts),
-        });
-        await bootstrapper.registerBootProviders();
-        keptManagedRow('connection-old', 'managed-old-account');
-        grantOn('connection-old');
+      await bootstrapper.registerBootProviders();
 
-        state.digest = 'link-2';
-        keptManagedRow('connection-new', await freshSideWithOneAccount(state));
-        await bootstrapper.reloadManagedCloud();
-
-        // Closed, not removed: it reads as disconnected, and its access has
-        // ended. The account may still be live at the service, so cleanup is
-        // owed and unknown, as after a local revoke.
-        expect(row('connection-old')).toMatchObject({
-          lifecycleState: 'disconnected',
-          externalCleanupState: 'unknown',
-          status: 'revoked',
-          enabled: false,
-          removedAt: null,
-        });
-        expect(
-          h.db
-            .select()
-            .from(connectionOperationGrants)
-            .where(eq(connectionOperationGrants.id, 'grant-connection-old'))
-            .get()?.revokedAt
-        ).toBeTruthy();
-        expect(row('connection-new').lifecycleState).toBe('connected');
-        expect(closed).toEqual([
-          { connectionId: 'connection-old', toolkit: 'gmail', label: 'connection-old' },
-        ]);
-      });
-
-      it('closes nothing the first time the route registers, with no earlier link on record', async () => {
-        h.db
-          .insert(connectorProviderInstances)
-          .values({
-            id: 'managed-provider',
-            type: 'dorkos-managed',
-            mode: 'managed',
-            displayName: 'dorkos-managed',
-            custody: 'managed',
-            capabilityJson: '{}',
-            status: 'unavailable',
-            createdAt: AT,
-            updatedAt: AT,
-          })
-          .run();
-        keptManagedRow('connection-old', 'managed-old-account');
-        const { cloud } = link('link-1');
-        const bootstrapper = new ConnectorProviderBootstrapper({
-          ...h.bootstrapperOptions(),
-          managedCloud: cloud,
-        });
-
-        await bootstrapper.registerBootProviders();
-
-        expect(h.registry.resolveProviderInstance('managed-provider' as never)).toBeDefined();
-        expect(row('connection-old').lifecycleState).toBe('connected');
-      });
-
-      it('touches nothing when the listing fails', async () => {
-        const { state, cloud } = link('link-1');
-        const bootstrapper = new ConnectorProviderBootstrapper({
-          ...h.bootstrapperOptions(),
-          managedCloud: cloud,
-        });
-        await bootstrapper.registerBootProviders();
-        keptManagedRow('connection-old', 'managed-old-account');
-
-        state.digest = 'link-2';
-        const failing = new FakeConnectorProvider({
-          instanceId: 'managed-provider' as never,
-          type: 'dorkos-managed',
-          custody: 'managed',
-        });
-        Object.defineProperty(failing, 'listAccounts', {
-          value: () => Promise.reject(new Error('listing interrupted')),
-        });
-        state.provider = failing;
-        await bootstrapper.reloadManagedCloud();
-
-        expect(row('connection-old')).toMatchObject({
-          lifecycleState: 'connected',
-          status: 'active',
-          enabled: true,
-        });
-      });
-
-      it('touches nothing when the new link answers with only part of its list', async () => {
-        const { state, cloud } = link('link-1');
-        const bootstrapper = new ConnectorProviderBootstrapper({
-          ...h.bootstrapperOptions(),
-          managedCloud: cloud,
-        });
-        await bootstrapper.registerBootProviders();
-        keptManagedRow('connection-old', 'managed-old-account');
-
-        // The real DorkOS account route, over a first page that says more follow.
-        state.digest = 'link-2';
-        state.provider = new ManagedCloudConnectorProvider({
-          instanceId: 'managed-provider' as never,
-          cloud: {
-            listManagedConnectorAccounts: async () => ({ accounts: [], nextCursor: 'page-2' }),
-          } as never,
-          executionContext: () => undefined,
-        });
-        await bootstrapper.reloadManagedCloud();
-
-        expect(row('connection-old').lifecycleState).toBe('connected');
-        expect(h.registry.resolveProviderInstance('managed-provider' as never)).toBeUndefined();
-      });
+      expect(h.registry.resolveProvider('composio')).toBeUndefined();
+      expect(f.instanceStatus(f.composioInstance)).toBe('unavailable');
     });
   });
 });

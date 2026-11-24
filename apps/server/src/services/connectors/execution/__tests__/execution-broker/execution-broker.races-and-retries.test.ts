@@ -429,5 +429,21 @@ describe('ConnectorExecutionBroker', () => {
         expect(h.provider.commands).toHaveLength(1);
       }
     );
+
+    it.each([
+      { status: 'error', code: 'PROVIDER_REJECTED', message: 'Rejected.', retryable: false },
+      { status: 'error', code: 'RATE_LIMITED', message: 'Slow down.', retryable: true },
+      { status: 'error', code: 'ACCOUNT_CHECK_FAILED', message: 'No answer.', retryable: false },
+      { status: 'outcome_unknown', code: 'PROVIDER_OUTCOME_UNKNOWN', message: 'Unknown.' },
+    ] as const)(
+      'leaves the sign-in alone for $code, which is not an ended sign-in',
+      async (result) => {
+        h.provider.results.push(result);
+
+        await h.execute();
+
+        expect(signInOf()).toEqual({ status: 'active', lastVerifiedAt: null });
+      }
+    );
   });
 });

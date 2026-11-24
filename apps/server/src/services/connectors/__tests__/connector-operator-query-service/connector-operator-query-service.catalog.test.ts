@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  connectionOperationGrants,
-  connections,
-  eq,
-  agents,
-  sessionConnectionOverrides,
-} from '@dorkos/db';
+import { connectionOperationGrants, connections, eq, sessionConnectionOverrides } from '@dorkos/db';
 import { ConnectorProviderInstanceIdSchema } from '@dorkos/shared/connector-schemas';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import {

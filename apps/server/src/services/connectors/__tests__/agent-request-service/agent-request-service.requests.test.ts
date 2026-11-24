@@ -477,4 +477,68 @@ describe('ConnectorAgentRequestService', () => {
     expect(requests.getForOwner(OWNER, created.requestId).status).toBe('awaiting_owner');
     expect(h.db.select().from(connectionOperationGrants).all()).toEqual([]);
   });
+
+  it('keeps a duplicate live hold attached when the first caller aborts', async () => {
+    const requests = h.service({ liveHoldMs: 5_000 });
+    const created = await requests.create(principal(), INPUT);
+    const firstController = new AbortController();
+    const first = requests.waitForResolution(
+      principal(),
+      created.requestId,
+      firstController.signal
+    );
+    const second = requests.waitForResolution(principal(), created.requestId);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    firstController.abort();
+    await expect(first).resolves.toMatchObject({ status: 'awaiting_owner' });
+    await requests.resolve(OWNER, created.requestId, { decision: 'denied' });
+
+    await expect(second).resolves.toMatchObject({ status: 'denied' });
+    expect(
+      h.db
+        .select()
+        .from(connectorAgentRequests)
+        .where(eq(connectorAgentRequests.id, created.requestId))
+        .get()
+    ).toMatchObject({ resumeState: 'resumed', liveHoldBootEpoch: null, liveHoldUntil: null });
+  });
+
+  it('makes an associated authentication failure terminal without writing grants', async () => {
+    const starting = {
+      flowId: 'flow-1',
+      providerInstanceId: 'provider-1' as never,
+      toolkit: 'gmail',
+      state: 'starting' as const,
+      createdAt: NOW.toISOString(),
+      expiresAt: '2026-09-07T12:15:00.000Z',
+    };
+    const failed = {
+      ...starting,
+      state: 'failed' as const,
+      reason: 'Sign-in was not completed.',
+    };
+    const authentication = {
+      findByIdempotencyKey: vi.fn(() => starting),
+      start: vi.fn(async () => starting),
+      poll: vi.fn(async () => failed),
+    };
+    const requests = h.service({ authentication: authentication as never });
+    const created = await requests.create(principal(), INPUT);
+    await requests.startAuthentication(OWNER, created.requestId, {
+      providerInstanceId: 'provider-1' as never,
+    });
+
+    await expect(
+      requests.pollAuthentication(OWNER, created.requestId, 'foreign-flow')
+    ).rejects.toMatchObject({ code: 'selection_invalid' });
+    expect(authentication.poll).not.toHaveBeenCalled();
+
+    await expect(requests.pollAuthentication(OWNER, created.requestId, 'flow-1')).resolves.toEqual(
+      failed
+    );
+    expect(requests.getForOwner(OWNER, created.requestId).status).toBe('authentication_failed');
+    expect(h.db.select().from(connectionOperationGrants).all()).toEqual([]);
+    expect(h.nudges).toEqual([]);
+  });
 });

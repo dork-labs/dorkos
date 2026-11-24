@@ -107,6 +107,51 @@ describe('ConnectorAuthenticationFlowService', () => {
       await h.service.poll(OWNER, started.flowId);
       expect(accountOf(existing)).toEqual({ enabled: false, pausedBy: 'owner' });
     });
+
+    it('gives the account back when the service can’t complete the sign-in', async () => {
+      const existing = insertActiveConnection(h.db);
+      vi.spyOn(h.provider, 'pollConnect').mockResolvedValue({ status: 'failed' });
+      const started = await h.service.reconnect(OWNER, existing, 'failed');
+      await expect(h.service.poll(OWNER, started.flowId)).resolves.toMatchObject({
+        state: 'failed',
+      });
+      expect(accountOf(existing)).toEqual({ enabled: true, pausedBy: null });
+    });
+
+    it('gives the account back when the service never confirmed the sign-in started', async () => {
+      const existing = insertActiveConnection(h.db);
+      vi.spyOn(h.provider, 'startConnect').mockRejectedValue(new Error('no answer'));
+      await expect(h.service.reconnect(OWNER, existing, 'unknown')).resolves.toMatchObject({
+        state: 'start_unknown',
+      });
+      expect(accountOf(existing)).toEqual({ enabled: true, pausedBy: null });
+    });
+
+    it('gives the account it started from back when a different account signs in', async () => {
+      const existing = insertActiveConnection(h.db);
+      vi.spyOn(h.provider, 'pollConnect').mockResolvedValue({
+        status: 'connected',
+        account: {
+          externalAccountRef: 'external:gmail:Different' as never,
+          toolkit: 'gmail',
+          label: 'Different',
+          status: 'active',
+          custody: 'managed',
+        },
+      });
+      const started = await h.service.reconnect(OWNER, existing, 'other-identity');
+      await h.service.poll(OWNER, started.flowId);
+      expect(accountOf(existing)).toEqual({ enabled: true, pausedBy: null });
+    });
+
+    it('keeps holding the account while another sign-in again for it still runs', async () => {
+      const existing = insertActiveConnection(h.db);
+      vi.spyOn(h.provider, 'pollConnect').mockResolvedValue({ status: 'failed' });
+      const first = await h.service.reconnect(OWNER, existing, 'first');
+      await h.service.reconnect(OWNER, existing, 'second');
+      await h.service.poll(OWNER, first.flowId);
+      expect(accountOf(existing)).toEqual({ enabled: false, pausedBy: 'sign_in' });
+    });
   });
 });
 

@@ -465,4 +465,32 @@ describe('ManagedAuthoritySyncService', () => {
       expect(h.db.select().from(connections).get()?.externalCleanupState).toBe('complete');
     });
   });
+
+  it('commits a managed pause and its outbox command before awaiting the cloud', async () => {
+    let release!: (status: ManagedConnectorAuthorityCommandStatus) => void;
+    h.cloud.submitConnectorAuthorityCommand = (command) =>
+      new Promise((resolve) => {
+        h.submitted.push(command);
+        release = resolve;
+      });
+    const sync = h.service();
+
+    const pending = sync.transition({
+      connectionId: CONNECTION_ID,
+      managedConnectionId: MANAGED_CONNECTION_ID,
+      lifecycle: 'paused',
+      providerInstanceId: PROVIDER_ID,
+      executionConfigGeneration: 1,
+      owner: OWNER,
+      signal: new AbortController().signal,
+    });
+
+    expect(h.db.select().from(connections).get()?.enabled).toBe(false);
+    expect(h.db.select().from(connectorManagedAuthorityOutbox).get()).toMatchObject({
+      state: 'pending',
+      scopeKind: 'connection_lifecycle',
+    });
+    release(statusFor(h.submitted[0]!));
+    await expect(pending).resolves.toMatchObject({ applied: true });
+  });
 });

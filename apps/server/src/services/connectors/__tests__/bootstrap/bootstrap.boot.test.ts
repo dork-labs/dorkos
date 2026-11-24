@@ -24,7 +24,6 @@ import {
   fakeNangoClient,
   fakeCredentials,
   useBootstrapHarness,
-  managedCloud,
 } from './bootstrap.fixtures.js';
 
 /** Registering providers at boot, and recovering a failed hosted boot. */

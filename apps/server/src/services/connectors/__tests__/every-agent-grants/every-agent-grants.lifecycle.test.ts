@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  connections,
-  connectorOperationRevisions,
-  connectorProviderInstances,
-  eq,
-} from '@dorkos/db';
+import { connectorOperationRevisions, connectorProviderInstances, eq } from '@dorkos/db';
 import { ConnectorProviderInstanceIdSchema } from '@dorkos/shared/connector-schemas';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import { ConnectorRegistry } from '../../registry.js';

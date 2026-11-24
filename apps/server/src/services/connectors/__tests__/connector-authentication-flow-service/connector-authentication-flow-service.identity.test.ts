@@ -343,4 +343,57 @@ describe('ConnectorAuthenticationFlowService', () => {
     });
     expect(h.db.select().from(connections).all()).toHaveLength(0);
   });
+
+  it('does not re-pause a completed reconnect when its idempotency key is replayed', async () => {
+    const existing = insertActiveConnection(h.db);
+    const started = await h.service.reconnect(OWNER, existing, 'same-account-reconnect');
+    const completed = await h.service.poll(OWNER, started.flowId);
+    expect(completed).toMatchObject({ state: 'connected', connectionId: existing });
+    expect(h.db.select().from(connections).where(eq(connections.id, existing)).get()?.enabled).toBe(
+      true
+    );
+
+    await expect(h.service.reconnect(OWNER, existing, 'same-account-reconnect')).resolves.toEqual(
+      completed
+    );
+    expect(h.db.select().from(connections).where(eq(connections.id, existing)).get()?.enabled).toBe(
+      true
+    );
+  });
+
+  it('keeps a pause the owner chose when signing in again completes', async () => {
+    const existing = insertActiveConnection(h.db);
+    const enabled = () =>
+      h.db.select().from(connections).where(eq(connections.id, existing)).get()?.enabled;
+    h.db.update(connections).set({ enabled: false }).where(eq(connections.id, existing)).run();
+
+    const started = await h.service.reconnect(OWNER, existing, 'paused-reconnect');
+    await expect(h.service.poll(OWNER, started.flowId)).resolves.toMatchObject({
+      state: 'connected',
+      connectionId: existing,
+    });
+    // Still paused: signing in again never undoes the owner's choice.
+    expect(enabled()).toBe(false);
+  });
+
+  it('unpauses after a sign-in again that an earlier unfinished one had paused', async () => {
+    const existing = insertActiveConnection(h.db);
+    const enabled = () =>
+      h.db.select().from(connections).where(eq(connections.id, existing)).get()?.enabled;
+    // An earlier sign-in again paused the account and then ran out of time.
+    const abandoned = await h.service.reconnect(OWNER, existing, 'abandoned-reconnect');
+    h.db
+      .update(connectorAuthenticationFlows)
+      .set({ state: 'expired', completedAt: new Date().toISOString() })
+      .where(eq(connectorAuthenticationFlows.id, abandoned.flowId))
+      .run();
+    expect(enabled()).toBe(false);
+
+    const again = await h.service.reconnect(OWNER, existing, 'second-reconnect');
+    await expect(h.service.poll(OWNER, again.flowId)).resolves.toMatchObject({
+      state: 'connected',
+    });
+    // That pause was the abandoned sign-in's, not the owner's.
+    expect(enabled()).toBe(true);
+  });
 });
