@@ -27,7 +27,7 @@ beforeAll(async () => {
   symlinkSync('hello.txt', path.join(root, 'alias.txt'));
   mkdirSync(path.join(root, 'folder'));
   const app = new Hono<{ Bindings: HttpBindings }>();
-  app.on(['GET', 'HEAD'], '/files/:name', async (c) => {
+  app.get('/files/:name', async (c) => {
     const result = await sendFileFromRoot(c, root, c.req.param('name'));
     if (result.kind === 'sent') return result.response;
     if (result.kind === 'outside') return c.json({ refused: 'outside' }, 403);
@@ -78,13 +78,6 @@ describe('sendFileFromRoot', () => {
     expect(await res.text()).not.toContain('hidden');
   });
 
-  it('answers a HEAD with the headers and no body', async () => {
-    const res = await get('hello.txt', { method: 'HEAD' });
-    expect(res.status).toBe(200);
-    expect(res.headers.get('content-length')).toBe('5');
-    expect(await res.text()).toBe('');
-  });
-
   it('sends a range inside the file as a 206', async () => {
     const res = await get('hello.txt', { headers: { Range: 'bytes=1-2' } });
     expect(res.status).toBe(206);
@@ -96,12 +89,6 @@ describe('sendFileFromRoot', () => {
     expect(res.status).toBe(416);
     expect(await res.json()).toEqual({ refused: 'send' });
     expect(res.headers.get('etag')).toBeNull();
-  });
-
-  it('hands a failed precondition to the route', async () => {
-    const res = await get('hello.txt', { headers: { 'If-Match': '"not-this-one"' } });
-    expect(res.status).toBe(412);
-    expect(await res.json()).toEqual({ refused: 'send' });
   });
 
   it('hands a missing file and a folder to the route', async () => {

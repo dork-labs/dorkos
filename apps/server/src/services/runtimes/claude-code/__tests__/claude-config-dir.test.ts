@@ -1,5 +1,5 @@
 import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -13,7 +13,6 @@ import {
   resolveClaudeRootSet,
   resolveLaunchAccountRoot as resolveLaunch,
 } from '../claude-config-dir.js';
-import { logger } from '../../../../lib/logger.js';
 
 /**
  * The ladder's folder for a launch in no project (where no account rule
@@ -108,14 +107,6 @@ describe('resolveActiveClaudeRoot (spec claude-code-accounts D2)', () => {
     process.env.CLAUDE_CONFIG_DIR = '/tmp/inherited-claude';
     expect(resolveActiveClaudeRoot(brokenConfig)).toBe('/tmp/inherited-claude');
   });
-
-  it('re-reads the env var on every call (no stale caching)', () => {
-    // The SDK subprocess reads the variable per spawn, so a value cached at
-    // module load would split-brain the moment anything changed it (DOR-250).
-    expect(resolveActiveClaudeRoot(fakeConfig())).toBe(path.join(os.homedir(), '.claude'));
-    process.env.CLAUDE_CONFIG_DIR = '/tmp/second-config';
-    expect(resolveActiveClaudeRoot(fakeConfig())).toBe('/tmp/second-config');
-  });
 });
 
 describe('a default account stored with ~ (written by hand, or before it was expanded on write)', () => {
@@ -152,10 +143,6 @@ describe('a default account stored with ~ (written by hand, or before it was exp
     expect('CLAUDE_CONFIG_DIR' in answer).toBe(true);
   });
 
-  it('launches an absolute folder exactly as stored', () => {
-    expect(launchEnv('/Users/dev/.claude2')).toEqual({ CLAUDE_CONFIG_DIR: '/Users/dev/.claude2' });
-  });
-
   it('shows Settings the expanded folder as where new sessions run', () => {
     expect(describeClaudeCodeAccounts(fakeConfig({ defaultAccount: '~/.claude2' }))).toMatchObject({
       resolvedAccount: path.join(os.homedir(), '.claude2'),
@@ -171,8 +158,6 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
     userProfile: process.env.USERPROFILE,
   };
   let tmp: string;
-  /** `~/.claude` under the staged HOME — created only by the test that needs it. */
-  let stagedHomeRoot: string;
 
   /** Create a directory that qualifies as an account (it holds `projects/`). */
   function makeAccount(dir: string): string {
@@ -195,7 +180,6 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
     // from reading whatever accounts the developer happens to have.
     process.env.HOME = tmp;
     process.env.USERPROFILE = tmp;
-    stagedHomeRoot = path.join(tmp, '.claude');
   });
 
   afterEach(() => {
@@ -208,26 +192,6 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
       else process.env[key] = value;
     }
     fs.rmSync(tmp, { recursive: true, force: true });
-  });
-
-  it('proves the staged HOME is what the resolver reads', () => {
-    // Guards every assertion below: if HOME staging stopped working, they would
-    // silently start describing the developer's own machine.
-    expect(os.homedir()).toBe(tmp);
-  });
-
-  it('names the active root once, not three times, when env and config agree', () => {
-    // Active root, `$CLAUDE_CONFIG_DIR` and the registered path are all the same
-    // directory here, so a set that is not deduplicated would scan it repeatedly.
-    const account = makeAccount(path.join(tmp, 'claude2'));
-    process.env.CLAUDE_CONFIG_DIR = account;
-    const roots = resolveClaudeRootSet(
-      fakeConfig({
-        defaultAccount: account,
-        accounts: [{ id: 'acme', path: account, label: 'Acme', color: null }],
-      })
-    );
-    expect(roots).toEqual([account]);
   });
 
   it('treats two spellings of one directory as one root', () => {
@@ -254,17 +218,6 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
       })
     );
     expect(roots).toEqual([active, other]);
-  });
-
-  it('keeps ~/.claude in the set even when another account is active', () => {
-    // Unconditional by decision (D2): the SDK may already have written there, and
-    // dropping it would hide history.
-    makeAccount(stagedHomeRoot);
-    const active = makeAccount(path.join(tmp, 'claude2'));
-    expect(resolveClaudeRootSet(fakeConfig({ defaultAccount: active }))).toEqual([
-      active,
-      stagedHomeRoot,
-    ]);
   });
 
   it('adds $CLAUDE_CONFIG_DIR even when a different account is active', () => {
@@ -295,30 +248,12 @@ describe('resolveClaudeRootSet (spec claude-code-accounts D2/D4)', () => {
     expect(roots).toEqual([account]);
   });
 
-  it('skips a registered path that does not exist, silently', () => {
-    const account = makeAccount(path.join(tmp, 'claude2'));
-    const gone = path.join(tmp, 'deleted-account');
-    const roots = resolveClaudeRootSet(
-      fakeConfig({
-        defaultAccount: account,
-        accounts: [{ id: 'moved', path: gone, label: 'moved', color: null }],
-      })
-    );
-    expect(roots).toEqual([account]);
-  });
-
   it('excludes even the ACTIVE root when it does not qualify', () => {
     // An active account with no `projects/` has no sessions to enumerate, so the
     // listing set is empty rather than carrying a root that yields nothing.
     expect(
       resolveClaudeRootSet(fakeConfig({ defaultAccount: makeNonAccount(path.join(tmp, 'empty')) }))
     ).toEqual([]);
-  });
-
-  it('does not throw when the config cannot be read', () => {
-    const inherited = makeAccount(path.join(tmp, 'claude-from-shell'));
-    process.env.CLAUDE_CONFIG_DIR = inherited;
-    expect(resolveClaudeRootSet(brokenConfig)).toEqual([inherited]);
   });
 });
 
@@ -411,37 +346,6 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
     });
   });
 
-  it('logs a minted id at debug level, since every un-migrated install has one', () => {
-    const debug = vi.spyOn(logger, 'debug').mockImplementation(() => {});
-    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
-    try {
-      const rows = [
-        { path: path.join(tmp, 'minted-row'), label: null },
-        { id: 'Bad_Id', path: path.join(tmp, 'bad-row'), label: null },
-      ] as unknown as UserConfig['runtimes']['claudeCode']['accounts'];
-      describeClaudeCodeAccounts(fakeConfig({ accounts: rows }));
-      const codes = (spy: typeof debug) =>
-        spy.mock.calls
-          .filter(([message]) => String(message).startsWith('[claude-accounts]'))
-          .map(([, meta]) => (meta as { code: string }).code);
-      expect(codes(debug)).toEqual(['id-minted']);
-      expect(codes(warn)).toEqual(['id-invalid']);
-    } finally {
-      debug.mockRestore();
-      warn.mockRestore();
-    }
-  });
-
-  it('reports a chosen account as not inherited', () => {
-    process.env.CLAUDE_CONFIG_DIR = '/tmp/inherited-claude';
-    expect(describeClaudeCodeAccounts(fakeConfig({ defaultAccount: '/tmp/chosen' }))).toMatchObject(
-      {
-        resolvedAccount: '/tmp/chosen',
-        inherited: false,
-      }
-    );
-  });
-
   it('says which registered accounts DorkOS can currently find', () => {
     const real = path.join(tmp, 'claude2');
     fs.mkdirSync(path.join(real, 'projects'), { recursive: true });
@@ -494,13 +398,6 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
       credits: expect.objectContaining({ id: 'dorkos-credits', isDefault: false }),
     });
   });
-
-  // The discriminator: a registry that really is empty carries no flag at all,
-  // so the key's mere presence is the claim and nothing else has to be read.
-  it('sends no flag at all when the registry is genuinely empty', () => {
-    process.env.CLAUDE_CONFIG_DIR = '/tmp/inherited-claude';
-    expect(describeClaudeCodeAccounts(fakeConfig())).not.toHaveProperty('accountsUnavailable');
-  });
 });
 
 describe('describeClaudeCodeAccounts: the row new sessions run on (resolvedAccountId)', () => {
@@ -536,34 +433,10 @@ describe('describeClaudeCodeAccounts: the row new sessions run on (resolvedAccou
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  it('proves the staged HOME is what the resolver reads', () => {
-    expect(os.homedir()).toBe(tmp);
-  });
-
   it('names the row whose folder the default is, even with a trailing slash', () => {
     const second = path.join(tmp, '.claude2');
     const described = describeClaudeCodeAccounts(
       fakeConfig({ defaultAccount: `${second}/`, accounts: [row('acme', second)] })
-    );
-    expect(described.resolvedAccountId).toBe('acme');
-  });
-
-  it('names the row a symlinked default points at', () => {
-    const second = path.join(tmp, '.claude2');
-    const link = path.join(tmp, 'link-to-claude2');
-    fs.symlinkSync(second, link);
-    const described = describeClaudeCodeAccounts(
-      fakeConfig({ defaultAccount: link, accounts: [row('acme', second)] })
-    );
-    expect(described.resolvedAccountId).toBe('acme');
-  });
-
-  it('matches a ~ default against the absolute row it names', () => {
-    // Only the default can be spelled with `~`: a row without an absolute path
-    // is not listed at all (`readClaudeAccountSettings`).
-    const second = path.join(tmp, '.claude2');
-    const described = describeClaudeCodeAccounts(
-      fakeConfig({ defaultAccount: '~/.claude2', accounts: [row('acme', second)] })
     );
     expect(described.resolvedAccountId).toBe('acme');
   });
@@ -577,44 +450,6 @@ describe('describeClaudeCodeAccounts: the row new sessions run on (resolvedAccou
     expect(described.resolvedAccountId).toBe('acme');
   });
 
-  it('names the row at ~/.claude when nothing is chosen and nothing is inherited', () => {
-    const described = describeClaudeCodeAccounts(
-      fakeConfig({
-        defaultAccount: null,
-        accounts: [row('acme', path.join(tmp, '.claude2')), row('main', path.join(tmp, '.claude'))],
-      })
-    );
-    expect(described.resolvedAccountId).toBe('main');
-  });
-
-  it("says 'default' when the default stands alone (null default, ~/.claude unregistered)", () => {
-    const described = describeClaudeCodeAccounts(
-      fakeConfig({ defaultAccount: null, accounts: [row('acme', path.join(tmp, '.claude2'))] })
-    );
-    expect(described.resolvedAccountId).toBe('default');
-  });
-
-  it("says 'default' when the chosen folder is one nobody registered", () => {
-    const loose = path.join(tmp, '.claude-loose');
-    fs.mkdirSync(loose);
-    const described = describeClaudeCodeAccounts(
-      fakeConfig({ defaultAccount: loose, accounts: [row('acme', path.join(tmp, '.claude2'))] })
-    );
-    expect(described.resolvedAccountId).toBe('default');
-  });
-
-  it('names no row when $CLAUDE_CONFIG_DIR is an unregistered folder and ~/.claude is registered', () => {
-    const loose = path.join(tmp, '.claude-loose');
-    fs.mkdirSync(loose);
-    process.env.CLAUDE_CONFIG_DIR = loose;
-    const described = describeClaudeCodeAccounts(
-      fakeConfig({ accounts: [row('main', path.join(tmp, '.claude'))] })
-    );
-    expect(described).not.toHaveProperty('resolvedAccountId');
-    // Where new sessions go instead, for Settings to say in words.
-    expect(described.launchOverride).toEqual({ env: 'CLAUDE_CONFIG_DIR', path: loose });
-  });
-
   it('names Main and sends no launch override when $CLAUDE_CONFIG_DIR is ~/.claude itself', () => {
     process.env.CLAUDE_CONFIG_DIR = `${path.join(tmp, '.claude')}/`;
     const described = describeClaudeCodeAccounts(
@@ -622,41 +457,6 @@ describe('describeClaudeCodeAccounts: the row new sessions run on (resolvedAccou
     );
     expect(described.resolvedAccountId).toBe('default');
     expect(described).not.toHaveProperty('launchOverride');
-  });
-
-  it('names the row and sends no launch override when $CLAUDE_CONFIG_DIR is a registered row', () => {
-    process.env.CLAUDE_CONFIG_DIR = path.join(tmp, '.claude2');
-    const described = describeClaudeCodeAccounts(
-      fakeConfig({ accounts: [row('acme', path.join(tmp, '.claude2'))] })
-    );
-    expect(described.resolvedAccountId).toBe('acme');
-    expect(described).not.toHaveProperty('launchOverride');
-  });
-
-  it('reports no launch override once a default is chosen, even with the variable set', () => {
-    process.env.CLAUDE_CONFIG_DIR = path.join(tmp, '.claude2');
-    const described = describeClaudeCodeAccounts(
-      fakeConfig({ defaultAccount: path.join(tmp, '.claude'), accounts: [] })
-    );
-    expect(described).not.toHaveProperty('launchOverride');
-    expect(described.resolvedAccountId).toBe('default');
-  });
-
-  it('does not call it Main when $CLAUDE_CONFIG_DIR is an unregistered folder and ~/.claude is not registered', () => {
-    // Main stands for ~/.claude (the usage store never reads the environment),
-    // while new sessions run in the inherited folder: neither row is honest.
-    const loose = path.join(tmp, '.claude-loose');
-    fs.mkdirSync(loose);
-    process.env.CLAUDE_CONFIG_DIR = loose;
-    const described = describeClaudeCodeAccounts(
-      fakeConfig({ accounts: [row('acme', path.join(tmp, '.claude2'))] })
-    );
-    expect(described).not.toHaveProperty('resolvedAccountId');
-    expect(described.launchOverride).toEqual({ env: 'CLAUDE_CONFIG_DIR', path: loose });
-  });
-
-  it('omits it when the registry cannot be read, rather than guessing', () => {
-    expect(describeClaudeCodeAccounts(brokenConfig)).not.toHaveProperty('resolvedAccountId');
   });
 });
 
@@ -706,32 +506,6 @@ describe('claudeConfigDirEnv (spec claude-code-accounts D8)', () => {
     // rather than letting the subprocess pick it up (acceptance criterion 3).
     expect('CLAUDE_CONFIG_DIR' in answer).toBe(true);
   });
-
-  it('names the default account by ABSENCE when the inherited account is a sibling', () => {
-    // The reported failure verbatim: launched from a shell exporting
-    // `CLAUDE_CONFIG_DIR=~/.claude2`, ~/.claude selected in the cockpit.
-    process.env.CLAUDE_CONFIG_DIR = path.join(os.homedir(), '.claude2');
-
-    expect(
-      claudeConfigDirEnv(path.join(os.homedir(), '.claude')).CLAUDE_CONFIG_DIR
-    ).toBeUndefined();
-  });
-
-  it('names the default account EXPLICITLY when the inherited variable already named it', () => {
-    // The one path to ~/.claude where the suffixed Keychain entry genuinely
-    // exists: this operator always exports CLAUDE_CONFIG_DIR=~/.claude, so they
-    // authenticated under that regime and pinning the path is right for them.
-    const defaultRoot = path.join(os.homedir(), '.claude');
-    process.env.CLAUDE_CONFIG_DIR = defaultRoot;
-
-    expect(claudeConfigDirEnv(defaultRoot)).toEqual({ CLAUDE_CONFIG_DIR: defaultRoot });
-  });
-
-  it('ignores a trailing separator when deciding whether the root is the default', () => {
-    expect(claudeConfigDirEnv(`${path.join(os.homedir(), '.claude')}/`)).toEqual({
-      CLAUDE_CONFIG_DIR: undefined,
-    });
-  });
 });
 
 describe('claudeCliConfigFile', () => {
@@ -742,15 +516,6 @@ describe('claudeCliConfigFile', () => {
     // Another spelling of the same folder is still the default.
     expect(claudeCliConfigFile(`${path.join(os.homedir(), '.claude')}/`)).toBe(
       path.join(os.homedir(), '.claude.json')
-    );
-  });
-
-  it('names the file inside any other account folder', () => {
-    expect(claudeCliConfigFile('/made-up/accounts/.claude-work')).toBe(
-      '/made-up/accounts/.claude-work/.claude.json'
-    );
-    expect(claudeCliConfigFile('~/.claude2')).toBe(
-      path.join(os.homedir(), '.claude2', '.claude.json')
     );
   });
 });

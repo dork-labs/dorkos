@@ -212,7 +212,57 @@ permissions:
   contents: read
 
 jobs:
+  # DOR-5130 step 1: in a merge group, the heavy job below is skipped when
+  # this same check already succeeded on the entry PR's current head
+  # (scripts/attest-pr-check.sh, read from main). It caught no real failure in
+  # 457 queue builds (week of Nov 16-22). Any doubt, error or missing run runs
+  # the real check. The push-to-main run plus after-merge-alert.yml are the
+  # backstop for a two-PR clash. On every other event this job is skipped and
+  # the heavy job runs as before.
+  attest:
+    if: ${{ github.event_name == 'merge_group' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: read
+    outputs:
+      attested: ${{ steps.attest.outputs.attested }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: |
+            scripts/attest-pr-check.sh
+            scripts/queue-repeat-guard.sh
+          sparse-checkout-cone-mode: false
+      - name: Did fixtures already pass on this PR's head?
+        id: attest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+        # The checkout above is main's, and main has no attest script until the
+        # PR that adds it lands (that PR's own queue entry exited 127 on
+        # 2026-11-24). A missing script runs the real check: never toward skipping.
+        # Pinned by packages/ci-steward/src/__tests__/workflow-script-checkout.test.ts.
+        run: |
+          if [ ! -f scripts/attest-pr-check.sh ]; then
+            echo "attested=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::scripts/attest-pr-check.sh is not on main yet, so the real check runs."
+            exit 0
+          fi
+          bash scripts/attest-pr-check.sh fixtures "$HEAD_REF" >> "$GITHUB_OUTPUT"
+
   fixtures:
+    # Skipped only when attest proved this check passed on the PR's head (a
+    # skipped required job reports success). `!cancelled()`, not `always()`,
+    # and `!= 'true'`, so a failed or missing attest runs the real check.
+    needs: attest
+    if: ${{ !cancelled() && needs.attest.outputs.attested != 'true' }}
     runs-on: ubuntu-latest
     # Measured, not guessed (CI Steward phase 0, 2026-09-19): 298 completed
     # runs over 2026-09-07..09-19, p95 1.12 min, max 1.30. Ceiling =
@@ -221,6 +271,18 @@ jobs:
     outputs:
       harness: ${{ steps.scope.outputs.harness }}
     steps:
+      # The census's fan-in rule (DOR-5130): this job runs only when attest did
+      # not prove a pass, and attest must have succeeded (merge_group) or been
+      # skipped (every other event). An attest that failed fails this check
+      # closed rather than letting it report success.
+      - name: Require the attest job to have succeeded or been skipped
+        env:
+          ATTEST: ${{ needs.attest.result }}
+        run: |
+          if [ "$ATTEST" != success ] && [ "$ATTEST" != skipped ]; then
+            echo "::error::the attest job ended '$ATTEST', so this check cannot tell whether it was skipped on purpose. Re-run the workflow."
+            exit 1
+          fi
       # Depth 2 so a pull request's test-merge commit has its first parent (the
       # base it was merged onto) locally; everything else the scope step needs
       # it fetches by SHA.
@@ -496,6 +558,12 @@ jobs:
       # recurring cost nothing in the run list makes obvious.
       - name: Review re-dispatch gate fixtures
         run: bash scripts/test-should-redispatch-review.sh
+
+      # review-redispatch-wait.sh times the scan after a failed review to the
+      # ladder's next rung (ledger 261124-161126). Too short and the scan
+      # skips the retry; it reads the rungs from the ladder. jq only.
+      - name: Review redispatch wait fixtures
+        run: bash scripts/test-review-redispatch-wait.sh
 
       # review-mode.sh decides whether a push gets a full review or the Security
       # lens only. The expensive mistake is a push re-check on a PR that never
@@ -806,12 +874,25 @@ jobs:
       - name: Daily sweep fixtures
         run: bash scripts/test-daily-sweep.sh
 
+      # attest-pr-check.sh decides whether the queue may skip lint,
+      # credential-free-build, openapi-fresh and fixtures (DOR-5130). A wrong
+      # "attested" skips a required check. Stub gh, jq only.
+      - name: Queue attest fixtures
+        run: bash scripts/test-attest-pr-check.sh
+
       # daily-release.sh decides the daily release's next step and picks the
       # commit it ships (DOR-5123). A wrong rule cuts from a commit whose
       # full run or queue checks were not green, or publishes twice. Stub gh,
       # npm and gate, a throwaway repo; git and jq only.
       - name: Daily release fixtures
         run: bash scripts/test-daily-release.sh
+
+      # timed-slot.sh lets the daily release and the daily sweep run once a
+      # day on their cron or the after-push backstop (ledger
+      # 261124-161126). A wrong rule runs a slot twice, or never. Stub
+      # gh, jq only; it also pins each cron to its slot.
+      - name: Timed slot fixtures
+        run: bash scripts/test-timed-slot.sh
 
       # release-branch-contents.sh is the rule for what a pull request into a
       # release/v<X.Y.Z> branch may carry (DOR-4639): only cherry-picks of main

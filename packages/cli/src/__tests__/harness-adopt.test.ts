@@ -14,6 +14,8 @@
  * @module __tests__/harness-adopt
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+// Compiles the server's harness consent module now, not inside the first test (DOR-4518).
+import './preload-harness-server.js';
 import { createHash } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';

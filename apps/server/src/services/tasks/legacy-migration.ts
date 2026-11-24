@@ -21,7 +21,7 @@
  * the first boot — it reads two directories that are not there and returns.
  * Someone upgrading from eight releases back hits exactly the same detector as
  * someone upgrading from the last one, which is the property that matters for a
- * pre-launch alpha where nobody can be told which release to install first.
+ * early alpha where nobody can be told which release to install first.
  *
  * Two kinds of legacy state:
  *

@@ -9,6 +9,7 @@ import type {
   ChatSendReceipt,
   ChatMessageServiceDeps,
 } from '../chat-message-service.js';
+import type { FreshDmBirth } from './chat-message-birth.js';
 import type { NewChatMessage } from '../chat-message-store.js';
 import { ChatMessageError } from '../chat-message-error.js';
 import { renderChatMessage } from '../chat-message-fence.js';
@@ -32,9 +33,10 @@ interface SendOptions {
     row: ChatMessageRow,
     target: ChatTarget,
     content: string,
-    delivery: ChatDelivery
+    delivery: ChatDelivery,
+    birth?: FreshDmBirth,
+    onAccepted?: () => void
   ) => Promise<ChatSendReceipt>;
-  markReplied: (id: string) => void;
 }
 
 /**
@@ -141,25 +143,51 @@ export async function sendChatMessage(options: SendOptions): Promise<ChatSendRec
     }
     return receipt;
   }
-  const row = deps.store.insert(rowInput);
+  let admitted: { row: ChatMessageRow; birth?: FreshDmBirth };
+  if (target.sessionId === null) {
+    if (!target.agent)
+      throw new ChatMessageError('UNAVAILABLE', 'DorkOS could not reserve this chat.');
+    try {
+      admitted = deps.store.insertFreshDm(rowInput, target.agent);
+    } catch (error) {
+      if (error instanceof ChatMessageError) throw error;
+      // A failed SQLite statement may include the private receipt body.
+      logger.warn('[chat_send] could not reserve a new DM');
+      throw new ChatMessageError('UNAVAILABLE', 'DorkOS could not reserve this chat.');
+    }
+  } else admitted = { row: deps.store.insert(rowInput) };
+  const { row, birth } = admitted;
 
   let receipt: ChatSendReceipt;
+  let accepted = false;
   try {
-    receipt = await options.deliver(caller, row, target, rendered.text, delivery);
+    receipt = await options.deliver(caller, row, target, rendered.text, delivery, birth, () => {
+      accepted = true;
+    });
   } catch (err) {
-    deps.store.delete(row.id);
+    if (birth && !accepted) {
+      try {
+        deps.store.deleteRejectedFreshDm(row, birth);
+      } catch {
+        // Keep the original refusal; the atomic receipt and allocation remain available.
+        logger.warn('[chat_send] could not retire a refused DM reservation');
+      }
+    } else if (!birth) deps.store.delete(row.id);
     if (err instanceof ChatMessageError) throw err;
     logger.warn('[chat_send] could not send a chat message', {
       from: caller.sessionId,
       to: input.to,
-      ...logError(err),
+      ...(birth ? {} : logError(err)),
     });
     throw new ChatMessageError(
       'UNAVAILABLE',
       'DorkOS could not send the message just now. Try again.'
     );
   }
-  if (replyToId) options.markReplied(replyToId);
+  if (replyToId) {
+    const answered = deps.store.update(replyToId, { status: 'replied' });
+    if (answered) deps.emitActivity(answered.fromSessionId);
+  }
   deps.emitActivity(caller.sessionId);
   deps.emitActivity(receipt.chatId);
   if (target.redirectedReplyTo) {

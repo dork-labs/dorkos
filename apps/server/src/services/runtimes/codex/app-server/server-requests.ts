@@ -33,9 +33,9 @@
  * @module services/runtimes/codex/app-server/server-requests
  */
 import type { StreamEvent } from '@dorkos/shared/types';
-import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { logRefusal } from '../../../observability/refusals.js';
+import { PENDING_APPROVAL_TIMING } from '../../shared/timing/pending-approval-timing.js';
 import { PATCH_TOOL_NAME, SHELL_TOOL_NAME } from '../event-mapper.js';
 import { refusalFor, type ServerRequest } from './protocol/methods.js';
 
@@ -460,7 +460,7 @@ interface PendingRequest {
 
 /** Options for {@link CodexServerRequestBroker}. */
 export interface ServerRequestBrokerOptions {
-  /** The countdown the card shows (default `SESSIONS.INTERACTION_TIMEOUT_MS`). */
+  /** The countdown the card shows (defaults to the shared attended countdown). */
   readonly countdownMs?: number;
   /** When nobody answered, and the request is declined (default the park ceiling). */
   readonly expireMs?: number;
@@ -479,8 +479,9 @@ export class CodexServerRequestBroker {
    * @param options - Timing.
    */
   constructor(options: ServerRequestBrokerOptions = {}) {
-    this.countdownMs = options.countdownMs ?? SESSIONS.INTERACTION_TIMEOUT_MS;
-    this.expireMs = options.expireMs ?? SESSIONS.INTERACTION_PARK_CEILING_MS;
+    const { countdownMs, expiresAfterMs } = PENDING_APPROVAL_TIMING.attended;
+    this.countdownMs = options.countdownMs ?? countdownMs;
+    this.expireMs = options.expireMs ?? expiresAfterMs;
   }
 
   /**

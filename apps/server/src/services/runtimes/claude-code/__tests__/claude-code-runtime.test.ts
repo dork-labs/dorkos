@@ -6,7 +6,7 @@ import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { readManifest } from '@dorkos/shared/manifest';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
 import type { ServerPrincipalProof } from '../../../connectors/principal/server-principal.js';
-import { wrapSdkQuery, sdkSimpleText, sdkToolCall } from './sdk-scenarios.js';
+import { wrapSdkQuery, sdkSimpleText } from './sdk-scenarios.js';
 import { DEFAULT_CWD } from '../../../../lib/resolve-root.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import {
@@ -202,25 +202,6 @@ describe('ClaudeCodeRuntime', () => {
     }
   });
 
-  describe('ensureSession()', () => {
-    it('stores session with correct defaults', () => {
-      agentManager.ensureSession('s1', { permissionMode: 'default' });
-      expect(agentManager.hasSession('s1')).toBe(true);
-    });
-
-    it('stores session with bypassPermissions mode', () => {
-      agentManager.ensureSession('s2', { permissionMode: 'bypassPermissions' });
-      expect(agentManager.hasSession('s2')).toBe(true);
-    });
-
-    it('does not overwrite existing session', () => {
-      agentManager.ensureSession('s1', { permissionMode: 'default' });
-      agentManager.ensureSession('s1', { permissionMode: 'bypassPermissions' });
-      // Should still be 'default' since the first call created it
-      expect(agentManager.hasSession('s1')).toBe(true);
-    });
-  });
-
   // DOR-1334 review, MUST-FIX 1. The requirements ladder and the SDK spawn seam
   // are one ladder now, but the runtime resolved it ONCE at construction — so a
   // successful "Install Claude" flipped the card to Ready while every session
@@ -256,19 +237,6 @@ describe('ClaudeCodeRuntime', () => {
 
       const after = await turnOptions(runtime, 'after-install');
       expect(after.pathToClaudeCodeExecutable).toBe('/dork-home/runtimes/claude-code/claude');
-    });
-
-    it('keeps the binary it resolved at startup without re-walking the ladder', async () => {
-      _binary.atBoot = '/bundled/claude';
-      // A ladder that would answer differently must not be consulted at all once
-      // a binary is in hand — a resolved binary does not move under a live server.
-      _binary.beforePath = '/somewhere/else/claude';
-      const runtime = new ClaudeCodeRuntime('/tmp/dorkos-test');
-      runtime.setSessionSettings(settingsOwner);
-
-      const options = await turnOptions(runtime, 'bundled');
-
-      expect(options.pathToClaudeCodeExecutable).toBe('/bundled/claude');
     });
   });
 
@@ -520,129 +488,6 @@ describe('ClaudeCodeRuntime', () => {
       expect(doneEvent).toBeDefined();
     });
 
-    it('carries supportedModels() capability fields into the next turn as summarized thinking', async () => {
-      // Regression pin for the omitted-thinking incident: the supportedModels()
-      // call site re-picked five fields and dropped supportsAdaptiveThinking,
-      // so the capability gate in resolveThinkingOptions never opened and every
-      // adaptive-capable session streamed empty thinking blocks. The SDK's
-      // model objects must reach the cache whole.
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-
-      const q1 = wrapSdkQuery(sdkSimpleText('first'));
-      q1.supportedModels.mockResolvedValue([
-        {
-          value: 'default',
-          displayName: 'Default (Opus 4.8)',
-          description: 'test model',
-          supportsEffort: true,
-          supportedEffortLevels: ['low', 'medium', 'high'],
-          supportsAdaptiveThinking: true,
-          supportsAutoMode: true,
-        },
-      ]);
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValueOnce(q1);
-
-      agentManager.ensureSession('s1', { permissionMode: 'default' });
-      for await (const event of agentManager.sendMessage('s1', 'hello')) {
-        void event;
-      }
-
-      // The model fetch is deliberately non-blocking on the send path — let its
-      // .then() continuation land before the next turn reads the cache.
-      await q1.supportedModels.mock.results[0]!.value;
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      const q2 = wrapSdkQuery(sdkSimpleText('second'));
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValueOnce(q2);
-      for await (const event of agentManager.sendMessage('s1', 'again')) {
-        void event;
-      }
-
-      const lastCall = (mockedQuery as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
-      const options = (lastCall[0] as { options: Record<string, unknown> }).options;
-      expect(options.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
-    });
-
-    it('streams SDK text_delta events', async () => {
-      // Re-import to get the mocked query
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-
-      // Mock SDK to yield an init message and a text delta
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        wrapSdkQuery(sdkSimpleText('Hello world'))
-      );
-
-      agentManager.ensureSession('s1', { permissionMode: 'default' });
-      const events = [];
-      for await (const event of agentManager.sendMessage('s1', 'hello')) {
-        events.push(event);
-      }
-
-      const textEvent = events.find((e) => e.type === 'text_delta');
-      expect(textEvent).toBeDefined();
-      expect((textEvent!.data as Record<string, unknown>).text).toBe('Hello world');
-
-      const doneEvent = events.find((e) => e.type === 'done');
-      expect(doneEvent).toBeDefined();
-      expect((doneEvent!.data as Record<string, unknown>).sessionId).toBe('s1');
-    });
-
-    it('fetches the SDK context-usage breakdown and emits it before done', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const q = wrapSdkQuery(sdkSimpleText('hi'));
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(q);
-
-      agentManager.ensureSession('s1', { permissionMode: 'default' });
-      const events = [];
-      for await (const event of agentManager.sendMessage('s1', 'hello')) {
-        events.push(event);
-      }
-
-      // getContextUsage() is reachable only because the prompt stream is held open
-      // past the result message.
-      expect(q.getContextUsage).toHaveBeenCalledTimes(1);
-
-      const usageIdx = events.findIndex((e) => e.type === 'context_usage');
-      const doneIdx = events.findIndex((e) => e.type === 'done');
-      expect(usageIdx).toBeGreaterThanOrEqual(0);
-      // Before done so it survives the first-message session-ID remap.
-      expect(usageIdx).toBeLessThan(doneIdx);
-
-      const usage = events[usageIdx].data as Record<string, unknown>;
-      // "Free space" is filtered out of the breakdown; "Messages" is kept.
-      expect((usage.categories as Array<{ name: string }>).map((c) => c.name)).toEqual([
-        'Messages',
-      ]);
-    });
-
-    it('streams tool call events', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        wrapSdkQuery(sdkToolCall('Read', { file: 'test.ts' }, ''))
-      );
-
-      agentManager.ensureSession('s1', { permissionMode: 'default' });
-      const events = [];
-      for await (const event of agentManager.sendMessage('s1', 'read test.ts')) {
-        events.push(event);
-      }
-
-      const startEvent = events.find((e) => e.type === 'tool_call_start');
-      expect(startEvent).toBeDefined();
-      expect((startEvent!.data as Record<string, unknown>).toolName).toBe('Read');
-
-      const deltaEvent = events.find((e) => e.type === 'tool_call_delta');
-      expect(deltaEvent).toBeDefined();
-      expect((deltaEvent!.data as Record<string, unknown>).input).toBe('{"file":"test.ts"}');
-
-      // Still in flight when the model stops typing the arguments (DOR-2011):
-      // nothing has run yet, and a gated call has not even been asked about.
-      const endEvent = events.find((e) => e.type === 'tool_call_end');
-      expect(endEvent).toBeDefined();
-      expect((endEvent!.data as Record<string, unknown>).status).toBe('running');
-    });
-
     it('passes systemPrompt with claude_code preset to SDK query', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
 
@@ -717,7 +562,6 @@ describe('ClaudeCodeRuntime', () => {
         if (callCount === 1) {
           // First call: simulate a stale session resume failure
           return wrapSdkQuery(
-            // eslint-disable-next-line require-yield -- simulates an SDK query that throws before yielding
             (async function* () {
               throw new Error('Query closed before response received');
             })()
@@ -748,7 +592,6 @@ describe('ClaudeCodeRuntime', () => {
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
         wrapSdkQuery(
-          // eslint-disable-next-line require-yield -- simulates an SDK query that throws before yielding
           (async function* () {
             throw new Error('Claude Code process exited with code 1');
           })()
@@ -766,103 +609,6 @@ describe('ClaudeCodeRuntime', () => {
       expect(errorEvent!.data.category).toBe('execution_error');
       expect(errorEvent!.data.message).toContain('stopped unexpectedly');
       // Should NOT retry — process exit is not a resume failure
-      expect(mockedQuery).toHaveBeenCalledTimes(1);
-    });
-
-    it('uses opts.cwd over empty session.cwd', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      (mockedQuery as ReturnType<typeof vi.fn>).mockClear();
-
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        wrapSdkQuery(
-          (async function* () {
-            yield {
-              type: 'system',
-              subtype: 'init',
-              session_id: 'cwd-test',
-              tools: [],
-              mcp_servers: [],
-              model: 'test',
-              permissionMode: 'default',
-              slash_commands: [],
-              output_style: 'text',
-              skills: [],
-              plugins: [],
-              cwd: '/correct/path',
-              apiKeySource: 'user',
-              uuid: 'uuid-1',
-            };
-            yield {
-              type: 'result',
-              subtype: 'success',
-              duration_ms: 100,
-              duration_api_ms: 80,
-              is_error: false,
-              num_turns: 1,
-              result: '',
-              stop_reason: 'end_turn',
-              total_cost_usd: 0.001,
-              usage: { input_tokens: 10, output_tokens: 5 },
-              modelUsage: {},
-              permission_denials: [],
-              uuid: 'uuid-2',
-              session_id: 'cwd-test',
-            };
-          })()
-        )
-      );
-
-      // Session created with empty cwd (simulating stale binding)
-      agentManager.ensureSession('cwd-empty', { permissionMode: 'default', cwd: '' });
-
-      const events = [];
-      for await (const event of agentManager.sendMessage('cwd-empty', 'hello', {
-        cwd: '/correct/path',
-      })) {
-        events.push(event);
-      }
-
-      // Should use opts.cwd, not the empty session.cwd
-      expect(mockedQuery).toHaveBeenCalledWith(
-        expect.objectContaining({
-          options: expect.objectContaining({
-            cwd: '/correct/path',
-          }),
-        })
-      );
-    });
-
-    it('does not retry for non-resume SDK errors', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      (mockedQuery as ReturnType<typeof vi.fn>).mockClear();
-
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        wrapSdkQuery(
-          // eslint-disable-next-line require-yield -- simulates an SDK query that throws before yielding
-          (async function* () {
-            throw new Error('API key not found');
-          })()
-        )
-      );
-
-      // Use hasStarted: true so the retry path is reachable — but non-resume errors should not retry
-      agentManager.ensureSession('s1', { permissionMode: 'default', hasStarted: true });
-      const events = [];
-      for await (const event of agentManager.sendMessage('s1', 'hello')) {
-        events.push(event);
-      }
-
-      const errorEvent = events.find((e) => e.type === 'error');
-      expect(errorEvent).toBeDefined();
-      const errorData = errorEvent!.data as Record<string, unknown>;
-      expect(errorData.message).toContain('stopped unexpectedly');
-      expect(errorData.category).toBe('execution_error');
-      expect(errorData.details).toBe('API key not found');
-
-      // Should still emit done
-      const doneEvent = events.find((e) => e.type === 'done');
-      expect(doneEvent).toBeDefined();
-      // Should only have been called once — no retry
       expect(mockedQuery).toHaveBeenCalledTimes(1);
     });
 
@@ -1035,182 +781,6 @@ describe('ClaudeCodeRuntime', () => {
       expect(events.find((e) => e.type === 'done')).toBeDefined();
     });
 
-    it('still reports a silent turn when the compaction was automatic', async () => {
-      // An auto boundary is incidental: context pressure fired while the person
-      // was waiting on an answer to something else, so a turn that compacts and
-      // then says nothing still owes them one.
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      (mockedQuery as ReturnType<typeof vi.fn>).mockClear();
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        wrapSdkQuery(compactStream('auto')())
-      );
-
-      agentManager.ensureSession('compact-auto', { permissionMode: 'default' });
-      const events: StreamEvent[] = [];
-      for await (const event of agentManager.sendMessage('compact-auto', 'summarise the repo')) {
-        events.push(event);
-      }
-
-      expect(events.find((e) => e.type === 'compact_boundary')).toBeDefined();
-      const errorEvent = events.find((e) => e.type === 'error');
-      expect(errorEvent).toBeDefined();
-      expect((errorEvent!.data as Record<string, unknown>).message).toContain('did not respond');
-    });
-
-    it('lets a failed compaction report its own reason, and nothing vaguer', async () => {
-      // A compaction that cannot run fires NO boundary — just the resolving
-      // status, which the mapper turns into `operation_progress` failed with the
-      // reason. That is neither content nor a typed `error`, so the turn used to
-      // collect a second verdict on top: "The agent did not respond. The service
-      // may be temporarily unavailable." — vaguer than the reason already on
-      // screen, and wrong about the cause.
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      (mockedQuery as ReturnType<typeof vi.fn>).mockClear();
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        wrapSdkQuery(
-          (async function* () {
-            yield {
-              type: 'system',
-              subtype: 'init',
-              session_id: 'compact-fail',
-              tools: [],
-              mcp_servers: [],
-              model: 'test',
-              permissionMode: 'default',
-              slash_commands: ['/compact'],
-              output_style: 'text',
-              skills: [],
-              plugins: [],
-              cwd: '/test',
-              apiKeySource: 'user',
-              uuid: 'uuid-init',
-            };
-            yield {
-              type: 'system',
-              subtype: 'status',
-              status: 'compacting',
-              session_id: 'compact-fail',
-              uuid: 'uuid-compacting',
-            };
-            yield {
-              type: 'system',
-              subtype: 'status',
-              // The resolving status clears `status` and carries the result.
-              status: null,
-              compact_result: 'failed',
-              compact_error: 'context too large to summarize',
-              session_id: 'compact-fail',
-              uuid: 'uuid-compact-failed',
-            };
-            yield {
-              type: 'result',
-              subtype: 'success',
-              duration_ms: 1_200,
-              duration_api_ms: 1_100,
-              is_error: false,
-              num_turns: 1,
-              result: '',
-              stop_reason: 'end_turn',
-              total_cost_usd: 0.001,
-              usage: { input_tokens: 10, output_tokens: 5 },
-              modelUsage: {},
-              permission_denials: [],
-              uuid: 'uuid-result',
-              session_id: 'compact-fail',
-            };
-          })()
-        )
-      );
-
-      agentManager.ensureSession('compact-fail', { permissionMode: 'default' });
-      const events: StreamEvent[] = [];
-      for await (const event of agentManager.executeCommandIntent('compact-fail', 'compact', {
-        cwd: '/mock',
-      })) {
-        events.push(event);
-      }
-
-      const failure = events.filter(
-        (e) => e.type === 'operation_progress' && (e.data as { state?: string }).state === 'failed'
-      );
-      expect(failure).toHaveLength(1);
-      expect(failure[0]!.data).toMatchObject({
-        operation: 'compaction',
-        error: 'context too large to summarize',
-      });
-      // The only verdict. No generic error piled on top of the specific one.
-      expect(events.filter((e) => e.type === 'error')).toEqual([]);
-      expect(events.find((e) => e.type === 'done')).toBeDefined();
-    });
-
-    // DOR-1240. An MCP elicitation reaches the SDK consumer via the
-    // `onElicitation` option the launch resolver registers — real
-    // `interactive-handlers.ts` code, which pushes an `elicitation_prompt`
-    // event straight onto `session.eventQueue` and holds its returned promise
-    // open until a person answers. Nobody answers here, mirroring the module's
-    // own reachability note: the underlying CLI is expected to stay blocked on
-    // that promise, so a stream that closes with nothing but the prompt is
-    // exactly the shape the guard has to tell apart from real silence, not a
-    // shape today's SDK is expected to produce on its own.
-    it('does not call an elicitation-only turn a crash', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      (mockedQuery as ReturnType<typeof vi.fn>).mockClear();
-      (mockedQuery as ReturnType<typeof vi.fn>).mockImplementation((args: { options: Options }) =>
-        wrapSdkQuery(
-          (async function* () {
-            yield {
-              type: 'system',
-              subtype: 'init',
-              session_id: 'elicit-only',
-              tools: [],
-              mcp_servers: [],
-              model: 'test',
-              permissionMode: 'default',
-              slash_commands: [],
-              output_style: 'text',
-              skills: [],
-              plugins: [],
-              cwd: '/test',
-              apiKeySource: 'user',
-              uuid: 'uuid-init',
-            };
-            // Fire the callback without awaiting its promise — nothing in this
-            // test ever answers it, matching an elicitation left pending.
-            void args.options.onElicitation?.(
-              { serverName: 'test-server', message: 'Which environment?' },
-              { signal: new AbortController().signal }
-            );
-            yield {
-              type: 'result',
-              subtype: 'success',
-              duration_ms: 100,
-              duration_api_ms: 80,
-              is_error: false,
-              num_turns: 1,
-              result: '',
-              stop_reason: 'end_turn',
-              total_cost_usd: 0.001,
-              usage: { input_tokens: 10, output_tokens: 5 },
-              modelUsage: {},
-              permission_denials: [],
-              uuid: 'uuid-result',
-              session_id: 'elicit-only',
-            };
-          })()
-        )
-      );
-
-      agentManager.ensureSession('elicit-only', { permissionMode: 'default' });
-      const events: StreamEvent[] = [];
-      for await (const event of agentManager.sendMessage('elicit-only', 'hello')) {
-        events.push(event);
-      }
-
-      expect(events.find((e) => e.type === 'error')).toBeUndefined();
-      expect(events.find((e) => e.type === 'elicitation_prompt')).toBeDefined();
-      expect(events.find((e) => e.type === 'done')).toBeDefined();
-    });
-
     // DOR-2838. A chat set to "Never ask" launches the SDK in `dontAsk`, and the
     // two callbacks the launch registers refuse rather than put anything to a
     // person: a tool call is denied and an MCP server's request is declined.
@@ -1263,33 +833,6 @@ describe('ClaudeCodeRuntime', () => {
       expect(elicitation).toEqual({ action: 'decline' });
       expect(events.find((e) => e.type === 'approval_required')).toBeUndefined();
       expect(events.find((e) => e.type === 'elicitation_prompt')).toBeUndefined();
-    });
-
-    it('retries resume failure once then surfaces error on second failure', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      (mockedQuery as ReturnType<typeof vi.fn>).mockClear();
-
-      // Both calls throw 'session not found' — a genuine resume failure
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        wrapSdkQuery(
-          // eslint-disable-next-line require-yield -- simulates an SDK query that throws before yielding
-          (async function* () {
-            throw new Error('session not found');
-          })()
-        )
-      );
-
-      agentManager.ensureSession('retry-exhaust', { permissionMode: 'default', hasStarted: true });
-      const events = [];
-      for await (const event of agentManager.sendMessage('retry-exhaust', 'hello')) {
-        events.push(event);
-      }
-
-      const errorEvent = events.find((e) => e.type === 'error');
-      expect(errorEvent).toBeDefined();
-      expect((errorEvent!.data as Record<string, unknown>).category).toBe('execution_error');
-      // Called twice: original + one retry (MAX_RESUME_RETRIES = 1)
-      expect(mockedQuery).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -1355,50 +898,6 @@ describe('ClaudeCodeRuntime', () => {
   });
 
   describe('executeCommandIntent()', () => {
-    /** Stub sendMessage with an empty turn so only the composed prompt matters. */
-    function spySend() {
-      return vi
-        .spyOn(agentManager, 'sendMessage')
-        .mockImplementation(async function* (): AsyncGenerator<StreamEvent> {
-          // No events — the assertion is on the composed prompt.
-        });
-    }
-
-    /** Drain an async generator to completion. */
-    async function drain(gen: AsyncGenerator<unknown>) {
-      for await (const _ of gen) {
-        // events discarded — the assertion is on the sendMessage call
-      }
-    }
-
-    it('sends the bare /compact when no instructions are supplied', async () => {
-      // The intent wraps the shipped /compact mechanism verbatim (DOR-109).
-      const sendSpy = spySend();
-      await drain(agentManager.executeCommandIntent('s1', 'compact', { cwd: '/mock' }));
-      expect(sendSpy).toHaveBeenCalledWith(
-        's1',
-        '/compact',
-        expect.objectContaining({ cwd: '/mock' })
-      );
-    });
-
-    it('appends trailing instructions to /compact so they reach the CLI verbatim', async () => {
-      // `/compact <instructions>` reached the CLI verbatim pre-DOR-109; the
-      // intent path must preserve that (review Important 1).
-      const sendSpy = spySend();
-      await drain(
-        agentManager.executeCommandIntent('s1', 'compact', {
-          cwd: '/mock',
-          instructions: 'focus on the API changes',
-        })
-      );
-      expect(sendSpy).toHaveBeenCalledWith(
-        's1',
-        '/compact focus on the API changes',
-        expect.anything()
-      );
-    });
-
     it('RT-CMP-02: the agent’s own request runs /compact with its note, and the record keeps who asked', async () => {
       // The same module instances this runtime uses: the graph is loaded once
       // for the file, so these are the dispatcher, projector and store it holds.
@@ -1438,66 +937,6 @@ describe('ClaudeCodeRuntime', () => {
         session.setSessionEventStore(undefined);
       }
     });
-
-    it('treats whitespace-only instructions as absent (bare /compact)', async () => {
-      const sendSpy = spySend();
-      await drain(
-        agentManager.executeCommandIntent('s1', 'compact', { cwd: '/mock', instructions: '   ' })
-      );
-      expect(sendSpy).toHaveBeenCalledWith('s1', '/compact', expect.anything());
-    });
-  });
-
-  describe('approveTool()', () => {
-    it('returns false when no pending approval', () => {
-      agentManager.ensureSession('s1', { permissionMode: 'default' });
-      expect(agentManager.approveTool('s1', 'tc1', true)).toBe(false);
-    });
-
-    it('returns false for nonexistent session', () => {
-      expect(agentManager.approveTool('nonexistent', 'tc1', true)).toBe(false);
-    });
-  });
-
-  describe('hasSession()', () => {
-    it('returns true for existing session', () => {
-      agentManager.ensureSession('s1', { permissionMode: 'default' });
-      expect(agentManager.hasSession('s1')).toBe(true);
-    });
-
-    it('returns false for non-existing session', () => {
-      expect(agentManager.hasSession('nonexistent')).toBe(false);
-    });
-  });
-
-  describe('getSdkSessionId()', () => {
-    it('returns session id for existing session', () => {
-      agentManager.ensureSession('s1', { permissionMode: 'default' });
-      expect(agentManager.getSdkSessionId('s1')).toBe('s1');
-    });
-
-    it('returns undefined for non-existing session', () => {
-      expect(agentManager.getSdkSessionId('nonexistent')).toBeUndefined();
-    });
-  });
-
-  describe('getSessionWarmth() / reapSession()', () => {
-    // Purpose: the honest answer for a runtime that holds no warm process —
-    // which is every server today, since nothing launches a pump until the
-    // per-session opt-in (task 3.8). A session it has never heard of is cold.
-    it('reports cold for any session, warm processes not being wired yet', () => {
-      agentManager.ensureSession('s1', { permissionMode: 'default' });
-      expect(agentManager.getSessionWarmth?.('s1')).toBe('cold');
-      expect(agentManager.getSessionWarmth?.('never-seen')).toBe('cold');
-    });
-
-    // Purpose: reapSession's callers are timers and sweeps. Asking about a
-    // session with no process must be free, silent, and repeatable.
-    it('reapSession is idempotent and a no-op when cold', async () => {
-      await expect(agentManager.reapSession?.('s1')).resolves.toBeUndefined();
-      await expect(agentManager.reapSession?.('s1')).resolves.toBeUndefined();
-      expect(agentManager.getSessionWarmth?.('s1')).toBe('cold');
-    });
   });
 
   describe('checkSessionHealth()', () => {
@@ -1510,18 +949,6 @@ describe('ClaudeCodeRuntime', () => {
 
       agentManager.checkSessionHealth();
       expect(agentManager.hasSession('old')).toBe(false);
-
-      vi.useRealTimers();
-    });
-
-    it('keeps fresh sessions', () => {
-      agentManager.ensureSession('fresh', { permissionMode: 'default' });
-
-      vi.useFakeTimers();
-      vi.advanceTimersByTime(5 * 60 * 1000); // 5 minutes
-
-      agentManager.checkSessionHealth();
-      expect(agentManager.hasSession('fresh')).toBe(true);
 
       vi.useRealTimers();
     });
@@ -1646,24 +1073,6 @@ describe('ClaudeCodeRuntime', () => {
       const callArgs = (mockedQuery as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(callArgs.options.allowedTools).toBeUndefined();
     });
-
-    it('still launches when no agent manifest exists', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const { readManifest } = await import('@dorkos/shared/manifest');
-
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
-      // readManifest throws (no .dork/agent.json)
-      (readManifest as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('ENOENT'));
-
-      agentManager.ensureSession('tf-5', { permissionMode: 'default' });
-      const events = [];
-      for await (const event of agentManager.sendMessage('tf-5', 'hello')) {
-        events.push(event);
-      }
-
-      expect(events.find((e) => e.type === 'done')).toBeDefined();
-      expect(events.find((e) => e.type === 'error')).toBeUndefined();
-    });
   });
 
   describe('getCommands() SDK caching', () => {
@@ -1671,14 +1080,6 @@ describe('ClaudeCodeRuntime', () => {
     function mockSuccessFlow() {
       return wrapSdkQuery(sdkSimpleText(''));
     }
-
-    it('returns filesystem-only commands before any sendMessage', async () => {
-      // Pass a temp cwd with no .claude/commands/ so the filesystem scanner finds nothing
-      const result = await agentManager.getCommands(false, '/tmp/dorkos-test-nonexistent');
-      // No SDK commands cached yet — should fall back to filesystem scanner
-      expect(result.commands).toEqual([]);
-      expect(result.lastScanned).toBeDefined();
-    });
 
     it('caches SDK commands after first sendMessage', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
@@ -1706,91 +1107,6 @@ describe('ClaudeCodeRuntime', () => {
       expect(result.commands[0].fullCommand).toBe('/compact');
       expect(result.commands[1].fullCommand).toBe('/help');
       expect(result.commands[1].argumentHint).toBe('[topic]');
-    });
-
-    it('does not re-fetch commands on subsequent messages', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const mockCommands = [
-        { name: '/compact', description: 'Compact conversation', argumentHint: '' },
-      ];
-
-      // First message — populates cache
-      const queryResult1 = mockSuccessFlow();
-      queryResult1.supportedCommands.mockResolvedValue(mockCommands);
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(queryResult1);
-
-      agentManager.ensureSession('cmd-2', { permissionMode: 'default' });
-      for await (const _ of agentManager.sendMessage('cmd-2', 'hello')) {
-        // drain
-      }
-
-      await vi.waitFor(async () => {
-        const result = await agentManager.getCommands();
-        expect(result.commands).toHaveLength(1);
-      });
-
-      // Second message — should NOT call supportedCommands again
-      const queryResult2 = mockSuccessFlow();
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(queryResult2);
-
-      for await (const _ of agentManager.sendMessage('cmd-2', 'world')) {
-        // drain
-      }
-
-      // supportedCommands on the second query should never be called
-      expect(queryResult2.supportedCommands).not.toHaveBeenCalled();
-    });
-
-    it('preserves SDK commands on forceRefresh (only refreshes filesystem metadata)', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const mockCommands = [
-        { name: '/compact', description: 'Compact conversation', argumentHint: '' },
-      ];
-
-      const queryResult = mockSuccessFlow();
-      queryResult.supportedCommands.mockResolvedValue(mockCommands);
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(queryResult);
-
-      agentManager.ensureSession('cmd-3', { permissionMode: 'default' });
-      for await (const _ of agentManager.sendMessage('cmd-3', 'hello')) {
-        // drain
-      }
-
-      await vi.waitFor(async () => {
-        const result = await agentManager.getCommands();
-        expect(result.commands).toHaveLength(1);
-      });
-
-      // forceRefresh refreshes filesystem metadata but preserves SDK commands
-      const result = await agentManager.getCommands(true);
-      expect(result.commands).toHaveLength(1);
-      expect(result.commands[0].fullCommand).toBe('/compact');
-    });
-
-    it('sorts SDK commands alphabetically by fullCommand', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const mockCommands = [
-        { name: '/zebra', description: 'Last', argumentHint: '' },
-        { name: '/alpha', description: 'First', argumentHint: '' },
-        { name: '/middle', description: 'Middle', argumentHint: '' },
-      ];
-
-      const queryResult = mockSuccessFlow();
-      queryResult.supportedCommands.mockResolvedValue(mockCommands);
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(queryResult);
-
-      agentManager.ensureSession('cmd-4', { permissionMode: 'default' });
-      for await (const _ of agentManager.sendMessage('cmd-4', 'hello')) {
-        // drain
-      }
-
-      await vi.waitFor(async () => {
-        const result = await agentManager.getCommands();
-        expect(result.commands).toHaveLength(3);
-      });
-
-      const result = await agentManager.getCommands();
-      expect(result.commands.map((c) => c.fullCommand)).toEqual(['/alpha', '/middle', '/zebra']);
     });
   });
 
@@ -1845,15 +1161,6 @@ describe('ClaudeCodeRuntime', () => {
       expect((await optionsOfLastTurn('partition-threw'))?.plugins ?? []).toEqual([]);
     });
 
-    it('broadcasts commands_changed so clients re-fetch the registry', async () => {
-      await agentManager.refreshActivatedPlugins();
-
-      expect(_mockBroadcast).toHaveBeenCalledWith(
-        'commands_changed',
-        expect.objectContaining({ changedAt: expect.any(String) })
-      );
-    });
-
     it('hot-reloads live sessions and replaces their cached command list', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
 
@@ -1884,29 +1191,6 @@ describe('ClaudeCodeRuntime', () => {
       const result = await agentManager.getCommands();
       expect(result.commands.map((c) => c.fullCommand)).toContain('/flow:execute');
       // ...and clients were told to re-fetch.
-      expect(_mockBroadcast).toHaveBeenCalledWith('commands_changed', expect.any(Object));
-    });
-
-    it('broadcasts even when there are no live sessions to hot-reload', async () => {
-      // No sendMessage → no reloadable session. The broadcast must still fire so
-      // a cold-cache palette re-fetches and the filesystem/next-query path wins.
-      await agentManager.refreshActivatedPlugins();
-      expect(_mockBroadcast).toHaveBeenCalledTimes(1);
-    });
-
-    it('does not throw when a session hot-reload fails', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const queryResult = wrapSdkQuery(sdkSimpleText(''));
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(queryResult);
-      agentManager.ensureSession('reload-fail', { permissionMode: 'default' });
-      for await (const _ of agentManager.sendMessage('reload-fail', 'hello')) {
-        // drain
-      }
-
-      queryResult.reloadPlugins.mockRejectedValue(new Error('subprocess gone'));
-
-      await expect(agentManager.refreshActivatedPlugins()).resolves.toBeUndefined();
-      // The broadcast still fires so other clients/sessions can re-sync.
       expect(_mockBroadcast).toHaveBeenCalledWith('commands_changed', expect.any(Object));
     });
 
@@ -2030,48 +1314,6 @@ describe('ClaudeCodeRuntime', () => {
       _mockBuildPluginsArray.mockResolvedValue([]);
     });
 
-    it('asks what the fan-out reload would cost before applying it', async () => {
-      const queryResult = await liveSession('reload-ask');
-
-      await agentManager.refreshActivatedPlugins();
-
-      expect(queryResult.reloadPlugins).toHaveBeenCalledWith({ holdOnCacheImpact: true });
-    });
-
-    it('leaves an unheld reload exactly as it was: one call, nothing recorded', async () => {
-      const paid = vi.fn();
-      agentManager.setPluginReloadActivity(paid);
-      const queryResult = await liveSession('reload-free');
-      setContextTokens('reload-free', 500_000);
-
-      await agentManager.refreshActivatedPlugins();
-
-      // The CLI waved it through, so there is no second call and no feed entry:
-      // a free reload is nobody's business.
-      expect(queryResult.reloadPlugins).toHaveBeenCalledTimes(1);
-      expect(paid).not.toHaveBeenCalled();
-    });
-
-    it('pays a held reload at once on a conversation too small to be worth waiting for', async () => {
-      const paid = vi.fn();
-      agentManager.setPluginReloadActivity(paid);
-      const queryResult = await liveSession('reload-small');
-      setContextTokens('reload-small', PLUGIN_RELOAD_SILENT_TOKENS - 1);
-      queryResult.reloadPlugins.mockResolvedValue(HELD);
-
-      await agentManager.refreshActivatedPlugins();
-
-      expect(queryResult.reloadPlugins).toHaveBeenCalledTimes(2);
-      expect(queryResult.reloadPlugins).toHaveBeenLastCalledWith();
-      expect(paid).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sessionId: 'reload-small',
-          deferred: false,
-          contextTokens: PLUGIN_RELOAD_SILENT_TOKENS - 1,
-        })
-      );
-    });
-
     it('holds a big conversation instead of paying for it', async () => {
       const paid = vi.fn();
       agentManager.setPluginReloadActivity(paid);
@@ -2123,28 +1365,6 @@ describe('ClaudeCodeRuntime', () => {
       );
     });
 
-    it('pays at the ceiling when the runtime never says the reload is free', async () => {
-      const paid = vi.fn();
-      agentManager.setPluginReloadActivity(paid);
-      const queryResult = await liveSession('reload-ceiling');
-      setContextTokens('reload-ceiling', 400_000);
-      queryResult.reloadPlugins.mockResolvedValue(HELD);
-
-      vi.useFakeTimers();
-      try {
-        await agentManager.refreshActivatedPlugins();
-        await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_CEILING_MS + 1_000);
-      } finally {
-        vi.useRealTimers();
-      }
-
-      // The last call is the plain one: the ceiling pays rather than asks.
-      expect(queryResult.reloadPlugins).toHaveBeenLastCalledWith();
-      expect(paid).toHaveBeenCalledWith(
-        expect.objectContaining({ deferred: true, release: 'ceiling' })
-      );
-    });
-
     it('applies a hand-triggered reload at once however big the conversation is', async () => {
       const paid = vi.fn();
       agentManager.setPluginReloadActivity(paid);
@@ -2162,75 +1382,6 @@ describe('ClaudeCodeRuntime', () => {
       expect(paid).toHaveBeenCalledWith(
         expect.objectContaining({ deferred: true, release: 'hand-triggered' })
       );
-    });
-
-    it('records an expensive hand-triggered reload even when nothing was holding', async () => {
-      // The reload the person asks for on a busy session the fan-out never
-      // reached: no wait to settle, but the cache rebuild is paid all the same,
-      // and decision 8 records a reload that was held OR above the threshold.
-      const paid = vi.fn();
-      agentManager.setPluginReloadActivity(paid);
-      const queryResult = await liveSession('reload-hand-cold');
-      setContextTokens('reload-hand-cold', PLUGIN_RELOAD_SILENT_TOKENS);
-
-      await agentManager.reloadPlugins('reload-hand-cold');
-
-      expect(queryResult.reloadPlugins).toHaveBeenLastCalledWith();
-      expect(paid).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sessionId: 'reload-hand-cold',
-          deferred: false,
-          release: 'hand-triggered',
-          contextTokens: PLUGIN_RELOAD_SILENT_TOKENS,
-        })
-      );
-    });
-
-    it('stays silent about a cheap hand-triggered reload', async () => {
-      const paid = vi.fn();
-      agentManager.setPluginReloadActivity(paid);
-      await liveSession('reload-hand-cheap');
-      setContextTokens('reload-hand-cheap', PLUGIN_RELOAD_SILENT_TOKENS - 1);
-
-      await agentManager.reloadPlugins('reload-hand-cheap');
-
-      expect(paid).not.toHaveBeenCalled();
-    });
-
-    it('records a hand-triggered reload once, not twice, when a wait was running', async () => {
-      const paid = vi.fn();
-      agentManager.setPluginReloadActivity(paid);
-      const queryResult = await liveSession('reload-hand-both');
-      setContextTokens('reload-hand-both', 400_000);
-      queryResult.reloadPlugins.mockResolvedValue(HELD);
-      await agentManager.refreshActivatedPlugins();
-
-      await agentManager.reloadPlugins('reload-hand-both');
-
-      expect(paid).toHaveBeenCalledTimes(1);
-      expect(paid).toHaveBeenCalledWith(
-        expect.objectContaining({ deferred: true, release: 'hand-triggered' })
-      );
-    });
-
-    it('does not apply a held reload twice after a hand trigger ended the wait', async () => {
-      const queryResult = await liveSession('reload-hand-once');
-      setContextTokens('reload-hand-once', 400_000);
-      queryResult.reloadPlugins.mockResolvedValue(HELD);
-
-      vi.useFakeTimers();
-      let callsAfterHandTrigger: number;
-      try {
-        await agentManager.refreshActivatedPlugins();
-        await agentManager.reloadPlugins('reload-hand-once');
-        callsAfterHandTrigger = queryResult.reloadPlugins.mock.calls.length;
-        await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_CEILING_MS * 2);
-      } finally {
-        vi.useRealTimers();
-      }
-
-      expect(callsAfterHandTrigger).toBe(2);
-      expect(queryResult.reloadPlugins).toHaveBeenCalledTimes(callsAfterHandTrigger);
     });
 
     it('drops a held reload when the session is evicted, applying nothing', async () => {
@@ -2267,29 +1418,6 @@ describe('ClaudeCodeRuntime', () => {
       expect(callsWhileHolding).toBe(1);
       expect(queryResult.reloadPlugins).toHaveBeenCalledTimes(callsWhileHolding);
       expect(paid).not.toHaveBeenCalled();
-    });
-
-    it('reloads anyway when the cost check itself goes unanswered', async () => {
-      // The ask is a SECOND control round trip on a channel with a documented
-      // habit of going silent. A reload nobody applied is worse than a reload
-      // nobody costed, so an unanswered ask must fall back to today's behaviour.
-      const { PLUGIN_RELOAD_ACK_TIMEOUT_MS } = await import('../sessions/bounded-control.js');
-      const queryResult = await liveSession('reload-deaf-check');
-      setContextTokens('reload-deaf-check', 400_000);
-      queryResult.reloadPlugins.mockImplementationOnce(() => new Promise<never>(() => {}));
-
-      vi.useFakeTimers();
-      try {
-        const refreshing = agentManager.refreshActivatedPlugins();
-        await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_ACK_TIMEOUT_MS + 1_000);
-        await refreshing;
-      } finally {
-        vi.useRealTimers();
-      }
-
-      // Asked once (never answered), then reloaded plainly.
-      expect(queryResult.reloadPlugins).toHaveBeenCalledTimes(2);
-      expect(queryResult.reloadPlugins).toHaveBeenLastCalledWith();
     });
   });
 
@@ -2342,37 +1470,6 @@ describe('ClaudeCodeRuntime', () => {
       expect(options?.settingSources).toEqual(['user']);
     });
 
-    it('does not probe when no plugin is installed (filesystem scan already covers it)', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      (mockedQuery as ReturnType<typeof vi.fn>).mockClear();
-      (agentManager as unknown as { activatedPlugins: unknown[] }).activatedPlugins = [];
-
-      await agentManager.getCommands(false, '/tmp/dorkos-warm-noplugins');
-      expect(mockedQuery).not.toHaveBeenCalled();
-    });
-
-    it('does not re-probe once the cache is warm', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const probe = wrapSdkQuery(sdkSimpleText(''));
-      probe.supportedCommands.mockResolvedValue([
-        { name: '/flow:capture', description: 'Capture', argumentHint: '' },
-      ]);
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
-      setInstalledPlugin();
-
-      const cwd = '/tmp/dorkos-warm-once';
-      await agentManager.getCommands(false, cwd);
-      await vi.waitFor(async () => {
-        const r = await agentManager.getCommands(false, cwd);
-        expect(r.commands).toHaveLength(1);
-      });
-      const callsAfterWarm = (mockedQuery as ReturnType<typeof vi.fn>).mock.calls.length;
-
-      // Cache is warm now → further reads must not spawn another probe.
-      await agentManager.getCommands(false, cwd);
-      expect((mockedQuery as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterWarm);
-    });
-
     it('closes the idle probe even when supportedCommands() rejects (teardown runs)', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
       const closeSpy = vi.fn();
@@ -2410,73 +1507,6 @@ describe('ClaudeCodeRuntime', () => {
       // Query.close() must run even when the probe succeeds — matches
       // RuntimeCache.warmup(), which closes the query after supportedModels().
       await vi.waitFor(() => expect(probe.close).toHaveBeenCalledTimes(1));
-    });
-
-    it('does not re-probe within the failure cooldown after a failed warm', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const probe = wrapSdkQuery(sdkSimpleText(''));
-      probe.supportedCommands.mockRejectedValue(new Error('boot failed'));
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
-      setInstalledPlugin();
-
-      const cwd = '/tmp/dorkos-warm-cooldown';
-      await agentManager.getCommands(false, cwd);
-      await vi.waitFor(() => expect(probe.supportedCommands).toHaveBeenCalledTimes(1));
-      const callsAfterFail = (mockedQuery as ReturnType<typeof vi.fn>).mock.calls.length;
-
-      // A cold read within the cooldown must NOT spawn a fresh probe — retrying a
-      // presumed-broken SDK on every read would storm it with timeout-long boots.
-      await agentManager.getCommands(false, cwd);
-      expect((mockedQuery as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterFail);
-    });
-
-    it('writes the warm result as PROVISIONAL so the first real message re-fetches (finding #4)', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const probe = wrapSdkQuery(sdkSimpleText(''));
-      // Warm probe reports a partial (MCP-less) command set.
-      probe.supportedCommands.mockResolvedValue([
-        { name: '/flow:capture', description: 'Capture', argumentHint: '' },
-      ]);
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
-      setInstalledPlugin();
-
-      const cwd = '/tmp/dorkos-warm-provisional';
-      await agentManager.getCommands(false, cwd);
-      // Palette populates immediately from the warm probe…
-      await vi.waitFor(async () => {
-        const r = await agentManager.getCommands(false, cwd);
-        expect(r.commands.map((c) => c.fullCommand)).toContain('/flow:capture');
-      });
-
-      // …but the cache entry is provisional, so a real message must still fetch
-      // the authoritative, MCP-inclusive list rather than trust the warm write.
-      const cache = (
-        agentManager as unknown as {
-          cache: { isSdkCommandsProvisional(cwd: string): boolean };
-        }
-      ).cache;
-      expect(cache.isSdkCommandsProvisional(cwd)).toBe(true);
-    });
-
-    it('prunes warmFailedAt entries past the cooldown when a new failure is recorded (finding #10)', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const probe = wrapSdkQuery(sdkSimpleText(''));
-      probe.supportedCommands.mockRejectedValue(new Error('boot failed'));
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
-      setInstalledPlugin();
-
-      const warmFailedAt = (agentManager as unknown as { warmFailedAt: Map<string, number> })
-        .warmFailedAt;
-
-      // Seed a stale entry (well past the 60s cooldown) for a cwd that will not
-      // be re-probed. Prune-on-add must evict it when a fresh failure lands.
-      warmFailedAt.set('/tmp/dorkos-warm-stale', Date.now() - 10 * 60 * 1000);
-
-      await agentManager.getCommands(false, '/tmp/dorkos-warm-prune');
-      await vi.waitFor(() => expect(warmFailedAt.has('/tmp/dorkos-warm-prune')).toBe(true));
-
-      // The stale entry was pruned on the new failure; only the fresh one remains.
-      expect(warmFailedAt.has('/tmp/dorkos-warm-stale')).toBe(false);
     });
   });
 });

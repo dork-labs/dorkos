@@ -351,6 +351,14 @@ async function answer(probe: Probe, to = port): Promise<Comparable> {
 }
 
 const HOSTS = { loopback: 'localhost:4242', foreign: 'rebound.example:4242' } as const;
+/** GET `path` with these headers (the loopback host by default), from this server or another. */
+function getAt(
+  path: string,
+  headers: Record<string, string> = { host: HOSTS.loopback },
+  to = port
+) {
+  return answer({ method: 'GET', path, headers }, to);
+}
 const ORIGINS = {
   none: undefined,
   loopback: 'http://localhost:4242',
@@ -432,27 +440,13 @@ describe('the chain matrix', () => {
     // A snapshot of one status for everything would match in every cell. Pin a few
     // cells that must differ from each other.
     const loopback = { host: HOSTS.loopback };
+    const probe = (headers: Record<string, string>) => getAt('/api/chain-probe', headers);
     state.login = false;
-    expect(
-      (await answer({ method: 'GET', path: '/api/chain-probe', headers: loopback })).status
-    ).toBe(200);
-    expect(
-      (await answer({ method: 'GET', path: '/api/chain-probe', headers: { host: HOSTS.foreign } }))
-        .status
-    ).toBe(403);
-    expect(
-      (
-        await answer({
-          method: 'GET',
-          path: '/api/chain-probe',
-          headers: { ...loopback, origin: ORIGINS.foreign },
-        })
-      ).status
-    ).toBe(403);
+    expect((await probe(loopback)).status).toBe(200);
+    expect((await probe({ host: HOSTS.foreign })).status).toBe(403);
+    expect((await probe({ ...loopback, origin: ORIGINS.foreign })).status).toBe(403);
     state.login = true;
-    expect(
-      (await answer({ method: 'GET', path: '/api/chain-probe', headers: loopback })).status
-    ).toBe(401);
+    expect((await probe(loopback)).status).toBe(401);
     const signedIn = await answer({
       method: 'POST',
       path: '/api/chain-probe',
@@ -461,19 +455,15 @@ describe('the chain matrix', () => {
     expect(signedIn.status).toBe(200);
     expect(signedIn.body).toMatchObject({ user: { userId: ownerId, credential: 'cookie' } });
     expect(signedIn.audit).toHaveLength(1);
-    const withKey = await answer({
-      method: 'GET',
-      path: '/api/chain-probe',
-      headers: { ...loopback, authorization: `Bearer ${GOOD_API_KEY}` },
-    });
+    const withKey = await probe({ ...loopback, authorization: `Bearer ${GOOD_API_KEY}` });
     expect(withKey.body).toMatchObject({
       user: { userId: ownerId, credential: 'api-key' },
       surface: 'http',
     });
-    const asAgent = await answer({
-      method: 'GET',
-      path: '/api/chain-probe',
-      headers: { ...loopback, cookie: GOOD_COOKIE, 'x-dorkos-agent': GOOD_AGENT_TOKEN },
+    const asAgent = await probe({
+      ...loopback,
+      cookie: GOOD_COOKIE,
+      'x-dorkos-agent': GOOD_AGENT_TOKEN,
     });
     expect(asAgent.body).toMatchObject({
       agent: '/agents/scout',
@@ -484,68 +474,36 @@ describe('the chain matrix', () => {
 
 describe('bodies', () => {
   const json = { host: HOSTS.loopback, 'content-type': 'application/json' };
+  const oversize = JSON.stringify({ pad: 'x'.repeat(1024 * 1024) });
+  const post = (
+    body?: Probe['body'],
+    headers: Record<string, string> = json,
+    chunked?: boolean
+  ): Probe => ({
+    method: 'POST',
+    path: '/api/chain-probe',
+    headers,
+    ...(body === undefined ? {} : { body }),
+    ...(chunked ? { chunked } : {}),
+  });
   const BODIES: Record<string, Probe> = {
-    'well-formed JSON': {
-      method: 'POST',
-      path: '/api/chain-probe',
-      headers: json,
-      body: '{"a":[1,2]}',
-    },
-    'malformed JSON': { method: 'POST', path: '/api/chain-probe', headers: json, body: '{"a":' },
-    'a top-level string (strict mode)': {
-      method: 'POST',
-      path: '/api/chain-probe',
-      headers: json,
-      body: '"just a string"',
-    },
-    'a body over the 1 MB limit': {
-      method: 'POST',
-      path: '/api/chain-probe',
-      headers: json,
-      body: JSON.stringify({ pad: 'x'.repeat(1024 * 1024) }),
-    },
-    'an empty body with a length': {
-      method: 'POST',
-      path: '/api/chain-probe',
-      headers: json,
-      body: '',
-    },
-    'an empty chunked body': {
-      method: 'POST',
-      path: '/api/chain-probe',
-      headers: json,
-      body: '',
-      chunked: true,
-    },
-    'no body at all': {
-      method: 'POST',
-      path: '/api/chain-probe',
-      headers: { host: HOSTS.loopback },
-    },
-    'a body that is not JSON': {
-      method: 'POST',
-      path: '/api/chain-probe',
-      headers: { host: HOSTS.loopback, 'content-type': 'text/plain' },
-      body: 'hello',
-    },
-    'a gzipped JSON body': {
-      method: 'POST',
-      path: '/api/chain-probe',
-      headers: { ...json, 'content-encoding': 'gzip' },
-      body: gzipSync('{"zipped":true}'),
-    },
-    'a charset JSON may not use': {
-      method: 'POST',
-      path: '/api/chain-probe',
-      headers: { host: HOSTS.loopback, 'content-type': 'application/json; charset=latin1' },
-      body: '{"a":1}',
-    },
-    'an oversized body from a caller with no credential, login on': {
-      method: 'POST',
-      path: '/api/chain-probe',
-      headers: json,
-      body: JSON.stringify({ pad: 'x'.repeat(1024 * 1024) }),
-    },
+    'well-formed JSON': post('{"a":[1,2]}'),
+    'malformed JSON': post('{"a":'),
+    'a top-level string (strict mode)': post('"just a string"'),
+    'a body over the 1 MB limit': post(oversize),
+    'an empty body with a length': post(''),
+    'an empty chunked body': post('', json, true),
+    'no body at all': post(undefined, { host: HOSTS.loopback }),
+    'a body that is not JSON': post('hello', { ...json, 'content-type': 'text/plain' }),
+    'a gzipped JSON body': post(gzipSync('{"zipped":true}'), {
+      ...json,
+      'content-encoding': 'gzip',
+    }),
+    'a charset JSON may not use': post('{"a":1}', {
+      ...json,
+      'content-type': 'application/json; charset=latin1',
+    }),
+    'an oversized body from a caller with no credential, login on': post(oversize),
   };
 
   for (const [name, probe] of Object.entries(BODIES)) {
@@ -559,11 +517,7 @@ describe('bodies', () => {
 describe('errors', () => {
   for (const kind of Object.keys(THROWABLE)) {
     it(`answers a route that throws a ${kind} error the same way`, async () => {
-      const answered = await answer({
-        method: 'GET',
-        path: `/api/chain-probe/throw/${kind}`,
-        headers: { host: HOSTS.loopback },
-      });
+      const answered = await getAt(`/api/chain-probe/throw/${kind}`);
       expect(answered.status).toBeGreaterThanOrEqual(400);
       expect(stable(answered)).toMatchSnapshot();
     });
@@ -576,8 +530,7 @@ describe('a stopping server', () => {
     const served = await listen(frontDoorListener(buildChain(closing)));
     try {
       closing.close();
-      const probe = { method: 'GET', path: '/api/chain-probe', headers: { host: HOSTS.loopback } };
-      const answered = await answer(probe, served.port);
+      const answered = await getAt('/api/chain-probe', undefined, served.port);
       expect(answered.status).toBe(503);
       expect(stable(answered)).toMatchSnapshot();
     } finally {
@@ -592,12 +545,7 @@ describe('a managed hostname that skipped the managed ingress', () => {
     managed.managedHosts = ['abc.remote.example'];
     const served = await listen(frontDoorListener(buildChain(new MainRequestAdmission())));
     try {
-      const probe = {
-        method: 'GET',
-        path: '/api/chain-probe',
-        headers: { host: 'abc.remote.example' },
-      };
-      const answered = await answer(probe, served.port);
+      const answered = await getAt('/api/chain-probe', { host: 'abc.remote.example' }, served.port);
       expect(answered.status).toBe(403);
       expect(answered.body).toEqual({ error: 'Forbidden.' });
       expect(stable(answered)).toMatchSnapshot();
@@ -611,11 +559,7 @@ describe('a managed hostname that skipped the managed ingress', () => {
 describe('a route that fails after its response has started', () => {
   it('is cut off the same way, and the Hono chain still logs it', async () => {
     vi.mocked(logger.error).mockClear();
-    const answered = await answer({
-      method: 'GET',
-      path: MIDSTREAM_PATH,
-      headers: { host: HOSTS.loopback },
-    });
+    const answered = await getAt(MIDSTREAM_PATH);
     expect(answered).toMatchObject({ status: 200, body: 'partly ', complete: false });
     expect(stable(answered)).toMatchSnapshot();
     expect(logger.error).toHaveBeenCalledWith(
@@ -647,11 +591,7 @@ describe('odd spellings of a gated path', () => {
   for (const spelling of SPELLINGS) {
     it(`never answers ${spelling} without a credential, login on`, async () => {
       state.login = true;
-      const answered = await answer({
-        method: 'GET',
-        path: spelling,
-        headers: { host: HOSTS.loopback },
-      });
+      const answered = await getAt(spelling);
       // The gate runs before the 404 and judges the folded path, so it
       // refuses every one.
       expect(answered.status).toBe(401);
@@ -661,11 +601,7 @@ describe('odd spellings of a gated path', () => {
   it('pins the one routing difference from Express: paths are case-sensitive', async () => {
     // Express routed `/API/chain-probe` to the probe; Hono finds no route.
     // Every group inherits this (see the module doc of `http/api-chain.ts`).
-    const answered = await answer({
-      method: 'GET',
-      path: '/API/chain-probe',
-      headers: { host: HOSTS.loopback },
-    });
+    const answered = await getAt('/API/chain-probe');
     expect(answered.status).toBe(404);
   });
 });

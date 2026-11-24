@@ -8,6 +8,7 @@ import {
   open,
   readFile,
   realpath,
+  rename,
   rm,
   writeFile,
   type FileHandle,
@@ -18,11 +19,24 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { setTimeout as wait } from 'node:timers/promises';
 import { expect, it } from 'vitest';
-import { allocatePosixSocketDirectory } from '@dorkos/test-utils/run-custody/posix';
+import {
+  allocatePosixSocketDirectory,
+  queryGroupPresence,
+} from '@dorkos/test-utils/run-custody/posix';
 import { RUNTIME_ENV_PROFILES } from '../../../shared/runtime-environment-catalog.js';
 import { pinnedOpenCode } from '../pinned-opencode.js';
+import {
+  openFixtureObserver,
+  openPositiveControl,
+} from './fixtures/runner-parent-exit-observer.js';
+import type { RunnerExitMode } from './fixtures/runner-parent-exit.setup.js';
 
 const armed = process.env.DORKOS_OPENCODE_PINNED_SERVE_PROOF === '1';
+const hostedLinuxX64 =
+  process.env.GITHUB_ACTIONS === 'true' &&
+  process.env.RUNNER_ENVIRONMENT === 'github-hosted' &&
+  process.platform === 'linux' &&
+  process.arch === 'x64';
 const LOG_CAP = 32768;
 async function until<T>(work: Promise<T>, deadline: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -41,21 +55,24 @@ async function until<T>(work: Promise<T>, deadline: number): Promise<T> {
   }
 }
 
-it.skipIf(!armed)(
-  'joins the pinned cohort after its nested runner exits itself',
-  async () => {
-    const deadline = Date.now() + 30000;
+function nestedFixture(mode: RunnerExitMode): () => Promise<void> {
+  return async () => {
+    const deadline = Date.now() + 30_000;
+    const silent = mode === 'silent-worker';
     let root: string | undefined;
     let output: FileHandle | undefined;
     let closed = false;
     let clean = false;
     let capture = true;
+    let released = false;
+    let joinRunner: (() => Promise<unknown>) | undefined;
+    let positive: ReturnType<typeof openPositiveControl> | undefined;
     const errors: unknown[] = [];
     const logs = {
       stdout: { chunks: [] as Buffer[], retained: 0, total: 0, truncated: false },
       stderr: { chunks: [] as Buffer[], retained: 0, total: 0, truncated: false },
     };
-    const diagnostics: Record<string, unknown> = { version: 1, phase: 'preparing' };
+    const diagnostics: Record<string, unknown> = { version: 1, mode, phase: 'preparing' };
     try {
       const flags = new Set(['OPENCODE_DISABLE_MODELS_FETCH', 'OPENCODE_DISABLE_AUTOUPDATE']);
       if (
@@ -65,7 +82,9 @@ it.skipIf(!armed)(
       )
         throw new Error('Runner fixture refuses ambient OpenCode configuration');
       if (!pinnedOpenCode()) throw new Error('Pinned fixture unavailable');
-      root = await realpath(await mkdtemp(join(tmpdir(), 'oc-re-')));
+      // Nested Unix sockets need a short fixture root on macOS.
+      const tempParent = process.platform === 'darwin' ? '/tmp' : tmpdir();
+      root = await realpath(await mkdtemp(join(tempParent, 'oc-re-')));
       const ownedRoot = root;
       const socket = await allocatePosixSocketDirectory(ownedRoot);
       output = await open(
@@ -76,7 +95,7 @@ it.skipIf(!armed)(
       const initial = await output.stat({ bigint: true });
       await writeFile(
         join(ownedRoot, 'context.json'),
-        JSON.stringify({ deadline, socketDirectory: socket.directory }),
+        JSON.stringify({ deadline, mode, socketDirectory: socket.directory }),
         { flag: 'wx', mode: 0o600 }
       );
       const require = createRequire(import.meta.url);
@@ -101,6 +120,8 @@ it.skipIf(!armed)(
         const value = process.env[name];
         if (value !== undefined) env[name] = value;
       }
+      const inspect = silent ? await openFixtureObserver(env) : undefined;
+      if (silent) positive = openPositiveControl(ownedRoot);
       const runner = spawn(
         process.execPath,
         [vitest, 'run', '--config', config, '--maxWorkers=1', '--retry=0'],
@@ -138,10 +159,29 @@ it.skipIf(!armed)(
         }
       );
       void done.catch(() => undefined);
+      joinRunner = () => until(done, deadline);
+      const exited = new Promise<{ code: number | null; signal: string | null }>(
+        (resolve, reject) => {
+          runner.once('error', reject);
+          runner.once('exit', (code, signal) => resolve({ code, signal }));
+        }
+      );
+      void exited.catch(() => undefined);
       async function json(name: string) {
         const value = await readFile(join(ownedRoot, name));
         if (value.length > 4096) throw new Error('Owned receipt exceeds bound');
         return JSON.parse(value.toString());
+      }
+      async function waitForJson(name: string, limit: number) {
+        while (Date.now() < limit) {
+          try {
+            return await json(name);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          }
+          await wait(25);
+        }
+        throw new Error(`Missing owned fixture receipt: ${name}`);
       }
       async function noOrdinaryCleanup() {
         await expect(lstat(join(ownedRoot, 'normal-teardown-ran'))).rejects.toMatchObject({
@@ -151,7 +191,82 @@ it.skipIf(!armed)(
           code: 'ENOENT',
         });
       }
-      expect(await until(done, deadline)).toEqual({ code: 23, signal: null });
+      let verifyWorkerAfterNativeCleanup: (() => Promise<void>) | undefined;
+      if (silent) {
+        const actor = positive;
+        if (!inspect || !actor?.pid || !runner.pid)
+          throw new Error('Missing owned fixture subjects');
+        const runnerPid = runner.pid;
+        const controlPid = actor.pid;
+        const ownerProofDeadline = deadline - 6_500;
+        const live = await waitForJson('pinned-ready.json', ownerProofDeadline);
+        const blocking = await waitForJson('worker-blocking.json', ownerProofDeadline);
+        expect(blocking).toEqual({ pid: live.workerPid, stopAt: deadline - 1000 });
+        expect(live.mainPid).toBe(runnerPid);
+        expect(live.target.kind).toBe('spawned');
+        expect(live.target.birth).toMatch(/^\d+:\d+$/);
+        const [main, worker, target, control] = await Promise.all([
+          inspect(runnerPid),
+          inspect(live.workerPid),
+          inspect(live.target.pid),
+          inspect(controlPid),
+        ]);
+        const anchor = await inspect(target.parent);
+        const guardian = await inspect(anchor.parent);
+        const node = await realpath(process.execPath);
+        expect(
+          new Set([main.pid, worker.pid, target.pid, anchor.pid, guardian.pid, control.pid]).size
+        ).toBe(6);
+        expect(main).toMatchObject({ parent: process.pid, executable: node });
+        expect(worker).toMatchObject({ parent: main.pid, executable: node });
+        expect(control).toMatchObject({ parent: process.pid, executable: node });
+        expect(target).toMatchObject({
+          parent: anchor.pid,
+          group: anchor.pid,
+          birth: live.target.birth,
+          executable: await realpath(pinnedOpenCode()!),
+        });
+        expect(anchor).toMatchObject({ group: anchor.pid, executable: node });
+        expect(guardian).toMatchObject({ parent: main.pid, executable: node });
+        expect(guardian.group).not.toBe(anchor.group);
+        expect(control.group).not.toBe(anchor.group);
+        await until(actor.challenge('before main exit'), ownerProofDeadline);
+        await noOrdinaryCleanup();
+        diagnostics.live = { main, worker, target, anchor, guardian, control };
+        diagnostics.workerBlockingUntil = blocking.stopAt;
+
+        expect(Date.now()).toBeLessThan(ownerProofDeadline);
+        const authorized = join(ownedRoot, 'outer-authorized');
+        await writeFile(
+          authorized + '.part',
+          JSON.stringify({ mainPid: main.pid, workerPid: worker.pid, targetPid: target.pid }),
+          { flag: 'wx', mode: 0o600 }
+        );
+        await rename(authorized + '.part', authorized + '.json');
+        const exactWorker = { pid: worker.pid, birth: worker.birth, executable: worker.executable };
+        const actualExit = await until(exited, deadline);
+        diagnostics.exit = actualExit;
+        expect(actualExit).toEqual({ code: 23, signal: null });
+        diagnostics.afterParentExit = await inspect(worker.pid);
+        expect(diagnostics.afterParentExit).toMatchObject(exactWorker);
+        verifyWorkerAfterNativeCleanup = async () => {
+          diagnostics.afterNativeCleanup = await inspect(worker.pid);
+          expect(diagnostics.afterNativeCleanup).toMatchObject(exactWorker);
+          expect(queryGroupPresence(anchor.group)).toBe('absent');
+          expect(await inspect(control.pid)).toEqual(control);
+          await until(actor.challenge('after native cleanup'), deadline);
+          await expect(lstat(join(ownedRoot, 'worker-exit.json'))).rejects.toMatchObject({
+            code: 'ENOENT',
+          });
+          await noOrdinaryCleanup();
+          const observedAt = Date.now();
+          expect(observedAt).toBeLessThan(blocking.stopAt);
+          diagnostics.cleanupObservedAt = observedAt;
+        };
+      } else {
+        expect(await until(done, deadline)).toEqual({ code: 23, signal: null });
+      }
+
       await noOrdinaryCleanup();
       const ready = await json('pinned-ready.json');
       expect(ready.ready).toBe(true);
@@ -163,7 +278,7 @@ it.skipIf(!armed)(
       expect(ready.workerPid).not.toBe(process.pid);
       expect(ready.workerParentPid).toBe(runner.pid);
       expect(await json('runner-transition.json')).toEqual({
-        kind: 'self-exit',
+        kind: mode,
         code: 23,
         mainPid: runner.pid,
         workerPid: ready.workerPid,
@@ -204,17 +319,15 @@ it.skipIf(!armed)(
         { code: 0, signal: null },
         { code: null, signal: 'SIGKILL' },
       ]).toContainEqual(receipt.anchorClose);
-      let worker;
-      while (Date.now() < deadline) {
-        try {
-          worker = await json('worker-exit.json');
-          break;
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        }
-        await wait(25);
+      if (silent) {
+        if (!verifyWorkerAfterNativeCleanup) throw new Error('Missing live worker observation');
+        await verifyWorkerAfterNativeCleanup();
+        await releaseWorker(ownedRoot, 'proof-observed');
+        released = true;
+        expect(await until(done, deadline)).toEqual({ code: 23, signal: null });
+        diagnostics.terminal = receipt;
       }
-      if (!worker) throw new Error('Missing owned worker exit receipt');
+      const worker = await waitForJson('worker-exit.json', deadline);
       expect(worker.version).toBe(1);
       expect(worker.workerPid).toBe(ready.workerPid);
       expect(worker.mainPid).toBe(runner.pid);
@@ -231,6 +344,29 @@ it.skipIf(!armed)(
       errors.push(error);
       diagnostics.phase = 'failed';
     } finally {
+      if (silent && root && !released) {
+        try {
+          await releaseWorker(root, 'proof-aborted');
+          await joinRunner?.();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      if (positive) {
+        try {
+          expect(await until(positive.close(), Date.now() + 1000)).toEqual({
+            code: 0,
+            signal: null,
+          });
+        } catch (error) {
+          errors.push(error);
+          try {
+            await until(positive.retire(), Date.now() + 1000);
+          } catch (closeError) {
+            errors.push(closeError);
+          }
+        }
+      }
       capture = false;
       // This covers context/config resolution, spawn failure and every later throw.
       if (output) {
@@ -296,6 +432,25 @@ it.skipIf(!armed)(
       }
     }
     if (errors.length) throw new AggregateError(errors, 'Maintained nested runner fixture failed');
-  },
-  30000
+    if (silent) console.info('[opencode-custody-silent-worker]', JSON.stringify(diagnostics));
+  };
+}
+
+/** Release the exact held fixture only, keeping an incomplete write invisible to its reader. */
+async function releaseWorker(root: string, result: 'proof-observed' | 'proof-aborted') {
+  const release = join(root, 'worker-release');
+  await writeFile(release + '.part', result + '\n', { flag: 'wx', mode: 0o600 });
+  await rename(release + '.part', release);
+}
+
+it.skipIf(!armed && !hostedLinuxX64)(
+  'joins the pinned cohort after its nested runner exits itself',
+  nestedFixture('self-exit'),
+  30_000
+);
+
+it.skipIf(!armed || process.platform !== 'darwin' || process.arch !== 'arm64')(
+  'joins the pinned cohort after runner exit while its macOS worker is still blocked',
+  nestedFixture('silent-worker'),
+  35_000
 );

@@ -2,7 +2,7 @@
  * The registry that counts a Codex agent's running heavy commands (DOR-4743), on its own: a gate
  * the test writes, a clock the test moves, and a sink the test reads. What only the registry can
  * show cheaply lives here; the counting itself is proven over the real transport in
- * `load-gate-hold.test.ts`.
+ * `load-gate-hold/load-gate-hold.commands.test.ts`.
  *
  * @vitest-environment node
  */

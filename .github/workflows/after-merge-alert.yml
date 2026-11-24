@@ -24,6 +24,9 @@ on:
       - site-build
       - harness-windows
       - browser-test
+      - lint
+      - credential-free-build
+      - docs-openapi-check
     types: [completed]
 
 permissions:

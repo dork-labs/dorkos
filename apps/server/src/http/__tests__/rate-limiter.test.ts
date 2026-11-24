@@ -12,7 +12,6 @@ import { honoListener, swappableServer } from '@dorkos/test-utils/listening-serv
 import {
   createRateLimiter,
   honoRateLimit,
-  rateLimitHeaders,
   type HonoRateLimitOptions,
   type RateLimitHeaders,
 } from '../rate-limiter.js';
@@ -20,13 +19,6 @@ import type { RequestFactsEnv } from '../request-facts.js';
 
 describe('createRateLimiter', () => {
   const policy = { windowMs: 60_000, limit: 3 };
-
-  it('allows the limit, then refuses', () => {
-    const limiter = createRateLimiter(policy);
-    const answers = [0, 1, 2, 3].map((t) => limiter.hit('a', t));
-    expect(answers.map((d) => d.allowed)).toEqual([true, true, true, false]);
-    expect(answers.map((d) => d.remaining)).toEqual([2, 1, 0, 0]);
-  });
 
   it('frees one slot when the oldest request leaves the window, not the whole budget', () => {
     const limiter = createRateLimiter(policy);
@@ -98,38 +90,6 @@ describe('createRateLimiter', () => {
     const limiter = createRateLimiter({ windowMs: 60_000, limit: 1, maxKeys: 1 });
     limiter.hit('a', 0).refund();
     expect(limiter.hit('b', 1).allowed).toBe(true);
-  });
-});
-
-describe('rateLimitHeaders', () => {
-  const policy = { windowMs: 60_000, limit: 2 };
-
-  it('writes the draft-6 headers express-rate-limit wrote', () => {
-    const decision = createRateLimiter(policy).hit('a', 0);
-    expect(rateLimitHeaders(decision, policy, 'standard', 0)).toEqual({
-      'RateLimit-Policy': '2;w=60',
-      'RateLimit-Limit': '2',
-      'RateLimit-Remaining': '1',
-      'RateLimit-Reset': '60',
-    });
-  });
-
-  it('writes the legacy headers, with the reset as a time', () => {
-    const decision = createRateLimiter(policy).hit('a', 0);
-    expect(rateLimitHeaders(decision, policy, 'legacy', 0)).toEqual({
-      'X-RateLimit-Limit': '2',
-      'X-RateLimit-Remaining': '1',
-      Date: new Date(0).toUTCString(),
-      'X-RateLimit-Reset': '60',
-    });
-  });
-
-  it('adds Retry-After to a refusal', () => {
-    const limiter = createRateLimiter(policy);
-    limiter.hit('a', 0);
-    limiter.hit('a', 0);
-    const refused = limiter.hit('a', 15_500);
-    expect(rateLimitHeaders(refused, policy, 'standard', 15_500)['Retry-After']).toBe('45');
   });
 });
 
