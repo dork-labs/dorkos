@@ -55,11 +55,12 @@ name: site-build
 #
 # TWO EVENTS, TWO DEPTHS, ONE JOB (the shape test.yml settles on):
 #
-#   * `merge_group`: builds the site UNCONDITIONALLY. The queue's combined tree
-#     — main plus everything ahead in the queue plus this PR — is the only place
-#     a two-PR interaction is visible, and the site has a live example of that
-#     class: a PR that removes an API operation and a PR that edits docs/ can
-#     each be green alone and combine into a prerender failure.
+#   * `push` to main (was `merge_group` until DOR-5130): builds the site after
+#     every merge that can reach it. Main's tree is where a two-PR interaction
+#     shows (a PR that removes an API operation and a PR that edits docs/ can
+#     each be green alone and combine into a prerender failure), and
+#     after-merge-alert.yml tells the author. If this check is ever promoted to
+#     required, it needs `merge_group:` back.
 #   * `pull_request`: builds only when the change can reach the site (see the
 #     scope step). This is the early-warning half — an author gets the answer on
 #     their own PR — and the queue is the authoritative half.
@@ -91,7 +92,8 @@ name: site-build
 # the team's bottleneck. A pull request that can't reach the site no longer
 # holds a runner to install and then skip the build. The list matches what the
 # scope step answers: the site's dependency closure, the two content roots, and
-# the root files turbo treats as affecting everything. `merge_group` stays
+# the root files turbo treats as affecting everything. `push` to main uses the
+# same list (it was an unfiltered `merge_group` run until DOR-5130), so
 # unfiltered, so a package added to the closure and missed here costs an early
 # warning, never a gate. PROMOTING THIS CHECK NOW TAKES ONE EDIT: delete the
 # `paths:` below first, because a required check that never reports keeps a PR
@@ -120,7 +122,34 @@ on:
       - '.gitattributes'
       - 'turbo.json'
       - '.github/workflows/site-build.yml'
-  merge_group:
+  # After merge, not in the queue (DOR-5130): an advisory result in the queue
+  # gates nothing and holds runners while the queue waits. The combined tree a
+  # two-PR clash shows up in is main itself; after-merge-alert.yml tells the
+  # author of the merge that broke it.
+  push:
+    branches: [main]
+    paths:
+      - 'apps/site/**'
+      - 'docs/**'
+      - 'blog/**'
+      - 'packages/cloud-api/**'
+      - 'packages/connector-providers/**'
+      - 'packages/eslint-config/**'
+      - 'packages/extension-api/**'
+      - 'packages/icons/**'
+      - 'packages/marketplace/**'
+      - 'packages/shared/**'
+      - 'packages/skills/**'
+      - 'packages/typescript-config/**'
+      - 'packages/ui/**'
+      - 'patches/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.npmrc'
+      - '.gitattributes'
+      - 'turbo.json'
+      - '.github/workflows/site-build.yml'
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for the Node 20 runtime (matches the other workflows here).
@@ -253,13 +282,13 @@ jobs:
             echo 'run=false' >> "$GITHUB_OUTPUT"
           fi
 
-      # The build. On `merge_group` this is unconditional; on `pull_request` it
+      # The build. After merge (`push` to main) this is unconditional; on `pull_request` it
       # runs only when the scope step said the change can reach the site. A
       # skipped step leaves this job GREEN and the `site-build` context
       # reported — which is the property the header's required-check argument
       # rests on.
       - name: Build the site (next build)
-        if: ${{ github.event_name == 'merge_group' || steps.scope.outputs.run == 'true' }}
+        if: ${{ github.event_name != 'pull_request' || steps.scope.outputs.run == 'true' }}
         run: pnpm exec turbo build --filter=@dorkos/site
 
       # Says out loud, in the log, that this run built nothing — so a green
