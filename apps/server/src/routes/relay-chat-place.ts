@@ -20,15 +20,13 @@
  *
  * Everything else is left as it was. The person is never asked. An id Mesh
  * knows as an agent is a message to that agent, unless a chat held under that
- * id is recorded to someone else (any agent can register one, so a Mesh id
- * alone proves nothing about a chat). An id nothing holds names no chat yet. A
+ * id is someone else's, by its record or its folder (any agent can register
+ * one, so a Mesh id alone proves nothing about a chat). An id nothing holds names no chat yet. A
  * caller DorkOS cannot name is not asked here either; how far it may reach is
  * decided apart from this rule.
  *
  * @module routes/relay-chat-place
  */
-import fs from 'node:fs';
-import path from 'node:path';
 import { resolveAgentTurnIdentity, type AgentSessionStoreLike } from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
@@ -36,6 +34,8 @@ import type { RequestFacts } from '../http/request-facts.js';
 import { errorBody } from '../lib/route-utils.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { liveSessionCwd } from '../services/core/agent-identity/session-agent.js';
+import { homeOf, resolveAgentHome } from '../services/core/agent-identity/agent-home.js';
+import { realOr } from '../services/session/launch/launch-caller.js';
 import { SESSION_LAUNCH_ACTION } from '../services/session/launch/launch-audit.js';
 import { chatPlaceRefusal, sessionLauncherOf } from './session-launcher.js';
 
@@ -50,13 +50,19 @@ export interface RelayChatPlaceSources {
   agentSessions?: AgentSessionStoreLike;
 }
 
-/** A folder's real path, or its resolved spelling when it cannot be read. */
-function realOr(dir: string): string {
-  try {
-    return fs.realpathSync.native(path.resolve(dir));
-  } catch {
-    return path.resolve(dir);
+/**
+ * The folder a registered runtime's own store answers for this id, which it
+ * also does for an id a chat no longer goes by (a renamed chat's old id, or the
+ * Mesh id a relay turn first ran under).
+ *
+ * @param sessionId - The id.
+ */
+function runtimeCwdOf(sessionId: string): string | undefined {
+  for (const runtime of runtimeRegistry.listRuntimes()) {
+    const cwd = runtime.getSessionCwd?.(sessionId);
+    if (cwd !== undefined) return cwd;
   }
+  return undefined;
 }
 
 /**
@@ -68,8 +74,7 @@ function realOr(dir: string): string {
  */
 async function isHeldChat(sessionId: string): Promise<boolean> {
   try {
-    if (liveSessionCwd(sessionId) !== undefined) return true;
-    if (runtimeRegistry.listRuntimes().some((r) => r.getSessionCwd?.(sessionId) !== undefined)) {
+    if (liveSessionCwd(sessionId) !== undefined || runtimeCwdOf(sessionId) !== undefined) {
       return true;
     }
     return (await runtimeRegistry.resolveSessionRuntime(sessionId)).bound;
@@ -79,8 +84,28 @@ async function isHeldChat(sessionId: string): Promise<boolean> {
 }
 
 /**
+ * Whose a chat held under this id is, read as {@link chatPlaceRefusal} reads
+ * it: the recorded agent, else the agent whose home the chat's folder is.
+ * `undefined` when nobody can be named or a read fails.
+ *
+ * @param id - The id.
+ */
+async function heldChatOwner(id: string): Promise<string | undefined> {
+  try {
+    const recorded = await runtimeRegistry.getSessionAgentPath(id);
+    if (recorded) return recorded;
+    const cwd = runtimeRegistry.getNativeSessionCwd(id) ?? liveSessionCwd(id) ?? runtimeCwdOf(id);
+    return cwd ? homeOf(resolveAgentHome(cwd)) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Whether the id is an agent's own address: Mesh knows it as an agent, and no
- * chat is held under it, or the one held is recorded to that same agent.
+ * chat is held under it, or the chat held there is that same agent's (a relay
+ * turn first runs under the Mesh id, and the runtime's store keeps answering
+ * to it). A chat that cannot be named is not an address.
  *
  * @param id - The id the subject ends in.
  * @param mesh - Mesh.
@@ -89,8 +114,8 @@ async function isAgentAddress(id: string, mesh: RelayChatMesh | undefined): Prom
   const home = mesh?.getProjectPath(id);
   if (home === undefined) return false;
   if (!(await isHeldChat(id))) return true;
-  const recorded = await runtimeRegistry.getSessionAgentPath(id).catch(() => null);
-  return recorded !== null && realOr(recorded) === realOr(home);
+  const owner = await heldChatOwner(id);
+  return owner !== undefined && realOr(owner) === realOr(home);
 }
 
 /**

@@ -75,9 +75,14 @@ let agentSessions: Map<string, string>;
 let runtimeHeld: Record<string, string>;
 
 /** Bind a chat as a launch binds it. */
-function chat(sessionId: string, agentPath: string | null, runningIn?: string): void {
+function chat(
+  sessionId: string,
+  agentPath: string | null,
+  runningIn?: string,
+  runtime = 'claude-code'
+): void {
   db.insert(sessionMetadata)
-    .values({ sessionId, runtime: 'claude-code', agentPath, createdAt: new Date().toISOString() })
+    .values({ sessionId, runtime, agentPath, createdAt: new Date().toISOString() })
     .run();
   if (runningIn) live[sessionId] = runningIn;
 }
@@ -301,6 +306,44 @@ describe('which chat a message reaches', () => {
     } finally {
       read.mockRestore();
     }
+  });
+
+  it("delivers to an agent's address after its first relay turn, as the store keeps answering to it", async () => {
+    // The turn ran under the Mesh id; the runtime then gave the chat its own id.
+    const ownId = '00000000-0000-4000-8000-00000000a008';
+    runtimeHeld['juno-id'] = JUNO;
+    agentSessions.set('juno-id', ownId);
+    chat(ownId, JUNO);
+    const res = await send(JUNO_SUBJECT, asRio);
+    expect(res.status).toBe(200);
+  });
+
+  it("delivers to an agent's address that a runtime holds in that agent's own folder", async () => {
+    runtimeHeld['juno-id'] = JUNO;
+    const res = await send(JUNO_SUBJECT, asRio);
+    expect(res.status).toBe(200);
+  });
+
+  it("delivers to an agent's address whose chat is recorded to that agent", async () => {
+    chat('juno-id', JUNO, undefined, 'codex');
+    const res = await send(JUNO_SUBJECT, asRio);
+    expect(res.status).toBe(200);
+  });
+
+  it("refuses a Mesh id whose chat runs in another agent's folder", async () => {
+    meshIds['collide-id'] = RIO;
+    live['collide-id'] = JUNO;
+    const res = await send('relay.agent.default.collide-id', asRio);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('DESK_NOT_OWN');
+  });
+
+  it('refuses a Mesh id whose held chat names nobody', async () => {
+    meshIds['lost-id'] = RIO;
+    chat('lost-id', null);
+    const res = await send('relay.agent.default.lost-id', asRio);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('DESK_NOT_OWN');
   });
 
   it('delivers to another agent whose conversation it already has', async () => {
