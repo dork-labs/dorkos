@@ -36,7 +36,7 @@ It only looks at assertions made on behalf of its own owner pid, so other apps c
 [smoke] owner killed → assertion gone in 13 ms; holders spawned after the kill: 0
 ```
 
-The last number should be 0. A dead owner makes each new caffeinate exit 0 at once. Since DOR-2919 (#2891) the engine treats an exit 0 in the first half of `-t` as a refusal (`denied`) and retries on a backoff (`RETRY_BACKOFF_MS`, 30 seconds first) instead of respawning at once, so nothing new starts before the test ends. A count above 0 means that check has regressed. (The comment above step 3 in the test still describes the pre-fix behavior.) In DorkOS the server watches its own pid, so the engine dies with the owner and this never happens either way.
+The last number should be 0. A dead owner makes each new caffeinate exit 0 at once. Since DOR-2919 (#2891) the engine treats an exit 0 in the first half of `-t` as a refusal (`denied`) and retries on a backoff (`RETRY_BACKOFF_MS`, 30 seconds first) instead of respawning at once, so nothing new starts before the test ends. A count above 0 means that check has regressed. In DorkOS the server watches its own pid, so the engine dies with the owner and this never happens either way.
 
 The script refuses to run anywhere but macOS. The test itself is gated on `DORKOS_KEEP_AWAKE_SMOKE=1` and `process.platform === 'darwin'`; everywhere else, `pnpm test` included, it is collected and skipped. No turbo task passes the variable through, so CI cannot arm it.
 

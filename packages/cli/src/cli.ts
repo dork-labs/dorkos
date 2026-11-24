@@ -535,7 +535,7 @@ Commands:
   doctor               Check your setup and report problems in plain words
                        (--deep also checks a running DorkOS; --json for raw output)
   feedback             Report a bug or request a feature on GitHub
-  cleanup              Remove all DorkOS data
+  cleanup              Remove DorkOS data (asks before each step)
 
 Options:
   -p, --port <port>      Port to listen on (default: ${DEFAULT_PORT})
