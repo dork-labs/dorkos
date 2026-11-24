@@ -245,12 +245,9 @@ gates:
     purpose: Publishes and attests the immutable Community image and its strict version-to-digest release manifest.
 
   # --- review-redispatch.yml ---
-  - id: wf.review-redispatch.wait
-    source: .github/workflows/review-redispatch.yml
-    purpose: Never gates a merge. After a claude-code-review run fails, sleeps until the retry ladder's next rung for that head has passed (review-redispatch-wait.sh), so the scan that follows can act on it.
   - id: wf.review-redispatch.redispatch
     source: .github/workflows/review-redispatch.yml
-    purpose: Never gates a merge. After a failed review (once its rung has passed) and on a 10-minute cron backstop, re-requests a lost automated review (re-review label) on PRs whose review check is red, up to the ladder in should-redispatch-review.sh, so pr-gates is not left waiting (DOR-5124; was merge-tail's second duty).
+    purpose: Never gates a merge. On every CLI Smoke Test finish on main (a tick after each push) and a 10-minute cron backstop, re-requests a lost automated review (re-review label) on PRs whose review check is red, up to the ladder in should-redispatch-review.sh, so pr-gates is not left waiting (DOR-5124; was merge-tail's second duty).
 
   # --- release-publish.yml ---
   - id: wf.release-publish.prove
