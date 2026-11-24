@@ -143,6 +143,18 @@ describe('a mesh agent subject runs on the target agent’s own runtime', () => 
     expect(claude.sendMessage).not.toHaveBeenCalled();
   });
 
+  // Evidence for RT-RELAY-01 × claude-code in contributing/capabilities/runtimes.md.
+  it('answers a claude-code agent on claude-code', async () => {
+    await writeAgentManifest('claude-code', agentDir);
+
+    await adapter.deliver(MESH_SUBJECT, agentEnvelope(), {
+      agent: { directory: agentDir, runtime: 'claude-code' },
+    });
+
+    expect(claude.sendMessage).toHaveBeenCalledOnce();
+    expect(codex.sendMessage).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['the manifest names none', undefined, true],
     ['the manifest names one this build did not start', 'opencode', true],
