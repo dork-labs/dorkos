@@ -22,6 +22,8 @@ import { TaskStore } from '../task-store.js';
 import type { TaskFileSync } from '../sync/task-file-sync.js';
 import { scheduleContentKey, taskWorkOf } from '../schedule-permission-clamp.js';
 import type { RuntimeAccount } from '../../core/usage/runtime-accounts.js';
+import { setAccountUsageStore } from '../../core/usage/current-usage-store.js';
+import type { AccountUsageStore } from '../../core/usage/account-usage-store.js';
 import {
   accountMayTakeMovedWork,
   accountMovePolicy,
@@ -306,6 +308,8 @@ describe('the account-move rule’s limits (review of #4211)', () => {
       );
     } finally {
       await fs.rm(home, { recursive: true, force: true });
+      // Back to a policy nobody seeded, so later tests read every folder as known.
+      initAccountSigninPolicy(home);
     }
   });
 });
@@ -390,12 +394,15 @@ describe('the account a task followed before an edit (S-b)', () => {
         registeredBy: 'user',
         account: CREDITS_ACCOUNT_ID,
       } as unknown as AgentManifest);
+      setAccountUsageStore({ listAccounts: () => ACCOUNTS } as unknown as AccountUsageStore);
       const prior = await priorAccountOf({ account: null }, home);
       expect(prior).toBe(CREDITS_ACCOUNT_ID);
       // The task named no account (`from` is null), but its runs were on credits.
-      const rule = accountMovePolicy(true, prior)!;
-      expect(rule('claude3', null)).toBe(false);
+      expect(accountMovePolicy(true, prior)!('claude3', null)).toBe(false);
+      // Control: the same move from an agent on an ordinary account keeps it.
+      expect(accountMovePolicy(true, 'claude4')!('claude3', null)).toBe(true);
     } finally {
+      setAccountUsageStore(undefined);
       await fs.rm(home, { recursive: true, force: true });
     }
   });
