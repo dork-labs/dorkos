@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
- * The managed-MCP Transport methods that can only be tested at this seam: every
- * verb rides `POST /api/capabilities/:id/invoke`, and a destructive verb has to
+ * The managed-MCP Transport methods that can only be tested at this seam: each
+ * verb rides its capability's REST path (`/api/agents/:agentId/mcp-servers…`,
+ * or the invoke endpoint for the three with none), and a destructive verb has to
  * tell a `200` (the updated list) apart from a `202` (an approval envelope) —
  * both of which `fetchJSON` treats as OK. The discrimination is by body shape,
  * so it is invisible above this seam where the mock Transport lives.
@@ -32,13 +33,13 @@ beforeEach(() => {
 });
 
 describe('listAgentMcpServers', () => {
-  it('invokes mcp.list with the agent id and returns the list', async () => {
+  it('reads the agent’s list from its REST path', async () => {
     stubFetch([{ name: 'fs', enabled: true }]);
-    const result = await setup().listAgentMcpServers('agent-1');
+    const result = await setup().listAgentMcpServers('agent 1');
     const [url, init] = lastCall();
-    expect(url).toBe('http://localhost:4242/api/capabilities/mcp.list/invoke');
-    expect(init.method).toBe('POST');
-    expect(init.body).toBe(JSON.stringify({ agentId: 'agent-1' }));
+    expect(url).toBe('http://localhost:4242/api/agents/agent%201/mcp-servers');
+    expect(init.method ?? 'GET').toBe('GET');
+    expect(init.body).toBeUndefined();
     expect(result).toEqual([{ name: 'fs', enabled: true }]);
   });
 });
@@ -50,9 +51,13 @@ describe('addAgentMcpServer', () => {
     connection: { transport: 'stdio' as const, command: 'npx', args: [], env: {} },
   };
 
-  it('maps a 200 array body to an ok result', async () => {
+  it('posts the server, without the agent id the path carries, and maps a 200 to ok', async () => {
     stubFetch([{ name: 'fs', enabled: true }], 200);
     const result = await setup().addAgentMcpServer(input);
+    const [url, init] = lastCall();
+    expect(url).toBe('http://localhost:4242/api/agents/agent-1/mcp-servers');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ name: 'fs', connection: input.connection });
     expect(result).toEqual({ status: 'ok', servers: [{ name: 'fs', enabled: true }] });
   });
 
@@ -86,12 +91,13 @@ describe('addAgentMcpServer', () => {
 describe('importAgentMcpServer', () => {
   const input = { agentId: 'agent-1', name: 'filesystem' };
 
-  it('invokes mcp.import with just the agent id and name', async () => {
+  it('posts to the discovered server’s import path with an empty body', async () => {
     stubFetch([{ name: 'filesystem', enabled: true }], 200);
     const result = await setup().importAgentMcpServer(input);
     const [url, init] = lastCall();
-    expect(url).toBe('http://localhost:4242/api/capabilities/mcp.import/invoke');
-    expect(init.body).toBe(JSON.stringify({ agentId: 'agent-1', name: 'filesystem' }));
+    expect(url).toBe('http://localhost:4242/api/agents/agent-1/mcp-servers/filesystem/import');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe(JSON.stringify({}));
     expect(result).toEqual({ status: 'ok', servers: [{ name: 'filesystem', enabled: true }] });
   });
 
@@ -110,13 +116,55 @@ describe('importAgentMcpServer', () => {
   });
 });
 
+describe('updateAgentMcpServer', () => {
+  it('patches the server’s path with only the changed fields', async () => {
+    stubFetch([{ name: 'fs', enabled: false }], 200);
+    const result = await setup().updateAgentMcpServer({
+      agentId: 'agent-1',
+      name: 'fs',
+      enabled: false,
+    });
+    const [url, init] = lastCall();
+    expect(url).toBe('http://localhost:4242/api/agents/agent-1/mcp-servers/fs');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(init.body as string)).toEqual({ enabled: false });
+    expect(result).toEqual({ status: 'ok', servers: [{ name: 'fs', enabled: false }] });
+  });
+});
+
+describe('the reversible verbs', () => {
+  it.each([
+    ['removeAgentMcpServer', 'DELETE', ''],
+    ['enableAgentMcpServer', 'POST', '/enable'],
+    ['disableAgentMcpServer', 'POST', '/disable'],
+  ] as const)('%s calls %s on the server’s path', async (method, verb, suffix) => {
+    stubFetch([], 200);
+    await setup()[method]('agent-1', 'my server');
+    const [url, init] = lastCall();
+    expect(url).toBe(`http://localhost:4242/api/agents/agent-1/mcp-servers/my%20server${suffix}`);
+    expect(init.method).toBe(verb);
+  });
+});
+
 describe('testAgentMcpServer', () => {
   it('returns the probe result object unchanged', async () => {
     stubFetch({ ok: true, toolCount: 3 });
     const result = await setup().testAgentMcpServer('agent-1', 'fs');
-    const [url] = lastCall();
-    expect(url).toBe('http://localhost:4242/api/capabilities/mcp.test/invoke');
+    const [url, init] = lastCall();
+    expect(url).toBe('http://localhost:4242/api/agents/agent-1/mcp-servers/fs/test');
+    expect(init.method).toBe('POST');
     expect(result).toEqual({ ok: true, toolCount: 3 });
+  });
+});
+
+describe('setMcpClientCredentials', () => {
+  it('puts the client id on the server’s client path, leaving out an empty secret', async () => {
+    stubFetch({ ok: true });
+    await setup().setMcpClientCredentials('agent-1', 'granola', { clientId: 'c-1' });
+    const [url, init] = lastCall();
+    expect(url).toBe('http://localhost:4242/api/agents/agent-1/mcp-servers/granola/client');
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body as string)).toEqual({ clientId: 'c-1' });
   });
 });
 

@@ -15,6 +15,8 @@ import {
   bootComposedServer,
   type ComposedServer,
 } from './contract/harness.js';
+import { composeCapabilityRegistryForDocs } from '../../services/core/self-description/dorkos-registry.js';
+import { honoPath, routeKey } from '../../routes/capability-http.js';
 
 const BASELINE = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -47,5 +49,25 @@ describe('route census', () => {
     // A subsystem that failed to start mounts nothing, which reads as dozens of
     // routes gone; the server's own log says why.
     expect(censusProblems(actual, baseline), server!.log()).toEqual([]);
+  });
+
+  // ADR 261123-170830: a capability's `http` surface is a route the server
+  // serves, never only a line in the document.
+  it('serves every path a capability declares', async () => {
+    const res = await fetch(`${server!.baseUrl}${ROUTE_CENSUS_PATH}`);
+    const served = new Set(
+      ((await res.json()) as RouteCensus).routes.map((entry) => {
+        const [method, path] = entry.split(' ');
+        return routeKey(method!, path!);
+      })
+    );
+    const unserved = composeCapabilityRegistryForDocs()
+      .capabilities.filter((capability) => capability.surfaces.http)
+      .map((capability) => {
+        const http = capability.surfaces.http!;
+        return `${routeKey(http.method, honoPath(http.path))} (${capability.id})`;
+      })
+      .filter((entry) => !served.has(entry.slice(0, entry.indexOf(' ('))));
+    expect(unserved, server!.log()).toEqual([]);
   });
 });

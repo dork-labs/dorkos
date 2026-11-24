@@ -5,8 +5,6 @@
  * lift its own pause on any surface.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import request from '@dorkos/test-utils/supertest';
-import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, type Db } from '@dorkos/db';
 import type { AgentPermissions, PermissionPreset } from '@dorkos/shared/permissions';
@@ -30,14 +28,6 @@ import { AccountIds } from '../../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
 import { AgentPauseService } from '../agent-pause.js';
 import { agentPauseDomain } from '../pause-capabilities.js';
-import { createAgentPauseRoutes } from '../../../../routes/agent-pause.js';
-import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
-
-// The routes are served through the `/api` chain, whose host guard and session
-// gate read the login setting: off, as on a fresh install.
-vi.mock('../../../core/config-manager.js', () => ({
-  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
-}));
 
 const SCOUT = { id: '01SCOUTAGENTULID0000000000', home: '/projects/scout' } as const;
 const ANA = { id: '01ANAAGENTULID00000000000', home: '/projects/ana' } as const;
@@ -175,33 +165,5 @@ describe('agent.pause and agent.resume (spec audit-trail PR5)', () => {
         { agentIdentityPresented: true, retryChannel: 'mcp-argument' }
       )
     ).rejects.toMatchObject({ payload: { code: 'CANNOT_RESUME_SELF' } });
-  });
-
-  describe('over HTTP', () => {
-    // One listening server for the block; the router reads each test's registry.
-    const server = listeningServer(
-      honoGroupListener({
-        path: '/api',
-        routes: createAgentPauseRoutes({ registry: () => registry }),
-      })
-    );
-
-    it('pauses, lists and resumes as the person at the app', async () => {
-      await request(server)
-        .post(`/api/agents/${SCOUT.id}/pause`)
-        .send({ reason: 'stop' })
-        .expect(200);
-      const listed = await request(server).get('/api/agents/pauses').expect(200);
-      expect(listed.body.pauses).toEqual([
-        expect.objectContaining({ agentId: SCOUT.id, reason: 'stop' }),
-      ]);
-      const resumed = await request(server).post(`/api/agents/${SCOUT.id}/resume`).expect(200);
-      expect(resumed.body).toMatchObject({ paused: false, changed: true });
-    });
-
-    it('answers 404 for an agent that does not exist', async () => {
-      const res = await request(server).post('/api/agents/nobody/pause').expect(404);
-      expect(res.body.code).toBe('AGENT_NOT_FOUND');
-    });
   });
 });

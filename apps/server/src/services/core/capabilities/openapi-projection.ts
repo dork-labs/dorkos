@@ -26,6 +26,12 @@
  */
 import type { OpenAPIRegistry, RouteConfig } from '@asteasolutions/zod-to-openapi';
 import type { z } from 'zod';
+import type { HttpSurface, HttpSuccessStatus } from '@dorkos/shared/capabilities';
+import type { CapabilityDefinition } from './capability-definition.js';
+import {
+  capabilityStandardResponses,
+  registerInvokeOperation,
+} from '../openapi/capabilities-invoke.js';
 import { capabilityInputObject, splitPathParams } from './input-projection.js';
 
 import type { CapabilityRegistry } from './registry.js';
@@ -61,25 +67,56 @@ function domainTag(domain: string): string {
 
 /**
  * Build the projected request: path parameters, then the remaining input fields
- * as query parameters (read methods) or a JSON body (write methods).
+ * from the query string and, for a write, the JSON body (see {@link HttpSurface}).
  *
- * @param method - The capability's HTTP method.
+ * @param http - The capability's HTTP surface.
  * @param params - The path parameters, or `null` when the path has none.
  * @param rest - The input fields the path does not carry.
  * @returns The request config, or `undefined` when there is nothing to declare.
  */
 function projectRequest(
-  method: string,
+  http: HttpSurface,
   params: z.ZodObject<z.ZodRawShape> | null,
   rest: z.ZodObject<z.ZodRawShape>
 ): RouteConfig['request'] {
   const request: NonNullable<RouteConfig['request']> = params ? { params } : {};
-  if (Object.keys(rest.shape).length > 0) {
-    const isWrite = method === 'post' || method === 'put' || method === 'patch';
-    if (isWrite) request.body = { content: { 'application/json': { schema: rest } } };
-    else request.query = rest;
+  const isWrite = http.method === 'post' || http.method === 'put' || http.method === 'patch';
+  const fields = Object.keys(rest.shape);
+  const queryFields = http.query
+    ? fields.filter((key) => http.query!.includes(key))
+    : isWrite
+      ? []
+      : fields;
+  if (queryFields.length === fields.length) {
+    if (fields.length > 0) request.query = rest;
+    return Object.keys(request).length > 0 ? request : undefined;
   }
-  return Object.keys(request).length > 0 ? request : undefined;
+  const inQuery = Object.fromEntries(queryFields.map((key) => [key, true as const]));
+  if (queryFields.length > 0) request.query = rest.pick(inQuery);
+  const body = queryFields.length > 0 ? rest.omit(inQuery) : rest;
+  request.body = { content: { 'application/json': { schema: body } } };
+  return request;
+}
+
+/**
+ * The documented responses of a capability's route: its success, and the
+ * dispatcher's standard ones beside it.
+ *
+ * @param capability - The capability.
+ * @param status - The route's success status.
+ * @returns The `responses` entry.
+ */
+function projectSuccess(
+  capability: CapabilityDefinition,
+  status: HttpSuccessStatus
+): RouteConfig['responses'] {
+  const description = `${capability.title} result`;
+  const success =
+    status === 204
+      ? { description }
+      : { description, content: { 'application/json': { schema: capability.output } } };
+  // A 202 success replaces the approval entry: both mean "accepted, not done".
+  return { ...capabilityStandardResponses(), [status]: success };
 }
 
 /**
@@ -88,9 +125,13 @@ function projectRequest(
  *
  * Request schemas derive from the capability's Zod `input` (a `z.object(...)`):
  * each `{name}` segment of the path is a path parameter, taking the input field
- * of that name when there is one (see {@link splitPathParams}); the remaining
- * fields project as query parameters for read methods (`get`/`delete`) and as a
- * JSON request body for write methods (`post`/`put`/`patch`). A capability with
+ * it fills (see {@link splitPathParams}); the remaining fields project as the
+ * surface reads them, the same way the generic mount does
+ * (`routes/capability-http.ts`): query parameters for read methods
+ * (`get`/`delete`), a JSON body for writes, and the surface's `query` list when
+ * it names one. The success status is the surface's `success` (`200` unless
+ * declared). Last, it documents the generic invoke endpoint, the second door
+ * onto every one of these capabilities. A capability with
  * no path parameters and an empty input object projects no request. The response schema is the
  * capability's Zod `output`; capabilities that still model `output` as
  * `z.unknown()` project an open response schema (honest-but-weak) that tightens
@@ -122,8 +163,12 @@ export function registerCapabilitiesInOpenApi(
     taken.add(key);
 
     const domain = capability.id.slice(0, capability.id.indexOf('.'));
-    const { params, rest } = splitPathParams(capabilityInputObject(capability), http.path);
-    const request = projectRequest(http.method, params, rest);
+    const { params, rest } = splitPathParams(
+      capabilityInputObject(capability),
+      http.path,
+      http.params
+    );
+    const request = projectRequest(http, params, rest);
 
     registryDoc.registerPath({
       method: http.method,
@@ -133,12 +178,8 @@ export function registerCapabilitiesInOpenApi(
       summary: capability.title,
       description: capability.description,
       ...(request ? { request } : {}),
-      responses: {
-        200: {
-          description: `${capability.title} result`,
-          content: { 'application/json': { schema: capability.output } },
-        },
-      },
+      responses: projectSuccess(capability, http.success ?? 200),
     });
   }
+  registerInvokeOperation(registryDoc);
 }

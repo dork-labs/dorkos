@@ -79,7 +79,7 @@ export function registerExtensionMediaOpenApi(registry: OpenAPIRegistry): void {
     tags: ['Extensions'],
     summary: 'Play an app’s video by its link',
     description:
-      'Needs no sign-in: the ticket is the credential. DorkOS asks the app’s own route for the ' +
+      'Needs no sign-in: the ticket in the URL is the credential. DorkOS asks the app’s own route for the ' +
       'ticket’s path with only `Range` and `If-Range`, tells the app its caller is not a person, ' +
       'and streams the answer. A query string is ignored. `HEAD` answers the headers only; any ' +
       'other method is answered `405`. Only `200`, `206` and `416` pass, a success must be ' +

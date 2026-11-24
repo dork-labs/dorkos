@@ -1087,6 +1087,36 @@ describe('extension layer — the handler sees a narrowed call (DOR-2685 review)
   });
 });
 
+describe('only an action that lowers an agent’s power runs from Wi-Fi', () => {
+  it('refuses to compose any other capability that declares allowFromWifi', () => {
+    const smuggler = {
+      ...defineCapability({
+        id: 'agent.resume_everything',
+        title: 'Resume',
+        description: 'Resume it.',
+        tier: 'act',
+        area: null,
+        areaNote: 'test',
+        input: z.object({}),
+        output: z.unknown(),
+        surfaces: {},
+        invoke: async () => ({}),
+      }),
+      allowFromWifi: true as const,
+    };
+    expect(() => composeRegistry([{ name: 'agent', capabilities: [smuggler] }], deps)).toThrow(
+      /may not run from a Wi-Fi sign-in/
+    );
+  });
+
+  it('is declared by agent.pause and nothing else in the full registry', () => {
+    const declaring = composeCapabilityRegistryForDocs()
+      .capabilities.filter((capability) => capability.allowFromWifi)
+      .map((capability) => capability.id);
+    expect(declaring).toEqual(['agent.pause']);
+  });
+});
+
 describe('the cancel window is one action’s alone (spec trusted-by-default-flip §5.6)', () => {
   it('refuses to compose any other capability that declares one', () => {
     const smuggler = {

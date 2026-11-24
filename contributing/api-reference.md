@@ -26,20 +26,32 @@ Types in `packages/shared/src/types.ts` re-export from `schemas.ts`, so existing
 
 ## Adding a New Endpoint
 
-1. **Define schemas** in the appropriate `packages/shared/src/` file (`schemas.ts`, `relay-schemas.ts`, or `mesh-schemas.ts`) for request/response shapes
-2. **Register the path** in `apps/server/src/services/core/openapi-registry.ts` with tags, request schema, and response schemas
-3. **Add validation** in the route handler using `Schema.safeParse(readJsonBody(c))`:
+An endpoint is a capability (ADR `261123-170830`): one `defineCapability` with an `http` surface is the route, its OpenAPI entry, its MCP tool and its `dorkos call` id. The generic mount (`apps/server/src/routes/capability-http.ts`) serves the path, and `POST /api/capabilities/{id}/invoke` reaches it too. Both run one dispatcher (`apps/server/src/routes/capability-dispatch.ts`), so the permission check, the audit record, the approval and the statuses are the same on every door. Do not add a hand route or a hand `registerPath` for a new endpoint.
+
+1. **Define the input and output** as Zod schemas, in the domain file or in `packages/shared/src/` when the client reads them too. The input is one `z.object(...)`: path segments, query fields and body fields all land in it.
+2. **Declare the capability** in its domain (see [How to add a capability](agent-operator-surface.md#how-to-add-a-capability)) with an `http` surface:
 
 ```typescript
-const parsed = MyRequestSchema.safeParse(readJsonBody(c));
-if (!parsed.success) {
-  return c.json({ error: 'Invalid request', details: parsed.error.format() }, 400);
-}
-const { field } = parsed.data;
+surfaces: {
+  http: {
+    method: 'post',
+    path: '/api/agents/{agentId}/pause', // each {segment} fills the input field of its name
+    // params: { id: 'agentId' },        // only when a segment's name differs from its field
+    // query: ['dryRun'],                // a write's fields that come from the query string
+    // success: 201,                     // 200 unless declared; 204 sends no body
+  },
+},
 ```
 
-4. Export the inferred type from `packages/shared/src/types.ts` if needed by client code
-5. **Regenerate the published docs** with BOTH commands below, and commit the result
+A `get` or `delete` reads every other field from the query string; a `post`, `put` or `patch` reads them from the JSON body. The path segments always win over a body field of the same name.
+
+3. **Refuse with a code.** A handler that refuses throws `CapabilityToolError({ error, code })`. The status comes from the code in one place (`toolErrorStatus`): `NOT_FOUND` or `…_NOT_FOUND` is 404, a "not you" code (`CANNOT_RESUME_SELF`, `NOT_YOURS`, `OPERATOR_ONLY`) is 403, `NOT_READY` is 503, anything else 400. Never map statuses in a route.
+4. **Test it.** A unit test on the handler (the happy path and each refusal), and a route test through the mount for anything HTTP-specific (see `apps/server/src/routes/__tests__/capability-http.test.ts`). Then run `pnpm --filter @dorkos/server census:update`: the route census and its "serves every path a capability declares" check read the new route.
+5. **Regenerate the published docs** with BOTH commands below, and commit the result.
+
+Two guards keep the mount honest. Building the app throws when a hand route claims a capability's method and path, or when two capabilities declare the same one. And `HAND_SERVED_CAPABILITIES` in `capability-http.ts` lists the capabilities whose path an older hand route still serves: it only shrinks, as each hand route is deleted.
+
+A few shapes a capability cannot carry yet (file uploads, raw bodies, streams) still need a hand route and a hand `registerPath` in `services/core/openapi-registry.ts`; validate the body with `Schema.safeParse(readJsonBody(c))` and answer `validationFailureBody(error)` with a 400.
 
 ## Operation ids
 

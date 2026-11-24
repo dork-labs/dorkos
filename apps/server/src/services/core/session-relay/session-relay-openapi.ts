@@ -246,7 +246,8 @@ function registerPasskeyOpenApi(registry: OpenAPIRegistry): void {
       'EdDSA or RS256, and not already pinned. Sent by the loopback page `GET /relay-passkey`. ' +
       'Needs no session even when this computer asks for a password; instead a direct ' +
       "loopback caller with no forwarding header, an `Origin` that is exactly the return page's, " +
-      'and a JSON body. The single-use statement is the credential.',
+      'and a JSON body. The single-use statement is the credential. Open like this only on a ' +
+      'computer: on a hub this path needs a sign-in like any other.',
     {
       400: PASSKEY_REFUSED,
       403: json(ErrorSchema, "Not a direct loopback caller, or not the return page's own request"),

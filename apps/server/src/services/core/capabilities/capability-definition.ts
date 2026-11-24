@@ -335,6 +335,15 @@ export interface CapabilityDefinition<
     context: CapabilityInvocationContext
   ) => Promise<CapabilityPreflightResult>;
   /**
+   * Whether a person signed in over Wi-Fi may run this `act` or `destructive`
+   * capability over HTTP. A Wi-Fi sign-in reads, and acts at the computer
+   * (DOR-2969); set this only on an action that lowers an agent's power, like
+   * stopping it, so the stop button works from any device. Never on one that
+   * raises it: `agent.resume` stays refused. The registry allows it only on
+   * the ids in `WIFI_ALLOWED_CAPABILITY_IDS`.
+   */
+  allowFromWifi?: true;
+  /**
    * A cancel window this call may wait out INSTEAD of the approval card (spec
    * `trusted-by-default-flip` §5.6). Only `connectors.execute_destructive`
    * declares one.

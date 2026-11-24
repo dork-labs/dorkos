@@ -179,3 +179,34 @@ describe('full ordinary MCP input object', () => {
     }
   });
 });
+
+describe('an HTTP surface whose input no request could send', () => {
+  /** A read whose surface names its query fields. */
+  function readWith(query: string[], params?: Record<string, string>) {
+    return defineCapability({
+      id: 'demo.read',
+      title: 'Read',
+      description: 'Read one demo thing.',
+      tier: 'observe',
+      area: null,
+      input: z.object({ thingId: z.string(), limit: z.number().optional(), cursor: z.string() }),
+      output: z.object({}),
+      surfaces: {
+        http: { method: 'get', path: '/api/demo/{id}', query, ...(params ? { params } : {}) },
+      },
+      invoke: async () => ({}),
+    });
+  }
+  const compose = (capability: ReturnType<typeof readWith>) =>
+    composeRegistry([{ name: 'demo', capabilities: [capability] }], { logger: noopLogger });
+
+  it('refuses a GET field that is neither in the path nor in its query list', () => {
+    expect(() => compose(readWith(['limit'], { id: 'thingId' }))).toThrow(
+      /"demo.read" is GET \/api\/demo\/\{id\}, which has no body, so no request can send cursor/
+    );
+  });
+
+  it('composes once every field has a way in', () => {
+    expect(() => compose(readWith(['limit', 'cursor'], { id: 'thingId' }))).not.toThrow();
+  });
+});

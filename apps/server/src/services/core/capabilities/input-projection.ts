@@ -32,21 +32,54 @@ export interface PathSplitInput {
  *
  * @param input - The capability's input object (see {@link capabilityInputObject}).
  * @param path - The capability's HTTP path, with `{name}` segments.
+ * @param fields - Which input field a segment fills when the names differ
+ *   (the surface's `params`); a segment not listed fills its own name.
  * @returns The path parameters and the remaining fields.
  */
-export function splitPathParams(input: z.ZodObject<z.ZodRawShape>, path: string): PathSplitInput {
+export function splitPathParams(
+  input: z.ZodObject<z.ZodRawShape>,
+  path: string,
+  fields: Readonly<Record<string, string>> = {}
+): PathSplitInput {
   const names = [...path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]!);
   if (names.length === 0) return { params: null, rest: input };
 
   const shape: Record<string, z.core.$ZodType> = input.shape;
   const params: Record<string, z.core.$ZodType> = {};
-  for (const name of names) {
-    const field = shape[name];
+  const carried = names.map((name) => fields[name] ?? name);
+  names.forEach((name, index) => {
+    const field = shape[carried[index]!];
     params[name] = field instanceof z.ZodOptional ? field.unwrap() : (field ?? z.string());
-  }
-  const rest = Object.fromEntries(Object.entries(shape).filter(([key]) => !names.includes(key)));
+  });
+  const rest = Object.fromEntries(Object.entries(shape).filter(([key]) => !carried.includes(key)));
   // Only rebuild the object when a field actually moved, so a capability whose
   // path names no input field keeps its own schema (and any registered name).
-  const moved = names.some((name) => name in shape);
+  const moved = carried.some((name) => name in shape);
   return { params: z.object(params), rest: moved ? z.object(rest) : input };
+}
+
+/**
+ * Refuse an HTTP surface whose input a caller could not send: a `get` or
+ * `delete` has no body, so when its surface names `query`, every input field
+ * must be either a path segment's or on that list.
+ *
+ * @param capability - The capability being composed.
+ * @throws Naming the fields no request could carry.
+ */
+export function assertHttpInputReachable(capability: CapabilityDefinition): void {
+  const http = capability.surfaces.http;
+  if (!http?.query || (http.method !== 'get' && http.method !== 'delete')) return;
+  const carried = [...http.path.matchAll(/\{([^}]+)\}/g)].map(
+    (match) => http.params?.[match[1]!] ?? match[1]!
+  );
+  const unreachable = Object.keys(capabilityInputObject(capability).shape).filter(
+    (field) => !carried.includes(field) && !http.query!.includes(field)
+  );
+  if (unreachable.length > 0) {
+    throw new Error(
+      `Capability registry: "${capability.id}" is ${http.method.toUpperCase()} ${http.path}, ` +
+        `which has no body, so no request can send ${unreachable.join(', ')}. ` +
+        'Put each in the path or in http.query.'
+    );
+  }
 }

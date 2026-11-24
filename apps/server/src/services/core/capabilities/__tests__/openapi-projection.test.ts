@@ -167,8 +167,79 @@ describe('registerCapabilitiesInOpenApi', () => {
     const doc = new OpenAPIRegistry();
     registerCapabilitiesInOpenApi(composeRegistry([demoDomain], deps), doc);
     const spec = generate(doc);
-    // `demo.ping` has no http surface, so no extra path appears.
-    expect(Object.keys(spec.paths ?? {})).toEqual(['/api/demo/things']);
+    // `demo.ping` has no http surface, so no extra path appears: only the
+    // generic invoke endpoint, which reaches every capability.
+    expect(Object.keys(spec.paths ?? {})).toEqual([
+      '/api/demo/things',
+      '/api/capabilities/{id}/invoke',
+    ]);
+  });
+
+  it('documents the invoke endpoint once, with every status the dispatcher answers', () => {
+    const doc = new OpenAPIRegistry();
+    registerCapabilitiesInOpenApi(composeRegistry([demoDomain], deps), doc);
+    const invoke = generate(doc).paths?.['/api/capabilities/{id}/invoke']?.post;
+    expect(invoke?.operationId).toBe('capabilities.invoke');
+    expect(Object.keys(invoke?.responses ?? {})).toEqual([
+      '200',
+      '202',
+      '400',
+      '403',
+      '404',
+      '500',
+      '503',
+    ]);
+  });
+
+  it('documents the dispatcher’s standard responses on every projected operation', () => {
+    const doc = new OpenAPIRegistry();
+    registerCapabilitiesInOpenApi(composeRegistry([demoDomain], deps), doc);
+    const get = generate(doc).paths?.['/api/demo/things']?.get;
+    expect(Object.keys(get?.responses ?? {}).sort()).toEqual(
+      ['200', '202', '400', '403', '404', '500', '503'].sort()
+    );
+    expect(get?.responses?.['404']?.content?.['application/json']?.schema).toEqual({
+      $ref: '#/components/schemas/ErrorResponse',
+    });
+  });
+
+  it('reads a renamed path segment, a POST’s query fields and the success status from the surface', () => {
+    const write = defineCapability({
+      id: 'demo.tag',
+      title: 'Tag thing',
+      description: 'Tag a demo thing.',
+      tier: 'act',
+      area: null,
+      input: z.object({ thingId: z.string(), dryRun: z.boolean().optional(), tag: z.string() }),
+      output: z.object({ ok: z.boolean() }),
+      surfaces: {
+        http: {
+          method: 'post',
+          path: '/api/demo/things/{id}/tags',
+          params: { id: 'thingId' },
+          query: ['dryRun'],
+          success: 201,
+        },
+      },
+      invoke: async () => ({ ok: true }),
+    });
+    const doc = new OpenAPIRegistry();
+    registerCapabilitiesInOpenApi(
+      composeRegistry([{ name: 'demo', capabilities: [write] }], deps),
+      doc
+    );
+    const post = generate(doc).paths?.['/api/demo/things/{id}/tags']?.post;
+    expect(declared(post)).toEqual(['path:id', 'query:dryRun']);
+    const body = post?.requestBody as { content: Record<string, { schema: object }> } | undefined;
+    expect(Object.keys(body?.content['application/json']?.schema ?? {})).toContain('properties');
+    expect(body?.content['application/json']?.schema).toMatchObject({
+      properties: { tag: { type: 'string' } },
+    });
+    expect(
+      Object.keys((body?.content['application/json']?.schema as { properties: object }).properties)
+    ).toEqual(['tag']);
+    expect(Object.keys(post?.responses ?? {})).toContain('201');
+    expect(Object.keys(post?.responses ?? {})).not.toContain('200');
   });
 
   it('throws when a capability path collides with a hand-registered one', () => {
