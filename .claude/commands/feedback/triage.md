@@ -220,7 +220,7 @@ For every open issue whose number matches nothing in FB:
    comment, and silence is a HOLD, not a post. After approval:
 
    ```bash
-   sig=$(pnpm exec tsx scripts/provenance/provenance-line.ts --visibility public --surface github)
+   sig=$(pnpm exec tsx scripts/provenance/provenance-line.ts --visibility public)
    { cat <<'REPLY'
    <the approved text>
 
@@ -423,7 +423,7 @@ release owes them:
 3. Post it with `<!-- beat:shipped -->` on its own line, then close the issue:
 
    ```bash
-   sig=$(pnpm exec tsx scripts/provenance/provenance-line.ts --visibility public --surface github)
+   sig=$(pnpm exec tsx scripts/provenance/provenance-line.ts --visibility public)
    { cat <<'REPLY'
    <the approved text>
 

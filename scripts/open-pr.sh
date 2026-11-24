@@ -261,13 +261,16 @@ fi
 # Version 2, built by scripts/provenance/provenance-line.ts through
 # @dorkos/shared/provenance, the one place its rules live. dork-labs/dorkos is
 # public, so the chat is cut to 8 characters and host and turn never go in.
-# A field the environment does not name is left out, and the note names it.
+# The CLI derives the surface (dorkos, ci or bare-cli: where the work was
+# driven from). A field the environment does not name is left out, and the
+# note names it.
 #
 # Signing never stops a PR from opening. When the CLI cannot run (no
 # node_modules, no node, a crash, or output that is not one signature line),
 # the body gets PROVENANCE_MINIMAL instead, and the note and a warning say why.
 PROVENANCE_CLI=$REPO_ROOT/scripts/provenance/provenance-line.ts
-PROVENANCE_MINIMAL='<!-- agent:provenance {"v":2,"surface":"github"} -->'
+# Without the CLI nothing is known, not even the surface.
+PROVENANCE_MINIMAL='<!-- agent:provenance {"v":2} -->'
 TSX=${OPEN_PR_TSX:-$REPO_ROOT/node_modules/.bin/tsx}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -280,7 +283,7 @@ else
   cli_rc=0
   line=""
   if [ -x "$TSX" ]; then
-    line=$("$TSX" "$PROVENANCE_CLI" --visibility public --surface github 2>"$tmp/provenance.err") || cli_rc=$?
+    line=$("$TSX" "$PROVENANCE_CLI" --visibility public 2>"$tmp/provenance.err") || cli_rc=$?
   fi
   if [ ! -x "$TSX" ]; then
     cli_failed="tsx is not installed at $TSX; run pnpm install"

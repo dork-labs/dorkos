@@ -12,13 +12,13 @@ field-changes: []
 
 DOR-5047 steps 2-4: `scripts/open-pr.sh` used to build a version 1 provenance line with jq. It now
 runs `scripts/provenance/provenance-line.ts` (through the repo's `node_modules/.bin/tsx`,
-`--visibility public --surface github`), so the rules for the line live in one place,
+`--visibility public`, the surface derived as `dorkos`, `ci` or `bare-cli`), so the rules for the line live in one place,
 `@dorkos/shared/provenance`, and a DorkOS turn's `agent` and `space` reach the PR body.
 
 Signing never refuses an open. A field the environment does not name is left out and listed in
 the output (`provenance: appended: ... (omitted: agent, space)`). When the CLI cannot run (no
 `pnpm install`, no node, a crash, or output that is not one signature line), the PR opens with
-`{"v":2,"surface":"github"}`, a warning and the reason. jq is no longer a hard requirement here.
+`{"v":2}`, a warning and the reason. jq is no longer a hard requirement here.
 The CLI costs about 0.1 s warm and 0.8 s cold.
 
 `scripts/test-open-pr.sh` pins the arguments and every fallback with stub tsx, so those run in

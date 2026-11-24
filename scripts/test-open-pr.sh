@@ -26,7 +26,7 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=Fixture GIT_AUTHOR_EMAIL=fixture@example.invalid
 export GIT_COMMITTER_NAME=Fixture GIT_COMMITTER_EMAIL=fixture@example.invalid
 unset CLAUDECODE CLAUDE_CODE_SESSION_ID CLAUDE_SESSION_ID DORKOS_HARNESS DORKOS_SESSION_ID DORKOS_AGENT_ID DORKOS_SPACE_ID
-unset OPEN_PR_CAP OPEN_PR_BASE OPEN_PR_REMOTE OPEN_PR_TSX
+unset OPEN_PR_CAP OPEN_PR_BASE OPEN_PR_REMOTE OPEN_PR_TSX CI
 export CLAUDE_CONFIG_DIR=/nowhere/claude
 
 # --- the stub gh -------------------------------------------------------------
@@ -71,7 +71,7 @@ export PATH="$tmp/bin:$PATH" GH="$tmp/bin/gh"
 # case runs a stub that logs its arguments to $tmp/tsx.log and prints the minimal
 # line, so the suite is fast and needs no node_modules; the provenance section
 # swaps in failing stubs and, when installed, the real tsx.
-MINIMAL='<!-- agent:provenance {"v":2,"surface":"github"} -->'
+MINIMAL='<!-- agent:provenance {"v":2} -->'
 stub_tsx() { # name, the stub's body
   printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"%s"\n%s\n' "$tmp/tsx.log" "$2" >"$tmp/bin/$1"
   chmod +x "$tmp/bin/$1"
@@ -283,7 +283,7 @@ check '--dry-run prints the hold comment' yes "$(has "$out" 'pr comment')"
 # the arguments open-pr.sh passes, and that a CLI that cannot sign never stops
 # the open.
 body() { cat "$GH_STATE.body" 2>/dev/null; }
-stub_tsx tsx-ok "echo '<!-- agent:provenance {\"v\":2,\"surface\":\"github\",\"chat\":\"dork:chat:abcdef12\"} -->'"
+stub_tsx tsx-ok "echo '<!-- agent:provenance {\"v\":2,\"surface\":\"dorkos\",\"chat\":\"dork:chat:abcdef12\"} -->'"
 stub_tsx tsx-crash 'echo "Error: boom" >&2; exit 1'
 stub_tsx tsx-no-node 'echo "env: node: No such file or directory" >&2; exit 127'
 stub_tsx tsx-garbage 'echo hello'
@@ -291,13 +291,13 @@ stub_tsx tsx-two-lines "echo '$MINIMAL'; echo '$MINIMAL'"
 
 : >"$tmp/tsx.log"
 OPEN_PR_TSX="$tmp/bin/tsx-ok" open --draft
-check 'open-pr runs the CLI as public, for github' \
-  "$repo_root/scripts/provenance/provenance-line.ts --visibility public --surface github" "$(cat "$tmp/tsx.log")"
+check 'open-pr runs the CLI as public, and lets it derive the surface' \
+  "$repo_root/scripts/provenance/provenance-line.ts --visibility public" "$(cat "$tmp/tsx.log")"
 check 'the CLI line is appended as printed' yes \
-  "$(has "$(body)" '<!-- agent:provenance {"v":2,"surface":"github","chat":"dork:chat:abcdef12"} -->')"
+  "$(has "$(body)" '<!-- agent:provenance {"v":2,"surface":"dorkos","chat":"dork:chat:abcdef12"} -->')"
 check 'the original body is kept' yes "$(has "$(body)" 'What changed and why.')"
 check 'a real open prints the line and names the omitted fields' yes \
-  "$(has "$out" 'provenance: appended: <!-- agent:provenance {"v":2,"surface":"github","chat":"dork:chat:abcdef12"} --> (omitted: harness, account, agent, space)')"
+  "$(has "$out" 'provenance: appended: <!-- agent:provenance {"v":2,"surface":"dorkos","chat":"dork:chat:abcdef12"} --> (omitted: harness, account, agent, space)')"
 check '--draft reaches gh' yes "$(has "$(cat "$GH_LOG")" '--draft')"
 check 'the URL is printed' yes "$(has "$out" 'url: https://github.com/made-up/repo/pull/42')"
 check 'the head SHA is printed' yes "$(has "$out" "head: $(git -C "$work" rev-parse HEAD)")"
@@ -327,7 +327,7 @@ OPEN_PR_TSX="$tmp/bin/tsx-crash" open --dry-run
 check 'a dry run says the CLI could not sign' yes "$(has "$out" 'provenance: appended the minimal line, because the provenance CLI could not sign')"
 
 for signed in 'v1|<!-- agent:provenance {"v":1,"surface":"github"} -->' \
-  'v2|<!-- agent:provenance {"v":2,"surface":"github","chat":"dork:chat:abcdef12"} -->' \
+  'v2|<!-- agent:provenance {"v":2,"surface":"dorkos","chat":"dork:chat:abcdef12"} -->' \
   'flow:provenance|<!-- flow:provenance {"v":1,"harness":"codex"} -->'; do
   name=${signed%%|*}
   printf 'Body.\n\n%s\n' "${signed#*|}" >"$tmp/signed.md"
@@ -345,15 +345,16 @@ SPACE=01JD3F1W2KQ8Z0YV9N6B5T4RMA
 real_tsx=$repo_root/node_modules/.bin/tsx
 real() { OPEN_PR_TSX=$real_tsx open; }
 if [ -x "$real_tsx" ]; then
-  full="<!-- agent:provenance {\"v\":2,\"harness\":\"claude-code\",\"surface\":\"github\",\"account\":\"claude3\",\"agent\":\"dork:agent:$AGENT\",\"chat\":\"dork:chat:7c1e4b2a\",\"space\":\"dork:space:$SPACE\"} -->"
-  CLAUDECODE=1 CLAUDE_CONFIG_DIR=/x/.claude3 CLAUDE_CODE_SESSION_ID=$CHAT DORKOS_AGENT_ID=$AGENT DORKOS_SPACE_ID=$SPACE real
+  full="<!-- agent:provenance {\"v\":2,\"harness\":\"claude-code\",\"surface\":\"dorkos\",\"account\":\"claude3\",\"agent\":\"dork:agent:$AGENT\",\"chat\":\"dork:chat:7c1e4b2a\",\"space\":\"dork:space:$SPACE\"} -->"
+  # A DorkOS turn: DorkOS sets the session, agent and space.
+  CLAUDECODE=1 CLAUDE_CONFIG_DIR=/x/.claude3 DORKOS_SESSION_ID=$CHAT DORKOS_AGENT_ID=$AGENT DORKOS_SPACE_ID=$SPACE real
   check 'every field present: the whole v2 line' yes "$(has "$(body)" "$full")"
   check 'every field present: nothing named as omitted' "yes,no" \
     "$(has "$out" "provenance: appended: $full"),$(has "$out" '(omitted:')"
 
   CLAUDECODE=1 CLAUDE_CONFIG_DIR=/x/.claude2 CLAUDE_CODE_SESSION_ID=$CHAT real
-  check 'outside a DorkOS turn, no agent or space' yes \
-    "$(has "$(body)" '<!-- agent:provenance {"v":2,"harness":"claude-code","surface":"github","account":"claude2","chat":"dork:chat:7c1e4b2a"} -->')"
+  check 'a bare Claude Code session: bare-cli, no agent or space' yes \
+    "$(has "$(body)" '<!-- agent:provenance {"v":2,"harness":"claude-code","surface":"bare-cli","account":"claude2","chat":"dork:chat:7c1e4b2a"} -->')"
   check 'and the note names them' yes "$(has "$out" '(omitted: agent, space)')"
 
   # Public: the chat is cut to 8 characters, and no machine detail goes in.
@@ -369,8 +370,10 @@ if [ -x "$real_tsx" ]; then
   CLAUDECODE=1 CLAUDE_CONFIG_DIR=/x/me@example.com real
   check 'an account with @ is left out' "no,yes" \
     "$(has "$(body)" 'example.com'),$(has "$out" '(omitted: account, agent, chat, space)')"
+  CI=true real
+  check 'in CI the surface is ci' yes "$(has "$(body)" '<!-- agent:provenance {"v":2,"surface":"ci"} -->')"
   real
-  check 'outside a known harness, only the surface' yes "$(has "$(body)" "$MINIMAL")"
+  check 'outside a known harness, only the surface' yes "$(has "$(body)" '<!-- agent:provenance {"v":2,"surface":"bare-cli"} -->')"
   check 'and every other field is named' yes "$(has "$out" '(omitted: harness, account, agent, chat, space)')"
 else
   echo "open-pr fixtures: skipped the real provenance CLI cases (no $real_tsx; run pnpm install)" >&2
