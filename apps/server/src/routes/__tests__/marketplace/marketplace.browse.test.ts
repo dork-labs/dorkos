@@ -254,6 +254,7 @@ describe('the package cache', () => {
 describe('GET /packages', () => {
   const listingNamed = (name: string): MarketplaceJson => ({
     name,
+    owner: { name: 'Owner' },
     plugins: [{ name: `${name}-pkg`, source: `https://example.com/${name}-pkg`, version: '1.0.0' }],
   });
 

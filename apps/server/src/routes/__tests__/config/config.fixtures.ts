@@ -13,7 +13,7 @@ import type { Hono } from 'hono';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import type { Test } from '@dorkos/test-utils/supertest';
+import type { Response as TestResponse, Test } from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import type { ApiEnv } from '../../../http/api-chain.js';
@@ -93,7 +93,8 @@ export function asBrowser(
 }
 
 /** The person at the desk confirming a held save with their password. */
-export const asPerson = (ask: Test) => confirmFixtureRequest(ask, server, OWNER_PASSWORD);
+export const asPerson = (ask: Test): Promise<TestResponse> =>
+  confirmFixtureRequest(ask, server, OWNER_PASSWORD);
 
 /** The config routes behind the `/api` chain, with the caller this file set. */
 export async function configApp(configRouter: Hono<ApiEnv>) {

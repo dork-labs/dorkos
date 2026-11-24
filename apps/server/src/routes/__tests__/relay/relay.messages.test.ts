@@ -213,7 +213,7 @@ describe('Relay routes', () => {
     function mountWithAdapterManager(publishResult: Record<string, unknown>) {
       const core = createMockRelayCore();
       vi.mocked(core.publish).mockResolvedValue(
-        publishResult as Awaited<ReturnType<RelayCore['publish']>>
+        publishResult as unknown as Awaited<ReturnType<RelayCore['publish']>>
       );
       const adapterManager = {
         getRegistry: vi

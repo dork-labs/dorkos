@@ -96,7 +96,7 @@ const STRUCTURAL_EXCLUDES = [
  * **Only ever lower this.** Lowering it means a file was fixed and freed; raising
  * it means a test file was given up on, which needs a reason in review.
  */
-const QUARANTINE_BASELINE = 99;
+const QUARANTINE_BASELINE = 96;
 
 /**
  * The `exclude` array from the server tsconfig.

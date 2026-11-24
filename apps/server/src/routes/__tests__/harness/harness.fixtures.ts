@@ -21,7 +21,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import type { RequestListener, Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import request from '@dorkos/test-utils/supertest';
+import request, { type Response as TestResponse } from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { initBoundary } from '../../../lib/boundary.js';
 import type {
@@ -244,7 +244,7 @@ export function writeManifest(repo: string, harnesses: string[]): void {
 // request while they assert about the queue.
 
 /** The status read, as a client makes it. */
-export function readStatus(projectPath: string) {
+export function readStatus(projectPath: string): Promise<TestResponse> {
   return request(servers.testServer)
     .get('/api/harness/status')
     .query({ projectPath })
@@ -252,7 +252,7 @@ export function readStatus(projectPath: string) {
 }
 
 /** The sync, as the page makes it. */
-export function syncProject(projectPath: string) {
+export function syncProject(projectPath: string): Promise<TestResponse> {
   return request(servers.testServer)
     .post('/api/harness/sync')
     .send({ projectPath })
@@ -260,7 +260,11 @@ export function syncProject(projectPath: string) {
 }
 
 /** The adopt, as the page makes it. */
-export function adoptSkill(projectPath: string, name: string, claudeOnly?: boolean) {
+export function adoptSkill(
+  projectPath: string,
+  name: string,
+  claudeOnly?: boolean
+): Promise<TestResponse> {
   return request(servers.testServer)
     .post('/api/harness/adopt')
     .send({ projectPath, name, ...(claudeOnly === undefined ? {} : { claudeOnly }) })

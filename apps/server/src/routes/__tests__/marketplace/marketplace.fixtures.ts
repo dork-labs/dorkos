@@ -44,6 +44,7 @@ import { configManager, initConfigManager } from '../../../services/core/config-
 /** The listing the fake fetcher serves for every source. */
 export const SAMPLE_MARKETPLACE_JSON: MarketplaceJson = {
   name: 'dorkos-community',
+  owner: { name: 'Owner' },
   plugins: [
     {
       name: 'sample-plugin',
@@ -83,6 +84,7 @@ export function buildSamplePluginManifest(): PluginPackageManifest {
     layers: [],
     requires: [],
     extensions: [],
+    schedules: [],
   };
 }
 

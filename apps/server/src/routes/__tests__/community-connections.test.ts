@@ -140,7 +140,7 @@ function verifiedConnection(target = ref): CommunityConnectionDescriptor {
 
 /** The route factory's dependencies after the pairing service. */
 type RouteDepsAfterService =
-  Parameters<typeof createCommunityConnectionsRoutes> extends [unknown, ...infer Rest]
+  Parameters<typeof createCommunityConnectionsRoutes> extends [unknown?, ...infer Rest]
     ? Rest
     : never;
 

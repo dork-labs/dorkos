@@ -191,7 +191,13 @@ describe('buildConversations', () => {
           from: 'relay.human.console.client-1',
           replyTo: 'relay.human.console.client-1',
           createdAt: '2026-01-01T00:00:00Z',
-          budget: { hopCount: 1, maxHops: 5, ttl: 300000, callBudgetRemaining: 10 },
+          budget: {
+            hopCount: 1,
+            maxHops: 5,
+            ancestorChain: [],
+            ttl: 300000,
+            callBudgetRemaining: 10,
+          },
         },
       },
     ];

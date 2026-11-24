@@ -106,24 +106,24 @@ describe('GET /api/harness/status', () => {
   // canonicalizes through the deepest existing ancestor), or the `isDirectory`
   // check (a raw `ENOTDIR` where the parse-failure sentence belongs).
   it.each([
-    ['no projectPath', 400, () => undefined, undefined],
-    ['a blank projectPath', 400, () => '   ', undefined],
+    ['no projectPath', 400, (): string | undefined => undefined, undefined],
+    ['a blank projectPath', 400, (): string | undefined => '   ', undefined],
     [
       'a relative projectPath',
       400,
-      () => 'some/relative/project',
+      (): string | undefined => 'some/relative/project',
       'projectPath must be an absolute path',
     ],
     [
       'a folder that does not exist',
       404,
-      () => join(paths.boundaryRoot, 'no-such-project'),
+      (): string | undefined => join(paths.boundaryRoot, 'no-such-project'),
       'Project directory not found',
     ],
     [
       'a path that is a file',
       400,
-      () => {
+      (): string | undefined => {
         const file = join(stageProject('file'), 'notes.md');
         writeAt(file, '# not a project\n');
         return file;

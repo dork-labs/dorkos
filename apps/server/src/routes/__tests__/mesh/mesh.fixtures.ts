@@ -7,7 +7,7 @@
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { afterAll, afterEach, beforeAll, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, vi, type Mock } from 'vitest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { MeshCore } from '@dorkos/mesh';
 import { createStepUpRoutes } from '../../step-up.js';
@@ -22,7 +22,7 @@ export const fixtureTarget = swappableServer();
 export const fixtureServer = fixtureTarget.server;
 
 /** Create a mock MeshCore with vi.fn() stubs for all methods. */
-export function createMockMeshCore() {
+export function createMockMeshCore(): MockMeshCore {
   return {
     discover: vi.fn(),
     register: vi.fn(),
@@ -46,8 +46,27 @@ export function createMockMeshCore() {
   };
 }
 
-/** The mock MeshCore {@link createMockMeshCore} returns. */
-export type MockMeshCore = ReturnType<typeof createMockMeshCore>;
+/** The mock MeshCore {@link createMockMeshCore} returns: each method a bare `vi.fn()`. */
+export type MockMeshCore = Record<
+  | 'discover'
+  | 'register'
+  | 'registerByPath'
+  | 'deny'
+  | 'undeny'
+  | 'unregister'
+  | 'list'
+  | 'listWithHealth'
+  | 'listWithPaths'
+  | 'get'
+  | 'listDenied'
+  | 'update'
+  | 'getStatus'
+  | 'getAgentHealth'
+  | 'getProjectPath'
+  | 'updateLastSeen'
+  | 'close',
+  Mock
+>;
 
 /** One registered agent's manifest. */
 export const MOCK_MANIFEST = {
