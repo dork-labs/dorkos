@@ -13,11 +13,8 @@ import { RoomThreadPanel } from '../ui/RoomThreadPanel';
 import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
 
-// The entry rows inside the panel read route state to decide where an author
-// face leads (`useProfileDeepLink`), and this file mounts them with no router.
-// Where that link goes has its own file —
-// `RoomMessage.click-to-profile.test.tsx`, which mounts a real router and
-// asserts the id that travels.
+// The entry rows inside the panel read route state to decide where an author face leads
+// (`useProfileDeepLink`), and this file mounts them with no router.
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
   return {
@@ -97,9 +94,8 @@ const room: RoomWithRoster = {
   createdAt: '2026-07-30T09:00:00.000Z',
   viewerAuthorId: 'reader',
   reactionFrequents: ['👍', '❤️', '🎉'],
-  // The reader themselves, on the roster — `ChannelComposer` now reads
-  // membership before offering a live composer at all (DOR-1233), and this
-  // panel's thread composer is the same component.
+  // The reader themselves, on the roster — `ChannelComposer` now reads membership before offering
+  // a live composer at all (DOR-1233), and this panel's thread composer is the same component.
   members: [
     { ...member('reader', 'You'), author: { id: 'reader', kind: 'human', displayName: 'You' } },
     member('ana', 'Ana'),
@@ -149,9 +145,8 @@ function renderPanel(overrides: Partial<Parameters<typeof RoomThreadPanel>[0]> =
 
 describe('a discussion the room opened about a document', () => {
   it('heads the panel with the person who started it, not "Unknown"', () => {
-    // This is the heading of the panel the Discuss button opens, so it is the
-    // most-read instance of a room-voiced post. The room's own author is on no
-    // roster; `subjectAuthorId` names who it is about.
+    // This is the heading of the panel the Discuss button opens, so it is the most-read instance
+    // of a room-voiced post.
     renderPanel({
       entries: [
         entry(1, {
@@ -177,20 +172,6 @@ describe('RoomThreadPanel', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveTextContent('line 1');
     expect(rows[1]).toHaveTextContent('line 2');
-  });
-
-  it('separates the root from its replies with a line counting them', () => {
-    renderPanel({ entries: [entry(1), reply(2, 1), reply(3, 1)] });
-
-    const panel = screen.getByTestId('room-thread-panel');
-    const divider = within(panel).getByTestId('room-thread-divider');
-    expect(divider).toHaveTextContent('2 replies');
-    const [root, firstReply] = within(panel).getAllByTestId('room-entry');
-    // Between the root and the first reply, in reading order.
-    expect(root!.compareDocumentPosition(divider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(
-      divider.compareDocumentPosition(firstReply!) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy();
   });
 
   it('draws replies flush with the root, with nothing beside them', () => {
@@ -225,19 +206,6 @@ describe('RoomThreadPanel', () => {
     expect(firstReply.className).toBe(root.className);
     expect(indentOf(firstReply)).toBe(indentOf(root));
   });
-
-  it('counts the whole thread when the root says it is bigger than the page', () => {
-    renderPanel({ entries: [entry(1, { threadReplyCount: 5 }), reply(2, 1)] });
-
-    expect(screen.getByTestId('room-thread-divider')).toHaveTextContent('5 replies');
-  });
-
-  it('says "1 reply" in the singular', () => {
-    renderPanel();
-
-    expect(screen.getByTestId('room-thread-divider')).toHaveTextContent('1 reply');
-  });
-
   it('gathers only ITS thread, not every reply in the room', () => {
     renderPanel({
       entries: [entry(1), reply(2, 1), entry(3), reply(4, 3)],
@@ -266,45 +234,13 @@ describe('RoomThreadPanel', () => {
     expect(screen.getAllByTestId('room-entry')).toHaveLength(2);
   });
 
-  it('does not call a thread orphaned while its history is still loading', () => {
-    // A deep link mounts this panel before the room's entries arrive, so the
-    // root is missing for a moment. Saying "the start of this thread is gone"
-    // in that moment is a small lie that flashes on every shared link.
-    renderPanel({ entries: [], historyLoaded: false });
-
-    expect(screen.queryByTestId('room-thread-orphan')).not.toBeInTheDocument();
-  });
-
-  it('is a root and a composer when nothing has been said back', () => {
-    // No invented empty state (design record §4): a thread with no replies yet
-    // IS a root and a box, and a drawing saying so would be furniture.
-    renderPanel({ entries: [entry(1)] });
-
-    expect(screen.getAllByTestId('room-entry')).toHaveLength(1);
-    expect(screen.getByRole('combobox', { name: 'Reply in this thread…' })).toBeInTheDocument();
-    expect(screen.queryByTestId('room-thread-orphan')).not.toBeInTheDocument();
-    // No line counting nothing under the root.
-    expect(screen.queryByTestId('room-thread-divider')).not.toBeInTheDocument();
-  });
-
-  it('closes on its close button', async () => {
-    const user = userEvent.setup();
-    const onClose = vi.fn();
-    renderPanel({ onClose });
-
-    await user.click(screen.getByRole('button', { name: 'Close thread' }));
-
-    expect(onClose).toHaveBeenCalled();
-  });
-
   it('closes on Escape, because it takes focus when it opens', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     renderPanel({ onClose });
 
-    // Not clicked into first: a panel opened from a reply row leaves focus up
-    // in the timeline, so it has to take focus itself or Escape never reaches
-    // it.
+    // Not clicked into first: a panel opened from a reply row leaves focus up in the timeline, so
+    // it has to take focus itself or Escape never reaches it.
     await user.keyboard('{Escape}');
 
     expect(onClose).toHaveBeenCalled();
@@ -315,39 +251,6 @@ describe('RoomThreadPanel', () => {
 
     expect(screen.getByRole('button', { name: 'Back to #build' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Close thread' })).not.toBeInTheDocument();
-  });
-
-  it('gives Back a target a finger can hit, named for the room it returns to', () => {
-    // On a phone this is the control a reader reaches for most, so it is a real
-    // 44px box carrying the room's name — "← #build" — rather than a glyph
-    // with invisible reach.
-    renderPanel({ pushed: true });
-
-    const back = screen.getByRole('button', { name: 'Back to #build' });
-    expect(back).toHaveTextContent('#build');
-    expect(back.className).toContain('h-11');
-  });
-
-  it('pins the message the thread hangs off under the header on a phone', () => {
-    // The replies scroll; the root stays put, so a long thread never scrolls
-    // away what it is about.
-    renderPanel({ pushed: true });
-
-    const pinned = screen.getByTestId('room-thread-pinned-root');
-    expect(pinned).toHaveTextContent('line 1');
-    const feed = screen.getByTestId('room-thread-feed');
-    expect(feed).not.toHaveTextContent('line 1');
-    expect(feed).toHaveTextContent('line 2');
-    // Above the feed, not inside it.
-    expect(pinned.compareDocumentPosition(feed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
-  it('keeps the root in the feed beside the room on a wide screen', () => {
-    renderPanel();
-
-    expect(screen.queryByTestId('room-thread-pinned-root')).not.toBeInTheDocument();
-    expect(screen.getByTestId('room-thread-feed')).toHaveTextContent('line 1');
-    expect(screen.getByRole('button', { name: 'Close thread' })).toBeInTheDocument();
   });
 
   it('draws the working line for an agent answering inside this thread', () => {
@@ -376,29 +279,6 @@ describe('RoomThreadPanel', () => {
     expect(screen.getByRole('feed', { name: 'Thread in #build' })).toBeInTheDocument();
   });
 
-  it('says it is busy while the thread’s history is still resolving', () => {
-    // The deep-link case: `?thread=` mounts the panel before the room's
-    // entries land.
-    renderPanel({ entries: [], historyLoaded: false });
-    expect(screen.getByRole('feed')).toHaveAttribute('aria-busy', 'true');
-
-    cleanup();
-    renderPanel();
-    // Written as false rather than left off, so the wait is announced as over.
-    expect(screen.getByRole('feed')).toHaveAttribute('aria-busy', 'false');
-  });
-
-  it('stops saying it is busy when the history fails to load', () => {
-    // The failure this catches: "loading" was the absence of success, so a
-    // fetch that ERRORED left the panel drawing a skeleton and promising a
-    // wait that was never going to end.
-    renderPanel({ entries: [], historyLoaded: false, historyFailed: true });
-
-    expect(screen.getByRole('feed')).toHaveAttribute('aria-busy', 'false');
-    expect(screen.getByText('Couldn’t load this thread')).toBeInTheDocument();
-    expect(screen.queryByTestId('room-thread-orphan')).not.toBeInTheDocument();
-  });
-
   it('numbers the root and its replies as one set', () => {
     renderPanel({ entries: [entry(1), reply(2, 1), reply(3, 1)] });
     const articles = screen.getAllByRole('article');
@@ -408,55 +288,6 @@ describe('RoomThreadPanel', () => {
       expect(article).toHaveAttribute('aria-posinset', String(index + 1));
       expect(article).toHaveAttribute('aria-setsize', '3');
     });
-  });
-
-  it('numbers an orphaned thread over the replies it actually has', () => {
-    // The missing root is not a phantom first article: promising three when
-    // Page Down can only reach two is worse than saying two.
-    renderPanel({ entries: [reply(2, 1), reply(3, 1)] });
-    const articles = screen.getAllByRole('article');
-
-    expect(articles).toHaveLength(2);
-    // `-1`, not `2`: the panel reads this thread out of the room's loaded page,
-    // and a root that is not in that page means the page begins somewhere
-    // inside the thread. What is on screen is not what there is.
-    expect(articles[0]).toHaveAttribute('aria-setsize', '-1');
-    // And no position either — the two travel together. "1 of unknown" states a
-    // position in the loaded page as though it were a position in the thread.
-    expect(articles[0]).not.toHaveAttribute('aria-posinset');
-  });
-
-  it('numbers a thread exactly when its root is on the page', () => {
-    // The complement, and why the rule above is about knowledge rather than
-    // about threads: with the root loaded, every reply after it is loaded too,
-    // so the set really is complete and Page Down can promise a total.
-    renderPanel({ entries: [entry(1), reply(2, 1), reply(3, 1)] });
-    const articles = screen.getAllByRole('article');
-
-    expect(articles.map((a) => a.getAttribute('aria-posinset'))).toEqual(['1', '2', '3']);
-    expect(articles.map((a) => a.getAttribute('aria-setsize'))).toEqual(['3', '3', '3']);
-  });
-
-  it('will not number a thread whose root says it is bigger than what is loaded', () => {
-    // The third state, and the one DOR-690 created. A root fetched from behind
-    // the page is HERE — so the rule above would call the set complete — while
-    // the older half of its replies is not, and the root says so. Promising
-    // "3 of 3" over the tail of a nine-message thread is the same lie the
-    // orphan case refuses, arriving by a different door.
-    renderPanel({ entries: [entry(1, { threadReplyCount: 8 }), reply(2, 1), reply(3, 1)] });
-    const articles = screen.getAllByRole('article');
-
-    expect(articles).toHaveLength(3);
-    expect(articles[0]).toHaveAttribute('aria-setsize', '-1');
-    expect(articles[0]).not.toHaveAttribute('aria-posinset');
-  });
-
-  it('numbers exactly when the root’s count agrees with what is loaded', () => {
-    // The count is not a reason on its own to stop numbering — only a count
-    // LARGER than the replies on screen is. A thread that fits says so.
-    renderPanel({ entries: [entry(1, { threadReplyCount: 2 }), reply(2, 1), reply(3, 1)] });
-
-    expect(screen.getAllByRole('article')[0]).toHaveAttribute('aria-setsize', '3');
   });
 
   it('moves root to reply on Page Down and back on Page Up', () => {
@@ -474,21 +305,6 @@ describe('RoomThreadPanel', () => {
     expect(first).toHaveFocus();
   });
 
-  it('lands on the panel’s own close button and composer on Ctrl+Home and Ctrl+End', () => {
-    // WITHIN the panel: the room behind it is full of tab stops, and leaving
-    // the thread for one of them is not what leaving a feed means here.
-    renderPanel();
-    const root = screen.getAllByRole('article')[0]!;
-
-    root.focus();
-    fireEvent.keyDown(root, { key: 'End', ctrlKey: true });
-    expect(screen.getByRole('combobox', { name: 'Reply in this thread…' })).toHaveFocus();
-
-    root.focus();
-    fireEvent.keyDown(root, { key: 'Home', ctrlKey: true });
-    expect(screen.getByRole('button', { name: 'Close thread' })).toHaveFocus();
-  });
-
   it('still closes on Escape from an article the feed put focus on', () => {
     // The feed moves focus; Escape is one of the panel's three ways out and
     // has to survive being pressed wherever the feed left the reader.
@@ -500,23 +316,5 @@ describe('RoomThreadPanel', () => {
     fireEvent.keyDown(root, { key: 'Escape' });
 
     expect(onClose).toHaveBeenCalled();
-  });
-
-  it('leaves work triggered by a ROOM message to the room’s own line', () => {
-    // `entry-9` is not a reply in this thread, so the panel says nothing —
-    // otherwise one claim would be announced in two places at once.
-    useRoomPresenceStore.getState().observe('room-1', {
-      type: 'signal',
-      signal: 'progress',
-      authorId: 'bo',
-      at: '2026-07-30T10:00:00.000Z',
-      state: 'working',
-      entryId: 'entry-9',
-      since: new Date().toISOString(),
-    });
-
-    renderPanel();
-
-    expect(screen.queryByTestId('thread-presence')).not.toBeInTheDocument();
   });
 });

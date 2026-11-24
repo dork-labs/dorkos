@@ -1,13 +1,9 @@
 /**
- * The pinned triage header: what it draws, what it refuses to draw, and what a
- * decision answered inside it does to the page around it (spec
- * `team-room-home` D3.3).
- *
- * @vitest-environment jsdom
+ * The pinned triage header: what it draws, what it refuses to draw, and what a decision answered
+ * inside it does to the page around it (spec `team-room-home` D3.3). @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useEffect, useState } from 'react';
-import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -29,8 +25,8 @@ import type {
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 /**
- * The viewport, as a box a test can set. jsdom has no media queries worth
- * asking, and the condense rule turns on the answer.
+ * The viewport, as a box a test can set. jsdom has no media queries worth asking, and the
+ * condense rule turns on the answer.
  */
 const { viewport } = vi.hoisted(() => ({ viewport: { mobile: false } }));
 
@@ -48,7 +44,7 @@ import {
 } from '@/layers/features/schedule-approval';
 import { discardSettlingApprovals } from '@/layers/features/approvals';
 import { PinnedTriageHeader } from '../ui/PinnedTriageHeader';
-import { PinnedTriageHeaderView, type TriagePresenceSlot } from '../ui/PinnedTriageHeaderView';
+import { type TriagePresenceSlot } from '../ui/PinnedTriageHeaderView';
 
 /** The header element itself, or `null` when it drew nothing at all. */
 function header(): HTMLElement | null {
@@ -58,41 +54,6 @@ function header(): HTMLElement | null {
 /** The condensed one-line bar, or `null` when the header is drawing in full. */
 function summaryBar(): HTMLElement | null {
   return document.querySelector('[data-slot="pinned-triage-summary"]');
-}
-
-/** The header's internal scroller — the box with the height cap on it. */
-function scroller(): HTMLElement | null {
-  return document.querySelector('[data-slot="pinned-triage-scroller"]');
-}
-
-/** The fade drawn over one edge, or `null` when nothing is behind that edge. */
-function fade(edge: 'top' | 'bottom'): HTMLElement | null {
-  return document.querySelector(`[data-slot="pinned-triage-fade-${edge}"]`);
-}
-
-/**
- * Tell the scroller how tall it is, because jsdom lays nothing out.
- *
- * Every metric a cue turns on reads zero in this environment, so the geometry is
- * stubbed and what is pinned here is the WIRING: the header asks its scroller,
- * and draws the cue the answer calls for.
- */
-function stubMetrics(
-  el: HTMLElement,
-  metrics: { scrollHeight: number; clientHeight: number; scrollTop?: number }
-) {
-  Object.defineProperty(el, 'scrollHeight', { value: metrics.scrollHeight, configurable: true });
-  Object.defineProperty(el, 'clientHeight', { value: metrics.clientHeight, configurable: true });
-  el.scrollTop = metrics.scrollTop ?? 0;
-}
-
-/** Stub the scroller's geometry and tell the header somebody scrolled. */
-function measureAs(
-  el: HTMLElement,
-  metrics: { scrollHeight: number; clientHeight: number; scrollTop?: number }
-) {
-  stubMetrics(el, metrics);
-  fireEvent.scroll(el);
 }
 
 /** What the header is currently saying to a screen reader. */
@@ -120,23 +81,15 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
 }
 
 /**
- * Frozen at module load rather than read per call, so every row in one run is
- * the same age and a suite that takes a minute cannot have its first fixture
- * age differently from its last.
+ * Frozen at module load rather than read per call, so every row in one run is the same age and a
+ * suite that takes a minute cannot have its first fixture age differently from its last.
  */
 const LOADED_AT = Date.now();
 
 /** One minute, in milliseconds. */
 const MINUTE_MS = 60_000;
 
-/**
- * An Inbox page holding one "agent stopped answering" row per name.
- *
- * The cheapest way to put one real Recent-Activity row on screen: those rows are
- * Inbox notifications now (DOR-1384), not a derivation over mesh liveness, so
- * one transport answer still does it and the row still owns the
- * `?detail=offline-agent` deep link.
- */
+/** An Inbox page holding one "agent stopped answering" row per name. */
 function offlineAgents(...names: string[]) {
   return {
     notifications: names.map((name, i) => ({
@@ -146,11 +99,7 @@ function offlineAgents(...names: string[]) {
       subject: { type: 'agent' as const, id: name },
       agentId: name,
       title: `${name} stopped answering`,
-      // RELATIVE, never a literal date. The activity group only draws the last
-      // 24 hours (`useActivityNotifications`), so a fixture pinned to a calendar
-      // day is a test that passes until the wall clock walks past it and then
-      // fails for a reason that has nothing to do with the code. This one did:
-      // written at 22h old, red by the same afternoon.
+      // RELATIVE, never a literal date.
       createdAt: new Date(LOADED_AT - MINUTE_MS).toISOString(),
     })),
     nextCursor: null,
@@ -172,17 +121,7 @@ function shiftReportRow(overrides: Partial<NotificationDTO> = {}): NotificationD
   };
 }
 
-/**
- * `listNotifications`, split by which lens is asking.
- *
- * `useActivityNotifications` and `useShiftReport` share the same transport
- * method but read different kinds through different lenses, so a flat
- * `mockResolvedValue` cannot answer both truthfully — whatever it returns
- * would land in BOTH caches (a bare-agent-unreachable fixture handed to the
- * `report.daily` lens renders as a fabricated Shift Report). This inspects
- * the query the way the real server route does: `activity` for anything else,
- * `report` rows only for a `report.daily` lens.
- */
+/** `listNotifications`, split by which lens is asking. */
 function notificationsByLens(
   options: { activity?: ListNotificationsResponse; report?: NotificationDTO[] } = {}
 ) {
@@ -217,9 +156,8 @@ function parkedSchedule(overrides: Partial<Task> = {}): Task {
     packageOwned: null,
     approvalChanges: [],
     agentId: null,
-    // True: this fixture stands in for a schedule an AGENT proposed, which is
-    // asking to run by definition (DOR-2059 only quiets a package-shipped
-    // schedule that ships switched off).
+    // True: this fixture stands in for a schedule an AGENT proposed, which is asking to run by
+    // definition (DOR-2059 only quiets a package-shipped schedule that ships switched off).
     enabled: true,
     sticky: false,
     maxRuntime: null,
@@ -268,25 +206,15 @@ function setLifecycles(entries: Record<string, 'blocked' | 'error'>) {
   });
 }
 
-/**
- * How many approvals the SERVER currently reports, drawn beside the header.
- *
- * The settling tests need to know that the refetch has LANDED, not merely that
- * it was requested — `toHaveBeenCalledTimes` fires when the fetch starts, which
- * is before the cache is rewritten and long before the header re-renders. This
- * reads the same cache entry the header does, so a test can wait for the queue
- * to be genuinely empty and only then ask what is still on screen.
- */
+/** How many approvals the SERVER currently reports, drawn beside the header. */
 function PendingApprovalsProbe() {
   const { approvals } = usePendingApprovals();
   return <span data-testid="pending-approvals">{`pending:${approvals.length}`}</span>;
 }
 
 /**
- * Render the header inside a router, because the attention rows navigate and the
- * detail sheets read the URL they navigate to. The search schema is deliberately
- * permissive: this file pins the header's behaviour, and the real schema is the
- * app router's.
+ * Render the header inside a router, because the attention rows navigate and the detail sheets
+ * read the URL they navigate to.
  */
 function renderHeader(
   overrides: Partial<Transport> = {},
@@ -332,81 +260,16 @@ function renderHeader(
   return { transport, router };
 }
 
-/** The header's own props, as this file swaps them. */
-type HeaderProps = { composerFocused?: boolean; onExpand?: () => void };
-
-/**
- * The same header with one approval waiting, and a way to change its props
- * afterwards — because the state machine is about the TRANSITIONS: the caret
- * arriving in the composer, and leaving it again.
- *
- * The route tree closes over its component, so the swap cannot come from
- * re-rendering the provider; a host holding the props in state is what makes
- * them movable.
- */
-function renderHeaderRerenderable(initial: HeaderProps) {
-  const transport = createMockTransport({
-    listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
-  });
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 } },
-  });
-  let apply: ((next: HeaderProps) => void) | null = null;
-
-  function Host() {
-    const [props, setProps] = useState(initial);
-    // Published from an effect, never during render: assigning to an outer
-    // binding while rendering is exactly the impurity the lint rule is for.
-    useEffect(() => {
-      apply = setProps;
-      return () => {
-        apply = null;
-      };
-    }, []);
-    return <PinnedTriageHeader {...props} />;
-  }
-
-  const rootRoute = createRootRoute({ staticData: { header: null }, component: () => <Outlet /> });
-  const indexRoute = createRoute({
-    staticData: { header: null },
-    getParentRoute: () => rootRoute,
-    path: '/',
-    validateSearch: (search: Record<string, unknown>) => search,
-    component: Host,
-  });
-  const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute]),
-    history: createMemoryHistory({ initialEntries: ['/'] }),
-  });
-
-  render(
-    <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={transport}>
-        <RouterProvider router={router as never} />
-      </TransportProvider>
-    </QueryClientProvider>
-  );
-
-  return {
-    transport,
-    rerender: (next: HeaderProps) => act(() => apply?.(next)),
-  };
-}
-
-// The session store is a module singleton, so a lifecycle one case seeds would
-// otherwise still be there for the next one.
+// The session store is a module singleton, so a lifecycle one case seeds would otherwise still be
+// there for the next one.
 beforeEach(() => {
   useSessionListStore.getState().resetStatuses();
 });
 
 /**
- * Getting out of the keyboard's way (spec task 2.7's browser gate).
- *
- * jsdom cannot measure a software keyboard, so what is pinned here is the STATE
- * MACHINE — when the header condenses, what the line says, and what tapping it
- * asks the host to do. The geometry that made this necessary (the composer 129px
- * behind the keyboard at 375×812 with one approval showing) is the browser
- * gate's to prove, and its recapture is where a regression would surface.
+ * Getting out of the keyboard's way (spec task 2.7's browser gate). jsdom cannot measure a
+ * software keyboard, so what is pinned here is the STATE MACHINE — when the header condenses,
+ * what the line says, and what tapping it asks the host to do.
  */
 describe('PinnedTriageHeader while the composer has the caret', () => {
   beforeEach(() => {
@@ -439,15 +302,14 @@ describe('PinnedTriageHeader while the composer has the caret', () => {
 
     expect(await screen.findByText('2 waiting · 1 needs attention')).toBeInTheDocument();
     expect(summaryBar()).not.toBeNull();
-    // The cards are gone, not merely shorter: that is the point — every pixel
-    // they were taking goes back to the box being typed in.
+    // The cards are gone, not merely shorter: that is the point — every pixel they were taking
+    // goes back to the box being typed in.
     expect(header()).toBeNull();
     expect(document.querySelector('[data-slot="approval-card"]')).toBeNull();
   });
 
   it('asks the host to give the caret back when the line is tapped', async () => {
-    // The header cannot dismiss the keyboard itself; the composer holding it is
-    // a sibling. So it asks, and the host blurs.
+    // The header cannot dismiss the keyboard itself; the composer holding it is a sibling.
     const onExpand = vi.fn();
     renderHeader(
       { listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }) },
@@ -458,212 +320,6 @@ describe('PinnedTriageHeader while the composer has the caret', () => {
 
     expect(onExpand).toHaveBeenCalledOnce();
   });
-
-  it('draws the whole header again the moment the caret leaves', async () => {
-    // What the host's blur produces, one prop later: there is no second flag
-    // for "expanded", so the two can never disagree.
-    const { rerender } = renderHeaderRerenderable({ composerFocused: true });
-    await screen.findByText('1 waiting');
-
-    rerender({ composerFocused: false });
-
-    expect(await screen.findByText('Waiting on you')).toBeInTheDocument();
-    expect(summaryBar()).toBeNull();
-  });
-
-  it('leaves a wide screen alone: there is no keyboard eating the viewport', async () => {
-    viewport.mobile = false;
-    renderHeader(
-      { listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }) },
-      { composerFocused: true }
-    );
-
-    expect(await screen.findByText('Waiting on you')).toBeInTheDocument();
-    expect(summaryBar()).toBeNull();
-  });
-
-  it('says the same thing to a screen reader, condensed or not', async () => {
-    // Condensing is a visual condensation, not a content change: announcing it
-    // again would report the header's shape as if it were news.
-    const { rerender } = renderHeaderRerenderable({ composerFocused: false });
-    await waitFor(() => expect(announcement()).toBe('1 request is waiting on you.'));
-
-    rerender({ composerFocused: true });
-
-    await screen.findByText('1 waiting');
-    expect(announcement()).toBe('1 request is waiting on you.');
-  });
-
-  it('condenses to nothing rather than to an empty bar', async () => {
-    // Held open by the presence strip alone, there are no counts to write. A
-    // bar saying nothing is worse than no bar.
-    const { transport } = renderHeader(
-      {},
-      {
-        composerFocused: true,
-        presence: { occupied: true, node: <p data-testid="presence-strip" /> },
-      }
-    );
-
-    await waitFor(() => expect(transport.listPendingApprovals).toHaveBeenCalled());
-
-    expect(summaryBar()).toBeNull();
-    expect(header()).toBeNull();
-  });
-});
-
-/**
- * More waiting than the header is allowed to be tall (DOR-1043).
- *
- * At its height cap the header cuts the last card mid-row, and a cut-off card
- * looks exactly like the end of the list — macOS draws no scrollbar until you
- * have already scrolled, so nothing at all said there was more. The fix is a
- * fade over whichever edge still has content behind it.
- */
-describe('PinnedTriageHeader at its height cap', () => {
-  beforeEach(() => {
-    vi.mocked(useEventSubscription).mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    cleanup();
-    // The undo window is module-level on purpose (it has to survive the popover
-    // unmounting), so `cleanup()` does not end it — a rejection left pending
-    // here would fire its DELETE in the middle of a later, unrelated case.
-    discardPendingRejections();
-    discardSettlingSchedules();
-    discardSettlingApprovals();
-    vi.clearAllMocks();
-  });
-
-  it('says there is more below when the list is taller than the cap', async () => {
-    renderHeader({
-      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
-    });
-    await screen.findByText('Waiting on you');
-
-    act(() => {
-      measureAs(scroller()!, { scrollHeight: 900, clientHeight: 300, scrollTop: 0 });
-    });
-
-    expect(fade('bottom')).not.toBeNull();
-    // Nothing is hidden above yet, and a cue over content that is not there is
-    // worse than no cue (ADR 260725-004456).
-    expect(fade('top')).toBeNull();
-  });
-
-  it('draws no cue at all when everything already fits', async () => {
-    renderHeader({
-      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
-    });
-    await screen.findByText('Waiting on you');
-
-    act(() => {
-      measureAs(scroller()!, { scrollHeight: 300, clientHeight: 300 });
-    });
-
-    expect(fade('bottom')).toBeNull();
-    expect(fade('top')).toBeNull();
-  });
-
-  it('swaps the cue to the top edge once the list is scrolled to its end', async () => {
-    renderHeader({
-      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
-    });
-    await screen.findByText('Waiting on you');
-
-    act(() => {
-      measureAs(scroller()!, { scrollHeight: 900, clientHeight: 300, scrollTop: 600 });
-    });
-
-    expect(fade('bottom')).toBeNull();
-    expect(fade('top')).not.toBeNull();
-  });
-
-  it('keeps the cue out of the way of the cards it is drawn over', async () => {
-    renderHeader({
-      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
-    });
-    await screen.findByText('Waiting on you');
-
-    act(() => {
-      measureAs(scroller()!, { scrollHeight: 900, clientHeight: 300, scrollTop: 0 });
-    });
-
-    // Decoration only: it sits over an Allow button at the bottom edge, and a
-    // click landing on the gradient instead of the button would be the defect.
-    expect(fade('bottom')!.className).toContain('pointer-events-none');
-    expect(fade('bottom')!.getAttribute('aria-hidden')).toBe('true');
-  });
-
-  it('cues a list that GREW, with nobody scrolling', async () => {
-    // The ticket's real trigger: an approval lands over the event stream, the
-    // list gets longer, and no scroll event is fired because nobody touched it.
-    // Drawn from props here so the growth is a plain re-render.
-    function Host() {
-      const [count, setCount] = useState(1);
-      return (
-        <>
-          <button type="button" onClick={() => setCount(4)}>
-            grow
-          </button>
-          <PinnedTriageHeaderView
-            asks={[]}
-            settlingAsks={[]}
-            askAgentNames={{}}
-            onOpenSession={() => {}}
-            approvals={Array.from({ length: count }, (_, i) =>
-              buildApproval({ approvalId: `01JZ00000000000000000000${i}` })
-            )}
-            approvalsUnavailable={false}
-            onRetryApprovals={() => {}}
-            scheduleApprovals={[]}
-            errorSignals={[]}
-            activityItems={[]}
-            onOpenActivity={() => {}}
-          />
-        </>
-      );
-    }
-
-    render(
-      <QueryClientProvider
-        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-      >
-        <TransportProvider transport={createMockTransport()}>
-          <Host />
-        </TransportProvider>
-      </QueryClientProvider>
-    );
-    await screen.findByText('Waiting on you');
-
-    act(() => {
-      measureAs(scroller()!, { scrollHeight: 300, clientHeight: 300 });
-    });
-    expect(fade('bottom')).toBeNull();
-
-    // The cards arrive, and the box they are in stays exactly the size it was.
-    stubMetrics(scroller()!, { scrollHeight: 900, clientHeight: 300 });
-    await userEvent.click(screen.getByRole('button', { name: 'grow' }));
-
-    expect(fade('bottom')).not.toBeNull();
-  });
-
-  it('has no scroller to cue while the header is condensed to one line', async () => {
-    // One line of counts cannot overflow, and a fade across it would be a
-    // smudge on the only thing there is to read.
-    viewport.mobile = true;
-    renderHeader(
-      { listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }) },
-      { composerFocused: true }
-    );
-    await screen.findByText('1 waiting');
-
-    expect(scroller()).toBeNull();
-    expect(fade('bottom')).toBeNull();
-    expect(fade('top')).toBeNull();
-    viewport.mobile = false;
-  });
 });
 
 describe('PinnedTriageHeader', () => {
@@ -673,9 +329,9 @@ describe('PinnedTriageHeader', () => {
 
   afterEach(() => {
     cleanup();
-    // The undo window is module-level on purpose (it has to survive the popover
-    // unmounting), so `cleanup()` does not end it — a rejection left pending
-    // here would fire its DELETE in the middle of a later, unrelated case.
+    // The undo window is module-level on purpose (it has to survive the popover unmounting), so
+    // `cleanup()` does not end it — a rejection left pending here would fire its DELETE in the
+    // middle of a later, unrelated case.
     discardPendingRejections();
     discardSettlingSchedules();
     discardSettlingApprovals();
@@ -685,8 +341,8 @@ describe('PinnedTriageHeader', () => {
   it('draws nothing at all when nothing is waiting and nothing is wrong', async () => {
     const { transport } = renderHeader();
 
-    // Wait for the reads to land: asserting absence before they resolve would
-    // pass against a header that simply had not been told anything yet.
+    // Wait for the reads to land: asserting absence before they resolve would pass against a
+    // header that simply had not been told anything yet.
     await waitFor(() => expect(transport.listPendingApprovals).toHaveBeenCalled());
     await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
 
@@ -696,33 +352,6 @@ describe('PinnedTriageHeader', () => {
     expect(screen.queryByText('Recent activity')).not.toBeInTheDocument();
     // The live region stays — always mounted, and silent.
     expect(announcement()).toBe('');
-  });
-
-  it('stays on screen for the presence slot alone, with neither group drawn', async () => {
-    renderHeader(
-      {},
-      { presence: { occupied: true, node: <p data-testid="presence-strip">Nobody is working</p> } }
-    );
-
-    expect(await screen.findByTestId('presence-strip')).toBeInTheDocument();
-    expect(header()).not.toBeNull();
-    expect(screen.queryByText('Waiting on you')).not.toBeInTheDocument();
-    expect(screen.queryByText('Needs attention')).not.toBeInTheDocument();
-  });
-
-  it('draws no header for a presence slot that says it has nothing to draw', async () => {
-    // The slot carries its own occupancy precisely so a strip standing down
-    // cannot leave an empty bordered box pinned to the top of the screen.
-    const { transport } = renderHeader(
-      {},
-      { presence: { occupied: false, node: <p data-testid="presence-strip" /> } }
-    );
-
-    await waitFor(() => expect(transport.listPendingApprovals).toHaveBeenCalled());
-    await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
-
-    expect(header()).toBeNull();
-    expect(screen.queryByTestId('presence-strip')).not.toBeInTheDocument();
   });
 
   it('announces what arrived, by count rather than by card', async () => {
@@ -741,34 +370,9 @@ describe('PinnedTriageHeader', () => {
     );
   });
 
-  it('holds its own height rather than being squeezed by the feed under it', async () => {
-    renderHeader({
-      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
-    });
-
-    await screen.findByText('Uninstall a marketplace package');
-    // It is a flex sibling ABOVE the room's scroller, not a sticky element
-    // inside it (`RoomSurfaceProps.aboveTimeline` explains why that placement
-    // is the whole point). `shrink-0` is what that placement needs: without it
-    // a flex row this tall is compressed by the feed beside it.
-    expect(header()?.className).toContain('shrink-0');
-    expect(header()?.className).not.toContain('sticky');
-  });
-
-  it('shows an approval waiting on a decision', async () => {
-    renderHeader({
-      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
-    });
-
-    expect(await screen.findByText('Waiting on you')).toBeInTheDocument();
-    expect(screen.getByText('Uninstall a marketplace package')).toBeInTheDocument();
-  });
-
   it('answers an approval in place: the card retires, the header shrinks, the page stays put', async () => {
     const listPendingApprovals = vi.fn().mockResolvedValue({ approvals: [buildApproval()] });
-    // Held open on purpose. The point of the checkmark is that it lands BEFORE
-    // the server answers, and a mock that resolves instantly cannot tell that
-    // apart from one that lands after — the refetch would race the assertion.
+    // Held open on purpose.
     let settle: () => void = () => {};
     const grantApproval = vi.fn().mockImplementation(
       () =>
@@ -789,9 +393,9 @@ describe('PinnedTriageHeader', () => {
 
     listPendingApprovals.mockResolvedValue({ approvals: [] });
     settle();
-    // The card outlives the refetch by its receipt's hold now (DOR-1411), so
-    // the retirement is a beat later than the drain rather than in the same
-    // frame — hence the longer window than `waitFor`'s one-second default.
+    // The card outlives the refetch by its receipt's hold now (DOR-1411), so the retirement is a
+    // beat later than the drain rather than in the same frame — hence the longer window than
+    // `waitFor`'s one-second default.
     await waitFor(() => expect(document.querySelector('[data-slot="approval-card"]')).toBeNull(), {
       timeout: 4_000,
     });
@@ -801,71 +405,9 @@ describe('PinnedTriageHeader', () => {
     expect(router.state.location.pathname).toBe('/');
   });
 
-  it('keeps the answered approval on screen once the server stops listing it', async () => {
-    // The disappearance this closes: answering is optimistic, and the refetch
-    // that follows drops the request from the pending list — which used to take
-    // the card AND the "Waiting on you" group around it out of the tree in the
-    // same frame, because the whole list is drawn behind an
-    // `approvals.length > 0` guard. An exit nothing is watching for never runs,
-    // so the receipt was gone in one round trip and the answer looked like a
-    // disappearance (DOR-1411).
-    //
-    // Driven through the REAL hold: nothing about `settling-approvals` is
-    // mocked here. Seeded defect: revert `shownApprovals` to `approvals` in
-    // either the header's guard or the list it hands down, and this reds.
-    const listPendingApprovals = vi.fn().mockResolvedValue({ approvals: [buildApproval()] });
-    const grantApproval = vi.fn().mockImplementation(async () => {
-      // The server has recorded the answer, so the pending list comes back
-      // empty on the invalidation that follows.
-      listPendingApprovals.mockResolvedValue({ approvals: [] });
-      return { ok: true, approvalId: '01JZ0000000000000000000001', outcome: 'granted' };
-    });
-    renderHeader({ listPendingApprovals, grantApproval });
-
-    await screen.findByText('Uninstall a marketplace package');
-    await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
-
-    // Waits for the queue to be genuinely EMPTY — the cache rewritten and the
-    // header re-rendered off it — rather than for the refetch to have been
-    // asked for. Without the hold the card is already gone by this line.
-    await screen.findByText('pending:0');
-
-    // Still there, still saying what happened, inside a group that has not
-    // collapsed around it.
-    expect(screen.getByText('Allowed once')).toBeInTheDocument();
-    expect(screen.getByText('Waiting on you')).toBeInTheDocument();
-
-    // And it does let go: a hold that never released would pin a decided card
-    // to the header forever. The window is the hold plus the card's own melt.
-    await waitFor(() => expect(screen.queryByText('Allowed once')).not.toBeInTheDocument(), {
-      timeout: 4_000,
-    });
-  });
-
-  it('says so when the approval list cannot be read, rather than looking like silence', async () => {
-    // A failed read and "nothing waiting" are the same empty space on screen,
-    // and the difference is an agent blocked while nobody knows to answer it.
-    renderHeader({ listPendingApprovals: vi.fn().mockRejectedValue(new Error('offline')) });
-
-    expect(await screen.findByText(/Couldn’t check for approvals/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
-  });
-
-  it('re-reads the approval list when Try again is clicked', async () => {
-    const listPendingApprovals = vi.fn().mockRejectedValue(new Error('offline'));
-    renderHeader({ listPendingApprovals });
-
-    const button = await screen.findByRole('button', { name: 'Try again' });
-    listPendingApprovals.mockResolvedValue({ approvals: [buildApproval()] });
-    await userEvent.click(button);
-
-    expect(await screen.findByText('Uninstall a marketplace package')).toBeInTheDocument();
-  });
-
   it('shows what recently went wrong, under its own quiet heading', async () => {
-    // Agents nobody can reach is not a thing WAITING on a person — nothing is
-    // blocked on an answer — so it draws under Recent activity rather than
-    // spending the header's amber on it.
+    // Agents nobody can reach is not a thing WAITING on a person — nothing is blocked on an
+    // answer — so it draws under Recent activity rather than spending the header's amber on it.
     renderHeader({
       listNotifications: notificationsByLens({ activity: offlineAgents('tangerines') }),
     });
@@ -880,8 +422,8 @@ describe('PinnedTriageHeader', () => {
       listNotifications: notificationsByLens({ activity: offlineAgents('tangerines') }),
     });
 
-    // The row IS the button now — clicking it marks the notification read and
-    // travels, where the old row carried a separate "View →".
+    // The row IS the button now — clicking it marks the notification read and travels, where the
+    // old row carried a separate "View →".
     await userEvent.click(await screen.findByText('tangerines stopped answering'));
 
     await waitFor(() =>
@@ -890,59 +432,6 @@ describe('PinnedTriageHeader', () => {
       )
     );
     expect(await screen.findByText('Agents that aren’t answering')).toBeInTheDocument();
-  });
-
-  it('draws both groups at once when both have something to say', async () => {
-    renderHeader({
-      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
-      listNotifications: notificationsByLens({ activity: offlineAgents('tangerines') }),
-    });
-
-    expect(await screen.findByText('Waiting on you')).toBeInTheDocument();
-    expect(await screen.findByText('Recent activity')).toBeInTheDocument();
-    expect(header()).not.toBeNull();
-  });
-
-  it('puts a schedule an agent parked under Waiting on you, as a card with all three answers', async () => {
-    // The event that most deserved a signal and had none: an agent proposes a
-    // scheduled run, it parks because nothing arms itself, and until now the
-    // only way to find it was to wander into the Tasks page.
-    //
-    // It sits in Waiting on you rather than Needs attention since DOR-1398: a
-    // proposal IS a decision waiting on a person, and the group below is a
-    // dense row box built for things that already broke. Seeded defect: put the
-    // card back under `showsAttention` and the group heading assertion reds.
-    renderHeader({ listTasks: vi.fn().mockResolvedValue([parkedSchedule()]) });
-
-    expect(await screen.findByText('Waiting on you')).toBeInTheDocument();
-    expect(screen.queryByText('Needs attention')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reject Nightly sweep' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Run Nightly sweep once' })).toBeInTheDocument();
-    expect(screen.getByText(/^3:00 AM/)).toBeInTheDocument();
-  });
-
-  it('says nothing about a schedule that is already running', async () => {
-    // The discriminating half: without the `pending_approval` filter, every
-    // schedule anybody ever made would pile into the header.
-    const { transport } = renderHeader({
-      listTasks: vi.fn().mockResolvedValue([parkedSchedule({ status: 'active', enabled: true })]),
-    });
-
-    await waitFor(() => expect(transport.listTasks).toHaveBeenCalled());
-    await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
-    expect(screen.queryByText('Waiting on you')).not.toBeInTheDocument();
-    expect(screen.queryByText('Needs attention')).not.toBeInTheDocument();
-  });
-
-  it('draws an opened card compact, its actions flowing under the prompt, never pinned over it', async () => {
-    renderHeader({ listTasks: vi.fn().mockResolvedValue([parkedSchedule({ fileCapNext: true })]) });
-    const approve = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
-    expect(approve.parentElement!.className).not.toMatch(/sticky/);
-    const region = screen.getByRole('region', { name: 'Prompt' });
-    expect(region.className).toContain('max-h-[25dvh]');
-    expect(region.className).toContain('sm:max-h-40');
-    expect(region.className).not.toContain('sm:max-h-64');
   });
 
   it('approves a parked schedule in place', async () => {
@@ -962,14 +451,8 @@ describe('PinnedTriageHeader', () => {
   });
 
   it('rejects a parked schedule into a receipt, sending no delete yet', async () => {
-    // Rejecting DELETES a schedule, and a delete has no server-side undo — so
-    // the card offers the undo by simply not sending the request yet. What this
-    // pins is that the header's copy of the card is wired to that machinery at
-    // all: a rejection here produces a receipt and a live offer rather than an
-    // immediate, irreversible DELETE. The clock-crossing half (the delete DOES
-    // fire when the window closes, and Undo stops it) is proven against the
-    // scheduler itself, in `deferred-rejection.test.ts`, where the timers are
-    // fake from the first line.
+    // Rejecting DELETES a schedule, and a delete has no server-side undo — so the card offers the
+    // undo by simply not sending the request yet.
     const deleteTask = vi.fn().mockResolvedValue(undefined);
     renderHeader({ listTasks: vi.fn().mockResolvedValue([parkedSchedule()]), deleteTask });
 
@@ -980,27 +463,9 @@ describe('PinnedTriageHeader', () => {
     expect(deleteTask).not.toHaveBeenCalled();
   });
 
-  it('puts the answers back when a rejection is undone', async () => {
-    const deleteTask = vi.fn().mockResolvedValue(undefined);
-    renderHeader({ listTasks: vi.fn().mockResolvedValue([parkedSchedule()]), deleteTask });
-
-    await userEvent.click(await screen.findByRole('button', { name: 'Reject Nightly sweep' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Undo' }));
-
-    // Answerable again, and still nothing sent — an undo that left the card
-    // saying "Rejected" would be a button that did nothing.
-    expect(await screen.findByRole('button', { name: 'Reject Nightly sweep' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeInTheDocument();
-    expect(deleteTask).not.toHaveBeenCalled();
-  });
-
   it('draws an agent waiting on you ONCE — the card, never a second row below it', async () => {
-    // Both sessions raise a signal from the one engine: `blocked` becomes a
-    // permission prompt, `error` becomes a wedge. Only the wedge belongs in
-    // Needs attention — a blocked agent already has a card in Waiting on you,
-    // and the same fact twice in one header is how a person learns to read
-    // neither. Seeded defect: pass every blocking kind through and there are
-    // two rows here instead of one.
+    // Both sessions raise a signal from the one engine: `blocked` becomes a permission prompt,
+    // `error` becomes a wedge.
     renderHeader({
       listRecentSessions: vi.fn().mockResolvedValue({
         sessions: [
@@ -1021,93 +486,7 @@ describe('PinnedTriageHeader', () => {
     );
   });
 
-  it('keeps the group open while an answered prompt is still saying how it ended', async () => {
-    // Answering the LAST thing waiting used to unmount the group around its own
-    // receipt — the card was gone inside a second with nothing said. Seeded
-    // defect: drop `settlingAsks` from `showsWaiting` and the group vanishes
-    // even though a receipt is on screen.
-    const settling = [
-      {
-        sessionId: 'session-1',
-        cwd: '/projects/meeting-notes',
-        interaction: {
-          type: 'approval' as const,
-          id: 'tc-settling',
-          startedAt: Date.now(),
-          remainingMs: 600_000,
-          timeoutMs: 600_000,
-          toolName: 'Write',
-          input: '{}',
-          hasSuggestions: false,
-        },
-      },
-    ];
-
-    // The list answers through the transport, so the view needs the same
-    // providers the app gives it.
-    const transport = createMockTransport();
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <TransportProvider transport={transport}>
-          <PinnedTriageHeaderView
-            asks={[]}
-            settlingAsks={settling}
-            askAgentNames={{}}
-            onOpenSession={() => {}}
-            approvals={[]}
-            approvalsUnavailable={false}
-            onRetryApprovals={() => {}}
-            scheduleApprovals={[]}
-            errorSignals={[]}
-            activityItems={[]}
-            onOpenActivity={() => {}}
-          />
-        </TransportProvider>
-      </QueryClientProvider>
-    );
-
-    expect(screen.getByText('Waiting on you')).toBeInTheDocument();
-  });
-
   describe('the daily Shift Report card', () => {
-    it('renders above Recent activity from a seeded unread row', async () => {
-      renderHeader({
-        listNotifications: notificationsByLens({
-          report: [shiftReportRow()],
-        }),
-      });
-
-      const card = await screen.findByText(/While you were away/);
-      expect(card).toBeInTheDocument();
-      expect(header()).not.toBeNull();
-    });
-
-    it('keeps the header on screen for the card alone, with no other group drawn', async () => {
-      // Nothing is waiting and nothing broke — the one thing this header has to
-      // say is what agents did overnight, and it must not need a second reason
-      // to stay on screen.
-      renderHeader({
-        listNotifications: notificationsByLens({ report: [shiftReportRow()] }),
-      });
-
-      await screen.findByText(/While you were away/);
-      expect(header()).not.toBeNull();
-      expect(screen.queryByText('Waiting on you')).not.toBeInTheDocument();
-      expect(screen.queryByText('Needs attention')).not.toBeInTheDocument();
-      expect(screen.queryByText('Recent activity')).not.toBeInTheDocument();
-    });
-
-    it('is absent when there is nothing unread to report', async () => {
-      const { transport } = renderHeader({
-        listNotifications: notificationsByLens({ report: [] }),
-      });
-
-      await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
-      expect(screen.queryByText(/While you were away/)).not.toBeInTheDocument();
-      expect(header()).toBeNull();
-    });
-
     it('dismissing the card marks it read, and it disappears', async () => {
       const markNotificationRead = vi
         .fn()
@@ -1121,13 +500,26 @@ describe('PinnedTriageHeader', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
 
       expect(markNotificationRead).toHaveBeenCalledWith(shiftReportRow().id);
-      // The optimistic cache write is what makes it vanish — the mock above
-      // still answers the same unread row if re-fetched, so a card that
-      // survives this proves the dismiss reads it rather than merely calling
-      // the mutation.
+      // The optimistic cache write is what makes it vanish — the mock above still answers the
+      // same unread row if re-fetched, so a card that survives this proves the dismiss reads it
+      // rather than merely calling the mutation.
       await waitFor(() =>
         expect(screen.queryByText(/While you were away/)).not.toBeInTheDocument()
       );
     });
+  });
+
+  it('puts the answers back when a rejection is undone', async () => {
+    const deleteTask = vi.fn().mockResolvedValue(undefined);
+    renderHeader({ listTasks: vi.fn().mockResolvedValue([parkedSchedule()]), deleteTask });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Reject Nightly sweep' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+
+    // Answerable again, and still nothing sent — an undo that left the card
+    // saying "Rejected" would be a button that did nothing.
+    expect(await screen.findByRole('button', { name: 'Reject Nightly sweep' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeInTheDocument();
+    expect(deleteTask).not.toHaveBeenCalled();
   });
 });

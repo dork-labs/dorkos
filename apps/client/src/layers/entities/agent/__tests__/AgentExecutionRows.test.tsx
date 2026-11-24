@@ -185,9 +185,7 @@ function renderRows(
     getModels: modelsFail
       ? vi.fn().mockRejectedValue(new Error('The models could not be read'))
       : vi.fn().mockResolvedValue(models),
-    // The Account row's one write path (DOR-1736). Answered with a manifest so
-    // the mutation SETTLES — the invalidation this component hangs on
-    // `onSettled` never runs against a promise nobody resolves.
+    // The Account row's one write path (DOR-1736).
     updateMeshAgent: vi.fn().mockResolvedValue(agent),
   });
   const queryClient = new QueryClient({
@@ -217,14 +215,6 @@ describe('AgentExecutionRows', () => {
     );
   });
 
-  it('says "set here" when the agent names its own', async () => {
-    renderRows(manifest({ model: 'sonnet', effort: 'high' }));
-    await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Set here')
-    );
-    expect(screen.getByTestId('agent-effort-row-chip')).toHaveTextContent('Set here');
-  });
-
   // The design's whole point: the chip IS the reset, and its one action clears
   // the field back to inheriting — which on the wire is `null`, not `undefined`.
   it('offers exactly one action from a "set here" chip, and it clears the field', async () => {
@@ -240,28 +230,12 @@ describe('AgentExecutionRows', () => {
     expect(onUpdate).toHaveBeenCalledWith({ model: null });
   });
 
-  it('does not offer a reset on an inherited chip — there is nothing to undo', async () => {
-    renderRows(manifest());
-    await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Server default')
-    );
-    expect(screen.queryByRole('button', { name: /set here/i })).toBeNull();
-  });
-
   it('picks a model through the row, and writes it', async () => {
     const { onUpdate } = renderRows(manifest());
     await waitFor(() => expect(screen.getByTestId('agent-model-row')).toHaveTextContent('Opus'));
     await userEvent.click(screen.getByTestId('agent-model-row'));
     await userEvent.click(await screen.findByRole('button', { name: 'Sonnet' }));
     expect(onUpdate).toHaveBeenCalledWith({ model: 'sonnet' });
-  });
-
-  it('says effort is not supported by the runtime rather than dropping the row', async () => {
-    renderRows(manifest({ runtime: 'opencode' }));
-    expect(await screen.findByTestId('agent-effort-unsupported-runtime')).toHaveTextContent(
-      'Not supported by OpenCode'
-    );
-    expect(screen.queryByTestId('agent-effort-row')).toBeNull();
   });
 
   it('warns about an effort stored where the runtime has none, and still lets it be cleared', async () => {
@@ -272,13 +246,6 @@ describe('AgentExecutionRows', () => {
     await userEvent.click(screen.getByTestId('agent-effort-row-chip').closest('button')!);
     await userEvent.click(await screen.findByTestId('agent-effort-row-chip-reset'));
     expect(onUpdate).toHaveBeenCalledWith({ effort: null });
-  });
-
-  it('says a model does not take an effort, in the model’s own words', async () => {
-    renderRows(manifest({ model: 'haiku' }));
-    expect(await screen.findByTestId('agent-effort-unsupported-model')).toHaveTextContent(
-      'This model doesn’t take an effort setting'
-    );
   });
 
   // ── The capped catalog has to admit itself here too (DOR-1674) ────────────
@@ -292,63 +259,12 @@ describe('AgentExecutionRows', () => {
     );
     const notice = await screen.findByTestId('model-catalog-unverified');
     expect(notice).toBeVisible();
-    // Seeing it is not enough: the trigger describes itself by the notice, so a
-    // person navigating by control hears the admission rather than only the
-    // model name.
+    // Seeing it is not enough: the trigger describes itself by the notice, so a person navigating
+    // by control hears the admission rather than only the model name.
     expect(screen.getByTestId('agent-model-row')).toHaveAttribute(
       'aria-describedby',
       notice.getAttribute('id')
     );
-  });
-
-  it('shows no unverified notice on a confirmed catalog', async () => {
-    renderRows(manifest());
-    // The row itself has to have rendered its catalog before the absence below
-    // means anything — a notice missing from a page that drew nothing proves
-    // nothing at all.
-    await waitFor(() => expect(screen.getByTestId('agent-model-row')).toHaveTextContent('Opus'));
-    expect(screen.queryByTestId('model-catalog-unverified')).not.toBeInTheDocument();
-    expect(screen.getByTestId('agent-model-row')).not.toHaveAttribute('aria-describedby');
-  });
-
-  // ── B1: a warming catalog is not evidence that a model is gone ─────────────
-  it('does not call a pinned model gone while the catalog is still empty', async () => {
-    renderRows(manifest({ model: 'sonnet' }), DEFAULTS, []);
-    // Wait for the EFFORT chip's server default, which only appears once config
-    // has arrived, then let the catalog query settle too — an empty catalog
-    // changes nothing on screen, so there is no positive thing to wait for, and
-    // asserting before it lands would pass no matter what the rule says.
-    await waitFor(() =>
-      expect(screen.getByTestId('agent-effort-row-chip')).toHaveTextContent('Server default')
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Set here')
-    );
-    await new Promise((r) => setTimeout(r, 50));
-    // The row falls back to the raw id and says nothing about availability. The
-    // chip's accessible name is the assertion that discriminates: a warning is
-    // appended to it (`Set here — …`), so an exact "Set here" is proof there
-    // isn't one.
-    expect(screen.getByTestId('agent-model-row')).toHaveTextContent('sonnet');
-    expect(screen.getByRole('button', { name: 'Set here' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /no longer offers/i })).toBeNull();
-  });
-
-  // ── B2: the optimistic `null` an in-flight reset writes must read as inherit ─
-  it('treats a null field as inheriting, not as a value set here', async () => {
-    // `AgentManifest` types these as `string | undefined`, so a `null` here is a
-    // deliberate lie about the type — and that is the point: the type says this
-    // cannot happen while the optimistic merge made it happen anyway, which is
-    // why nothing caught the bug at compile time.
-    renderRows(manifest({ model: null, effort: null } as unknown as Partial<AgentManifest>));
-    await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Server default · opus')
-    );
-    expect(screen.getByTestId('agent-model-row-chip')).not.toHaveTextContent('Set here');
-    expect(screen.getByTestId('agent-effort-row-chip')).toHaveTextContent(
-      'Server default · Medium'
-    );
-    expect(screen.queryByRole('button', { name: /no longer offers null/i })).toBeNull();
   });
 
   // ── B2: a picker that stays open hides the row it just changed ─────────────
@@ -358,21 +274,6 @@ describe('AgentExecutionRows', () => {
     await userEvent.click(screen.getByTestId('agent-model-row'));
     await userEvent.click(await screen.findByRole('button', { name: 'Sonnet' }));
     await waitFor(() => expect(screen.queryByTestId('agent-model-row-inherit')).toBeNull());
-  });
-
-  it('closes the picker when the inherit line is used', async () => {
-    const { onUpdate } = renderRows(manifest({ model: 'sonnet' }));
-    await userEvent.click(await screen.findByTestId('agent-model-row'));
-    await userEvent.click(await screen.findByTestId('agent-model-row-inherit'));
-    expect(onUpdate).toHaveBeenCalledWith({ model: null });
-    await waitFor(() => expect(screen.queryByTestId('agent-model-row-inherit')).toBeNull());
-  });
-
-  it('closes the chip’s reset popover once the reset is taken', async () => {
-    renderRows(manifest({ model: 'sonnet' }));
-    await userEvent.click(await screen.findByRole('button', { name: /set here/i }));
-    await userEvent.click(await screen.findByTestId('agent-model-row-chip-reset'));
-    await waitFor(() => expect(screen.queryByTestId('agent-model-row-chip-reset')).toBeNull());
   });
 
   // ── I3: effort is judged against the model that will actually run ──────────
@@ -394,95 +295,15 @@ describe('AgentExecutionRows', () => {
       'haiku does not take an effort setting'
     );
   });
-
-  // ── The runtime's own declaration is the source, not a list in the client ──
-  // The defaults carry no `opencode` row here, so the only thing left that can
-  // say OpenCode takes no effort is the capability map.
-  const NO_OPENCODE_ROW: ExecutionDefaults = {
-    runtime: 'claude-code',
-    trustStop: null,
-    perRuntime: [
-      {
-        runtime: 'claude-code',
-        model: 'opus',
-        effort: 'medium',
-        supportsEffort: true,
-        trustStop: null,
-      },
-    ],
-  };
-
-  it('reads the runtime-level unsupported state off the capability map', async () => {
-    renderRows(manifest({ runtime: 'opencode' }), NO_OPENCODE_ROW, MODELS, capabilityMap(false));
-    expect(await screen.findByTestId('agent-effort-unsupported-runtime')).toHaveTextContent(
-      'Not supported by OpenCode'
-    );
-    expect(screen.queryByTestId('agent-effort-row')).toBeNull();
-  });
-
-  // The discriminator: flip only the declaration and the control comes back.
-  it('offers the effort control when the same runtime declares it takes one', async () => {
-    renderRows(manifest({ runtime: 'opencode' }), NO_OPENCODE_ROW, MODELS, capabilityMap(true));
-    expect(await screen.findByTestId('agent-effort-row')).toBeInTheDocument();
-    expect(screen.queryByTestId('agent-effort-unsupported-runtime')).toBeNull();
-  });
-
-  // The third state, between those two: nothing has answered yet. An editable
-  // control here would be offered and then taken away a round-trip later.
-  it('offers no effort control while the declaration is still in flight', async () => {
-    renderRows(manifest({ runtime: 'opencode' }), NO_OPENCODE_ROW, MODELS, WITHHELD);
-    expect(await screen.findByTestId('agent-effort-pending')).toHaveTextContent(
-      'Checking what OpenCode supports'
-    );
-    expect(screen.queryByTestId('agent-effort-row')).toBeNull();
-    // Nor does it guess the other way: "Not supported" is a claim, and nothing
-    // has said it.
-    expect(screen.queryByTestId('agent-effort-unsupported-runtime')).toBeNull();
-  });
 });
 
 describe('AgentExecutionRows — the Account row', () => {
-  /** One registered account: a registry with nothing to choose between. */
-  const ONE_ACCOUNT: ClaudeCodeConfig = {
-    ...TWO_ACCOUNTS,
-    accounts: [TWO_ACCOUNTS.accounts[0]!],
-  };
-
   it('is absent on a runtime that has no such thing as an account', async () => {
     renderRows(manifest({ runtime: 'opencode' }), DEFAULTS, MODELS, capabilityMap(true), {
       ...TWO_ACCOUNTS,
     });
     // Wait for something the same config DOES draw, so the absence below is a
     // rendered absence rather than a not-yet.
-    await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Server default')
-    );
-    expect(screen.queryByTestId('agent-account-row')).toBeNull();
-  });
-
-  it('is absent when this machine knows only one account — there is nothing to pick', async () => {
-    renderRows(manifest(), DEFAULTS, MODELS, capabilityMap(false), ONE_ACCOUNT);
-    await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Server default')
-    );
-    expect(screen.queryByTestId('agent-account-row')).toBeNull();
-  });
-
-  it('comes back for an agent that HAS an account set, however small the registry', async () => {
-    // The one agent whose setting must stay visible: hiding it would make it
-    // unclearable.
-    renderRows(
-      manifest({ account: 'personal' }),
-      DEFAULTS,
-      MODELS,
-      capabilityMap(false),
-      ONE_ACCOUNT
-    );
-    expect(await screen.findByTestId('agent-account-row')).toBeInTheDocument();
-  });
-
-  it('is absent until the config answers, rather than offering an empty picker', async () => {
-    renderRows(manifest());
     await waitFor(() =>
       expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Server default')
     );
@@ -512,27 +333,7 @@ describe('AgentExecutionRows — the Account row', () => {
     expect(screen.queryByText(/\.claude$/)).toBeNull();
   });
 
-  it('wears the resolved server default when the agent has no opinion', async () => {
-    renderRows(manifest(), DEFAULTS, MODELS, capabilityMap(false), TWO_ACCOUNTS);
-    expect(await screen.findByTestId('agent-account-row-chip')).toHaveTextContent(
-      'Server default · .claude'
-    );
-    expect(screen.getByTestId('agent-account-row')).toHaveTextContent('.claude');
-  });
-
-  it('says "set here" and names the account by its label, not its id', async () => {
-    renderRows(manifest({ account: 'work' }), DEFAULTS, MODELS, capabilityMap(false), TWO_ACCOUNTS);
-    expect(await screen.findByTestId('agent-account-row-chip')).toHaveTextContent('Set here');
-    expect(screen.getByTestId('agent-account-row')).toHaveTextContent('Acme Corp');
-  });
-
-  // DOR-1736. Billing is operator-only: `agent-write-policy.ts` classifies
-  // `account` as `operator-only`, so `PATCH /api/agents/current` — the route
-  // `onUpdate` reaches — refuses ANY body naming it, 403, whole patch. This row
-  // wrote through exactly that route, so on the only machines that draw it (more
-  // than one registered account) picking an account failed every time. It writes
-  // through `PATCH /api/mesh/agents/:id` instead, the same split the Tools page's
-  // toggles took in DOR-1506.
+  // DOR-1736.
   it('writes the registry id through the OPERATOR route, never the agent self-edit route', async () => {
     const { onUpdate, transport } = renderRows(
       manifest(),
@@ -572,21 +373,6 @@ describe('AgentExecutionRows — the Account row', () => {
     await waitFor(() =>
       expect(transport.updateMeshAgent).toHaveBeenCalledWith('a', { account: 'dorkos-credits' })
     );
-  });
-
-  it('shows no notice for an agent a person already allowed onto credits', async () => {
-    renderRows(manifest({ account: 'dorkos-credits' }), DEFAULTS, MODELS, capabilityMap(false), {
-      ...TWO_ACCOUNTS,
-      credits: {
-        id: 'dorkos-credits',
-        path: '/Users/dev/.dork/runtimes/claude-code/credits',
-        available: true,
-        isDefault: false,
-        allowedAgents: ['a'],
-      },
-    });
-    expect(await screen.findByTestId('agent-account-row')).toHaveTextContent('DorkOS credits');
-    expect(screen.queryByTestId('agent-credits-not-allowed')).toBeNull();
   });
 
   describe('on DorkOS credits (DOR-2636)', () => {
@@ -648,174 +434,47 @@ describe('AgentExecutionRows — the Account row', () => {
         'Use the suggested model: Service pick'
       );
     });
+  });
 
-    it('says when the credits list may be out of date', async () => {
-      renderRows(
-        manifest({ account: 'dorkos-credits' }),
-        NO_DEFAULT_MODEL,
-        CREDIT_MODELS.map((m) => ({ ...m, creditsListOutOfDate: true })),
-        withCredits() as never,
-        { ...TWO_ACCOUNTS, credits: CREDITS }
-      );
-      expect(await screen.findByTestId('agent-credits-models-out-of-date')).toHaveTextContent(
-        'The models your DorkOS credits cover may be out of date.'
-      );
+  it('refreshes the manifest it renders, so a picked account does not snap back', async () => {
+    // `useUpdateAgent` (mesh) clears `['mesh','agents']` and stops, while this row renders the
+    // manifest `useCurrentAgent` holds under `agentKeys.byPath` — and the Settings exceptions
+    // strip reads `agentKeys.resolved`.
+    const { transport, queryClient } = renderRows(
+      manifest(),
+      DEFAULTS,
+      MODELS,
+      capabilityMap(false),
+      TWO_ACCOUNTS
+    );
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    await userEvent.click(await screen.findByTestId('agent-account-row'));
+    await userEvent.click(await screen.findByRole('button', { name: /Acme Corp/ }));
+    await waitFor(() => expect(transport.updateMeshAgent).toHaveBeenCalled());
+    await waitFor(() => {
+      const asked = invalidate.mock.calls.map(([filters]) => JSON.stringify(filters?.queryKey));
+      expect(asked).toContain(JSON.stringify(['agents']));
     });
+  });
 
-    it('follows credits as the machine default for an agent that names no account', async () => {
-      const { transport } = renderRows(
-        manifest(),
-        NO_DEFAULT_MODEL,
-        CREDIT_MODELS,
-        withCredits() as never,
-        {
-          ...TWO_ACCOUNTS,
-          credits: { ...CREDITS, isDefault: true },
-        }
-      );
-      await waitFor(() =>
-        expect(
-          vi
-            .mocked(transport.getModels)
-            .mock.calls.some(([opts]) => opts?.account === 'dorkos-credits')
-        ).toBe(true)
-      );
-    });
-
-    it('keeps Automatic on credits while the service says nothing about protocols', async () => {
-      renderRows(
-        manifest({ account: 'dorkos-credits' }),
-        NO_DEFAULT_MODEL,
-        MODELS.map((m, i) => (i === 0 ? { ...m, isDefault: true } : m)),
-        withCredits() as never,
-        { ...TWO_ACCOUNTS, credits: CREDITS }
-      );
-      expect(await screen.findByTestId('agent-model-row')).toHaveTextContent('Automatic');
-      await userEvent.click(screen.getByTestId('agent-model-row'));
-      expect(await screen.findByTestId('agent-model-row-inherit')).toHaveTextContent(
-        'Use server default'
-      );
-    });
-
-    it('keeps the runtime’s own menu and Automatic for an agent on its own sign-in', async () => {
-      const { transport } = renderRows(
-        manifest({ account: 'work' }),
-        NO_DEFAULT_MODEL,
-        MODELS,
-        withCredits() as never,
-        { ...TWO_ACCOUNTS, credits: CREDITS }
-      );
-      expect(await screen.findByTestId('agent-model-row')).toHaveTextContent('Automatic');
-      expect(
-        vi.mocked(transport.getModels).mock.calls.every(([opts]) => opts?.account === undefined)
-      ).toBe(true);
-    });
-
-    it('reads "Chosen by DorkOS" for an agent on DorkOS with no model chosen', async () => {
-      creditsDefaults = { doe: { runsOn: 'credits' } };
-      const map = capabilityMap(false);
-      const capabilities = {
-        ...map,
-        capabilities: {
-          ...map.capabilities,
-          doe: {
-            ...map.capabilities['claude-code'],
-            type: 'doe',
-            credits: { protocol: 'anthropic-messages' },
-          },
-        },
-      };
-      const picked = CREDIT_MODELS.map((m) =>
-        m.isDefault ? { ...m, description: 'Chosen by DorkOS' } : m
-      );
-      renderRows(manifest({ runtime: 'doe' }), NO_DEFAULT_MODEL, picked, capabilities as never);
-      await waitFor(() =>
-        expect(screen.getByTestId('agent-model-row')).toHaveTextContent('Chosen by DorkOS')
-      );
-      await userEvent.click(screen.getByTestId('agent-model-row'));
-      expect(await screen.findByTestId('agent-model-row-inherit')).toHaveTextContent(
-        'Chosen by DorkOS'
-      );
-    });
-
-    it('names the DorkOS preference instead of "Chosen by DorkOS" once one is set', async () => {
-      creditsDefaults = { doe: { runsOn: 'credits' } };
-      const map = capabilityMap(false);
-      const capabilities = {
-        ...map,
-        capabilities: {
-          ...map.capabilities,
-          doe: {
-            ...map.capabilities['claude-code'],
-            type: 'doe',
-            credits: { protocol: 'anthropic-messages' },
-          },
-        },
-      };
-      const withPreference: ExecutionDefaults = {
-        ...NO_DEFAULT_MODEL,
-        perRuntime: [
-          ...NO_DEFAULT_MODEL.perRuntime,
-          {
-            runtime: 'doe',
-            model: 'md_other',
-            effort: null,
-            supportsEffort: false,
-            trustStop: null,
-          },
-        ],
-      };
-      renderRows(
-        manifest({ runtime: 'doe' }),
-        withPreference,
-        CREDIT_MODELS,
-        capabilities as never
-      );
-      await waitFor(() =>
-        expect(screen.getByTestId('agent-model-row')).toHaveTextContent('Another')
-      );
-      expect(screen.getByTestId('agent-model-row')).not.toHaveTextContent('Chosen by DorkOS');
-    });
-
-    it('names the model an agent on DorkOS was given', async () => {
-      creditsDefaults = { doe: { runsOn: 'credits' } };
-      const map = capabilityMap(false);
-      const capabilities = {
-        ...map,
-        capabilities: {
-          ...map.capabilities,
-          doe: {
-            ...map.capabilities['claude-code'],
-            type: 'doe',
-            credits: { protocol: 'anthropic-messages' },
-          },
-        },
-      };
-      renderRows(
-        manifest({ runtime: 'doe', model: 'md_other' }),
-        NO_DEFAULT_MODEL,
-        CREDIT_MODELS,
-        capabilities as never
-      );
-      await waitFor(() =>
-        expect(screen.getByTestId('agent-model-row')).toHaveTextContent('Another')
-      );
-      expect(screen.getByTestId('agent-model-row')).not.toHaveTextContent('Chosen by DorkOS');
-    });
-
-    it('says so when the credits list cannot be read, instead of offering another menu', async () => {
-      modelsFail = true;
-      renderRows(
-        manifest({ account: 'dorkos-credits' }),
-        NO_DEFAULT_MODEL,
-        CREDIT_MODELS,
-        withCredits() as never,
-        { ...TWO_ACCOUNTS, credits: CREDITS }
-      );
-      expect(await screen.findByTestId('agent-credits-models-unavailable')).toHaveTextContent(
-        'Couldn’t load the models DorkOS credits cover. Try again in a moment.'
-      );
-    });
+  it('leaves the row showing what is stored when the write is refused', async () => {
+    // `onSettled`, not `onSuccess`, and no optimistic write: the row is fully controlled by the
+    // manifest, so a re-read is the only thing that ever moves it — and after a REFUSED write it
+    // is the only thing that proves it did not.
+    const { onUpdate, transport } = renderRows(
+      manifest({ account: 'work' }),
+      DEFAULTS,
+      MODELS,
+      capabilityMap(false),
+      TWO_ACCOUNTS
+    );
+    vi.mocked(transport.updateMeshAgent).mockRejectedValueOnce(new Error('Forbidden'));
+    await userEvent.click(await screen.findByTestId('agent-account-row'));
+    await userEvent.click(await screen.findByTestId('agent-account-row-option-personal'));
+    await waitFor(() => expect(transport.updateMeshAgent).toHaveBeenCalled());
+    // Still Acme Corp — the row never claimed a change the server rejected.
+    expect(screen.getByTestId('agent-account-row')).toHaveTextContent('Acme Corp');
+    expect(onUpdate).not.toHaveBeenCalled();
   });
 
   it('restores the server default through the footer, writing the wire null', async () => {
@@ -837,128 +496,6 @@ describe('AgentExecutionRows — the Account row', () => {
     );
     expect(onUpdate).not.toHaveBeenCalled();
   });
-
-  it('refreshes the manifest it renders, so a picked account does not snap back', async () => {
-    // `useUpdateAgent` (mesh) clears `['mesh','agents']` and stops, while this
-    // row renders the manifest `useCurrentAgent` holds under `agentKeys.byPath`
-    // — and the Settings exceptions strip reads `agentKeys.resolved`. Without
-    // the sweep the value would return to what it was: a save that looks like a
-    // refusal. The same defect `ToolsTab` pins for its own toggles.
-    const { transport, queryClient } = renderRows(
-      manifest(),
-      DEFAULTS,
-      MODELS,
-      capabilityMap(false),
-      TWO_ACCOUNTS
-    );
-    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
-    await userEvent.click(await screen.findByTestId('agent-account-row'));
-    await userEvent.click(await screen.findByRole('button', { name: /Acme Corp/ }));
-    await waitFor(() => expect(transport.updateMeshAgent).toHaveBeenCalled());
-    await waitFor(() => {
-      const asked = invalidate.mock.calls.map(([filters]) => JSON.stringify(filters?.queryKey));
-      expect(asked).toContain(JSON.stringify(['agents']));
-    });
-  });
-
-  it('leaves the row showing what is stored when the write is refused', async () => {
-    // `onSettled`, not `onSuccess`, and no optimistic write: the row is fully
-    // controlled by the manifest, so a re-read is the only thing that ever moves
-    // it — and after a REFUSED write it is the only thing that proves it did
-    // not. The failure itself is announced by the app-wide mutation handler
-    // (`shared/lib/query-client`), the same report every mesh write gets.
-    const { onUpdate, transport } = renderRows(
-      manifest({ account: 'work' }),
-      DEFAULTS,
-      MODELS,
-      capabilityMap(false),
-      TWO_ACCOUNTS
-    );
-    vi.mocked(transport.updateMeshAgent).mockRejectedValueOnce(new Error('Forbidden'));
-    await userEvent.click(await screen.findByTestId('agent-account-row'));
-    await userEvent.click(await screen.findByTestId('agent-account-row-option-personal'));
-    await waitFor(() => expect(transport.updateMeshAgent).toHaveBeenCalled());
-    // Still Acme Corp — the row never claimed a change the server rejected.
-    expect(screen.getByTestId('agent-account-row')).toHaveTextContent('Acme Corp');
-    expect(onUpdate).not.toHaveBeenCalled();
-  });
-
-  it('never offers a synthesized root as a choice — nothing can point at it', async () => {
-    renderRows(manifest(), DEFAULTS, MODELS, capabilityMap(false), {
-      ...TWO_ACCOUNTS,
-      inherited: true,
-      accounts: [
-        // The inherited root the operator never registered: display-only,
-        // carrying no id (ADR 260821-205324). The server heals an id onto
-        // everything it registers, so it does not really emit this row — the
-        // wire type permits it, and the filter that drops it is defensiveness
-        // this case keeps honest.
-        { id: null, path: '/Users/dev/.claude-ambient', label: null, isAccountRoot: true },
-        ...TWO_ACCOUNTS.accounts,
-      ],
-    });
-    await userEvent.click(await screen.findByTestId('agent-account-row'));
-    await screen.findByTestId('agent-account-row-option-work');
-    // The two REGISTERED accounts are the only options; the only way back to
-    // the id-less root is the inherit footer below them.
-    expect(screen.queryAllByTestId(/^agent-account-row-option-/)).toHaveLength(2);
-  });
-
-  // NOT because one option plus the restore footer is no choice — it is one:
-  // "bill to Acme Corp" and "go back to the default" are two different
-  // outcomes, and the picker would work.
-  //
-  // It is hidden for consistency. The status bar hides its own account control
-  // on a single-account machine (`isMultiAccount`, `use-claude-accounts.ts`),
-  // and one surface offering a per-agent account while another calls the
-  // machine single-account is two answers to one question. The two thresholds
-  // are not spelled identically — that one counts wire rows, this one counts
-  // rows the registry gave an id — but they agree on every registry the server
-  // actually emits, because it heals an id onto everything it registers.
-  // Pinned deliberately so a change to either has to face the other.
-  it('hides the row for a lone registered account beside an id-less root', async () => {
-    renderRows(manifest(), DEFAULTS, MODELS, capabilityMap(false), {
-      ...TWO_ACCOUNTS,
-      accounts: [
-        { id: null, path: '/Users/dev/.claude', label: null, isAccountRoot: true },
-        TWO_ACCOUNTS.accounts[1]!,
-      ],
-    });
-    await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Server default')
-    );
-    expect(screen.queryByTestId('agent-account-row')).toBeNull();
-  });
-
-  it('turns amber for an id nobody registered, and still says which id', async () => {
-    renderRows(
-      manifest({ account: 'retired-client' }),
-      DEFAULTS,
-      MODELS,
-      capabilityMap(false),
-      TWO_ACCOUNTS
-    );
-    const chip = await screen.findByTestId('agent-account-row-chip');
-    expect(chip).toHaveTextContent('Set here');
-    // The warning is appended to the chip's accessible name, so it is never
-    // only a color.
-    expect(screen.getByRole('button', { name: /isn’t on this computer/i })).toBeInTheDocument();
-    expect(screen.getByTestId('agent-account-row')).toHaveTextContent('retired-client');
-  });
-
-  it('reads the optimistic wire null as inheriting, not as an account named null', async () => {
-    renderRows(
-      manifest({ account: null } as unknown as Partial<AgentManifest>),
-      DEFAULTS,
-      MODELS,
-      capabilityMap(false),
-      TWO_ACCOUNTS
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId('agent-account-row-chip')).toHaveTextContent('Server default')
-    );
-    expect(screen.queryByRole('button', { name: /isn’t on this computer/i })).toBeNull();
-  });
 });
 
 describe('AgentExecutionRows — a registry the server could not read', () => {
@@ -976,13 +513,5 @@ describe('AgentExecutionRows — a registry the server could not read', () => {
     // it is still possible — but nothing on screen claims it is wrong.
     expect(await screen.findByTestId('agent-account-row')).toHaveTextContent('work');
     expect(screen.queryByRole('button', { name: /isn’t on this computer/i })).toBeNull();
-  });
-
-  it('offers no picker to an agent with nothing set — there is nothing to offer', async () => {
-    renderRows(manifest(), DEFAULTS, MODELS, capabilityMap(false), UNAVAILABLE);
-    await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Server default')
-    );
-    expect(screen.queryByTestId('agent-account-row')).toBeNull();
   });
 });

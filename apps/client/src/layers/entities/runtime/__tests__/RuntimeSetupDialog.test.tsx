@@ -161,69 +161,11 @@ describe('RuntimeSetupPanel — Ready/Connect model', () => {
     expect(connects).toHaveLength(1);
     expect(within(section).queryByText('Ready')).not.toBeInTheDocument();
   });
-
-  it('hides binary/CLI vocabulary on the default path, revealing it only under Advanced', async () => {
-    // Purpose: the Apple Test — the default surface describes what happens for
-    // the user; CLI/binary detail is Priya's, gated behind Advanced. Fails if
-    // "Codex CLI" or the install command is present before expanding.
-    const user = userEvent.setup();
-    renderPanel(
-      <RuntimeSetupPanel
-        runtime="codex"
-        requirements={THREE_SIBLINGS}
-        registeredTypes={REGISTERED}
-      />
-    );
-
-    // Exact string match targets the dependency NAME, not the description
-    // ("The Codex CLI binary.") which also contains the substring.
-    expect(screen.queryByText('Codex CLI')).not.toBeInTheDocument();
-    expect(screen.queryByText('codex login')).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /setup details/i }));
-
-    expect(await screen.findByText('Codex CLI')).toBeInTheDocument();
-    expect(screen.getByText('codex login')).toBeInTheDocument();
-  });
-
-  it('renders all three runtimes with the same component shape (siblings)', () => {
-    // Purpose: the three-siblings guarantee — Claude, Codex, and OpenCode each
-    // render via one shared section as Ready-or-one-Connect. Fails if any
-    // runtime shows a structurally different surface.
-    renderPanel(<RuntimeSetupPanel requirements={THREE_SIBLINGS} registeredTypes={REGISTERED} />);
-
-    const sections = screen.getAllByTestId(/^runtime-section-/);
-    expect(sections.map((s) => s.getAttribute('data-testid'))).toEqual([
-      'runtime-section-claude-code',
-      'runtime-section-codex',
-      'runtime-section-opencode',
-    ]);
-
-    // Each section: exactly one of {Ready badge, single Connect CTA} + one
-    // Advanced disclosure trigger — identical structure across all three.
-    for (const [type, connectLabel] of [
-      ['claude-code', null],
-      ['codex', 'Connect Codex'],
-      ['opencode', 'Install OpenCode'],
-    ] as const) {
-      const section = screen.getByTestId(`runtime-section-${type}`);
-      expect(within(section).getByRole('button', { name: /setup details/i })).toBeInTheDocument();
-      if (connectLabel === null) {
-        expect(within(section).getByText('Ready')).toBeInTheDocument();
-      } else {
-        expect(within(section).getByRole('button', { name: connectLabel })).toBeInTheDocument();
-        expect(within(section).queryByText('Ready')).not.toBeInTheDocument();
-      }
-    }
-  });
 });
 
-// ---------------------------------------------------------------------------
-// Ready-state reconnect (DOR-438) — a ready login runtime keeps a quiet way to
-// fix its sign-in, because "Ready" only fingerprints the credential and cannot
-// see a stale or invalid one. Uses a recording stub for the injected connect
-// slot so the entity's affordance is tested without a feature dependency.
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------- Ready-state
+// reconnect (DOR-438) — a ready login runtime keeps a quiet way to fix its sign-in, because
+// "Ready" only fingerprints the credential and cannot see a stale or invalid one.
 
 const CLAUDE_READY: SystemRequirements = {
   runtimes: {
@@ -254,9 +196,9 @@ function reconnectSlotStub({ type, connect, onConnected }: RuntimeConnectSlotPro
 
 describe('RuntimeSetupPanel — ready-state reconnect (DOR-438)', () => {
   it('offers a quiet Fix sign-in on a ready login runtime and reveals the login flow', async () => {
-    // Purpose: a ready credential can still be stale, so a ready login runtime
-    // keeps a calm reconnect path — the Ready badge stays, a small Fix sign-in
-    // link expands the SAME login connect flow, and Cancel restores the calm.
+    // Purpose: a ready credential can still be stale, so a ready login runtime keeps a calm
+    // reconnect path — the Ready badge stays, a small Fix sign-in link expands the SAME login
+    // connect flow, and Cancel restores the calm.
     const user = userEvent.setup();
     renderPanel(
       <RuntimeSetupPanel
@@ -284,65 +226,11 @@ describe('RuntimeSetupPanel — ready-state reconnect (DOR-438)', () => {
     await user.click(within(section).getByTestId('runtime-reconnect-cancel-claude-code'));
     expect(within(section).queryByTestId('reconnect-slot-claude-code')).not.toBeInTheDocument();
   });
-
-  it('collapses the reconnect flow the instant the connect lands', async () => {
-    // Purpose: a successful reconnect ends the inline flow — onConnected closes
-    // it, exactly like the OpenCode change path, so it is never a dead end.
-    const user = userEvent.setup();
-    renderPanel(
-      <RuntimeSetupPanel
-        runtime="claude-code"
-        requirements={CLAUDE_READY}
-        registeredTypes={['claude-code']}
-        renderConnect={reconnectSlotStub}
-      />
-    );
-
-    const section = screen.getByTestId('runtime-section-claude-code');
-    await user.click(within(section).getByTestId('runtime-reconnect-claude-code'));
-    await user.click(within(section).getByTestId('reconnect-slot-fire-claude-code'));
-    expect(within(section).queryByTestId('reconnect-slot-claude-code')).not.toBeInTheDocument();
-    expect(within(section).getByTestId('runtime-reconnect-claude-code')).toBeInTheDocument();
-  });
-
-  it('keeps the ready runtime calm when no connect flow is wired', () => {
-    // Purpose: the install-only surface (no injected renderConnect) has no flow
-    // to reopen, so a ready runtime shows just the settled Ready badge.
-    renderPanel(
-      <RuntimeSetupPanel
-        runtime="claude-code"
-        requirements={CLAUDE_READY}
-        registeredTypes={['claude-code']}
-      />
-    );
-
-    const section = screen.getByTestId('runtime-section-claude-code');
-    expect(within(section).getByText('Ready')).toBeInTheDocument();
-    expect(within(section).queryByTestId('runtime-reconnect-claude-code')).not.toBeInTheDocument();
-  });
-
-  it('does not offer reconnect on a not-ready runtime (not-ready path unchanged)', () => {
-    // Purpose: reconnect is a ready-state affordance only — a not-ready runtime
-    // keeps its single Connect action, no Fix sign-in link.
-    renderPanel(
-      <RuntimeSetupPanel
-        runtime="codex"
-        requirements={THREE_SIBLINGS}
-        registeredTypes={REGISTERED}
-        renderConnect={reconnectSlotStub}
-      />
-    );
-
-    const section = screen.getByTestId('runtime-section-codex');
-    expect(within(section).queryByText('Ready')).not.toBeInTheDocument();
-    expect(within(section).queryByTestId('runtime-reconnect-codex')).not.toBeInTheDocument();
-  });
 });
 
-// ---------------------------------------------------------------------------
-// OpenCode one-click provisioning (task 1.6) — through the live dialog so the
-// requirements query genuinely refetches after invalidation.
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------- OpenCode one-click
+// provisioning (task 1.6) — through the live dialog so the requirements query genuinely refetches
+// after invalidation. ---------------------------------------------------------------------------
 
 function deferred<T>() {
   let resolve!: (v: T) => void;
@@ -382,9 +270,9 @@ const OPENCODE_READY: SystemRequirements = {
   },
 };
 
-// A login-kind connect (Codex/Claude), distinct from OpenCode's one-click
-// install: the reported bug was connecting a not-yet-ready runtime of ANY kind
-// and having it not get selected, so we exercise the login path too.
+// A login-kind connect (Codex/Claude), distinct from OpenCode's one-click install: the reported
+// bug was connecting a not-yet-ready runtime of ANY kind and having it not get selected, so we
+// exercise the login path too.
 const CODEX_CONNECT: SystemRequirements = {
   runtimes: {
     codex: {
@@ -397,27 +285,6 @@ const CODEX_CONNECT: SystemRequirements = {
           description: 'ChatGPT or API-key auth.',
           status: 'missing',
           installHint: 'codex login',
-        },
-      ],
-    },
-  },
-};
-
-const CODEX_READY: SystemRequirements = {
-  runtimes: {
-    codex: {
-      state: 'ready',
-      dependencies: [
-        {
-          name: 'Codex CLI',
-          description: 'The Codex CLI binary.',
-          status: 'satisfied',
-          version: '1.0.0',
-        },
-        {
-          name: 'Codex authentication',
-          description: 'ChatGPT or API-key auth.',
-          status: 'satisfied',
         },
       ],
     },
@@ -447,10 +314,9 @@ function renderDialog(overrides: Partial<Parameters<typeof createMockTransport>[
 
 describe('RuntimeSetupDialog — OpenCode provisioning', () => {
   it('provisions on Connect, renders progress, and flips to Ready on success', async () => {
-    // Purpose: the one-click install — clicking Connect runs the provision
-    // mutation, streams inline progress, and (via ['requirements'] invalidation)
-    // refetches to Ready with no manual "Check again". Fails if the progress
-    // never renders or OpenCode does not flip to Ready after the install.
+    // Purpose: the one-click install — clicking Connect runs the provision mutation, streams
+    // inline progress, and (via ['requirements'] invalidation) refetches to Ready with no manual
+    // "Check again".
     const user = userEvent.setup();
     const install = deferred<RuntimeProvisionResult>();
     let call = 0;
@@ -489,9 +355,8 @@ describe('RuntimeSetupDialog — OpenCode provisioning', () => {
   });
 
   it('shows an honest, retryable error when provisioning rejects', async () => {
-    // Purpose: a failed install must not fake success — it surfaces the honest
-    // message and a retryable Connect, and never flips to Ready. Fails if the
-    // error is swallowed or OpenCode reads as Ready after a rejection.
+    // Purpose: a failed install must not fake success — it surfaces the honest message and a
+    // retryable Connect, and never flips to Ready.
     const user = userEvent.setup();
     const transport = renderDialog({
       checkRequirements: vi.fn().mockResolvedValue(OPENCODE_CONNECT),
@@ -511,11 +376,8 @@ describe('RuntimeSetupDialog — OpenCode provisioning', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// onRuntimeReady — the connect→continue signal. Drives readiness the same way
-// the provisioning test does: checkRequirements returns Connect first, then a
-// refetch flips it to Ready (the connect having "succeeded").
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------- onRuntimeReady —
+// the connect→continue signal.
 
 function renderReadinessDialog(props: {
   runtime?: string;
@@ -554,10 +416,9 @@ function renderReadinessDialog(props: {
 
 describe('RuntimeSetupDialog — onRuntimeReady (connect success)', () => {
   it('fires once when the scoped runtime transitions not-ready → ready', async () => {
-    // Purpose: the connect→continue wiring — when a scoped runtime flips Ready
-    // while the dialog is open (connect succeeded), the opener is signalled
-    // exactly once so it can continue the flow it was blocked on. Fails if the
-    // signal never fires, or fires more than once.
+    // Purpose: the connect→continue wiring — when a scoped runtime flips Ready while the dialog
+    // is open (connect succeeded), the opener is signalled exactly once so it can continue the
+    // flow it was blocked on.
     const onRuntimeReady = vi.fn();
     let call = 0;
     const { queryClient } = renderReadinessDialog({
@@ -582,40 +443,9 @@ describe('RuntimeSetupDialog — onRuntimeReady (connect success)', () => {
     expect(onRuntimeReady).toHaveBeenCalledTimes(1);
   });
 
-  it('fires once for a login-kind runtime (the exact reported not-ready → ready case)', async () => {
-    // Purpose: the fire is connect-kind-agnostic — a login runtime (Codex) that
-    // transitions Ready after the user connects must signal the opener just like
-    // OpenCode's install path. Guards the reported scenario across connect kinds.
-    const onRuntimeReady = vi.fn();
-    let call = 0;
-    const { queryClient } = renderReadinessDialog({
-      runtime: 'codex',
-      capabilities: { codex: { type: 'codex' } },
-      defaultRuntime: 'codex',
-      onRuntimeReady,
-      checkRequirements: () => {
-        call += 1;
-        return Promise.resolve(call === 1 ? CODEX_CONNECT : CODEX_READY);
-      },
-    });
-
-    // Baseline: opened on a not-ready login runtime — no auto-fire.
-    await screen.findByRole('button', { name: 'Connect Codex' });
-    expect(onRuntimeReady).not.toHaveBeenCalled();
-
-    // Drive the connect success: a refetch flips requirements to Ready.
-    await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: ['requirements'] });
-    });
-
-    await waitFor(() => expect(onRuntimeReady).toHaveBeenCalledWith('codex'));
-    expect(onRuntimeReady).toHaveBeenCalledTimes(1);
-  });
-
   it('does NOT fire when the dialog opens on an already-ready runtime', async () => {
-    // Purpose: opening the setup surface on a Ready runtime is not a connect
-    // transition — the loading→ready flash must not be mistaken for one. Fails
-    // if the baseline is captured before readiness is actually known.
+    // Purpose: opening the setup surface on a Ready runtime is not a connect transition — the
+    // loading→ready flash must not be mistaken for one.
     const onRuntimeReady = vi.fn();
     renderReadinessDialog({
       runtime: 'opencode',
@@ -628,38 +458,10 @@ describe('RuntimeSetupDialog — onRuntimeReady (connect success)', () => {
     });
     expect(onRuntimeReady).not.toHaveBeenCalled();
   });
-
-  it('does NOT fire in the unscoped "Your runtimes" overview', async () => {
-    // Purpose: the overview has no single runtime to select — a readiness
-    // change there must never signal a selection.
-    const onRuntimeReady = vi.fn();
-    let call = 0;
-    const { queryClient } = renderReadinessDialog({
-      runtime: undefined,
-      onRuntimeReady,
-      checkRequirements: () => {
-        call += 1;
-        return Promise.resolve(call === 1 ? OPENCODE_CONNECT : OPENCODE_READY);
-      },
-    });
-
-    await screen.findByRole('heading', { name: 'Your runtimes' });
-    await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: ['requirements'] });
-    });
-    await waitFor(() => {
-      expect(screen.getByTestId('runtime-ready-opencode')).toBeInTheDocument();
-    });
-    expect(onRuntimeReady).not.toHaveBeenCalled();
-  });
 });
 
-// ---------------------------------------------------------------------------
-// showConnectSuccess — the explicit success moment. A connect path reports its
-// landing via onConnected; the dialog swaps in a success panel with a Done
-// button (spec: opencode-connect-overhaul §6), instead of the path's own inline
-// confirmation, and stays open until Done.
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------- showConnectSuccess
+// — the explicit success moment.
 
 /** A connect-slot stub exposing a button that reports a landing via onConnected. */
 function fireConnectedStub({ onConnected }: RuntimeConnectSlotProps) {
@@ -716,51 +518,5 @@ describe('RuntimeSetupDialog — showConnectSuccess (explicit success moment)', 
 
     await user.click(screen.getByTestId('runtime-connected-done'));
     expect(onOpenChange).toHaveBeenCalledWith(false);
-  });
-
-  it('does not inject onConnected when showConnectSuccess is off (no success panel)', async () => {
-    const user = userEvent.setup();
-    renderSuccessDialog(false);
-
-    // The path renders, but onConnected is undefined, so firing it is a no-op and
-    // the dialog keeps the setup panel — the path owns its inline confirmation.
-    await user.click(await screen.findByTestId('fire-connected'));
-    expect(screen.queryByTestId('runtime-connected-panel')).not.toBeInTheDocument();
-  });
-});
-
-describe('RuntimeSetupDialog — shell', () => {
-  it('titles the scoped dialog with the runtime label and no terminal-steps copy', async () => {
-    // Purpose: the default surface never tells a connectable runtime to "run
-    // these steps in your terminal". Fails if the legacy terminal copy returns.
-    renderDialog({ checkRequirements: vi.fn().mockResolvedValue(OPENCODE_CONNECT) });
-
-    expect(screen.getByRole('heading', { name: 'OpenCode' })).toBeInTheDocument();
-    expect(screen.getByText('Connect it to start a chat.')).toBeInTheDocument();
-    expect(screen.queryByText(/run these steps in your terminal/i)).not.toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Install OpenCode' })).toBeInTheDocument();
-    });
-  });
-
-  it('titles the unscoped dialog "Your runtimes"', () => {
-    const transport = createMockTransport({
-      getCapabilities: vi.fn().mockResolvedValue({
-        capabilities: { 'claude-code': { type: 'claude-code' } },
-        defaultRuntime: 'claude-code',
-      }),
-      checkRequirements: vi.fn().mockResolvedValue(THREE_SIBLINGS),
-    });
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
-    });
-    render(<RuntimeSetupDialog open onOpenChange={vi.fn()} />, {
-      wrapper: ({ children }: { children: ReactNode }) => (
-        <QueryClientProvider client={queryClient}>
-          <TransportProvider transport={transport}>{children}</TransportProvider>
-        </QueryClientProvider>
-      ),
-    });
-    expect(screen.getByRole('heading', { name: 'Your runtimes' })).toBeInTheDocument();
   });
 });

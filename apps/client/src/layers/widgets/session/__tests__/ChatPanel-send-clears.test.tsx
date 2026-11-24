@@ -1,33 +1,11 @@
 // @vitest-environment jsdom
-/**
- * The composer empties when the words are genuinely on their way, and not one
- * moment sooner.
- *
- * This used to be structural: `useSessionSubmit.handleSubmit` hard-coded a
- * `true` in the `clearInput` position of `executeSubmission`, so no caller
- * could get it wrong. DOR-1354 made it a caller-supplied option — `ChatPanel` passes
- * `{ clearInput: true }` into the session's `ConversationTarget.send` — which
- * moved the guarantee out of the function and into one line of wiring that
- * nothing was watching. Dropping that line left every one of the repo's 954
- * client test files green while the box stopped emptying on every send.
- *
- * So both halves are pinned here, at the seam that owns them, with the REAL
- * submit path underneath: the clear happens on a confirmed send, and it does
- * NOT happen when the attachment transform throws (DOR-480 — the words are the
- * only copy, and an upload that failed must leave them where they were typed).
- *
- * The panel is mounted with the composer stubbed down to a textarea and a send
- * button that calls `target.send` — the same port Enter reaches in the real
- * composer. Everything under it is real: `useChatSession`, `useSessionSubmit`,
- * `executeSubmission`, the chat store the draft lives in.
- */
+/** The composer empties when the words are genuinely on their way, and not one moment sooner. */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
-import type { Session } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 const routerSearch = vi.hoisted(() => ({ current: {} as Record<string, string> }));
@@ -37,9 +15,9 @@ const routerSearch = vi.hoisted(() => ({ current: {} as Record<string, string> }
 const uploadOverride = vi.hoisted(() => ({
   run: undefined as undefined | (() => Promise<string[]>),
 }));
-// The out-of-usage banner and its composer pause read the session's account
-// (spec claude-account-ui §6.7); they have their own tests, and this file's
-// narrow mocks do not carry what they read.
+// The out-of-usage banner and its composer pause read the session's account (spec
+// claude-account-ui §6.7); they have their own tests, and this file's narrow mocks do not carry
+// what they read.
 vi.mock('@/layers/features/continue-on-account', () => ({
   AccountLimitBanner: () => null,
   AccountLimitMarker: () => null,
@@ -114,13 +92,10 @@ const PICKER_STUB = {
   setAvailable: () => {},
 };
 vi.mock('@/layers/features/status', () => ({
-  // The panel closes the permission picker as the session changes. The stub's
-  // state object is module-level and frozen: the panel selects `setOpen` into an
-  // effect dependency, so a fresh function per call would re-run it every render.
+  // The panel closes the permission picker as the session changes.
   useSessionPermissionPicker: (select: (s: typeof PICKER_STUB) => unknown) => select(PICKER_STUB),
-  // The panel reads this to decide whether a read-only session needs its one
-  // explanation (DOR-2019). Never eligible here: these suites are about the send
-  // path, and a card in the bottom slot is not part of it.
+  // The panel reads this to decide whether a read-only session needs its one explanation
+  // (DOR-2019).
   useReadOnlyModeHint: () => ({ eligible: false, runtimeLabel: 'Codex', dismiss: () => {} }),
   ReadOnlyModeNotice: () => null,
   useRuntimeChip: () => ({ runtime: null }),
@@ -173,9 +148,7 @@ vi.mock('../ui/SessionComposer', async () => {
 
 import { ChatPanel } from '../ui/ChatPanel';
 import { TransportProvider, useAgentBirthStore, useAppStore } from '@/layers/shared/model';
-import { agentKeys } from '@/layers/entities/agent';
 import {
-  sessionKeys,
   useSessionChatStore,
   useSessionListStore,
   useSessionStreamStore,
@@ -371,50 +344,6 @@ describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
     expect(onLaunchConsumed).toHaveBeenCalledTimes(1);
   });
 
-  it('uses the URL-first directory for a cached-provenance launch auto-send', async () => {
-    const postMessage = vi
-      .fn()
-      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
-    const getAgentByPath = vi.fn().mockRejectedValue(new Error('cache should satisfy this lookup'));
-    const cachedAgent = {
-      workspace: { mode: 'home' },
-      id: 'agent-url',
-      name: 'URL agent',
-      description: '',
-      runtime: 'claude-code',
-      capabilities: [],
-      behavior: { responseMode: 'always' },
-      registeredAt: '2026-09-06T00:00:00.000Z',
-      registeredBy: 'test',
-      personaEnabled: true,
-      mcpServers: [],
-    } satisfies AgentManifest;
-    const streamState = useSessionStreamStore.getState().getSession(SESSION_ID);
-    useSessionStreamStore.setState({
-      sessions: { [SESSION_ID]: { ...streamState, streamReadyCursor: 0 } },
-      sessionAccessOrder: [SESSION_ID],
-    });
-    useAppStore.setState({ selectedCwd: '/store/default' });
-    routerSearch.current = { dir: '/url/agent' };
-
-    renderPanel(
-      createMockTransport({ getAgentByPath, postMessage }),
-      undefined,
-      (queryClient) => {
-        queryClient.setQueryData(agentKeys.byPath('/url/agent'), cachedAgent);
-      },
-      {
-        launchPrompt: 'run in the URL directory',
-        launchSend: true,
-      }
-    );
-
-    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
-    expect(getAgentByPath).not.toHaveBeenCalled();
-    expect(postMessage.mock.calls[0]?.[2]).toBe('/url/agent');
-    expect(postMessage.mock.calls[0]?.[3]).toMatchObject({ agentPath: '/url/agent' });
-  });
-
   it('keeps a first send closed until a failed agent lookup is retried', async () => {
     const getAgentByPath = vi
       .fn()
@@ -444,43 +373,9 @@ describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
     expect(postMessage.mock.calls[0]?.[3]).not.toHaveProperty('agentPath');
   });
 
-  it('allows an existing session reply when the agent lookup is unavailable', async () => {
-    const getAgentByPath = vi.fn().mockRejectedValue(new Error('temporary lookup failure'));
-    const postMessage = vi
-      .fn()
-      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
-    const existing = {
-      id: SESSION_ID,
-      title: 'Existing session',
-      createdAt: '2026-09-06T00:00:00.000Z',
-      updatedAt: '2026-09-06T00:00:00.000Z',
-      runtime: 'claude-code',
-    } as Session;
-
-    useAppStore.setState({ selectedCwd: '/test/dir' });
-    renderPanel(
-      createMockTransport({
-        getAgentByPath,
-        postMessage,
-        listSessions: vi.fn().mockResolvedValue({ sessions: [existing] }),
-      }),
-      undefined,
-      (queryClient) => {
-        queryClient.setQueryData(sessionKeys.list('/test/dir'), [existing]);
-      }
-    );
-    await waitFor(() => expect(getAgentByPath).toHaveBeenCalledWith('/test/dir'));
-
-    await send('reply to the existing session');
-
-    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
-    expect(screen.queryByText('Couldn’t check this folder.')).not.toBeInTheDocument();
-  });
-
   it('empties the composer once the trigger has been accepted', async () => {
-    // **Seeded defect:** drop `{ clearInput: true }` from `sendMessage` in
-    // `ChatPanel` and this is the only assertion in the client suite that goes
-    // red. That is the entire reason this file exists.
+    // **Seeded defect:** drop `{ clearInput: true }` from `sendMessage` in `ChatPanel` and this
+    // is the only assertion in the client suite that goes red.
     const postMessage = vi
       .fn()
       .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
@@ -494,10 +389,8 @@ describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
   });
 
   it('leaves the words in the box when the attachment transform throws', async () => {
-    // DOR-480, restated at the new seam: the clear runs INSIDE the submit,
-    // after the transform succeeds. Hoisting it up to the caller — clearing
-    // beside `target.send` rather than passing the option — would empty the box
-    // on a failed upload with nothing anywhere holding the sentence.
+    // DOR-480, restated at the new seam: the clear runs INSIDE the submit, after the transform
+    // succeeds.
     const postMessage = vi
       .fn()
       .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));

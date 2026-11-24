@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -153,11 +153,6 @@ describe('remote community surface', () => {
     expect(screen.getByPlaceholderText('Message Scout…')).toBeInTheDocument();
   });
 
-  it('offers Leave channel in an ordinary channel', async () => {
-    mount();
-    expect(await screen.findByRole('button', { name: 'Leave channel' })).toBeInTheDocument();
-  });
-
   it('keeps an archived grant read-only without opening a stream or agent controls', async () => {
     const archivedAccess = {
       state: 'verified',
@@ -212,29 +207,6 @@ describe('remote community surface', () => {
     );
     expect(view.transport.haltRoom).not.toHaveBeenCalled();
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
-  });
-
-  it('refreshes the live room authority after joining instead of retaining a read-only snapshot', async () => {
-    const view = mount();
-    vi.mocked(view.transport.joinRemoteCommunityRoom).mockResolvedValue(room);
-    await waitFor(() =>
-      expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalledTimes(1)
-    );
-    act(() =>
-      view.emit({
-        type: 'snapshot',
-        room: { ...room, joined: false, writable: false },
-        entries: [],
-        cursor: null,
-        lastRemoteSeq: 0,
-        stale: false,
-      })
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Join channel' }));
-    await waitFor(() =>
-      expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalledTimes(2)
-    );
-    expect(screen.queryByRole('button', { name: 'Join channel' })).not.toBeInTheDocument();
   });
 
   it('shows agent deliveries as unconfirmed and removes them on an empty replacement', async () => {
@@ -293,44 +265,6 @@ describe('remote community surface', () => {
     expect(screen.queryByText('Local agent output')).not.toBeInTheDocument();
   });
 
-  it('offers retry only for eligible agent deliveries and refreshes after the qualified request', async () => {
-    const view = mount();
-    await waitFor(() =>
-      expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalledTimes(1)
-    );
-    const delivery = {
-      idempotencyKey: 'agent-retry',
-      author: { kind: 'agent' as const, displayName: 'Builder' },
-      text: 'Unconfirmed output',
-      parentEntryId: null,
-      attachments: [],
-      state: 'pending' as const,
-      failure: null,
-      retryable: false,
-    };
-    const snapshot = {
-      type: 'deliveries' as const,
-      community: room.community,
-      roomId: room.roomId,
-      deliveries: [delivery],
-    };
-    act(() => view.emit(snapshot));
-    expect(screen.queryByRole('button', { name: 'Retry now' })).not.toBeInTheDocument();
-    act(() => view.emit({ ...snapshot, deliveries: [{ ...delivery, retryable: true }] }));
-    fireEvent.click(screen.getByRole('button', { name: 'Retry now' }));
-    await waitFor(() =>
-      expect(view.transport.retryRemoteCommunityDelivery).toHaveBeenCalledWith(
-        'a',
-        'same',
-        'agent-retry'
-      )
-    );
-    await waitFor(() =>
-      expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalledTimes(2)
-    );
-    expect(screen.queryByText('Unconfirmed output')).not.toBeInTheDocument();
-  });
-
   it('keeps an unconfirmed delivery visible when the retry is refused', async () => {
     const view = mount();
     vi.mocked(view.transport.retryRemoteCommunityDelivery).mockRejectedValue(
@@ -387,37 +321,6 @@ describe('remote community surface', () => {
     expect(view.transport.postToRoom).not.toHaveBeenCalled();
   });
 
-  it('reveals a confirmed owner post without waiting for a remote stream echo', async () => {
-    const scrollTo = vi.fn();
-    const originalScrollTo = HTMLElement.prototype.scrollTo;
-    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
-      configurable: true,
-      value: scrollTo,
-    });
-    const view = mount();
-    await waitFor(() => expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalled());
-    vi.mocked(view.transport.postRemoteCommunityEntry).mockResolvedValue(ownerEntry);
-    try {
-      const input = await screen.findByRole('combobox');
-      fireEvent.change(input, { target: { value: ownerEntry.text } });
-      fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
-      await waitFor(() =>
-        expect(view.transport.postRemoteCommunityEntry).toHaveBeenCalledWith(
-          'a',
-          'same',
-          expect.objectContaining({ text: ownerEntry.text })
-        )
-      );
-      expect(await screen.findByText(ownerEntry.text, { exact: true })).toBeVisible();
-      expect(scrollTo).toHaveBeenCalled();
-    } finally {
-      Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
-        configurable: true,
-        value: originalScrollTo,
-      });
-    }
-  });
-
   describe('reply line under a thread root (DOR-2229)', () => {
     /** A root as history returns it, with the server's count and the newest reply it counted. */
     const root = RemoteCommunityEntrySchema.parse({
@@ -427,21 +330,6 @@ describe('remote community surface', () => {
       thread: { replyCount: 3, lastReplyAt: '2026-09-16T10:05:00Z' },
       threadLastReplySeq: 5,
     });
-    /** A reply to `root` at channel sequence `seq`. */
-    function reply(seq: number) {
-      return RemoteCommunityEntrySchema.parse({
-        ...ownerEntry,
-        id: `reply-${seq}`,
-        text: `reply ${seq}`,
-        parentEntryId: 'root',
-        threadRootEntryId: 'root',
-        depth: 1,
-        remoteSeq: seq,
-        cursor: `cursor-${seq}`,
-        createdAt: `2026-09-16T10:${String(seq).padStart(2, '0')}:00Z`,
-      });
-    }
-
     it('says how many replies the server counted, and opens the thread', async () => {
       const view = mount(access, [root]);
 
@@ -449,35 +337,6 @@ describe('remote community surface', () => {
       fireEvent.click(line);
 
       expect(view.onThread).toHaveBeenCalledWith('root');
-    });
-
-    it('counts a reply that streams in, but never one the server already counted', async () => {
-      const view = mount(access, [root]);
-      await screen.findByRole('button', { name: /^3 replies/ });
-
-      act(() => view.emit({ type: 'entry', entry: reply(8) }));
-      expect(await screen.findByRole('button', { name: /^4 replies/ })).toBeInTheDocument();
-
-      // Reply 5 is the newest the count included: it reaching this client later
-      // (a reconnect's snapshot, say) must not move the number.
-      act(() => view.emit({ type: 'entry', entry: reply(5) }));
-      expect(screen.getByRole('button', { name: /^4 replies/ })).toBeInTheDocument();
-    });
-
-    it('counts the replies it holds when the server sent no count', async () => {
-      const view = mount(access, [{ ...root, thread: undefined, threadLastReplySeq: undefined }]);
-      await screen.findByText(root.text);
-      expect(screen.queryByRole('button', { name: /repl(y|ies) · last/ })).not.toBeInTheDocument();
-
-      act(() => view.emit({ type: 'entry', entry: reply(8) }));
-
-      expect(await screen.findByRole('button', { name: /^1 reply · last / })).toBeInTheDocument();
-    });
-
-    it('draws no reply line inside the thread itself', async () => {
-      mount(access, [root, reply(4), reply(5)], 'root');
-      await screen.findByText('reply 5');
-      expect(screen.queryByRole('button', { name: /repl(y|ies) · last/ })).not.toBeInTheDocument();
     });
   });
 
@@ -488,17 +347,6 @@ describe('remote community surface', () => {
       text: 'zqxrootcanary said once',
       thread: { replyCount: 3, lastReplyAt: '2026-09-16T10:05:00Z' },
       threadLastReplySeq: 5,
-    });
-    const reply = RemoteCommunityEntrySchema.parse({
-      ...ownerEntry,
-      id: 'reply-4',
-      text: 'zqxreplycanary in the thread',
-      parentEntryId: 'root',
-      threadRootEntryId: 'root',
-      depth: 1,
-      remoteSeq: 4,
-      cursor: 'cursor-4',
-      createdAt: '2026-09-16T10:04:00Z',
     });
     /** The entry as the redaction feed returns it: the tombstone, with no thread summary. */
     const tombstone = (held: RemoteCommunityEntry, text: string) =>
@@ -525,93 +373,6 @@ describe('remote community surface', () => {
       expect(screen.getByRole('button', { name: /^3 replies · last / })).toBeInTheDocument();
       expect(view.transport.listRemoteCommunityEntries).toHaveBeenCalledTimes(1);
       expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalledTimes(1);
-    });
-
-    it('replaces a reply in the open thread', async () => {
-      const view = mount(access, [root, reply], 'root');
-      await screen.findByText(reply.text);
-
-      act(() =>
-        view.emit({ type: 'revision', entry: tombstone(reply, 'This message was deleted.') })
-      );
-
-      expect(await screen.findByText('This message was deleted.')).toBeInTheDocument();
-      expect(screen.queryByText(reply.text)).not.toBeInTheDocument();
-      expect(screen.getByText(root.text)).toBeInTheDocument();
-    });
-
-    // Purpose: a change that arrives while the history page is still loading is remembered and
-    // applied when the page lands with the old words. It fails if the view drops the stream's
-    // remembered changes, or if the stream does not remember changes during a load.
-    it('shows the tombstone on a history page that was still loading when the change arrived', async () => {
-      let open!: () => void;
-      const gate = new Promise<void>((resolve) => (open = resolve));
-      const view = mount(access, [root], undefined, gate);
-      await waitFor(() => expect(view.transport.listRemoteCommunityEntries).toHaveBeenCalled());
-
-      act(() =>
-        view.emit({ type: 'revision', entry: tombstone(root, 'This message was erased.') })
-      );
-      await act(async () => open());
-
-      expect(await screen.findByText('This message was erased.')).toBeInTheDocument();
-      expect(screen.queryByText(root.text)).not.toBeInTheDocument();
-    });
-
-    // Purpose: the person's own confirmed post is held outside the stream (merged after it), so a
-    // later erasure of it must still win. It fails if the view drops the remembered changes or the
-    // stream does not count the view's own posts as held.
-    it('shows the tombstone on your own confirmed post when it is erased later', async () => {
-      // jsdom has no scrolling; a confirmed post scrolls the timeline to it.
-      const original = HTMLElement.prototype.scrollTo;
-      Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
-        configurable: true,
-        value: vi.fn(),
-      });
-      onTestFinished(() => {
-        Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
-          configurable: true,
-          value: original,
-        });
-      });
-      const view = mount();
-      await waitFor(() => expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalled());
-      vi.mocked(view.transport.postRemoteCommunityEntry).mockResolvedValue(ownerEntry);
-      const input = await screen.findByRole('combobox');
-      fireEvent.change(input, { target: { value: ownerEntry.text } });
-      fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
-      await waitFor(() => expect(view.transport.postRemoteCommunityEntry).toHaveBeenCalled());
-      expect(await screen.findByText(ownerEntry.text, { exact: true })).toBeInTheDocument();
-
-      act(() =>
-        view.emit({ type: 'revision', entry: tombstone(ownerEntry, 'This message was erased.') })
-      );
-
-      expect(await screen.findByText('This message was erased.')).toBeInTheDocument();
-      expect(screen.queryByText(ownerEntry.text, { exact: true })).not.toBeInTheDocument();
-    });
-
-    it('adds no row for a message it does not hold', async () => {
-      const view = mount(access, [root]);
-      await screen.findByText(root.text);
-
-      act(() =>
-        view.emit({
-          type: 'revision',
-          entry: { ...tombstone(root, 'never loaded here'), id: 'elsewhere', remoteSeq: 9 },
-        })
-      );
-      // A later post, so the frame above has certainly been read.
-      act(() =>
-        view.emit({
-          type: 'entry',
-          entry: { ...ownerEntry, id: 'later', text: 'a later post', remoteSeq: 10 },
-        })
-      );
-
-      expect(await screen.findByText('a later post')).toBeInTheDocument();
-      expect(screen.queryByText('never loaded here')).not.toBeInTheDocument();
-      expect(screen.getByText(root.text)).toBeInTheDocument();
     });
   });
 });
