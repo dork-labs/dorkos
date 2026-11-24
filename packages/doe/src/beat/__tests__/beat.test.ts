@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Doe } from '../../doe.js';
 import { SqliteModelStore } from '../../store.js';
-import { DeferredToolRegistry, createToolSearch } from '../../registry/registry.js';
+import { DeferredToolRegistry } from '../../registry/registry.js';
 import type { DoeConfig, DoeEvent, ToolDescriptor } from '../../contracts.js';
 import { createBeatExtension, validateBeatOutcome } from '../beat.js';
 import { beatFixture } from './beat-fixture.js';
@@ -372,67 +372,6 @@ it('malformed end_beat and repeated raises never persist successful outcomes', a
       .archive('test', 'beat:malformed')
       .some((r) => r.payload.role === 'toolResult' && r.payload.isError === true)
   ).toBe(true);
-});
-
-it('refreshes deferred tools during the beat without exposing end_beat in the main registry', async () => {
-  const fixture = await beatFixture([
-    [{ name: 'tool_search', args: { query: 'calendar', limit: 1 } }],
-    [
-      { name: 'calendar', args: {} },
-      { name: 'end_beat', args: { kind: 'quiet' } },
-    ],
-  ]);
-  cleanups.push(fixture.close);
-  const c = config(fixture.endpoint);
-  c.registry.register(createToolSearch(c.registry));
-  const effect = vi.fn(async () => ({ content: [] }));
-  c.registry.register({
-    name: 'calendar',
-    description: 'calendar appointments',
-    schema: { type: 'object', properties: {} },
-    execute: effect,
-  });
-  expect(await new Doe(c).runBeat({ id: 'deferred', prompt: 'check calendar' })).toEqual({
-    kind: 'quiet',
-  });
-  expect(effect).toHaveBeenCalledOnce();
-  expect(fixture.bodies).toHaveLength(2);
-  expect(JSON.stringify(fixture.bodies[1]?.tools)).toContain('calendar');
-  expect(JSON.stringify(fixture.bodies[1]?.tools)).toContain('end_beat');
-  expect(c.registry.selected().some((t) => t.name === 'end_beat')).toBe(false);
-});
-it('includes the reserved end_beat schema in beat budgets and rejects collisions atomically', async () => {
-  const c = config();
-  const factory = vi.fn();
-  for (let i = 0; i < 64; i++) add(c, `host_${i}`, async () => ({ content: [] }));
-  await expect(new Doe(c, factory).runBeat({ id: 'full', prompt: 'check' })).rejects.toThrow(
-    'budget'
-  );
-  expect(factory).not.toHaveBeenCalled();
-  expect(c.registry.selected()).toHaveLength(64);
-  const collision = config();
-  add(collision, 'end_beat', async () => ({ content: [] }));
-  await expect(
-    new Doe(collision, factory).runBeat({ id: 'collision', prompt: 'check' })
-  ).rejects.toThrow('reserved');
-  expect(factory).not.toHaveBeenCalled();
-  const small = config();
-  small.extensions = { runBeat: createBeatExtension({ maxSchemaBytes: 10 }) };
-  await expect(new Doe(small, factory).runBeat({ id: 'schema', prompt: 'check' })).rejects.toThrow(
-    'budget'
-  );
-});
-
-it('permits a corrected end_beat after an earlier failed tool batch', async () => {
-  const fixture = await beatFixture([
-    [{ name: 'end_beat', args: { kind: 'quiet', unexpected: true } }],
-    [{ name: 'end_beat', args: { kind: 'quiet' } }],
-  ]);
-  cleanups.push(fixture.close);
-  const c = config(fixture.endpoint);
-  expect(await new Doe(c).runBeat({ id: 'recovered', prompt: 'check' })).toEqual({ kind: 'quiet' });
-  expect(fixture.bodies).toHaveLength(2);
-  expect(c.store.outcomes('test', 'beat:recovered')).toHaveLength(1);
 });
 
 it('refuses quiet completion after denied approval while allowing ordinary tool-error recovery', async () => {

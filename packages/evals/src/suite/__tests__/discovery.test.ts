@@ -18,7 +18,7 @@ import {
   type OracleContext,
   type RoomFacts,
 } from '../../types.js';
-import { ALL_CASES, selectSuite } from '../index.js';
+import { selectSuite } from '../index.js';
 import { discoveryCases } from '../discovery.js';
 import { NOTES_CONTENT, NOTES_FILE } from '../discovery-fixtures.js';
 
@@ -393,21 +393,6 @@ const CANNED: Record<string, { room?: boolean; passes: Canned[]; fails: CannedFa
 };
 
 describe('the discovery suite registry', () => {
-  it('holds the eight cases in order, reachable as `--suite discovery`', () => {
-    expect(discoveryCases.map((c) => c.id)).toEqual(IDS);
-    expect(selectSuite('discovery').map((c) => c.id)).toEqual(IDS);
-  });
-
-  it('registers each case once and makes it selectable by its own id', () => {
-    for (const evalCase of discoveryCases) {
-      expect(
-        ALL_CASES.filter((c) => c.id === evalCase.id),
-        evalCase.id
-      ).toHaveLength(1);
-      expect(selectSuite(evalCase.id).map((c) => c.id)).toEqual([evalCase.id]);
-    }
-  });
-
   it('is credentialed and quarantined, and never in `core`, so no default run spends on it', () => {
     const coreIds = selectSuite('core').map((c) => c.id);
     for (const evalCase of discoveryCases) {

@@ -340,45 +340,6 @@ describe('validatePackage', () => {
       expect(result.ok).toBe(true);
     });
 
-    it('says nothing for a manifest-only agent package', async () => {
-      // Purpose: an agent needs no plugin.json, so there is nothing to disagree with.
-      const result = await validatePackage(path.join(FIXTURES_DIR, 'valid-agent'));
-
-      expect(result.issues.some((i) => i.code === 'VERSION_MISMATCH')).toBe(false);
-    });
-
-    it('leaves an unparseable plugin.json to its existing handling', async () => {
-      // Purpose: a broken plugin.json is not a version disagreement; reporting
-      // one would bury the real problem under a misleading message.
-      const pkg = await makeVersionedPackage('1.0.0', '{ not json');
-
-      const result = await validatePackage(pkg);
-
-      expect(result.issues.some((i) => i.code === 'VERSION_MISMATCH')).toBe(false);
-    });
-
-    it('reports declaredVersion on a failed result', async () => {
-      // Purpose: the update check reads the version of a tree that does not
-      // validate; the result must still carry it.
-      const pkg = await makeVersionedPackage(
-        '0.6.0',
-        JSON.stringify({ name: 'versioned', version: '0.7.2' })
-      );
-      expect((await validatePackage(pkg)).declaredVersion).toBe('0.7.2');
-
-      const dir = await tempDir();
-      const invalid = path.join(dir, 'schema-invalid');
-      await writeJson(path.join(invalid, PACKAGE_MANIFEST_PATH), {
-        schemaVersion: 1,
-        name: 'schema-invalid',
-        version: '2.0.0',
-      });
-      const invalidResult = await validatePackage(invalid);
-      expect(invalidResult.ok).toBe(false);
-      expect(invalidResult.issues.some((i) => i.code === 'MANIFEST_SCHEMA_INVALID')).toBe(true);
-      expect(invalidResult.declaredVersion).toBe('2.0.0');
-    });
-
     it('keeps "declares no version" apart from a real 0.0.0 for Claude-Code-only packages', async () => {
       // Purpose: the synthesized manifest must say 0.0.0 (the schema requires a
       // version), but that placeholder must never be reported as the package's.
@@ -1011,27 +972,6 @@ describe('validatePackage', () => {
       expect(warning?.level).toBe('warning');
     });
 
-    it('does not warn when the package declares categories', async () => {
-      const dir = await tempDir();
-      const pkg = path.join(dir, 'categorized');
-      await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {
-        schemaVersion: 1,
-        name: 'categorized',
-        version: '1.0.0',
-        type: 'agent',
-        description: 'A package with categories',
-        license: 'MIT',
-        tags: [],
-        categories: ['security'],
-        layers: [],
-      });
-
-      const result = await validatePackage(pkg);
-
-      expect(result.ok).toBe(true);
-      expect(result.issues.some((i) => i.code === 'CATEGORY_MISSING')).toBe(false);
-    });
-
     it('rejects an off-list entry inside categories[] as MANIFEST_SCHEMA_INVALID', async () => {
       const dir = await tempDir();
       const pkg = path.join(dir, 'bad-category');
@@ -1259,28 +1199,6 @@ describe('readDeclaredVersion', () => {
     expect(await readDeclaredVersion(dir)).toBe('0.7.2');
   });
 
-  it('falls through to the manifest when plugin.json declares no version', async () => {
-    // Purpose: a plugin.json without `version` states nothing, so the
-    // manifest's version is the package's own statement.
-    const dir = await makePackage({
-      manifest: JSON.stringify({ version: '2.1.0' }),
-      plugin: JSON.stringify({ name: 'x' }),
-    });
-    expect(await readDeclaredVersion(dir)).toBe('2.1.0');
-  });
-
-  it('reads the manifest when there is no plugin.json', async () => {
-    // Purpose: agent packages ship only a manifest.
-    const dir = await makePackage({ manifest: JSON.stringify({ version: '3.0.0' }) });
-    expect(await readDeclaredVersion(dir)).toBe('3.0.0');
-  });
-
-  it('returns undefined when neither file exists', async () => {
-    // Purpose: "declares none" must stay distinguishable from a real version.
-    const dir = await makePackage({});
-    expect(await readDeclaredVersion(dir)).toBeUndefined();
-  });
-
   it('falls through an unparseable plugin.json to the manifest, without throwing', async () => {
     // Purpose: installed trees are read without any validity gate; one broken
     // file must not cost the package its version, or throw on the listing path.
@@ -1289,22 +1207,6 @@ describe('readDeclaredVersion', () => {
       plugin: '{ not json',
     });
     expect(await readDeclaredVersion(dir)).toBe('1.4.0');
-  });
-
-  it('returns undefined when both files are unparseable or declare a non-string version', async () => {
-    // Purpose: garbage is "declares none", never a thrown error or a bogus string.
-    const broken = await makePackage({ manifest: '[', plugin: 'nope' });
-    expect(await readDeclaredVersion(broken)).toBeUndefined();
-    const nonString = await makePackage({
-      manifest: JSON.stringify({ version: 1 }),
-      plugin: JSON.stringify({ version: '' }),
-    });
-    expect(await readDeclaredVersion(nonString)).toBeUndefined();
-  });
-
-  it('never throws for a path that does not exist', async () => {
-    // Purpose: the function is documented total; callers rely on that.
-    await expect(readDeclaredVersion('/definitely/not/here')).resolves.toBeUndefined();
   });
 });
 

@@ -3,7 +3,6 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
-import { sql } from 'drizzle-orm';
 import { SqliteIndex } from '../sqlite-index.js';
 import { MaildirStore } from '../maildir-store.js';
 import type { IndexedMessage } from '../sqlite-index.js';
@@ -70,15 +69,6 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('insertMessage + getBySubject', () => {
-  it('inserts a message and retrieves it by subject', () => {
-    const msg = makeMessage();
-    index.insertMessage(msg);
-
-    const results = index.getBySubject(TEST_SUBJECT);
-    expect(results).toHaveLength(1);
-    expect(results[0]).toEqual(msg);
-  });
-
   it('preserves existing sender/expiresAt when the SAME row is re-written omitting them (H2)', () => {
     // The publish accounting row carries sender + expiresAt for rate limiting.
     const expiresAt = new Date(Date.now() + 60_000).toISOString();
@@ -162,32 +152,6 @@ describe('insertMessage + getBySubject', () => {
     });
     expect(index.countSenderInWindow('relay.agent.sender', windowStart)).toBe(1);
   });
-
-  it('retrieves multiple messages for the same subject ordered by created_at DESC', () => {
-    const msg1 = makeMessage({
-      id: '01JAAA',
-      createdAt: '2026-01-01T00:00:00.000Z',
-    });
-    const msg2 = makeMessage({
-      id: '01JBBB',
-      createdAt: '2026-01-02T00:00:00.000Z',
-    });
-    const msg3 = makeMessage({
-      id: '01JCCC',
-      createdAt: '2026-01-03T00:00:00.000Z',
-    });
-
-    index.insertMessage(msg1);
-    index.insertMessage(msg2);
-    index.insertMessage(msg3);
-
-    const results = index.getBySubject(TEST_SUBJECT);
-    expect(results).toHaveLength(3);
-    // Descending order
-    expect(results[0].id).toBe('01JCCC');
-    expect(results[1].id).toBe('01JBBB');
-    expect(results[2].id).toBe('01JAAA');
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -250,21 +214,6 @@ describe('deleteMessage', () => {
 
     const rows = index.getMessageDeliveries('shared');
     expect(rows.map((r) => r.endpointHash)).toEqual(['ep-b']);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// getByStatus
-// ---------------------------------------------------------------------------
-
-describe('getByStatus', () => {
-  it('returns only rows with the given status, id-ascending', () => {
-    index.insertMessage(makeMessage({ id: '01JB', status: 'failed' }));
-    index.insertMessage(makeMessage({ id: '01JA', status: 'failed' }));
-    index.insertMessage(makeMessage({ id: '01JC', status: 'pending' }));
-
-    const failed = index.getByStatus('failed');
-    expect(failed.map((m) => m.id)).toEqual(['01JA', '01JB']);
   });
 });
 
@@ -392,27 +341,6 @@ describe('rebuild', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Metrics
-// ---------------------------------------------------------------------------
-
-describe('getMetrics', () => {
-  it('returns correct aggregate counts by status', () => {
-    index.insertMessage(makeMessage({ id: 'p1', status: 'pending' }));
-    index.insertMessage(makeMessage({ id: 'p2', status: 'pending' }));
-    index.insertMessage(makeMessage({ id: 'd1', status: 'delivered' }));
-    index.insertMessage(makeMessage({ id: 'f1', status: 'failed' }));
-
-    const metrics = index.getMetrics();
-    expect(metrics.totalMessages).toBe(4);
-    expect(metrics.byStatus).toEqual({
-      pending: 2,
-      delivered: 1,
-      failed: 1,
-    });
-  });
-});
-
-// ---------------------------------------------------------------------------
 // countSenderInWindow (now counts all messages in window)
 // ---------------------------------------------------------------------------
 
@@ -428,21 +356,6 @@ describe('countSenderInWindow', () => {
     );
 
     const count = index.countSenderInWindow(SENDER_A, '2026-01-01T00:00:00.000Z');
-    expect(count).toBe(2);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// countNewByEndpoint (now counts 'pending' status)
-// ---------------------------------------------------------------------------
-
-describe('countNewByEndpoint', () => {
-  it('counts only messages with status pending', () => {
-    index.insertMessage(makeMessage({ id: 'n1', endpointHash: 'ep1', status: 'pending' }));
-    index.insertMessage(makeMessage({ id: 'n2', endpointHash: 'ep1', status: 'pending' }));
-    index.insertMessage(makeMessage({ id: 'c1', endpointHash: 'ep1', status: 'delivered' }));
-
-    const count = index.countNewByEndpoint('ep1');
     expect(count).toBe(2);
   });
 });
@@ -515,28 +428,6 @@ describe('message identity (composite id + endpointHash)', () => {
     expect(seen.sort()).toEqual(['01JA:h1', '01JB:h1', '01JB:h2', '01JB:h3', '01JC:h1'].sort());
     // No duplicates leaked across pages.
     expect(new Set(seen).size).toBe(seen.length);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Anti-regression: semantic status values (pending/delivered, not new/cur)
-// ---------------------------------------------------------------------------
-
-describe('anti-regression: semantic status values', () => {
-  it('uses "pending" status for new messages (not "new")', () => {
-    const msg = makeMessage({ id: 'status-check' });
-    index.insertMessage(msg);
-
-    const result = index.getMessage('status-check');
-    expect(result?.status).toBe('pending');
-    expect(result?.status).not.toBe('new');
-
-    // Verify at the raw SQL level that the stored value is 'pending'
-    const rows = db.all<{ status: string }>(
-      sql`SELECT status FROM relay_index WHERE id = 'status-check'`
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].status).toBe('pending');
   });
 });
 

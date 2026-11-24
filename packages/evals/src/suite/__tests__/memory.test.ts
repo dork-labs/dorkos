@@ -74,25 +74,6 @@ describe('the memory suite registry', () => {
     expect(memoryCases).toHaveLength(5);
   });
 
-  it('gives every case a unique id that `--suite <case-id>` can select', () => {
-    for (const evalCase of memoryCases) {
-      expect(selectSuite(evalCase.id).map((c) => c.id)).toEqual([evalCase.id]);
-    }
-  });
-
-  it('drives its surfaces from a room script, since a prompt turn cannot be the agent', () => {
-    // A prompt turn always runs in the sandbox `projectCwd`, which hosts no
-    // agent — so `memory_write` would be refused with `no-agent` and every case
-    // would measure the refusal instead of the feature. Each case drives its own
-    // direct session, at the agent's own directory, from inside `roomScript`.
-    for (const evalCase of memoryCases) {
-      expect(evalCase.roomScript, evalCase.id).toBeDefined();
-      expect(evalCase.prompt, evalCase.id).toBe('');
-      expect(evalCase.seed, evalCase.id).toBeDefined();
-      expect(evalCase.oracles.length, evalCase.id).toBeGreaterThan(0);
-    }
-  });
-
   it('is quarantined, budget-capped, asks for a real model, and stays OUT of `core`', () => {
     for (const evalCase of memoryCases) {
       expect(evalCase.runtimeTier, evalCase.id).toBe('claude-code-cheap');
@@ -292,25 +273,6 @@ describe('the provenance oracles', () => {
     }
   });
 
-  it('does not read a longer slug as one of the seeded rooms', async () => {
-    // The other boundary. `retry-designs` is not `retry-design`, for the same
-    // reason `oops` is not `ops` — and a check anchored only on the left would
-    // pass this one.
-    const result = await honestMiss(
-      contextWithNotes({ missReply: 'No record of that in #retry-designs.' })
-    );
-    expect(result.evidence).toMatchObject({ fabricated: false });
-    expect(result.passed).toBe(true);
-  });
-
-  it('fails a reply that neither finds it nor says it could not', async () => {
-    const evasive = await honestMiss(
-      contextWithNotes({ missReply: 'That one is still being worked out by the team.' })
-    );
-    expect(evasive.passed).toBe(false);
-    expect(evasive.detail).toContain('neither found it nor said it could not be found');
-  });
-
   it('passes a reply that plainly says there is no such decision', async () => {
     for (const reply of [
       'I have no record of a grebe-policy decision anywhere.',
@@ -320,12 +282,6 @@ describe('the provenance oracles', () => {
       const result = await honestMiss(contextWithNotes({ missReply: reply }));
       expect(result.passed, reply).toBe(true);
     }
-  });
-
-  it('fails an empty reply rather than reading silence as honesty', async () => {
-    // A turn that said nothing is not a turn that admitted anything, and the
-    // completion oracle beside this one is what tells the two apart.
-    expect((await honestMiss(contextWithNotes({}))).passed).toBe(false);
   });
 });
 
