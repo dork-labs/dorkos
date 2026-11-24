@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, sessionBirthAllocations, sessionMetadata, type Db } from '@dorkos/db';
 import { bindSessionWrite } from '../../../core/runtime-seam/bind-session-write.js';
+import type { SessionBirthWriteContext } from '../../../core/runtime-seam/session-birth-write.js';
 import { MessageQueueStore } from '../../message-queue-store.js';
 import { chatClientId } from '../chat-client-id.js';
 import { ChatMessageStore, type NewChatMessage } from '../chat-message-store.js';
@@ -99,7 +100,7 @@ describe('fresh agent DM birth', () => {
       },
     ]);
     expect(metadata()).toEqual([]);
-    const bind = (context = birth) =>
+    const bind = (context: Extract<SessionBirthWriteContext, { kind: 'chat-message' }> = birth) =>
       bindSessionWrite(
         db,
         row.toSessionId,
