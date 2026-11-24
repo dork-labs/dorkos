@@ -47,6 +47,7 @@ bash scripts/test-pr-gates-check.sh
 bash scripts/test-qa-real-data.sh
 bash scripts/test-design-ok.sh
 bash scripts/test-should-redispatch-review.sh
+bash scripts/test-review-mode.sh
 bash scripts/test-should-reap-worktree.sh
 bash scripts/test-worktree-janitor-volumes.sh
 bash scripts/test-seeded-pack-changed.sh
