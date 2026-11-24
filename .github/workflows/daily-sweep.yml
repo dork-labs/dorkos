@@ -1,18 +1,22 @@
 name: daily-sweep
 
-# The day's merges, for QA's and the designer's batch review (DOR-5120, under
-# DOR-5098; Dorian, Nov 23: no local agent reviews an open PR, so QA and the
-# designer review everything merged since the last release, once a day).
+# The day's merges, for QA's, the designer's and Security's batch review
+# (DOR-5120, under DOR-5098; Dorian, Nov 23: no local agent reviews an open PR,
+# so QA, the designer and Security review everything merged since the last
+# release, once a day).
 #
 # One GitHub issue per release window, labelled daily-sweep and titled
 # "Daily sweep: merged since vX.Y.Z", is rewritten each run with the PRs that
-# design-ok.sh or qa-real-data.sh flag (scripts/daily-sweep.sh). Ticks survive
-# the rewrite. The QA and designer agents pick it up from their heartbeats, fix
+# design-ok.sh or qa-real-data.sh flag, and the PRs that touched a path on the
+# security gate's list (security-gate.yml's SECURITY_PATH_PATTERN, matched by
+# security-gate.mjs) (scripts/daily-sweep.sh). Ticks survive the rewrite. The
+# QA, designer and Security agents pick it up from their heartbeats, fix
 # forward, tick, and close it when every item is ticked. Nothing here gates a
 # merge or a release.
 #
 # Runs main's copy of its scripts. No secret. Writes only that issue and its
-# label. Public text only: PR numbers, titles, authors and file paths.
+# label. Public text only: PR numbers, titles, authors and file paths, never a
+# finding (Security files those privately).
 
 on:
   schedule:
@@ -45,6 +49,11 @@ jobs:
             scripts/daily-sweep.sh
             scripts/design-ok.sh
             scripts/qa-real-data.sh
+            .github/workflows/security-gate.yml
+            .github/scripts/security-gate.mjs
+            .github/scripts/security-verdict.mjs
+            .github/scripts/security-label-at-head.mjs
+            .github/scripts/security-required-checks.mjs
           sparse-checkout-cone-mode: false
 
       - name: Build and post the sweep list
@@ -61,7 +70,7 @@ jobs:
           title="Daily sweep: merged since $tag"
           gh api "repos/$REPO/labels/daily-sweep" >/dev/null 2>&1 ||
             gh api --method POST "repos/$REPO/labels" -f name=daily-sweep -f color=0e8a16 \
-              -f description="QA's and the designer's daily review list (DOR-5120)" >/dev/null || true
+              -f description="QA's, the designer's and Security's daily review list (DOR-5120)" >/dev/null || true
           n=$(gh api --paginate "repos/$REPO/issues?state=open&labels=daily-sweep&per_page=100" \
             --jq ".[] | select(.pull_request == null and .title == $(jq -Rn --arg t "$title" '$t')) | .number" | head -n 1)
           if [ -n "$n" ]; then
