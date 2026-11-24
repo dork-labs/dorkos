@@ -738,22 +738,30 @@ describe('a report with a long error or question still reaches its parent (DOR-3
   it('never splits a joined emoji or an accented letter where the detail is cut', () => {
     const pad = (n: number) => 'x'.repeat(n);
     const tail = 'tail'.repeat(REPORT_DETAIL_MAX);
-    const family = '👨‍👩‍👧';
+    const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}';
     expect(detailOf(composeReport('failed', '', `${pad(KEPT - 3)}${family}${tail}`))).toBe(
       `${pad(KEPT - 3)}${CUT}`
     );
-    expect(detailOf(composeReport('failed', '', `${pad(KEPT - 1)}é${tail}`))).toBe(
+    expect(detailOf(composeReport('failed', '', `${pad(KEPT - 1)}e\u0301${tail}`))).toBe(
       `${pad(KEPT - 1)}${CUT}`
     );
-    expect(detailOf(composeReport('failed', '', `${pad(KEPT - 2)}é${tail}`))).toBe(
-      `${pad(KEPT - 2)}é${CUT}`
+    expect(detailOf(composeReport('failed', '', `${pad(KEPT - 2)}e\u0301${tail}`))).toBe(
+      `${pad(KEPT - 2)}e\u0301${CUT}`
     );
+  });
+
+  // A letter under thousands of combining marks is one character longer than the whole room.
+  it('keeps what fits of one character too long for the room, rather than nothing', () => {
+    const huge = `a${'\u0301'.repeat(CHAT_MESSAGE_MAX)}`;
+    const saved = cutReportDetail(huge);
+    expect(saved).toBe(`${huge.slice(0, KEPT)}${CUT}`);
+    expect(cutReportDetail(saved)).toBe(saved);
   });
 
   it('never splits a joined emoji where the last message is cut', () => {
     const pad = (n: number) => 'x'.repeat(n);
     const replyOf = (report: string) => report.split('\n\n')[1]!;
-    const family = '👨‍👩‍👧';
+    const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}';
     expect(replyOf(composeReport('finished', `${pad(REPORT_TEXT_MAX - 3)}${family}tail`))).toBe(
       `${pad(REPORT_TEXT_MAX - 3)}…`
     );

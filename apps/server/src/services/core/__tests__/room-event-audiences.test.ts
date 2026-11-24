@@ -144,9 +144,10 @@ describe('every room_* event and read_cursor', () => {
 });
 
 // An in-process listener hears every broadcast, addressed or not (`EventFanOut.subscribe`), so
-// one that picked out a read cursor could hand it to readers its audience never named. No
-// listener may name one: a new one that needs to must first carry the audience with it.
-it('no in-process listener picks out a read cursor', () => {
+// one that passed a read cursor on could hand it to readers its audience never named. Every
+// listener is pinned here, so a new one fails until someone has read what it forwards; and none
+// may name a read cursor: one that needs to must first carry the audience with it.
+it('every in-process listener is a reviewed one, and none picks out a read cursor', () => {
   const scoped = Object.keys(SCOPED_EXACT_EVENTS);
   const listeners = sources(sourceRoot).flatMap((path) => {
     const source = ts.createSourceFile(
@@ -171,9 +172,15 @@ it('no in-process listener picks out a read cursor', () => {
     visit(source);
     return subscribes ? [{ path: path.slice(sourceRoot.length + 1), named: [...named] }] : [];
   });
-  expect(listeners.map(({ path }) => path)).toContain(
-    'services/communities/local/local-community-adapter.ts'
-  );
+  expect(listeners.map(({ path }) => path).sort()).toEqual([
+    // Room lifecycle into the local community's own streams.
+    'services/communities/local/local-community-adapter.ts',
+    // Approval verdicts, matched by ask id, back to the turn that waits on them.
+    'services/core/approvals/approval-service.ts',
+    'services/core/approvals/approval-verdict-delivery.ts',
+    // Notifications, to know when to send the daily shift report.
+    'services/notifications/emitters/shift-report.ts',
+  ]);
   expect(listeners.filter(({ named }) => named.length > 0)).toEqual([]);
 });
 

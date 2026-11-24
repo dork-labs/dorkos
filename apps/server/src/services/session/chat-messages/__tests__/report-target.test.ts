@@ -188,6 +188,35 @@ describe('deliverToRoomSeat (DOR-3488)', () => {
     expect(deliver.mock.calls.map(([seat]) => seat)).toEqual(['named', 'known-now']);
   });
 
+  // A saved report names the seat the outbox checked; another id's seat must not take it.
+  it('hands a saved report only to the seat the outbox checked', async () => {
+    vi.spyOn(runtimeRegistry, 'resolveForSession').mockResolvedValue({
+      getInternalSessionId: (id: string) => (id === 'named' ? 'known-now' : undefined),
+    } as never);
+    const deliver = vi.fn((_seat: string, _report: unknown, onSettled?: (ran: boolean) => void) => {
+      onSettled?.(true);
+      return true;
+    });
+    setRoomSeatReports({
+      seatOf: (id) => ({ roomId: 'r', authorId: id === 'named' ? 'other' : 'a' }),
+      holdsSeat: () => true,
+      deliver,
+    });
+    try {
+      await expect(
+        deliverToRoomSeat('named', { ...report, seat: { roomId: 'r', authorId: 'a' } })
+      ).resolves.toBe(true);
+      expect(deliver.mock.calls.map(([seat]) => seat)).toEqual(['known-now']);
+      deliver.mockClear();
+      await expect(
+        deliverToRoomSeat('named', { ...report, seat: { roomId: 'r', authorId: 'nobody' } })
+      ).resolves.toBe(false);
+      expect(deliver).not.toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   it('tries one id once when the chat is known by the id it was named by', async () => {
     vi.spyOn(runtimeRegistry, 'resolveForSession').mockResolvedValue({
       getInternalSessionId: () => undefined,

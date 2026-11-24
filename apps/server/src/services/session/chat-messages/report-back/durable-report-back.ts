@@ -154,6 +154,9 @@ export class DurableReportBack {
           marks: saved.marks,
           outsideWords: saved.outsideWords,
           waitDeadlineAt: row.waitDeadlineAt ?? undefined,
+          ...(saved.seat && saved.seat !== 'unavailable'
+            ? { seat: { roomId: saved.seat.roomId, authorId: saved.seat.authorId } }
+            : {}),
           beforeRun: () => {
             if (this.isStopped() || saved.seat === null) return false;
             claimed = claimed

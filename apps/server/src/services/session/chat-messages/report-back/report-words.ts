@@ -6,7 +6,11 @@
  * @module services/session/chat-messages/report-back/report-words
  */
 
-/** The longest last message a report carries; the parent reads more with `chat_read`. */
+/**
+ * The longest last message a report carries; the parent reads more with `chat_read`. A cut
+ * that lands inside a code block closes it, which can add a few characters past this; the
+ * whole report stays far under the send limit.
+ */
 export const REPORT_TEXT_MAX = 6_000;
 
 /**
@@ -61,14 +65,25 @@ const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 /**
  * At most `max` code units of `s`, never splitting a character a person sees
  * as one: an emoji made of two code units, emoji joined into one, or a letter
- * and its accent. Reads only as far as the cut.
+ * and its accent. Reads only as far as the cut. One character longer than
+ * all of `max` (a letter under thousands of marks) is cut by code point
+ * instead, so the cut keeps something.
  */
 function cutAt(s: string, max: number): string {
   if (s.length <= max) return s;
   let end = 0;
   for (const { index, segment } of GRAPHEMES.segment(s)) {
-    if (index + segment.length > max) break;
-    end = index + segment.length;
+    if (index + segment.length <= max) {
+      end = index + segment.length;
+      continue;
+    }
+    if (segment.length > max) {
+      for (const point of segment) {
+        if (end + point.length > max) break;
+        end += point.length;
+      }
+    }
+    break;
   }
   return s.slice(0, end);
 }

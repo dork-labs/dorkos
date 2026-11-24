@@ -415,16 +415,20 @@ export async function deliverToRoomSeat(
   const seats = getRoomSeatReports();
   if (!seats) return false;
   const canonical = await canonicalChatId(parentSessionId).catch(() => parentSessionId);
-  // Both ids are tried in turn: the first can be a seat's old chat that refuses this report.
-  const candidates = [...new Set([parentSessionId, canonical])].filter(
-    (id) => seats.seatOf(id) !== null
-  );
+  // Both ids are tried in turn: the first can be a seat's old chat that refuses this report. A
+  // saved report goes only to the seat the outbox checked when it saved it.
+  const { seat: checked, ...rest } = report;
+  const candidates = [...new Set([parentSessionId, canonical])].filter((id) => {
+    const seat = seats.seatOf(id);
+    if (seat === null) return false;
+    return !checked || (seat.roomId === checked.roomId && seat.authorId === checked.authorId);
+  });
   if (candidates.length === 0) return false;
   const fromTitle = await chatTitleOf(report.fromSessionId);
   // A seat that moved checks this against the move (DOR-3753): only the server's record, set
   // last so no start a caller handed in survives.
   const startedAt = reportStartedAtFromStore(getSessionStartedByStore(), report.fromSessionId);
-  const sent = { ...report, fromTitle, startedAt: startedAt ?? undefined };
+  const sent = { ...rest, fromTitle, startedAt: startedAt ?? undefined };
   return new Promise<boolean>((resolve, reject) => {
     const settled = (ran: boolean) => {
       if (ran) resolve(true);
