@@ -27,7 +27,6 @@ const SAMPLE_IDS: Record<EntityKind, string> = {
   turn: 'turn_7',
   todo: '01KJ5Z8Y3M2N4P6Q8R0S2T4V6Z',
   run: '01KJ5Z8Y3M2N4P6Q8R0S2T4V70',
-  project: 'dorkos',
   pr: 'dork-labs/dorkos#4242',
   ticket: 'DOR-4968',
   branch: 'feat/dor-4968-work-links',

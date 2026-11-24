@@ -19,7 +19,12 @@
  *   ({@link recordChatFork}, called by `POST /api/sessions/:id/fork`).
  *
  * The store lives in this computer's SQLite store for now; its move to the
- * space store is DOR-5139 (ADR 261122-173853).
+ * space store is DOR-5139 (ADR 261122-173853). The store is space data; turn
+ * code reaches it only through hooks or events, so DOR-5139 is a store move,
+ * not a rewrite. Nothing under `services/runtimes/` or `services/session/`
+ * imports this domain (`__tests__/work-graph-boundary.test.ts`): the re-key
+ * write registers itself on the session's hook, and the fork write is called
+ * by the route, since a fork raises no event.
  *
  * @module services/work-graph
  */

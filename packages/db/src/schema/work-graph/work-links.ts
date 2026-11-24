@@ -7,8 +7,8 @@ import { check, index, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite
  * - `started`: a chat started another chat.
  * - `claims`: a chat claims a ticket or pull request.
  * - `opened`: a chat opened a pull request, a branch or a worktree.
- * - `works_on`: a chat works on a ticket, a pull request or a project.
- * - `belongs_to`: a thing belongs to another (a run to its task's project).
+ * - `works_on`: a chat works on a ticket, a pull request or a branch.
+ * - `belongs_to`: a thing belongs to another (a run to the chat it ran in).
  * - `produced`: a chat produced a thing (a to-do, a room entry).
  * - `forked_from`: a chat is a fork of another chat.
  * - `rekeyed_from`: a chat's id replaced an older id of the same chat (ADR-0267).

@@ -15,7 +15,9 @@
  *   this records their results. `work_claims` stays the exclusivity lock.
  *
  * It lives in this computer's SQLite store for now. Its move to the space store
- * is DOR-5139 (ADR 261122-173853).
+ * is DOR-5139 (ADR 261122-173853). The store is space data; turn code reaches
+ * it only through hooks or events, so DOR-5139 is a store move, not a rewrite
+ * (`__tests__/work-graph-boundary.test.ts` holds runtime and session code to it).
  *
  * @module services/work-graph/work-link-store
  */
