@@ -33,6 +33,7 @@ export default defineConfig({
     './src/schema/session/turn-context.ts',
     './src/schema/session/chat-messages.ts',
     './src/schema/session/work-claims.ts',
+    './src/schema/work-graph/work-links.ts',
     './src/schema/workspace.ts',
     './src/schema/auth.ts',
     './src/schema/owner/owner-factors.ts',

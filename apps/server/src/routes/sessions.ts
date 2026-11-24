@@ -42,6 +42,7 @@ import { problem, readJsonBody, sendProblem, validationProblem } from '@dorkos/h
 import { honoRequestFacts } from '../http/request-facts.js';
 import { forkPlace } from './session-launcher.js';
 import { invalidSessionId, ownerRefusalReply, sessionNotFound } from './session-route-replies.js';
+import { recordChatFork } from '../services/work-graph/index.js';
 import { readQuery } from '../http/request-query.js';
 import { boundaryRefusal, parseSessionId } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
@@ -553,6 +554,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
     try {
       const forked = await runtime.forkSession(cwd, internalSessionId, parsed.data);
       if (!forked) return sessionNotFound(c, 'Nothing was forked.');
+      recordChatFork(internalSessionId, forked.id);
       return c.json(forked, 201);
     } catch {
       return problem(c, 'internal_error', { detail: 'The fork failed. Try again.' });

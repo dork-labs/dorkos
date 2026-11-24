@@ -26,6 +26,12 @@ import { disposeProjector } from '../../../services/session/session-state-projec
 import { setAccountUsageStore } from '../../../services/core/usage/current-usage-store.js';
 import type { AccountUsageStore } from '../../../services/core/usage/account-usage-store.js';
 import { S1, runtimeHolder, useSessionsApp } from './sessions.fixtures.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import {
+  getWorkLinkStore,
+  installWorkLinkStore,
+  uninstallWorkLinkStore,
+} from '../../../services/work-graph/index.js';
 
 const server = listeningServer(composedListener(new MainRequestAdmission(), { sessions: {} }));
 
@@ -321,6 +327,24 @@ describe('POST /api/sessions/:id/fork', () => {
       upToMessageId: 'msg-123',
       title: 'Fork',
     });
+  });
+
+  it('records the fork forked_from the id actually forked, in the work graph (DOR-4968)', async () => {
+    installWorkLinkStore(createTestDb());
+    try {
+      // The runtime's own id for S1 differs from the request's, so the edge must name it.
+      const internalId = '00000000-0000-4000-8000-internal00002';
+      fakeRuntime.getInternalSessionId.mockReturnValue(internalId);
+      fakeRuntime.forkSession.mockResolvedValue(FORKED);
+
+      const res = await request(server).post(`/api/sessions/${S1}/fork`).send({});
+      expect(res.status).toBe(201);
+      expect(getWorkLinkStore()!.from({ kind: 'chat', id: FORKED.id })).toEqual([
+        expect.objectContaining({ relation: 'forked_from', to: { kind: 'chat', id: internalId } }),
+      ]);
+    } finally {
+      uninstallWorkLinkStore();
+    }
   });
 
   it.each([
