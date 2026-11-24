@@ -267,6 +267,45 @@ describe('read_canvas', () => {
     expect(result.documents.find((d) => d.title === 'mine')?.author).toBe('the operator');
   });
 
+  /** Flag letters and an end mark with no flag in front: nothing a person sees. */
+  const STRAY_FLAG_LETTERS = '\u{E006F}\u{E006B}\u{E007F}';
+
+  it('hands back a document’s words the way people see them', async () => {
+    const document = harness.service.canvas.open(roomId, ana, {
+      type: 'markdown',
+      content: `Ship it${STRAY_FLAG_LETTERS} today`,
+      title: 'notes',
+    });
+    const result = (await registryFor(harness).invoke(
+      'rooms.read_canvas',
+      { roomId, documentId: document.id },
+      { identity: identityFor(ANA, 'Ana') }
+    )) as { content: { content: string } };
+    expect(result.content.content).toBe('Ship it today');
+  });
+
+  it('calls a document with no visible title "Untitled"', async () => {
+    const document = harness.service.canvas.open(roomId, ana, {
+      type: 'json',
+      data: {},
+      title: STRAY_FLAG_LETTERS,
+    });
+    const registry = registryFor(harness);
+    const listed = (await registry.invoke(
+      'rooms.read_canvas',
+      { roomId },
+      { identity: identityFor(ANA, 'Ana') }
+    )) as { documents: Array<{ title: string }> };
+    const read = (await registry.invoke(
+      'rooms.read_canvas',
+      { roomId, documentId: document.id },
+      { identity: identityFor(ANA, 'Ana') }
+    )) as { title: string };
+
+    expect(listed.documents.map((d) => d.title)).toEqual(['Untitled']);
+    expect(read.title).toBe('Untitled');
+  });
+
   it('returns the contents of a document that names no file', async () => {
     const document = harness.service.canvas.open(roomId, ana, {
       type: 'json',
@@ -302,6 +341,25 @@ describe('read_canvas', () => {
       { identity: identityFor(ANA, 'Ana'), cwd: tree }
     )) as { content: string };
     expect(result.content).toBe('export const version = 3;\n');
+  });
+
+  it('hands back a file’s words the way people see them', async () => {
+    harness.service.canvas.apply({
+      roomId,
+      authorId: ana,
+      turnId: 'turn-1',
+      command: markdownCommand('src/router.ts'),
+      cwd: tree,
+    });
+    const [document] = harness.service.canvas.list(roomId);
+    writeFileSync(path.join(tree, 'src', 'router.ts'), `// ok${STRAY_FLAG_LETTERS}\n`);
+
+    const result = (await registryFor(harness).invoke(
+      'rooms.read_canvas',
+      { roomId, documentId: document.id },
+      { identity: identityFor(ANA, 'Ana'), cwd: tree }
+    )) as { content: string };
+    expect(result.content).toBe('// ok\n');
   });
 
   it('says so plainly when the file has gone', async () => {

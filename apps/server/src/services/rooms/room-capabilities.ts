@@ -207,7 +207,7 @@ import { RoomError } from './room-errors.js';
 import { POST_TO_ROOM_DESCRIPTION } from './handoff/room-post-description.js';
 import { registerRoomPreGateChecks } from './attachments/protected-file-checks.js';
 import { callerAuthor, requireAgentCwd, toolCallerOf } from './service/room-caller-author.js';
-import { UNTRUSTED_NOTE } from './service/room-entry-projection.js';
+import { defuseUntrusted, UNTRUSTED_NOTE } from './service/room-entry-projection.js';
 import {
   projectMemberMatches,
   projectMemberRoomList,
@@ -1396,7 +1396,7 @@ async function readRoomCanvas(
       documents: canvas.list(input.roomId).map((document) => ({
         documentId: document.id,
         type: document.contentType,
-        title: sanitizeIdentity(document.title) ?? document.title,
+        title: sanitizeIdentity(document.title) ?? 'Untitled',
         author: authorLabel(rooms, document.authorId),
         pinned: document.pinned,
         lastChangedAt: document.lastTouchedAt,
@@ -1420,7 +1420,7 @@ async function readRoomCanvas(
     note: UNTRUSTED_NOTE,
     documentId: document.id,
     type: document.contentType,
-    title: sanitizeIdentity(document.title) ?? document.title,
+    title: sanitizeIdentity(document.title) ?? 'Untitled',
     author: authorLabel(rooms, document.authorId),
     pinned: document.pinned,
     ...(document.treeKind !== undefined
@@ -1445,9 +1445,9 @@ async function readRoomCanvas(
   // the file route uses, so nothing here widens what a caller can reach.
   const filePath = canvasSourcePath(document.content);
   if (filePath !== null) {
-    return { ...metadata, ...(await readFileBacked(rooms, document, filePath)) };
+    return { ...metadata, ...defuseUntrusted(await readFileBacked(rooms, document, filePath)) };
   }
-  return { ...metadata, content: document.content };
+  return { ...metadata, content: defuseUntrusted(document.content) };
 }
 
 /**

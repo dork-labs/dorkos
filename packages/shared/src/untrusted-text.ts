@@ -111,8 +111,12 @@ export function sanitizeIdentity(
     .replace(/\s+/g, ' ')
     .trim();
   if (collapsed.length === 0) return undefined;
-  // Stripped again after the cap, so a flag cut in half leaves no letters behind.
-  return stripStrayFlagLetters(collapsed.slice(0, maxLength));
+  // The cap counts UTF-16 units, so it can land inside a pair: drop a lone high
+  // half rather than end on a broken character. Then strip again, so a flag cut
+  // in half leaves no letters behind, and trim what the cut left at the end.
+  let capped = collapsed.slice(0, maxLength);
+  if (/[\uD800-\uDBFF]$/.test(capped)) capped = capped.slice(0, -1);
+  return stripStrayFlagLetters(capped).trimEnd() || undefined;
 }
 
 /**

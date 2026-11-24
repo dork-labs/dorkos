@@ -780,7 +780,12 @@ describe('the rooms capability domain', () => {
       const react = roomsDomain.capabilities.find((c) => c.id === 'rooms.react');
       const input = (emoji: string) => ({ roomId: 'r', entryId: 'e', emoji });
       expect(react?.input.safeParse(input('\u{1F44D}')).success).toBe(true);
-      for (const emoji of ['lol', '\u{1F44D} nice', '0123']) {
+      for (const emoji of [
+        'lol',
+        '\u{1F44D} nice',
+        '0123',
+        '\u{1F44D}\u{E006F}\u{E006B}\u{E007F}',
+      ]) {
         expect(react?.input.safeParse(input(emoji)).success, emoji).toBe(false);
       }
     });
@@ -802,6 +807,19 @@ describe('the rooms capability domain', () => {
         result.entries.every((entry) => !entry.author.includes('<') && !entry.author.includes('>')),
         'no label carries a bracket a member could have typed'
       ).toBe(true);
+    });
+
+    it('hands back message text the way people see it', async () => {
+      service.post(channel.id, {
+        authorId: human,
+        text: 'ship it\u{E006F}\u{E006B}\u{E007F} today',
+      });
+
+      const result = (await call('rooms.read_history', { roomId: channel.id, limit: 10 })) as {
+        entries: Array<{ text: string }>;
+      };
+
+      expect(result.entries.map((entry) => entry.text)).toEqual(['ship it today']);
     });
 
     it('names the operator as an agent should read them, never the registry`s "You"', async () => {

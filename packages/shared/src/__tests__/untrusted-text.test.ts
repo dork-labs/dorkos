@@ -99,7 +99,7 @@ describe('defuseSystemTags', () => {
     });
   });
 
-  describe('characters that render as nothing', () => {
+  describe('letters outside a real flag', () => {
     it('removes them from a body', () => {
       expect(defuse(`ship it${flagLetters('ok')}\u{E007F} today`)).toBe('ship it today');
       expect(defuse(`\u{1F44D}${flagLetters('gbeng')}\u{E007F}`)).toBe('\u{1F44D}');
@@ -185,13 +185,21 @@ describe('sanitizeIdentity', () => {
     expect(sanitizeIdentity('an‮a')).toBe('ana');
   });
 
-  it('removes characters that render as nothing, and keeps subdivision flags', () => {
+  it('removes letters outside a real flag, and keeps subdivision flags', () => {
     expect(sanitizeIdentity(`Ana${flagLetters('admin')}`)).toBe('Ana');
     expect(sanitizeIdentity(`Team ${flagOf('gbwls')}`)).toBe(`Team ${flagOf('gbwls')}`);
     expect(sanitizeIdentity(`${flagLetters('hi')}\u{E007F}`)).toBeUndefined();
   });
 
   it('does not leave part of a flag behind when it caps the length', () => {
+    const astral = sanitizeIdentity(`${'x'.repeat(IDENTITY_MAX_LENGTH - 1)}\u{1F44D}`);
+    expect(astral, 'no half of a pair is left at the end').toBe(
+      'x'.repeat(IDENTITY_MAX_LENGTH - 1)
+    );
+    expect(sanitizeIdentity(`${'x'.repeat(IDENTITY_MAX_LENGTH - 1)} y`)).toBe(
+      'x'.repeat(IDENTITY_MAX_LENGTH - 1)
+    );
+
     const capped = sanitizeIdentity(`${'x'.repeat(IDENTITY_MAX_LENGTH - 6)}${flagOf('gbeng')}`);
     expect(capped).toBe(`${'x'.repeat(IDENTITY_MAX_LENGTH - 6)}\u{1F3F4}`);
   });
