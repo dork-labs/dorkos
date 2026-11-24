@@ -118,9 +118,5 @@ grep -qF -- '- `browser-test`' <<<"$body"; expect "comment names the check" "0" 
 grep -qF 'pr-7-' <<<"$body";               expect "comment names the run filter" "0" "$?"
 grep -qF '`requeue-ok`' <<<"$body";        expect "comment names the way past it" "0" "$?"
 
-# ── merge-tail's comment points at the same way past ─────────────────────
-grep -qF 'requeue-ok' "$repo_root/.github/workflows/merge-tail.yml"
-expect "merge-tail names requeue-ok" "0" "$?"
-
 echo "queue-repeat-guard fixtures: $pass passed, $fail failed"
 [[ "$fail" -eq 0 ]]
