@@ -31,7 +31,11 @@ import {
 } from '../../../../core/agent-identity/index.js';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
-import { getOrCreateSpaceId } from '../../../../../lib/identity/space-id.js';
+import {
+  SPACE_ID_FILENAME,
+  holdLocalSpaceId,
+  loadLocalSpaceId,
+} from '../../../../../lib/identity/space-id.js';
 import { INSTANCE_ID_FILENAME } from '../../../../../lib/instance-id.js';
 import {
   clearTestHomes,
@@ -180,6 +184,7 @@ describe('executeSdkQuery — the references a signature carries (DOR-5138)', ()
     vi.clearAllMocks();
     initAgentIdentityService(createTestDb());
     dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-refs-'));
+    // Where a turn WOULD mint, if it read the file itself: it must not.
     vi.stubEnv('DORK_HOME', dorkHome);
     // Ambient values from the server's own environment must never ride through.
     vi.stubEnv('DORKOS_AGENT_ID', 'ambient-agent');
@@ -187,27 +192,37 @@ describe('executeSdkQuery — the references a signature carries (DOR-5138)', ()
   });
 
   afterEach(async () => {
+    holdLocalSpaceId(undefined);
     vi.unstubAllEnvs();
     resetAgentIdentityService();
     await fs.rm(dorkHome, { recursive: true, force: true });
   });
 
-  it('names the chat’s Mesh agent and the local space, never the install id', async () => {
+  it('names the chat’s Mesh agent and the space boot loaded, never the install id', async () => {
     const installId = '11111111-2222-3333-4444-555555555555';
     await fs.writeFile(path.join(dorkHome, INSTANCE_ID_FILENAME), installId);
+    const spaceId = await loadLocalSpaceId(dorkHome);
 
     const env = (await launchWith(meshWithAgent())).env as Record<string, string>;
 
     expect(env.DORKOS_AGENT_ID).toBe('01JAGENT0000000000000000');
-    expect(env.DORKOS_SPACE_ID).toBe(await getOrCreateSpaceId(dorkHome));
-    expect(env.DORKOS_SPACE_ID).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(spaceId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(env.DORKOS_SPACE_ID).toBe(spaceId);
     expect(Object.values(env)).not.toContain(installId);
   });
 
   it('leaves the agent out when the folder hosts no agent, and keeps the space', async () => {
+    const spaceId = await loadLocalSpaceId(dorkHome);
     const env = (await launchWith(null)).env as Record<string, string>;
 
     expect(env).not.toHaveProperty('DORKOS_AGENT_ID');
-    expect(env.DORKOS_SPACE_ID).toBe(await getOrCreateSpaceId(dorkHome));
+    expect(env.DORKOS_SPACE_ID).toBe(spaceId);
+  });
+
+  it('carries no space id and writes no file when the server never booted', async () => {
+    const env = (await launchWith(meshWithAgent())).env as Record<string, string>;
+
+    expect(env).not.toHaveProperty('DORKOS_SPACE_ID');
+    expect(await fs.readdir(dorkHome)).not.toContain(SPACE_ID_FILENAME);
   });
 });

@@ -23,7 +23,6 @@ import { OpenCodeSessionEnvironment } from './session-environment.js';
 import { SidecarCustodyAttempt, type SidecarSpawnPort } from './sidecar-custody.js';
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
 import { turnReferenceEnv } from '../shared/references/turn-reference-env.js';
-import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk';
@@ -183,13 +182,8 @@ export interface OpenCodeServerManagerOptions extends Partial<OpenCodeSidecarPla
 export class OpenCodeServerManager implements OpenCodeClientProvider {
   private readonly sessionEnvironment = new OpenCodeSessionEnvironment();
   /** Hand chat metadata to the shell plugin without modifying the shared process env. */
-  async bindSessionEnvironment(
-    sessionId: string,
-    openCodeSessionId: string,
-    agentId?: string
-  ): Promise<void> {
-    const references = await turnReferenceEnv(resolveDorkHome(), agentId);
-    return this.sessionEnvironment.bind(sessionId, openCodeSessionId, references);
+  bindSessionEnvironment(sessionId: string, openCodeSessionId: string, agentId?: string) {
+    return this.sessionEnvironment.bind(sessionId, openCodeSessionId, turnReferenceEnv(agentId));
   }
   private phase: SidecarPhase = 'idle';
   private child: ChildProcess | null = null;

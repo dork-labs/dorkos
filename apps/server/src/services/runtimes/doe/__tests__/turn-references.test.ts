@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
-import { getOrCreateSpaceId } from '../../../../lib/identity/space-id.js';
+import { holdLocalSpaceId, loadLocalSpaceId } from '../../../../lib/identity/space-id.js';
 import { initConfigManager } from '../../../core/config-manager.js';
 import {
   clearTestHomes,
@@ -46,7 +46,7 @@ it('DOR-5138: the builder env names the chat’s Mesh agent and the local space'
     })
   );
   registerTestHomes([agentDir]);
-  vi.stubEnv('DORK_HOME', dorkHome);
+  const spaceId = await loadLocalSpaceId(dorkHome);
   vi.stubEnv('DORKOS_AGENT_ID', 'ambient-agent');
   vi.stubEnv('DORKOS_SPACE_ID', 'ambient-space');
   const environments: Array<Readonly<Record<string, string>>> = [];
@@ -74,7 +74,6 @@ it('DOR-5138: the builder env names the chat’s Mesh agent and the local space'
       );
       expect(events.filter((event) => event.type === 'error')).toEqual([]);
     }
-    const spaceId = await getOrCreateSpaceId(dorkHome);
     expect(spaceId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(environments[0]).toMatchObject({
       DORKOS_SESSION_ID: 'doe-agent-chat',
@@ -89,6 +88,7 @@ it('DOR-5138: the builder env names the chat’s Mesh agent and the local space'
     expect(environments[1]).not.toHaveProperty('DORKOS_AGENT_ID');
   } finally {
     vi.unstubAllEnvs();
+    holdLocalSpaceId(undefined);
     clearTestHomes();
     await rm(root, { recursive: true, force: true });
   }

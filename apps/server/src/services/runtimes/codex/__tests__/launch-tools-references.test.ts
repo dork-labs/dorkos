@@ -9,9 +9,9 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, it, expect, vi } from 'vitest';
+import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
-import { getOrCreateSpaceId } from '../../../../lib/identity/space-id.js';
+import { holdLocalSpaceId, loadLocalSpaceId } from '../../../../lib/identity/space-id.js';
 import { initConfigManager } from '../../../core/config-manager.js';
 import { resolveCodexLaunchTools } from '../mcp-server-config.js';
 
@@ -29,7 +29,7 @@ describe('resolveCodexLaunchTools — the references a signature carries (DOR-51
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-refs-'));
     const dorkHome = path.join(root, 'dork');
     const home = path.join(root, 'agent');
-    vi.stubEnv('DORK_HOME', dorkHome);
+    const spaceId = await loadLocalSpaceId(dorkHome);
     try {
       const tools = await resolveCodexLaunchTools(
         home,
@@ -41,9 +41,9 @@ describe('resolveCodexLaunchTools — the references a signature carries (DOR-51
         [],
         'app-server'
       );
-      return { tools, home, spaceId: await getOrCreateSpaceId(dorkHome) };
+      return { tools, home, spaceId };
     } finally {
-      vi.unstubAllEnvs();
+      holdLocalSpaceId(undefined);
       await fs.rm(root, { recursive: true, force: true });
     }
   }

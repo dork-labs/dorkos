@@ -294,6 +294,13 @@ export interface AgentIdentityPin {
   /** The agent's display name, as attribution labels show it. */
   readonly displayName: string | undefined;
   /**
+   * The agent's Mesh ULID, which the launch hands its shells as
+   * `DORKOS_AGENT_ID` for signatures (DOR-5138). Pinned here so a re-registered
+   * agent at the same path relaunches rather than signing with its old id.
+   * Absent only in pins built without one.
+   */
+  readonly agentId?: string;
+  /**
    * Whether a token was actually minted. A launch that could not mint runs
    * unattributed; asking for attribution afterwards is a change of authority
    * and relaunches, which is how a failed mint self-heals on the next message.
@@ -579,7 +586,9 @@ function withdrawnPlugins(
 function describeAgentIdentity(identity: AgentIdentityPin | undefined): string {
   if (!identity) return '<unattributed>';
   const state = identity.attributed ? 'token' : 'mint-failed';
-  return [state, identity.agentPath, identity.displayName ?? ''].join(FIELD_SEP);
+  return [state, identity.agentPath, identity.displayName ?? '', identity.agentId ?? ''].join(
+    FIELD_SEP
+  );
 }
 
 /**
@@ -610,10 +619,10 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
   // partition is complete and each row is independently comparable.
   // `DORKOS_SESSION_ID` is left out too (DOR-4380): a chat rekey (DOR-1309) changes
   // the id the turn arrives under, but every id of the chat resolves to the same
-  // chat, so it must not cost the warm process. The agent and space references
-  // (`DORKOS_AGENT_ID`, `DORKOS_SPACE_ID`) are left out for the same kind of
-  // reason: which agent a launch runs as is already its own pin (`agentIdentity`),
-  // and the space id is written once per install, so neither may relaunch alone.
+  // chat, so it must not cost the warm process. `DORKOS_AGENT_ID` is left out of
+  // the env digest because the `agentIdentity` pin already carries the same Mesh
+  // id, so an agent change still relaunches, through that pin. `DORKOS_SPACE_ID`
+  // is the value boot loaded and cannot change while the server runs.
   const owned = new Set([
     'CLAUDE_CONFIG_DIR',
     'DORKOS_SESSION_ID',

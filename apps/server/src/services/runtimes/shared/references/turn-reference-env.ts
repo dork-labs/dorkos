@@ -7,15 +7,16 @@
  *
  * - `DORKOS_AGENT_ID`: the Mesh ULID of the chat's agent. Absent when the turn
  *   has no registered agent; never guessed from a folder or a name.
- * - `DORKOS_SPACE_ID`: the local space's id (`lib/identity/space-id.ts`). Absent when it
- *   cannot be read or saved.
+ * - `DORKOS_SPACE_ID`: the local space's id, as boot loaded it
+ *   (`lib/identity/space-id.ts`). Absent before boot or when it could not be
+ *   read or saved; a turn never reads the file.
  *
  * Neither is a credential, and neither is the install id: the raw install id is
  * the anonymous usage id and never leaves the machine, so nothing here reads it.
  *
  * @module services/runtimes/shared/references/turn-reference-env
  */
-import { getOrCreateSpaceId } from '../../../../lib/identity/space-id.js';
+import { localSpaceId } from '../../../../lib/identity/space-id.js';
 
 /** The variable naming the chat's agent by its Mesh ULID. */
 export const AGENT_ID_ENV_VAR = 'DORKOS_AGENT_ID';
@@ -28,18 +29,15 @@ export const TURN_REFERENCE_ENV_NAMES = [AGENT_ID_ENV_VAR, SPACE_ID_ENV_VAR] as 
 export type TurnReferenceEnv = Partial<Record<(typeof TURN_REFERENCE_ENV_NAMES)[number], string>>;
 
 /**
- * Resolve a turn's reference variables.
+ * Resolve a turn's reference variables. Synchronous and free of I/O: the space
+ * id is the value boot loaded.
  *
- * @param dorkHome - The resolved data directory the space id lives in.
  * @param agentId - The Mesh ULID of the chat's agent, or `undefined` when the
  *   turn has no registered agent.
  * @returns Only the variables whose value is known.
  */
-export async function turnReferenceEnv(
-  dorkHome: string,
-  agentId: string | undefined
-): Promise<TurnReferenceEnv> {
-  const spaceId = await getOrCreateSpaceId(dorkHome);
+export function turnReferenceEnv(agentId: string | undefined): TurnReferenceEnv {
+  const spaceId = localSpaceId();
   return {
     ...(agentId ? { [AGENT_ID_ENV_VAR]: agentId } : {}),
     ...(spaceId ? { [SPACE_ID_ENV_VAR]: spaceId } : {}),

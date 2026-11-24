@@ -183,9 +183,7 @@ export async function resolveLaunch(args: {
   // Stamp agent last_seen_at when a message is dispatched
   const meshAgent = turnAgentPath ? opts.meshCore?.getByPath(turnAgentPath) : undefined;
   const meshAgentId = meshAgent?.id;
-  if (opts.meshCore && meshAgentId) {
-    opts.meshCore.updateLastSeen(meshAgentId, 'message_sent');
-  }
+  if (opts.meshCore && meshAgentId) opts.meshCore.updateLastSeen(meshAgentId, 'message_sent');
 
   // Load the agent manifest for the settings a launch is pinned to (its account,
   // below) — from the HOME, never the folder the turn stands in, whose
@@ -404,7 +402,7 @@ export async function resolveLaunch(args: {
         DORKOS_SESSION_ID: sessionId,
         // The agent the token below is minted for, and this install's space,
         // for signatures (provenance v2); left out when unknown.
-        ...(await turnReferenceEnv(resolveDorkHome(), meshAgent?.id)),
+        ...turnReferenceEnv(meshAgent?.id),
         CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
         // Keeps the task and todo tools on the model's surface. SDK 0.3.233 took
         // TodoWrite / TaskCreate / TaskUpdate / TaskGet / TaskList off the DEFAULT
@@ -957,6 +955,8 @@ export async function resolveLaunch(args: {
           // The ANCHORED agent, not the directory: two launches standing in the
           // same worktree for the same agent are the same identity.
           agentPath: turnAgentPath,
+          // The Mesh id the env's `DORKOS_AGENT_ID` names, so a changed id relaunches.
+          agentId: meshAgent.id,
           // The same string the mint above was given: the pin describes who this
           // launch was minted FOR, so a second name here would be a fingerprint
           // of something that never happened.

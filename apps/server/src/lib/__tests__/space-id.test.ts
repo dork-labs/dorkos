@@ -8,7 +8,14 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getOrCreateSpaceId, SPACE_ID_FILENAME } from '../identity/space-id.js';
+import {
+  getOrCreateSpaceId,
+  holdLocalSpaceId,
+  loadLocalSpaceId,
+  localSpaceId,
+  SPACE_ID_FILENAME,
+} from '../identity/space-id.js';
+import { logger } from '../logger.js';
 import { INSTANCE_ID_FILENAME } from '../instance-id.js';
 
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
@@ -21,6 +28,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  holdLocalSpaceId(undefined);
   await fs.rm(dorkHome, { recursive: true, force: true });
 });
 
@@ -87,15 +95,43 @@ describe('getOrCreateSpaceId', () => {
     expect(await getOrCreateSpaceId(blocked)).toBeUndefined();
   });
 
-  it('falls back to an exclusive create on a filesystem with no hard links', async () => {
-    const link = vi
-      .spyOn(fs, 'link')
-      .mockRejectedValue(Object.assign(new Error('ENOTSUP'), { code: 'ENOTSUP' }));
-    const id = await getOrCreateSpaceId(dorkHome);
-    expect(link).toHaveBeenCalled();
-    expect(id).toMatch(ULID);
-    expect(await getOrCreateSpaceId(dorkHome)).toBe(id);
-    expect(await fs.readdir(dorkHome)).toEqual([SPACE_ID_FILENAME]);
+  it.each(['ENOTSUP', 'EXDEV', 'EIO', 'EACCES'])(
+    'falls back to an exclusive create when the hard link fails with %s',
+    async (code) => {
+      const link = vi.spyOn(fs, 'link').mockRejectedValue(Object.assign(new Error(code), { code }));
+      const id = await getOrCreateSpaceId(dorkHome);
+      expect(link).toHaveBeenCalled();
+      expect(id).toMatch(ULID);
+      expect(await getOrCreateSpaceId(dorkHome)).toBe(id);
+      expect(await fs.readdir(dorkHome)).toEqual([SPACE_ID_FILENAME]);
+    }
+  );
+
+  it('sweeps a temporary file a dead mint left behind, and keeps a fresh one', async () => {
+    const stale = path.join(dorkHome, `.${SPACE_ID_FILENAME}-dead`);
+    const fresh = path.join(dorkHome, `.${SPACE_ID_FILENAME}-live`);
+    await fs.writeFile(stale, 'x');
+    await fs.writeFile(fresh, 'x');
+    const old = new Date(Date.now() - 10 * 60_000);
+    await fs.utimes(stale, old, old);
+    expect(await getOrCreateSpaceId(dorkHome)).toMatch(ULID);
+    expect((await fs.readdir(dorkHome)).sort()).toEqual(
+      [`.${SPACE_ID_FILENAME}-live`, SPACE_ID_FILENAME].sort()
+    );
+  });
+
+  it('logs the unusable file by name once per process, however often it is read', async () => {
+    // A fresh module: the once-per-process flag is module state.
+    vi.resetModules();
+    const fresh = await import('../identity/space-id.js');
+    const freshLogger = (await import('../logger.js')).logger;
+    const warn = vi.spyOn(freshLogger, 'warn').mockImplementation(() => {});
+    const file = path.join(dorkHome, SPACE_ID_FILENAME);
+    await fs.writeFile(file, 'not-a-ulid');
+    await fresh.getOrCreateSpaceId(dorkHome);
+    await fresh.getOrCreateSpaceId(dorkHome);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]![0])).toContain(file);
   });
 
   it('never reads or reuses the install id', async () => {
@@ -105,5 +141,37 @@ describe('getOrCreateSpaceId', () => {
     expect(id).toMatch(ULID);
     expect(id).not.toBe(installId);
     expect(await fs.readFile(path.join(dorkHome, INSTANCE_ID_FILENAME), 'utf8')).toBe(installId);
+  });
+});
+
+describe('the id boot holds (loadLocalSpaceId, localSpaceId)', () => {
+  it('holds nothing before boot, and reads no disk to say so', async () => {
+    const read = vi.spyOn(fs, 'readFile');
+    expect(localSpaceId()).toBeUndefined();
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('mints once at boot and holds that id; a second boot reads the same one', async () => {
+    const booted = await loadLocalSpaceId(dorkHome);
+    expect(booted).toMatch(ULID);
+    expect(localSpaceId()).toBe(booted);
+    const write = vi.spyOn(fs, 'writeFile');
+    holdLocalSpaceId(undefined);
+    expect(await loadLocalSpaceId(dorkHome)).toBe(booted);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('turns read the held id without touching the file', async () => {
+    const booted = await loadLocalSpaceId(dorkHome);
+    const read = vi.spyOn(fs, 'readFile');
+    expect(localSpaceId()).toBe(booted);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('holds nothing when the file at boot is unusable', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    await fs.writeFile(path.join(dorkHome, SPACE_ID_FILENAME), 'not-a-ulid');
+    expect(await loadLocalSpaceId(dorkHome)).toBeUndefined();
+    expect(localSpaceId()).toBeUndefined();
   });
 });
