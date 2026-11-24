@@ -52,8 +52,19 @@
 # the shards' lists. The workflow passes `git ls-files` of those suites, so a
 # binary suite that no job ran fails here by name, whichever job lost it.
 #
+# THE PLANNED SET (DOR-5130). A merge-queue build runs only the suites its own
+# change can reach (scripts/pr-test-plan.sh on HEAD^1..HEAD). `--packages
+# <file>` names them, one repo-relative package directory per line, and then
+# the per-package check covers exactly those packages instead of every package
+# that declares a `test` script: each must still contribute at least one
+# collected file. Each named directory must be a workspace package with a
+# `test` script, and an empty list is refused (the planner never selects
+# nothing; it answers `full`). The workflow narrows --require-files to the same
+# packages. The push run on main, the canary and release pull requests never
+# pass it, so they still prove the whole monorepo.
+#
 # Usage:
-#   scripts/assert-shard-union.sh [--quarantined <file>] [--require-files <file>] <dir-of-shard-lists>
+#   scripts/assert-shard-union.sh [--quarantined <file>] [--require-files <file>] [--packages <file>] <dir-of-shard-lists>
 #
 # <dir-of-shard-lists> holds one or more *.txt files, one collected test-file
 # path per line, repo-relative (e.g. apps/server/src/__tests__/foo.test.ts).
@@ -80,6 +91,7 @@ command -v jq >/dev/null 2>&1 || fail 'jq is required but was not found on PATH.
 
 quarantined_file=''
 required_file=''
+planned_file=''
 while [ $# -gt 0 ]; do
   case "$1" in
   --quarantined)
@@ -100,13 +112,21 @@ file means that did not happen, and an empty one is how \"none required\" is
 said. This gate will not read the one as the other."
     shift 2
     ;;
+  --packages)
+    planned_file=${2:-}
+    [ -n "$planned_file" ] || fail '--packages needs a file.'
+    [ -f "$planned_file" ] || fail "no planned-packages list at $planned_file.
+The workflow writes it from test-shard-count's plan just before this runs; a
+MISSING file means that did not happen, and this gate will not guess the set."
+    shift 2
+    ;;
   --*) fail "unknown option: $1" ;;
   *) break ;;
   esac
 done
 
 lists_dir=${1:-}
-[ -n "$lists_dir" ] || fail 'usage: assert-shard-union.sh [--quarantined <file>] [--require-files <file>] <dir-of-shard-lists>'
+[ -n "$lists_dir" ] || fail 'usage: assert-shard-union.sh [--quarantined <file>] [--require-files <file>] [--packages <file>] <dir-of-shard-lists>'
 [ -d "$lists_dir" ] || fail "shard-list directory not found: $lists_dir"
 
 # The union lives in a FILE, and each package's membership test greps that
@@ -124,19 +144,42 @@ cat "$lists_dir"/*.txt 2>/dev/null | sort -u > "$union_file"
 Every shard uploads a shard-files-*.txt naming the test files vitest collected;
 an empty union means no shard collected anything, which is not a passing sweep."
 
+# The packages to check: every one declaring a `test` script, or, with
+# --packages, exactly the planned ones (each validated as such a package).
 checked=0
 missing=''
-while IFS= read -r manifest; do
-  if [ "$(jq -r 'if .scripts.test == null then "no" else "yes" end' "$manifest" 2>/dev/null)" = 'yes' ]; then
-    checked=$((checked + 1))
-    pkg_dir=$(dirname "$manifest")
-    pkg_rel=${pkg_dir#"$workspace_root"/}
-    if ! grep -q -- "^$pkg_rel/" "$union_file"; then
-      missing="$missing  $pkg_rel"$'\n'
+packages_file=$(mktemp -t shard-union-packages.XXXXXX)
+trap 'rm -f "$union_file" "$packages_file"' EXIT
+if [ -n "$planned_file" ]; then
+  grep -v '^[[:space:]]*$' "$planned_file" | sort -u > "$packages_file"
+  [ -s "$packages_file" ] || fail "the planned-packages list $planned_file is empty.
+The planner never selects nothing (it answers \`full\` instead), so an empty
+plan means the plan was lost on the way here. This gate will not certify a
+union against an empty set."
+  while IFS= read -r pkg_rel; do
+    case "$pkg_rel" in
+    apps/*/* | packages/*/*) fail "planned package directory '$pkg_rel' is not a workspace package directory (apps/<name> or packages/<name>)." ;;
+    apps/* | packages/*) ;;
+    *) fail "planned package directory '$pkg_rel' is not a workspace package directory (apps/<name> or packages/<name>)." ;;
+    esac
+    [ "$(jq -r 'if .scripts.test == null then "no" else "yes" end' "$workspace_root/$pkg_rel/package.json" 2>/dev/null)" = 'yes' ] ||
+      fail "planned package '$pkg_rel' has no package.json declaring a \`test\` script, so the plan names a suite that cannot run."
+  done <"$packages_file"
+else
+  while IFS= read -r manifest; do
+    if [ "$(jq -r 'if .scripts.test == null then "no" else "yes" end' "$manifest" 2>/dev/null)" = 'yes' ]; then
+      pkg_dir=$(dirname "$manifest")
+      printf '%s\n' "${pkg_dir#"$workspace_root"/}"
     fi
+  done < <(find "$workspace_root/apps" "$workspace_root/packages" \
+    -mindepth 2 -maxdepth 2 -name package.json 2>/dev/null) | sort > "$packages_file"
+fi
+while IFS= read -r pkg_rel; do
+  checked=$((checked + 1))
+  if ! grep -q -- "^$pkg_rel/" "$union_file"; then
+    missing="$missing  $pkg_rel"$'\n'
   fi
-done < <(find "$workspace_root/apps" "$workspace_root/packages" \
-  -mindepth 2 -maxdepth 2 -name package.json 2>/dev/null)
+done <"$packages_file"
 
 [ "$checked" -gt 0 ] || fail "found no workspace package declaring a \`test\` script under
 $workspace_root/{apps,packages}. That is either the wrong root or a broken
@@ -178,6 +221,7 @@ fi
 # a blind spot wearing a watchdog's collar.
 quarantined_files=0
 quarantined_skipped=0
+quarantined_unplanned=0
 if [ -n "$quarantined_file" ]; then
   while IFS= read -r line; do
     [ -n "$line" ] || continue
@@ -196,6 +240,16 @@ if [ -n "$quarantined_file" ]; then
       continue
       ;;
     esac
+    # A planned run (DOR-5130) collected only the planned packages, so a
+    # quarantined file in a package outside the plan is not expected in the
+    # union. It is counted and printed, never checked as missing.
+    if [ -n "$planned_file" ]; then
+      pkg_of_file=$(printf '%s' "$file" | cut -d/ -f1-2)
+      if ! grep -q -Fx -- "$pkg_of_file" "$packages_file"; then
+        quarantined_unplanned=$((quarantined_unplanned + 1))
+        continue
+      fi
+    fi
     quarantined_files=$((quarantined_files + 1))
     grep -q -Fx -- "$file" "$union_file" || fail "a QUARANTINED test's file contributed nothing to any shard: $file
 Quarantine is per test and excludes no file, so this file stopped being
@@ -208,6 +262,7 @@ fi
 total=$(wc -l < "$union_file" | tr -d ' ')
 if [ -n "$quarantined_file" ]; then
   lane_note="$quarantined_files quarantined test file(s) still collected, $quarantined_skipped lane line(s) not a workspace test file and not checked here"
+  [ -z "$planned_file" ] || lane_note="$lane_note, $quarantined_unplanned in a package outside the plan and not expected here"
 else
   lane_note='no quarantine list was given, so nothing was checked against one'
 fi
@@ -216,5 +271,10 @@ if [ -n "$required_file" ]; then
 else
   required_note='no required-files list was given'
 fi
-printf 'assert-shard-union: %s package(s) all contributed to a union of %s collected test file(s); %s; %s.\n' \
-  "$checked" "$total" "$required_note" "$lane_note"
+if [ -n "$planned_file" ]; then
+  scope_note='planned '
+else
+  scope_note=''
+fi
+printf 'assert-shard-union: %s %spackage(s) all contributed to a union of %s collected test file(s); %s; %s.\n' \
+  "$checked" "$scope_note" "$total" "$required_note" "$lane_note"

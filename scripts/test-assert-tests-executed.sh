@@ -92,8 +92,8 @@ make_root() {
     printf '{"taskId":"builder#build","task":"build","cache":{"status":"HIT"}}'
     local entry
     for entry in $tasks; do
-      printf ',{"taskId":"%s#test","task":"test","cache":{"status":"%s"}}' \
-        "${entry%%:*}" "${entry##*:}"
+      printf ',{"taskId":"%s#test","task":"test","directory":"packages/%s","cache":{"status":"%s"}}' \
+        "${entry%%:*}" "${entry%%:*}" "${entry##*:}"
     done
     printf ']}\n'
   } >"$root/.turbo/runs/run.json"
@@ -154,6 +154,59 @@ check 'an unreadable run summary is refused' refused "$(verdict "$malformed")"
 # reporting success there would certify an empty world.
 bare=$(make_root bare --packages '' --tasks '')
 check 'a workspace with no test-bearing packages is refused' refused "$(verdict "$bare")"
+
+# --- The planned set (DOR-5130) -----------------------------------------------
+#
+# A merge-queue build runs only the suites its change can reach, and names them
+# with --packages. The run must be EXACTLY that set: no fewer, no others. With
+# no --packages (the push run on main, the canary) every package is expected,
+# which "a run missing a package test suite is refused" above already pins.
+
+planned_verdict() {
+  local root=$1 list=$2 output status
+  output=$(WORKSPACE_ROOT="$root" bash "$assert" --packages "$list" 2>&1)
+  status=$?
+  [ -n "${VERBOSE:-}" ] && printf '\n--- %s ---\n%s\n' "$root" "$output" >&2
+  if [ "$status" -eq 0 ]; then printf 'ok'; else printf 'refused'; fi
+}
+plan_file() {
+  local path=$work_dir/packages-list-$1.txt
+  printf '%s' "$2" >"$path"
+  printf '%s' "$path"
+}
+
+subset=$(make_root planned-subset --packages alpha,beta,gamma --tasks 'alpha:MISS beta:MISS')
+check 'a run of exactly the planned packages is accepted' ok \
+  "$(planned_verdict "$subset" "$(plan_file subset $'packages/alpha\npackages/beta\n')")"
+check 'the same run with no plan is refused (every package expected)' refused "$(verdict "$subset")"
+
+check 'a planned package that did not run is refused' refused \
+  "$(planned_verdict "$subset" "$(plan_file more $'packages/alpha\npackages/beta\npackages/gamma\n')")"
+
+check 'a package that ran but was not planned is refused' refused \
+  "$(planned_verdict "$subset" "$(plan_file fewer $'packages/alpha\n')")"
+
+check 'a replayed planned task is still refused' refused \
+  "$(planned_verdict "$(make_root planned-hit --packages alpha,beta --tasks 'alpha:MISS beta:HIT')" \
+    "$(plan_file hit $'packages/alpha\npackages/beta\n')")"
+
+check 'an empty plan is refused, never read as nothing expected' refused \
+  "$(planned_verdict "$subset" "$(plan_file empty $'\n')")"
+
+check 'a missing plan file is refused' refused \
+  "$(WORKSPACE_ROOT="$subset" bash "$assert" --packages "$work_dir/no-such-plan.txt" >/dev/null 2>&1 && echo ok || echo refused)"
+
+check 'a planned package with no test script is refused' refused \
+  "$(planned_verdict "$(make_root planned-notest --packages alpha --no-test icons --tasks 'alpha:MISS')" \
+    "$(plan_file notest $'packages/alpha\npackages/icons\n')")"
+
+check 'a planned path that is not a package directory is refused' refused \
+  "$(planned_verdict "$subset" "$(plan_file deep $'packages/alpha/src\n')")"
+
+nodir=$(make_root planned-nodir --packages alpha --tasks 'alpha:MISS')
+printf '{"tasks":[{"taskId":"alpha#test","task":"test","cache":{"status":"MISS"}}]}\n' >"$nodir/.turbo/runs/run.json"
+check 'a summary that does not say where a task ran is refused' refused \
+  "$(planned_verdict "$nodir" "$(plan_file nodir $'packages/alpha\n')")"
 
 # -----------------------------------------------------------------------------
 

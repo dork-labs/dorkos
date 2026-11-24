@@ -312,7 +312,7 @@ function testMerge(repo: string, files: string[]): void {
 }
 
 /**
- * Run the workflow's "Plan this pull request's suites" step in a fixture repo,
+ * Run the workflow's "Plan this change's suites" step in a fixture repo,
  * with `npx` on PATH standing in for the registry: it runs the repo's own
  * turbo, or fails when asked to.
  */
@@ -329,7 +329,7 @@ function planStep(repo: string, event: string, { npxFails = false } = {}) {
   chmodSync(npx, 0o755);
   const output = path.join(bin, 'output.txt');
   writeFileSync(output, '');
-  const result = spawnSync('bash', ['-c', step("Plan this pull request's suites")], {
+  const result = spawnSync('bash', ['-c', step("Plan this change's suites")], {
     cwd: repo,
     encoding: 'utf8',
     env: {
@@ -378,17 +378,79 @@ describe.skipIf(!existsSync(turbo))('the workflow step that plans a pull request
     expect(planStep(repo, 'pull_request')).toEqual({ scope: 'full' });
   });
 
-  it.each(['merge_group', 'schedule', 'workflow_dispatch', 'release_pull_request'])(
-    '%s never plans: the queue and the canary run every suite',
+  it.each(['push', 'schedule', 'workflow_dispatch', 'release_pull_request'])(
+    '%s never plans: main, the canary and a release pull request run every suite',
     (event) => {
       const { repo } = monorepo({ planner: true });
       testMerge(repo, ['contributing/capabilities/runtimes.md']);
       expect(planStep(repo, event)).toEqual({ scope: 'full' });
+      const { repo: squashed } = monorepo({ planner: true });
+      change(squashed, ['contributing/capabilities/runtimes.md']);
+      expect(planStep(squashed, event)).toEqual({ scope: 'full' });
     }
   );
+
+  // DOR-5130: a merge-queue entry is ONE squash commit on the entry ahead of it
+  // (or main), so the queue plans HEAD^1..HEAD, on the combined tree.
+  it('a queue entry runs the suites its squash commit moved', () => {
+    const { repo } = monorepo({ planner: true });
+    change(repo, ['contributing/capabilities/runtimes.md']);
+    expect(planStep(repo, 'merge_group')).toEqual({
+      scope: 'selected',
+      packages: 'server',
+      dirs: 'apps/server',
+    });
+  });
+
+  it('a queue entry reaches every suite that builds on what it changed', () => {
+    const { repo } = monorepo({ planner: true });
+    change(repo, ['packages/shared/src/index.ts']);
+    expect(planStep(repo, 'merge_group')).toEqual({
+      scope: 'selected',
+      packages: 'server shared',
+      dirs: 'apps/server packages/shared',
+    });
+  });
+
+  it('a queue entry plans only its own commit, not the entries ahead of it', () => {
+    const { repo } = monorepo({ planner: true });
+    change(repo, ['packages/shared/src/index.ts']); // the entry ahead
+    change(repo, ['contributing/capabilities/runtimes.md']); // this entry
+    expect(planStep(repo, 'merge_group')).toMatchObject({ scope: 'selected', dirs: 'apps/server' });
+  });
+
+  it.each([
+    'pnpm-lock.yaml',
+    'turbo.json',
+    'packages/shared/package.json',
+    '.github/workflows/test.yml',
+  ])('a queue entry that changes %s runs every suite', (file) => {
+    const { repo } = monorepo({ planner: true });
+    change(repo, ['apps/server/src/a.ts', file]);
+    expect(planStep(repo, 'merge_group')).toEqual({ scope: 'full' });
+  });
+
+  it('a queue entry whose parent has no planner runs every suite', () => {
+    const { repo } = monorepo();
+    change(repo, ['contributing/capabilities/runtimes.md']);
+    expect(planStep(repo, 'merge_group')).toEqual({ scope: 'full' });
+  });
+
+  it('a queue entry with no parent to diff runs every suite', () => {
+    const { repo } = monorepo({ planner: true });
+    git(repo, 'checkout', '-q', '--orphan', 'lone');
+    git(repo, 'commit', '-q', '-m', 'lone root');
+    expect(planStep(repo, 'merge_group')).toEqual({ scope: 'full' });
+  });
+
+  it('a queue entry runs every suite when turbo cannot be fetched', () => {
+    const { repo } = monorepo({ planner: true });
+    change(repo, ['contributing/capabilities/runtimes.md']);
+    expect(planStep(repo, 'merge_group', { npxFails: true })).toEqual({ scope: 'full' });
+  });
 });
 
-describe('the plan reaches the pull request leg and nothing else', () => {
+describe('the plan reaches the pull request leg and the queue, nothing else', () => {
   it('the pull request sweep filters to the planned packages', () => {
     expect(
       step(
@@ -397,12 +459,100 @@ describe('the plan reaches the pull request leg and nothing else', () => {
     ).toContain('for package in $PACKAGES; do filters+=("--filter=$package"); done');
   });
 
-  it('the queue sweep reads no plan', () => {
+  // DOR-5130: the full-sweep line filters to the plan on merge_group alone, and
+  // refuses a `selected` plan with no package rather than running everything
+  // under a plan that says otherwise.
+  it('the full-sweep line filters to the plan on a queue entry only', () => {
     const sweep = step(
       "Run every package's test suite (shard ${{ matrix.shard }}/${{ strategy.job-total }})"
     );
-    expect(sweep).not.toContain('PACKAGES');
-    expect(sweep).not.toContain('--filter');
+    expect(sweep).toContain(
+      `if [ "$EVENT" = 'merge_group' ] && [ "\${SCOPE:-}" = 'selected' ]; then`
+    );
+    expect(sweep).toContain('for package in $PACKAGES; do filters+=("--filter=$package"); done');
+    expect(sweep).toContain('--only "${filters[@]}" -- --run');
     expect(sweep).not.toContain('--affected');
+  });
+
+  /** Run the sweep step's body with turbo stubbed to print its arguments. */
+  function sweepArgs(event: string, scope: string, packages: string) {
+    const bin = mkdtempSync(path.join(scratch, 'sweep-'));
+    writeFileSync(path.join(bin, 'pnpm'), '#!/usr/bin/env bash\necho "ARGS: $*"\n');
+    chmodSync(path.join(bin, 'pnpm'), 0o755);
+    const output = path.join(bin, 'output.txt');
+    writeFileSync(output, '');
+    const body = step(
+      "Run every package's test suite (shard ${{ matrix.shard }}/${{ strategy.job-total }})"
+    )
+      .replaceAll('${{ matrix.shard }}', '1')
+      .replaceAll('${{ strategy.job-total }}', '2');
+    const result = spawnSync('bash', ['-e', '-c', body], {
+      encoding: 'utf8',
+      env: {
+        ...env,
+        PATH: `${bin}:${env.PATH ?? ''}`,
+        EVENT: event,
+        SCOPE: scope,
+        PACKAGES: packages,
+        GITHUB_OUTPUT: output,
+      },
+    });
+    const args = /^ARGS: (.*)$/m.exec(result.stdout)?.[1] ?? '';
+    return { status: result.status, args, log: result.stdout + result.stderr };
+  }
+
+  it('a queue entry with a selected plan runs exactly the planned suites', () => {
+    const r = sweepArgs('merge_group', 'selected', 'server shared ');
+    expect(r.status, r.log).toBe(0);
+    expect(r.args).toContain('--only --filter=server --filter=shared -- --run');
+  });
+
+  it.each([
+    ['merge_group', 'full'],
+    ['push', 'selected'],
+    ['schedule', 'selected'],
+    ['release_pull_request', 'selected'],
+  ])('%s with scope %s runs every suite', (event, scope) => {
+    const r = sweepArgs(event, scope, 'server ');
+    expect(r.status, r.log).toBe(0);
+    expect(r.args).toContain('--only -- --run');
+    expect(r.args).not.toContain('--filter');
+  });
+
+  /** Run the per-shard execution proof step with a stub that records its arguments. */
+  function proofArgs(event: string, scope: string, dirs: string) {
+    const cwd = mkdtempSync(path.join(scratch, 'proof-'));
+    mkdirSync(path.join(cwd, 'scripts'));
+    writeFileSync(
+      path.join(cwd, 'scripts/assert-tests-executed.sh'),
+      'echo "ARGS: $*"\n[ "$1" != --packages ] || cat "$2"\n'
+    );
+    const result = spawnSync('bash', ['-e', '-c', step('Prove the suite actually executed')], {
+      cwd,
+      encoding: 'utf8',
+      env: { ...env, EVENT: event, SCOPE: scope, DIRS: dirs, RUNNER_TEMP: cwd },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    return result.stdout;
+  }
+
+  it('the execution proof checks the planned set on a planned queue entry only', () => {
+    const planned = proofArgs('merge_group', 'selected', 'apps/server packages/shared ');
+    expect(planned).toMatch(
+      /^ARGS: --packages \S+planned-packages\.txt\napps\/server\npackages\/shared\n$/
+    );
+    for (const [event, scope] of [
+      ['merge_group', 'full'],
+      ['push', 'selected'],
+      ['schedule', 'selected'],
+      ['release_pull_request', 'selected'],
+    ])
+      expect(proofArgs(event!, scope!, 'apps/server ')).toBe('ARGS: \n');
+  });
+
+  it('a queue entry whose selected plan names no package fails, never runs everything', () => {
+    const r = sweepArgs('merge_group', 'selected', ' ');
+    expect(r.status).not.toBe(0);
+    expect(r.args).toBe('');
   });
 });

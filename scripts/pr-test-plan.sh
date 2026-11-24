@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Decide which package test suites a pull request's `test` leg runs (DOR-3518,
-# ledger 261031-164008). The merge queue and the main canary never use this:
-# they always run every suite.
+# ledger 261031-164008), and since DOR-5130 a merge-queue entry's: the queue
+# passes its squash commit's parent as <base-sha> (HEAD^1..HEAD on the
+# combined tree). The push run on main, the canary and release pull requests
+# never use this: they always run every suite.
 #
 # WHY NOT `turbo test --affected`, which the leg ran until now. It picks
 # packages by which FILES changed and ignores every task's `inputs`.
@@ -17,8 +19,8 @@
 # definition in turbo.json.
 #
 # WHAT IT CANNOT SEE: a test that reads a file nobody declared. Declaring it in
-# turbo.json is the fix. The merge queue runs every suite, so nothing reaches
-# `main` on this leg's choice alone.
+# turbo.json is the fix. The push run on main runs every suite after every
+# merge (DOR-5130), so such a miss is caught there, after merge.
 #
 # A CHANGE CANNOT SELECT ITS OWN TESTS AWAY. A change to anything that decides
 # how tests are chosen, installed or run (turbo.json, any package.json, the
