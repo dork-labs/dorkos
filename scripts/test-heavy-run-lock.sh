@@ -1574,6 +1574,40 @@ race2=$!
 wait "$race1" "$race2"
 check_eq 'two near-simultaneous starts ask flow once' 1 "$(wc -l <"$calls" | tr -d ' ')"
 check_eq 'and both are placed by rank' 'DOR-1 first racer|DOR-10 second racer|' "$(line_of "$coord")"
+# The start goes through heavy-order.ranks.lock: while someone else holds it,
+# no refresh starts (the command goes on without fresh ranks after 5 s).
+coord=$(new_coord)
+printf 'starting\n' >"$coord/heavy-order.ranks.run"
+perl -e 'utime time - 100, time - 100, $ARGV[0]' "$coord/heavy-order.ranks.run"
+perl -MFcntl=:flock -e 'open(my $f, ">>", $ARGV[0]) or exit 2; flock($f, LOCK_EX) or exit 2; sleep 12' \
+  "$coord/heavy-order.ranks.lock" &
+ranks_holder=$!
+own_pids+=("$ranks_holder")
+sleep 0.5
+: >"$calls"
+r=$(FLOW_REFRESH=10 FLOW_TIMEOUT=1 rk "$coord" "$locks" --insert 'DOR-1 lock held')
+check_eq 'a held ranks lock starts no refresh' 0 "$(wc -l <"$calls" | tr -d ' ')"
+check_contains 'and the label goes to the end, unranked' "insert 'DOR-1 lock held' done (by rank: DOR-1: no rank" "$r"
+kill -KILL "$ranks_holder" 2>/dev/null
+wait "$ranks_holder" 2>/dev/null
+
+# A refresh that crashed while "starting" leaves a marker; once older than the
+# cap plus 30 s it is stale. Two commands that both find it stale clear it and
+# start ONE refresh between them (the start is under heavy-order.ranks.lock).
+for round in 1 2 3; do
+  coord=$(new_coord)
+  printf 'starting\n' >"$coord/heavy-order.ranks.run"
+  perl -e 'utime time - 100, time - 100, $ARGV[0]' "$coord/heavy-order.ranks.run"
+  : >"$calls"
+  FLOW_MODE=slowish FLOW_REFRESH=10 FLOW_TIMEOUT=6 rk "$coord" "$locks" --insert 'DOR-1 first after crash' >/dev/null &
+  race1=$!
+  FLOW_MODE=slowish FLOW_REFRESH=10 FLOW_TIMEOUT=6 rk "$coord" "$locks" --insert 'DOR-10 second after crash' >/dev/null &
+  race2=$!
+  wait "$race1" "$race2"
+  check_eq "a crashed starting marker past the cap is cleared, and two commands start one refresh (round $round)" \
+    1 "$(wc -l <"$calls" | tr -d ' ')"
+  check_eq "and both are placed by rank (round $round)" 'DOR-1 first after crash|DOR-10 second after crash|' "$(line_of "$coord")"
+done
 
 # The listing after a write reads kept ranks only: no flow call, no wait.
 coord=$(new_coord)
@@ -1585,7 +1619,7 @@ r=$(FLOW_MODE=slow FLOW_TIMEOUT=5 rk "$coord" "$locks" --move 'DOR-10 b' --top)
 took=$(($(date +%s) - start))
 check_eq 'a --move asks flow nothing' 0 "$(wc -l <"$calls" | tr -d ' ')"
 check_le 'and does not wait for it' 2 "$took"
-check_contains 'its listing says the ranks are not kept' 'no kept ranks' "$r"
+check_contains 'its listing says the ranks were not refreshed after a write' 'no ranks: not refreshed after a write' "$r"
 
 # The real lookup, with the hook unset, from a checkout with no flow installed.
 norepo="$work/norepo"

@@ -10,9 +10,10 @@
 # said it should go. So `--insert <label>` with no --after/--before/--at/--top
 # now does that itself:
 #
-#   * A release row (`rel-*`, `qa-gate-*`, `qa-row*`) goes first: behind any
-#     release rows already there and behind whatever is running, ahead of
-#     everything else (the PM's Nov 22 rule; contributing/ci.md).
+#   * A release row (`rel-*`, `qa-gate-*`, `qa-row*`) goes right behind the
+#     last release row in the line, wherever it is, and past any running line
+#     directly behind that; with no release row it goes first, past any
+#     running line at the top (the PM's Nov 22 rule; contributing/ci.md).
 #   * A label naming a ticket (`DOR-1234`, any case, not glued to a letter or
 #     digit before it; the first one wins) goes in front of the first line
 #     whose ticket ranks lower in `flow order`. Work in flight (In Progress,
@@ -33,6 +34,7 @@
 #   heavy-order.ranks      "DOR-1<TAB>3" / "DOR-2<TAB>unranked", one per line;
 #                          its age is the age of the ranks
 #   heavy-order.ranks.run  the pid of a refresh in flight
+#   heavy-order.ranks.lock a short lock around clearing and making .run
 #   heavy-order.ranks.err  why the last refresh failed
 #
 # Ranks younger than DORKOS_HEAVY_RANKS_MAX_AGE seconds (1800) are used as they
@@ -171,18 +173,39 @@ order_ranks_running() {
   kill -0 "$pid" 2>/dev/null
 }
 
-# Start one refresh unless one is in flight. The marker is created with
-# noclobber, so of two near-simultaneous starts only one gets it; a stale
-# marker is cleared first.
+# Start one refresh unless one is in flight. Checking, clearing a stale marker
+# and making a new one happen under a short flock on heavy-order.ranks.lock
+# (descriptor 7; never the order lock), so two commands cannot both clear a
+# stale marker and start two refreshes. The marker is also made with
+# noclobber. A lock not had within 5 s starts nothing: this command goes on
+# without fresh ranks.
 order_ranks_start() {
+  [ -L "$ORDER_RANKS_FILE.lock" ] && return 0
+  { exec 7>>"$ORDER_RANKS_FILE.lock"; } 2>/dev/null || return 0
+  # shellcheck disable=SC2016 # a perl program, not a shell expansion
+  if ! perl -MFcntl=:flock -e '
+    open(my $fh, ">>&=", 7) or exit 2;
+    local $SIG{ALRM} = sub { exit 1 };
+    alarm 5;
+    flock($fh, LOCK_EX) or exit 2;
+    exit 0' 2>/dev/null; then
+    exec 7>&-
+    return 0
+  fi
   if [ -f "$ORDER_RANKS_FILE.run" ]; then
-    order_ranks_running && return 0
+    if order_ranks_running; then
+      exec 7>&-
+      return 0
+    fi
     rm -f -- "$ORDER_RANKS_FILE.run"
   fi
-  (set -C && printf 'starting\n' >"$ORDER_RANKS_FILE.run") 2>/dev/null || return 0
-  rm -f -- "$ORDER_RANKS_FILE.err"
-  order_ranks_refresh </dev/null >/dev/null 2>&1 8>&- &
-  disown "$!" 2>/dev/null
+  if (set -C && printf 'starting\n' >"$ORDER_RANKS_FILE.run") 2>/dev/null; then
+    rm -f -- "$ORDER_RANKS_FILE.err"
+    order_ranks_refresh </dev/null >/dev/null 2>&1 7>&- 8>&- &
+    disown "$!" 2>/dev/null
+  fi
+  # Closing descriptor 7 lets go of the lock.
+  exec 7>&-
   return 0
 }
 
@@ -205,7 +228,7 @@ order_ranks_load() {
   age=$(file_age "$ORDER_RANKS_FILE")
   if [ -z "$age" ] || [ "$age" -ge "$max" ]; then
     if [ "${1:-}" = kept ]; then
-      ORDER_RANKS_WHY='no kept ranks; the next --insert or --list asks flow'
+      ORDER_RANKS_WHY='not refreshed after a write; --list or an --insert asks flow'
     elif order_flow_argv; then
       order_ranks_start
       deadline=$(($(date +%s) + wait))
