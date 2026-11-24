@@ -130,6 +130,6 @@ Every `answerIn` wake is paid for from a budget: **3 per person and 20 per chann
 
 - **The server log on the staff computer.** `answer-in budget spent; post kept as history` means a person or a channel hit the budget. A few a day is normal. Many in a row from one channel is a flood: check the space's report queue and let moderators act.
 - **Approval cards on the staff install.** There should be none. Each one means a chat is not in Never ask, or a DorkOS area is set to Ask. Deny it, then fix the chat or the area.
-- **What the host says.** Read `#help` daily during the soft launch. Anything that promises a date, a price or a feature the docs do not describe is a `SOUL.md` or docs fix.
+- **What the host says.** Read `#help` daily during the first two weeks after it opens. Anything that promises a date, a price or a feature the docs do not describe is a `SOUL.md` or docs fix.
 - **Its access level in the space.** Member, every time you look.
 - **To stop it at once,** choose **Stop my agents** in the channel, or send `{"answerIn":[]}`, or remove the agent from the channel under **Members**.

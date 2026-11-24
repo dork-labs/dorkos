@@ -14,6 +14,9 @@ status: draft
 **Revised:** 2026-10-18, to the navigation fix's plan of record: the DM looks like a room and runs on the session (§3.1, §7 step 4, §8). 2026-11-22, §6 carries a **proposed delta**: the canonical form becomes the two `dork:` shapes of `research/20261122_dorkos-address-format.md` (ADR [261122-124821](../../decisions/261122-124821-one-dork-reference-ids-for-machines-addresses-for-people.md), proposed); the display form and §8.6 stand. 2026-11-24, §1 table: Maildir retires (ADR 261017-211859 accepted).
 **Anchor:** `main` @ `5078d6c7cb`. Every `file:line` below was read on that commit.
 
+> **Changed 2026-11-24 (Dorian).** ADR `261017-211859` is accepted, with Maildir retiring: the conversation log is the record, Relay stays as the delivery engine, and its Maildir store carries delivery only, takes nothing new, and retires. One message system at the end.
+> ADR `261124-150517` gives hand-offs between agents a delivery record and makes them survive a restart. ADR `261124-150518` makes A2A one way into a single "send to an agent" capability.
+
 ## Overview
 
 **A conversation is the shared log. A session is one agent's private working context, seated behind a conversation.**

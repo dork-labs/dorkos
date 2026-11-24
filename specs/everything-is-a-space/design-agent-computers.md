@@ -2,6 +2,9 @@
 
 **For:** Dorian and DorkOS Cloud · **Date:** 2026-10-18 · **Status:** proposed, waiting on agreement · **Builds on:** A1 (#2952), B1 to B3 (the session relay), C7 (the teammate tier) · **Tickets:** DOR-2939 (A7), DOR-2940 (A8)
 
+> **Changed 2026-11-24 by ADR `261124-150515` (sequence, not dates).** The launch and the "at launch / after launch" split in this note are retired. What it decided to build, and the order where one part needs another, stand. The live order is `meta/ROADMAP.md`.
+> ADR `261124-150516` makes the agent computer the computer side only, not the whole server in a sealed role. Section 5's "The role" (and part 2 of the build order) is replaced; the contract in sections 2 and 3 stands, and a Mac will use it too.
+
 > **Note 2026-11-22, ADR [`261122-173853`](../../decisions/261122-173853-one-space-model.md) (one space model).** Section 1's split is now the general rule: a space holds its members' data (identity, rules, memory, schedules, conversations, connections, settings) and the computer that runs turns holds only execution state (workspaces, runtime transcripts and sign-ins, processes). A hub is a one-tenant space server. "A hub runs no agents" is a hosting policy read from the role setting, not an architectural wall. A Mac agent's identity stays on the Mac at launch; after launch the private space becomes a tenant on the space store, agents last.
 
 "Hub" is the code's word for a person's own DorkOS in the cloud. No app copy says it: people see **Private**, **Cloud** and their computer's name.

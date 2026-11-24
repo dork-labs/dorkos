@@ -194,7 +194,7 @@ Every rule blocks except `hand-registered-path`, which is **advisory** (`blockin
 
 ### Adding a route that passes
 
-**Today** a new route passes every blocking rule when it is a documented `registerPath` (the recipe is [Adding a New Endpoint](#adding-a-new-endpoint)) with:
+A new endpoint is a capability ([Adding a New Endpoint](#adding-a-new-endpoint)). A hand route, kept only for a shape a capability cannot carry yet, passes every blocking rule when it is a documented `registerPath` with:
 
 - a unique `operationId` (or none, and the generator derives one: see [Operation ids](#operation-ids));
 - at least one 4xx or 5xx response, each with a body that is `$ref: ErrorResponse`;
@@ -204,7 +204,7 @@ Every rule blocks except `hand-registered-path`, which is **advisory** (`blockin
 
 Then regenerate the docs (above), so `docs/api/openapi.json` and the census both list it. `hand-registered-path` notes the new call, but only as advice.
 
-**Once DOR-4978 merges** (the capability mount, landing next), a new route is a capability with an `http` surface instead, served by the generic mount and documented by the OpenAPI projection, and `hand-registered-path` blocks. That PR rewrites [Adding a New Endpoint](#adding-a-new-endpoint) with the recipe; the decision is in ADR PR #4160. The path, parameter and paging rules above still apply. One gap stays open after it: a capability's `http` surface cannot declare its error responses yet, so a new capability route adds one to `error-missing` in its group until it can.
+**DOR-4978 has merged:** a new route is a capability with an `http` surface, served by the generic mount and documented by the OpenAPI projection. The path, parameter and paging rules above still apply to it. `hand-registered-path` still only advises: `scripts/api-lint/check-api-lint.ts` has not been switched to block. One gap stays open: a capability's `http` surface cannot declare its error responses yet, so a new capability route adds one to `error-missing` in its group until it can.
 
 **Never raise a number in the baseline by hand.** `--update` only lowers or removes entries, and CI runs the check with `--base`, which refuses any entry that is higher than the base's or new.
 

@@ -14,6 +14,9 @@ status: ideation
 **Decision:** ADR [261015-042933](../../decisions/261015-042933-everything-is-a-space-hubs-space-servers-and-agent-computers.md)
 **Status:** Agreed. The design below was reviewed over six rounds by four reviewers (architecture, product, security and open source, DorkOS Cloud), and Dorian approved it with all the recommended picks on 2026-10-15. Do not reopen it; change it only through a new decision.
 
+> **Changed 2026-11-24 by ADR `261124-150515` (sequence, not dates).** The dates, the launch and the "before launch / after launch" split in this document are retired. What it decided to build, and the order where one step needs another, stand. The live order is `meta/ROADMAP.md`.
+> ADR `261124-150516` changes the agent computer (section 2.5, steps A7 and A8): it runs the computer side only, not the whole server in a sealed role.
+
 > **Changed 2026-11-22 by ADR [`261122-173853`](../../decisions/261122-173853-one-space-model.md) (one space model).** Two kinds of state, not two kinds of place. A space holds its members' data (agents' identity, rules, memory and schedules, conversations, connections, settings, documents, extensions); only execution state (workspaces, runtime transcripts and sign-ins, running processes) stays on the computer that runs turns. A hub is a one-tenant space server, and the private space (today `LOCAL_COMMUNITY` on SQLite) becomes a tenant on the space store after launch, domain by domain, agents last. "No hub runs agents" is a hosting policy read from the role setting; the wall that stays is that a shared host never holds a member's credentials or a key to a member's computer. "The Mac's own rooms stay the Mac's" describes launch, not the end state.
 
 "Hub" is the internal word for a person's own DorkOS. It never appears in anything a person reads. The app says **Private** for the private space and **space** for everything else.
@@ -287,6 +290,8 @@ After launch (PGlite, XL). Neither experience needs it.
 - **Access levels and guests at invite time:** after launch (Dorian, 2026-10-15; equal accounts, DOR-2743).
 
 ## 5) Size and date
+
+_Retired 2026-11-24 (ADR 261124-150515): kept as a record of the old plan. The order of the steps stands; the dates do not._
 
 - **App:** about 15 L and 10 M, roughly 18 to 20 chat-weeks, across three app chats.
 - **Cloud:** four chats from the weekend: the hub fleet, the computer fleet, team spaces (with the host split and its launch gates), and billing.

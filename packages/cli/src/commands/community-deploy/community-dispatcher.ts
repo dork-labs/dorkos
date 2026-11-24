@@ -60,7 +60,7 @@ import { COMMUNITY_SERVICE_TIMEOUT_MS } from './provider-process.js';
 /**
  * The line every `dorkos community` run starts with (DOR-2740).
  *
- * Spaces are an experiment the launch ships without: the app hides them until a
+ * Spaces are an experiment, off by default: the app hides them until a
  * person turns them on in Settings → Experiments, and the command that builds a
  * space server says the same thing before it does anything.
  */
