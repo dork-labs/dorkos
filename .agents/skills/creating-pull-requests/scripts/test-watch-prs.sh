@@ -74,6 +74,19 @@ check auto_merge_off    "$(jq -c '.mergeState="CLEAN"' <<<"$unarmed")"          
 # after a failed-checks ejection of this head, re-arming is the ejection's call
 check auto_merge_off_ejected "$(jq -c '.mergeState="CLEAN" | .failedEjectionsSinceChange=1' <<<"$unarmed")" "AUTO_MERGE_OFF(ejected,1)"
 check auto_merge_off_repeat  "$(jq -c '.mergeState="CLEAN" | .failedEjectionsSinceChange=2' <<<"$unarmed")" "AUTO_MERGE_OFF(ejected,2)"
+check auto_merge_off_ejected_reason "$(jq -c '.mergeState="CLEAN" | .failedEjectionsSinceChange=1 | .lastRemovalReasonSinceChange="failed_checks"' <<<"$unarmed")" "AUTO_MERGE_OFF(ejected,1)"
+# every queue removal since the last change counts, and carries its reason: a
+# manual or timed-out removal is not an ejection to re-queue after
+check auto_merge_off_manual  "$(jq -c '.mergeState="CLEAN" | .lastRemovalReasonSinceChange="manual"' <<<"$unarmed")" "AUTO_MERGE_OFF(dequeued,manual)"
+check auto_merge_off_timeout "$(jq -c '.mergeState="CLEAN" | .lastRemovalReasonSinceChange="checks_timed_out"' <<<"$unarmed")" "AUTO_MERGE_OFF(dequeued,checks_timed_out)"
+# the latest removal wins: a failed ejection then a manual dequeue is manual
+check auto_merge_off_manual_last "$(jq -c '.mergeState="CLEAN" | .failedEjectionsSinceChange=1 | .lastRemovalReasonSinceChange="manual"' <<<"$unarmed")" "AUTO_MERGE_OFF(dequeued,manual)"
+# UNSTABLE is CLEAN with a non-required check red; only the excluded Vercel
+# check reaches here (any other red is FAILING above)
+check auto_merge_off_unstable "$(jq -c '.mergeState="UNSTABLE"' <<<"$unarmed")" "AUTO_MERGE_OFF"
+check auto_merge_off_unstable_ejected "$(jq -c '.mergeState="UNSTABLE" | .failedEjectionsSinceChange=1' <<<"$unarmed")" "AUTO_MERGE_OFF(ejected,1)"
+# threads block nothing now, so a green unarmed PR with threads is still off
+check auto_merge_off_over_threads "$(jq -c '.mergeState="CLEAN" | .unresolvedThreads=2' <<<"$unarmed")" "AUTO_MERGE_OFF"
 check clean_armed       "$(jq -c '.mergeState="CLEAN"' <<<"$base")"                                 "PENDING"
 check pending           "$base"                                                                     "PENDING"
 # a conflict outranks failing checks: a DIRTY PR gets no CI, so reds are stale
@@ -105,7 +118,10 @@ ACTIONABLE=(
   'EJECTED(checks_timed_out)' 'EJECTED(something_new)' 'CONFLICTING' 'FAILING(test)'
   'CANCELLED(review)' 'STUCK_UNMERGEABLE' 'STALLED_IN_QUEUE(120)' 'HELD_BY_LABEL(hold)'
   'HELD_BY_LABEL(hold,armed)' 'UNRESOLVED_THREADS(2)' 'UNRESOLVED_THREADS(2,armed)'
-  'AUTO_MERGE_OFF' 'AUTO_MERGE_OFF(ejected,2)' 'WATCHER BLIND(3 cycles)'
+  'AUTO_MERGE_OFF' 'AUTO_MERGE_OFF(ejected,1)' 'AUTO_MERGE_OFF(ejected,2)'
+  'AUTO_MERGE_OFF(dequeued,manual)' 'AUTO_MERGE_OFF(dequeued,checks_timed_out)'
+  'AUTO_MERGE_OFF(dequeued,invalid_merge_commit)' 'HELD_BY_LABEL(blocked,armed)'
+  'WATCHER BLIND(3 cycles)'
 )
 for token in "${ACTIONABLE[@]}"; do
   [ -n "$(remedy_of "$token")" ] || { echo "FAIL remedy_present: '$token' has no remedy" >&2; fail=1; }
@@ -115,6 +131,8 @@ for token in "${ACTIONABLE[@]}"; do
   remedy_lacks no_squash_flag "$token" '--squash'
   remedy_lacks no_direct_merge "$token" 'gh pr merge [0-9<]'
   remedy_lacks no_empty_commit_advice "$token" '(^|[^r] )push an empty commit|allow-empty'
+  # merge-tail, arm-door and arm.sh are gone from main (DOR-5124)
+  remedy_lacks no_retired_arming "$token" 'merge-tail|arm-door|arm\.sh'
 done
 # Informational tokens print no remedy: each line is a model wakeup.
 for token in MERGED CLOSED 'QUEUED(2)' PENDING; do
@@ -137,8 +155,21 @@ remedy_has failing_never_empty 'FAILING(test)' 'Never push an empty commit'
 # After an ejection, AUTO_MERGE_OFF never says to turn auto-merge back on:
 # the same job failing twice must not be re-armed (#1964).
 remedy_lacks ejected_off_no_rearm 'AUTO_MERGE_OFF(ejected,2)' 'gh pr merge'
-remedy_has ejected_off_defers 'AUTO_MERGE_OFF(ejected,2)' 'never re-arm after the same job failed twice'
-remedy_has held_armed_disarm 'HELD_BY_LABEL(hold,armed)' 'gh pr merge --disable-auto 1931'
+remedy_has ejected_off_fix 'AUTO_MERGE_OFF(ejected,2)' 'fix it and push'
+# one ejection: read the job, then re-queue once if it is plainly not yours
+remedy_has ejected_once_requeue 'AUTO_MERGE_OFF(ejected,1)' 'gh pr merge --auto 1931'
+remedy_has ejected_once_reads_job 'AUTO_MERGE_OFF(ejected,1)' 'Read the failing merge-group job first'
+# a manual or timed-out removal never comes with a command to re-queue
+remedy_lacks manual_no_rearm 'AUTO_MERGE_OFF(dequeued,manual)' 'gh pr merge'
+remedy_has manual_reads_why 'AUTO_MERGE_OFF(dequeued,manual)' 'on purpose'
+remedy_lacks timeout_no_rearm 'AUTO_MERGE_OFF(dequeued,checks_timed_out)' 'gh pr merge'
+remedy_has timeout_is_stall 'AUTO_MERGE_OFF(dequeued,checks_timed_out)' 'Do not push or rerun'
+remedy_lacks other_removal_no_rearm 'AUTO_MERGE_OFF(dequeued,invalid_merge_commit)' 'gh pr merge'
+remedy_has other_removal_names_reason 'AUTO_MERGE_OFF(dequeued,invalid_merge_commit)' 'invalid_merge_commit'
+# hold is enforced by the required not-held check; the other hold labels are not
+remedy_has hold_armed_not_held 'HELD_BY_LABEL(hold,armed)' 'not-held'
+remedy_lacks hold_armed_no_disarm 'HELD_BY_LABEL(hold,armed)' 'disable-auto'
+remedy_has held_armed_disarm 'HELD_BY_LABEL(blocked,armed)' 'gh pr merge --disable-auto 1931'
 remedy_has blind_names_checks 'WATCHER BLIND(3 cycles)' 'gh auth status'
 # Without a PR the placeholder stays readable.
 case "$("$SCRIPT" --remedy 'EJECTED(merge_conflict)')" in
@@ -309,12 +340,16 @@ probe_field() { # $1 name, $2 jq filter, $3 expected
 probe_field probe_threads_include_outdated .unresolvedThreads 2
 probe_field probe_labels .labels '["hold"]'
 probe_field probe_repeat_since_change .failedEjectionsSinceChange 2
+probe_field probe_removals_since_change .removalsSinceChange 3
+probe_field probe_last_removal_since_change .lastRemovalReasonSinceChange '"failed_checks"'
 probe_field probe_last_ejection .lastEjectionReason '"failed_checks"'
 probe_field probe_queue_age_known '.queuedMinutes > 1000' true
 # A force-push is a change too: nothing after it means no repeat.
 FORCE_PUSHED=$(jq -c '.data.repository.pullRequest.timelineItems.nodes += [{"__typename":"HeadRefForcePushedEvent"}]' <<<"$RICH_PR")
 rich=$(STUB_GH_API_JSON="$FORCE_PUSHED" STUB_GH_CHECKS_OUTPUT="$CHECKS_PASS" STUB_GH_CHECKS_EXIT=0 PATH="$STUB_DIR:$PATH" "$SCRIPT" --probe 42)
 probe_field probe_force_push_resets .failedEjectionsSinceChange 0
+probe_field probe_force_push_resets_removals .removalsSinceChange 0
+probe_field probe_force_push_resets_reason .lastRemovalReasonSinceChange null
 # No queue entry means no queue age, never a crash.
 rich=$(STUB_GH_CHECKS_OUTPUT="$CHECKS_PASS" STUB_GH_CHECKS_EXIT=0 PATH="$STUB_DIR:$PATH" "$SCRIPT" --probe 42)
 probe_field probe_unqueued_age .queuedMinutes null
@@ -418,7 +453,7 @@ valid_watch_check valid_bounded_watch 3 "WATCHER EXPIRED after 1 cycles — PRs 
 # and a --once watcher says it on its only cycle. `sleep` is stubbed to a
 # no-op so the loop runs its cycles without waiting. Captured stdout is not a
 # TTY, so exit-on-action is on by default: the streaming cells pass
-# --no-exit-on-action, and the default cells expect exit 5 and the summary.
+# --no-exit-on-action, and the default cells expect exit 10 and the summary.
 LOOP_DIR="$STUB_DIR/loop"
 mkdir "$LOOP_DIR"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$LOOP_DIR/sleep"
@@ -435,12 +470,12 @@ blind_check() { # $1 name, $2 expected exit, $3 expected stdout, remaining args 
 BLIND_REMEDY=$("$SCRIPT" --remedy 'WATCHER BLIND(3 cycles)' 42)
 blind_check blind_after_three_cycles 3 "PR #42 -> WATCHER BLIND(3 cycles) :: $BLIND_REMEDY
 WATCHER EXPIRED after 5 cycles — PRs still open; check them directly" --no-exit-on-action --interval 1 --max-cycles 5 42
-blind_check blind_once 5 "PR #42 -> WATCHER BLIND(1 cycles) :: $("$SCRIPT" --remedy 'WATCHER BLIND(1 cycles)' 42)
+blind_check blind_once 10 "PR #42 -> WATCHER BLIND(1 cycles) :: $("$SCRIPT" --remedy 'WATCHER BLIND(1 cycles)' 42)
 NEEDS ACTION: PR #42 WATCHER BLIND(1 cycles). Act on each line above, then re-launch the watcher for any PR still open." --once 42
 blind_check blind_short_watch 3 "PR #42 -> WATCHER BLIND(2 cycles) :: $("$SCRIPT" --remedy 'WATCHER BLIND(2 cycles)' 42)
 WATCHER EXPIRED after 2 cycles — PRs still open; check them directly" --no-exit-on-action --interval 1 --max-cycles 2 42
 # A background watcher that goes blind wakes you on the cycle it says so.
-blind_check blind_wakes_background 5 "PR #42 -> WATCHER BLIND(3 cycles) :: $BLIND_REMEDY
+blind_check blind_wakes_background 10 "PR #42 -> WATCHER BLIND(3 cycles) :: $BLIND_REMEDY
 NEEDS ACTION: PR #42 WATCHER BLIND(3 cycles). Act on each line above, then re-launch the watcher for any PR still open." --interval 1 --max-cycles 5 42
 
 # A reported line carries its remedy after ` :: `, from the same remedy() the
@@ -478,19 +513,19 @@ line_for() { # $1 PR, $2 token: the report line the loop prints
 
 # CONFLICTING
 STUB_GH_API_JSON="$(pr_json DIRTY "$ARMED" '[]')" STUB_GH_CHECKS_OUTPUT="$CHECKS_PASS" STUB_GH_CHECKS_EXIT=0 \
-  action_check exit_conflicting 5 "$(line_for 42 CONFLICTING)
+  action_check exit_conflicting 10 "$(line_for 42 CONFLICTING)
 NEEDS ACTION: PR #42 CONFLICTING$SUMMARY_TAIL" --interval 1 --max-cycles 3 42
 # FAILING
 STUB_GH_API_JSON="$(pr_json BLOCKED "$ARMED" '[]')" STUB_GH_CHECKS_OUTPUT="$CHECKS_FAIL_NONVERCEL" STUB_GH_CHECKS_EXIT=1 \
-  action_check exit_failing 5 "$(line_for 42 'FAILING(typecheck)')
+  action_check exit_failing 10 "$(line_for 42 'FAILING(typecheck)')
 NEEDS ACTION: PR #42 FAILING(typecheck)$SUMMARY_TAIL" --interval 1 --max-cycles 3 42
 # AUTO_MERGE_OFF: green, and nothing is going to merge it
 STUB_GH_API_JSON="$(pr_json CLEAN null '[]')" STUB_GH_CHECKS_OUTPUT="$CHECKS_PASS" STUB_GH_CHECKS_EXIT=0 \
-  action_check exit_auto_merge_off 5 "$(line_for 42 AUTO_MERGE_OFF)
+  action_check exit_auto_merge_off 10 "$(line_for 42 AUTO_MERGE_OFF)
 NEEDS ACTION: PR #42 AUTO_MERGE_OFF$SUMMARY_TAIL" --interval 1 --max-cycles 3 42
 # CANCELLED: a cancelled check never turns green by itself
 STUB_GH_API_JSON="$(pr_json BLOCKED "$ARMED" '[]')" STUB_GH_CHECKS_OUTPUT="$CHECKS_CANCEL" STUB_GH_CHECKS_EXIT=0 \
-  action_check exit_cancelled 5 "$(line_for 42 'CANCELLED(review)')
+  action_check exit_cancelled 10 "$(line_for 42 'CANCELLED(review)')
 NEEDS ACTION: PR #42 CANCELLED(review)$SUMMARY_TAIL" --interval 1 --max-cycles 3 42
 # EJECTED: an ejection counts only once the watcher saw the PR without it, so
 # cycle 1 is a quiet queued PR and cycle 2 carries the removal event.
@@ -499,16 +534,22 @@ mkdir "$SEQ_DIR"
 pr_json BLOCKED "$ARMED" '[]' > "$SEQ_DIR/1.json"
 pr_json BLOCKED null '[{"__typename":"RemovedFromMergeQueueEvent","createdAt":"2026-08-25T04:00:00Z","reason":"failed_checks"}]' > "$SEQ_DIR/2.json"
 STUB_GH_API_SEQ="$SEQ_DIR" STUB_GH_CHECKS_OUTPUT="$CHECKS_PASS" STUB_GH_CHECKS_EXIT=0 \
-  action_check exit_ejected 5 "$(line_for 42 'EJECTED(failed_checks)')
+  action_check exit_ejected 10 "$(line_for 42 'EJECTED(failed_checks)')
 NEEDS ACTION: PR #42 EJECTED(failed_checks)$SUMMARY_TAIL" --interval 1 --max-cycles 4 42
 
-# A relaunch after an ejection sees a green PR with auto-merge off. The
-# ejection already woke you and its remedy decides whether to re-arm, so the
-# relaunch keeps watching instead of waking you again with "turn it back on".
+# A relaunch after an ejection sees a green PR with auto-merge off. It wakes
+# you with the ejection's own advice (read the job, re-queue once if it is not
+# yours), never a bare "turn it back on"; if you chose to wait, you leave the
+# PR out of the relaunch.
 EJECTED_GREEN='{"data":{"repository":{"pullRequest":{"state":"OPEN","mergeStateStatus":"CLEAN","labels":{"nodes":[]},"autoMergeRequest":null,"mergeQueueEntry":null,"reviewThreads":{"nodes":[]},"timelineItems":{"nodes":[{"__typename":"PullRequestCommit"},{"__typename":"RemovedFromMergeQueueEvent","createdAt":"2026-08-25T04:00:00Z","reason":"failed_checks"}]}}}}}'
 STUB_GH_API_JSON="$EJECTED_GREEN" STUB_GH_CHECKS_OUTPUT="$CHECKS_PASS" STUB_GH_CHECKS_EXIT=0 \
-  action_check relaunch_after_ejection 3 "$(line_for 42 'AUTO_MERGE_OFF(ejected,1)')
-WATCHER EXPIRED after 2 cycles — PRs still open; check them directly" --interval 1 --max-cycles 2 42
+  action_check relaunch_after_ejection 10 "$(line_for 42 'AUTO_MERGE_OFF(ejected,1)')
+NEEDS ACTION: PR #42 AUTO_MERGE_OFF(ejected,1)$SUMMARY_TAIL" --interval 1 --max-cycles 2 42
+# The collector carries a manual removal through to the token, end to end.
+DEQUEUED_GREEN='{"data":{"repository":{"pullRequest":{"state":"OPEN","mergeStateStatus":"CLEAN","labels":{"nodes":[]},"autoMergeRequest":null,"mergeQueueEntry":null,"reviewThreads":{"nodes":[]},"timelineItems":{"nodes":[{"__typename":"PullRequestCommit"},{"__typename":"RemovedFromMergeQueueEvent","createdAt":"2026-08-25T04:00:00Z","reason":"failed_checks"},{"__typename":"RemovedFromMergeQueueEvent","createdAt":"2026-08-25T05:00:00Z","reason":"manual"}]}}}}}'
+STUB_GH_API_JSON="$DEQUEUED_GREEN" STUB_GH_CHECKS_OUTPUT="$CHECKS_PASS" STUB_GH_CHECKS_EXIT=0 \
+  action_check relaunch_after_dequeue 10 "$(line_for 42 'AUTO_MERGE_OFF(dequeued,manual)')
+NEEDS ACTION: PR #42 AUTO_MERGE_OFF(dequeued,manual)$SUMMARY_TAIL" --interval 1 --max-cycles 2 42
 
 # States that need nobody's hand do not end the watch: a held PR waits for
 # whoever set the label, a pending one for its checks.
@@ -521,7 +562,7 @@ WATCHER EXPIRED after 2 cycles — PRs still open; check them directly" --interv
 # the summary names only the PR that needs action.
 STUB_GH_API_JSON_41="$(pr_json BLOCKED "$ARMED" '[]')" STUB_GH_API_JSON_42="$(pr_json DIRTY "$ARMED" '[]')" \
   STUB_GH_API_JSON_43="$(pr_json CLEAN null '[]')" STUB_GH_CHECKS_OUTPUT="$CHECKS_PASS" STUB_GH_CHECKS_EXIT=0 \
-  action_check exit_names_each_pr 5 "$(line_for 42 CONFLICTING)
+  action_check exit_names_each_pr 10 "$(line_for 42 CONFLICTING)
 $(line_for 43 AUTO_MERGE_OFF)
 NEEDS ACTION: PR #42 CONFLICTING, PR #43 AUTO_MERGE_OFF$SUMMARY_TAIL" --interval 1 --max-cycles 3 41 42 43
 
@@ -535,6 +576,7 @@ WATCHER EXPIRED after 2 cycles — PRs still open; check them directly" --no-exi
 # --exit-on-action turns it back on there. Python's pty module, not script(1):
 # BSD and util-linux script differ in flags and in how they treat a closed
 # stdin, and this runs the same way on macOS and on the Linux runners.
+command -v python3 >/dev/null || { echo "test-watch-prs: the TTY cells need python3 on PATH" >&2; exit 1; }
 in_tty() { # argv = command; prints its output (\r removed) and exits with its code
   python3 -c '
 import os, pty, sys
@@ -566,7 +608,7 @@ tty_check() { # $1 name, $2 expected exit, $3 expected last line, remaining args
   case "$out" in *"$(line_for 42 CONFLICTING)"*) : ;; *) echo "FAIL $name: no CONFLICTING line: $out" >&2; fail=1 ;; esac
 }
 tty_check tty_default_streams 3 "WATCHER EXPIRED after 2 cycles — PRs still open; check them directly" --interval 1 --max-cycles 2 42
-tty_check tty_exit_on_action 5 "NEEDS ACTION: PR #42 CONFLICTING$SUMMARY_TAIL" --exit-on-action --interval 1 --max-cycles 2 42
+tty_check tty_exit_on_action 10 "NEEDS ACTION: PR #42 CONFLICTING$SUMMARY_TAIL" --exit-on-action --interval 1 --max-cycles 2 42
 
 # AUTO_MERGE_OFF's remedy reads main's ci/required-checks.json the way
 # scripts/open-pr.sh does: once main requires not-held, release-window and
