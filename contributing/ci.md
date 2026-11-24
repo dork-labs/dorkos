@@ -304,15 +304,15 @@ The canary closes it. `test.yml`, `browser-test.yml`, `typecheck.yml` and `lint.
 
 **The PR-side gates.** Each runs on `pull_request` and `merge_group` with no path filter or job-level `if:`, and checks out main's copy of its script, never the PR's:
 
-| Check            | Fails while                                                                                                                              | Decision                                           |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `not-held`       | the PR carries `hold` (DOR-5103)                                                                                                         | `scripts/not-held-check.sh`                        |
-| `pr-gates`       | Security has not signed off at the head: no `security-reviewed` label at or after it, and no passing cloud `security-verdict` (DOR-5119) | `scripts/pr-gates-check.sh`, reusing `arm-door.sh` |
-| `release-window` | the `MERGE_FREEZE` repository variable names another PR, a release PR is not alone, or main's `VERSION` is not on npm yet (DOR-5102)     | `scripts/release-window-check.sh`                  |
+| Check            | Fails while                                                                                                                                                                                                                                                          | Decision                                           |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `not-held`       | the PR carries `hold` (DOR-5103)                                                                                                                                                                                                                                     | `scripts/not-held-check.sh`                        |
+| `pr-gates`       | Security has not signed off at the head. Security's sign-off is a signed review marker or the cloud verdict: a PR comment whose signature verifies against main's `ci/security/allowed_signers` for this PR's head, or a passing cloud `security-verdict` (DOR-5119) | `scripts/pr-gates-check.sh`, reusing `arm-door.sh` |
+| `release-window` | the `MERGE_FREEZE` repository variable names another PR, a release PR is not alone, or main's `VERSION` is not on npm yet (DOR-5102)                                                                                                                                 | `scripts/release-window-check.sh`                  |
 
 `pr-gates` prints QA's `qa-real-data` and the designer's `design-ok` as notes only: no local agent reviews an open PR, and QA and the designer sweep each day's merges instead. The cloud Security lens runs inside the Claude review on every push; `security-verdict.yml` posts its verdict as a status and re-runs `pr-gates` after a pass. Nothing re-runs a check when a freeze lifts or a publish lands, so `release-window-refresh.yml` re-runs failed `release-window` checks once the window is open again.
 
-**Only Security's `label-pr.sh` adds or removes `security-*` labels; no agent touches them by hand.** If you think a PR needs one, ask Security. Fork PRs get no automatic review (no secrets), so they wait for that label.
+**Only Security's `label-pr.sh` adds or removes `security-*` labels and posts its signed review marker; no agent touches them by hand.** A `security-reviewed` label by itself is not a sign-off; `pr-gates` notes it and keeps waiting for the signed marker or the cloud verdict. If you think a PR needs a review, ask Security. Fork PRs get no automatic review (no secrets), so they wait for Security's signed review.
 
 **The door.** `queue-repeat-guard.yml` reads every merge-queue entry and takes out a head that already failed the same required check in two queue builds (see the queue section above). It fails open.
 

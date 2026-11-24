@@ -451,7 +451,8 @@ jobs:
       # pr-gates-check.sh runs arm-door's decision on the pull request (minus
       # the verify-proof reason), so auto-merge can wait for the sign-offs
       # (DOR-5107). End to end through the real arm-door.sh, qa-real-data.sh and
-      # design-ok.sh, with a stubbed `gh`.
+      # design-ok.sh, with a stubbed `gh`; Security's signed review markers are
+      # signed and verified with a throwaway ssh-keygen key made in the suite.
       - name: PR-gates fixtures
         run: bash scripts/test-pr-gates-check.sh
 
