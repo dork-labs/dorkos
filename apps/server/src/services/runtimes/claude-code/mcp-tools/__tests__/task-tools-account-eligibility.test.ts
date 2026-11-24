@@ -15,11 +15,20 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-const rules = vi.hoisted(() => ({ claudeCode: {} as Record<string, unknown> }));
+const rules = vi.hoisted(() => ({
+  claudeCode: {} as Record<string, unknown>,
+  /** The trust preset; `undefined` reads as Trusted. */
+  preset: undefined as string | undefined,
+}));
 
 vi.mock('../../../../core/config-manager.js', () => ({
   configManager: {
-    get: (key: string) => (key === 'runtimes' ? { claudeCode: rules.claudeCode } : undefined),
+    get: (key: string) =>
+      key === 'runtimes'
+        ? { claudeCode: rules.claudeCode }
+        : key === 'permissions' && rules.preset
+          ? { preset: rules.preset }
+          : undefined,
   },
 }));
 vi.mock('../../../../core/usage/account-eligibility.js', async (importOriginal) => ({
@@ -63,6 +72,8 @@ const BASE = {
 let store: TaskStore;
 let tools: Record<string, SessionTool>;
 let root: string;
+let deps: McpToolDeps;
+let projectPath: string;
 
 beforeEach(async () => {
   rules.claudeCode = {
@@ -82,9 +93,9 @@ beforeEach(async () => {
   root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-task-tools-acct-')));
   const dorkHome = path.join(root, 'dork');
   await fs.mkdir(path.join(dorkHome, 'skills'), { recursive: true });
-  const projectPath = path.join(root, 'agent');
+  projectPath = path.join(root, 'agent');
   await fs.mkdir(projectPath, { recursive: true });
-  const deps = {
+  deps = {
     taskStore: store,
     defaultCwd: '/tmp/test',
     dorkHome,
@@ -188,6 +199,60 @@ describe('tasks_update moving an approved schedule to another account (DOR-5097)
   afterEach(() => {
     setAccountUsageStore(undefined);
     setNotificationService(null);
+    rules.preset = undefined;
+  });
+
+  /** The tools as another caller sees them: no verified agent, or a marked turn. */
+  const toolsFor = (opts: { agent?: boolean; marked?: boolean }) =>
+    Object.fromEntries(
+      (
+        getTasksTools(
+          deps,
+          undefined,
+          opts.marked ? () => ({ outsider: true }) : undefined,
+          opts.agent === false ? undefined : () => projectPath
+        ) as unknown as SessionTool[]
+      ).map((t) => [t.name, t])
+    );
+
+  /** A person's own approved global schedule on `work`. */
+  function personsApproved(): string {
+    const created = store.createTask({
+      name: 'nightly-sweep',
+      description: 'Sweep',
+      prompt: 'sweep the backlog',
+      cron: '0 3 * * *',
+      filePath: path.join(root, 'dork', 'skills', 'nightly-sweep', 'SKILL.md'),
+      account: 'work',
+    } as Parameters<TaskStore['createTask']>[0]);
+    return created.id;
+  }
+
+  async function callWith(set: Record<string, SessionTool>, args: Record<string, unknown>) {
+    const result = await set['tasks_update']!.handler(args, undefined);
+    return JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+  }
+
+  it.each([
+    ['a caller DorkOS cannot identify', { agent: false }],
+    ['an agent whose turn read outside words', { marked: true }],
+  ])('keeps no account move for %s (S-c)', async (_, opts) => {
+    const id = personsApproved();
+
+    const payload = await callWith(toolsFor(opts), { id, account: 'spare' });
+
+    expect(payload).not.toHaveProperty('accountNote');
+    expect(store.getTask(id)?.status).toBe('pending_approval');
+  });
+
+  it('keeps no account move on the Careful preset (S-c)', async () => {
+    rules.preset = 'careful';
+    const id = await approved();
+
+    const { payload } = await call('tasks_update', { id, account: 'spare' });
+
+    expect(payload).not.toHaveProperty('accountNote');
+    expect(store.getTask(id)?.status).toBe('pending_approval');
   });
 
   /** A schedule on `work`, approved by a person. */

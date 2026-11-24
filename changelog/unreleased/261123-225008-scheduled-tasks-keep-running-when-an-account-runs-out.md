@@ -2,6 +2,7 @@
 covers:
   - "fix(tasks): a scheduled run whose account is out or signed out runs on another account, and moving an approved task's account keeps it approved (DOR-5097)"
   - "fix(tasks): an agent's account move off credits or on Careful waits for approval, Undo never restores a restricted account approved, and every task shows its account (DOR-5097)"
+  - "fix(tasks): an account-only change the move rule declines always waits for approval, and only an identified agent's move stays live (DOR-5097)"
 ---
 
 ### Fixed

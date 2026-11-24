@@ -31,7 +31,8 @@ import type { PermissionMode, Task, UpdateTaskRequest } from '@dorkos/shared/typ
 import {
   accountMovePolicy,
   announceAccountMove,
-  announceAccountUnpin,
+  priorAccountOf,
+  settleAccountUnpin,
 } from '../../../../tasks/approvals/account-move.js';
 
 /**
@@ -309,42 +310,59 @@ export function emitAgentSwitchedOn(
   });
 }
 
+/** What {@link settleTaskAccountEdit} did. */
+export interface TaskAccountEditOutcome {
+  /** A kept account move stands, and the person was told. */
+  moved: boolean;
+  /** The task waits for a person now, over its account. */
+  parked: boolean;
+}
+
 /**
  * After an agent's `tasks_update` (DOR-5097): tell the person when it moved an
- * approved task to another account and the task stayed approved (with an
- * Undo), and when it turned "This account only" off. Answers whether a kept
- * move stands: a notice that could not be posted parks the task instead.
+ * approved, still running task to another account (with an Undo); a notice
+ * that could not be posted parks it instead. An unpin ("This account only"
+ * off) is told, or parks the task on Careful.
  *
  * @param deps - Shared MCP tool dependencies.
  * @param before - The task before the edit.
  * @param caller - The calling agent, by its home when DorkOS knows it.
  * @param moved - Whether the edit was settled as a kept account move.
  */
-export async function announceTaskAccountEdit(
+export async function settleTaskAccountEdit(
   deps: McpToolDeps,
   before: Task,
   caller: { agentPath?: string | null },
   moved: boolean
-): Promise<boolean> {
+): Promise<TaskAccountEditOutcome> {
   const store = deps.taskStore!;
   const after = store.getTask(before.id);
-  if (!after) return false;
+  if (!after) return { moved: false, parked: false };
   const edit = { before, after, agentPath: caller.agentPath ?? null };
-  await announceAccountUnpin(edit);
-  return moved && (await announceAccountMove(store, edit));
+  const stands = moved && after.status === 'active' && (await announceAccountMove(store, edit));
+  const unpin = await settleAccountUnpin(store, edit);
+  return { moved: stands, parked: (moved && !stands) || unpin === 'parked' };
 }
 
 /**
  * The account-move rule for a `tasks_update` call: kept only for one of our
- * agents DorkOS identified, from an unmarked turn, off the Careful preset
- * (`accountMovePolicy`).
+ * agents DorkOS identified, from an unmarked turn, off the Careful preset, and
+ * never off credits, the task's own or the one it followed (`accountMovePolicy`).
  *
+ * @param deps - Shared MCP tool dependencies, for the agent's home.
+ * @param task - The task before the edit.
  * @param caller - The calling agent and whether its turn is marked.
  */
-export function accountMovePolicyFor(
+export async function accountMovePolicyFor(
+  deps: McpToolDeps,
+  task: Task,
   caller: Pick<AgentModeCaller, 'agentPath' | 'marked'>
-): ReturnType<typeof accountMovePolicy> {
-  return accountMovePolicy(caller.agentPath !== undefined && !caller.marked);
+): Promise<ReturnType<typeof accountMovePolicy>> {
+  const home = task.agentId ? deps.meshCore?.getProjectPath(task.agentId) : undefined;
+  return accountMovePolicy(
+    caller.agentPath !== undefined && !caller.marked,
+    await priorAccountOf(task, home)
+  );
 }
 
 /** The agent-writable fields a `tasks_update` call may carry into the store. */

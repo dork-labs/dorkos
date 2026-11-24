@@ -5,14 +5,14 @@
  *
  * Shown for every Claude Code task: its own account, else its agent's, else the
  * default, so a pin is never invisible. A task on another runtime has no
- * account to show. Runs on DorkOS credits, and a remembered chat that already
- * started, never move, so they say so and offer the switch only to take a pin
- * off.
+ * account to show. Runs on DorkOS credits never move and show no move rule; a
+ * remembered chat that already ran says it stays on its account. Either offers
+ * the switch only to take a pin off.
  *
  * @module features/tasks/ui/account/TaskAccountLine
  */
 import { useId } from 'react';
-import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
+import { CREDITS_ACCOUNT_ID, IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Task } from '@dorkos/shared/types';
 import { useUpdateTask } from '@/layers/entities/tasks';
@@ -46,7 +46,7 @@ function ruleOf(pinned: boolean, onCredits: boolean, keepsChat: boolean): string
 export function TaskAccountLine({ task, agent }: TaskAccountLineProps) {
   const switchId = useId();
   const updateTask = useUpdateTask();
-  const { accounts, nameFor, resolvedAccount } = useClaudeAccounts();
+  const { accounts, nameFor, resolvedAccount, ownResolvedAccount } = useClaudeAccounts();
   const runtime = task.runtime ?? agent?.runtime ?? null;
   if (runtime !== null && runtime !== 'claude-code') return null;
 
@@ -54,11 +54,15 @@ export function TaskAccountLine({ task, agent }: TaskAccountLineProps) {
   const onCredits = accountId === CREDITS_ACCOUNT_ID;
   const row = accounts.find((account) => accountId !== null && account.id === accountId);
   const defaultName = resolvedAccount ? nameFor(resolvedAccount) : 'the default account';
+  // The main sign-in by the name the app gives it everywhere, never its `default` id.
+  const mainName = ownResolvedAccount ? nameFor(ownResolvedAccount) : defaultName;
   const name = onCredits
     ? CREDITS_ACCOUNT_LABEL
     : row
       ? nameFor(row.path)
-      : (accountId ?? defaultName);
+      : accountId === IMPLICIT_ACCOUNT_ID
+        ? mainName
+        : (accountId ?? defaultName);
   const whose = task.account !== null ? '' : agent?.account ? ' (its agent’s)' : ' (the default)';
   const pinned = task.accountPinned === true;
   const keepsChat = task.sticky && Boolean(task.lastRunAt);

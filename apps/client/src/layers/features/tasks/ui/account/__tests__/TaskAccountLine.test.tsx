@@ -93,6 +93,21 @@ describe('TaskAccountLine', () => {
     expect(screen.queryByRole('switch')).toBeNull();
   });
 
+  it('names the main sign-in by its name, never its `default` id', async () => {
+    const main = {
+      claudeCode: {
+        ...(config as { claudeCode: object }).claudeCode,
+        resolvedAccount: '/home/u/.claude',
+      },
+    } as unknown as ServerConfig;
+    renderLine(
+      { ...base, account: 'default' },
+      createMockTransport({ getConfig: vi.fn().mockResolvedValue(main) })
+    );
+    expect(await screen.findByText(/^Runs on (?!default)/)).toBeInTheDocument();
+    expect(screen.queryByText('Runs on default')).toBeNull();
+  });
+
   it('says a remembered chat that already ran stays on its account', () => {
     renderLine({ ...base, sticky: true, lastRunAt: '2026-11-23T10:00:00.000Z' }, withConfig());
     expect(screen.getByText(/remembered chat stays on this account/)).toBeInTheDocument();

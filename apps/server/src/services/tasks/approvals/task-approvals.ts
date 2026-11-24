@@ -416,9 +416,9 @@ export class TaskApprovals {
 
     // A grant that no longer covers the old work falls through to the rules below.
     const now = effectiveWork(row);
+    const onlyAccount = movesOnlyAccount(before, now);
     const movesAccount =
-      movesOnlyAccount(before, now) &&
-      caller.accountMayMoveTo?.(now.account, before.account ?? null) === true;
+      onlyAccount && caller.accountMayMoveTo?.(now.account, before.account ?? null) === true;
     if (movesAccount && this.followAccountMove(row, before, previousKey, key)) {
       return 'account-moved';
     }
@@ -426,7 +426,11 @@ export class TaskApprovals {
     const substitutesWork = before.prompt !== row.prompt || before.runtime !== row.runtime;
     // The task's own agent vouching for its own edit, from an ordinary turn, keeps
     // even substituted work and a file-born row live (Security ruling of Nov 3).
-    const kept = caller.ownAgentVouches === true || (row.origin !== 'file' && !substitutesWork);
+    // An account-only change the move rule declined (or no rule allowed) is
+    // money, not work: it parks, whatever an agent's live edit would keep (DOR-5097).
+    const kept =
+      !onlyAccount &&
+      (caller.ownAgentVouches === true || (row.origin !== 'file' && !substitutesWork));
     if (caller.armsAgentWork === true && kept) {
       // The sync parks a row whose key changed and moves its grant aside, so a
       // grant that covered the old work is in one of the two columns.
@@ -530,14 +534,16 @@ export class TaskApprovals {
   /**
    * Park a schedule with DorkOS's own sentence saying why (DOR-5097: an
    * account move nobody could be told about). Withdraws the approval and keeps
-   * it aside for the card, as any park does.
+   * it aside for the card, as any park does. A schedule already waiting is left
+   * as it is, with the sentence it already has.
    *
    * @param id - The schedule.
    * @param reason - DorkOS's sentence.
    */
   parkWithReason(id: string, reason: string): void {
     const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
-    if (!row) return;
+    // Already waiting: its own sentence already says why.
+    if (!row || row.status === 'pending_approval') return;
     this.db
       .update(pulseSchedules)
       .set({

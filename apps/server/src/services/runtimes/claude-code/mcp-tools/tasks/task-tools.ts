@@ -69,7 +69,7 @@ import {
   agentModeCallerOf,
   emitAgentSwitchedOn,
   accountMovePolicyFor,
-  announceTaskAccountEdit,
+  settleTaskAccountEdit,
   toolUpdatePatch,
   AGENT_ID_ON_CREATE_REFUSAL,
   callerAgentPathOf,
@@ -624,7 +624,7 @@ export function createUpdateScheduleHandler(
         // Its own agent's, or a Full one's, prompt edit from an ordinary turn stays live (M7).
         ownAgentVouches: (vouched || forOther.kind === 'allowed') && caller.scheduledRun !== true,
         // A move to another account a person left open keeps the approval, not on Careful (DOR-5097).
-        accountMayMoveTo: accountMovePolicyFor(caller),
+        accountMayMoveTo: await accountMovePolicyFor(deps, existing, caller),
       }
     );
     const accountMoved = settled === 'account-moved';
@@ -639,8 +639,8 @@ export function createUpdateScheduleHandler(
     const why = afterToolAgentEdit(deps, updated, mode, caller, { vouched, writesContent });
     if (why) settled = 'parked';
     // A kept account move stands only once the person is told, with an Undo (DOR-5097).
-    const moved = await announceTaskAccountEdit(deps, existing, caller, accountMoved);
-    if (accountMoved && !moved) settled = 'parked';
+    const account = await settleTaskAccountEdit(deps, existing, caller, accountMoved);
+    if (account.parked) settled = 'parked';
     if (settled === 'parked') {
       updated = deps.taskStore!.getTask(updated.id) ?? updated;
       // The standing condition and its escalation clock start here, as they do
@@ -705,7 +705,7 @@ export function createUpdateScheduleHandler(
       schedule: updated,
       ...fileReply,
       ...rulesReply,
-      ...(moved && { accountNote: ACCOUNT_MOVE_NOTE }),
+      ...(account.moved && { accountNote: ACCOUNT_MOVE_NOTE }),
     });
   };
 }

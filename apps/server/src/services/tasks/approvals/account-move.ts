@@ -21,11 +21,13 @@
  * Undo that puts the old account back (`accountUndo`, kept server side). A move
  * nobody could be told about does not stand silently: the schedule waits for
  * the person instead, with a sentence saying why. An agent unpinning a task
- * ("This account only" off) is told too, since its runs may now move.
+ * ("This account only" off) is told too, since its runs may now move; on
+ * Careful the task waits for the person instead.
  *
  * @module services/tasks/approvals/account-move
  */
 import { CREDITS_ACCOUNT_ID, IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
+import { readManifest } from '@dorkos/shared/manifest';
 import type { Task } from '@dorkos/shared/types';
 import { logError, logger } from '../../../lib/logger.js';
 import { recordAudit } from '../../audit/audit-trail.js';
@@ -87,11 +89,36 @@ export function agentMayMoveAccount(
  *
  * @param callerIsOurAgent - Whether the server identified the caller as one of
  *   this install's agents, from an unmarked turn.
+ * @param priorAccount - The account the task's runs really started on before
+ *   the edit ({@link priorAccountOf}): a task following a credits agent is
+ *   moving off credits too.
  */
 export function accountMovePolicy(
-  callerIsOurAgent: boolean
+  callerIsOurAgent: boolean,
+  priorAccount: string | null = null
 ): ((to: string | null, from: string | null) => boolean) | undefined {
-  return agentSchedulesArmWithoutAsking(callerIsOurAgent) ? agentMayMoveAccount : undefined;
+  if (!agentSchedulesArmWithoutAsking(callerIsOurAgent)) return undefined;
+  return (to, from) => agentMayMoveAccount(to, from ?? priorAccount);
+}
+
+/**
+ * The account a task's runs started on before an edit: its own, else its
+ * agent's (the manifest's `account`), else `null` for the default. Never throws.
+ *
+ * @param task - The task before the edit.
+ * @param agentPath - The task's agent's home, when it has one.
+ */
+export async function priorAccountOf(
+  task: Pick<Task, 'account'>,
+  agentPath: string | null | undefined
+): Promise<string | null> {
+  if (task.account !== null) return task.account;
+  if (!agentPath) return null;
+  try {
+    return (await readManifest(agentPath))?.account ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** The sentence a schedule parks with when an account move could not be told (DOR-5097). */
@@ -163,14 +190,28 @@ export async function announceAccountMove(
   return false;
 }
 
+/** The sentence a schedule parks with when an agent took its pin off on Careful (DOR-5097). */
+export const CAREFUL_UNPIN_REASON =
+  'An agent let this move to other accounts. On Careful, that waits for you.';
+
 /**
- * Tell the person an agent turned "This account only" off on a task, so its
- * runs may now move to another account (DOR-5097). Never throws.
+ * An agent turned "This account only" off on a task, so its runs may now move
+ * to another account (DOR-5097). On the Careful preset that is an account edit
+ * like any other, and the task parks (`parked`); otherwise the person is told
+ * (`told`). `none` when the edit did not unpin. Never throws.
  *
+ * @param store - Where the task parks.
  * @param move - The task before and after, and who changed it.
  */
-export async function announceAccountUnpin(move: AccountMove): Promise<void> {
-  if (move.before.accountPinned !== true || move.after.accountPinned === true) return;
+export async function settleAccountUnpin(
+  store: Pick<TaskStore, 'approvals'>,
+  move: AccountMove
+): Promise<'none' | 'parked' | 'told'> {
+  if (move.before.accountPinned !== true || move.after.accountPinned === true) return 'none';
+  if (!agentSchedulesArmWithoutAsking(true)) {
+    store.approvals.parkWithReason(move.after.id, CAREFUL_UNPIN_REASON);
+    return 'parked';
+  }
   try {
     const setterId = move.agentPath ? resolveAgentIdForPath(move.agentPath) : undefined;
     const payload = await resolveScheduleArmedPayload(move.after);
@@ -182,4 +223,5 @@ export async function announceAccountUnpin(move: AccountMove): Promise<void> {
   } catch (err) {
     logger.warn('[tasks] could not tell the person about an unpinned account', logError(err));
   }
+  return 'told';
 }

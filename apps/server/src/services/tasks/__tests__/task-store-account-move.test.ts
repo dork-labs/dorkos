@@ -16,13 +16,17 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseSchedules, type Db } from '@dorkos/db';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
+import { writeManifest } from '@dorkos/shared/manifest';
+import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { TaskStore } from '../task-store.js';
 import type { TaskFileSync } from '../sync/task-file-sync.js';
 import { scheduleContentKey, taskWorkOf } from '../schedule-permission-clamp.js';
 import type { RuntimeAccount } from '../../core/usage/runtime-accounts.js';
 import {
   accountMayTakeMovedWork,
+  accountMovePolicy,
   agentMayMoveAccount,
+  priorAccountOf,
   announceAccountMove,
   UNTOLD_ACCOUNT_MOVE_REASON,
 } from '../approvals/account-move.js';
@@ -326,5 +330,78 @@ describe('telling the person about a kept move', () => {
       status: 'pending_approval',
       reason: UNTOLD_ACCOUNT_MOVE_REASON,
     });
+  });
+});
+
+describe('an account-only change the move rule declines (round 2)', () => {
+  let store: TaskStore;
+
+  beforeEach(() => {
+    store = new TaskStore(createTestDb());
+  });
+
+  function approvedOn(account: string): string {
+    const id = store.fileSync.upsertFromFile(definition(account)).id;
+    store.approvals.recordPersonApproval(id);
+    return id;
+  }
+
+  /** One of our agents moving its OWN schedule, which keeps other edits live. */
+  function ownAgentMove(id: string, to: string | null) {
+    const before = { ...taskWorkOf(store.getTask(id)!), status: store.getTask(id)!.status };
+    store.updateTask(id, { account: to });
+    return store.approvals.settleApprovedWorkChange(id, before, {
+      trusted: false,
+      armsAgentWork: true,
+      accountMayMoveTo: (next, from) => agentMayMoveAccount(next, from, ACCOUNTS),
+    });
+  }
+
+  it.each([
+    ['off DorkOS credits', CREDITS_ACCOUNT_ID, 'claude3'],
+    ['onto the main sign-in', 'claude3', 'main'],
+    ['onto an account kept out of automatic moves', 'claude3', 'claude-ab1'],
+  ])('parks an own-schedule move %s, whatever a live edit would keep (M2)', (_, from, to) => {
+    const id = approvedOn(from);
+    expect(ownAgentMove(id, to)).toBe('parked');
+    expect(store.getTask(id)!.status).toBe('pending_approval');
+  });
+
+  it('leaves a schedule already waiting with the sentence it has', () => {
+    const id = approvedOn('claude3');
+    store.approvals.parkWithReason(id, 'first');
+    store.approvals.parkWithReason(id, 'second');
+    expect(store.getTask(id)!.reason).toBe('first');
+  });
+});
+
+describe('the account a task followed before an edit (S-b)', () => {
+  it('counts a task that follows a credits agent as moving off credits', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-credits-agent-'));
+    try {
+      await writeManifest(home, {
+        id: '01JKCREDITSAGENT000000000',
+        name: 'scout',
+        description: '',
+        runtime: 'claude-code',
+        capabilities: [],
+        behavior: { responseMode: 'always' },
+        registeredAt: new Date().toISOString(),
+        registeredBy: 'user',
+        account: CREDITS_ACCOUNT_ID,
+      } as unknown as AgentManifest);
+      const prior = await priorAccountOf({ account: null }, home);
+      expect(prior).toBe(CREDITS_ACCOUNT_ID);
+      // The task named no account (`from` is null), but its runs were on credits.
+      const rule = accountMovePolicy(true, prior)!;
+      expect(rule('claude3', null)).toBe(false);
+    } finally {
+      await fs.rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('reads the task’s own account first, and nothing for no agent', async () => {
+    expect(await priorAccountOf({ account: 'claude3' }, '/nowhere')).toBe('claude3');
+    expect(await priorAccountOf({ account: null }, undefined)).toBeNull();
   });
 });
