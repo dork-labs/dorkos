@@ -191,6 +191,19 @@ describe('checkTagGate on the real release workflows', () => {
       ['tag-gate/write-no-main-refusal', 'build-windows'],
     ]);
   });
+
+  it('fails when a build job is given only an OIDC token (it can sign attestations)', () => {
+    const findings = withWorkflow('desktop-release.yml', (t) =>
+      t.replace(
+        '    # Read-only (DOR-4030): this job builds and uploads a run artifact; only\n    # publish may write to a release.\n    permissions:\n      contents: read',
+        '    permissions:\n      contents: read\n      id-token: write'
+      )
+    );
+    expect(found(findings)).toEqual([
+      ['tag-gate/ungated-job', 'build-windows'],
+      ['tag-gate/write-no-main-refusal', 'build-windows'],
+    ]);
+  });
 });
 
 describe('namedEnvironments', () => {

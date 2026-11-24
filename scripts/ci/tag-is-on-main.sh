@@ -25,8 +25,11 @@
 # main in a separate PR) the workflow YAML itself comes from the tagged commit,
 # so a tag on an arbitrary commit with an edited workflow can skip this step;
 # there it is defense in depth only, which is why no tag-push job holds an
-# environment secret. Either way the lock on the secrets is the environments' required
-# reviewer (DOR-4036) and the tag and release-branch rulesets.
+# environment secret. Either way the lock on the secrets is the environments'
+# main-only deployment rule and required reviewer (DOR-4036). The `v*` tag and
+# `release/*` branch rulesets that would also lock who can push them do not
+# exist yet (owner's step in DOR-5123); until they do, a tag push off main can
+# still run its own publish-community.yml (DOR-4809).
 #
 # FAILS CLOSED. Exit 0 lets the run go on. Anything else refuses: exit 1 for
 # "no", exit 2 for "cannot decide" (bad arguments, git errors, main without the

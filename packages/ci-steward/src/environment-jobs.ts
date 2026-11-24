@@ -10,7 +10,7 @@
  * - **Placement.** A job that reads a secret listed under
  *   `secret_environments` names that secret's environment. Outside it the
  *   secret reads as empty (it is not at repository level), and a job that
- *   quietly gets nothing (arm-door's App token before this) fails open.
+ *   quietly gets nothing (an App token minted from an empty key) fails open.
  */
 import type { Finding } from './finding.ts';
 import type { HandFiles } from './load.ts';
@@ -102,9 +102,11 @@ export function checkEnvironmentJobs(
       for (const want of wants) {
         if (names(job, want.name)) continue;
         const read = want.secrets.filter((s) =>
-          new RegExp(`secrets\\.${escape(s)}\\b|secrets\\[\\s*['"]${escape(s)}['"]\\s*\\]`).test(
-            job.text
-          )
+          // GitHub's contexts are case-insensitive: `secrets.csc_link` reads CSC_LINK.
+          new RegExp(
+            `secrets\\.${escape(s)}\\b|secrets\\[\\s*['"]${escape(s)}['"]\\s*\\]`,
+            'i'
+          ).test(job.text)
         );
         if (read.length === 0) continue;
         out.push({

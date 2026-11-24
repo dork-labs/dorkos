@@ -61,14 +61,17 @@ What changed:
 - New census checks (`environment-jobs`): every `uses:` in a job naming any
   environment is pinned to a commit SHA, with no exception list
   (`actions/create-github-app-token` is pinned to v3.4.0,
-  `f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc`, in all four workflows), and a
-  job that reads an environment's secret must name that environment.
-- `queue-repeat-guard` and `arm-door` move from `merge_group` (the pull
-  request's own copy of the workflow) to `workflow_run` on
-  changelog-fragment-check (main's copy), so they can enter `automation`.
-  Both check out main only and validate the queue ref before use. `arm-door`
-  goes red when it cannot mint the App token, since without it the label gate
-  would be off.
+  `f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc`, in all four workflows that use
+  it), and a job that reads an environment's secret must name that
+  environment.
+- `queue-repeat-guard` moves from `merge_group` (the pull request's own copy
+  of the workflow) to `workflow_run` on changelog-fragment-check (main's
+  copy), so it can enter `automation`. It checks out main only and validates
+  the queue ref before use. `auto-revert`, `review-redispatch` and
+  `neon-preview-sweep` already run main's copy on main (`workflow_run`,
+  `schedule`) and now name `automation` too. (Rebased Nov 23: `arm-door` and
+  `merge-tail` were retired on main by DOR-5124, so this PR no longer edits
+  them.)
 - A version taken from a tag or an input must be a plain release version
   before any step uses it, and later steps read it from `env:`, never from an
   expression inside a script.
@@ -90,8 +93,8 @@ What changed:
   that names Security as its owner, never red and never a pass.
 
 This is a hygiene change: it claims no speed or flake improvement, and no
-required check changes. The queue guard and the arm door fire seconds later
-than before, which is the one timing change. Releases now need three manual
+required check changes. The queue guard fires seconds later than before,
+which is the one timing change. Releases now need three manual
 runs on main (desktop-release, publish-docker, update-homebrew), each step
 that holds a secret behind an approval; the Community image still publishes
 on the tag push. Revert

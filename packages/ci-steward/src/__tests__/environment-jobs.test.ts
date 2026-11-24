@@ -175,6 +175,24 @@ describe('checkEnvironmentJobs on the real workflows', () => {
     ]);
   });
 
+  it('reads a secret named in lower case as that secret (GitHub contexts ignore case)', () => {
+    expect(
+      run({
+        file: 'neon-preview-sweep.yml',
+        change: (t) =>
+          t
+            .replace('    environment: automation\n', '')
+            .replace('secrets.NEON_API_KEY', 'secrets.neon_api_key'),
+      })
+    ).toEqual([
+      [
+        'environment-secrets/outside-environment',
+        '.github/workflows/neon-preview-sweep.yml',
+        'sweep',
+      ],
+    ]);
+  });
+
   it('fails when a job names the wrong environment for the secret it reads', () => {
     const findings = run({
       file: 'review-redispatch.yml',

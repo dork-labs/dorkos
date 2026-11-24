@@ -26,7 +26,8 @@ type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
- * Whether a `permissions:` value lets GITHUB_TOKEN write contents or packages.
+ * Whether a `permissions:` value lets GITHUB_TOKEN write contents or packages,
+ * or mint an OIDC token (`id-token: write`, which signs attestations).
  * Absent means the repository default, which may be write-all, so it counts.
  *
  * @param perms - The job's `permissions:`, else the workflow's.
@@ -35,7 +36,7 @@ function mayWrite(perms: unknown): boolean {
   if (perms === undefined || perms === null) return true;
   if (typeof perms === 'string') return perms !== 'read-all' && perms !== '{}';
   if (!isObj(perms)) return true;
-  return perms.contents === 'write' || perms.packages === 'write';
+  return perms.contents === 'write' || perms.packages === 'write' || perms['id-token'] === 'write';
 }
 
 /** Strip a `${{ … }}` wrapper and collapse whitespace. */
