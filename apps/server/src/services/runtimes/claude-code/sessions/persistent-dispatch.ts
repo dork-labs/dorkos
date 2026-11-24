@@ -479,15 +479,15 @@ export class PersistentDispatch {
     return bundle.heldWork === true;
   }
 
-  /** Read the existing crash policy; unknown/cold process cannot authorize a fresh-id escape. */
-  failedSeatCrashAllows(sessionId: string): boolean {
+  /**
+   * Read the existing crash policy. `'cold'` (no process held) never authorizes a fresh-id escape
+   * from live memory; only a later process's durable record may use it (DOR-4626).
+   */
+  failedSeatCrashAllows(sessionId: string): 'allows' | 'refuses' | 'cold' {
     const key = this.sessionKeyOf(sessionId);
     const bundle = this.bundles.get(key);
-    return (
-      bundle !== undefined &&
-      this.registry.peek(key) === bundle.pump &&
-      bundle.recovery.willAutoResume
-    );
+    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return 'cold';
+    return bundle.recovery.willAutoResume ? 'allows' : 'refuses';
   }
 
   /**

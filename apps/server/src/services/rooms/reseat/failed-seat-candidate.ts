@@ -1,4 +1,4 @@
-/** Strict live producer + durable failed room-turn evidence, never preference fallback. */
+/** Strict producer record + durable failed room-turn evidence, never preference fallback. */
 import { resolve } from 'node:path';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { resolveLaunchAccountRoot } from '../../runtimes/claude-code/claude-config-dir.js';
@@ -26,7 +26,7 @@ export interface FailedSeatCandidate {
 interface ClaudeFailureReader {
   readFailedSeatAuthority(
     sessionId: string
-  ): (RecoveryAuthority & { dispatchId: string; entryId: string }) | null;
+  ): (RecoveryAuthority & { dispatchId: string; entryId: string; restored?: true }) | null;
 }
 
 /** Resolve only a proven Claude candidate with an intact transcript and current guards. */
@@ -102,10 +102,14 @@ export async function failedSeatCandidate(seat: Seat): Promise<FailedSeatCandida
         now.billing === authority.billing &&
         now.inference === authority.inference &&
         now.accountId === authority.accountId &&
+        now.restored === authority.restored &&
         pause !== undefined &&
         !pause.isPaused(seat.agentPath) &&
-        projector !== undefined &&
-        !projector.hasPendingInteractions() &&
+        // A later process holds no projector for a chat it never ran; nothing can wait on a
+        // person there. Live memory must still name one (DOR-4626).
+        (projector === undefined
+          ? authority.restored === true
+          : !projector.hasPendingInteractions()) &&
         !isTurnInFlight(sessionId, runtime) &&
         !runtime.holdsBackgroundWork?.(sessionId) &&
         !runtime.isHelperWorking?.(sessionId) &&
