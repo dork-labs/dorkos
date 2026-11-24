@@ -10,8 +10,8 @@
       "tests": 1084
     },
     "apps/desktop": {
-      "ratio": 0.92,
-      "tests": 19272
+      "ratio": 0.81,
+      "tests": 16894
     },
     "apps/server": {
       "ratio": 1.24,

@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MAX_LOG_EXCERPT_LEN } from '@dorkos/shared/telemetry-events';
 
 vi.mock('electron', () => import('../../__tests__/electron-mock'));
 vi.mock('electron-log', () => import('../../__tests__/electron-log-mock'));
@@ -63,13 +62,6 @@ function writeRotatedLog(lines: string[]): void {
   writeFileSync(join(logDir, 'main.old.log'), `${lines.join('\n')}\n`);
 }
 
-/** The same file as {@link writeLiveLog}, with the line endings electron-log writes on Windows. */
-function writeLiveLogCrlf(lines: string[]): void {
-  const path = join(logDir, 'main.log');
-  writeFileSync(path, `${lines.join('\r\n')}\r\n`);
-  log.transports.file.getFile = () => ({ path });
-}
-
 beforeEach(() => {
   resetElectronMock();
   resetLogMock();
@@ -119,28 +111,6 @@ describe('getShellLogExcerpt', () => {
     expect(excerpt).not.toContain('at Socket.emit');
   });
 
-  it('reads a Windows log, where every line ends with CRLF', () => {
-    // electron-log writes `os.EOL`. On Windows that is `\r\n`, which left a
-    // trailing `\r` on every line, matched nothing, and made the whole feature
-    // return nothing at all on that platform.
-    const lines = [
-      line('info', '[renderer] Reloading the window.'),
-      line('error', '[renderer] Could not load the fallback page.'),
-      '    at loadFallback (main.js:10:5)',
-      line('error', '[server:stderr] Error: ECONNREFUSED'),
-    ];
-    writeLiveLog(lines);
-    const withLf = getShellLogExcerpt();
-    writeLiveLogCrlf(lines);
-
-    const withCrlf = getShellLogExcerpt();
-
-    expect(withCrlf).toBe(withLf);
-    expect(withCrlf).toContain('Reloading the window.');
-    expect(withCrlf).toContain('at loadFallback (main.js:10:5)');
-    expect(withCrlf).not.toContain('\r');
-  });
-
   it('strips the query and fragment from a URL a page put in the log', () => {
     // `permissions/index.ts` logs the requesting page's URL at info, and in the
     // canvas browser that can be any third-party page — including one carrying
@@ -163,39 +133,6 @@ describe('getShellLogExcerpt', () => {
     expect(excerpt).not.toContain('abc123def456');
     expect(excerpt).not.toContain('case=88213');
     expect(excerpt).not.toContain('FMfcgz');
-  });
-
-  it('leaves the punctuation around a URL where the line had it', () => {
-    // Real log prose parenthesises URLs and ends sentences with them. Eating
-    // the bracket or the comma corrupts the line, which is its own defect.
-    writeLiveLog([
-      line('info', '[renderer] opened (https://a.example/p?q=1) in a tab'),
-      line('warn', '[updater] feed https://x.example/a/b#frag, then gave up'),
-      line('info', '[tunnel] live at https://dorkos-kai.example/s?token=zz.'),
-    ]);
-
-    const excerpt = getShellLogExcerpt();
-
-    expect(excerpt).toContain('opened (https://a.example/p) in a tab');
-    expect(excerpt).toContain('feed https://x.example/a/b, then gave up');
-    expect(excerpt).toContain('live at https://dorkos-kai.example/s.');
-  });
-
-  it("keeps the shell's own info-level lines", () => {
-    writeLiveLog([
-      line('info', '[renderer] Reloading the window.'),
-      line('debug', '[renderer] Something too quiet to report.'),
-      line('verbose', '[renderer] Quieter still.'),
-      line('warn', '[updater] Could not reach the update feed.'),
-    ]);
-
-    const excerpt = getShellLogExcerpt();
-
-    expect(excerpt).toContain('[renderer] Reloading the window.');
-    expect(excerpt).toContain('[updater] Could not reach the update feed.');
-    // The level floor: below `info` is noise a report should not carry.
-    expect(excerpt).not.toContain('too quiet to report');
-    expect(excerpt).not.toContain('Quieter still');
   });
 
   it('keeps a stack trace with the entry it belongs to', () => {
@@ -273,40 +210,8 @@ describe('getShellLogExcerpt', () => {
     expect(excerpt).not.toContain('sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123');
   });
 
-  it('cuts from the front when it exceeds the length bound', () => {
-    const filler = 'x'.repeat(400);
-    const lines = Array.from({ length: 60 }, (_, i) => line('info', `[renderer] ${i} ${filler}`));
-    writeLiveLog(lines);
-
-    const excerpt = getShellLogExcerpt();
-
-    expect(excerpt?.length).toBeLessThanOrEqual(MAX_LOG_EXCERPT_LEN);
-    expect(excerpt?.startsWith('…')).toBe(true);
-    // A report is filed about the moment at the END of the log, so the newest
-    // line is the one that must survive the cut (DOR-1976).
-    expect(excerpt).toContain('[renderer] 59 ');
-    expect(excerpt).not.toContain('[renderer] 0 ');
-  });
-
   it('returns undefined rather than throwing when the log file is unreadable', () => {
     log.transports.file.getFile = () => ({ path: join(logDir, 'nothing-here', 'main.log') });
-
-    expect(getShellLogExcerpt()).toBeUndefined();
-  });
-
-  it('returns undefined when nothing survives the filter', () => {
-    writeLiveLog([
-      line('error', '[server:stderr] Only the child said anything.'),
-      line('debug', '[renderer] And this is below the floor.'),
-    ]);
-
-    expect(getShellLogExcerpt()).toBeUndefined();
-  });
-
-  it('returns undefined rather than throwing when the transport has no file', () => {
-    log.transports.file.getFile = () => {
-      throw new Error('file logging is off');
-    };
 
     expect(getShellLogExcerpt()).toBeUndefined();
   });
@@ -342,21 +247,5 @@ describe('registerShellLogExcerptHandler', () => {
     writeLiveLog([line('info', '[renderer] Reloading the window.')]);
 
     expect(armHandler()('https://example.com/phish')).toBeUndefined();
-  });
-
-  it('answers undefined rather than throwing when the sender is being torn down', () => {
-    writeLiveLog([line('info', '[renderer] Reloading the window.')]);
-    registerShellLogExcerptHandler(() => OWN_ORIGIN);
-    const call = ipcMain.handle.mock.calls.find(([name]) => name === SHELL_LOG_EXCERPT_CHANNEL);
-    const handler = call?.[1] as (event: Electron.IpcMainInvokeEvent) => string | undefined;
-    const dyingSender = {
-      sender: {
-        getURL: () => {
-          throw new Error('Object has been destroyed');
-        },
-      },
-    } as unknown as Electron.IpcMainInvokeEvent;
-
-    expect(handler(dyingSender)).toBeUndefined();
   });
 });

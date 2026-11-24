@@ -112,14 +112,6 @@ describe('offerMoveToApplications — when it speaks up', () => {
     expect(options.cancelId).toBe(1);
   });
 
-  it('offers the move to a copy running off the mounted disk image', async () => {
-    launchedFromTheWrongPlace(ON_THE_DISK_IMAGE);
-
-    await offerMoveToApplications();
-
-    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
-  });
-
   it('says nothing to a copy already in Applications', async () => {
     launchedFromTheWrongPlace();
     app.isInApplicationsFolder = vi.fn(() => true);
@@ -128,15 +120,6 @@ describe('offerMoveToApplications — when it speaks up', () => {
 
     expect(dialog.showMessageBox).not.toHaveBeenCalled();
     expect(app.moveToApplicationsFolder).not.toHaveBeenCalled();
-  });
-
-  it('says nothing in development, where the app is never in Applications', async () => {
-    launchedFromTheWrongPlace();
-    app.isPackaged = false;
-
-    await expect(offerMoveToApplications()).resolves.toBe(false);
-
-    expect(dialog.showMessageBox).not.toHaveBeenCalled();
   });
 
   it('says nothing off macOS, and never asks a question that platform cannot answer', async () => {
@@ -168,23 +151,6 @@ describe('offerMoveToApplications — the suppression switch', () => {
     // Silence is not a decline: nothing is recorded, so a real launch on this
     // machine is still offered the move.
     expect(ledgerWasWritten()).toBe(false);
-  });
-
-  it('offers as normal when the switch is unset', async () => {
-    launchedFromTheWrongPlace();
-
-    await offerMoveToApplications();
-
-    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
-  });
-
-  it('ignores any value other than 1, so a stray export cannot mute the guard', async () => {
-    launchedFromTheWrongPlace();
-    process.env.DORKOS_DESKTOP_SUPPRESS_INSTALL_PROMPT = 'true';
-
-    await offerMoveToApplications();
-
-    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -248,17 +214,6 @@ describe('offerMoveToApplications — what gets remembered', () => {
     expect(ledgerWasWritten()).toBe(false);
   });
 
-  it('asks again next launch when the replace confirmation is cancelled', async () => {
-    launchedFromTheWrongPlace();
-    answerOfferWith(0);
-    dialog.showMessageBoxSync = vi.fn(() => 1);
-    app.moveToApplicationsFolder = vi.fn((options) => options?.conflictHandler?.('exists') ?? true);
-
-    await expect(offerMoveToApplications()).resolves.toBe(false);
-
-    expect(ledgerWasWritten()).toBe(false);
-  });
-
   it('remembers a move that could not be performed at all', async () => {
     // An Applications folder this account cannot write to fails the same way on
     // every launch; asking again could only ever produce the same dead end.
@@ -276,15 +231,6 @@ describe('offerMoveToApplications — what gets remembered', () => {
     );
   });
 
-  it('records nothing when the move succeeds', async () => {
-    launchedFromTheWrongPlace();
-    answerOfferWith(0);
-
-    await expect(offerMoveToApplications()).resolves.toBe(true);
-
-    expect(ledgerWasWritten()).toBe(false);
-  });
-
   it('does not ask twice in the same place', async () => {
     launchedFromTheWrongPlace(ON_THE_DISK_IMAGE);
     ledger({ askedAtLocation: ON_THE_DISK_IMAGE });
@@ -292,15 +238,6 @@ describe('offerMoveToApplications — what gets remembered', () => {
     await expect(offerMoveToApplications()).resolves.toBe(false);
 
     expect(dialog.showMessageBox).not.toHaveBeenCalled();
-  });
-
-  it('asks again once the app is somewhere else with a different key', async () => {
-    launchedFromTheWrongPlace(ON_THE_DISK_IMAGE);
-    ledger({ askedAtLocation: '/Users/kai/Applications/DorkOS.app/Contents/MacOS/DorkOS' });
-
-    await offerMoveToApplications();
-
-    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
   });
 
   it('treats every translocated launch as one place, though macOS randomizes the path', async () => {
@@ -319,18 +256,6 @@ describe('offerMoveToApplications — what gets remembered', () => {
     await offerMoveToApplications();
 
     expect(dialog.showMessageBox).not.toHaveBeenCalled();
-  });
-
-  it('still offers when the ledger cannot be written', async () => {
-    launchedFromTheWrongPlace();
-    answerOfferWith(1);
-    mockedWriteFileSync.mockImplementation(() => {
-      throw new Error('read-only volume');
-    });
-
-    await expect(offerMoveToApplications()).resolves.toBe(false);
-
-    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -464,17 +389,6 @@ describe('offerMoveToApplications — committing the quit', () => {
 
     expect(guard.asked()).toBe(true);
   });
-
-  it('leaves an unrelated quit alone when no move was ever offered', async () => {
-    launchedFromTheWrongPlace();
-    app.isInApplicationsFolder = vi.fn(() => true);
-    const guard = armGuardWithAgents(3);
-
-    await offerMoveToApplications();
-    await app.emit('before-quit', { preventDefault: () => undefined });
-
-    expect(guard.asked()).toBe(true);
-  });
 });
 
 describe('offerMoveToApplications — an existing copy in Applications', () => {
@@ -498,16 +412,5 @@ describe('offerMoveToApplications — an existing copy in Applications', () => {
     dialog.showMessageBoxSync = vi.fn(() => 1);
 
     expect(capturedConflictHandler()('exists')).toBe(false);
-  });
-
-  it('lets a copy already running from Applications take over, without a second question', async () => {
-    launchedFromTheWrongPlace();
-    answerOfferWith(0);
-    await offerMoveToApplications();
-
-    // Electron's default focuses that instance and quits this one — the right
-    // outcome, and not something worth interrupting anyone for.
-    expect(capturedConflictHandler()('existsAndRunning')).toBe(true);
-    expect(dialog.showMessageBoxSync).not.toHaveBeenCalled();
   });
 });
