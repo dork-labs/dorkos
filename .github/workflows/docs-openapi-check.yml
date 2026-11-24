@@ -53,6 +53,10 @@ name: docs-openapi-check
 on:
   pull_request:
   merge_group:
+  # After merge too (DOR-5130): the backstop for the queue's attested skip.
+  # after-merge-alert.yml tells the author of a merge that breaks this.
+  push:
+    branches: [main]
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for Node 20 runtime.
@@ -64,24 +68,75 @@ env:
 # and are never cancelled here — the queue supersedes builds by dequeuing them.
 # Deliberately identical in form to site-build.yml and test.yml.
 concurrency:
-  group: docs-openapi-check-${{ github.ref }}
+  group: docs-openapi-check-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
+  # DOR-5130 step 1: in a merge group, the heavy job below is skipped when
+  # this same check already succeeded on the entry PR's current head
+  # (scripts/attest-pr-check.sh, read from main). It caught no real failure in
+  # 457 queue builds (week of Nov 16-22). Any doubt, error or missing run runs
+  # the real check. The push-to-main run plus after-merge-alert.yml are the
+  # backstop for a two-PR clash. On every other event this job is skipped and
+  # the heavy job runs as before.
+  attest:
+    if: ${{ github.event_name == 'merge_group' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: read
+    outputs:
+      attested: ${{ steps.attest.outputs.attested }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/attest-pr-check.sh
+            scripts/queue-repeat-guard.sh
+          sparse-checkout-cone-mode: false
+      - name: Did openapi-fresh already pass on this PR's head?
+        id: attest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+        run: bash scripts/attest-pr-check.sh openapi-fresh "$HEAD_REF" >> "$GITHUB_OUTPUT"
+
   # THE ONE PRODUCER of the `openapi-fresh` context, on both events. Do not
   # rename it, and do not split it into two same-named jobs under mutually
   # exclusive `if`s — test.yml's header explains why one producer is the only
   # shape whose required-check semantics are pinned down.
   openapi-fresh:
+    # Skipped only when attest proved this check passed on the PR's head (a
+    # skipped required job reports success). `!cancelled()`, not `always()`,
+    # and `!= 'true'`, so a failed or missing attest runs the real check.
+    needs: attest
+    if: ${{ !cancelled() && needs.attest.outputs.attested != 'true' }}
     runs-on: ubuntu-latest
     # Measured, not guessed (CI Steward phase 0, 2026-09-19): 299 completed
     # runs over 2026-09-12..09-19, p95 3.12 min, max 4.67. Ceiling =
     # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
     timeout-minutes: 10
     steps:
+      # The census's fan-in rule (DOR-5130): this job runs only when attest did
+      # not prove a pass, and attest must have succeeded (merge_group) or been
+      # skipped (every other event). An attest that failed fails this check
+      # closed rather than letting it report success.
+      - name: Require the attest job to have succeeded or been skipped
+        env:
+          ATTEST: ${{ needs.attest.result }}
+        run: |
+          if [ "$ATTEST" != success ] && [ "$ATTEST" != skipped ]; then
+            echo "::error::the attest job ended '$ATTEST', so this check cannot tell whether it was skipped on purpose. Re-run the workflow."
+            exit 1
+          fi
       # fetch-depth: 2 so the test-merge commit's first parent, the base, exists
       # for the scope step. At the default depth 1 the diff below cannot resolve
       # it. Full history took 9m42s of this job's 10 minutes on 2026-11-03

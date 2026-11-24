@@ -105,6 +105,10 @@ name: lint
 on:
   pull_request:
   merge_group:
+  # After merge too (DOR-5130): the backstop for the queue's attested skip.
+  # after-merge-alert.yml tells the author of a merge that breaks this.
+  push:
+    branches: [main]
   schedule:
     - cron: '33 0 * * *'
   workflow_dispatch:
@@ -126,14 +130,92 @@ concurrency:
   # and the two are correlated in time, because the reason to dispatch by hand
   # is usually the reason a round is already running. The suffix is constant
   # for `pull_request` and `merge_group`, so neither changes behaviour.
-  group: lint-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'dispatch' || 'gate' }}
+  group: lint-${{ github.event_name == 'push' && github.sha || github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'dispatch' || 'gate' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
+  # DOR-5130 step 1: in a merge group, the heavy job below is skipped when
+  # this same check already succeeded on the entry PR's current head
+  # (scripts/attest-pr-check.sh, read from main). It caught no real failure in
+  # 457 queue builds (week of Nov 16-22). Any doubt, error or missing run runs
+  # the real check. The push-to-main run plus after-merge-alert.yml are the
+  # backstop for a two-PR clash. On every other event this job is skipped and
+  # the heavy job runs as before.
+  attest:
+    if: ${{ github.event_name == 'merge_group' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: read
+    outputs:
+      attested: ${{ steps.attest.outputs.attested }}
+    steps:
+      # A canary run is against `main` or it is nothing.
+      #
+      # `workflow_dispatch` is ref-free, so `--ref <a PR's branch>` would run
+      # this workflow against that branch and post the check run — under the
+      # name of a REQUIRED context — on that pull request's head. This refuses
+      # that, and refuses it by FAILING: a skipped job posts a skipped check
+      # run and GitHub counts skipped as passing, so a skip is how you hand a
+      # pull request a green required check that tested a different tree.
+      #
+      # INLINE, AND FIRST. Inline because this runs BEFORE `actions/checkout`,
+      # where the workspace is still empty: a `bash scripts/…` here would exit
+      # 127 on every event, reddening this required check on every PR and every
+      # queue build (the same 127 that killed a required check on 2026-07-29,
+      # which is why "Prove the browser suite actually executed" carries a
+      # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
+      # than 150 job minutes. Byte-identical in every canary job and
+      # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
+      # extracts this very block and runs it.
+      #
+      # No `if:`: the body is a no-op on the gating events, which keeps it out
+      # of the census allowlist while gating exactly the same thing.
+      - name: A canary run is against main
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ -z "$EVENT" ] || [ -z "$REF" ]; then
+            echo "::error title=The main canary runs against main only::EVENT or REF is empty, so this cannot be shown to be a safe run. Refusing rather than assuming it is not a canary."
+            exit 1
+          fi
+          if [ "$EVENT" != 'schedule' ] && [ "$EVENT" != 'workflow_dispatch' ]; then
+            echo "event '$EVENT' is not a canary event; nothing to check."
+            exit 0
+          fi
+          if [ "$REF" != 'refs/heads/main' ]; then
+            echo "::error title=The main canary runs against main only::this $EVENT run is on '$REF', not 'refs/heads/main'. Nothing was tested. Dispatch it with --ref main; a run on a branch would post this check on that branch's head, under the name of a required context."
+            exit 1
+          fi
+          echo "canary $EVENT run against $REF."
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/attest-pr-check.sh
+            scripts/queue-repeat-guard.sh
+          sparse-checkout-cone-mode: false
+      - name: Did lint already pass on this PR's head?
+        id: attest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+        run: bash scripts/attest-pr-check.sh lint "$HEAD_REF" >> "$GITHUB_OUTPUT"
+
   lint:
+    # Skipped only when attest proved this check passed on the PR's head (a
+    # skipped required job reports success). `!cancelled()`, not `always()`,
+    # and `!= 'true'`, so a failed or missing attest runs the real check.
+    needs: attest
+    if: ${{ !cancelled() && needs.attest.outputs.attested != 'true' }}
     runs-on: ubuntu-latest
     # A full cold lint (`turbo lint --force`, 21 packages, no cache) measured
     # ~40s on an idle developer machine, and `prettier --check .` over ~7,300
@@ -184,6 +266,18 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
+      # The census's fan-in rule (DOR-5130): this job runs only when attest did
+      # not prove a pass, and attest must have succeeded (merge_group) or been
+      # skipped (every other event). An attest that failed fails this check
+      # closed rather than letting it report success.
+      - name: Require the attest job to have succeeded or been skipped
+        env:
+          ATTEST: ${{ needs.attest.result }}
+        run: |
+          if [ "$ATTEST" != success ] && [ "$ATTEST" != skipped ]; then
+            echo "::error::the attest job ended '$ATTEST', so this check cannot tell whether it was skipped on purpose. Re-run the workflow."
+            exit 1
+          fi
       - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
