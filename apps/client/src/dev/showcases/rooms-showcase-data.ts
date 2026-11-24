@@ -248,6 +248,19 @@ export const DM_ROOM: RoomWithRoster = createRoomWithRoster({
   members: [MEMBER.reader, { ...MEMBER.pm, responseMode: 'always' }],
 });
 
+/**
+ * A one-to-one whose agent has left the team (DOR-2365): the line over its
+ * composer says so before anyone types.
+ */
+export const RETIRED_DM_ROOM: RoomWithRoster = createRoomWithRoster({
+  ...DM_ROOM,
+  id: 'room-dm-retired',
+  members: [
+    MEMBER.reader,
+    { ...MEMBER.pm, responseMode: 'always', author: { ...MEMBER.pm.author, retired: true } },
+  ],
+});
+
 /** A retired room: the banner, the dormant meters, and the way back. */
 export const ARCHIVED_ROOM: RoomWithRoster = createRoomWithRoster({
   id: 'room-old-thing',
