@@ -63,6 +63,8 @@ export function registerSessionLocationsOpenApi(registry: OpenAPIRegistry): void
   registry.registerPath({
     method: 'post',
     path: '/api/session-locations/chats',
+    // Its derived id, `sessionLocations.createChats`, is the saved-folder route's above.
+    operationId: 'sessionLocations.createAgentChat',
     tags: ['Sessions'],
     summary: 'Acknowledge a new chat with a registered agent',
     description: 'Reserves a chat id without starting a turn or setting a runtime.',
