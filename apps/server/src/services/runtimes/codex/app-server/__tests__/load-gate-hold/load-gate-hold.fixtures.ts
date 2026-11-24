@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, expect, vi } from 'vitest';
+import { afterEach, beforeEach, expect, vi, type Mock } from 'vitest';
 import type { LoadGateSettings } from '@dorkos/shared/config-schema';
 import { LOAD_WAIT_STATUS } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -97,7 +97,7 @@ export function machine(load = 20, gate?: () => LoadGate) {
     noticeEveryMs: MINUTE,
     log: (line) => lines.push(line),
   });
-  const log = { warn: vi.fn() };
+  const log: { warn: Mock } = { warn: vi.fn() };
   const deps: HeavyAskDeps = {
     gate: gate ?? (() => real),
     settings: () => settings,

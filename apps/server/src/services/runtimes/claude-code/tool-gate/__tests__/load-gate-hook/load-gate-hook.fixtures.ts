@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, expect, vi } from 'vitest';
+import { afterEach, beforeEach, expect, vi, type Mock } from 'vitest';
 import type {
   HookCallback,
   HookCallbackMatcher,
@@ -119,7 +119,7 @@ export function hooksFor(
   now: () => number,
   extra: Partial<LoadGateHookDeps> = {}
 ) {
-  const log = { warn: vi.fn() };
+  const log: { warn: Mock } = { warn: vi.fn() };
   const hooks = loadGateHooks(
     session,
     { sessionId: 'dorkos-session', agentName: 'Ana' },

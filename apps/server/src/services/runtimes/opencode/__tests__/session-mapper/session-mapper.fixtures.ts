@@ -1,7 +1,7 @@
 /**
  * Shared setup for the session-mapper tests, split from one file by subject.
  */
-import { vi } from 'vitest';
+import { vi, type Mock } from 'vitest';
 import type {
   Session as OpenCodeSession,
   UserMessage,
@@ -94,7 +94,9 @@ export function toolPart(state: Extract<Part, { type: 'tool' }>['state']): Part 
 }
 
 /** Shared helper for the session-mapper tests: `createMockClient`. */
-export function createMockClient() {
+export function createMockClient(): {
+  session: { list: Mock; create: Mock; get: Mock; messages: Mock };
+} {
   return {
     session: {
       list: vi.fn(),

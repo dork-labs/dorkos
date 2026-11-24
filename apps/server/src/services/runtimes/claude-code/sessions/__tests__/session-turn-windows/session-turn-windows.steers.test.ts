@@ -10,6 +10,7 @@ import {
   errorResultMessage,
   textDeltaMessage,
   apiRetryMessage,
+  compactBoundaryMessage,
   type Harness,
   harness,
   settled,
@@ -58,6 +59,27 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
     // Closed on the CLI's own successful `result`, never on the synthetic
     // "the agent never finished this turn".
     expect(h.rawStream().some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('L-04: survives an auto compaction taken ahead of the continuation', async () => {
+    // The other shape that precedes a continuation's first word, and one the
+    // pump already drives end to end elsewhere: the CLI compacts to make room
+    // for the steer's turn, then runs it.
+    const h = harness({ graceMs: 40 });
+    await steeredAndAnswered(h, [compactBoundaryMessage()]);
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    h.live().emit(textDeltaMessage('answering after the compaction'));
+    h.live().emit(resultMessage('steer-1'));
+
+    await settled(h, 1);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(
+      windows[0]!.events.some(
+        (e) => e.type === 'text_delta' && e.text === 'answering after the compaction'
+      )
+    ).toBe(true);
   });
 
   it('closes at the cap when the process chatters and never speaks', async () => {
