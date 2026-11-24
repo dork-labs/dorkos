@@ -64,9 +64,9 @@ function codeLines(rel: string): string {
     .join('\n');
 }
 
-/** Every suite named by hand in a chunk of text. */
+/** Every suite named by hand in a chunk of text: a path whose file name starts with `test-`. */
 function namedSuites(text: string): string[] {
-  const matches = text.matchAll(/[\w./-]*\btest-[A-Za-z0-9._-]+\.sh\b/g);
+  const matches = text.matchAll(/(?<![\w.-])(?:[\w.-]+\/)*test-[A-Za-z0-9._-]+\.sh\b/g);
   return [...new Set([...matches].map((m) => m[0]))].sort();
 }
 
