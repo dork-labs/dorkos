@@ -62,3 +62,22 @@ export function turnRefusalOf(
   const paused = pausedRefusalOf(err);
   return paused ? { reason: 'paused', ...paused } : null;
 }
+
+/**
+ * The pause behind a turn that ended without an answer, or `null` when the
+ * agent is not paused. A pause that lands MID-turn stops the runtime, and the
+ * turn ends the way any interrupted turn does: unanswered, or thrown with
+ * whatever the runtime said. Read as a failure, that is "ran into a problem",
+ * which reports the person's own choice back to them as a crash (DOR-3178).
+ * Asked of the agent's folder, as {@link refusePausedRoomTurn} asks it.
+ *
+ * @param agentPath - The agent's folder.
+ * @returns The refusal the room's `paused` line is written from, or `null`.
+ */
+export function pausedDuringTurnOf(
+  agentPath: string
+): ({ reason: 'paused' } & SilenceContext) | null {
+  const paused = agentPause()?.pausedAgentOfTurn({ forAgent: agentPath });
+  if (!paused) return null;
+  return { reason: 'paused', ...(paused.pausedAt ? { pausedAt: paused.pausedAt } : {}) };
+}
