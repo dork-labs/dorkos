@@ -16,7 +16,7 @@ name: after-merge-alert
 
 on:
   workflow_run:
-    workflows: [scripts-test, CLI Smoke Test, Desktop Smoke, db-check]
+    workflows: [scripts-test, CLI Smoke Test, Desktop Smoke, db-check, site-build, harness-windows]
     types: [completed]
 
 permissions:
