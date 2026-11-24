@@ -104,6 +104,7 @@ import type { MessageSenderOpts, ResolvedLaunch } from './message-sender-shared.
 import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
+import { watchLaunchFolderAllows } from '../tool-gate/folder-file-allows.js';
 import { protectedFileMatcher } from '../tool-gate/protected-file-hook.js';
 import { heldFolderMatchers } from '../tool-gate/dev-link-hook.js';
 import { turnReadRoots } from '../tool-gate/held-turn-reads.js';
@@ -697,8 +698,8 @@ export async function resolveLaunch(args: {
   });
   // A credits turn's endpoint, in the launch's own settings (see above).
   applyCreditsSettingsEnv(sdkOptions, creditsSettings);
-  // The agent's own folder allow list (DOR-3039), which Claude Code drops in a
-  // folder it has not been told to trust.
+  // The agent's own folder allow list (DOR-3039), as a person approved it; below Full the rest
+  // of the folder's settings allow only what a person approved (`folderAllows` below, DOR-5237).
   await applyFolderAllowsToLaunch({
     agent: meshAgent
       ? { id: meshAgent.id, name: agentDisplayName ?? meshAgent.name ?? meshAgent.id }
@@ -760,14 +761,24 @@ export async function resolveLaunch(args: {
   });
   // One launch's heavy-job hooks (DOR-4209), built here because a card gives its call's slot back.
   const loadGate = loadGateHooks(session, { sessionId, agentName: agentDisplayName });
-  sdkOptions.canUseTool = createCanUseTool(
-    session,
-    logger,
-    editBaselineCapture,
-    resolveIdentity,
-    { cwd: effectiveCwd, roots: readRoots },
-    outsideChecks,
-    loadGate.releaseCall
+  // Below Full, an agent's folder settings allow only what a person approved (DOR-5237); a
+  // person's Always allow counts as approved from that answer on.
+  const folderAllows = watchLaunchFolderAllows(sdkOptions, {
+    agentId: meshAgent?.id,
+    home: turnAgentPath ?? undefined,
+    cwd: effectiveCwd,
+    compared: repoConfig.compared,
+  });
+  sdkOptions.canUseTool = folderAllows.rememberPersonAnswers(
+    createCanUseTool(
+      session,
+      logger,
+      editBaselineCapture,
+      resolveIdentity,
+      { cwd: effectiveCwd, roots: readRoots },
+      outsideChecks,
+      loadGate.releaseCall
+    )
   );
   // Pre-edit baseline capture must ALSO ride the SDK PreToolUse hook (DOR-212):
   // `canUseTool` is skipped entirely under `bypassPermissions`, but PreToolUse
@@ -812,8 +823,12 @@ export async function resolveLaunch(args: {
         audit: auditTurn,
       }),
       // A held turn (DOR-3204): the folder's allow rules become cards, its deny
-      // rules still refuse. Answers nothing on any other turn.
-      { hooks: [createHeldTurnHook(session, resolveIdentity, logger, heldReadFolders)] },
+      // rules still refuse. Below Full, so does a rule nobody approved (DOR-5237).
+      {
+        hooks: [
+          createHeldTurnHook(session, resolveIdentity, logger, heldReadFolders, folderAllows),
+        ],
+      },
       // Never ask (DOR-3042): the CLI calls no `canUseTool` under `dontAsk`, so
       // DorkOS's own safe tools are let through here, with the gate's own
       // per-call decision. Answers nothing in any other mode.

@@ -7,7 +7,11 @@ import { describe, expect, it } from 'vitest';
 import type { HookInput } from '@anthropic-ai/claude-agent-sdk';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
-import { createHeldTurnHook, HELD_TURN_ASK_REASON } from '../held-turn-hook.js';
+import {
+  createHeldTurnHook,
+  FOLDER_RULE_ASK_REASON,
+  HELD_TURN_ASK_REASON,
+} from '../held-turn-hook.js';
 
 /** A `PreToolUse` input for one call, as Claude Code hands it. */
 function call(
@@ -185,5 +189,90 @@ describe('the held turn hook', () => {
     for (const tool of ['WebFetch', 'Edit', 'Write', 'NotebookEdit', 'Monitor']) {
       expect(await decide({ permissionMode: 'default', ...HELD }, call(tool))).toEqual(ASK);
     }
+  });
+});
+
+describe('a folder rule nobody approved, below Full (DOR-5237)', () => {
+  const FOLDER_ASK = {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'ask',
+      permissionDecisionReason: FOLDER_RULE_ASK_REASON,
+    },
+  };
+  /** A check that answers `mustAsk` for every call, recording what it was asked. */
+  function folderCheck(answer: boolean) {
+    const asked: string[] = [];
+    return {
+      asked,
+      check: {
+        mustAsk: async (toolName: string) => {
+          asked.push(toolName);
+          return answer;
+        },
+      },
+    };
+  }
+  async function decideWith(
+    session: { permissionMode: PermissionModeId; turnPermissionCeiling?: TurnPermissionCeiling },
+    input: HookInput,
+    answer: boolean
+  ) {
+    const { check } = folderCheck(answer);
+    const hook = createHeldTurnHook(
+      session,
+      async () => ({ identity: { agentPath: '/a' } }),
+      noopLog,
+      FOLDERS,
+      check
+    );
+    return hook(input, 'tool-1', signal);
+  }
+  const python = call('Bash', { command: 'python3 -c 1' });
+
+  it('asks when only an unapproved folder rule would run the call, in every mode below Full', async () => {
+    for (const mode of ['default', 'acceptEdits', 'dontAsk', 'plan', 'auto'] as const) {
+      expect(await decideWith({ permissionMode: mode }, python, true), mode).toEqual(FOLDER_ASK);
+    }
+  });
+
+  it('answers nothing when the check finds nothing, or the chat is set to Full', async () => {
+    expect(await decideWith({ permissionMode: 'default' }, python, false)).toEqual({});
+    expect(await decideWith({ permissionMode: 'bypassPermissions' }, python, true)).toEqual({});
+  });
+
+  it('lets through what it lets through on a held turn', async () => {
+    const reads = [
+      call('Read', { file_path: '/agents/ana/notes.md' }),
+      call('Bash', { command: 'ls -la src' }),
+      call('TodoWrite'),
+      call('mcp__dorkos__chat_send', { to: 'c', message: 'hi' }, { name: 'dorkos', source: 'sdk' }),
+    ];
+    for (const input of reads) {
+      expect(await decideWith({ permissionMode: 'default' }, input, true)).toEqual({});
+    }
+  });
+
+  it('keeps a held turn’s own answer, and never asks the folder check there', async () => {
+    const { asked, check } = folderCheck(false);
+    const hook = createHeldTurnHook(
+      { permissionMode: 'default', ...HELD },
+      async () => ({}),
+      noopLog,
+      FOLDERS,
+      check
+    );
+    expect(await hook(python, 'tool-1', signal)).toEqual(ASK);
+    expect(asked).toEqual([]);
+  });
+
+  it('lets Accept edits run an edit inside the working folder, and asks about one outside', async () => {
+    const inside = call('Write', { file_path: '/agents/ana/notes.md', content: 'x' });
+    const outside = call('Write', { file_path: '/etc/hosts', content: 'x' });
+    const relative = call('Edit', { file_path: 'notes.md', old_string: 'a', new_string: 'b' });
+    expect(await decideWith({ permissionMode: 'acceptEdits' }, inside, true)).toEqual({});
+    expect(await decideWith({ permissionMode: 'acceptEdits' }, relative, true)).toEqual({});
+    expect(await decideWith({ permissionMode: 'acceptEdits' }, outside, true)).toEqual(FOLDER_ASK);
+    expect(await decideWith({ permissionMode: 'default' }, inside, true)).toEqual(FOLDER_ASK);
   });
 });
