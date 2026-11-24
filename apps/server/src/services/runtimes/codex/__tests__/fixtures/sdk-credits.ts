@@ -1,6 +1,7 @@
 /** Legacy SDK-shaped credits values for scripted test fixtures only. */
 import type { CodexOptions } from '@openai/codex-sdk';
-import { CODEX_CREDITS_PROVIDER_ID, codexRoutesOrPays } from '../../credits-launch.js';
+import { codexRoutesOrPays } from '../../credits-launch.js';
+import { CREDITS_PROVIDER_ID, scrubForCredits } from '../../../shared/credits/environment.js';
 import { creditsCodexHome } from '../../codex-home.js';
 import {
   type CreditsLaunch,
@@ -22,10 +23,10 @@ export function codexCreditsProcessEnv(
   launch: CreditsLaunch,
   tokenVar: string
 ): Record<string, string> {
-  const kept: Record<string, string> = {};
-  for (const [name, value] of Object.entries(projected)) {
-    if (!codexRoutesOrPays(name) && !isCreditsTokenVar(name)) kept[name] = value;
-  }
+  const kept = scrubForCredits(
+    projected,
+    (name) => codexRoutesOrPays(name) || isCreditsTokenVar(name)
+  );
   return { ...kept, CODEX_HOME: creditsCodexHome(), ...creditsTokenEnv(launch, tokenVar) };
 }
 
@@ -51,9 +52,9 @@ export function codexCreditsConfig(
   tokenVar: string
 ): Record<string, unknown> {
   return {
-    model_provider: CODEX_CREDITS_PROVIDER_ID,
+    model_provider: CREDITS_PROVIDER_ID,
     model_providers: {
-      [CODEX_CREDITS_PROVIDER_ID]: {
+      [CREDITS_PROVIDER_ID]: {
         name: 'DorkOS credits',
         base_url: launch.baseUrl,
         env_key: tokenVar,

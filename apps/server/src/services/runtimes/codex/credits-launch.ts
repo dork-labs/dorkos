@@ -21,10 +21,8 @@ import fs from 'node:fs';
 import { logger } from '../../../lib/logger.js';
 import { creditsCodexHome } from './codex-home.js';
 import { isCreditsTokenVar } from '../../core/cloud/credits-protocols.js';
+import { CREDITS_PROVIDER_ID, scrubForCredits } from '../shared/credits/environment.js';
 import { locateCodexRollout } from './turn-context-usage.js';
-
-/** The model provider id a credits turn selects. Never one a person's config can define for us. */
-export const CODEX_CREDITS_PROVIDER_ID = 'dorkos-credits';
 
 /** Make sure the credits home exists, so the CLI can write a thread's rollout there. */
 export function ensureCreditsCodexHome(): void {
@@ -77,10 +75,10 @@ export function codexRoutesOrPays(name: string): boolean {
 export function codexCreditsAppServerEnv(
   projected: Readonly<Record<string, string>>
 ): Record<string, string> {
-  const kept: Record<string, string> = {};
-  for (const [name, value] of Object.entries(projected)) {
-    if (!codexRoutesOrPays(name) && !isCreditsTokenVar(name)) kept[name] = value;
-  }
+  const kept = scrubForCredits(
+    projected,
+    (name) => codexRoutesOrPays(name) || isCreditsTokenVar(name)
+  );
   return { ...kept, CODEX_HOME: creditsCodexHome() };
 }
 
@@ -98,9 +96,9 @@ export function codexCreditsThreadConfig(relay: {
   key: string;
 }): Record<string, unknown> {
   return {
-    model_provider: CODEX_CREDITS_PROVIDER_ID,
+    model_provider: CREDITS_PROVIDER_ID,
     model_providers: {
-      [CODEX_CREDITS_PROVIDER_ID]: {
+      [CREDITS_PROVIDER_ID]: {
         name: 'DorkOS credits',
         base_url: relay.baseUrl,
         wire_api: 'responses',

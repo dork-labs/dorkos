@@ -23,9 +23,9 @@ vi.mock('../../../core/cloud/v1-client.js', async (importOriginal) => ({
 
 import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference.js';
 import { __setCreditsCatalogForTests } from '../../../core/cloud/credits-models.js';
+import { CREDITS_PROVIDER_ID } from '../../shared/credits/environment.js';
 import { planOpenCodeSidecar, planOpenCodeTurn } from '../credits-mode.js';
 import {
-  OPENCODE_CREDITS_PROVIDER_ID,
   OPENCODE_OWN_PLAN,
   creditsModelFor,
   openCodeCreditsConfig,
@@ -60,6 +60,9 @@ describe('the credits sidecar’s environment', () => {
   it('drops the person’s provider keys and endpoint, and carries no credits token at all', () => {
     const env = openCodeCreditsEnv({
       PATH: '/bin',
+      Https_Proxy: 'http://proxy.invalid',
+      NO_PROXY: 'localhost',
+      NODE_EXTRA_CA_CERTS: '/fixture/ca.pem',
       OPENROUTER_API_KEY: 'person',
       OPENAI_API_KEY: 'person',
       ANTHROPIC_API_KEY: 'person',
@@ -67,7 +70,13 @@ describe('the credits sidecar’s environment', () => {
       GITHUB_TOKEN: 'gh',
       DORKOS_CREDITS_TOKEN_OLD: 'a token that must not ride along',
     });
-    expect(env).toEqual({ PATH: '/bin', GITHUB_TOKEN: 'gh' });
+    expect(env).toEqual({
+      PATH: '/bin',
+      Https_Proxy: 'http://proxy.invalid',
+      NO_PROXY: 'localhost',
+      NODE_EXTRA_CA_CERTS: '/fixture/ca.pem',
+      GITHUB_TOKEN: 'gh',
+    });
   });
 });
 
@@ -75,11 +84,11 @@ describe('the credits sidecar’s config', () => {
   it('enables the credits provider alone, points it at the relay with the boot’s key, and lists the models', () => {
     const config = openCodeCreditsConfig(RELAY, [model('m-chat', false), model('m-tools', true)]);
     expect(config).toEqual({
-      enabled_providers: [OPENCODE_CREDITS_PROVIDER_ID],
-      model: `${OPENCODE_CREDITS_PROVIDER_ID}/m-tools`,
-      small_model: `${OPENCODE_CREDITS_PROVIDER_ID}/m-tools`,
+      enabled_providers: ['dorkos-credits'],
+      model: `${CREDITS_PROVIDER_ID}/m-tools`,
+      small_model: `${CREDITS_PROVIDER_ID}/m-tools`,
       provider: {
-        [OPENCODE_CREDITS_PROVIDER_ID]: {
+        [CREDITS_PROVIDER_ID]: {
           name: 'DorkOS credits',
           npm: '@ai-sdk/openai-compatible',
           options: { baseURL: RELAY.baseUrl, apiKey: RELAY.key, includeUsage: true },
@@ -105,10 +114,10 @@ describe('the credits sidecar’s config', () => {
 
   it('is the allow list alone with no relay grant or no models, so no provider can run', () => {
     expect(openCodeCreditsConfig(null, [model('m', true)])).toEqual({
-      enabled_providers: [OPENCODE_CREDITS_PROVIDER_ID],
+      enabled_providers: [CREDITS_PROVIDER_ID],
     });
     expect(openCodeCreditsConfig(RELAY, [])).toEqual({
-      enabled_providers: [OPENCODE_CREDITS_PROVIDER_ID],
+      enabled_providers: [CREDITS_PROVIDER_ID],
     });
   });
 });
@@ -116,11 +125,11 @@ describe('the credits sidecar’s config', () => {
 describe('which model a credits turn runs on', () => {
   const available = [model('a', false), model('b', true)];
   it('keeps the session’s model when it is a credits model', () => {
-    expect(creditsModelFor(`${OPENCODE_CREDITS_PROVIDER_ID}/a`, available)).toBe('a');
+    expect(creditsModelFor(`${CREDITS_PROVIDER_ID}/a`, available)).toBe('a');
   });
   it('falls back to the first that can call tools, never to another provider’s model', () => {
     expect(creditsModelFor('openrouter/some-model', available)).toBe('b');
-    expect(creditsModelFor(`${OPENCODE_CREDITS_PROVIDER_ID}/gone`, available)).toBe('b');
+    expect(creditsModelFor(`${CREDITS_PROVIDER_ID}/gone`, available)).toBe('b');
     expect(creditsModelFor(undefined, [model('only', false)])).toBe('only');
     expect(creditsModelFor(undefined, [])).toBeNull();
   });

@@ -28,6 +28,7 @@ import { env } from '../../../env.js';
 import { DoeRuntime } from '../doe/index.js';
 import type { DoeRuntimeOptions } from '../doe/doe-runtime.js';
 import { resolveDoeInference } from '../doe/credentials.js';
+import { CREDITS_PROVIDER_ID } from '../shared/credits/environment.js';
 import { createFakeCloudApprovalRoutes, createFakeCloudLink } from './fake-cloud-link.js';
 import { createFakeCloudV1Fetch } from './fake-cloud-v1.js';
 import { createFakeInferenceRoutes } from './fake-inference.js';
@@ -56,7 +57,7 @@ export function composeReplayCloud(): void {
 export function testModeDoeOptions(): DoeRuntimeOptions {
   return {
     resolveModel: async (config) => {
-      if (config.source !== 'dorkos-credits') throw new Error(TEST_MODE_DOE_REFUSAL);
+      if (config.source !== CREDITS_PROVIDER_ID) throw new Error(TEST_MODE_DOE_REFUSAL);
       return resolveDoeInference(config);
     },
   };

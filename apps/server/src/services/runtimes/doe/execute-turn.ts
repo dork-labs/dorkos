@@ -30,6 +30,7 @@ import {
 import { agentRunsOnCredits } from '../../core/cloud/credits-model-gate.js';
 import { creditsRefusalEvent } from '../../core/cloud/credits-protocols.js';
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
+import { CREDITS_PROVIDER_ID } from '../shared/credits/environment.js';
 import { turnReferenceEnv } from '../shared/references/turn-reference-env.js';
 import type { ConnectorTurnLeaseSupervisorHandle } from '../connectors/connector-turn-lease-supervisor.js';
 import { openConnectorTurn } from '../connectors/open-connector-turn.js';
@@ -166,7 +167,7 @@ export async function executeDoeTurn(
       const configured = hostState.inference();
       const manifest = agentPath ? await readHomeManifest(agentPath) : null;
       const creditsChosen =
-        configured?.source === 'dorkos-credits' ||
+        configured?.source === CREDITS_PROVIDER_ID ||
         agentRunsOnCredits(
           hostState.runtime,
           { id: manifest?.id, account: manifest?.account },
@@ -206,7 +207,7 @@ export async function executeDoeTurn(
       hostState.sessions.setInference(id, record.inference!);
     }
     const config = DoeInferenceConfigSchema.parse(record.inference);
-    turn.credits = config.source === 'dorkos-credits';
+    turn.credits = config.source === CREDITS_PROVIDER_ID;
     const room = opts?.additionalContext?.find((entry) => entry.kind === 'room_context')?.data;
     const localRoomAnswer =
       config.source === 'local' &&

@@ -44,6 +44,7 @@ import { DoeInferenceConfigSchema } from '@dorkos/shared/config-schema';
 import { homeOf, resolveAgentHome, readHomeManifest } from '../../core/agent-identity/index.js';
 import { peekProjector } from '../../session/session-state-projector.js';
 import { dorkosToolsPosture } from '../shared/dorkos-mcp-injection.js';
+import { CREDITS_PROVIDER_ID } from '../shared/credits/environment.js';
 import { type ConnectorRuntimeTools } from '../connector-tools.js';
 import { executeDoeTurn, type ActiveTurn } from './execute-turn.js';
 import { DoeSessionRuntime } from './session-runtime.js';
@@ -430,8 +431,8 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
   async sessionRunsOnCredits(id: string): Promise<boolean> {
     const record = this.sessions.get(id);
     if (record?.inference)
-      return DoeInferenceConfigSchema.parse(record.inference).source === 'dorkos-credits';
-    if (this.inference()?.source === 'dorkos-credits') return true;
+      return DoeInferenceConfigSchema.parse(record.inference).source === CREDITS_PROVIDER_ID;
+    if (this.inference()?.source === CREDITS_PROVIDER_ID) return true;
     const bound = await runtimeRegistry.getSessionAgentPath(id).catch(() => null);
     const home = homeOf(
       resolveAgentHome(
