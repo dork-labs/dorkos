@@ -39,6 +39,7 @@ import {
 import { NotificationStore } from '../../../../notifications/notification-store.js';
 import { setAccountUsageStore } from '../../../../core/usage/current-usage-store.js';
 import type { AccountUsageStore } from '../../../../core/usage/account-usage-store.js';
+import { UNTOLD_ACCOUNT_MOVE_REASON } from '../../../../tasks/approvals/account-move.js';
 
 interface SessionTool {
   name: string;
@@ -160,6 +161,7 @@ describe('tasks_update moving an approved schedule to another account (DOR-5097)
     rules.claudeCode.accounts = [
       ...(rules.claudeCode.accounts as unknown[]),
       { id: 'spare', path: '/accounts/spare', label: 'Spare', onlyProjects: null },
+      { id: 'lab', path: '/accounts/lab', label: 'Lab', onlyProjects: null },
     ];
     const account = (id: string, label: string, extra: Record<string, unknown> = {}) => ({
       runtime: 'claude-code',
@@ -175,7 +177,8 @@ describe('tasks_update moving an approved schedule to another account (DOR-5097)
       listAccounts: () => [
         account('work', 'Work'),
         account('spare', 'Spare'),
-        account('client', 'Client Work', { noAutoMove: true }),
+        account('client', 'Client Work'),
+        account('lab', 'Lab', { noAutoMove: true }),
       ],
     } as unknown as AccountUsageStore);
     notifications = new NotificationStore(createTestDb());
@@ -212,6 +215,29 @@ describe('tasks_update moving an approved schedule to another account (DOR-5097)
       .notifications.filter((n) => n.kind === 'schedule.armed_by_agent');
     expect(told).toHaveLength(1);
     expect(told[0]!.title).toContain('to Spare');
+  });
+
+  it('parks instead, saying why, when the person cannot be told', async () => {
+    // Purpose: a kept move never stands unseen; both doors agree (S4, C3).
+    setNotificationService(null);
+    const id = await approved();
+
+    const { payload } = await call('tasks_update', { id, account: 'spare' });
+
+    expect(payload).toMatchObject({ needsReapproval: true });
+    expect(store.getTask(id)).toMatchObject({
+      status: 'pending_approval',
+      reason: UNTOLD_ACCOUNT_MOVE_REASON,
+    });
+  });
+
+  it('parks a move to an account kept out of automatic moves, and says nothing of a move', async () => {
+    const id = await approved();
+
+    const { payload } = await call('tasks_update', { id, account: 'lab' });
+
+    expect(payload).toMatchObject({ needsReapproval: true });
+    expect(payload).not.toHaveProperty('accountNote');
   });
 
   it('pins and unpins a schedule to its account', async () => {

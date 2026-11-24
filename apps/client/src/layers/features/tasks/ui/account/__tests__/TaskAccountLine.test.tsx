@@ -13,12 +13,16 @@ import { runAccountMoveLine } from '../../../lib/run-account-move';
 
 afterEach(cleanup);
 
-function renderLine(task: Parameters<typeof TaskAccountLine>[0]['task'], transport: Transport) {
+function renderLine(
+  task: Parameters<typeof TaskAccountLine>[0]['task'],
+  transport: Transport,
+  agent?: Parameters<typeof TaskAccountLine>[0]['agent']
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>
-        <TaskAccountLine task={task} />
+        <TaskAccountLine task={task} agent={agent} />
       </TransportProvider>
     </QueryClientProvider>
   );
@@ -30,42 +34,70 @@ const config = {
   },
 } as unknown as ServerConfig;
 
+const base = {
+  id: 't1',
+  account: 'claude5',
+  runtime: null,
+  sticky: false,
+  lastRunAt: null,
+} as Parameters<typeof TaskAccountLine>[0]['task'];
+
 describe('TaskAccountLine', () => {
-  it('says nothing for a task that follows its agent’s account', () => {
-    const { container } = renderLine(
-      { id: 't1', account: null },
-      createMockTransport({ getConfig: vi.fn().mockResolvedValue(config) })
-    );
+  const withConfig = (extra: Partial<Transport> = {}) =>
+    createMockTransport({ getConfig: vi.fn().mockResolvedValue(config), ...extra });
+
+  it('says nothing for a task on another runtime', () => {
+    const { container } = renderLine({ ...base, runtime: 'codex' }, withConfig());
     expect(container).toBeEmptyDOMElement();
   });
 
   it('names the account and says another takes the run when it is out', async () => {
-    renderLine(
-      { id: 't1', account: 'claude5' },
-      createMockTransport({ getConfig: vi.fn().mockResolvedValue(config) })
-    );
+    renderLine(base, withConfig());
     expect(await screen.findByText('Runs on Claude5')).toBeInTheDocument();
     expect(screen.getByText(/Another account takes the run/)).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: 'This account only' })).not.toBeChecked();
   });
 
+  it('shows the agent’s account, with the switch, for a task that follows it', async () => {
+    renderLine({ ...base, account: null }, withConfig(), {
+      account: 'claude5',
+      runtime: 'claude-code',
+    });
+    expect(await screen.findByText('Runs on Claude5 (its agent’s)')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'This account only' })).toBeInTheDocument();
+  });
+
+  it('shows the default for a task that names no account and whose agent names none', () => {
+    renderLine({ ...base, account: null }, withConfig());
+    expect(screen.getByText(/\(the default\)$/)).toBeInTheDocument();
+  });
+
   it('pins the task to its account', async () => {
     const updateTask = vi.fn().mockResolvedValue({});
-    renderLine(
-      { id: 't1', account: 'claude5' },
-      createMockTransport({ getConfig: vi.fn().mockResolvedValue(config), updateTask })
-    );
+    renderLine(base, withConfig({ updateTask }));
     fireEvent.click(screen.getByRole('switch', { name: 'This account only' }));
     await waitFor(() => expect(updateTask).toHaveBeenCalledWith('t1', { accountPinned: true }));
   });
 
   it('says a pinned task’s run won’t start when its account is out', () => {
-    renderLine(
-      { id: 't1', account: 'claude5', accountPinned: true },
-      createMockTransport({ getConfig: vi.fn().mockResolvedValue(config) })
-    );
+    renderLine({ ...base, accountPinned: true }, withConfig());
     expect(screen.getByText(/Runs only here/)).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: 'This account only' })).toBeChecked();
+  });
+
+  it('names DorkOS credits in words, with no move rule and no switch', () => {
+    renderLine({ ...base, account: 'dorkos-credits' }, withConfig());
+    expect(screen.getByText('Runs on DorkOS credits')).toBeInTheDocument();
+    expect(screen.queryByText(/dorkos-credits/)).toBeNull();
+    expect(screen.queryByText(/Another account/)).toBeNull();
+    expect(screen.queryByRole('switch')).toBeNull();
+  });
+
+  it('says a remembered chat that already ran stays on its account', () => {
+    renderLine({ ...base, sticky: true, lastRunAt: '2026-11-23T10:00:00.000Z' }, withConfig());
+    expect(screen.getByText(/remembered chat stays on this account/)).toBeInTheDocument();
+    expect(screen.queryByText(/Another account/)).toBeNull();
+    expect(screen.queryByRole('switch')).toBeNull();
   });
 });
 

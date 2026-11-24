@@ -7,7 +7,10 @@
  *
  * @module services/tasks/__tests__/task-store-account-move
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseSchedules, type Db } from '@dorkos/db';
@@ -17,7 +20,20 @@ import { TaskStore } from '../task-store.js';
 import type { TaskFileSync } from '../sync/task-file-sync.js';
 import { scheduleContentKey, taskWorkOf } from '../schedule-permission-clamp.js';
 import type { RuntimeAccount } from '../../core/usage/runtime-accounts.js';
-import { accountMayTakeMovedWork } from '../approvals/account-move.js';
+import {
+  accountMayTakeMovedWork,
+  agentMayMoveAccount,
+  announceAccountMove,
+  UNTOLD_ACCOUNT_MOVE_REASON,
+} from '../approvals/account-move.js';
+import {
+  recordAccountSignin,
+  resetAccountSignins,
+} from '../../observability/account-signin-state.js';
+import {
+  accountSigninPolicy,
+  initAccountSigninPolicy,
+} from '../../health/account-signin-policy.js';
 import { movesOnlyAccount } from '../approvals/account-move-rule.js';
 
 const FILE_PATH = `/home/u/.dork/skills/publish/${SKILL_FILENAME}`;
@@ -192,5 +208,123 @@ describe('an agent’s account-only change to an approved schedule', () => {
     expect(agentEdit(id, { account: 'claude4' })).toBe('unchanged');
     expect(store.getTask(id)!.status).toBe('pending_approval');
     expect(row(id).approvedContentKey).toBeNull();
+  });
+});
+
+describe('the account-move rule’s limits (review of #4211)', () => {
+  let db: Db;
+  let store: TaskStore;
+
+  beforeEach(() => {
+    db = createTestDb();
+    store = new TaskStore(db);
+  });
+
+  afterEach(() => resetAccountSignins());
+
+  const row = (id: string) =>
+    db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get()!;
+
+  function approvedOn(account: string): string {
+    const id = store.fileSync.upsertFromFile(definition(account)).id;
+    store.approvals.recordPersonApproval(id);
+    return id;
+  }
+
+  function agentMove(id: string, to: string | null) {
+    const before = { ...taskWorkOf(store.getTask(id)!), status: store.getTask(id)!.status };
+    store.updateTask(id, { account: to });
+    return store.approvals.settleApprovedWorkChange(id, before, {
+      trusted: false,
+      accountMayMoveTo: (next, from) => agentMayMoveAccount(next, from, ACCOUNTS),
+    });
+  }
+
+  it('never keeps the approval when an agent moves a task off DorkOS credits', () => {
+    // Purpose: credits are the owner's call, and so is what replaces them (M1).
+    expect(agentMayMoveAccount('claude3', CREDITS_ACCOUNT_ID, ACCOUNTS)).toBe(false);
+    const id = approvedOn(CREDITS_ACCOUNT_ID);
+    expect(agentMove(id, 'claude3')).toBe('parked');
+    expect(store.getTask(id)!.status).toBe('pending_approval');
+  });
+
+  it('falls through to the old rules when the grant does not cover the work it replaced', () => {
+    // Purpose: a stale grant must not read as "unchanged" and leave the edit live (S1).
+    const id = approvedOn('claude3');
+    db.update(pulseSchedules)
+      .set({ approvedContentKey: 'a grant for other work' })
+      .where(eq(pulseSchedules.id, id))
+      .run();
+    expect(agentMove(id, 'claude4')).toBe('parked');
+  });
+
+  it('keeps the server’s own record of what the move replaced, for the Undo', () => {
+    const id = approvedOn('claude3');
+    expect(agentMove(id, 'claude4')).toBe('account-moved');
+    expect(store.approvals.agentModeColumnOf(id).accountUndo).toEqual({
+      previous: 'claude3',
+      written: 'claude4',
+      at: expect.any(String),
+    });
+  });
+
+  it('parks with DorkOS’s own sentence when asked to', () => {
+    const id = approvedOn('claude3');
+    store.approvals.parkWithReason(id, UNTOLD_ACCOUNT_MOVE_REASON);
+    expect(store.getTask(id)).toMatchObject({
+      status: 'pending_approval',
+      reason: UNTOLD_ACCOUNT_MOVE_REASON,
+      reasonSource: 'dorkos',
+    });
+    expect(row(id).approvedContentKey).toBeNull();
+  });
+
+  it('restricts an account that is not routable, or was last seen signed out', () => {
+    expect(accountMayTakeMovedWork('claude3', [account('claude3', { routable: false })])).toBe(
+      false
+    );
+    recordAccountSignin('claude-code', '/accounts/claude3', 'signed-out');
+    expect(accountMayTakeMovedWork('claude3', ACCOUNTS)).toBe(false);
+    recordAccountSignin('claude-code', '/accounts/claude3', 'signed-in');
+    expect(accountMayTakeMovedWork('claude3', ACCOUNTS)).toBe(true);
+  });
+
+  it('restricts an account whose sign-in nobody confirmed yet', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-signin-policy-'));
+    try {
+      initAccountSigninPolicy(home);
+      // Seeded with no folders: a folder added after that is not confirmed yet.
+      accountSigninPolicy()!.seed([], new Date());
+      const fresh = path.join(home, 'claude-new');
+      await fs.mkdir(fresh);
+      expect(accountMayTakeMovedWork('claude-new', [account('claude-new', { path: fresh })])).toBe(
+        false
+      );
+    } finally {
+      await fs.rm(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('telling the person about a kept move', () => {
+  let store: TaskStore;
+
+  beforeEach(() => {
+    store = new TaskStore(createTestDb());
+  });
+
+  it('parks the task with a sentence when the person cannot be told', async () => {
+    // Purpose: no notification service is wired, so nothing can be posted (C3).
+    const id = store.fileSync.upsertFromFile(definition('claude3')).id;
+    const before = store.getTask(id)!;
+    store.updateTask(id, { account: 'claude4' });
+
+    const stands = await announceAccountMove(store, { before, after: store.getTask(id)! });
+
+    expect(stands).toBe(false);
+    expect(store.getTask(id)).toMatchObject({
+      status: 'pending_approval',
+      reason: UNTOLD_ACCOUNT_MOVE_REASON,
+    });
   });
 });

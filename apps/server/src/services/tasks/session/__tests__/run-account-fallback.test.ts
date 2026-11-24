@@ -15,7 +15,12 @@ import type { RankedAccount } from '../../../core/usage/account-ranking.js';
 import { TaskStore } from '../../task-store.js';
 import type { RunExecution } from '../../execution/resolve-run-execution.js';
 import { checkRunAccount } from '../run-account.js';
-import { decideRunAccount, type RunAccountWorld } from '../run-account-fallback.js';
+import {
+  decideRunAccount,
+  readRunAccountWorld,
+  runAccountDecision,
+  type RunAccountWorld,
+} from '../run-account-fallback.js';
 
 const RESET = '2026-11-28T15:00:00.000Z';
 
@@ -265,5 +270,24 @@ describe('checkRunAccount moves a run before it starts', () => {
       await check(task, exec, [ranked('claude4', { limited: true }), ranked('c5')])
     ).toBeNull();
     expect(exec.settings.accountHint).toBe('claude4');
+  });
+});
+
+describe('readRunAccountWorld', () => {
+  it('reads nothing for a run on DorkOS credits: credits never move onto a person’s sign-in', async () => {
+    expect(
+      await readRunAccountWorld({ accountHint: CREDITS_ACCOUNT_ID, agentPath: undefined, cwd: '' })
+    ).toBeNull();
+  });
+
+  it('starts a run where it is when the account cannot be read', async () => {
+    const decision = await runAccountDecision(
+      { accountHint: 'claude4', agentPath: undefined, cwd: '' },
+      false,
+      async () => {
+        throw new Error('the usage store is gone');
+      }
+    );
+    expect(decision).toEqual({ kind: 'stay' });
   });
 });

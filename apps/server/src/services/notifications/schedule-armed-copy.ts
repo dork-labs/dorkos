@@ -46,7 +46,8 @@ export interface ScheduleArmedPayload extends ScheduleSubject {
   /**
    * Set when an agent moved an approved schedule to another Claude account and
    * it stayed approved (DOR-5097): the accounts by id (`null` follows the agent)
-   * and as a person reads them, and when. Undo puts `fromId` back.
+   * and as a person reads them, and when. Undo puts back what the server
+   * recorded (`accountUndo`), never these words.
    */
   accountChange?: {
     fromId: string | null;
@@ -55,6 +56,11 @@ export interface ScheduleArmedPayload extends ScheduleSubject {
     to: string;
     at: string;
   };
+  /**
+   * Set when an agent turned "This account only" off on a task (DOR-5097): its
+   * runs may now move off `account`, as a person reads it, when it is out.
+   */
+  accountUnpinned?: { account: string; at: string };
   /**
    * Set when the task's SKILL file changed outside the task tools (DOR-3703,
    * M4): `capped` when its runs went to Don't ask (one notice per pair of
@@ -121,36 +127,40 @@ export const SCHEDULE_ARMED_COPY = {
       ? `${p.armedBy} asked to set ${p.taskName} to ${p.refusedRaise.to}`
       : p.fileChange
         ? fileChangeTitle(p, p.fileChange)
-        : p.accountChange
-          ? `${p.armedBy} moved ${p.taskName} to ${p.accountChange.to}`
-          : p.promptChange
-            ? `${p.armedBy} rewrote ${p.taskName}`
-            : p.modeChange
-              ? `${p.armedBy} set ${p.taskName} to ${p.modeChange.to}`
-              : `${p.armedBy} made a schedule: ${p.taskName}`,
+        : p.accountUnpinned
+          ? `${p.armedBy} let ${p.taskName} move accounts`
+          : p.accountChange
+            ? `${p.armedBy} moved ${p.taskName} to ${p.accountChange.to}`
+            : p.promptChange
+              ? `${p.armedBy} rewrote ${p.taskName}`
+              : p.modeChange
+                ? `${p.armedBy} set ${p.taskName} to ${p.modeChange.to}`
+                : `${p.armedBy} made a schedule: ${p.taskName}`,
   // A second line that never contradicts a refused Undo (designer, round 7).
   body: (p: ScheduleArmedPayload) =>
     p.refusedRaise
       ? `Nothing changed. It still runs at ${p.refusedRaise.from}. Started by ${p.refusedRaise.startedBy}.`
       : p.fileChange
         ? fileChangeBody(p.fileChange)
-        : p.accountChange
-          ? `Was ${p.accountChange.from}. It stays approved.`
-          : p.promptChange
-            ? `Prompt changed ${p.promptChange.fromHash} → ${p.promptChange.toHash}. Started by ${p.promptChange.startedBy}.`
-            : p.modeChange
-              ? `Was ${p.modeChange.from}.${p.modeChange.startedBy ? ` Started by ${p.modeChange.startedBy}.` : ''}`
-              : p.execution
-                ? [
-                    `Runs as: ${p.execution.modeLabel}`,
-                    p.execution.modeSummary,
-                    p.execution.limitation,
-                  ]
-                    .filter(Boolean)
-                    .join('\n')
-                : `Runs ${p.cadence}${p.runsAs ? ` as ${p.runsAs}` : ''}. Pause it any time.`,
+        : p.accountUnpinned
+          ? `Its runs may leave ${p.accountUnpinned.account} when it’s out.`
+          : p.accountChange
+            ? `Was ${p.accountChange.from}.`
+            : p.promptChange
+              ? `Prompt changed ${p.promptChange.fromHash} → ${p.promptChange.toHash}. Started by ${p.promptChange.startedBy}.`
+              : p.modeChange
+                ? `Was ${p.modeChange.from}.${p.modeChange.startedBy ? ` Started by ${p.modeChange.startedBy}.` : ''}`
+                : p.execution
+                  ? [
+                      `Runs as: ${p.execution.modeLabel}`,
+                      p.execution.modeSummary,
+                      p.execution.limitation,
+                    ]
+                      .filter(Boolean)
+                      .join('\n')
+                  : `Runs ${p.cadence}${p.runsAs ? ` as ${p.runsAs}` : ''}. Pause it any time.`,
   actions: (p: ScheduleArmedPayload) =>
-    p.fileChange?.kind === 'capped' || p.refusedRaise
+    p.fileChange?.kind === 'capped' || p.refusedRaise || p.accountUnpinned
       ? FILE_CAPPED_ACTIONS
       : p.modeChange || p.promptChange || p.fileChange || p.accountChange
         ? MODE_CHANGE_ACTIONS
@@ -168,11 +178,13 @@ export const SCHEDULE_ARMED_COPY = {
         ? `schedule-file:${p.taskId}:${p.fileChange.fromHash}:${p.fileChange.toHash}`
         : p.fileChange
           ? `schedule-file-lift:${p.taskId}:${p.fileChange.at}`
-          : p.accountChange
-            ? `schedule-account:${p.taskId}:${p.accountChange.at}`
-            : p.promptChange
-              ? `schedule-prompt:${p.taskId}:${p.promptChange.at}`
-              : p.modeChange
-                ? `schedule-mode:${p.taskId}:${p.modeChange.at}`
-                : `schedule-armed:${p.taskId}`,
+          : p.accountUnpinned
+            ? `schedule-unpin:${p.taskId}:${p.accountUnpinned.at}`
+            : p.accountChange
+              ? `schedule-account:${p.taskId}:${p.accountChange.at}`
+              : p.promptChange
+                ? `schedule-prompt:${p.taskId}:${p.promptChange.at}`
+                : p.modeChange
+                  ? `schedule-mode:${p.taskId}:${p.modeChange.at}`
+                  : `schedule-armed:${p.taskId}`,
 };

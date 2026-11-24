@@ -56,8 +56,9 @@ import {
 import { changesApprovedWork } from '../services/tasks/task-file-update.js';
 import { auditScheduleUpdate, scheduleEdit } from '../services/tasks/approvals/schedule-owner.js';
 import {
-  accountMayTakeMovedWork,
+  accountMovePolicy,
   announceAccountMove,
+  announceAccountUnpin,
 } from '../services/tasks/approvals/account-move.js';
 import type { WorkChangeSettlement } from '../services/tasks/approvals/task-approvals.js';
 import { refuseStickyAccountChange } from '../services/tasks/session/sticky-session.js';
@@ -388,8 +389,8 @@ export async function updateTaskHttp(
       // Only an agent's own schedule stays live through its edit (DOR-3640 R1),
       // and not one an agent approved or a person set looser than Don't ask (DOR-3703).
       armsAgentWork: !trusted && edit.armsAgentWork && agentEditMayStayLive(existing, store),
-      // A move to another account a person left open keeps the approval (DOR-5097).
-      accountMayMoveTo: accountMayTakeMovedWork,
+      // A move to another account a person left open keeps the approval, not on Careful (DOR-5097).
+      accountMayMoveTo: accountMovePolicy(true),
     });
     updated = store.getTask(updated.id) ?? updated;
   }
@@ -407,13 +408,17 @@ export async function updateTaskHttp(
     updated,
   });
 
-  // A kept account move stands only once the person is told, with an Undo (DOR-5097).
-  if (settled === 'account-moved' && updated.status === 'active') {
-    const agentPath = caller.agentIdentity?.agentPath ?? null;
-    if (!(await announceAccountMove(store, { before: existing, after: updated, agentPath }))) {
-      updated = store.getTask(updated.id) ?? updated;
-    }
+  // A kept account move stands only once the person is told, with an Undo, and
+  // an agent unpinning a task is told too (DOR-5097).
+  const accountEdit = {
+    before: existing,
+    after: updated,
+    agentPath: caller.agentIdentity?.agentPath,
+  };
+  if (settled === 'account-moved' && !(await announceAccountMove(store, accountEdit))) {
+    updated = store.getTask(updated.id) ?? updated;
   }
+  if (!trusted) await announceAccountUnpin(accountEdit);
 
   // Re-register or unregister the cron job to match the new state, through the
   // shared seam — see the note on the create path above.

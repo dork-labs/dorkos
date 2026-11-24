@@ -28,7 +28,11 @@ import {
 import type { TaskStore } from '../../../../tasks/task-store.js';
 import { agentIdOfHome } from '../../../../tasks/approvals/schedule-owner.js';
 import type { PermissionMode, Task, UpdateTaskRequest } from '@dorkos/shared/types';
-import { announceAccountMove } from '../../../../tasks/approvals/account-move.js';
+import {
+  accountMovePolicy,
+  announceAccountMove,
+  announceAccountUnpin,
+} from '../../../../tasks/approvals/account-move.js';
 
 /**
  * Who is proposing a schedule, read at CALL time rather than at registration.
@@ -306,23 +310,41 @@ export function emitAgentSwitchedOn(
 }
 
 /**
- * Tell the person an agent's `tasks_update` moved an approved task to another
- * account and it stayed approved (DOR-5097). Answers whether the move stands:
- * a notice that could not be posted parks the task instead.
+ * After an agent's `tasks_update` (DOR-5097): tell the person when it moved an
+ * approved task to another account and the task stayed approved (with an
+ * Undo), and when it turned "This account only" off. Answers whether a kept
+ * move stands: a notice that could not be posted parks the task instead.
  *
  * @param deps - Shared MCP tool dependencies.
  * @param before - The task before the edit.
  * @param caller - The calling agent, by its home when DorkOS knows it.
+ * @param moved - Whether the edit was settled as a kept account move.
  */
-export async function announceTaskAccountMove(
+export async function announceTaskAccountEdit(
   deps: McpToolDeps,
   before: Task,
-  caller: { agentPath?: string | null }
+  caller: { agentPath?: string | null },
+  moved: boolean
 ): Promise<boolean> {
   const store = deps.taskStore!;
   const after = store.getTask(before.id);
   if (!after) return false;
-  return announceAccountMove(store, { before, after, agentPath: caller.agentPath ?? null });
+  const edit = { before, after, agentPath: caller.agentPath ?? null };
+  await announceAccountUnpin(edit);
+  return moved && (await announceAccountMove(store, edit));
+}
+
+/**
+ * The account-move rule for a `tasks_update` call: kept only for one of our
+ * agents DorkOS identified, from an unmarked turn, off the Careful preset
+ * (`accountMovePolicy`).
+ *
+ * @param caller - The calling agent and whether its turn is marked.
+ */
+export function accountMovePolicyFor(
+  caller: Pick<AgentModeCaller, 'agentPath' | 'marked'>
+): ReturnType<typeof accountMovePolicy> {
+  return accountMovePolicy(caller.agentPath !== undefined && !caller.marked);
 }
 
 /** The agent-writable fields a `tasks_update` call may carry into the store. */

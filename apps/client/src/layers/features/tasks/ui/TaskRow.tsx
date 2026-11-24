@@ -553,7 +553,7 @@ export function TaskRow({
                     {shortenHomePath(task.filePath)}
                   </p>
                 )}
-                <TaskAccountLine task={task} />
+                <TaskAccountLine task={task} agent={agent} />
                 {task.timingOverridden && (
                   <div
                     data-slot="task-package-timing"

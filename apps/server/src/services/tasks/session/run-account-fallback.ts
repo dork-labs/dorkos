@@ -23,6 +23,11 @@
  *
  * Only Claude Code runs carry an account, and only a run that starts a
  * conversation picks one: a resumed sticky conversation keeps its account.
+ * Each account is its own Claude folder with its own settings (its user
+ * CLAUDE.md, MCP servers and sign-in), so a moved run reads that folder's.
+ *
+ * This automatic fallback runs on every trust preset, Careful included: it
+ * changes no approved setting, only where one run starts.
  *
  * @module services/tasks/session/run-account-fallback
  */

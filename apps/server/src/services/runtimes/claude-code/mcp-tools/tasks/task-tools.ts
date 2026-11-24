@@ -68,7 +68,8 @@ import {
 import {
   agentModeCallerOf,
   emitAgentSwitchedOn,
-  announceTaskAccountMove,
+  accountMovePolicyFor,
+  announceTaskAccountEdit,
   toolUpdatePatch,
   AGENT_ID_ON_CREATE_REFUSAL,
   callerAgentPathOf,
@@ -98,7 +99,6 @@ import {
 } from './task-tool-mode.js';
 import { createScheduledTask } from '../../../../tasks/lifecycle/create-task.js';
 import { agentSchedulesArmWithoutAsking } from '../../../../tasks/approvals/agent-trust.js';
-import { accountMayTakeMovedWork } from '../../../../tasks/approvals/account-move.js';
 import { auditScheduleUpdate, scheduleEdit } from '../../../../tasks/approvals/schedule-owner.js';
 import { applyTaskFileUpdate } from '../../../../tasks/lifecycle/update-task-file.js';
 import { taskCreateLifecycleDeps } from './task-create-deps.js';
@@ -623,10 +623,11 @@ export function createUpdateScheduleHandler(
           ),
         // Its own agent's, or a Full one's, prompt edit from an ordinary turn stays live (M7).
         ownAgentVouches: (vouched || forOther.kind === 'allowed') && caller.scheduledRun !== true,
-        // A move to another account a person left open keeps the approval (DOR-5097).
-        accountMayMoveTo: accountMayTakeMovedWork,
+        // A move to another account a person left open keeps the approval, not on Careful (DOR-5097).
+        accountMayMoveTo: accountMovePolicyFor(caller),
       }
     );
+    const accountMoved = settled === 'account-moved';
     // An edit from a marked turn parks it for a person, whatever it changed, and keeps the marks
     // for its card (DOR-3036).
     const marks = callerMarks?.() ?? marksOf(caller.sessionId, caller.agentPath);
@@ -638,9 +639,8 @@ export function createUpdateScheduleHandler(
     const why = afterToolAgentEdit(deps, updated, mode, caller, { vouched, writesContent });
     if (why) settled = 'parked';
     // A kept account move stands only once the person is told, with an Undo (DOR-5097).
-    const moved =
-      settled === 'account-moved' && (await announceTaskAccountMove(deps, existing, caller));
-    if (settled === 'account-moved' && !moved) settled = 'parked';
+    const moved = await announceTaskAccountEdit(deps, existing, caller, accountMoved);
+    if (accountMoved && !moved) settled = 'parked';
     if (settled === 'parked') {
       updated = deps.taskStore!.getTask(updated.id) ?? updated;
       // The standing condition and its escalation clock start here, as they do
