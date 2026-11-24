@@ -5,9 +5,14 @@
  * @module server/services/rooms/limits/context-entries
  */
 import type { RoomContextData } from '@dorkos/shared/additional-context';
-import type { RoomEntry } from '@dorkos/shared/room-schemas';
+import type { RoomEntry, RoomEntryReaction } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../author-registry.js';
-import { answersOutsideWords, strangerMarkForEntries, type ReadEntry } from './turn-ceiling.js';
+import {
+  answersOutsideWords,
+  isEntryAuthorExternal,
+  strangerMarkForEntries,
+  type ReadEntry,
+} from './turn-ceiling.js';
 
 /**
  * The id of every room message a built context shows the agent besides the one it answers: the
@@ -36,11 +41,43 @@ export function contextEntryIds(context: RoomContextData): string[] {
   ];
 }
 
-/** What {@link marksForShown} reads: the room log, its authors and who owns the install. */
+/** What {@link marksForShown} reads: the room log, its reactions, its authors and the owner. */
 export interface ShownMarkDeps {
   store: { listEntriesByIds(roomId: string, ids: string[]): RoomEntry[] };
+  reactions: {
+    listFor(roomId: string, entryIds: readonly string[]): Map<string, RoomEntryReaction[]>;
+  };
   authors: AuthorRegistry;
   isOwnerAuthor: (authorId: string) => boolean;
+}
+
+/**
+ * Everyone whose reaction stands on the agent's own recent posts, the posts whose reactions the
+ * context shows as acknowledgments, leaving out the agent itself (DOR-4144). The context renders
+ * at most five of them by name, beside the emoji; reading every one can only add a mark. Who
+ * reacted is someone the turn was shown, as a line's author is.
+ *
+ * @param deps - The room's reactions.
+ * @param roomId - The room.
+ * @param context - The context built for this turn.
+ * @param selfAuthorId - The author id of the agent taking the turn.
+ */
+function shownReactors(
+  deps: Pick<ShownMarkDeps, 'reactions'>,
+  roomId: string,
+  context: RoomContextData,
+  selfAuthorId: string
+): ReadEntry[] {
+  if (context.ownRecent.length === 0) return [];
+  const pills = deps.reactions.listFor(
+    roomId,
+    context.ownRecent.map((entry) => entry.id)
+  );
+  const reactors = new Set<string>();
+  for (const row of pills.values())
+    for (const pill of row) for (const authorId of pill.authorIds) reactors.add(authorId);
+  reactors.delete(selfAuthorId);
+  return [...reactors].map((authorId) => ({ authorId }));
 }
 
 /** A message a room turn answers, with what says where its words came from. */
@@ -58,7 +95,8 @@ type AnsweredEntry = Pick<RoomEntry, 'id' | 'authorId'> & Pick<ReadEntry, 'body'
  *   nothing (Security M4).
  *
  * Both read the messages {@link contextEntryIds} names, so neither counts the agent's own recent
- * posts. The note also leaves out any shown message the turn's own agent wrote, which today can
+ * posts, and both read who reacted to those posts ({@link shownReactors}): a stranger's reaction
+ * shown as an acknowledgment counts as a stranger's line does (DOR-4144). The note also leaves out any shown message the turn's own agent wrote, which today can
  * only be the opener of a thread it started: a noted chat's posts are kept with the outsider mark,
  * so counting its own post would keep the chat noted by what it wrote itself, turn after turn,
  * for as long as the thread is in use. The mark still counts that opener (DOR-4453).
@@ -80,15 +118,17 @@ export function marksForShown(
 ): { carriedOutsider?: true; outsideWords?: true } {
   const shown = deps.store.listEntriesByIds(roomId, contextEntryIds(context));
   const others = shown.filter((entry) => entry.authorId !== selfAuthorId);
+  const reactors = shownReactors(deps, roomId, context, selfAuthorId);
   return {
     ...strangerMarkForEntries(
       enabled,
       deps.authors,
-      [...answered, ...shown],
+      [...answered, ...shown, ...reactors],
       deps.isOwnerAuthor,
       roomId
     ),
-    ...(answersOutsideWords(deps.authors, [...answered, ...others], roomId)
+    ...(answersOutsideWords(deps.authors, [...answered, ...others], roomId) ||
+    reactors.some((reactor) => isEntryAuthorExternal(deps.authors, reactor.authorId))
       ? { outsideWords: true as const }
       : {}),
   };
