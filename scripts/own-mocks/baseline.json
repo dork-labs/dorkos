@@ -3,7 +3,7 @@
   "packages": {
     "apps/client": 1519,
     "apps/desktop": 42,
-    "apps/server": 2605,
+    "apps/server": 2584,
     "apps/site": 109,
     "packages/browser": 32,
     "packages/cli": 52,
@@ -11,6 +11,6 @@
     "packages/evals": 5,
     "packages/harness": 1,
     "packages/mesh": 1,
-    "packages/relay": 6
+    "packages/relay": 2
   }
 }

@@ -20,11 +20,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RoomAttachment, RoomMoment, RoomNoticeCode } from '@dorkos/shared/room-schemas';
 import type { PendingPost, RoomEntry } from '@/layers/entities/room';
 import { Conversation, Message, PendingRow } from '@/layers/features/conversation';
-import { ROOM_CAPABILITIES, RoomMessage } from '@/layers/widgets/room-view';
+import { NoAgentHint, ROOM_CAPABILITIES, RoomMessage } from '@/layers/widgets/room-view';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { THREAD_AGENT_ANA, THREAD_AGENT_KAI, THREAD_ROOM_ID } from './room-thread-showcase-data';
+import { RETIRED_DM_ROOM } from './rooms-showcase-data';
 
 /**
  * Every notice the room can write, with the SERVER's own words.
@@ -324,6 +325,21 @@ function NoticesSection() {
   );
 }
 
+/** A DM whose agents have all left the team says so before anyone types (DOR-2365). */
+function RetiredDmSection() {
+  return (
+    <PlaygroundSection
+      title="NoAgentHint — retired DM"
+      description="A DM whose only agents have left the team. The hint says nobody will answer before a word is typed, instead of the message going nowhere."
+    >
+      <ShowcaseLabel>A DM whose agent left the team</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <NoAgentHint room={RETIRED_DM_ROOM} hasEntries onAddAgents={() => {}} />
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
 /** A message of your own, in flight and refused. */
 function PendingSection() {
   return (
@@ -474,6 +490,7 @@ export function RoomDeliveryShowcases() {
       <MomentsSection />
       <NoticesSection />
       <PendingSection />
+      <RetiredDmSection />
       <AttachmentsSection />
     </QueryClientProvider>
   );

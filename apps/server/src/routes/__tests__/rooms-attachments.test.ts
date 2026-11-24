@@ -203,7 +203,8 @@ describe('/api/rooms/:id/attachments', () => {
       const res = await upload(Buffer.alloc(uploadConfig.maxFileSize + 1, 7), 'big.bin');
 
       expect(res.status).toBe(413);
-      expect(res.body.error).toContain(`${uploadConfig.maxFileSize / 1024 / 1024}MB`);
+      expect(res.body.code).toBe('request_too_large');
+      expect(res.body.detail).toContain(`${uploadConfig.maxFileSize / 1024 / 1024}MB`);
     });
 
     it('refuses a type outside the configured allowlist', async () => {
@@ -212,6 +213,21 @@ describe('/api/rooms/:id/attachments', () => {
       const res = await upload(TEXT, 'notes.log', 'text/plain');
 
       expect(res.status).toBe(415);
+      expect(res.body.code).toBe('unsupported_media_type');
+    });
+
+    it('answers a body the parser cannot read with a fixed sentence, never its words', async () => {
+      const res = await request(fixtureServer)
+        .post(`/api/rooms/${roomId}/attachments`)
+        .set('Content-Type', 'multipart/form-data')
+        .send('nothing');
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('malformed_request');
+      expect(res.body.detail).toBe(
+        'That upload couldn’t be read. Send it again as one complete form.'
+      );
+      expect(JSON.stringify(res.body)).not.toContain('Boundary');
     });
 
     it('refuses a request with no files at all', async () => {

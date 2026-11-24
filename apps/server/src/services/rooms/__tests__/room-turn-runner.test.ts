@@ -2507,29 +2507,6 @@ describe('what a room turn runs with (execution defaults)', () => {
     expect(triggered[0].settings).toEqual({});
   });
 
-  it('sends no model at all when nothing is configured', async () => {
-    await createSessionRoomTurnRunner().run(request());
-    expect(triggered[0].settings).toEqual({});
-  });
-
-  it("runs the turn on the addressed agent's own model and effort", async () => {
-    // Rooms are where the per-agent setting earns its keep: the room addressed
-    // THIS agent, so what it says about itself outranks the server's default.
-    runtimesConfig = {
-      ...USER_CONFIG_DEFAULTS.runtimes,
-      claudeCode: {
-        ...USER_CONFIG_DEFAULTS.runtimes.claudeCode,
-        defaultModel: 'opus',
-        defaultEffort: 'high',
-      },
-    };
-    agentManifest = { runtime: 'claude-code', model: 'sonnet', effort: 'low' };
-
-    await createSessionRoomTurnRunner().run(request());
-
-    expect(triggered[0].settings).toEqual({ model: 'sonnet', effort: 'low' });
-  });
-
   it('never seeds a Codex model onto the claude-code session a missing runtime falls back to', async () => {
     // The reported break, end to end. This build has no Codex adapter, so the
     // room turn runs on claude-code — and the agent's `gpt-5.3-codex` would
@@ -2564,29 +2541,16 @@ describe('what a room turn runs with (execution defaults)', () => {
     expect(triggered[0].settings).toEqual({ model: 'gpt-5.3-codex' });
   });
 
-  it("keeps the server's effort for an agent that only names a model", async () => {
-    runtimesConfig = {
-      ...USER_CONFIG_DEFAULTS.runtimes,
-      claudeCode: {
-        ...USER_CONFIG_DEFAULTS.runtimes.claudeCode,
-        defaultModel: 'opus',
-        defaultEffort: 'high',
-      },
-    };
-    agentManifest = { runtime: 'claude-code', model: 'sonnet' };
-
-    await createSessionRoomTurnRunner().run(request());
-
-    expect(triggered[0].settings).toEqual({ model: 'sonnet', effort: 'high' });
-  });
-
   it('answers the same for a relay-triggered turn as for a room turn', async () => {
     // Which model an agent is is not a question that may depend on who is
     // asking. It did: the room resolved this whole ladder and the relay
     // resolved nothing at all, so the same agent answered a person in a channel
     // on haiku and a colleague over relay on the server default (DOR-1344).
     // Both surfaces now go through `resolveUnattendedSessionDefaults`, and this
-    // is what would notice one of them growing a second opinion.
+    // is what would notice one of them growing a second opinion. The ladder's
+    // own rungs (the agent's model over the server's, nothing configured, an
+    // effort kept when only a model is named) are pinned on the shared resolver
+    // in `relay/__tests__/turn-execution-settings.test.ts`.
     runtimesConfig = {
       ...USER_CONFIG_DEFAULTS.runtimes,
       claudeCode: {

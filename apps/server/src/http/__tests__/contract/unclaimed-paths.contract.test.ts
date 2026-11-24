@@ -30,6 +30,7 @@ import {
   stepUpAt,
   confirmSetupAt,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const SHELL = '<!doctype html><html><body><div id="root"></div></body></html>';
 const BUNDLE = 'console.log("the app");';
@@ -50,7 +51,9 @@ const SHELL_HEADERS = {
   'x-content-type-options': 'nosniff',
 };
 
-const API_NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const API_NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 const HOST_NOT_ALLOWED = {
   error:
     'This instance does not answer to the address "evil.example". If that is how you reach DorkOS, list it in DORKOS_TRUSTED_HOSTS, or turn on login.',
@@ -105,12 +108,14 @@ contractSuite(
       headers: { origin: 'https://evil.example' },
       expect: {
         status: 403,
-        headers: { 'access-control-allow-origin': null, 'content-type': /^application\/json\b/ },
-        body: {
-          error:
-            'This instance does not answer to pages from "https://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
-          code: 'ORIGIN_NOT_ALLOWED',
+        headers: {
+          'access-control-allow-origin': null,
+          'content-type': 'application/problem+json',
         },
+        body: problemBody('origin_not_allowed', {
+          detail:
+            'This instance does not answer to pages from this address. If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
+        }),
       },
     },
     {
@@ -179,7 +184,10 @@ contractSuite(
       path: '/team',
       headers: { 'content-type': 'application/json' },
       body: '{"not json',
-      expect: { status: 500, body: { error: 'Internal Server Error', code: 'INTERNAL_ERROR' } },
+      expect: {
+        status: 400,
+        body: problemBody('malformed_request', { detail: 'The request body is not valid JSON.' }),
+      },
     },
     {
       name: 'a page takes no more than the 1 MB JSON limit either',
@@ -188,7 +196,9 @@ contractSuite(
       body: { blob: 'x'.repeat(1_100_000) },
       expect: {
         status: 413,
-        body: { error: 'That is too large to send in one request.', code: 'REQUEST_TOO_LARGE' },
+        body: problemBody('request_too_large', {
+          detail: 'That is too large to send in one request.',
+        }),
       },
     },
     {

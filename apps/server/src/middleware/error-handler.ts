@@ -1,20 +1,22 @@
 import { BoundaryError } from '../lib/boundary.js';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { logger } from '../lib/logger.js';
-import { OriginRefusedError } from '../http/cors-policy.js';
+import { ORIGIN_REFUSED_SENTENCE, OriginRefusedError } from '../http/cors-policy.js';
 import {
   AmbiguousSessionError,
   SessionDiscoveryUnavailableError,
 } from '../services/session/resolution/session-lookup-error.js';
 import { RuntimeNotRegisteredError } from '../services/core/runtime-registry.js';
 import { redactLogPath } from './request-logger.js';
+import { problemBody, type ProblemOptions } from '@dorkos/http-kit';
+import type { Problem, ProblemCode } from '@dorkos/shared/problem';
 
-/** The status and JSON body an unhandled request error is answered with. */
+/** The status and problem document an unhandled request error is answered with. */
 export interface ErrorReply {
   /** The HTTP status. */
   status: number;
-  /** The JSON body, in the repo's `{ error, code }` shape. */
-  body: { error: string; code: string; runtime?: string };
+  /** The problem document (`@dorkos/shared/problem`). */
+  body: Problem;
 }
 
 /**
@@ -46,14 +48,20 @@ export function logRequestError(err: Error, method: string, sentPath: string): v
 }
 
 /**
- * How an error no route handled is answered: which status, and which body.
+ * How an error no route handled is answered: which status, and which problem
+ * document (`application/problem+json`, DOR-4979).
  *
- * One mapping for every route, so they all fail the same way.
+ * One mapping for every route, so they all fail the same way. Every `detail`
+ * is a fixed sentence written here, never an exception's message or stack.
  *
  * @param err - The error.
  * @returns The status and body to answer with.
  */
 export function errorReply(err: Error): ErrorReply {
+  const reply = (code: ProblemCode, options: ProblemOptions = {}): ErrorReply => {
+    const body = problemBody(code, options);
+    return { status: body.status, body };
+  };
   // A runtime registration mismatch is a configuration error, not a 500. A
   // session persisted as runtime X on a server that no longer has X registered
   // is deployment drift; surface it with a stable error code so the client can
@@ -70,64 +78,81 @@ export function errorReply(err: Error): ErrorReply {
   // languages: one named a runtime slug and stopped there, the other apologised
   // for a broken agent. Naming the program the way a person sees it elsewhere
   // (`runtimeDisplayName`) and stating the recovery is what makes them one
-  // answer. `runtime` still rides the body as the raw type, for a client that
-  // wants to route on it rather than print it.
+  // answer.
   if (err instanceof BoundaryError) {
-    return {
-      status: 403,
-      body: { error: 'This chat is outside the allowed directory.', code: err.code },
-    };
+    if (err.code === 'OUTSIDE_BOUNDARY') {
+      return reply('outside_boundary', { detail: 'This chat is outside the allowed directory.' });
+    }
+    // A path with a NUL byte in it is a bad path, not a refusal of permission.
+    if (err.code === 'NULL_BYTE') {
+      return reply('invalid_request', { detail: 'That path has a character paths can’t hold.' });
+    }
+    return reply('forbidden', { detail: 'DorkOS isn’t allowed to open that path.' });
   }
 
   if (err instanceof OriginRefusedError) {
-    return { status: err.status, body: { error: err.message, code: err.code } };
+    return reply('origin_not_allowed', { detail: ORIGIN_REFUSED_SENTENCE });
   }
 
   if (err instanceof SessionDiscoveryUnavailableError) {
-    return { status: 503, body: { error: err.message, code: err.code, runtime: err.runtime } };
+    return reply('temporarily_unavailable', {
+      detail: 'Chat history is temporarily unavailable. Try again.',
+    });
   }
 
   if (err instanceof AmbiguousSessionError) {
-    return { status: 409, body: { error: err.message, code: err.code } };
+    return reply('conflict', { detail: 'This chat ID matches multiple chats.' });
   }
 
   if (err instanceof RuntimeNotRegisteredError) {
     const program = runtimeDisplayName(err.runtime);
-    return {
-      status: 503,
-      body: {
-        error: `This chat runs on ${program}, which isn't running on this machine. Turn ${program} back on to pick it up, or start a new chat to use what's running now.`,
-        code: 'RUNTIME_NOT_AVAILABLE',
-        runtime: err.runtime,
-      },
-    };
+    return reply('runtime_not_available', {
+      detail: `This chat runs on ${program}, which isn't running on this machine. Turn ${program} back on to pick it up, or start a new chat to use what's running now.`,
+    });
   }
 
-  // A body that never fit is not a server fault, and answering 500 to it is a
-  // small lie with a real cost: a person saving a large file in a room was told
-  // "Internal server error" by the body parser's own 1 MB limit, so the message
-  // said nothing about the one thing they could act on (DOR-1600's review).
-  //
-  // Deliberately narrow. `body-parser` raises several kinds of failure and this
-  // honours exactly one of them — the size limit, which it marks
-  // `entity.too.large` and which is unambiguous. Everything else it raises keeps
-  // the 500 it has always had, because widening this to "any 4xx with expose"
-  // would quietly restate every route's answer to a malformed body, which is a
-  // change nobody has argued for here.
-  if ((err as { type?: unknown }).type === 'entity.too.large') {
-    return {
-      status: 413,
-      body: { error: 'That is too large to send in one request.', code: 'REQUEST_TOO_LARGE' },
-    };
-  }
+  // A body the chain's reader refused is the caller's mistake, never a server
+  // fault: answering 500 to one told a person saving a large file in a room
+  // that the server broke (DOR-1600's review), and told a script that sent
+  // broken JSON the same (DOR-4979). `body-parser` marks each refusal with a
+  // `type`; the ones it raises for a body it could not read map here.
+  const type = (err as { type?: unknown }).type;
+  const bodyRefusal =
+    typeof type === 'string' && Object.hasOwn(BODY_REFUSALS, type)
+      ? BODY_REFUSALS[type]
+      : undefined;
+  if (bodyRefusal) return reply(bodyRefusal.code, { detail: bodyRefusal.detail });
 
-  // eslint-disable-next-line no-restricted-syntax -- must read dynamically; env.ts parses once at import and tests mutate NODE_ENV at runtime
-  const isDev = process.env.NODE_ENV !== 'production';
-  return {
-    status: 500,
-    body: {
-      error: isDev ? err.message || 'Internal Server Error' : 'Internal Server Error',
-      code: 'INTERNAL_ERROR',
-    },
-  };
+  // Never the exception's own words, in any environment: a message can carry a
+  // path, a query or a secret, and a stack never belongs on the wire. The
+  // chain's `onError` has already logged it (`logRequestError`).
+  return reply('internal_error', { detail: 'DorkOS hit an error. It’s in the server log.' });
 }
+
+/** The `body-parser` refusals the chain answers as the caller's mistake, by its `type`. */
+const BODY_REFUSALS: Readonly<Record<string, { code: ProblemCode; detail: string }>> = {
+  'entity.too.large': {
+    code: 'request_too_large',
+    detail: 'That is too large to send in one request.',
+  },
+  'entity.parse.failed': {
+    code: 'malformed_request',
+    detail: 'The request body is not valid JSON.',
+  },
+  'request.aborted': {
+    code: 'malformed_request',
+    detail: 'The request body ended before it was complete.',
+  },
+  'request.size.invalid': {
+    code: 'malformed_request',
+    detail: 'The request body is not the size it said it was.',
+  },
+  'encoding.unsupported': {
+    code: 'unsupported_media_type',
+    detail: 'The request body is compressed in a way DorkOS cannot read.',
+  },
+  'charset.unsupported': {
+    code: 'unsupported_media_type',
+    detail: 'The request body uses a character set DorkOS cannot read.',
+  },
+};

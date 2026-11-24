@@ -17,11 +17,20 @@
 # move a high-water mark down by one with no release and no record, which is
 # exactly the silent lowering these ratchets exist to prevent. With it, the only
 # thing quarantine can move is its own ceiling, and that ceiling is small.
+#
+# DELETION IS NOT A DROP. The pass-count floors exist to catch a test that
+# stopped running without anyone choosing that: a config that stops collecting
+# a file, a broken import that empties a suite. They must never make deleting a
+# low-value test cost a ledger entry, because nothing else in the repo pushes
+# the test count down (.claude/rules/testing.md, "Is this test worth keeping?").
+# So when `ratchet-assert` is built (phase 2), a mark falls without a release by
+# the number of test cases the batch deleted from source, counted from the
+# merge-group diff; only a drop beyond that is a violation.
 ratchets:
   - id: vitest-passed
     kind: floor
     scope: per-package
-    description: Vitest tests passed in the full queue sweep may not fall below the package's high-water mark. Quarantined tests are excluded from both the mark and the reading, so quarantining one can never lower it.
+    description: Vitest tests passed in the full queue sweep may not fall below the package's high-water mark. Quarantined tests are excluded from both the mark and the reading, so quarantining one can never lower it. Tests deleted from source lower the mark by the number deleted, with no release, so this ratchet catches tests that silently stopped running and never charges for deleting one on purpose.
     measured_from: the queue test shards' vitest JSON reports, unioned in the test fan-in
     enforced_by: ratchet-assert in wf.test.test on merge_group
     enforced_from_phase: 2
@@ -35,7 +44,7 @@ ratchets:
   - id: playwright-passed
     kind: floor
     scope: per-spec-file
-    description: Playwright tests passed per spec file may not fall below that file's mark. Quarantined tests are excluded from both the mark and the reading, so quarantining one can never lower it.
+    description: Playwright tests passed per spec file may not fall below that file's mark. Quarantined tests are excluded from both the mark and the reading, so quarantining one can never lower it. Tests deleted from source lower the mark by the number deleted, with no release, so this ratchet catches tests that silently stopped running and never charges for deleting one on purpose.
     measured_from: the browser shards' Playwright JSON reports, unioned in the browser-test fan-in
     enforced_by: ratchet-assert in wf.browser-test.browser-test on merge_group
     enforced_from_phase: 2

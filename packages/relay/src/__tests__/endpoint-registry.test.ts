@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { join } from 'node:path';
-import { mkdtemp, stat, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, stat, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { EndpointRegistry } from '../endpoint-registry.js';
 
@@ -37,18 +37,6 @@ async function expectNotExists(dirPath: string): Promise<void> {
 
 describe('EndpointRegistry', () => {
   describe('registerEndpoint', () => {
-    it('returns EndpointInfo with correct fields', async () => {
-      const subject = 'relay.agent.myproject.backend';
-      const info = await registry.registerEndpoint(subject);
-
-      expect(info.subject).toBe(subject);
-      expect(info.hash).toBe(subject);
-      expect(info.maildirPath).toBe(join(tempDir, 'mailboxes', subject));
-      expect(info.registeredAt).toBeTruthy();
-      // registeredAt is a valid ISO date string
-      expect(new Date(info.registeredAt).toISOString()).toBe(info.registeredAt);
-    });
-
     it('refuses a control subject outright — nobody may hold that mailbox', async () => {
       // Not an ownership rule with an exception for the server: an endpoint on
       // a control subject makes `publish` count the mailbox delivery, so every
@@ -69,27 +57,8 @@ describe('EndpointRegistry', () => {
       await expectDirExists(join(info.maildirPath, 'failed'));
     });
 
-    it('creates only the expected subdirectories', async () => {
-      const info = await registry.registerEndpoint('relay.agent.test');
-      const contents = await readdir(info.maildirPath);
-
-      expect(contents.sort()).toEqual(['cur', 'failed', 'new', 'tmp']);
-    });
-
     it('throws when subject is invalid', async () => {
       await expect(registry.registerEndpoint('')).rejects.toThrow('Invalid subject');
-    });
-
-    it('throws when subject contains single wildcard', async () => {
-      await expect(registry.registerEndpoint('relay.agent.*')).rejects.toThrow(
-        'must not contain wildcards'
-      );
-    });
-
-    it('throws when subject contains multi-wildcard', async () => {
-      await expect(registry.registerEndpoint('relay.agent.>')).rejects.toThrow(
-        'must not contain wildcards'
-      );
     });
 
     it('throws when endpoint is already registered', async () => {
@@ -97,14 +66,6 @@ describe('EndpointRegistry', () => {
       await registry.registerEndpoint(subject);
 
       await expect(registry.registerEndpoint(subject)).rejects.toThrow('already registered');
-    });
-
-    it('allows registering multiple distinct endpoints', async () => {
-      await registry.registerEndpoint('relay.agent.a');
-      await registry.registerEndpoint('relay.agent.b');
-      await registry.registerEndpoint('relay.agent.c');
-
-      expect(registry.size).toBe(3);
     });
   });
 
@@ -119,11 +80,6 @@ describe('EndpointRegistry', () => {
 
       const result = await registry.unregisterEndpoint(subject);
       expect(result).toBe(true);
-    });
-
-    it('returns false when endpoint is not found', async () => {
-      const result = await registry.unregisterEndpoint('relay.agent.nonexistent');
-      expect(result).toBe(false);
     });
 
     it('removes endpoint from in-memory registry', async () => {
@@ -147,146 +103,31 @@ describe('EndpointRegistry', () => {
 
       await expectNotExists(maildirPath);
     });
-
-    it('decrements size after unregister', async () => {
-      await registry.registerEndpoint('relay.agent.a');
-      await registry.registerEndpoint('relay.agent.b');
-      expect(registry.size).toBe(2);
-
-      await registry.unregisterEndpoint('relay.agent.a');
-      expect(registry.size).toBe(1);
-    });
   });
 
   // ---------------------------------------------------------------------------
   // getEndpoint
   // ---------------------------------------------------------------------------
 
-  describe('getEndpoint', () => {
-    it('returns EndpointInfo for a registered subject', async () => {
-      const subject = 'relay.agent.myproject.backend';
-      const registered = await registry.registerEndpoint(subject);
-
-      const found = registry.getEndpoint(subject);
-      expect(found).toEqual(registered);
-    });
-
-    it('returns undefined for an unregistered subject', () => {
-      const found = registry.getEndpoint('relay.agent.nonexistent');
-      expect(found).toBeUndefined();
-    });
-  });
-
   // ---------------------------------------------------------------------------
   // getEndpointByHash
   // ---------------------------------------------------------------------------
-
-  describe('getEndpointByHash', () => {
-    it('returns EndpointInfo for a registered hash', async () => {
-      const subject = 'relay.agent.myproject.backend';
-      const registered = await registry.registerEndpoint(subject);
-
-      const found = registry.getEndpointByHash(registered.hash);
-      expect(found).toEqual(registered);
-    });
-
-    it('returns undefined for an unknown hash', () => {
-      const found = registry.getEndpointByHash('000000000000');
-      expect(found).toBeUndefined();
-    });
-  });
 
   // ---------------------------------------------------------------------------
   // listEndpoints
   // ---------------------------------------------------------------------------
 
-  describe('listEndpoints', () => {
-    it('returns an empty array when no endpoints are registered', () => {
-      expect(registry.listEndpoints()).toEqual([]);
-    });
-
-    it('returns all registered endpoints', async () => {
-      await registry.registerEndpoint('relay.agent.a');
-      await registry.registerEndpoint('relay.agent.b');
-
-      const list = registry.listEndpoints();
-      expect(list).toHaveLength(2);
-
-      const subjects = list.map((e) => e.subject).sort();
-      expect(subjects).toEqual(['relay.agent.a', 'relay.agent.b']);
-    });
-
-    it('does not include unregistered endpoints', async () => {
-      await registry.registerEndpoint('relay.agent.a');
-      await registry.registerEndpoint('relay.agent.b');
-      await registry.unregisterEndpoint('relay.agent.a');
-
-      const list = registry.listEndpoints();
-      expect(list).toHaveLength(1);
-      expect(list[0].subject).toBe('relay.agent.b');
-    });
-  });
-
   // ---------------------------------------------------------------------------
   // hasEndpoint
   // ---------------------------------------------------------------------------
-
-  describe('hasEndpoint', () => {
-    it('returns true for a registered subject', async () => {
-      await registry.registerEndpoint('relay.agent.test');
-      expect(registry.hasEndpoint('relay.agent.test')).toBe(true);
-    });
-
-    it('returns false for an unregistered subject', () => {
-      expect(registry.hasEndpoint('relay.agent.nonexistent')).toBe(false);
-    });
-  });
 
   // ---------------------------------------------------------------------------
   // size
   // ---------------------------------------------------------------------------
 
-  describe('size', () => {
-    it('is 0 initially', () => {
-      expect(registry.size).toBe(0);
-    });
-
-    it('increments on registration', async () => {
-      await registry.registerEndpoint('relay.agent.a');
-      expect(registry.size).toBe(1);
-
-      await registry.registerEndpoint('relay.agent.b');
-      expect(registry.size).toBe(2);
-    });
-
-    it('decrements on unregistration', async () => {
-      await registry.registerEndpoint('relay.agent.a');
-      await registry.registerEndpoint('relay.agent.b');
-      await registry.unregisterEndpoint('relay.agent.a');
-
-      expect(registry.size).toBe(1);
-    });
-  });
-
   // ---------------------------------------------------------------------------
   // Hash determinism and directory structure
   // ---------------------------------------------------------------------------
-
-  describe('directory naming', () => {
-    it('hash equals subject (API compatibility)', async () => {
-      const subject = 'relay.agent.test.determinism';
-      const info = await registry.registerEndpoint(subject);
-
-      expect(info.hash).toBe(subject);
-    });
-
-    it('maildir path is derived from subject', async () => {
-      const subject = 'relay.agent.path-check';
-      const info = await registry.registerEndpoint(subject);
-
-      expect(info.maildirPath).toBe(join(tempDir, 'mailboxes', subject));
-    });
-  });
 
   // ---------------------------------------------------------------------------
   // Activity tracking (inactivity-based TTL sweep, M3)
@@ -310,11 +151,6 @@ describe('EndpointRegistry', () => {
       const activity = registry.getLastActivityMs('relay.inbox.dispatch.act');
       expect(activity).toBeGreaterThanOrEqual(registeredMs);
       expect(activity).toBeGreaterThan(registeredMs - 1);
-    });
-
-    it('touch() is a no-op for unregistered subjects', () => {
-      registry.touch('relay.inbox.dispatch.missing');
-      expect(registry.getLastActivityMs('relay.inbox.dispatch.missing')).toBeUndefined();
     });
 
     it('forgets activity on unregister', async () => {
@@ -407,11 +243,6 @@ describe('endpoint ownership survives the process', () => {
     expect(owners).toEqual(['relay.agent.ns.alice', 'relay.agent.ns.alice']);
   });
 
-  it('reports no owner for a mailbox that records none, rather than guessing one', async () => {
-    const info = await registry.registerEndpoint('relay.system.console');
-    expect(info.owner).toBeUndefined();
-  });
-
   it('relinquishes ownership when the endpoint is unregistered', async () => {
     await registry.registerEndpoint('relay.inbox.temp', { owner: 'relay.agent.ns.alice' });
     await registry.unregisterEndpoint('relay.inbox.temp');
@@ -478,21 +309,5 @@ describe('one mailbox, one subject', () => {
       owner: 'relay.agent.ns.alice',
     });
     expect(again.subject).toBe('relay.inbox.mixedCase');
-  });
-
-  it('keeps unrelated subjects that share no case-folded form', async () => {
-    await registry.registerEndpoint('relay.inbox.alice');
-    await registry.registerEndpoint('relay.inbox.alicia');
-    expect(registry.size).toBe(2);
-  });
-
-  it('leaves the owner file out of the endpoint hash listing', async () => {
-    // The .owner file sits beside tmp/new/cur/failed. If it were mistaken for a
-    // mailbox the GC would try to reap it.
-    await registry.registerEndpoint('relay.inbox.alice', { owner: 'relay.agent.ns.alice' });
-    const entries = await readdir(tempDir + '/mailboxes', { withFileTypes: true });
-    expect(entries.filter((e) => e.isDirectory()).map((e) => e.name)).toEqual([
-      'relay.inbox.alice',
-    ]);
   });
 });

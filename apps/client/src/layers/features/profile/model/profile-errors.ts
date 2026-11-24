@@ -77,8 +77,12 @@ export function handleErrorMessage(error: unknown, attempted: string): string {
  */
 export function avatarErrorMessage(error: unknown): string {
   switch (codeOf(error)) {
-    case 'AVATAR_TOO_LARGE':
+    // The upload parser's refusals (DOR-4979): the size cap, and a form that
+    // carried the wrong number of files or none in the photo field.
+    case 'request_too_large':
       return 'That photo is over 2 MB. Pick a smaller one.';
+    case 'malformed_request':
+      return 'That upload didn’t come through. Pick one photo and try again.';
     case 'AVATAR_TYPE_UNSUPPORTED':
       return 'That file isn’t a photo DorkOS can use. Pick a PNG, JPEG or WebP.';
     case 'AVATAR_MISSING':

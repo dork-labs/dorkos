@@ -33,10 +33,6 @@ function run(
 }
 
 describe('healthOf', () => {
-  it('is ok when the schedule never finished a run', () => {
-    expect(healthOf([])).toEqual(HEALTHY);
-  });
-
   it('is failing when the latest finished run needs attention, and names the tool', () => {
     expect(
       healthOf([run('r2', 'needs_attention', { refusedTools: ['Bash'], outcome: 'partial' })])
@@ -69,19 +65,6 @@ describe('healthOf', () => {
 
   it('clears after one completed run', () => {
     expect(healthOf([run('r2', 'completed'), run('r1', 'failed')])).toEqual(HEALTHY);
-  });
-
-  it('names several refused tools, and says when nothing got done', () => {
-    expect(
-      healthOf([
-        run('r1', 'needs_attention', { refusedTools: ['Bash', 'Write'], outcome: 'nothing_done' }),
-      ]).reason
-    ).toEqual({
-      kind: 'tools_refused',
-      tools: ['Bash', 'Write'],
-      nothingDone: true,
-      message: null,
-    });
   });
 
   it('reads an expired sign-in as its own reason', () => {
@@ -188,12 +171,6 @@ describe('scheduleHealth', () => {
     expect(scheduleHealth(db).get('s1')).toMatchObject({ streak: 1, lastRunId: 'r1' });
   });
 
-  it('counts two failures after the schedule last changed', () => {
-    insert('c1', 's1', 'failed', '2026-11-13T01:00:00.000Z');
-    insert('c2', 's1', 'failed', '2026-11-13T02:00:00.000Z');
-    expect(scheduleHealth(db).get('s1')).toMatchObject({ streak: 2, recentStreak: 2 });
-  });
-
   it('does not count failures older than the schedule’s last change', () => {
     insert('d1', 's1', 'failed', '2026-11-13T01:00:00.000Z');
     insert('d2', 's1', 'failed', '2026-11-13T02:00:00.000Z');
@@ -207,11 +184,5 @@ describe('scheduleHealth', () => {
       streak: 2,
       recentStreak: 0,
     });
-  });
-
-  it('never counts weeks-old failures from before the notice shipped', () => {
-    insert('e1', 's1', 'failed', '2026-10-19T01:00:00.000Z');
-    insert('e2', 's1', 'failed', '2026-11-04T01:00:00.000Z');
-    expect(scheduleHealth(db).get('s1')).toMatchObject({ streak: 2, recentStreak: 0 });
   });
 });

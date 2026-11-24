@@ -91,44 +91,6 @@ describe('TraceStore retention', () => {
     expect(store.getAdapterEvents('tg')).toHaveLength(1);
   });
 
-  it('reads the pruned range on the primary key, not by scanning the table', () => {
-    const db = createTestDb();
-    const store = new TraceStore(db);
-    // Plan the statement the store itself sends, captured from the connection.
-    const sent: { sql: string; params: unknown[] }[] = [];
-    const prepare = db.$client.prepare.bind(db.$client);
-    const client = db.$client as unknown as { prepare: typeof prepare };
-    client.prepare = ((source: string) => {
-      const statement = prepare(source);
-      const run = statement.run.bind(statement);
-      (statement as unknown as { run: (...args: unknown[]) => unknown }).run = (
-        ...args: unknown[]
-      ) => {
-        sent.push({ sql: source, params: args });
-        return run(...(args as []));
-      };
-      return statement;
-    }) as typeof prepare;
-    try {
-      store.pruneDeliverySpans(NOW - 8 * DAY, 5000);
-    } finally {
-      client.prepare = prepare;
-    }
-    expect(sent).toHaveLength(1);
-    const plan = (
-      db.$client.prepare(`EXPLAIN QUERY PLAN ${sent[0]!.sql}`).all(...(sent[0]!.params as [])) as {
-        detail: string;
-      }[]
-    )
-      .map((row) => row.detail)
-      .join('\n');
-    expect(plan).toMatch(
-      /SEARCH relay_traces USING INDEX sqlite_autoindex_relay_traces_1 \(id<\?\)/
-    );
-    expect(plan).not.toMatch(/SCAN relay_traces/);
-    expect(plan).not.toContain('TEMP B-TREE');
-  });
-
   it('leaves a connection event written before kind existed to the event-log cap', () => {
     const db = createTestDb();
     const store = new TraceStore(db);

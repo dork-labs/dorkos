@@ -11,17 +11,6 @@ import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from './b
 const uuidSchema = z.string().uuid();
 
 /**
- * The 400 body for data that failed its schema: a route returns
- * `c.json(validationFailureBody(error), 400)`.
- *
- * @param error - Why the data failed its schema.
- * @returns The body.
- */
-export function validationFailureBody(error: z.ZodError) {
-  return { error: 'Validation failed', details: z.flattenError(error) };
-}
-
-/**
  * Extract a human-readable error message from an unknown caught value.
  *
  * @param err - Caught error value

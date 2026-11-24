@@ -200,7 +200,7 @@ function isAwaitingApproval(result: unknown): boolean {
 
 /**
  * Render an invoke error to stderr. For an {@link ApiError} the server's message
- * is surfaced, and any structured `details` (e.g. a Zod validation flatten) is
+ * is surfaced, and any structured `issues` (a Zod validation flatten) is
  * printed as JSON so an agent can act on the exact schema failure.
  *
  * @param err - The thrown error.
@@ -208,8 +208,9 @@ function isAwaitingApproval(result: unknown): boolean {
 function printCallError(err: unknown): void {
   if (err instanceof ApiError) {
     console.error(`Error: ${err.message}`);
-    if (err.body.details !== undefined) {
-      console.error(JSON.stringify(err.body.details, null, 2));
+    const issues = err.issues ?? err.body.details;
+    if (issues !== undefined) {
+      console.error(JSON.stringify(issues, null, 2));
     }
     return;
   }

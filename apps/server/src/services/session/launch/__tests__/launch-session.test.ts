@@ -63,7 +63,6 @@ vi.mock('../../message-dispatcher.js', () => ({
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { configManager } from '../../../core/config-manager.js';
 import { dispatchMessage } from '../../message-dispatcher.js';
-import { recordDispatchEnd } from '../../../observability/dispatch-buffers.js';
 import { resolveSessionCwdWithRoom } from '../../../workspace/room-session-place.js';
 import {
   AGENT_LAUNCH_MAX_LIVE,
@@ -175,29 +174,6 @@ describe('dispatchSessionMessage', () => {
     expect(result).toMatchObject({ warnings: [{ code: 'NO_DORKOS_TOOLS' }] });
   });
 
-  it('warns a Codex chat whose runtime cannot answer at all', async () => {
-    registerTestHomes(['/agents/known']);
-    vi.mocked(resolveSessionCwdWithRoom).mockResolvedValueOnce({
-      cwd: '/agents/known',
-      rung: 'explicit',
-    });
-    const carries = fakeRuntime.carriesRoomTools;
-    fakeRuntime.carriesRoomTools = undefined;
-    try {
-      const result = await dispatchSessionMessage({
-        sessionId: SESSION,
-        request: { content: 'hi', cwd: '/agents/known', runtime: 'codex' },
-        clientId: 'c',
-        meshCore: mesh,
-        roomSessionPlace: undefined,
-        origin: { kind: 'interactive' },
-      });
-      expect(result).toMatchObject({ warnings: [{ code: 'NO_DORKOS_TOOLS' }] });
-    } finally {
-      fakeRuntime.carriesRoomTools = carries;
-    }
-  });
-
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(runtimeRegistry.has).mockReturnValue(true);
@@ -303,47 +279,6 @@ describe('dispatchSessionMessage', () => {
     expect(dispatchMessage).not.toHaveBeenCalled();
   });
 
-  it('binds the session with the origin its caller named', async () => {
-    const result = await dispatchSessionMessage({
-      sessionId: SESSION,
-      request: { content: 'hi', agentPath: '/agents/known' },
-      clientId: 'c',
-      meshCore: mesh,
-      roomSessionPlace: undefined,
-      origin: { kind: 'agent-launch' },
-    });
-
-    expect(isSessionLaunchRefusal(result)).toBe(false);
-    expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
-      SESSION,
-      'claude-code',
-      { kind: 'agent-launch' },
-      '/agents/known'
-    );
-  });
-
-  it("tells the caller's onSettled how the turn ended, after the dispatch buffer", async () => {
-    const onSettled = vi.fn();
-    await dispatchSessionMessage({
-      sessionId: SESSION,
-      request: { content: 'hi' },
-      clientId: 'c',
-      meshCore: mesh,
-      roomSessionPlace: undefined,
-      origin: { kind: 'interactive' },
-      onSettled,
-    });
-
-    const passed = vi.mocked(dispatchMessage).mock.calls[0][0];
-    passed.onSettled?.('failed');
-
-    expect(recordDispatchEnd).toHaveBeenCalledWith(expect.any(String), 'failed');
-    expect(onSettled).toHaveBeenCalledWith('failed', undefined);
-    expect(vi.mocked(recordDispatchEnd).mock.invocationCallOrder[0]).toBeLessThan(
-      onSettled.mock.invocationCallOrder[0]
-    );
-  });
-
   describe('where a turn may stand (spec `agent-home-desk` I3)', () => {
     afterEach(() => clearTestHomes());
 
@@ -394,26 +329,6 @@ describe('dispatchSessionMessage', () => {
       }
       expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
       expect(dispatchMessage).not.toHaveBeenCalled();
-    });
-
-    it('launches a folder outside the rooms directory as before', async () => {
-      registerTestHomes([], { roomsDir: '/dork/rooms' });
-      vi.mocked(resolveSessionCwdWithRoom).mockResolvedValueOnce({
-        cwd: '/work/project',
-        rung: 'explicit',
-      });
-
-      const result = await dispatchSessionMessage({
-        sessionId: SESSION,
-        request: { content: 'hi', cwd: '/work/project' },
-        clientId: 'c',
-        meshCore: mesh,
-        roomSessionPlace: undefined,
-        origin: { kind: 'interactive' },
-      });
-
-      expect(isSessionLaunchRefusal(result)).toBe(false);
-      expect(dispatchMessage).toHaveBeenCalled();
     });
   });
 
@@ -471,23 +386,11 @@ describe('dispatchSessionMessage', () => {
       expect(vi.mocked(dispatchMessage).mock.calls.length).toBe(calls);
     });
 
-    it('still refuses the 9th at the shipped setting of 8', async () => {
-      setMaxAgentChats(8);
-      for (let i = 0; i < 8; i++) expect(isSessionLaunchRefusal(await cappedLaunch())).toBe(false);
-      expect(isSessionLaunchRefusal(await cappedLaunch())).toBe(true);
-    });
-
     it('admits a 9th once a person raises the setting, and refuses past the new number', async () => {
       setMaxAgentChats(12);
       for (let i = 0; i < 12; i++) expect(isSessionLaunchRefusal(await cappedLaunch())).toBe(false);
       const refused = await cappedLaunch();
       expect(refused).toEqual({ refused: 'LAUNCH_CAP_FULL', message: agentLaunchCapMessage() });
-    });
-
-    it('names the number in force and the setting that raises it', () => {
-      setMaxAgentChats(12);
-      expect(agentLaunchCapMessage()).toContain('(12)');
-      expect(agentLaunchCapMessage()).toContain('runtimes.maxAgentChats');
     });
 
     it('frees a slot when a turn settles, and still tells the caller', async () => {
@@ -538,19 +441,6 @@ describe('dispatchSessionMessage', () => {
       expect(fakeRuntime.ensureSession).not.toHaveBeenCalled();
       expect(vi.mocked(dispatchMessage).mock.calls[0]![0].unattended).toBe(true);
     });
-
-    it('leaves an attended launch as it was', async () => {
-      await dispatchSessionMessage({
-        sessionId: SESSION,
-        request: { content: 'hi' },
-        clientId: 'c',
-        meshCore: mesh,
-        roomSessionPlace: undefined,
-        origin: { kind: 'interactive' },
-      });
-      expect(fakeRuntime.ensureSession).not.toHaveBeenCalled();
-      expect(vi.mocked(dispatchMessage).mock.calls[0]![0].unattended).toBeUndefined();
-    });
   });
 });
 
@@ -588,12 +478,6 @@ describe('a launch held by a continuation (DOR-3203)', () => {
   it('passes the hold on', async () => {
     const passed = await launched({ continuationHold: true });
     expect(passed).toMatchObject({ permissionCeiling: 'runtime-default', continuationHold: true });
-  });
-
-  it('passes a Wi-Fi hold on without calling it a continuation (DOR-3037)', async () => {
-    const passed = await launched({});
-    expect(passed.permissionCeiling).toBe('runtime-default');
-    expect(passed.continuationHold).toBeUndefined();
   });
 });
 

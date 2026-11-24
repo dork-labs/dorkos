@@ -16,6 +16,7 @@
  */
 import { extensionApiUrl } from '../model/extension-api-url';
 import { readAppResponse } from './app-request';
+import { readErrorBody } from '@dorkos/shared/problem';
 
 /** The largest picture or video an app may bring into its frame: 32 MB. */
 export const APP_MEDIA_MAX_BYTES = 32 * 1024 * 1024;
@@ -112,7 +113,7 @@ export async function mintAppMediaUrl(id: string, path: string): Promise<string>
     error?: unknown;
   } | null;
   if (!response.ok) {
-    throw new Error(typeof body?.error === 'string' ? body.error : NO_LINK);
+    throw new Error(readErrorBody(body, NO_LINK).message);
   }
   if (typeof body?.url !== 'string' || !MEDIA_URL.test(body.url)) {
     throw new Error(NO_LINK);

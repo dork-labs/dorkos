@@ -190,6 +190,7 @@ import { TURN_NOT_STARTED_CODE } from '../../../../session/launch/turn-not-start
 import { extensionSkillPluginRoots } from '../../../../extensions/agent-skills/running-skills-ledger.js';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
 import { SESSIONS } from '../../../../../config/constants.js';
+import { takeTimersStopped } from '../../../../session/turn-cutoff/timers-stopped.js';
 import { feedProjector } from '../../../../session/session-event-normalizer.js';
 import {
   SessionStateProjector,
@@ -3437,6 +3438,81 @@ describe('the record of background work a process holds (DOR-2065)', () => {
     }
     expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
     expect(session.pendingTimers).toBeUndefined();
+  });
+
+  // DOR-3755: a timer dies with its process, and nothing ran the chat again to
+  // fire it, so the agent's next turn is told.
+  it('owes the next turn a note when it takes a process with a timer still pending', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const session = (
+      runtime as unknown as {
+        sessionStore: { findSession: (id: string) => { pendingTimers?: number } };
+      }
+    ).sessionStore.findSession(sessionId);
+    session.pendingTimers = 2;
+
+    // A pending timer holds the process on the first reap; only the ceiling takes it.
+    await runtime.reapSession(sessionId);
+    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
+    expect(takeTimersStopped(sessionId)).toBeNull();
+
+    const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
+    try {
+      await runtime.reapSession(sessionId);
+    } finally {
+      clock.mockRestore();
+      awake.mockRestore();
+    }
+
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    expect(takeTimersStopped(sessionId)).toEqual({ timers: 2, at: later });
+  });
+
+  /** The session record whose timer count the Stop hook writes. */
+  function timersOf(sessionId: string): { pendingTimers?: number } {
+    return (
+      runtime as unknown as {
+        sessionStore: { findSession: (id: string) => { pendingTimers?: number } };
+      }
+    ).sessionStore.findSession(sessionId);
+  }
+
+  // DOR-3755: a person's pause ended the work on purpose, so it owes no note.
+  it('owes no note when a pause ends a process with a timer pending', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    timersOf(sessionId).pendingTimers = 1;
+
+    await expect(
+      runtime.endSessionsWhere((session) => session.sessionId === sessionId)
+    ).resolves.toEqual([sessionId]);
+
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    expect(timersOf(sessionId).pendingTimers).toBeUndefined();
+    expect(takeTimersStopped(sessionId)).toBeNull();
+  });
+
+  // DOR-3755: a relaunch runs its turn at once, so it owes no note either.
+  it('owes no note when a dispatch relaunches a process with a timer pending', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    timersOf(sessionId).pendingTimers = 1;
+    const { buildSystemPromptAppend } = await import('../../messaging/context-builder.js');
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>MOVED</env>',
+      stable: '<env>MOVED</env>',
+    });
+
+    await turn(sessionId, 'after the change');
+
+    expect(cli.launches).toBe(2);
+    expect(cli.processes[0]!.ended).toBe(true);
+    expect(takeTimersStopped(sessionId)).toBeNull();
   });
 
   it('is cleared when the process crashes while holding work', async () => {

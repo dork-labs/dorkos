@@ -486,8 +486,12 @@ export interface OperatingSkill {
  *   must act, and a room hears only started, blocked on a person, and shipped, plus
  *   an answer or a result somebody there asked for. An agent seeded at 70 would post
  *   every report and status relay into the room.
+ * - 72: `scheduling-tasks` says a run whose account is out of usage or signed out
+ *   runs on another signed-in account, that `accountPinned` keeps it on its own,
+ *   and that changing only `account` keeps an approved task approved (DOR-5097).
+ *   An agent seeded at 71 would re-ask the person to approve every account move.
  */
-export const OPERATING_SKILLS_VERSION = 71;
+export const OPERATING_SKILLS_VERSION = 72;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

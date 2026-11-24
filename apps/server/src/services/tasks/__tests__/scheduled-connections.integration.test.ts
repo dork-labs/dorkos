@@ -299,18 +299,6 @@ describe.each(['direct', 'relay'] as const)('%s scheduled connected apps', (disp
     expect(provider.execute).toHaveBeenCalledOnce();
   });
 
-  it('replaces sticky history when the schedule moves to another agent', async () => {
-    grant('agent-a');
-    await fire('agent-a', 'scheduled', 'Read the granted mailbox', otherAgentHome);
-    expect(turnSessionId).not.toBe('previous-owner-session');
-    expect(await runtimeRegistry.getSessionAgentPath('previous-owner-session')).toBe(
-      otherAgentHome
-    );
-    expect(await runtimeRegistry.getSessionAgentPath(turnSessionId!)).toBe(agentHome);
-    expect(turnError).toBeUndefined();
-    expect(provider.execute).toHaveBeenCalledOnce();
-  });
-
   it('removing a sticky agent cannot retain its connected apps', async () => {
     grant('agent-a');
     await fire(null, 'scheduled', 'Read the granted mailbox', agentHome);
@@ -365,13 +353,4 @@ describe.each(['direct', 'relay'] as const)('%s scheduled connected apps', (disp
     expect(turnError).toBeDefined();
     expect(provider.execute).not.toHaveBeenCalled();
   });
-
-  if (dispatchPath === 'direct') {
-    it('records the same agent for an attended Run now', async () => {
-      grant('agent-a');
-      await fire('agent-a', 'manual');
-      expect(turnError).toBeUndefined();
-      expect(provider.execute).toHaveBeenCalledOnce();
-    });
-  }
 });

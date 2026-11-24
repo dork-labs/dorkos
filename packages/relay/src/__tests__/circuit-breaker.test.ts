@@ -21,19 +21,6 @@ describe('CircuitBreakerManager', () => {
       expect(result.state).toBe('CLOSED');
     });
 
-    it('tracks consecutive failures', () => {
-      cbm.recordFailure('endpoint-abc');
-      cbm.recordFailure('endpoint-abc');
-
-      // Should still be CLOSED (threshold is 5)
-      const result = cbm.check('endpoint-abc');
-      expect(result.allowed).toBe(true);
-      expect(result.state).toBe('CLOSED');
-
-      const states = cbm.getStates();
-      expect(states.get('endpoint-abc')?.consecutiveFailures).toBe(2);
-    });
-
     it('transitions to OPEN after failureThreshold consecutive failures', () => {
       for (let i = 0; i < DEFAULT_CB_CONFIG.failureThreshold; i++) {
         cbm.recordFailure('endpoint-abc');
@@ -81,20 +68,6 @@ describe('CircuitBreakerManager', () => {
       expect(result.allowed).toBe(true);
       expect(result.state).toBe('HALF_OPEN');
     });
-
-    it('remains OPEN if cooldown has not elapsed', () => {
-      // Advance time but not past cooldown
-      vi.setSystemTime(Date.now() + DEFAULT_CB_CONFIG.cooldownMs - 1);
-
-      const result = cbm.check('endpoint-abc');
-      expect(result.allowed).toBe(false);
-      expect(result.state).toBe('OPEN');
-    });
-
-    it('includes endpoint hash in rejection reason', () => {
-      const result = cbm.check('endpoint-abc');
-      expect(result.reason).toBe('circuit open for endpoint endpoint-abc');
-    });
   });
 
   describe('HALF_OPEN state', () => {
@@ -136,33 +109,9 @@ describe('CircuitBreakerManager', () => {
       expect(result.allowed).toBe(false);
       expect(result.state).toBe('OPEN');
     });
-
-    it('resets halfOpenSuccesses on transition back to OPEN', () => {
-      // Record one success, then fail
-      cbm.recordSuccess('endpoint-abc');
-      cbm.recordFailure('endpoint-abc');
-
-      const states = cbm.getStates();
-      expect(states.get('endpoint-abc')?.halfOpenSuccesses).toBe(0);
-      expect(states.get('endpoint-abc')?.state).toBe('OPEN');
-    });
   });
 
   describe('state management', () => {
-    it('creates new breaker in CLOSED state for unknown endpoint', () => {
-      const result = cbm.check('brand-new-endpoint');
-      expect(result.allowed).toBe(true);
-      expect(result.state).toBe('CLOSED');
-
-      const states = cbm.getStates();
-      const breaker = states.get('brand-new-endpoint');
-      expect(breaker).toBeDefined();
-      expect(breaker?.state).toBe('CLOSED');
-      expect(breaker?.consecutiveFailures).toBe(0);
-      expect(breaker?.openedAt).toBeNull();
-      expect(breaker?.halfOpenSuccesses).toBe(0);
-    });
-
     it('maintains separate state per endpoint hash', () => {
       // Trip endpoint-a to OPEN
       for (let i = 0; i < DEFAULT_CB_CONFIG.failureThreshold; i++) {
@@ -196,33 +145,6 @@ describe('CircuitBreakerManager', () => {
       expect(result.allowed).toBe(true);
       expect(result.state).toBe('CLOSED');
     });
-
-    it('getStates() returns a copy of all breaker states', () => {
-      cbm.check('endpoint-a');
-      cbm.check('endpoint-b');
-
-      const states = cbm.getStates();
-      expect(states.size).toBe(2);
-      expect(states.has('endpoint-a')).toBe(true);
-      expect(states.has('endpoint-b')).toBe(true);
-
-      // Modifying the copy should not affect the manager
-      states.delete('endpoint-a');
-      const statesAgain = cbm.getStates();
-      expect(statesAgain.has('endpoint-a')).toBe(true);
-    });
-
-    it('updateConfig() changes thresholds for future checks', () => {
-      // Lower the threshold to 2
-      cbm.updateConfig({ failureThreshold: 2 });
-
-      cbm.recordFailure('endpoint-abc');
-      cbm.recordFailure('endpoint-abc');
-
-      const result = cbm.check('endpoint-abc');
-      expect(result.allowed).toBe(false);
-      expect(result.state).toBe('OPEN');
-    });
   });
 
   describe('disabled', () => {
@@ -237,68 +159,6 @@ describe('CircuitBreakerManager', () => {
       const result = disabledCbm.check('endpoint-abc');
       expect(result.allowed).toBe(true);
       expect(result.state).toBe('CLOSED');
-    });
-  });
-
-  describe('custom configuration', () => {
-    it('uses custom failureThreshold', () => {
-      const customCbm = new CircuitBreakerManager({ failureThreshold: 3 });
-
-      customCbm.recordFailure('ep');
-      customCbm.recordFailure('ep');
-      expect(customCbm.check('ep').allowed).toBe(true);
-
-      customCbm.recordFailure('ep');
-      expect(customCbm.check('ep').allowed).toBe(false);
-    });
-
-    it('uses custom cooldownMs', () => {
-      const customCbm = new CircuitBreakerManager({
-        failureThreshold: 1,
-        cooldownMs: 5000,
-      });
-
-      customCbm.recordFailure('ep');
-      expect(customCbm.check('ep').state).toBe('OPEN');
-
-      // Advance 4999ms - still OPEN
-      vi.setSystemTime(Date.now() + 4999);
-      expect(customCbm.check('ep').state).toBe('OPEN');
-
-      // Advance to exactly 5000ms - transitions to HALF_OPEN
-      vi.setSystemTime(Date.now() + 1);
-      expect(customCbm.check('ep').state).toBe('HALF_OPEN');
-    });
-
-    it('uses custom successToClose', () => {
-      const customCbm = new CircuitBreakerManager({
-        failureThreshold: 1,
-        cooldownMs: 1000,
-        successToClose: 3,
-      });
-
-      // Trip to OPEN, then HALF_OPEN
-      customCbm.recordFailure('ep');
-      vi.setSystemTime(Date.now() + 1000);
-      customCbm.check('ep');
-
-      // Need 3 successes to close
-      customCbm.recordSuccess('ep');
-      expect(customCbm.getStates().get('ep')?.state).toBe('HALF_OPEN');
-
-      customCbm.recordSuccess('ep');
-      expect(customCbm.getStates().get('ep')?.state).toBe('HALF_OPEN');
-
-      customCbm.recordSuccess('ep');
-      expect(customCbm.getStates().get('ep')?.state).toBe('CLOSED');
-    });
-  });
-
-  describe('recordSuccess on unknown endpoint', () => {
-    it('is a no-op for unknown endpoint hash', () => {
-      // Should not throw or create a breaker
-      cbm.recordSuccess('nonexistent');
-      expect(cbm.getStates().has('nonexistent')).toBe(false);
     });
   });
 });

@@ -24,9 +24,8 @@ import {
   ConnectorGrantExclusionError,
   type ConnectorGrantExclusionService,
 } from '../services/connectors/access/grant-exclusions.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import { verifyRequestAuth, type RequestUser } from '../services/core/auth/session-gate.js';
 import {
   ConnectorManagementReviewError,
@@ -255,7 +254,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const input = ConnectorManagementReviewCreateRequestSchema.safeParse(
       readJsonBody(c, { emptyAs: {} })
     );
-    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    if (!input.success) return validationProblem(c, input.error);
     try {
       const review = deps.reviews.create(requester, input.data);
       return c.json(
@@ -284,7 +283,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
     const query = ReviewListQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
     try {
       return c.json({ reviews: deps.reviews.list(owner, query.data.state) });
     } catch (error) {
@@ -308,7 +307,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const input = ConnectorManagementReviewDecisionSchema.safeParse(
       readJsonBody(c, { emptyAs: {} })
     );
-    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    if (!input.success) return validationProblem(c, input.error);
     const reviewRequestId = c.req.param('reviewRequestId');
     const decide = async () => {
       try {
@@ -335,7 +334,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const requests = requireAgentRequests(c);
     if (requests instanceof Response) return requests;
     const query = AgentRequestListQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
     try {
       return c.json({
         requests: requests
@@ -365,7 +364,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const requests = requireAgentRequests(c);
     if (requests instanceof Response) return requests;
     const input = ConnectorAgentRequestDecisionSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    if (!input.success) return validationProblem(c, input.error);
     const requestId = c.req.param('requestId');
     const decide = async () => {
       const active = requestAbortSignal(c);
@@ -397,7 +396,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const input = ConnectorAgentRequestAuthenticationInputSchema.safeParse(
       readJsonBody(c, { emptyAs: {} })
     );
-    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    if (!input.success) return validationProblem(c, input.error);
     const requestId = c.req.param('requestId');
     // Connecting an account for an agent waits for the owner (DOR-4355).
     return runFrontDoorWrite(c, {
@@ -436,7 +435,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const input = ConnectorReconciliationPreviewRequestSchema.safeParse(
       readJsonBody(c, { emptyAs: {} })
     );
-    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    if (!input.success) return validationProblem(c, input.error);
     const controller = new AbortController();
     c.env.outgoing.once('close', () => controller.abort());
     try {
@@ -529,7 +528,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const input = ConnectorReconciliationApplyRequestSchema.safeParse(
       readJsonBody(c, { emptyAs: {} })
     );
-    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    if (!input.success) return validationProblem(c, input.error);
     /**
      * Send the save. As narrowing, the service refuses it inside its write when it
      * would also settle the review, and this answers `null` so the save waits.

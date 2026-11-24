@@ -503,3 +503,169 @@ describe('createTurnLiveness — against the captured delivery segment', () => {
     expect(settle.task_id).toBe(DELIVERY_AGENT_TASK_ID);
   });
 });
+
+/**
+ * A run id in the CLI's real shape (SDK 0.3.304): the run's start time in base
+ * 36, padded to nine characters, then eight hex digits. Ids of one task sort,
+ * as plain strings, in the order the runs opened.
+ */
+function runIdAt(ms: number, hex: string): string {
+  return `${ms.toString(36).padStart(9, '0')}-${hex}`;
+}
+
+/** An earlier and a later run of one task. */
+const RUN_1 = runIdAt(Date.UTC(2026, 10, 1, 20, 0, 0), '1a2b3c4d');
+const RUN_2 = runIdAt(Date.UTC(2026, 10, 1, 20, 5, 0), '9f8e7d6c');
+
+/** A level frame whose entries name the run each task is on (SDK 0.3.304). */
+function tasksChangedWithRuns(
+  tasks: Array<{ id: string; type: 'local_agent' | 'local_bash'; runId: string }>
+): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'background_tasks_changed',
+    tasks: tasks.map(({ id, type, runId }) => ({
+      task_id: id,
+      run_id: runId,
+      task_type: type,
+      description: `task ${id}`,
+    })),
+    session_id: 'sdk-1',
+  } as unknown as SDKMessage;
+}
+
+/** A settle that names its run, and optionally keeps itself out of the transcript. */
+function runSettled(taskId: string, runId: string | undefined, extra: object = {}): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'task_notification',
+    task_id: taskId,
+    ...(runId !== undefined ? { run_id: runId } : {}),
+    status: 'completed',
+    ...extra,
+    session_id: `subagent-${taskId}`,
+  } as unknown as SDKMessage;
+}
+
+/** A task starting, in the foreground or the background. */
+function taskStarted(taskId: string, backgrounded: boolean, runId?: string): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'task_started',
+    task_id: taskId,
+    ...(runId !== undefined ? { run_id: runId } : {}),
+    task_type: 'local_agent',
+    description: `task ${taskId}`,
+    is_backgrounded: backgrounded,
+    session_id: 'sdk-1',
+  } as unknown as SDKMessage;
+}
+
+// DOR-3755. A resumed task keeps its `task_id` and gets a new `run_id`, and
+// the run ids of one task sort in the order the runs opened (`sdk.d.ts`). Keyed
+// on the task id alone, a late settle from the old run deleted the NEW run's
+// live entry, and the helper still working read as gone.
+describe('createTurnLiveness — one task, several runs (DOR-3755)', () => {
+  it("a late settle from an earlier run leaves the newer run's helper live", () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(tasksChangedWithRuns([{ id: 'agent-1', type: 'local_agent', runId: RUN_2 }]));
+    liveness.observe(runSettled('agent-1', RUN_1));
+
+    expect(liveness.liveAgentCount()).toBe(1);
+    // A live helper holds with no deadline, whatever else is owed.
+    expect(liveness.holdOpenAtResult()).toEqual({ hold: true, armDeadline: false });
+  });
+
+  it("the run's own settle still ends it", () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(tasksChangedWithRuns([{ id: 'agent-1', type: 'local_agent', runId: RUN_2 }]));
+    liveness.observe(runSettled('agent-1', RUN_2));
+
+    expect(liveness.liveAgentCount()).toBe(0);
+    expect(liveness.owedCount()).toBe(1);
+  });
+
+  it('a settle that names no run ends the task, as before run ids existed', () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(tasksChangedWithRuns([{ id: 'agent-1', type: 'local_agent', runId: RUN_2 }]));
+    liveness.observe(runSettled('agent-1', undefined));
+
+    expect(liveness.liveAgentCount()).toBe(0);
+  });
+
+  it('two runs of one task that both settle owe two deliveries, cleared one at a time', () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(runSettled('agent-1', RUN_1));
+    liveness.observe(runSettled('agent-1', RUN_2));
+    expect(liveness.owedCount()).toBe(2);
+
+    // One consumed prompt clears one debt, the older one.
+    expect(liveness.clearOldestOwed(1)).toEqual(['agent-1']);
+    expect(liveness.owedCount()).toBe(1);
+  });
+});
+
+// DOR-3755. The CLI emits `task_notification` for every task it registers. A
+// foreground task's result already went back inline as its tool result, and a
+// `skip_transcript` task is never put in front of the model, so neither is
+// ever delivered — and a debt for one held the turn for the full deadline.
+describe('createTurnLiveness — settles nothing is delivered for (DOR-3755)', () => {
+  it('a foreground task owes nothing, so the result closes at once', () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(taskStarted('fg-1', false));
+    liveness.observe(runSettled('fg-1', undefined));
+    liveness.observe(resultFrame());
+
+    expect(liveness.owedCount()).toBe(0);
+    expect(liveness.holdOpenAtResult()).toEqual({ hold: false, armDeadline: false });
+  });
+
+  it('a task kept out of the transcript owes nothing', () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(runSettled('dream-1', undefined, { skip_transcript: true }));
+
+    expect(liveness.owedCount()).toBe(0);
+  });
+
+  it('a foreground task that later joins the level set owes its delivery', () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(taskStarted('fg-1', false, RUN_1));
+    liveness.observe(tasksChangedWithRuns([{ id: 'fg-1', type: 'local_agent', runId: RUN_1 }]));
+    liveness.observe(runSettled('fg-1', RUN_1));
+
+    expect(liveness.owedCount()).toBe(1);
+  });
+
+  it('a resumed run in the background owes, though an earlier run ran in the foreground', () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(taskStarted('agent-1', false, RUN_1));
+    liveness.observe(runSettled('agent-1', RUN_1));
+    liveness.observe(taskStarted('agent-1', true, RUN_2));
+    liveness.observe(runSettled('agent-1', RUN_2));
+
+    expect(liveness.owedCount()).toBe(1);
+  });
+
+  it('a start in the background clears a foreground mark the task still carries', () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(taskStarted('agent-1', false, RUN_1));
+    // Resumed before the first run's settle arrived: always in the background.
+    liveness.observe(taskStarted('agent-1', true, RUN_2));
+    liveness.observe(runSettled('agent-1', RUN_2));
+
+    expect(liveness.owedCount()).toBe(1);
+  });
+
+  it('a start with no backgrounded flag keeps the old answer and owes', () => {
+    const liveness = createTurnLiveness();
+    liveness.observe({
+      type: 'system',
+      subtype: 'task_started',
+      task_id: 'old-cli-1',
+      session_id: 'sdk-1',
+    } as unknown as SDKMessage);
+    liveness.observe(runSettled('old-cli-1', undefined));
+
+    expect(liveness.owedCount()).toBe(1);
+  });
+});

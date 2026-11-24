@@ -65,6 +65,7 @@ import {
   relayLinkCodeHash,
   verifyRelayLinkRequest,
 } from '../services/core/session-relay/link-signature.js';
+import { apiNotFound } from '../http/unclaimed.js';
 
 /** What the route reads and writes, injectable for tests. */
 export interface HubLinkRouteDeps {
@@ -153,7 +154,7 @@ export function createHubLinkRoutes(deps: HubLinkRouteDeps = liveDeps): Hono<Api
   const router = new Hono<ApiEnv>();
 
   router.post('/', async (c) => {
-    if (!deps.isHub()) return c.json(errorBody('Not found', 'API_NOT_FOUND'), 404);
+    if (!deps.isHub()) return apiNotFound(c);
     if (fromBrowser(c)) {
       return c.json(errorBody('Link from the DorkOS app on your computer.', 'FORBIDDEN'), 403);
     }

@@ -73,6 +73,12 @@
       "issue": "DOR-2789",
       "note": "A conversation with an agent is a \"chat\" in everything people read (operator decision D13, 2026-10-08). \"Session\" and \"conversation\" were two more names for the same thing, so both are retired as user-facing nouns; singular and plural are listed because a term is fenced with a word boundary. Rooms, channels and DMs keep their own names, so room talk is never renamed to \"chat\", and a room's reply thread is still a thread. A sign-in session is a different meaning: copy says \"sign-in\" instead. What stays is everything a person does not read as copy: identifiers, API paths and the /session route, MCP tool names, and text only an agent reads (tool descriptions and results), each allowlisted per file in allowlist.json with its reason. Docs prose is scanned for this wave too (MDX_SCANNED_WAVES); an identifier that keeps the word belongs in inline code.",
       "terms": ["session", "sessions", "conversation", "conversations"]
+    },
+    {
+      "id": "wave-8",
+      "issue": "DOR-5135",
+      "note": "The switch that lets other devices open this computer's DorkOS answers on every network the computer is on: Wi-Fi, a wired (Ethernet) cable, and VPNs such as Tailscale, which can reach a device anywhere in the world. Copy that said \"Wi-Fi\" was wrong for a wired computer and gave wrong advice to a Tailscale device, so the feature says \"network\" (\"Devices on my network\") in everything people read. Identifiers and config keys (lanAccess, allowFromWifi, server.lanAccess) keep their names, and the gate never reads those positions. Docs prose is scanned for this wave too (MDX_SCANNED_WAVES). A genuine Wi-Fi reference (a phone's Wi-Fi settings, a hotel Wi-Fi example) is a scoped, reasoned allowlist entry.",
+      "terms": ["wi-fi", "wifi"]
     }
   ]
 }

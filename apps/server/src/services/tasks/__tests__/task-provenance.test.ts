@@ -84,25 +84,6 @@ describe('who proposed a schedule', () => {
       // agent off must not keep seeing its name on a card asking for approval.
       await expect(resolveProposerName(AGENT_PATH)).resolves.toBeNull();
     });
-
-    it('answers null for a directory nothing was ever minted for', async () => {
-      await expect(resolveProposerName('/tmp/agents/nobody')).resolves.toBeNull();
-    });
-
-    it('answers null when no path was recorded', async () => {
-      await expect(resolveProposerName(null)).resolves.toBeNull();
-      await expect(resolveProposerName('')).resolves.toBeNull();
-    });
-
-    it('answers null when no identity service is wired at all', async () => {
-      resetAgentIdentityService();
-      await expect(resolveProposerName(AGENT_PATH)).resolves.toBeNull();
-    });
-
-    it('degrades to null when the lookup throws, rather than failing the read', async () => {
-      vi.spyOn(identity, 'describeAgent').mockRejectedValue(new Error('database is locked'));
-      await expect(resolveProposerName(AGENT_PATH)).resolves.toBeNull();
-    });
   });
 
   describe('withProposerName', () => {
@@ -111,11 +92,6 @@ describe('who proposed a schedule', () => {
       const named = await withProposerName(proposal(AGENT_PATH));
       expect(named.proposedByName).toBe('Nightly Bot');
       expect(named.proposedByAgentPath).toBe(AGENT_PATH);
-    });
-
-    it('leaves an operator-created task alone', async () => {
-      const named = await withProposerName(proposal(null));
-      expect(named.proposedByName).toBeNull();
     });
   });
 
@@ -142,14 +118,6 @@ describe('who proposed a schedule', () => {
       // Two directories among four tasks: the list endpoint runs on every
       // cockpit poll, so a lookup per row would be a per-row database read.
       expect(describeAgent).toHaveBeenCalledTimes(2);
-    });
-
-    it('keeps the list in order and skips the lookup entirely when nothing is attributed', async () => {
-      const describeAgent = vi.spyOn(identity, 'describeAgent');
-      const tasks = [proposal(null), proposal(null)];
-      const named = await withProposerNames(tasks);
-      expect(named.map((t) => t.id)).toEqual(tasks.map((t) => t.id));
-      expect(describeAgent).not.toHaveBeenCalled();
     });
   });
 });

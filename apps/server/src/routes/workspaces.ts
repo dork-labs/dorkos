@@ -22,7 +22,7 @@ import { readCallerAuthority } from '../lib/caller-authority.js';
 import { BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
@@ -69,7 +69,7 @@ function shownOf(inspection: WorkspaceInspection) {
 router.get('/', async (c) => {
   const parsed = ListQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid query', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   try {
     const workspaces = await getWorkspaceManager().list({ projectKey: parsed.data.projectKey });
@@ -98,7 +98,7 @@ router.get('/scan', async (c) => {
 router.get('/resolve', async (c) => {
   const parsed = ResolveQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid query', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   try {
     const workspace = await getWorkspaceManager().resolveByPath(parsed.data.path);
@@ -116,7 +116,7 @@ router.get('/resolve', async (c) => {
 router.post('/ports', async (c) => {
   const parsed = PortsBodySchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Validation failed', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   try {
     const workspace = await getWorkspaceManager().resolveByPath(parsed.data.path);
@@ -139,10 +139,10 @@ router.post('/', async (c) => {
   const parsed = EnsureWorkspaceRequestSchema.safeParse(readJsonBody(c));
   const decision = WorkspaceDecisionSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
   if (!parsed.success) {
-    return c.json({ error: 'Validation failed', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   if (!decision.success) {
-    return c.json({ error: 'Validation failed', details: z.flattenError(decision.error) }, 400);
+    return validationProblem(c, decision.error);
   }
   const person = trustedCaller(readCallerAuthority(honoRequestFacts(c))) !== undefined;
   const name = `${parsed.data.projectKey}/${parsed.data.key}`;
@@ -225,7 +225,7 @@ router.get('/:id', async (c) => {
 router.post('/:id/pin', async (c) => {
   const parsed = PinBodySchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Validation failed', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   try {
     const workspace = await getWorkspaceManager().setPinned(c.req.param('id'), parsed.data.pinned);
@@ -250,7 +250,7 @@ router.post('/:id/pin', async (c) => {
 router.delete('/:id', async (c) => {
   const parsed = RemoveQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid query', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const id = c.req.param('id');
   const person = trustedCaller(readCallerAuthority(honoRequestFacts(c))) !== undefined;

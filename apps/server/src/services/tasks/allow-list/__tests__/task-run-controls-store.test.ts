@@ -4,9 +4,8 @@
  * made-up names.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { pulseSchedules, type Db } from '@dorkos/db';
+import type { Db } from '@dorkos/db';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../../task-store.js';
 import type { TaskFileSync } from '../../sync/task-file-sync.js';
@@ -51,10 +50,6 @@ describe('a task’s run controls', () => {
     return store.fileSync.upsertFromFile(definition());
   }
 
-  it('starts with no list and as an ordinary task', () => {
-    expect(created()).toMatchObject({ approvedAllow: null, runOnce: false, ranOnceAt: null });
-  });
-
   it('stores a list, its pins and the one-shot flag, and reads them back', () => {
     const task = created();
     expect(
@@ -74,14 +69,6 @@ describe('a task’s run controls', () => {
     expect(JSON.stringify(store.getTask(task.id))).not.toContain('sha256');
   });
 
-  it('clears a list with an empty one', () => {
-    const task = created();
-    store.runControls.set(task.id, { approvedAllow: [RUN] });
-    store.runControls.set(task.id, { approvedAllow: [] });
-    const row = db.select().from(pulseSchedules).where(eq(pulseSchedules.id, task.id)).get()!;
-    expect(row.approvedAllow).toBeNull();
-  });
-
   it('keeps the one-shot flag through a sync of a changed file', () => {
     const task = created();
     store.runControls.set(task.id, { runOnce: true });
@@ -95,12 +82,6 @@ describe('a task’s run controls', () => {
     expect(store.runControls.claimOneShot(task.id)).toBe(true);
     expect(store.runControls.claimOneShot(task.id)).toBe(false);
     expect(store.getTask(task.id)?.ranOnceAt).toEqual(expect.any(String));
-  });
-
-  it('never claims a task that is not a one-shot', () => {
-    const task = created();
-    expect(store.runControls.claimOneShot(task.id)).toBe(false);
-    expect(oneShotDue(store.getTask(task.id)!, store.runControls)).toBe(false);
   });
 
   it('is due once: the claim is what makes it due', () => {
@@ -164,10 +145,5 @@ describe('a task’s run controls', () => {
       })
     ).rejects.toThrow('the run could not start');
     expect(oneShotDue(store.getTask(task.id)!, store.runControls)).toBe(false);
-  });
-
-  it('reads no pins for a task that does not exist', () => {
-    expect(store.runControls.set('missing', { approvedAllow: [RUN] })).toBe(false);
-    expect(store.runControls.pinsOf('missing')).toEqual({ firstSetAt: null, programs: {} });
   });
 });

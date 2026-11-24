@@ -45,6 +45,7 @@ import {
   stepUpAt,
   confirmSetupAnswer,
 } from './harness.js';
+import { problemBody, validationProblemBody } from '@dorkos/http-kit';
 
 /** The repository root: the composed server's directory boundary. */
 const REPO_ROOT = realpathSync(
@@ -57,7 +58,10 @@ afterAll(() => rmSync(WORK, { recursive: true, force: true }));
 
 const S = '/api/sessions';
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json$/ };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 const SESSION_NOT_FOUND = { error: 'Session not found', code: 'SESSION_NOT_FOUND' };
 const SESSION_CWD_REQUIRED = {
   error:
@@ -73,8 +77,8 @@ const AGENT_UNVERIFIED = {
     'That agent identity could not be verified. Its token may have been revoked, or it may have expired.',
   code: 'AGENT_IDENTITY_UNVERIFIED',
 };
-const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
-const CORS_REFUSED = z.object({ code: z.literal('ORIGIN_NOT_ALLOWED') }).loose();
+const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
+const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 const OUTSIDE_BOUNDARY = {
@@ -142,14 +146,11 @@ contractSuite('the session routes, login off, nothing started', [
     path: `${S}?limit=abc`,
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      body: {
-        error: 'Invalid query',
-        details: {
-          errors: [],
-          properties: { limit: { errors: ['Invalid input: expected number, received NaN'] } },
-        },
-      },
+      headers: PROBLEM_TYPE,
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { limit: ['Invalid input: expected number, received NaN'] },
+      }),
     },
   },
   {
@@ -180,8 +181,8 @@ contractSuite('the session routes, login off, nothing started', [
     path: `${S}/recent?limit=abc`,
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      schema: z.object({ error: z.literal('Invalid query') }).loose(),
+      headers: PROBLEM_TYPE,
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {
@@ -198,8 +199,8 @@ contractSuite('the session routes, login off, nothing started', [
     path: `${S}/daily-counts?days=abc`,
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      schema: z.object({ error: z.literal('Invalid query') }).loose(),
+      headers: PROBLEM_TYPE,
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {
@@ -294,13 +295,13 @@ contractSuite('the session routes, login off, nothing started', [
   {
     name: 'GET under a session on a path no route has is the /api 404',
     path: `${S}/${UNKNOWN}/nonexistent`,
-    expect: { status: 404, headers: JSON_TYPE, body: NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NOT_FOUND },
   },
   {
     name: 'DELETE /api/sessions/:id does not exist',
     method: 'DELETE',
     path: `${S}/${UNKNOWN}`,
-    expect: { status: 404, headers: JSON_TYPE, body: NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NOT_FOUND },
   },
 
   // ---- rename and settings ----------------------------------------------------
@@ -418,7 +419,7 @@ contractSuite('the session routes, login off, nothing started', [
     path: `${S}/${UNKNOWN}/messages`,
     headers: { 'content-type': 'application/json' },
     body: '{',
-    expect: { status: 500, headers: JSON_TYPE, schema: MALFORMED_JSON },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: MALFORMED_JSON },
   },
   {
     name: 'POST /api/sessions/:id/messages over the body limit is a 413',
@@ -427,8 +428,10 @@ contractSuite('the session routes, login off, nothing started', [
     body: { content: 'x'.repeat(1_100_000) },
     expect: {
       status: 413,
-      headers: JSON_TYPE,
-      body: { error: 'That is too large to send in one request.', code: 'REQUEST_TOO_LARGE' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('request_too_large', {
+        detail: 'That is too large to send in one request.',
+      }),
     },
   },
   {
@@ -636,14 +639,11 @@ contractSuite('the session routes, login off, nothing started', [
     body: {},
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      body: {
-        error: 'Validation failed',
-        details: {
-          formErrors: [],
-          fieldErrors: { content: ['Invalid input: expected object, received undefined'] },
-        },
-      },
+      headers: PROBLEM_TYPE,
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { content: ['Invalid input: expected object, received undefined'] },
+      }),
     },
   },
   {
@@ -823,8 +823,8 @@ contractSuite('the session routes, login off, nothing started', [
     body: multipart(part('other', 'x', 'a.gif')),
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      body: { error: 'Unexpected file field', code: 'RECORDING_UPLOAD_INVALID' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('malformed_request', { detail: 'Unexpected file field' }),
     },
   },
   {
@@ -835,8 +835,8 @@ contractSuite('the session routes, login off, nothing started', [
     body: multipart(part('recording', 'x', 'a.gif'), part('recording', 'y', 'b.gif')),
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      body: { error: 'Unexpected file field', code: 'RECORDING_UPLOAD_INVALID' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('malformed_request', { detail: 'Unexpected file field' }),
     },
   },
   {
@@ -847,8 +847,8 @@ contractSuite('the session routes, login off, nothing started', [
     body: multipart(...Array.from({ length: 8 }, (_, i) => part(`f${i}`, 'x'))),
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      body: { error: 'Too many fields', code: 'RECORDING_UPLOAD_INVALID' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('malformed_request', { detail: 'Too many fields' }),
     },
   },
   {
@@ -859,8 +859,8 @@ contractSuite('the session routes, login off, nothing started', [
     body: multipart(part('requestId', 'x'.repeat(3000))),
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      body: { error: 'Field value too long', code: 'RECORDING_UPLOAD_INVALID' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('malformed_request', { detail: 'Field value too long' }),
     },
   },
   {
@@ -871,8 +871,10 @@ contractSuite('the session routes, login off, nothing started', [
     body: `--${BOUNDARY}\r\nbroken`,
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      body: { error: 'Unexpected end of form', code: 'RECORDING_UPLOAD_INVALID' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('malformed_request', {
+        detail: 'That upload couldn’t be read. Send it again as one complete form.',
+      }),
     },
   },
   {
@@ -883,8 +885,10 @@ contractSuite('the session routes, login off, nothing started', [
     body: 'abc',
     expect: {
       status: 400,
-      headers: JSON_TYPE,
-      body: { error: 'Multipart: Boundary not found', code: 'RECORDING_UPLOAD_INVALID' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('malformed_request', {
+        detail: 'That upload couldn’t be read. Send it again as one complete form.',
+      }),
     },
   },
 

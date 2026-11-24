@@ -294,7 +294,7 @@ describe('SessionPump — the state machine (spec §4.2)', () => {
     await h.pump.dispatch([{ content: 'hello', messageId: 'msg-hello' }]);
     const query = h.live();
 
-    await h.pump.teardown();
+    await h.pump.teardown('stop');
     expect(h.pump.state).toBe('cold');
     expect(h.pump.warmth).toBe('cold');
     expect(query.closed).toBe(1);
@@ -545,7 +545,7 @@ describe('SessionPump — guards', () => {
 
     const torn = harness();
     await warmed(torn);
-    await torn.pump.teardown();
+    await torn.pump.teardown('stop');
     await expect(torn.pump.warm()).rejects.toMatchObject({ reason: 'process-gone' });
   });
 });
@@ -599,7 +599,7 @@ describe('SessionPump — launch and teardown', () => {
 
     const warming = h.pump.warm();
     await vi.waitFor(() => expect(entered).toBe(true));
-    await h.pump.teardown();
+    await h.pump.teardown('stop');
     release(late);
 
     await expect(warming).rejects.toMatchObject({ reason: 'process-gone' });
@@ -657,7 +657,7 @@ describe('SessionPump — launch and teardown', () => {
       query.closed += 1;
     });
 
-    await h.pump.teardown();
+    await h.pump.teardown('stop');
     expect(query.closed).toBe(1);
     expect(h.pump.state).toBe('cold');
   });
@@ -666,8 +666,8 @@ describe('SessionPump — launch and teardown', () => {
   it('teardown is idempotent', async () => {
     const h = harness();
     await warmed(h);
-    await h.pump.teardown();
-    await h.pump.teardown();
+    await h.pump.teardown('stop');
+    await h.pump.teardown('stop');
     expect(h.queries[0]!.closed).toBe(1);
   });
 });

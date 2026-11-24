@@ -38,6 +38,7 @@ import {
   stepUpAt,
   confirmSetupAt,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 /** Stands for this server's local MCP token, which is only known once it boots. */
 const LOCAL_TOKEN = '{{local-token}}';
@@ -45,6 +46,7 @@ const LOCAL_TOKEN = '{{local-token}}';
 const AGENT = '{{agent}}';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json$/ };
 const NOSNIFF = { 'x-content-type-options': 'nosniff' };
 /** The headers every card answer carries: no caching instructions of its own. */
 const CARD_HEADERS = { ...JSON_TYPE, ...NOSNIFF, 'cache-control': null };
@@ -84,12 +86,15 @@ const NEEDS_SERVER_KEY = rpcError(
   -32001,
   'Unauthorized. Send this server\'s API key as "Authorization: Bearer <key>".'
 );
-const NOT_ALLOWED_BY_CORS = (origin: string) => ({
-  error: `This instance does not answer to pages from "${origin}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`,
-  code: 'ORIGIN_NOT_ALLOWED',
+/** The CORS refusal: one fixed sentence, whatever origin the page sent. */
+const NOT_ALLOWED_BY_CORS = problemBody('origin_not_allowed', {
+  detail:
+    'This instance does not answer to pages from this address. If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
 });
-const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR'), error: z.string() }).strict();
-const TOO_LARGE = { error: 'That is too large to send in one request.', code: 'REQUEST_TOO_LARGE' };
+const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
+const TOO_LARGE = problemBody('request_too_large', {
+  detail: 'That is too large to send in one request.',
+});
 /** The untargeted-message refusal on the fleet endpoint. */
 const NO_TARGET = (id: number) => ({
   jsonrpc: '2.0',
@@ -429,8 +434,8 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     headers: { origin: 'https://evil.example' },
     expect: {
       status: 403,
-      headers: { ...JSON_TYPE, ...NOT_COUNTED, 'access-control-allow-origin': null },
-      body: NOT_ALLOWED_BY_CORS('https://evil.example'),
+      headers: { ...PROBLEM_TYPE, ...NOT_COUNTED, 'access-control-allow-origin': null },
+      body: NOT_ALLOWED_BY_CORS,
     },
   },
   {
@@ -786,20 +791,20 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     },
   },
   {
-    name: 'POST /a2a answers malformed JSON with the error handler’s 500',
+    name: 'POST /a2a answers malformed JSON with the error handler’s 400',
     method: 'POST',
     path: '/a2a',
     headers: { ...WITH_TOKEN, 'content-type': 'application/json' },
     body: '{"jsonrpc":',
-    expect: { status: 500, headers: { ...JSON_TYPE, ...NOT_COUNTED }, schema: MALFORMED_JSON },
+    expect: { status: 400, headers: { ...PROBLEM_TYPE, ...NOT_COUNTED }, schema: MALFORMED_JSON },
   },
   {
-    name: 'POST /a2a/agents/:id answers malformed JSON with the error handler’s 500, with no token',
+    name: 'POST /a2a/agents/:id answers malformed JSON with the error handler’s 400, with no token',
     method: 'POST',
     path: `/a2a/agents/${AGENT}`,
     headers: { 'content-type': 'application/json' },
     body: '{"jsonrpc":',
-    expect: { status: 500, headers: NOT_COUNTED, schema: MALFORMED_JSON },
+    expect: { status: 400, headers: NOT_COUNTED, schema: MALFORMED_JSON },
   },
   {
     name: 'POST /a2a answers a top-level JSON string with the error handler’s 500',
@@ -807,7 +812,7 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     path: '/a2a',
     headers: { ...WITH_TOKEN, 'content-type': 'application/json' },
     body: '"message/send"',
-    expect: { status: 500, schema: MALFORMED_JSON },
+    expect: { status: 400, schema: MALFORMED_JSON },
   },
   {
     name: 'POST /a2a refuses a body over a megabyte, with the token',
@@ -818,7 +823,7 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
       ...rpc('message/send', legacyMessage('m-big', { agentId: AGENT })),
       padding: 'x'.repeat(1_100_000),
     },
-    expect: { status: 413, headers: { ...JSON_TYPE, ...NOT_COUNTED }, body: TOO_LARGE },
+    expect: { status: 413, headers: { ...PROBLEM_TYPE, ...NOT_COUNTED }, body: TOO_LARGE },
   },
   {
     name: 'POST /a2a/agents/:id refuses a body over a megabyte, with no token',
@@ -853,7 +858,7 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     expect: {
       status: 403,
       headers: { ...NOT_COUNTED, 'access-control-allow-origin': null },
-      body: NOT_ALLOWED_BY_CORS('https://evil.example'),
+      body: NOT_ALLOWED_BY_CORS,
     },
   },
   {

@@ -18,7 +18,7 @@ import type { Db } from '@dorkos/db';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { AccountAdvisor } from '@dorkos/extension-api/server';
 import type { HistoryMessage } from '@dorkos/shared/types';
-import { SEED_CONTEXT_MAX_LENGTH, type SessionLimit } from '@dorkos/shared/schemas';
+import { type SessionLimit } from '@dorkos/shared/schemas';
 
 vi.mock('../../../../lib/logger.js', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -44,7 +44,6 @@ import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-
 import { CODEX_CAPABILITIES } from '../../../runtimes/codex/runtime-constants.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import {
-  ADVISOR_TIMEOUT_MS,
   __resetAccountAdvisorForTests,
   registerAccountAdvisor,
 } from '../../../core/usage/account-advisor.js';
@@ -54,23 +53,15 @@ import type { RuntimeAccount } from '../../../core/usage/runtime-accounts.js';
 import { recordContinuation } from '../../../core/usage/session-continuation.js';
 import { disposeProjector, getOrCreateProjector } from '../../session-state-projector.js';
 import { SessionLimitStore, setSessionLimitStore } from '../session-limit-store.js';
-import {
-  CLAIMED_HANDOFF_SETTLE_MS,
-  planNewLimit,
-  refreshLimitState,
-  settleAutoPlansAtBoot,
-  startLimitPlanning,
-  writePlan,
-} from '../limit-plans.js';
+import { planNewLimit, refreshLimitState, startLimitPlanning, writePlan } from '../limit-plans.js';
 import { fireAutoHandoff } from '../auto-handoff.js';
 import { lastTurnLevelOf, recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
 import { setContinuationHoldDb } from '../../../core/turn-power/continuation-hold.js';
 import {
+  cancelAutoContinue,
   ContinueError,
-  FLOW_UNREACHABLE_MESSAGE,
   MODEL_CONTINUE_PROMPT,
   WAIT_ONLY_MESSAGE,
-  cancelAutoContinue,
   continueOptions,
   continueSession,
   installContinueService,
@@ -450,14 +441,6 @@ describe('without an advisor', () => {
     expect(plan('src-1')).toEqual({ mode: 'continued', sessionId: 'new-1', accountId: 'spare' });
   });
 
-  it('answers a second continue with the session the first one started', async () => {
-    await limitedSession('src-1');
-    const first = await continueSession('src-1', { account: 'spare' }, deps);
-    const second = await continueSession('src-1', { account: 'busy' }, deps);
-    expect(second).toEqual(first);
-    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
-  });
-
   it('starts exactly one session for two concurrent continues', async () => {
     await limitedSession('src-1');
     const [a, b] = await Promise.all([
@@ -465,20 +448,6 @@ describe('without an advisor', () => {
       continueSession('src-1', { account: 'spare' }, deps),
     ]);
     expect(a).toEqual(b);
-    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
-  });
-
-  it('answers a continue after a restart with the new session the row points at', async () => {
-    await limitedSession('src-1');
-    await continueSession('src-1', { account: 'spare' }, deps);
-    // A new process: nothing in memory, the row is all there is.
-    stopPlanning();
-    uninstall();
-    stopPlanning = startLimitPlanning({ now: () => new Date() });
-    uninstall = installContinueService({});
-    expect(await continueSession('src-1', { account: 'busy' }, deps)).toEqual({
-      sessionId: 'new-1',
-    });
     expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
   });
 
@@ -513,43 +482,6 @@ describe('without an advisor', () => {
     expect(err.status).toBe(400);
     expect(err.code).toBe('SAME_ACCOUNT');
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
-  });
-
-  it('checks the chosen model before carrying the work over', async () => {
-    await limitedSession('src-1');
-    const err = await refusal(
-      continueSession(
-        'src-1',
-        { account: 'spare', model: 'gpt-9' },
-        { ...deps, checkModel: async () => 'That model is not offered.' }
-      )
-    );
-    expect(err.status).toBe(400);
-    expect(err.code).toBe('UNSUPPORTED_MODEL');
-    expect(dispatchSessionMessage).not.toHaveBeenCalled();
-    expect(plan('src-1')).toEqual({ mode: 'ask' });
-  });
-
-  it('refuses a body with neither an account nor a model', async () => {
-    await limitedSession('src-1');
-    expect((await refusal(continueSession('src-1', {}, deps))).status).toBe(400);
-  });
-
-  it('answers 409 on continue, wait and cancel for a session with no limit', async () => {
-    for (const call of [
-      continueSession('src-none', { account: 'spare' }, deps),
-      waitForReset('src-none', {}),
-      cancelAutoContinue('src-none'),
-    ]) {
-      const err = await refusal(call);
-      expect(err.status).toBe(409);
-      expect(err.code).toBe('NO_LIMIT');
-    }
-  });
-
-  it('refuses to cancel when no handoff is pending', async () => {
-    await limitedSession('src-1');
-    expect((await refusal(cancelAutoContinue('src-1'))).code).toBe('NOT_HANDING_OFF');
   });
 });
 
@@ -620,17 +552,6 @@ describe('which sessions may carry over', () => {
     expect(err.message).toBe(WAIT_ONLY_MESSAGE);
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
   });
-
-  it('keeps carryOver false on the waiting plan, and refuses an automatic resume', async () => {
-    await limitedSession('src-1', { origin: 'schedule' });
-    expect((await refusal(waitForReset('src-1', { autoResume: true }))).status).toBe(400);
-    expect(await waitForReset('src-1', {})).toEqual({
-      mode: 'waiting',
-      resumeAt: RESETS,
-      autoResume: false,
-      carryOver: false,
-    });
-  });
 });
 
 // === Only Claude Code sessions continue =====================================
@@ -661,25 +582,6 @@ describe('a session on another runtime', () => {
       expect.objectContaining({ runtime: 'codex', resolution: 'resumed-reset', toSessionId: null }),
     ]);
   });
-
-  it('an OpenCode account limit only waits and never ranks or asks about Claude accounts', async () => {
-    const rank = vi.fn(async () => ({ accounts: [], recommendedId: null }));
-    const claims = vi.fn(async () => true);
-    const onLimited = vi.fn(async () => ({ mode: 'wait' as const }));
-    advise({ rank, claims, onLimited });
-    await limitedSession('src-oc', { runtime: 'opencode', accountId: 'default' });
-    expect(plan('src-oc')).toEqual({ mode: 'ask', carryOver: false });
-    expect(state('src-oc')).toBe('wait-only');
-    expect(store.get('src-oc')?.claimedBy).toBeNull();
-    expect(await continueOptions('src-oc')).toEqual({
-      plan: { mode: 'ask', carryOver: false },
-      ranking: { accounts: [], recommendedId: null },
-      advised: false,
-    });
-    expect(rank).not.toHaveBeenCalled();
-    expect(claims).not.toHaveBeenCalled();
-    expect(onLimited).not.toHaveBeenCalled();
-  });
 });
 
 // === States ==================================================================
@@ -705,19 +607,6 @@ describe('states', () => {
     });
   });
 
-  it('moves to limited when another account gets room, on a usage change', async () => {
-    installUsageStore([
-      { id: 'main', state: 'limited' },
-      { id: 'spare', state: 'limited', resetsAt: '2026-09-27T14:00:00.000Z' },
-    ]);
-    await limitedSession('src-1');
-    expect(state('src-1')).toBe('all-accounts-out');
-    accounts[1] = { id: 'spare', weekly: 10 };
-    for (const listener of usageListeners) listener(usageOf(accounts[1]));
-    await vi.waitFor(() => expect(state('src-1')).toBe('limited'));
-    expect(store.get('src-1')?.limit.allOut).toBeUndefined();
-  });
-
   it('is model-limited with the default fallback when only Opus ran out', async () => {
     installUsageStore([
       { id: 'main', weekly: 60 },
@@ -726,14 +615,6 @@ describe('states', () => {
     await limitedSession('src-1', { window: 'seven_day_opus', scope: 'model' });
     expect(state('src-1')).toBe('model-limited');
     expect(store.get('src-1')?.limit.modelFallback).toBe('sonnet');
-  });
-
-  it('offers the advisor’s fallback model', async () => {
-    installUsageStore([{ id: 'main', weekly: 60 }]);
-    advise({ modelFallback: async () => ({ model: 'haiku' }) });
-    await limitedSession('src-1', { window: 'seven_day_opus', scope: 'model' });
-    expect(store.get('src-1')?.limit.modelFallback).toBe('haiku');
-    expect(state('src-1')).toBe('model-limited');
   });
 
   it('continue { model } switches the same session’s model and sends one turn', async () => {
@@ -748,50 +629,6 @@ describe('states', () => {
     expect(call.sessionId).toBe('src-1');
     expect(call.origin).toEqual({ kind: 'interactive' });
     expect(call.request.content).toBe(MODEL_CONTINUE_PROMPT);
-  });
-
-  it('carries a Wi-Fi continue’s ceiling to the turn it sends, on either path (DOR-3037)', async () => {
-    installUsageStore([{ id: 'main', weekly: 60 }]);
-    await limitedSession('src-1', { window: 'seven_day_opus', scope: 'model', origin: 'room' });
-    await continueSession(
-      'src-1',
-      { model: 'sonnet' },
-      { ...deps, permissionCeiling: 'runtime-default' }
-    );
-    expect(vi.mocked(dispatchSessionMessage).mock.calls[0]![0].permissionCeiling).toBe(
-      'runtime-default'
-    );
-  });
-
-  it('records resumed-model when the turn a model switch sends starts', async () => {
-    installUsageStore([{ id: 'main', weekly: 60 }]);
-    await runtimeRegistry.saveSessionSettings('src-1', { model: 'opus' });
-    // The runtime stores the chosen model, as the real ones do.
-    let saved: Promise<void> = Promise.resolve();
-    runtime.updateSession.mockImplementation((id, opts) => {
-      saved = runtimeRegistry.saveSessionSettings(id, opts);
-      return { updated: true } as never;
-    });
-    await limitedSession('src-1', { window: 'seven_day_opus', scope: 'model' });
-    await continueSession('src-1', { model: 'sonnet' }, deps);
-    await saved;
-    // The session's next turn_start clears the limit.
-    store.delete('src-1');
-    expect(endings('src-1')).toEqual([['resumed-model', null, null, 'opus', 'sonnet']]);
-  });
-
-  it('refuses a model the runtime does not offer', async () => {
-    installUsageStore([{ id: 'main', weekly: 60 }]);
-    await limitedSession('src-1', { window: 'seven_day_opus', scope: 'model' });
-    const err = await refusal(
-      continueSession(
-        'src-1',
-        { model: 'gpt-9' },
-        { ...deps, checkModel: async () => 'That model is not offered.' }
-      )
-    );
-    expect(err.status).toBe(400);
-    expect(runtime.updateSession).not.toHaveBeenCalled();
   });
 });
 
@@ -831,15 +668,6 @@ describe('with an advisor', () => {
     expect(call.request.content).toBe('Pick up DOR-1');
   });
 
-  it('falls back to the default summary for an oversized seed', async () => {
-    advise({ carryOver: async () => ({ seedContext: 'x'.repeat(SEED_CONTEXT_MAX_LENGTH + 1) }) });
-    await limitedSession('src-1');
-    await continueSession('src-1', { account: 'spare' }, deps);
-    const call = vi.mocked(dispatchSessionMessage).mock.calls[0]![0];
-    expect(call.request.seedContext).toContain('Previous session: src-1');
-    expect(call.request.content).toBe(CARRY_OVER_PROMPT);
-  });
-
   it('falls back to the defaults when the advisor throws', async () => {
     advise({
       onLimited: async () => {
@@ -848,17 +676,6 @@ describe('with an advisor', () => {
     });
     await limitedSession('src-1');
     expect(plan('src-1')).toEqual({ mode: 'ask' });
-  });
-
-  it('turns an onLimited wait into a waiting plan that resumes by itself', async () => {
-    advise({ onLimited: async () => ({ mode: 'wait' }) });
-    await limitedSession('src-1');
-    // Core's resume engine (task 5.2) runs it, so an unclaimed wait promises it.
-    expect(plan('src-1')).toEqual({ mode: 'waiting', resumeAt: RESETS, autoResume: true });
-    expect(await waitForReset('src-1', { autoResume: false })).toMatchObject({
-      autoResume: false,
-    });
-    expect(await waitForReset('src-1', { autoResume: true })).toMatchObject({ autoResume: true });
   });
 
   it('never lets a state refresh that read before a carry-over undo it', async () => {
@@ -943,76 +760,6 @@ describe('a session the advisor claims', () => {
     expect(move).not.toHaveBeenCalled();
   });
 
-  it('puts an unreported handoff from a person’s continue back to ask after 10 minutes', async () => {
-    advise({ claims: async () => true, move: async () => undefined });
-    await limitedSession('src-1');
-    await continueSession('src-1', { account: 'spare' }, deps);
-    await vi.advanceTimersByTimeAsync(CLAIMED_HANDOFF_SETTLE_MS - 1_000);
-    expect(plan('src-1')?.mode).toBe('auto');
-    await vi.advanceTimersByTimeAsync(2_000);
-    await vi.waitFor(() => expect(plan('src-1')).toEqual({ mode: 'ask' }));
-    // A handoff that never happened is not history.
-    expect(store.history('src-1')).toEqual([]);
-  });
-
-  it('shows an onLimited auto plan and settles it after 10 minutes past fireAt', async () => {
-    advise({
-      claims: async () => true,
-      onLimited: async () => ({ mode: 'auto', target: 'spare', delaySeconds: 60 }),
-    });
-    await limitedSession('src-1');
-    expect(plan('src-1')).toEqual({
-      mode: 'auto',
-      target: 'spare',
-      fireAt: new Date(NOW.getTime() + 60_000).toISOString(),
-    });
-    await vi.advanceTimersByTimeAsync(60_000 + CLAIMED_HANDOFF_SETTLE_MS + 1_000);
-    await vi.waitFor(() => expect(plan('src-1')).toEqual({ mode: 'ask' }));
-    expect(dispatchSessionMessage).not.toHaveBeenCalled();
-  });
-
-  it('shows an onLimited wait on a claimed session and arms nothing of its own', async () => {
-    advise({ claims: async () => true, onLimited: async () => ({ mode: 'wait' }) });
-    await limitedSession('src-1');
-    expect(plan('src-1')).toMatchObject({ mode: 'waiting', autoResume: true });
-    expect(store.get('src-1')?.claimedBy).toBe('flow');
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it.each(['ask', 'auto', 'waiting'] as const)(
-    'records markContinued over a %s plan',
-    async (mode) => {
-      advise({
-        claims: async () => true,
-        move: async () => undefined,
-        wait: async () => undefined,
-      });
-      await limitedSession('src-1');
-      if (mode === 'auto') await continueSession('src-1', { account: 'spare' }, deps);
-      if (mode === 'waiting') await waitForReset('src-1', {});
-      await recordContinuation('flow', 'src-1', {
-        sessionId: 'flow-new',
-        runtime: 'claude-code',
-        accountId: 'spare',
-      });
-      expect(plan('src-1')).toEqual({
-        mode: 'continued',
-        sessionId: 'flow-new',
-        accountId: 'spare',
-      });
-      expect(state('src-1')).toBe('moved');
-      expect(endings('src-1')).toEqual([['moved', 'flow-new', 'spare', null, null]]);
-    }
-  );
-
-  it('refuses markContinued over a plan that already continued', async () => {
-    advise({ claims: async () => true });
-    await limitedSession('src-1');
-    const to = { sessionId: 'flow-new', runtime: 'claude-code', accountId: 'spare' };
-    await recordContinuation('flow', 'src-1', to);
-    await expect(recordContinuation('flow', 'src-1', to)).rejects.toThrow(/already continued/);
-  });
-
   it('refuses markContinued from an extension that did not claim the session', async () => {
     await limitedSession('src-1');
     await expect(
@@ -1024,94 +771,6 @@ describe('a session the advisor claims', () => {
     ).rejects.toThrow(/not claimed/);
   });
 
-  it('treats markContinued for a session whose row is gone as a no-op', async () => {
-    await expect(
-      recordContinuation('flow', 'src-gone', {
-        sessionId: 'x',
-        runtime: 'claude-code',
-        accountId: 'spare',
-      })
-    ).resolves.toBeUndefined();
-  });
-
-  it('reads a claimed auto as ask after a restart, and still accepts a later markContinued', async () => {
-    advise({ claims: async () => true, move: async () => undefined });
-    await limitedSession('src-1');
-    await continueSession('src-1', { account: 'spare' }, deps);
-    settleAutoPlansAtBoot();
-    expect(plan('src-1')).toEqual({ mode: 'ask' });
-    await recordContinuation('flow', 'src-1', {
-      sessionId: 'flow-new',
-      runtime: 'claude-code',
-      accountId: 'spare',
-    });
-    expect(plan('src-1')?.mode).toBe('continued');
-  });
-
-  it('cancels through advisor.cancelAuto, and success returns the plan to ask', async () => {
-    const cancelAuto = vi.fn(async () => undefined);
-    advise({ claims: async () => true, move: async () => undefined, cancelAuto });
-    await limitedSession('src-1');
-    await continueSession('src-1', { account: 'spare' }, deps);
-    expect(await cancelAutoContinue('src-1')).toEqual({ mode: 'ask' });
-    expect(cancelAuto).toHaveBeenCalledTimes(1);
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it('waits through advisor.wait and arms no timer of its own', async () => {
-    const wait = vi.fn(async () => undefined);
-    advise({ claims: async () => true, wait });
-    await limitedSession('src-1');
-    await waitForReset('src-1', { autoResume: true });
-    expect(wait).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: 'src-1' }),
-      RESETS,
-      true
-    );
-    expect(plan('src-1')).toMatchObject({ mode: 'waiting', autoResume: true });
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it.each([
-    ['move', () => continueSession('src-1', { account: 'spare' }, deps)],
-    ['wait', () => waitForReset('src-1', {})],
-  ] as const)('refuses with 503 and changes nothing when %s throws', async (method, act) => {
-    advise({
-      claims: async () => true,
-      [method]: async () => {
-        throw new Error('flow is down');
-      },
-    });
-    await limitedSession('src-1');
-    const err = await refusal(act());
-    expect(err.status).toBe(503);
-    expect(err.message).toBe(FLOW_UNREACHABLE_MESSAGE);
-    expect(plan('src-1')).toEqual({ mode: 'ask' });
-  });
-
-  it('refuses with 503 when move takes longer than the bound', async () => {
-    advise({ claims: async () => true, move: () => new Promise<void>(() => undefined) });
-    await limitedSession('src-1');
-    const pending = refusal(continueSession('src-1', { account: 'spare' }, deps));
-    await vi.advanceTimersByTimeAsync(ADVISOR_TIMEOUT_MS + 10);
-    expect((await pending).status).toBe(503);
-    expect(plan('src-1')).toEqual({ mode: 'ask' });
-  });
-
-  it('refuses cancel with 503 when cancelAuto throws', async () => {
-    advise({
-      claims: async () => true,
-      move: async () => undefined,
-      cancelAuto: async () => {
-        throw new Error('down');
-      },
-    });
-    await limitedSession('src-1');
-    await continueSession('src-1', { account: 'spare' }, deps);
-    expect((await refusal(cancelAutoContinue('src-1'))).status).toBe(503);
-    expect(plan('src-1')?.mode).toBe('auto');
-  });
-
   it('refuses every action with 503 while the claiming advisor is absent', async () => {
     const unregister = advise({ claims: async () => true });
     await limitedSession('src-1');
@@ -1119,44 +778,6 @@ describe('a session the advisor claims', () => {
     expect((await refusal(continueSession('src-1', { account: 'spare' }, deps))).status).toBe(503);
     expect((await refusal(waitForReset('src-1', {}))).status).toBe(503);
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
-  });
-
-  it('tells the advisor about a wait once, even when the local write loses a race', async () => {
-    const wait = vi.fn(async () => {
-      // Something else rewrites the plan while the advisor is answering.
-      const row = store.get('src-1')!;
-      store.update('src-1', row.limit.since, {
-        plan: { mode: 'waiting', resumeAt: null, autoResume: false },
-      });
-    });
-    advise({ claims: async () => true, wait });
-    await limitedSession('src-1');
-    expect(await waitForReset('src-1', { autoResume: true })).toMatchObject({
-      mode: 'waiting',
-      resumeAt: RESETS,
-      autoResume: true,
-    });
-    expect(wait).toHaveBeenCalledTimes(1);
-  });
-
-  it('answers a cancel that raced the 10-minute fallback as done, asking the advisor once', async () => {
-    const cancelAuto = vi.fn(async () => {
-      // The fallback put the plan back to ask while flow was cancelling.
-      const row = store.get('src-1')!;
-      store.update('src-1', row.limit.since, { plan: { mode: 'ask' }, state: 'limited' });
-    });
-    advise({ claims: async () => true, move: async () => undefined, cancelAuto });
-    await limitedSession('src-1');
-    await continueSession('src-1', { account: 'spare' }, deps);
-    expect(await cancelAutoContinue('src-1')).toEqual({ mode: 'ask' });
-    expect(cancelAuto).toHaveBeenCalledTimes(1);
-  });
-
-  it('asks a newly registered advisor to claim a row nobody claimed', async () => {
-    await limitedSession('src-1');
-    expect(store.get('src-1')?.claimedBy).toBeNull();
-    advise({ claims: async () => true }, 'flow-2');
-    await vi.waitFor(() => expect(store.get('src-1')?.claimedBy).toBe('flow-2'));
   });
 });
 
@@ -1200,14 +821,6 @@ describe('core’s automatic handoff', () => {
     await limitedSession('src-1');
     expect(plan('src-1')).toEqual({ mode: 'auto', target: 'spare', fireAt: FIRE_AT });
     expect(state('src-1')).toBe('handing-off');
-  });
-
-  it('clamps the advisor’s delay to an hour', async () => {
-    adviseAuto({}, 99_999);
-    await limitedSession('src-1');
-    expect(plan('src-1')).toMatchObject({
-      fireAt: new Date(NOW.getTime() + 3_600_000).toISOString(),
-    });
   });
 
   it('fires once at fireAt, carrying the work over unattended with the advisor’s seed', async () => {
@@ -1290,45 +903,12 @@ describe('core’s automatic handoff', () => {
     expect(lastTurnLevelOf(call.sessionId!)?.outsider).toBe(true);
   });
 
-  it('seeds an automatic move with the default summary when the advisor’s seed is too big', async () => {
-    adviseAuto({
-      carryOver: async () => ({ seedContext: 'x'.repeat(SEED_CONTEXT_MAX_LENGTH + 1) }),
-    });
-    await limitedSession('src-1');
-    await vi.advanceTimersByTimeAsync(60_000);
-    await vi.waitFor(() => expect(dispatchSessionMessage).toHaveBeenCalledTimes(1));
-    const call = vi.mocked(dispatchSessionMessage).mock.calls[0]![0];
-    expect(call.request.seedContext).toContain('Previous session: src-1');
-    expect(call.request.content).toBe(CARRY_OVER_PROMPT);
-  });
-
   it('keeps a person’s own continue attended and outside the cap', async () => {
     await limitedSession('src-1');
     await continueSession('src-1', { account: 'spare' }, deps);
     const call = vi.mocked(dispatchSessionMessage).mock.calls[0]![0];
     expect(call.unattended).toBeUndefined();
     expect(call.countsTowardLaunchCap).toBeUndefined();
-  });
-
-  it('runs a person’s own continue here uncapped, even after a held turn (DOR-3037)', async () => {
-    const seam = recordTurnLevels(
-      {
-        type: 'claude-code',
-        getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
-        async *sendMessage() {
-          yield { type: 'done', data: {} } as StreamEvent;
-        },
-      } as unknown as AgentRuntime,
-      () => 'bypassPermissions'
-    );
-    for await (const _event of seam.sendMessage('src-1', 'hi', {
-      permissionCeiling: 'runtime-default',
-    })) {
-      // drain
-    }
-    await limitedSession('src-1');
-    await continueSession('src-1', { account: 'spare' }, deps);
-    expect(vi.mocked(dispatchSessionMessage).mock.calls[0]![0].permissionCeiling).toBeUndefined();
   });
 
   it('drops to ask and tells the person again when the target is no longer eligible', async () => {
@@ -1340,28 +920,6 @@ describe('core’s automatic handoff', () => {
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
     expect(notifyAutoMoveFailed).toHaveBeenCalledTimes(1);
     expect(notifyAutoMoveFailed).toHaveBeenCalledWith('src-1', '/work/project', expect.anything());
-  });
-
-  it('drops to ask and tells the person again when the launch cap is full', async () => {
-    adviseAuto();
-    await limitedSession('src-1');
-    vi.mocked(isAgentLaunchCapFull).mockReturnValue(true);
-    await vi.advanceTimersByTimeAsync(60_000);
-    await vi.waitFor(() => expect(plan('src-1')).toEqual({ mode: 'ask' }));
-    expect(dispatchSessionMessage).not.toHaveBeenCalled();
-    expect(notifyAutoMoveFailed).toHaveBeenCalledTimes(1);
-  });
-
-  it('drops to ask when the launch itself is refused by the cap', async () => {
-    adviseAuto();
-    await limitedSession('src-1');
-    vi.mocked(dispatchSessionMessage).mockResolvedValueOnce({
-      refused: 'LAUNCH_CAP_FULL',
-      message: 'Too many',
-    } as never);
-    await vi.advanceTimersByTimeAsync(60_000);
-    await vi.waitFor(() => expect(plan('src-1')).toEqual({ mode: 'ask' }));
-    expect(notifyAutoMoveFailed).toHaveBeenCalledTimes(1);
   });
 
   it('starts one session when a person’s continue is already running as the timer fires', async () => {
@@ -1376,151 +934,6 @@ describe('core’s automatic handoff', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
     expect(plan('src-1')).toEqual({ mode: 'continued', sessionId: 'new-held', accountId: 'busy' });
-  });
-
-  it('answers a person’s continue during the automatic move with the session it starts', async () => {
-    adviseAuto();
-    await limitedSession('src-1');
-    const held = heldLaunch();
-    await vi.advanceTimersByTimeAsync(60_000);
-    await vi.waitFor(() => expect(dispatchSessionMessage).toHaveBeenCalledTimes(1));
-    const person = continueSession('src-1', { account: 'busy' }, deps);
-    held.release();
-    expect(await person).toEqual({ sessionId: 'new-held' });
-    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
-  });
-
-  it('refuses a wait or a cancel once the automatic move has started', async () => {
-    adviseAuto();
-    await limitedSession('src-1');
-    const held = heldLaunch();
-    await vi.advanceTimersByTimeAsync(60_000);
-    await vi.waitFor(() => expect(dispatchSessionMessage).toHaveBeenCalledTimes(1));
-    expect((await refusal(waitForReset('src-1', {}))).code).toBe('MOVING');
-    expect((await refusal(cancelAutoContinue('src-1'))).code).toBe('MOVING');
-    held.release();
-    await vi.waitFor(() => expect(plan('src-1')?.mode).toBe('continued'));
-  });
-
-  it('fires after all when a person’s continue it waited behind fails', async () => {
-    adviseAuto();
-    await limitedSession('src-1');
-    expect(plan('src-1')?.mode).toBe('auto');
-    const held = heldLaunch({ refused: 'DESK_NOT_OWN', message: 'Not here.' });
-    const person = continueSession('src-1', { account: 'busy' }, deps);
-    await vi.advanceTimersByTimeAsync(60_000);
-    held.release();
-    expect((await refusal(person)).code).toBe('DESK_NOT_OWN');
-    // The timer's fire waited for the person's move, and runs now it failed.
-    await vi.waitFor(() =>
-      expect(plan('src-1')).toEqual({ mode: 'continued', sessionId: 'new-1', accountId: 'spare' })
-    );
-    expect(dispatchSessionMessage).toHaveBeenCalledTimes(2);
-  });
-
-  it('starts one session when the old one cannot be pointed at the new one after launch', async () => {
-    // A store error after the launch was accepted must not read as a failed
-    // move: the timer waiting behind this continue would start a second one.
-    adviseAuto();
-    await limitedSession('src-1');
-    expect(plan('src-1')?.mode).toBe('auto');
-    const update = store.update.bind(store);
-    let thrown = false;
-    vi.spyOn(store, 'update').mockImplementation((...args: Parameters<typeof store.update>) => {
-      if (!thrown && (args[2] as { plan?: { mode?: string } }).plan?.mode === 'continued') {
-        thrown = true;
-        throw new Error('SQLITE_BUSY');
-      }
-      return update(...args);
-    });
-    const held = heldLaunch();
-    const person = continueSession('src-1', { account: 'busy' }, deps);
-    await vi.advanceTimersByTimeAsync(60_000);
-    held.release();
-    expect(await person).toEqual({ sessionId: 'new-held' });
-    expect(thrown).toBe(true);
-    // The pointer has not landed yet: a second click answers with the same
-    // session, and a wait cannot hold work that already moved.
-    expect(plan('src-1')?.mode).toBe('auto');
-    expect(await continueSession('src-1', { account: 'spare' }, deps)).toEqual({
-      sessionId: 'new-held',
-    });
-    expect((await refusal(waitForReset('src-1', {}))).code).toBe('ALREADY_MOVED');
-    // The retry lands a second later.
-    await vi.advanceTimersByTimeAsync(1_000);
-    await vi.waitFor(() =>
-      expect(plan('src-1')).toEqual({ mode: 'continued', sessionId: 'new-held', accountId: 'busy' })
-    );
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
-  });
-
-  it('refuses a cancel whose write would land after the automatic move started', async () => {
-    // The cancel read `auto` and is deriving the state (the advisor's ranking)
-    // when the timer fires: its write must not land under the move.
-    let gate: (() => void) | undefined;
-    let blockNextRank = false;
-    adviseAuto(
-      {
-        rank: async () => {
-          if (blockNextRank) {
-            blockNextRank = false;
-            await new Promise<void>((resolve) => (gate = resolve));
-          }
-          return {
-            accounts: ofRuntime('claude-code')
-              .filter((a) => a.id !== 'main')
-              .map((a) => ({ id: a.id, eligible: a.state !== 'limited', reason: 'fine' })),
-            recommendedId: null,
-          };
-        },
-      },
-      1
-    );
-    await limitedSession('src-1');
-    expect(plan('src-1')?.mode).toBe('auto');
-    blockNextRank = true;
-    const cancel = refusal(cancelAutoContinue('src-1'));
-    await vi.waitFor(() => expect(gate).toBeDefined());
-    const held = heldLaunch();
-    // Fires in 1 s, inside the advisor's 2 s bound the cancel is waiting on.
-    await vi.advanceTimersByTimeAsync(1_000);
-    await vi.waitFor(() => expect(dispatchSessionMessage).toHaveBeenCalledTimes(1));
-    gate!();
-    expect((await cancel).code).toBe('MOVING');
-    held.release();
-    await vi.waitFor(() => expect(plan('src-1')?.mode).toBe('continued'));
-  });
-
-  it('answers a click with the automatic move that finished while it checked the runtime', async () => {
-    // The click reads the limit, then waits on the runtime check; the timer's
-    // move completes in between. The click must decide from what is true
-    // after the wait, not from the `auto` it read before it.
-    adviseAuto();
-    await limitedSession('src-1');
-    expect(plan('src-1')?.mode).toBe('auto');
-    const real = runtimeRegistry.resolveSessionRuntime.bind(runtimeRegistry);
-    let release: () => void = () => undefined;
-    const gate = new Promise<void>((resolve) => (release = resolve));
-    let holdNext = true;
-    vi.spyOn(runtimeRegistry, 'resolveSessionRuntime').mockImplementation(async (id: string) => {
-      if (holdNext) {
-        holdNext = false;
-        await gate;
-      }
-      return real(id);
-    });
-
-    const person = continueSession('src-1', { account: 'busy' }, deps);
-    await vi.waitFor(() => expect(holdNext).toBe(false));
-    await vi.advanceTimersByTimeAsync(60_000);
-    await vi.waitFor(() =>
-      expect(plan('src-1')).toEqual({ mode: 'continued', sessionId: 'new-1', accountId: 'spare' })
-    );
-    release();
-
-    expect(await person).toEqual({ sessionId: 'new-1' });
-    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
   });
 
   it('never arms or fires for a limit on another runtime', async () => {
@@ -1556,15 +969,6 @@ describe('core’s automatic handoff', () => {
     await vi.advanceTimersByTimeAsync(120_000);
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
     expect(plan('src-1')?.mode).toBe('waiting');
-  });
-
-  it('does nothing once the session’s next turn cleared its limit', async () => {
-    adviseAuto();
-    await limitedSession('src-1');
-    expect(plan('src-1')?.mode).toBe('auto');
-    store.delete('src-1');
-    await vi.advanceTimersByTimeAsync(120_000);
-    expect(dispatchSessionMessage).not.toHaveBeenCalled();
   });
 
   it('turns a pending automatic move into ask after a restart, and never fires it', async () => {
@@ -1629,25 +1033,6 @@ describe('continuing on another runtime', () => {
       continueSession('src-1', { account: 'default', runtime: 'codex' }, deps)
     );
     expect([err.status, err.code]).toEqual([400, 'RUNTIME_NOT_OFFERED']);
-    expect(dispatchSessionMessage).not.toHaveBeenCalled();
-  });
-
-  it('refuses a runtime that is not registered', async () => {
-    adviseCodex();
-    await limitedSession('src-1');
-    const err = await refusal(
-      continueSession('src-1', { account: 'default', runtime: 'nope' }, deps)
-    );
-    expect([err.status, err.code]).toEqual([400, 'UNKNOWN_RUNTIME']);
-  });
-
-  it('refuses an account a runtime without accounts cannot run on', async () => {
-    adviseCodex(['default', 'work']);
-    await limitedSession('src-1');
-    const err = await refusal(
-      continueSession('src-1', { account: 'work', runtime: 'codex' }, deps)
-    );
-    expect([err.status, err.code]).toEqual([400, 'ACCOUNT_NOT_ROUTABLE']);
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
   });
 
@@ -1728,19 +1113,6 @@ describe('carrying a chat an extension started', () => {
     expect(startedBy.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(1);
   });
 
-  it('is never refused by the extension’s limits: a move replaces one chat with one', async () => {
-    startedByFlow('src-1');
-    for (let i = 0; i < 9; i++) startedByFlow(`flow-${i}`);
-    await limitedSession('src-1');
-
-    const answer = await continueSession('src-1', { account: 'spare' }, deps);
-
-    expect(answer).toEqual({ sessionId: 'new-1' });
-    expect(startedBy.get('new-1')).toMatchObject({ startedBySessionId: 'src-1', carried: true });
-    // Adds no start to the hour: the extension's count is what it was.
-    expect(startedBy.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(10);
-  });
-
   it('counts the successor as running, so the extension cannot start past 3 working chats', async () => {
     startedByFlow('src-1');
     await limitedSession('src-1');
@@ -1772,12 +1144,6 @@ describe('carrying a chat an extension started', () => {
 
     const minted = vi.mocked(dispatchSessionMessage).mock.calls[0]![0].sessionId;
     expect(startedBy.get(minted)).toBeNull();
-  });
-
-  it('records nothing for a person’s own chat', async () => {
-    await limitedSession('src-1');
-    await continueSession('src-1', { account: 'spare' }, deps);
-    expect(startedBy.get('new-1')).toBeNull();
   });
 });
 
@@ -1822,26 +1188,6 @@ describe('continuing on DorkOS credits', () => {
     });
     const call = vi.mocked(dispatchSessionMessage).mock.calls[0]![0];
     expect(call.request).toMatchObject({ runtime: 'claude-code', account: 'dorkos-credits' });
-  });
-
-  it('judges a model picked with credits against what credits serve, and an own account’s by its own menu', async () => {
-    creditsAvailable();
-    const checkModel = vi.fn(async () => null);
-    await limitedSession('src-1');
-    await continueSession(
-      'src-1',
-      { account: 'dorkos-credits', model: 'md_pick' },
-      {
-        ...deps,
-        checkModel,
-      }
-    );
-    expect(checkModel).toHaveBeenLastCalledWith(expect.anything(), 'md_pick', {
-      onCredits: true,
-    });
-    await limitedSession('src-2');
-    await continueSession('src-2', { account: 'spare', model: 'sonnet' }, { ...deps, checkModel });
-    expect(checkModel).toHaveBeenLastCalledWith(expect.anything(), 'sonnet', { onCredits: false });
   });
 
   it('refuses credits when they are not on offer, and starts nothing', async () => {

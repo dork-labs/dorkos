@@ -43,7 +43,6 @@ import {
 } from '../services/tasks/lifecycle/delete-task.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { loadTemplates } from '../services/tasks/task-templates.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { clearsTheAgentBar, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
@@ -52,7 +51,7 @@ import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withTaskFolderRules } from './task-approval-rules.js';
@@ -244,7 +243,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // A trial of a pending schedule is never looser than one click could approve, and runs at
     // the mode the person picked when that is stricter still (DOR-4336).
     const body = TriggerTaskRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     const trial = await trialRunMode(store.getTask(id), body.data.permissionMode, meshCore);
     if (trial.kind === 'refused') return c.json(TRIAL_TOO_LOOSE_REFUSAL, 409);
     if (trial.kind === 'unknown_mode') return c.json(TRIAL_UNKNOWN_MODE_REFUSAL, 400);
@@ -262,7 +261,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
 
   router.get('/runs', (c) => {
     const parsed = ListTaskRunsQuerySchema.safeParse(readQuery(c));
-    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const data = parsed.data;
 
     const runs = store.listRuns({

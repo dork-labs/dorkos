@@ -23,6 +23,7 @@ import type { ApiEnv } from '../../http/api-chain.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { resetDocIndexCacheForTests } from '../../services/docs/links/doc-index.js';
 import { createDocLinkRoutes, type DocLinkRouteDeps } from '../docs-links.js';
+import { problemBody } from '@dorkos/http-kit';
 
 let base: string;
 let space: string;
@@ -73,7 +74,9 @@ describe('GET /api/documents/index', () => {
     config.docs = { enabled: false };
     const off = await getIndex(live, space);
     expect(off.status).toBe(404);
-    await expect(off.json()).resolves.toEqual({ error: 'Not found', code: 'API_NOT_FOUND' });
+    await expect(off.json()).resolves.toEqual(
+      problemBody('not_found', { detail: 'This server has no API route at that path.' })
+    );
 
     config.docs = undefined;
     expect((await getIndex(live, space)).status).toBe(404);
@@ -92,7 +95,7 @@ describe('GET /api/documents/index', () => {
   it('refuses a request with no cwd', async () => {
     const res = await getIndex(app(), null);
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ error: 'Invalid query' });
+    await expect(res.json()).resolves.toMatchObject({ code: 'invalid_request' });
   });
 
   it('refuses a cwd that is relative or not an existing folder', async () => {

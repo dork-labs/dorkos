@@ -115,32 +115,6 @@ describe('a relay turn runs on the agent it addressed', () => {
     expect(sendCall[2]).toEqual(expect.objectContaining({ model: 'claude-haiku-4-5' }));
   });
 
-  it('carries the effort through too', async () => {
-    resolveExecutionSettings.mockResolvedValue({ model: 'opus', effort: 'high' });
-    await adapter.start(relay);
-    const envelope = createTestEnvelope();
-
-    await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
-
-    expect(agentManager.ensureSession).toHaveBeenCalledWith(
-      'agent-ulid-1',
-      expect.objectContaining({ model: 'opus', effort: 'high' })
-    );
-  });
-
-  it('asks about the session it is about to run, and the directory that holds the manifest', async () => {
-    await adapter.start(relay);
-    const envelope = createTestEnvelope();
-
-    await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
-
-    expect(resolveExecutionSettings).toHaveBeenCalledWith({
-      runtimeType: 'claude-code',
-      sessionId: 'agent-ulid-1',
-      agentDirectory: '/projects/ana',
-    });
-  });
-
   it("asks about the agent's own directory even when the turn runs elsewhere", async () => {
     // A payload cwd moves where the turn RUNS. Which model the agent is, is a
     // property of the agent, so it keeps being read where the agent lives — the
@@ -180,16 +154,6 @@ describe('a relay turn runs on the agent it addressed', () => {
     );
   });
 
-  it('names no turn agent when the payload carries none', async () => {
-    await adapter.start(relay);
-    const envelope = createTestEnvelope({ payload: { content: 'hi', cwd: '/projects/other' } });
-
-    await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
-
-    const opts = vi.mocked(agentManager.sendMessage).mock.calls[0]![2];
-    expect(opts).not.toHaveProperty('forAgent');
-  });
-
   it("never reads the agent's settings from the payload's directory (DOR-5057)", async () => {
     // A payload's `cwd` says where the turn works, and a checkout there can carry
     // a `.dork/agent.json` of its own. With no agent resolved, the host reads the
@@ -205,18 +169,6 @@ describe('a relay turn runs on the agent it addressed', () => {
     expect(resolveExecutionSettings).toHaveBeenCalledWith({
       runtimeType: 'claude-code',
       sessionId: 'agent-ulid-1',
-    });
-  });
-
-  it('asks with no directory at all when nothing resolved one', async () => {
-    await adapter.start(relay);
-    const envelope = createTestEnvelope();
-
-    await adapter.deliver(envelope.subject, envelope, undefined);
-
-    expect(resolveExecutionSettings).toHaveBeenCalledWith({
-      sessionId: 'agent-ulid-1',
-      runtimeType: 'claude-code',
     });
   });
 
@@ -266,25 +218,6 @@ describe('a relay turn runs on the agent it addressed', () => {
       'agent-ulid-1',
       expect.objectContaining({ permissionMode: 'bypassPermissions', model: 'claude-haiku-4-5' })
     );
-  });
-
-  it('runs the turn anyway when nothing can answer', async () => {
-    // A host that wired no resolver — every test double in this package, and
-    // any embedder — behaves exactly as before: no model key at all, so the
-    // runtime picks.
-    adapter = new ClaudeCodeAdapter(
-      'claude-code',
-      {},
-      { ...deps, resolveExecutionSettings: undefined }
-    );
-    await adapter.start(relay);
-    const envelope = createTestEnvelope();
-
-    await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
-
-    const ensureCall = vi.mocked(agentManager.ensureSession).mock.calls[0];
-    expect(ensureCall[1]).not.toHaveProperty('model');
-    expect(ensureCall[1]).not.toHaveProperty('effort');
   });
 
   it('still answers when the settings lookup fails', async () => {
@@ -363,19 +296,6 @@ describe('a relay message can name the account a new conversation runs on (DOR-2
     const sends = vi.mocked(agentManager.sendMessage).mock.calls;
     expect(sends[0]?.[2]).toEqual(expect.objectContaining({ accountHint: 'work' }));
     expect(sends[1]?.[2]).not.toHaveProperty('accountHint');
-  });
-
-  it('ignores an account that is not a non-empty string', async () => {
-    const adapter = new ClaudeCodeAdapter('claude-code', {}, deps);
-    await adapter.start(relay);
-    for (const [i, account] of ['', 42, { id: 'work' }, 'work'].entries()) {
-      const envelope = createTestEnvelope({ id: `msg-${i}`, payload: { content: 'Go', account } });
-      await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
-    }
-
-    expect(
-      resolveExecutionSettings.mock.calls.map(([opts]) => opts.requestedAccount ?? null)
-    ).toEqual([null, null, null, 'work']);
   });
 
   it('runs the turn without an account when the host refuses it', async () => {

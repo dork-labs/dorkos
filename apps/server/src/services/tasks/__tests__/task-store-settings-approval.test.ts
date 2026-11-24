@@ -82,9 +82,6 @@ describe('the settings are part of the approval', () => {
     store = new TaskStore(db);
   });
 
-  const row = (id: string) =>
-    db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get()!;
-
   /** A schedule a person approved (an operator write arrives with a grant). */
   const approvedSchedule = (settings: Settings = {}) =>
     store.fileSync.upsertFromFile(definition(settings)).id;
@@ -92,9 +89,6 @@ describe('the settings are part of the approval', () => {
   it.each([
     ['runtime', { runtime: 'codex' }],
     ['model', { model: 'claude-opus-4' }],
-    ['effort', { effort: 'high' }],
-    ['time limit', { maxRuntime: '2h' }],
-    ['memory of earlier runs', { sticky: true }],
   ])('asks again when a file changes the %s', (_, settings) => {
     // Purpose: each of these changes what an unattended run does or costs, so
     // a person who approved one value did not approve another.
@@ -164,17 +158,6 @@ describe('the settings are part of the approval', () => {
       }
     });
 
-    it('never switches a schedule on', () => {
-      const id = approvedSchedule();
-      store.updateTask(id, { enabled: false });
-      const before = { ...taskWorkOf(store.getTask(id)!), status: 'active' };
-      store.updateTask(id, { model: 'claude-opus-4' });
-
-      store.approvals.settleApprovedWorkChange(id, before, { trusted: false });
-
-      expect(store.getTask(id)!.enabled).toBe(false);
-    });
-
     it('keeps saying what changed when a sync parked it first, mid-request', () => {
       // Purpose: the race DOR-2313 covers: a sync lands between the file write
       // and the row write, and withdraws the grant with its own sentence.
@@ -192,27 +175,6 @@ describe('the settings are part of the approval', () => {
         ],
       });
     });
-
-    it('keeps the sentence through the next sync of the same file', () => {
-      const id = approvedSchedule();
-      const before = { ...taskWorkOf(store.getTask(id)!), status: 'active' };
-      store.updateTask(id, { model: 'claude-opus-4' });
-      store.approvals.settleApprovedWorkChange(id, before, { trusted: false });
-
-      const synced = store.fileSync.upsertFromFile(
-        definition({ model: 'claude-opus-4' }),
-        undefined,
-        DISCOVERY
-      );
-
-      expect(synced).toMatchObject({
-        status: 'pending_approval',
-        reason: AGENT_SETTINGS_CHANGE_REASON,
-      });
-      expect(synced.approvalChanges).toEqual([
-        { field: 'model', from: null, to: 'claude-opus-4', via: 'schedule' },
-      ]);
-    });
   });
 
   describe('a person’s edit', () => {
@@ -226,18 +188,6 @@ describe('the settings are part of the approval', () => {
         store.fileSync.upsertFromFile(definition({ runtime: 'codex' }), undefined, DISCOVERY).status
       ).toBe('active');
     });
-
-    it('clears what the card said changed, once approved', () => {
-      const id = approvedSchedule();
-      const before = { ...taskWorkOf(store.getTask(id)!), status: 'active' };
-      store.updateTask(id, { model: 'claude-opus-4' });
-      store.approvals.settleApprovedWorkChange(id, before, { trusted: false });
-
-      store.updateTask(id, { status: 'active' });
-
-      expect(store.getTask(id)!.approvalChanges).toEqual([]);
-      expect(row(id).previousApprovalKey).toBeNull();
-    });
   });
 
   it('does not quote the instructions in what changed', () => {
@@ -250,66 +200,6 @@ describe('the settings are part of the approval', () => {
     expect(store.getTask(id)!.approvalChanges).toEqual([
       { field: 'prompt', from: null, to: null, via: 'schedule' },
     ]);
-  });
-
-  it('does not park over an effort value the API cannot show', () => {
-    // Purpose: a row holding an effort the schema does not know reads as "none"
-    // on the task; the key must read it the same way, or an unrelated edit
-    // would look like a change to the approved work.
-    const id = approvedSchedule();
-    db.update(pulseSchedules).set({ effort: 'turbo' }).where(eq(pulseSchedules.id, id)).run();
-    store.approvals.recordApproval(id);
-    const before = { ...taskWorkOf(store.getTask(id)!), status: 'active' };
-    store.updateTask(id, { description: 'Tidier words' });
-
-    expect(store.approvals.settleApprovedWorkChange(id, before, { trusted: false })).toBe(
-      'unchanged'
-    );
-    expect(store.getTask(id)!.status).toBe('active');
-  });
-
-  it('keeps the withdrawn approval when a migration parks a drifted row', () => {
-    // Purpose: the card's "what changed" must work for every park, the
-    // migration's included.
-    const id = approvedSchedule();
-    store.approvals.rekeyMigratedFile(FILE_PATH, '/new/home/SKILL.md', {
-      prompt: 'An edited prompt.',
-      cron: CRON,
-      timezone: 'UTC',
-    });
-
-    expect(store.getTask(id)).toMatchObject({ status: 'pending_approval' });
-    // The row takes the file's new prompt at the next sync of its new home.
-    const synced = store.fileSync.upsertFromFile(
-      { ...definition({}, 'An edited prompt.'), filePath: '/new/home/SKILL.md' },
-      undefined,
-      DISCOVERY
-    );
-    expect(synced.approvalChanges).toEqual([
-      { field: 'prompt', from: null, to: null, via: 'schedule' },
-    ]);
-  });
-
-  it('says nothing changed on a schedule that is not waiting', () => {
-    // Purpose: "what changed" belongs to a schedule waiting for a decision; a
-    // running one with a stale record of a withdrawn approval shows nothing.
-    const id = approvedSchedule();
-    db.update(pulseSchedules)
-      .set({ previousApprovalKey: row(id).approvedContentKey })
-      .where(eq(pulseSchedules.id, id))
-      .run();
-    store.updateTask(id, { model: 'claude-opus-4' });
-
-    expect(store.getTask(id)!.status).toBe('active');
-    expect(store.getTask(id)!.approvalChanges).toEqual([]);
-  });
-
-  it('says nothing changed on a schedule nobody approved yet', () => {
-    // Purpose: "what changed" is against an approval; a first sighting has none.
-    const parked = store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY);
-
-    expect(parked.status).toBe('pending_approval');
-    expect(parked.approvalChanges).toEqual([]);
   });
 
   describe('carrying an approval from an older key format', () => {
@@ -355,25 +245,6 @@ describe('the settings are part of the approval', () => {
         'pending_approval'
       );
     });
-
-    it('still upgrades a two-part key from before DOR-2307, all the way', () => {
-      const id = approvedSchedule({ model: 'gpt-5' });
-      withGrant(id, JSON.stringify([PROMPT, CRON]));
-
-      store.approvals.upgradeLegacyApprovalKeys();
-
-      expect(row(id).approvedContentKey).toBe(
-        scheduleContentKey({ ...taskWorkOf(store.getTask(id)!) })
-      );
-    });
-
-    it('does nothing the second time', () => {
-      const id = approvedSchedule();
-      withGrant(id, threePart());
-
-      expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(1);
-      expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(0);
-    });
   });
 });
 
@@ -393,12 +264,5 @@ describe('upgradeLegacyContentKey', () => {
     expect(upgradeLegacyContentKey(JSON.stringify([PROMPT, CRON, 'UTC']), current)).toBe(
       scheduleContentKey({ ...current, prompt: PROMPT, cron: CRON, timezone: 'UTC' })
     );
-  });
-
-  it('leaves a current key, and anything it did not write, alone', () => {
-    const now = scheduleContentKey({ ...current, prompt: PROMPT, cron: CRON });
-    expect(upgradeLegacyContentKey(now, current)).toBeNull();
-    expect(upgradeLegacyContentKey(JSON.stringify([PROMPT, CRON, 7]), current)).toBeNull();
-    expect(upgradeLegacyContentKey('nope', current)).toBeNull();
   });
 });

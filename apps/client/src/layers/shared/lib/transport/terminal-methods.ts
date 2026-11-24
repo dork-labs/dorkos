@@ -19,6 +19,7 @@ import {
   type TerminalClientMessage,
 } from '@dorkos/shared/terminal-schemas';
 import type { TerminalHandle } from '@dorkos/shared/transport';
+import { responseError } from '../response-error';
 
 /**
  * Derive the WebSocket URL for a terminal socket from the transport base URL,
@@ -213,13 +214,9 @@ export function createTerminalMethods(baseUrl: string) {
         signal,
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }));
         // Carry the server's machine-readable code (e.g. TERMINAL_LIMIT → 429)
         // so callers can map known failures to friendlier copy.
-        throw Object.assign(
-          new Error(body.error || `Couldn’t open the terminal (HTTP ${res.status})`),
-          typeof body.code === 'string' ? { code: body.code } : {}
-        );
+        throw await responseError(res, `Couldn’t open the terminal (HTTP ${res.status})`);
       }
       const { id } = CreateTerminalResponseSchema.parse(await res.json());
       return attachSocket(id, signal);

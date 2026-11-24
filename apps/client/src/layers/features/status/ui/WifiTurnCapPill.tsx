@@ -12,10 +12,10 @@ import {
 } from '@/layers/shared/ui';
 
 /** The pill's words. */
-export const WIFI_TURN_CAP_LABEL = 'On Wi-Fi · agents ask or only read';
+export const WIFI_TURN_CAP_LABEL = 'On your network · agents ask or only read';
 /** What the pill says on hover, focus, or tap. */
 export const WIFI_TURN_CAP_DETAIL =
-  'Over Wi-Fi, every file or shell step needs your OK, or agents only read.';
+  'From your network, every file or shell step needs your OK, or agents only read.';
 
 /**
  * A 44px-square hit area around the pill (Apple HIG), drawn as an invisible
@@ -31,13 +31,13 @@ interface WifiTurnCapPillProps {
   /**
    * Say it in as few pixels as possible, as the line's other items do below
    * `full`: the icon alone, so a phone-width line keeps room for the chip
-   * beside it ("Default (Wi-Fi)"). The words stay in its label and tooltip.
+   * beside it ("Default (network)"). The words stay in its label and tooltip.
    */
   compact?: boolean;
 }
 
 /**
- * Says, while this browser reached DorkOS over Wi-Fi, that a chat started here
+ * Says, while this browser reached DorkOS over the network, that a chat started here
  * runs at the runtime's default at most: every file or shell step asks, and an
  * answer is Allow once or Deny, or, on a runtime whose default only reads
  * (Codex), the agent only reads (DOR-3037). Draws nothing anywhere else.

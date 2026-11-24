@@ -75,19 +75,12 @@ describe('room_entry_reactions', () => {
     expect(() => db.insert(roomEntryReactions).values(reaction()).run()).toThrow(/UNIQUE/i);
   });
 
-  it('lets the same person put a DIFFERENT emoji on the same entry', () => {
+  it.each([
+    ['the same person, a DIFFERENT emoji', { emoji: '🎉' }],
+    ['a DIFFERENT person, the same emoji', { authorId: 'human-priya' }],
+  ])('lets %s react to the same entry', (_, second) => {
     db.insert(roomEntryReactions).values(reaction()).run();
-    db.insert(roomEntryReactions)
-      .values(reaction({ emoji: '🎉' }))
-      .run();
-    expect(db.select().from(roomEntryReactions).all()).toHaveLength(2);
-  });
-
-  it('lets a DIFFERENT person put the same emoji on the same entry', () => {
-    db.insert(roomEntryReactions).values(reaction()).run();
-    db.insert(roomEntryReactions)
-      .values(reaction({ authorId: 'human-priya' }))
-      .run();
+    db.insert(roomEntryReactions).values(reaction(second)).run();
     expect(db.select().from(roomEntryReactions).all()).toHaveLength(2);
   });
 
@@ -126,13 +119,5 @@ describe('room_entry_reactions', () => {
       db.select().from(roomEntryReactions).all(),
       'a message that is gone leaves no pills behind'
     ).toHaveLength(0);
-  });
-
-  it('stores a multi-code-point emoji byte for byte', () => {
-    const family = '👨‍👩‍👧‍👦';
-    db.insert(roomEntryReactions)
-      .values(reaction({ emoji: family }))
-      .run();
-    expect(db.select().from(roomEntryReactions).get()?.emoji).toBe(family);
   });
 });

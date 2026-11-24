@@ -27,7 +27,13 @@ import {
 } from '../../../../tasks/agent-mode/agent-mode-run-origin.js';
 import type { TaskStore } from '../../../../tasks/task-store.js';
 import { agentIdOfHome } from '../../../../tasks/approvals/schedule-owner.js';
-import type { Task } from '@dorkos/shared/types';
+import type { PermissionMode, Task, UpdateTaskRequest } from '@dorkos/shared/types';
+import {
+  accountMovePolicy,
+  announceAccountMove,
+  priorAccountOf,
+  settleAccountUnpin,
+} from '../../../../tasks/approvals/account-move.js';
 
 /**
  * Who is proposing a schedule, read at CALL time rather than at registration.
@@ -302,4 +308,113 @@ export function emitAgentSwitchedOn(
     summary: `Switched on scheduled task ${updated.displayName ?? updated.name}`,
     linkPath: '/',
   });
+}
+
+/** What {@link settleTaskAccountEdit} did. */
+export interface TaskAccountEditOutcome {
+  /** A kept account move stands, and the person was told. */
+  moved: boolean;
+  /** The task waits for a person now, over its account. */
+  parked: boolean;
+}
+
+/**
+ * After an agent's `tasks_update` (DOR-5097): tell the person when it moved an
+ * approved, still running task to another account (with an Undo); a notice
+ * that could not be posted parks it instead. An unpin ("This account only"
+ * off) is told, or parks the task on Careful.
+ *
+ * @param deps - Shared MCP tool dependencies.
+ * @param before - The task before the edit.
+ * @param caller - The calling agent, by its home when DorkOS knows it.
+ * @param moved - Whether the edit was settled as a kept account move.
+ */
+export async function settleTaskAccountEdit(
+  deps: McpToolDeps,
+  before: Task,
+  caller: { agentPath?: string | null },
+  moved: boolean
+): Promise<TaskAccountEditOutcome> {
+  const store = deps.taskStore!;
+  const after = store.getTask(before.id);
+  if (!after) return { moved: false, parked: false };
+  const edit = { before, after, agentPath: caller.agentPath ?? null };
+  const stands = moved && after.status === 'active' && (await announceAccountMove(store, edit));
+  const unpin = await settleAccountUnpin(store, edit);
+  return { moved: stands, parked: (moved && !stands) || unpin === 'parked' };
+}
+
+/**
+ * The account-move rule for a `tasks_update` call: kept only for one of our
+ * agents DorkOS identified, from an unmarked turn, off the Careful preset, and
+ * never off credits, the task's own or the one it followed (`accountMovePolicy`).
+ *
+ * @param deps - Shared MCP tool dependencies, for the agent's home.
+ * @param task - The task before the edit.
+ * @param caller - The calling agent and whether its turn is marked.
+ */
+export async function accountMovePolicyFor(
+  deps: McpToolDeps,
+  task: Task,
+  caller: Pick<AgentModeCaller, 'agentPath' | 'marked'>
+): Promise<ReturnType<typeof accountMovePolicy>> {
+  const home = task.agentId ? deps.meshCore?.getProjectPath(task.agentId) : undefined;
+  return accountMovePolicy(
+    caller.agentPath !== undefined && !caller.marked,
+    await priorAccountOf(task, home)
+  );
+}
+
+/** The agent-writable fields a `tasks_update` call may carry into the store. */
+type ToolUpdateFields = Pick<
+  UpdateTaskRequest,
+  | 'name'
+  | 'prompt'
+  | 'enabled'
+  | 'sticky'
+  | 'readsOutsideText'
+  | 'runtime'
+  | 'model'
+  | 'effort'
+  | 'account'
+  | 'accountPinned'
+  | 'requestedPermissionMode'
+  | 'requestedAllow'
+  | 'resetTiming'
+> & { cron?: string; timezone?: string; maxRuntime?: string };
+
+/**
+ * The patch a `tasks_update` call writes, assembled field by field rather than
+ * spread from the call, so nothing here could carry `permissionMode` to the
+ * store except the mode an approval decided (S-C).
+ *
+ * @param args - The call's fields.
+ * @param permissionMode - The mode a mode-only decision set, if any.
+ */
+export function toolUpdatePatch(
+  args: ToolUpdateFields,
+  permissionMode: PermissionMode | undefined
+): UpdateTaskRequest {
+  return {
+    ...(args.name !== undefined && { name: args.name }),
+    ...(args.prompt !== undefined && { prompt: args.prompt }),
+    ...(args.cron !== undefined && { cron: args.cron }),
+    ...(args.enabled !== undefined && { enabled: args.enabled }),
+    ...(args.timezone !== undefined && { timezone: args.timezone }),
+    ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
+    ...(args.sticky !== undefined && { sticky: args.sticky }),
+    // Only `true` gets here: the policy refused anything else first (DOR-3969).
+    ...(args.readsOutsideText === true && { readsOutsideText: true }),
+    ...(args.runtime !== undefined && { runtime: args.runtime }),
+    ...(args.model !== undefined && { model: args.model }),
+    ...(args.effort !== undefined && { effort: args.effort }),
+    ...(args.account !== undefined && { account: args.account }),
+    ...(args.accountPinned !== undefined && { accountPinned: args.accountPinned }),
+    ...(args.requestedPermissionMode !== undefined && {
+      requestedPermissionMode: args.requestedPermissionMode,
+    }),
+    ...(args.requestedAllow !== undefined && { requestedAllow: args.requestedAllow }),
+    ...(args.resetTiming === true && { resetTiming: true as const }),
+    ...(permissionMode !== undefined && { permissionMode }),
+  };
 }

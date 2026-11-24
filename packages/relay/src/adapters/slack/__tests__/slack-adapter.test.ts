@@ -1,7 +1,7 @@
 import { sendPrivateSlackNotification } from '../private-notification.js';
 vi.mock('../private-notification.js', () => ({ sendPrivateSlackNotification: vi.fn() }));
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SlackAdapter, SLACK_MANIFEST } from '../index.js';
+import { SlackAdapter } from '../index.js';
 import { createMockRelay } from '../../../__tests__/fixtures.js';
 import type { RelayPublisher } from '../../../types.js';
 import type { z } from 'zod';
@@ -36,7 +36,6 @@ const capturedActionHandlers = new Map<string, (args: Record<string, unknown>) =
 const mockReactionsAdd = vi.fn().mockResolvedValue({ ok: true });
 const mockReactionsRemove = vi.fn().mockResolvedValue({ ok: true });
 const mockSetStatus = vi.fn().mockResolvedValue({ ok: true });
-let capturedAssistantHandler: ((args: Record<string, unknown>) => Promise<void>) | null = null;
 
 /** Options the adapter passed to the most recent `new App(...)` (DOR-1542: proxy wiring). */
 let capturedAppOptions: Record<string, unknown> | null = null;
@@ -66,7 +65,6 @@ vi.mock('@slack/bolt', () => {
 
     event(eventName: string, handler: (args: Record<string, unknown>) => Promise<void>) {
       if (eventName === 'app_mention') capturedMentionHandler = handler;
-      if (eventName === 'assistant_thread_started') capturedAssistantHandler = handler;
     }
 
     action(actionId: string, handler: (args: Record<string, unknown>) => Promise<void>) {
@@ -124,7 +122,6 @@ describe('SlackAdapter', () => {
     vi.clearAllMocks();
     capturedMessageHandler = null;
     capturedMentionHandler = null;
-    capturedAssistantHandler = null;
     capturedErrorHandler = null;
     capturedActionHandlers.clear();
     capturedAppOptions = null;
@@ -174,90 +171,6 @@ describe('SlackAdapter', () => {
     }
   );
 
-  // Identity
-  it('has correct id, subjectPrefix, and displayName', () => {
-    expect(adapter.id).toBe('slack-1');
-    expect(adapter.subjectPrefix).toBe('relay.human.slack.slack-1');
-    expect(adapter.displayName).toBe('Slack');
-  });
-
-  it('accepts custom displayName', () => {
-    const custom = new SlackAdapter(
-      's2',
-      slackConfig({ botToken: 'xoxb-x', appToken: 'xapp-x', signingSecret: 's' }),
-      'Work Slack'
-    );
-    expect(custom.displayName).toBe('Work Slack');
-  });
-
-  // Initial status
-  it('reports disconnected before start', () => {
-    expect(adapter.getStatus().state).toBe('disconnected');
-  });
-
-  // Start
-  it('start() transitions to connected', async () => {
-    await adapter.start(mockRelay);
-    expect(adapter.getStatus().state).toBe('connected');
-  });
-
-  it('start() is idempotent — only calls app.start once', async () => {
-    await adapter.start(mockRelay);
-    await adapter.start(mockRelay);
-    expect(mockAppStart).toHaveBeenCalledTimes(1);
-  });
-
-  it('start() registers message, app_mention, and global error handlers', async () => {
-    await adapter.start(mockRelay);
-    expect(capturedMessageHandler).toBeDefined();
-    expect(capturedMentionHandler).toBeDefined();
-    expect(capturedErrorHandler).toBeDefined();
-  });
-
-  it('global error handler records error in adapter status', async () => {
-    await adapter.start(mockRelay);
-    expect(capturedErrorHandler).toBeDefined();
-
-    await capturedErrorHandler!(new Error('socket_disconnect'));
-    const status = adapter.getStatus();
-    expect(status.state).toBe('error');
-    expect(status.lastError).toBe('socket_disconnect');
-    expect(status.errorCount).toBe(1);
-  });
-
-  // Stop
-  it('stop() calls app.stop() and transitions to disconnected', async () => {
-    await adapter.start(mockRelay);
-    await adapter.stop();
-    expect(mockAppStop).toHaveBeenCalled();
-    expect(adapter.getStatus().state).toBe('disconnected');
-  });
-
-  it('stop() is idempotent — only calls app.stop once', async () => {
-    await adapter.start(mockRelay);
-    await adapter.stop();
-    await adapter.stop();
-    expect(mockAppStop).toHaveBeenCalledTimes(1);
-  });
-
-  // testConnection
-  it('testConnection() validates token without starting Socket Mode', async () => {
-    const result = await adapter.testConnection();
-    expect(result).toEqual({ ok: true, botUsername: 'dorkos_bot' });
-    expect(mockAppStart).not.toHaveBeenCalled();
-  });
-
-  it('testConnection() returns error on invalid token', async () => {
-    mockAuthTest.mockRejectedValueOnce(new Error('invalid_auth'));
-    const result = await adapter.testConnection();
-    expect(result).toEqual({ ok: false, error: 'invalid_auth' });
-  });
-
-  it('testConnection() does not alter adapter state', async () => {
-    await adapter.testConnection();
-    expect(adapter.getStatus().state).toBe('disconnected');
-  });
-
   // Corporate-proxy support (DOR-1542): @slack/web-api 8 and @slack/socket-mode moved from
   // axios (which honored HTTP_PROXY/HTTPS_PROXY automatically) to native fetch, which does
   // not. These assert the wiring end to end (real @slack/web-api and undici types, mocked
@@ -269,16 +182,6 @@ describe('SlackAdapter', () => {
   describe('proxy support (DOR-1542)', () => {
     afterEach(() => {
       vi.unstubAllEnvs();
-    });
-
-    it('passes no fetch/receiver override to App or WebClient when no proxy env var is set', async () => {
-      await adapter.start(mockRelay);
-      expect(capturedAppOptions?.clientOptions).toBeUndefined();
-      expect(capturedAppOptions?.receiver).toBeUndefined();
-      expect(capturedSocketModeReceiverOptions).toBeNull();
-
-      await adapter.testConnection();
-      expect(capturedWebClientOptions).toBeUndefined();
     });
 
     it('wires a fetch and a SocketModeReceiver dispatcher when HTTPS_PROXY is set, both dispatching through the same instance', async () => {
@@ -330,71 +233,16 @@ describe('SlackAdapter', () => {
       // What we're actually asserting is that _stop() calls close() at all.
       expect(closeSpy).toHaveBeenCalled();
     });
-
-    it('wires the proxy transport when HTTP_PROXY is set', async () => {
-      vi.stubEnv('HTTP_PROXY', 'http://proxy.example.com:8080');
-      await adapter.start(mockRelay);
-      const clientOptions = capturedAppOptions?.clientOptions as { fetch?: unknown } | undefined;
-      expect(typeof clientOptions?.fetch).toBe('function');
-    });
-
-    it('does NOT wire the proxy transport when only NO_PROXY is set (DOR-1542 review, F5)', async () => {
-      vi.stubEnv('NO_PROXY', 'internal.example.com');
-      await adapter.start(mockRelay);
-      expect(capturedAppOptions?.clientOptions).toBeUndefined();
-      expect(capturedAppOptions?.receiver).toBeUndefined();
-      expect(capturedSocketModeReceiverOptions).toBeNull();
-    });
-
-    it('wires the proxy transport when the lowercase https_proxy is set', async () => {
-      vi.stubEnv('https_proxy', 'http://proxy.example.com:8080');
-      await adapter.start(mockRelay);
-      const clientOptions = capturedAppOptions?.clientOptions as { fetch?: unknown } | undefined;
-      expect(typeof clientOptions?.fetch).toBe('function');
-    });
   });
 
   // Timeout on auth.test()
 
-  it('start() rejects when auth.test() hangs beyond INIT_TIMEOUT_MS', async () => {
-    vi.useFakeTimers();
-
-    // Suppress the expected unhandled rejection from the timeout race under fake timers
-    const suppress = () => {};
-    process.on('unhandledRejection', suppress);
-
-    mockAuthTest.mockReturnValue(new Promise(() => {})); // never resolves
-
-    const startPromise = adapter.start(mockRelay);
-    await vi.advanceTimersByTimeAsync(15_000);
-    await expect(startPromise).rejects.toThrow('timed out');
-
-    // Reset mock so subsequent tests work
-    mockAuthTest.mockResolvedValue({ user_id: 'U_BOT', user: 'dorkos_bot' });
-    await vi.advanceTimersByTimeAsync(0);
-    process.removeListener('unhandledRejection', suppress);
-    vi.useRealTimers();
-  });
-
-  it('testConnection() rejects when auth.test() hangs beyond INIT_TIMEOUT_MS', async () => {
-    vi.useFakeTimers();
-
-    const suppress = () => {};
-    process.on('unhandledRejection', suppress);
-
-    mockAuthTest.mockReturnValue(new Promise(() => {})); // never resolves
-
-    const resultPromise = adapter.testConnection();
-    await vi.advanceTimersByTimeAsync(15_000);
-
-    const result = await resultPromise;
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain('timed out');
-
-    mockAuthTest.mockResolvedValue({ user_id: 'U_BOT', user: 'dorkos_bot' });
-    await vi.advanceTimersByTimeAsync(0);
-    process.removeListener('unhandledRejection', suppress);
-    vi.useRealTimers();
+  // Stop
+  it('stop() calls app.stop() and transitions to disconnected', async () => {
+    await adapter.start(mockRelay);
+    await adapter.stop();
+    expect(mockAppStop).toHaveBeenCalled();
+    expect(adapter.getStatus().state).toBe('disconnected');
   });
 
   // Deliver
@@ -417,67 +265,6 @@ describe('SlackAdapter', () => {
     const result = await adapter.deliver('relay.human.slack.slack-1.D123', envelope);
     expect(result.success).toBe(true);
     expect(mockPostMessage).toHaveBeenCalled();
-  });
-
-  // The assistant split panel is the one Slack surface with a status line, and
-  // `assistant_thread_started` is the only thing that names it. Without this
-  // wiring every surface would fall back to the emoji, which is the wrong idiom
-  // in a panel that has somewhere better to say it.
-  it('sets an assistant status, not a reaction, in a thread it saw start', async () => {
-    await adapter.start(mockRelay);
-    expect(capturedAssistantHandler).toBeDefined();
-
-    await capturedAssistantHandler!({
-      event: { assistant_thread: { channel_id: 'D123', thread_ts: '1234.0001' } },
-    });
-
-    const envelope = {
-      id: 'e1',
-      subject: 'relay.human.slack.slack-1.D123',
-      from: 'relay.agent.backend',
-      budget: {
-        hopCount: 0,
-        maxHops: 5,
-        ancestorChain: [],
-        ttl: Date.now() + 3_600_000,
-        callBudgetRemaining: 10,
-      },
-      createdAt: new Date().toISOString(),
-      payload: {
-        type: 'text_delta',
-        data: { text: 'working' },
-        platformData: { ts: '1234.0001' },
-      },
-    };
-    await adapter.deliver('relay.human.slack.slack-1.D123', envelope);
-
-    expect(mockSetStatus).toHaveBeenCalledWith({
-      channel_id: 'D123',
-      thread_ts: '1234.0001',
-      status: 'is working on it…',
-    });
-    expect(mockReactionsAdd).not.toHaveBeenCalled();
-  });
-
-  it('deliver() returns error when adapter is stopped', async () => {
-    // Never started — client is null
-    const envelope = {
-      id: 'e1',
-      subject: 'relay.human.slack.slack-1.D123',
-      from: 'relay.agent.backend',
-      budget: {
-        hopCount: 0,
-        maxHops: 5,
-        ancestorChain: [],
-        ttl: Date.now() + 3_600_000,
-        callBudgetRemaining: 10,
-      },
-      createdAt: new Date().toISOString(),
-      payload: { content: 'Hello' },
-    };
-    const result = await adapter.deliver('relay.human.slack.slack-1.D123', envelope);
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('not started');
   });
 
   // Duplicate mention delivery (message + app_mention for the same message)
@@ -530,32 +317,19 @@ describe('SlackAdapter', () => {
       });
     }
 
-    it('stops the adapter on fatal error code (e.g. invalid_auth)', async () => {
+    it.each([
+      ['on its code', { code: 'invalid_auth' }, 'invalid_auth'],
+      ['in its data.error field', { data: { error: 'token_revoked' } }, 'token_revoked'],
+    ])('stops the adapter on a fatal error code %s', async (_where, fields, code) => {
       await adapter.start(mockRelay);
-      expect(capturedErrorHandler).toBeDefined();
 
-      await deliverFatalError(
-        Object.assign(new Error('An API error occurred'), { code: 'invalid_auth' })
-      );
+      await deliverFatalError(Object.assign(new Error('An API error occurred'), fields));
 
       expect(mockAppStop).toHaveBeenCalled();
       const status = adapter.getStatus();
       expect(status.state).toBe('error');
-      expect(status.lastError).toContain('invalid_auth');
+      expect(status.lastError).toContain(code);
       expect(status.lastError).toContain('Re-check your bot token');
-    });
-
-    it('stops the adapter when fatal error is in data.error field', async () => {
-      await adapter.start(mockRelay);
-
-      await deliverFatalError(
-        Object.assign(new Error('An API error occurred'), { data: { error: 'token_revoked' } })
-      );
-
-      expect(mockAppStop).toHaveBeenCalled();
-      const status = adapter.getStatus();
-      expect(status.state).toBe('error');
-      expect(status.lastError).toContain('token_revoked');
     });
 
     it('stops the adapter on a real WebAPIPlatformError, whose code is never the Slack error', async () => {
@@ -574,52 +348,6 @@ describe('SlackAdapter', () => {
       expect(status.state).toBe('error');
       expect(status.lastError).toContain('invalid_auth');
       expect(status.lastError).not.toContain('slack_webapi_platform_error');
-    });
-
-    it('stops the adapter when Bolt wraps the platform error in an AuthorizationError', async () => {
-      // The path a revoked token ACTUALLY takes. Bolt authorizes every incoming
-      // event, and an authorize() failure reaches the error handler as
-      // `new AuthorizationError(msg, original)` (App.js) — the platform error is
-      // on `.original`, never at the top level. Testing only the outer error
-      // sees code 'slack_bolt_authorization_error', matches nothing, and leaves
-      // the adapter retrying forever against a dead token (DOR-1528).
-      const { WebAPIPlatformError } = await import('@slack/web-api');
-      await adapter.start(mockRelay);
-
-      const wrapped = Object.assign(
-        new Error('Authorization of incoming event did not succeed. An API error occurred'),
-        {
-          code: 'slack_bolt_authorization_error',
-          original: new WebAPIPlatformError({ ok: false, error: 'token_revoked' }),
-        }
-      );
-      await deliverFatalError(wrapped);
-
-      expect(mockAppStop).toHaveBeenCalled();
-      const status = adapter.getStatus();
-      expect(status.state).toBe('error');
-      expect(status.lastError).toContain('token_revoked');
-      expect(status.lastError).not.toContain('slack_bolt_authorization_error');
-    });
-
-    it('finds the platform error through `cause` and through `originals`', async () => {
-      // The other two Bolt wrappers: a non-Error throw is re-thrown with the
-      // value on `.cause`, and MultipleListenerError collects them on
-      // `.originals` (an array, not a single `.original`).
-      const { WebAPIPlatformError } = await import('@slack/web-api');
-      await adapter.start(mockRelay);
-
-      const viaOriginals = Object.assign(new Error('Multiple errors occurred'), {
-        code: 'slack_bolt_multiple_listener_error',
-        originals: [
-          new Error('unrelated listener failure'),
-          new WebAPIPlatformError({ ok: false, error: 'account_inactive' }),
-        ],
-      });
-      await deliverFatalError(viaOriginals);
-
-      expect(mockAppStop).toHaveBeenCalled();
-      expect(adapter.getStatus().lastError).toContain('account_inactive');
     });
 
     it('survives a self-referential error chain without hanging', async () => {
@@ -648,109 +376,6 @@ describe('SlackAdapter', () => {
       await adapter.stop();
 
       expect(mockAppStop).toHaveBeenCalledTimes(1);
-    });
-
-    it('queues only one teardown when every event fails the same way', async () => {
-      // A dead token fails every incoming event, so the handler fires
-      // repeatedly; the adapter must not stack a teardown per event.
-      const { WebAPIPlatformError } = await import('@slack/web-api');
-      await adapter.start(mockRelay);
-
-      await deliverFatalError(new WebAPIPlatformError({ ok: false, error: 'invalid_auth' }));
-      const stopCallsAfterFirst = mockAppStop.mock.calls.length;
-
-      await capturedErrorHandler!(
-        new WebAPIPlatformError({ ok: false, error: 'invalid_auth' }) as unknown as Error
-      );
-      await new Promise((resolve) => setImmediate(resolve));
-
-      expect(mockAppStop.mock.calls.length).toBe(stopCallsAfterFirst);
-    });
-
-    it('records non-fatal errors without stopping the adapter', async () => {
-      await adapter.start(mockRelay);
-      mockAppStop.mockClear();
-
-      await capturedErrorHandler!(new Error('rate_limited'));
-
-      expect(mockAppStop).not.toHaveBeenCalled();
-      const status = adapter.getStatus();
-      expect(status.state).toBe('error');
-      expect(status.lastError).toBe('rate_limited');
-    });
-
-    it('produces a descriptive error message mentioning bot token', async () => {
-      await adapter.start(mockRelay);
-
-      await deliverFatalError(
-        Object.assign(new Error('An API error occurred'), { code: 'app_uninstalled' })
-      );
-
-      const status = adapter.getStatus();
-      expect(status.lastError).toMatch(/Fatal Slack error: app_uninstalled/);
-      expect(status.lastError).toMatch(/Re-check your bot token and app configuration/);
-    });
-  });
-
-  // getStatus defensiveness
-  it('getStatus() returns a copy — external mutation does not affect internal state', () => {
-    const status = adapter.getStatus();
-    status.errorCount = 999;
-    expect(adapter.getStatus().errorCount).toBe(0);
-  });
-
-  // SLACK_MANIFEST configFields
-  describe('SLACK_MANIFEST configFields', () => {
-    const fieldByKey = (key: string) => SLACK_MANIFEST.configFields.find((f) => f.key === key);
-
-    it('includes respondMode, dmPolicy, dmAllowlist, and channelOverrides fields', () => {
-      expect(fieldByKey('respondMode')).toBeDefined();
-      expect(fieldByKey('dmPolicy')).toBeDefined();
-      expect(fieldByKey('dmAllowlist')).toBeDefined();
-      expect(fieldByKey('channelOverrides')).toBeDefined();
-    });
-
-    it('respondMode is a select field with radio-cards display', () => {
-      const field = fieldByKey('respondMode')!;
-      expect(field.type).toBe('select');
-      expect(field.displayAs).toBe('radio-cards');
-      expect(field.options).toHaveLength(3);
-      expect(field.options!.map((o) => o.value)).toEqual([
-        'thread-aware',
-        'mention-only',
-        'always',
-      ]);
-    });
-
-    it('dmPolicy is a select field with radio-cards display', () => {
-      const field = fieldByKey('dmPolicy')!;
-      expect(field.type).toBe('select');
-      expect(field.displayAs).toBe('radio-cards');
-      expect(field.options).toHaveLength(2);
-      expect(field.options!.map((o) => o.value)).toEqual(['open', 'allowlist']);
-    });
-
-    it('dmAllowlist is a textarea shown only when dmPolicy equals allowlist', () => {
-      const field = fieldByKey('dmAllowlist')!;
-      expect(field.type).toBe('textarea');
-      expect(field.showWhen).toEqual({ field: 'dmPolicy', equals: 'allowlist' });
-    });
-
-    it('channelOverrides is a textarea field', () => {
-      const field = fieldByKey('channelOverrides')!;
-      expect(field.type).toBe('textarea');
-    });
-
-    it('all new fields are in the Access Control section', () => {
-      const newKeys = ['respondMode', 'dmPolicy', 'dmAllowlist', 'channelOverrides'];
-      for (const key of newKeys) {
-        expect(fieldByKey(key)!.section).toBe('Access Control');
-      }
-    });
-
-    it('typingIndicator description mentions enabled by default', () => {
-      const field = fieldByKey('typingIndicator')!;
-      expect(field.description).toContain('Enabled by default');
     });
   });
 

@@ -158,8 +158,8 @@ describe('streamToNodeResponse', () => {
     const { response } = open(host);
     const res = await response;
     expect(res.statusCode).toBe(500);
-    expect(res.headers['content-type']).toMatch(/^application\/json/);
-    expect(JSON.parse(await bodyOf(res))).toMatchObject({ code: 'INTERNAL_ERROR' });
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(JSON.parse(await bodyOf(res))).toMatchObject({ code: 'internal_error' });
   });
 
   it('closes the connection on an error thrown after the head went out', async () => {

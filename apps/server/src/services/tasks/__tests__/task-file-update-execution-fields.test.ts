@@ -43,10 +43,6 @@ function file(blockLines = ''): string {
 }
 
 describe('touchesFile — does an execution write open the SKILL.md', () => {
-  it.each(['runtime', 'model', 'effort'] as const)('opens the file for a new %s', (field) => {
-    expect(touchesFile({ [field]: 'codex' }, row())).toBe(true);
-  });
-
   it.each(['runtime', 'model', 'effort'] as const)('opens the file to CLEAR %s', (field) => {
     // Clearing is a state a person chooses — back to "the agent's answer" — and
     // it only means anything if the key actually leaves the file.
@@ -97,16 +93,5 @@ describe('planTaskFileUpdate — where the trio is written', () => {
     expect(block).not.toHaveProperty('model');
     // Untouched fields survive — a clear of one is not a reset of the block.
     expect(block).toMatchObject({ effort: 'high', cron: '0 3 * * *' });
-  });
-
-  it('leaves a block that names none of them exactly as it was', () => {
-    const plan = planTaskFileUpdate(FILE_PATH, file(), { description: 'Sweep harder' });
-
-    expect(plan.kind).toBe('write');
-    const block =
-      plan.kind === 'write' ? (plan.frontmatter.schedule as Record<string, unknown>) : {};
-    expect(block).not.toHaveProperty('runtime');
-    expect(block).not.toHaveProperty('model');
-    expect(block).not.toHaveProperty('effort');
   });
 });

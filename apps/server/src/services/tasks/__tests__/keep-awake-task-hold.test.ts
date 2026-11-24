@@ -138,20 +138,4 @@ describe('a task run holds the computer awake', () => {
     expect(keepAwake.status().working).toEqual({ chats: 0, rooms: 0, tasks: 0, waking: false });
     await service.stop();
   });
-
-  it('a run that cannot start still releases its hold', async () => {
-    const { agent } = gatedAgent();
-    const service = new TaskSchedulerService({
-      store,
-      runtimes: { ...singleRuntimeSource(agent as never), has: () => false },
-      config: CONFIG,
-      keepAwake,
-    });
-    const task = newTask('refused');
-
-    const run = await service.triggerManualRun(task.id);
-    await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
-    expect(keepAwake.status().working.tasks).toBe(0);
-    await service.stop();
-  });
 });

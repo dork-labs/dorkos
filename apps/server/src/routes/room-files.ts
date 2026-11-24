@@ -255,7 +255,7 @@ router.get('/:id/files/raw', (c) =>
  *
  * The 1 MB request body limit is smaller than the default file cap, so a very
  * large save never reaches the room's cap: the JSON body stage refuses it and
- * the error handler answers **413 `REQUEST_TOO_LARGE`**. That used to be a 500 with
+ * the error handler answers **413 `request_too_large`**. That used to be a 500 with
  * no code, which told a person nothing about the one thing they could act on.
  */
 router.put('/:id/files/content', (c) =>

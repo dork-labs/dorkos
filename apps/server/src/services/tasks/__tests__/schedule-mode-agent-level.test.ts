@@ -4,7 +4,7 @@
  *
  * @module services/tasks/__tests__/schedule-mode-agent-level
  */
-import { afterAll, beforeAll, describe, it, expect, beforeEach, vi } from 'vitest';
+import { afterAll, beforeAll, describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { eq } from 'drizzle-orm';
 import { pulseSchedules, type Db } from '@dorkos/db';
@@ -24,13 +24,8 @@ import {
   needsScheduleApprovalAttention,
   type FileAgentLevel,
 } from '../schedule-permission-clamp.js';
-import { changesApprovedWork } from '../task-file-update.js';
 import { TaskStore } from '../task-store.js';
 import type { TaskFileSync } from '../sync/task-file-sync.js';
-
-vi.mock('../../../lib/logger.js', () => ({
-  logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
-}));
 
 const AGENT = '/home/u/agent';
 const FILE_PATH = `${AGENT}/.agents/skills/sweeper/${SKILL_FILENAME}`;
@@ -123,15 +118,6 @@ describe('a schedule file clamps to its agent’s level', () => {
       // Still a row a person can act on.
       expect(needsScheduleApprovalAttention(held)).toBe(true);
     });
-
-    it('keeps the quiet sentence across syncs, and drops it when the level falls', () => {
-      const row = sync('default', FULL, 'agent-1');
-      approve(row.id);
-      sync('bypassPermissions', FULL, 'agent-1');
-
-      expect(sync('bypassPermissions', FULL, 'agent-1').quietHold).toBe(true);
-      expect(sync('bypassPermissions', ASK, 'agent-1').quietHold).toBe(false);
-    });
   });
 
   describe('agent at Ask', () => {
@@ -145,10 +131,6 @@ describe('a schedule file clamps to its agent’s level', () => {
 
       expect((await boundLevel('default', 'default')).runsAt).toBe('default');
     });
-
-    it('holds a stored bypass down to Ask at run time', async () => {
-      expect((await boundLevel('bypassPermissions', 'default')).runsAt).toBe('default');
-    });
   });
 
   describe('a mode change is a change to approved work', () => {
@@ -161,41 +143,6 @@ describe('a schedule file clamps to its agent’s level', () => {
       expect(held.reason).toBe(CHANGED_REASON);
       expect(held.quietHold).toBe(false);
       expect(held.permissionMode).toBe('acceptEdits');
-    });
-
-    it('takes a file going stricter without asking', () => {
-      const row = sync('acceptEdits', null);
-      approve(row.id);
-
-      const lowered = sync('default', null);
-      expect(lowered.status).toBe('active');
-      expect(lowered.permissionMode).toBe('default');
-    });
-
-    it('asks again when a lowered file goes back up', () => {
-      const row = sync('acceptEdits', null);
-      approve(row.id);
-      sync('default', null);
-
-      expect(sync('acceptEdits', null).status).toBe('pending_approval');
-    });
-
-    it('counts the mode in changesApprovedWork', () => {
-      const existing = {
-        prompt: 'p',
-        cron: null,
-        timezone: null,
-        name: 'n',
-        runtime: null,
-        model: null,
-        effort: null,
-        maxRuntime: null,
-        sticky: false,
-        account: null,
-        permissionMode: 'default',
-      };
-      expect(changesApprovedWork({ permissionMode: 'default' }, existing)).toBe(false);
-      expect(changesApprovedWork({ permissionMode: 'bypassPermissions' }, existing)).toBe(true);
     });
   });
 

@@ -662,6 +662,33 @@ export function buildAgentPausedNotice(agentName: string, subjectAuthorId: strin
 }
 
 /**
+ * The durable `notice` for a member somebody paused while it was answering
+ * here (DOR-3178): the pause stopped this turn. It names the person who paused
+ * it, as the rename and move lines do, and names nobody when no person did.
+ * Same `agent_paused` notice and damping as {@link buildAgentPausedNotice}, so a
+ * room hears about one pause once.
+ *
+ * @param agentName - Display name of the paused agent.
+ * @param subjectAuthorId - Author id of that agent, for rendering.
+ * @param by - The person who paused it, or `null` when no person did.
+ */
+export function buildPausedMidTurnNotice(
+  agentName: string,
+  subjectAuthorId: string,
+  by: string | null
+): RoomEntryBody {
+  // A line starts with a capital even when the person is "the operator".
+  const who = by ? by.charAt(0).toUpperCase() + by.slice(1) : null;
+  return {
+    text: who
+      ? `${who} paused ${agentName}, so this turn stopped.`
+      : `${agentName} was paused, so this turn stopped.`,
+    notice: 'agent_paused',
+    subjectAuthorId,
+  };
+}
+
+/**
  * The durable `notice` for a member that left the room before the turn it was
  * owed ever ran.
  *

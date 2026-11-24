@@ -38,7 +38,6 @@
  */
 import type { Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { z } from 'zod';
 import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { KEPT_FROM_AUTO_MOVES } from '@dorkos/shared/permissions';
 import {
@@ -84,7 +83,7 @@ import { checkClaudeLaunchAccount } from '../services/runtimes/claude-code/launc
 import { projectRegistry } from '../services/projects/project-registry.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
@@ -250,7 +249,7 @@ export function mountAccountEligibilityRoutes(
   router.get('/claude-code/account-eligibility', async (c) => {
     const parsed = AccountEligibilityQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     try {
       const project = parsed.data.project
@@ -273,13 +272,9 @@ export function mountAccountEligibilityRoutes(
     if (refused) return refused;
     const parsed = ProjectAccountsRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) {
-      return c.json(
-        {
-          error: 'Send the project folder as `project` and the account ids as `allow` (or null).',
-          details: z.treeifyError(parsed.error),
-        },
-        400
-      );
+      return validationProblem(c, parsed.error, {
+        detail: 'Send the project folder as `project` and the account ids as `allow` (or null).',
+      });
     }
     try {
       const project = await projectOfNamedFolder(parsed.data.project);
@@ -363,10 +358,7 @@ export function mountAccountEligibilityRoutes(
     if (refused) return refused;
     const parsed = ProjectWithoutCreditsRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) {
-      return c.json(
-        { error: 'Send the session as `sessionId`.', details: z.treeifyError(parsed.error) },
-        400
-      );
+      return validationProblem(c, parsed.error, { detail: 'Send the chat as `sessionId`.' });
     }
     try {
       const folder = await folderOfSession(parsed.data.sessionId);
@@ -428,13 +420,9 @@ export function mountAccountEligibilityRoutes(
     if (refused) return refused;
     const parsed = OnlyProjectsRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) {
-      return c.json(
-        {
-          error: 'Send the project folders as `projects` (or null for any project).',
-          details: z.treeifyError(parsed.error),
-        },
-        400
-      );
+      return validationProblem(c, parsed.error, {
+        detail: 'Send the project folders as `projects` (or null for any project).',
+      });
     }
     const accountId = c.req.param('id');
     const unknownAccount = {
@@ -525,10 +513,7 @@ export function mountAccountEligibilityRoutes(
     if (refused) return refused;
     const parsed = NoAutoMoveSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) {
-      return c.json(
-        { error: 'Send `noAutoMove` as true or false.', details: z.treeifyError(parsed.error) },
-        400
-      );
+      return validationProblem(c, parsed.error, { detail: 'Send `noAutoMove` as true or false.' });
     }
     const accountId = c.req.param('id');
     const unknownAccount = {

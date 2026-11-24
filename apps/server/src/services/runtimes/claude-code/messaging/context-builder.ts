@@ -745,6 +745,7 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
     case 'approval_verdict':
     case 'direct_notes':
     case 'turn_cutoff':
+    case 'timers_stopped':
     case 'new_since_last_run':
       // Prose written once for every runtime; several carry a security seam.
       return renderProseContextBlock(entry);

@@ -326,6 +326,24 @@ describe('useful-raise rate', () => {
 
     expect(measure().usefulRaiseRate).toMatchObject({ part: 1, whole: 2 });
   });
+
+  it('does not count a stored reaction that is not a real emoji as an answer', () => {
+    beat('b1', 4 * DAY, { outcome: 'worked', turnSessionId: 'chat-1', raises: 2 });
+    for (const [id, emoji] of [
+      ['e-liked', '👍'],
+      ['e-not-emoji', '\u{1F44D}\u{E0068}\u{E0069}\u{E007F}'],
+    ] as const) {
+      entry(id, 'room-team', 'author-juno', 2 * DAY + 10 * HOUR);
+      outboxRow(`o-${id}`, 'b1', 2 * DAY + 10 * HOUR, {
+        rung: 'room',
+        roomId: 'room-team',
+        deliveredEntryId: id,
+      });
+      react(id, 'room-team', 'author-person', emoji, 2 * DAY);
+    }
+
+    expect(measure().usefulRaiseRate).toMatchObject({ part: 1, whole: 2 });
+  });
 });
 
 describe('interruptions per useful outcome', () => {

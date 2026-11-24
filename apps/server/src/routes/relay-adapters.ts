@@ -30,10 +30,9 @@ import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { honoRateLimit } from '../http/rate-limiter.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import {
   CreateBindingRequestSchema,
   UpdateBindingRequestSchema,
@@ -300,7 +299,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
     if (!bindingStore) return c.json({ error: 'Binding subsystem not available' }, 503);
     const result = CreateBindingRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
+      return validationProblem(c, result.error);
     }
     // Validate adapter exists
     const adapterExists = adapterManager.getAdapter(result.data.adapterId);
@@ -384,7 +383,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
     if (!bindingStore) return c.json({ error: 'Binding subsystem not available' }, 503);
     const result = MoveBindingRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
+      return validationProblem(c, result.error);
     }
 
     const meshCore = adapterManager.getMeshCore();
@@ -433,7 +432,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
 
     const result = UpdateBindingRequestSchema.safeParse(readJsonBody(c));
     if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
+      return validationProblem(c, result.error);
     }
 
     // `bridge: 'room'` requires a `chatId` (spec §3.1), but a PATCH body is

@@ -14,13 +14,14 @@
  */
 import { Hono } from 'hono';
 import { ListNotificationsQuerySchema } from '@dorkos/shared/notification-schemas';
-import { errorBody, validationFailureBody } from '../lib/route-utils.js';
+import { errorBody } from '../lib/route-utils.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { notificationEntitlement } from '../services/notifications/notification-entitlement.js';
 import type { NotificationService } from '../services/notifications/notification-service.js';
+import { validationProblem } from '@dorkos/http-kit';
 
 /** Refusal code for a caller that may not move read state. */
 const NOT_THE_OPERATOR_CODE = 'NOTIFICATIONS_OPERATOR_ONLY';
@@ -40,7 +41,7 @@ export function createNotificationsRoutes(service: NotificationService): Hono<Ap
 
   router.get('/', (c) => {
     const query = ListNotificationsQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
 
     // An unentitled caller gets `200` with an empty list, never `403`: the
     // response must not tell a machine what it is not allowed to read about.

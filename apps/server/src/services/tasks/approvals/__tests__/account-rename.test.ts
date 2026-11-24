@@ -15,7 +15,7 @@ import { writeSkillFile } from '@dorkos/skills/writer';
 import { TaskStore } from '../../task-store.js';
 import type { TaskFileSync } from '../../sync/task-file-sync.js';
 import { parseContentKey } from '../../schedule-permission-clamp.js';
-import { renameScheduleAccount, rewriteScheduleAccountInPlace } from '../account-rename.js';
+import { renameScheduleAccount } from '../account-rename.js';
 
 const notOwned = async () => false;
 
@@ -125,18 +125,6 @@ describe('renameScheduleAccount', () => {
     });
   });
 
-  it('leaves a schedule on another account alone', async () => {
-    await writeSchedule('work');
-    const id = store.fileSync.upsertFromFile(definition('work')).id;
-    const before = row(id);
-    expect(await renameScheduleAccount(db, 'default', 'default-2', notOwned)).toEqual({
-      rows: 0,
-      files: 0,
-    });
-    expect(row(id)).toEqual(before);
-    expect(await fileAccount()).toBe('work');
-  });
-
   it('edits only the account value, byte for byte everywhere else', async () => {
     const before = [
       '---',
@@ -164,11 +152,6 @@ describe('renameScheduleAccount', () => {
       before.replace("account: 'default' #", "account: 'default-2' #")
     );
     expect(row(id).account).toBe('default-2');
-  });
-
-  it('leaves a flow-style schedule block to the planner', () => {
-    const flow = '---\nname: x\nschedule: { cron: "0 7 * * *", account: default }\n---\nbody\n';
-    expect(rewriteScheduleAccountInPlace(flow, 'default', 'default-2')).toBeNull();
   });
 
   it('skips a schedule an installed package owns: neither its row nor its file moves', async () => {

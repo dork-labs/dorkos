@@ -15,11 +15,20 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-const rules = vi.hoisted(() => ({ claudeCode: {} as Record<string, unknown> }));
+const rules = vi.hoisted(() => ({
+  claudeCode: {} as Record<string, unknown>,
+  /** The trust preset; `undefined` reads as Trusted. */
+  preset: undefined as string | undefined,
+}));
 
 vi.mock('../../../../core/config-manager.js', () => ({
   configManager: {
-    get: (key: string) => (key === 'runtimes' ? { claudeCode: rules.claudeCode } : undefined),
+    get: (key: string) =>
+      key === 'runtimes'
+        ? { claudeCode: rules.claudeCode }
+        : key === 'permissions' && rules.preset
+          ? { preset: rules.preset }
+          : undefined,
   },
 }));
 vi.mock('../../../../core/usage/account-eligibility.js', async (importOriginal) => ({
@@ -32,6 +41,14 @@ import type { Task } from '@dorkos/shared/schemas';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
 import { getTasksTools } from '../tasks/task-tools.js';
+import {
+  NotificationService,
+  setNotificationService,
+} from '../../../../notifications/notification-service.js';
+import { NotificationStore } from '../../../../notifications/notification-store.js';
+import { setAccountUsageStore } from '../../../../core/usage/current-usage-store.js';
+import type { AccountUsageStore } from '../../../../core/usage/account-usage-store.js';
+import { UNTOLD_ACCOUNT_MOVE_REASON } from '../../../../tasks/approvals/account-move.js';
 
 interface SessionTool {
   name: string;
@@ -55,6 +72,8 @@ const BASE = {
 let store: TaskStore;
 let tools: Record<string, SessionTool>;
 let root: string;
+let deps: McpToolDeps;
+let projectPath: string;
 
 beforeEach(async () => {
   rules.claudeCode = {
@@ -74,9 +93,9 @@ beforeEach(async () => {
   root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-task-tools-acct-')));
   const dorkHome = path.join(root, 'dork');
   await fs.mkdir(path.join(dorkHome, 'skills'), { recursive: true });
-  const projectPath = path.join(root, 'agent');
+  projectPath = path.join(root, 'agent');
   await fs.mkdir(projectPath, { recursive: true });
-  const deps = {
+  deps = {
     taskStore: store,
     defaultCwd: '/tmp/test',
     dorkHome,
@@ -143,5 +162,155 @@ describe('tasks_update', () => {
     const { isError } = await call('tasks_update', { id, account: 'spare' });
     expect(isError).toBe(false);
     expect(store.getTask(id)?.account).toBe('spare');
+  });
+});
+
+describe('tasks_update moving an approved schedule to another account (DOR-5097)', () => {
+  let notifications: NotificationStore;
+
+  beforeEach(() => {
+    rules.claudeCode.accounts = [
+      ...(rules.claudeCode.accounts as unknown[]),
+      { id: 'spare', path: '/accounts/spare', label: 'Spare', onlyProjects: null },
+      { id: 'lab', path: '/accounts/lab', label: 'Lab', onlyProjects: null },
+    ];
+    const account = (id: string, label: string, extra: Record<string, unknown> = {}) => ({
+      runtime: 'claude-code',
+      id,
+      label,
+      path: `/accounts/${id}`,
+      routable: true,
+      implicit: false,
+      isDefault: false,
+      ...extra,
+    });
+    setAccountUsageStore({
+      listAccounts: () => [
+        account('work', 'Work'),
+        account('spare', 'Spare'),
+        account('client', 'Client Work'),
+        account('lab', 'Lab', { noAutoMove: true }),
+      ],
+    } as unknown as AccountUsageStore);
+    notifications = new NotificationStore(createTestDb());
+    setNotificationService(new NotificationService(notifications));
+  });
+
+  afterEach(() => {
+    setAccountUsageStore(undefined);
+    setNotificationService(null);
+    rules.preset = undefined;
+  });
+
+  /** The tools as another caller sees them: no verified agent, or a marked turn. */
+  const toolsFor = (opts: { agent?: boolean; marked?: boolean }) =>
+    Object.fromEntries(
+      (
+        getTasksTools(
+          deps,
+          undefined,
+          opts.marked ? () => ({ outsider: true }) : undefined,
+          opts.agent === false ? undefined : () => projectPath
+        ) as unknown as SessionTool[]
+      ).map((t) => [t.name, t])
+    );
+
+  /** A person's own approved global schedule on `work`. */
+  function personsApproved(): string {
+    const created = store.createTask({
+      name: 'nightly-sweep',
+      description: 'Sweep',
+      prompt: 'sweep the backlog',
+      cron: '0 3 * * *',
+      filePath: path.join(root, 'dork', 'skills', 'nightly-sweep', 'SKILL.md'),
+      account: 'work',
+    } as Parameters<TaskStore['createTask']>[0]);
+    return created.id;
+  }
+
+  async function callWith(set: Record<string, SessionTool>, args: Record<string, unknown>) {
+    const result = await set['tasks_update']!.handler(args, undefined);
+    return JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+  }
+
+  it.each([
+    ['a caller DorkOS cannot identify', { agent: false }],
+    ['an agent whose turn read outside words', { marked: true }],
+  ])('keeps no account move for %s (S-c)', async (_, opts) => {
+    const id = personsApproved();
+
+    const payload = await callWith(toolsFor(opts), { id, account: 'spare' });
+
+    expect(payload).not.toHaveProperty('accountNote');
+    expect(store.getTask(id)?.status).toBe('pending_approval');
+  });
+
+  it('keeps no account move on the Careful preset (S-c)', async () => {
+    rules.preset = 'careful';
+    const id = await approved();
+
+    const { payload } = await call('tasks_update', { id, account: 'spare' });
+
+    expect(payload).not.toHaveProperty('accountNote');
+    expect(store.getTask(id)?.status).toBe('pending_approval');
+  });
+
+  /** A schedule on `work`, approved by a person. */
+  async function approved(): Promise<string> {
+    const created = await call('tasks_create', { ...BASE, account: 'work' });
+    const id = (created.payload.schedule as Task).id;
+    store.updateTask(id, { status: 'active' });
+    expect(store.getTask(id)?.status).toBe('active');
+    return id;
+  }
+
+  it('keeps it approved and running, and says the person was told', async () => {
+    const id = await approved();
+
+    const { isError, payload } = await call('tasks_update', { id, account: 'spare' });
+
+    expect(isError).toBe(false);
+    expect(payload).toMatchObject({
+      schedule: { status: 'active', account: 'spare' },
+      accountNote: expect.stringContaining('stays approved'),
+    });
+    expect(payload).not.toHaveProperty('needsReapproval');
+    const told = notifications
+      .list({ limit: 10 } as Parameters<NotificationStore['list']>[0])
+      .notifications.filter((n) => n.kind === 'schedule.armed_by_agent');
+    expect(told).toHaveLength(1);
+    expect(told[0]!.title).toContain('to Spare');
+  });
+
+  it('parks instead, saying why, when the person cannot be told', async () => {
+    // Purpose: a kept move never stands unseen; both doors agree (S4, C3).
+    setNotificationService(null);
+    const id = await approved();
+
+    const { payload } = await call('tasks_update', { id, account: 'spare' });
+
+    expect(payload).toMatchObject({ needsReapproval: true });
+    expect(store.getTask(id)).toMatchObject({
+      status: 'pending_approval',
+      reason: UNTOLD_ACCOUNT_MOVE_REASON,
+    });
+  });
+
+  it('parks a move to an account kept out of automatic moves, and says nothing of a move', async () => {
+    const id = await approved();
+
+    const { payload } = await call('tasks_update', { id, account: 'lab' });
+
+    expect(payload).toMatchObject({ needsReapproval: true });
+    expect(payload).not.toHaveProperty('accountNote');
+  });
+
+  it('pins and unpins a schedule to its account', async () => {
+    const id = await approved();
+
+    expect((await call('tasks_update', { id, accountPinned: true })).isError).toBe(false);
+    expect(store.getTask(id)).toMatchObject({ status: 'active', accountPinned: true });
+    await call('tasks_update', { id, accountPinned: false });
+    expect(store.getTask(id)?.accountPinned).toBeUndefined();
   });
 });

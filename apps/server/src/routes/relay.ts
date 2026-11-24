@@ -23,10 +23,9 @@ import {
 } from '@dorkos/shared/relay-schemas';
 import { initSSEStream } from '../services/core/streams/stream-adapter.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
 import { resolveSubjectLabels, type SubjectLabel } from '../services/relay/subject-resolver.js';
@@ -217,7 +216,7 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
   // POST /messages — Send a message
   router.post('/messages', async (c) => {
     const result = SendMessageRequestSchema.safeParse(readJsonBody(c));
-    if (!result.success) return c.json(validationFailureBody(result.error), 400);
+    if (!result.success) return validationProblem(c, result.error);
 
     // This route takes a client-supplied `from`. It must not let an untrusted
     // caller assert a principal the initiate-consent gate trusts as exempt
@@ -284,7 +283,7 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
   // GET /messages — List with filters and cursor pagination
   router.get('/messages', (c) => {
     const result = MessageListQuerySchema.safeParse(readQuery(c));
-    if (!result.success) return c.json(validationFailureBody(result.error), 400);
+    if (!result.success) return validationProblem(c, result.error);
     return c.json(relayCore.listMessages(result.data));
   });
 
@@ -335,7 +334,7 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
   // POST /endpoints — Register an endpoint
   router.post('/endpoints', async (c) => {
     const result = EndpointRegistrationSchema.safeParse(readJsonBody(c));
-    if (!result.success) return c.json(validationFailureBody(result.error), 400);
+    if (!result.success) return validationProblem(c, result.error);
 
     // This route takes a client-supplied subject and, with login off by
     // default, is reachable by anything that can reach the port. A mailbox in a
@@ -369,7 +368,7 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
   // remaining segment but the last, as dots and slashes alike may sit in it.
   router.get('/endpoints/:subject{.+}/inbox', async (c) => {
     const result = InboxQuerySchema.safeParse(readQuery(c));
-    if (!result.success) return c.json(validationFailureBody(result.error), 400);
+    if (!result.success) return validationProblem(c, result.error);
     try {
       const messages = await relayCore.readInbox(c.req.param('subject'), result.data);
       return c.json(messages);
@@ -393,7 +392,7 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
   // GET /dead-letters — List dead-letter messages
   router.get('/dead-letters', async (c) => {
     const result = DeadLetterQuerySchema.safeParse(readQuery(c));
-    if (!result.success) return c.json(validationFailureBody(result.error), 400);
+    if (!result.success) return validationProblem(c, result.error);
     const { endpointHash } = result.data;
     const deadLetters = await relayCore.getDeadLetters(endpointHash ? { endpointHash } : undefined);
     return c.json(deadLetters);

@@ -112,7 +112,7 @@ export function refuseAgentToolFiles(
 
 /** What a turn that read outsider words reads when it tries to rewrite these files. */
 export const AGENT_FILES_OUTSIDER_REFUSAL =
-  "This turn read words DorkOS can't vouch for, such as a Wi-Fi sign-in's, so it " +
+  "This turn read words DorkOS can't vouch for, such as those from a sign-in on your network, so it " +
   "can't change the agent's instructions, such as SOUL.md or HEARTBEAT.md. Ask the person " +
   'to change them at ' +
   'the computer DorkOS runs on.';
@@ -186,7 +186,7 @@ export function namedInstructionFields(body: unknown): string[] {
 /**
  * Refuse `update_agent` rewriting SOUL.md, HEARTBEAT.md or the persona from a
  * turn that read words DorkOS cannot vouch for (DOR-3037): a beat runs at the
- * agent's own level, so a HEARTBEAT.md written from a Wi-Fi turn would carry
+ * agent's own level, so a HEARTBEAT.md written from a network turn would carry
  * that turn's words past its cap. Read from the turn's own record, never from
  * the model. Throws the tool's refusal; answers `undefined` when the call may
  * go on, so a capability can chain its handler after it with `??`.

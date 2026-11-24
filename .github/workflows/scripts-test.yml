@@ -294,6 +294,19 @@ jobs:
       - name: Security verdict fixtures
         run: bash scripts/test-security-verdict-check.sh
 
+      # security-findings.sh encrypts a failing Security lens's details to
+      # Security's key (and review-gh.sh saves them). The plumbing runs on a
+      # stub; the round trip needs the real age, so install the pinned build
+      # and make a missing one a failure rather than a skip.
+      - name: Install age for the Security findings fixtures
+        run: |
+          bash scripts/install-age.sh "$RUNNER_TEMP/age-bin"
+          echo "AGE_BIN_DIR=$RUNNER_TEMP/age-bin" >>"$GITHUB_ENV"
+      - name: Security findings fixtures
+        env:
+          REQUIRE_AGE: '1'
+        run: bash scripts/test-security-findings.sh
+
       - name: Git-guard hook fixtures
         run: bash scripts/test-git-guard.sh
 
@@ -780,6 +793,14 @@ jobs:
       # repos with a local origin), git and jq, no pnpm.
       - name: Release-branch contents fixtures
         run: bash scripts/test-release-branch-contents.sh
+
+      # release-gate.sh is the daily release's last decision before npm with no
+      # person approving (DOR-5123): P still on main and not reverted, P's own
+      # full run green, and every required check green in P's merge-queue
+      # build. A rule that quietly loosens ships an unproven commit. Stub gh, jq
+      # only.
+      - name: Release gate fixtures
+        run: bash scripts/test-release-gate.sh
 
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages

@@ -484,6 +484,38 @@ describe('what may be a reaction', () => {
     expect(isReactionEmoji(overIt), 'one past it is not').toBe(false);
   });
 
+  // The black flag plus the letters of a region and an end mark: the only emoji
+  // spelled this way that pickers offer are England, Scotland and Wales.
+  const flagOf = (letters: string) =>
+    `\u{1F3F4}${[...letters].map((c) => String.fromCodePoint(0xe0000 + c.charCodeAt(0))).join('')}\u{E007F}`;
+
+  it.each([
+    ['England', flagOf('gbeng')],
+    ['Scotland', flagOf('gbsct')],
+    ['Wales', flagOf('gbwls')],
+  ])('accepts subdivision flags: %s', (_name, emoji) => {
+    expect(isReactionEmoji(emoji)).toBe(true);
+    expect(ToggleReactionRequestSchema.parse({ emoji }).emoji).toBe(emoji);
+  });
+
+  it.each([
+    ['flag letters after a different emoji', `\u{1F44D}${flagOf('gbeng').slice(2)}`],
+    ['a flag with no end mark', flagOf('gbeng').slice(0, -2)],
+    ['flag letters with no flag in front', flagOf('gbeng').slice(2)],
+    ['a region pickers do not offer', flagOf('usca')],
+    ['more letters after a real flag', `${flagOf('gbeng')}${flagOf('ok').slice(2)}`],
+    ['an end mark with no letters', '\u{1F3F4}\u{E007F}'],
+  ])('rejects a flag-like sequence that isn’t one: %s', (_reason, value) => {
+    expect(isReactionEmoji(value)).toBe(false);
+    expect(ToggleReactionRequestSchema.safeParse({ emoji: value }).success).toBe(false);
+  });
+
+  it('rejects a run of flags too long for one reaction', () => {
+    const three = `${flagOf('gbeng')}${flagOf('gbsct')}${flagOf('gbwls')}`;
+    expect([...three].length).toBeGreaterThan(REACTION_EMOJI_MAX_CODE_POINTS);
+    expect(isReactionEmoji(three)).toBe(false);
+  });
+
   it('never accepts an angle bracket or a control character, whatever surrounds it', () => {
     for (const value of [
       '\u{1F44D}<',

@@ -1,5 +1,5 @@
 /**
- * Wi-Fi access (DOR-2930): the one controller this server runs, wired to the
+ * Network access (DOR-2930): the one controller this server runs, wired to the
  * real settings, login posture and network. See `lan-access.ts`.
  *
  * @module services/core/lan-access
@@ -29,7 +29,7 @@ export { getLanAccessHosts, getLanAccessOrigins } from './lan-trust.js';
 export function writeLanAccessSetting(enabled: boolean): void {
   const before = configManager.get('server');
   configManager.set('server', { ...before, lanAccess: enabled });
-  logConfigWrite('Wi-Fi access', 'server', before, configManager.get('server'));
+  logConfigWrite('Network access', 'server', before, configManager.get('server'));
 }
 
 /**
@@ -42,13 +42,13 @@ export function lanAccessEnvironmentLock(): string | null {
   return env.DORKOS_ALLOW_INSECURE_BIND ? 'DORKOS_ALLOW_INSECURE_BIND' : null;
 }
 
-/** The server's Wi-Fi access controller. `index.ts` attaches it once listening. */
+/** The server's network access controller. `index.ts` attaches it once listening. */
 export const lanAccess = new LanAccess({
   readSetting: () => configManager.get('server')?.lanAccess === true,
   writeSetting: writeLanAccessSetting,
   canExpose,
   setByEnvironment: lanAccessEnvironmentLock,
-  isLocalPeer: (address) => isLocalNetworkPeer(address),
+  isLocalPeer: (address, localAddress) => isLocalNetworkPeer(address, undefined, localAddress),
   secureCookies: AUTH_COOKIES_SECURE,
   readLocalName: () => readLocalName(),
   readAddresses: () => readLanAddresses(),

@@ -30,7 +30,6 @@
 import { Readable } from 'node:stream';
 import type { TLSSocket } from 'node:tls';
 import { Hono, type Context } from 'hono';
-import { z } from 'zod';
 import fs from 'fs/promises';
 import path from 'path';
 import {
@@ -61,7 +60,7 @@ import {
   bridgeKeyFor,
 } from '../services/workbench-serve/index.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 
 const router = new Hono<ApiEnv>();
 
@@ -127,7 +126,7 @@ function tokenErrorStatus(err: WorkbenchTokenError): 401 | 403 {
 router.post('/sign', async (c) => {
   const parsed = WorkbenchSignRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
 
   if (!isPersonalComputer()) {
@@ -225,7 +224,7 @@ async function signPreview(c: Context<ApiEnv>, port: number) {
 router.post('/probe', async (c) => {
   const parsed = WorkbenchProbeRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   // A hub's own ports are not the person's, so it does not say. The browser
   // then asks for a preview anyway, which a hub answers as a tunnel would.
@@ -248,7 +247,7 @@ router.post('/probe', async (c) => {
 router.post('/bridge', async (c) => {
   const parsed = WorkbenchBridgeStatusRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   return c.json(frameBridgeLedger.status(await bridgeKeyFor(parsed.data)));
 });

@@ -19,6 +19,7 @@
  * @module features/auth/model/auth-client
  */
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
+import { readErrorBody } from '@dorkos/shared/problem';
 
 /** A local owner/user record as returned by Better Auth. */
 export interface AuthUser {
@@ -145,7 +146,7 @@ async function toAuthError(res: Response): Promise<AuthError> {
   return {
     message:
       body.message ||
-      (typeof body.error === 'string' ? body.error : '') ||
+      readErrorBody(body, '').message ||
       res.statusText ||
       `The server didn’t accept that (${res.status}). Try again.`,
     status: res.status,

@@ -20,6 +20,7 @@ import {
   type StepUpRefusalCode,
 } from '@dorkos/shared/step-up';
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
+import { readErrorBody } from '@dorkos/shared/problem';
 
 /** `/api` is in both the base URL and the path, so it is said once. */
 const ROUTE = STEP_UP_PATH.replace(/^\/api/, '');
@@ -58,7 +59,7 @@ async function failureOf(res: Response): Promise<ConfirmActionFailure> {
   return {
     ok: false,
     reason: KNOWN.includes(code) ? (code as StepUpRefusalCode) : 'other',
-    message: typeof body?.error === 'string' ? body.error : 'That didn’t work. Try again.',
+    message: readErrorBody(body, 'That didn’t work. Try again.').message,
     ...(number('triesLeft') !== undefined ? { triesLeft: number('triesLeft') } : {}),
     ...(number('retryAfterSeconds') !== undefined
       ? { retryAfterSeconds: number('retryAfterSeconds') }

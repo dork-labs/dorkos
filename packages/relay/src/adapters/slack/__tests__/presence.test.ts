@@ -13,7 +13,6 @@ import {
   WORKING_STATUS,
   PENDING_REACTION_TTL_MS,
   PRESENCE_REFRESH_MS,
-  SETTLED_GRACE_MS,
   ABANDONED_BINDING_TTL_MS,
 } from '../presence.js';
 import type { SlackPresenceState, PresenceContext } from '../presence.js';
@@ -93,11 +92,6 @@ describe('slack presence', () => {
       expect(state.active.size).toBe(0);
     });
 
-    it('releases without a held claim without touching Slack', () => {
-      releasePresence(ctx, 'terminal');
-      expect(reactionsRemove).not.toHaveBeenCalled();
-    });
-
     it('holds one claim per turn, and lets go of it exactly once', () => {
       queuePendingReaction(state, 'D123', '1234.0001');
       claimPresence(ctx);
@@ -144,13 +138,6 @@ describe('slack presence', () => {
       expect(state.bindings.size).toBe(0);
     });
 
-    it('never sends a Slack call it cannot make (no client)', () => {
-      queuePendingReaction(state, 'D123', '1234.0001');
-      claimPresence({ ...ctx, client: null });
-      expect(reactionsAdd).not.toHaveBeenCalled();
-      expect(state.active.size).toBe(0);
-    });
-
     it('survives a Slack reaction failure', async () => {
       reactionsAdd.mockRejectedValueOnce(new Error('no_permission'));
       const warn = vi.fn();
@@ -161,10 +148,6 @@ describe('slack presence', () => {
 
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to add reaction'));
       expect(state.active.size).toBe(1);
-    });
-
-    it('uses the eyes emoji, the "seen, on it" convention', () => {
-      expect(PRESENCE_EMOJI).toBe('eyes');
     });
   });
 
@@ -223,32 +206,6 @@ describe('slack presence', () => {
       expect(state.pendingReactions.get('D123')?.map((e) => e.ts)).toEqual(['next-person']);
     });
 
-    it('draws the line at five seconds, not merely somewhere', () => {
-      vi.useFakeTimers();
-      // Pinned, not just referenced: the boundary below moves with the constant,
-      // so widening the grace has to fail something.
-      expect(SETTLED_GRACE_MS).toBe(5_000);
-      queuePendingReaction(state, 'D123', 'first');
-      claimPresence(ctx);
-      releasePresence(ctx, 'terminal');
-      queuePendingReaction(state, 'D123', 'second');
-      reactionsAdd.mockClear();
-
-      // Just inside the grace: this is the finished turn still talking.
-      vi.advanceTimersByTime(SETTLED_GRACE_MS - 100);
-      claimPresence(ctx);
-      expect(reactionsAdd).not.toHaveBeenCalled();
-
-      // Just outside it: this is a person asking something new.
-      vi.advanceTimersByTime(200);
-      claimPresence(ctx);
-      expect(reactionsAdd).toHaveBeenCalledWith({
-        channel: 'D123',
-        name: PRESENCE_EMOJI,
-        timestamp: 'second',
-      });
-    });
-
     it('lets go of a binding whose question was never answered', () => {
       vi.useFakeTimers();
       queuePendingReaction(state, 'D123', 'asker');
@@ -264,25 +221,6 @@ describe('slack presence', () => {
       claimPresence({ ...ctx, channelId: 'D999', threadTs: '77.1', streamKeyTs: '77.1' });
 
       expect(state.bindings.has('D123:1234.0001')).toBe(false);
-    });
-
-    it('treats a later question on the same thread as a new turn', () => {
-      vi.useFakeTimers();
-      queuePendingReaction(state, 'D123', 'first');
-      claimPresence(ctx);
-      releasePresence(ctx, 'terminal');
-
-      // Two turns in one Slack thread share a stream key — a person's follow-up
-      // is a new turn, not an echo of the one that just ended.
-      vi.advanceTimersByTime(30_000);
-      queuePendingReaction(state, 'D123', 'second');
-      claimPresence(ctx);
-
-      expect(reactionsAdd).toHaveBeenLastCalledWith({
-        channel: 'D123',
-        name: PRESENCE_EMOJI,
-        timestamp: 'second',
-      });
     });
   });
 

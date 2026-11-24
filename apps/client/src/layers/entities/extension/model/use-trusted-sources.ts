@@ -16,14 +16,17 @@ import type {
 } from '@dorkos/shared/extension-approval-schemas';
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
+import { readResponseError } from '@/layers/shared/lib';
 
 /** The query key for the trusted list. */
 export const trustedSourcesQueryKey = [...extensionQueryKeys.all, 'trusted-sources'] as const;
 
 /** A failed request's own sentence, or the status when it sent none. */
 async function failureOf(res: Response): Promise<Error> {
-  const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
-  return new Error(body.message ?? body.error ?? `The server answered ${res.status}`);
+  const body = await readResponseError(res, `The server answered ${res.status}`, {
+    oldMessageFirst: true,
+  });
+  return new Error(body.message);
 }
 
 /** Send one trusted-source write. */

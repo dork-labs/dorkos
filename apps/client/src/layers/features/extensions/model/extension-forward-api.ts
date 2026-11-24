@@ -23,6 +23,7 @@ import {
 import { resolveStableClientId } from '@/layers/shared/lib/transport';
 import { extensionApiUrl } from './extension-api-url';
 import { requestForwardConsent } from './forward-consent';
+import { readErrorBody } from '@dorkos/shared/problem';
 
 /** The codes the server answers with that `api.forward` throws as themselves. */
 const FORWARD_CODES: ReadonlySet<string> = new Set<ForwardErrorCode>([
@@ -45,21 +46,22 @@ interface PendingConsent {
 }
 
 /** A refused response's body, as a {@link ForwardError}. */
-function refusalOf(status: number, body: { error?: string; code?: string }): ForwardError {
+function refusalOf(status: number, body: unknown): ForwardError {
+  const reading = readErrorBody(body, 'DorkOS could not do that. Try again.');
   const code: ForwardErrorCode =
-    body.code && FORWARD_CODES.has(body.code)
-      ? (body.code as ForwardErrorCode)
+    reading.code && FORWARD_CODES.has(reading.code)
+      ? (reading.code as ForwardErrorCode)
       : status === 404
         ? 'not_found'
         : status === 403
           ? 'person_required'
           : 'unavailable';
-  return new ForwardError(code, body.error ?? 'DorkOS could not do that. Try again.');
+  return new ForwardError(code, reading.message);
 }
 
 /** A refused response, as a {@link ForwardError}. */
 async function refusal(res: Response): Promise<ForwardError> {
-  return refusalOf(res.status, (await res.json().catch(() => ({}))) as { error?: string });
+  return refusalOf(res.status, await res.json().catch(() => undefined));
 }
 
 /**

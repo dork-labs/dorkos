@@ -106,6 +106,8 @@ const CARRIES_PROSE: Record<ContextKind, boolean> = {
   context_warning: false,
   // Two server-derived facts about how the stall guard ended the last turn.
   turn_cutoff: false,
+  // A count and a time the server derived from the process ending (DOR-3755).
+  timers_stopped: false,
   new_since_last_run: false,
 };
 
@@ -194,6 +196,11 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
     kind: 'turn_cutoff',
     scope: 'per-turn',
     data: { windowMs: 600_000, neverStarted: false },
+  },
+  timers_stopped: {
+    kind: 'timers_stopped',
+    scope: 'per-turn',
+    data: { timers: 1, at: Date.UTC(2026, 10, 1, 20, 48, 7) },
   },
   approval_verdict: {
     kind: 'approval_verdict',

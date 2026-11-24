@@ -168,163 +168,90 @@ describe('BridgedAskDelivery', () => {
     expect(options.serverBridgePrincipal).toBe(true);
   });
 
-  it('sends nothing for an Ask in a session no room owns', async () => {
-    startDelivery();
+  const questionEvent = {
+    type: 'question_prompt',
+    id: 'q-1',
+    startedAt: Date.now(),
+    remainingMs: TIMEOUT_MS,
+    timeoutMs: TIMEOUT_MS,
+    questions: [{ question: 'Which branch?', header: 'Branch' }],
+  };
 
-    park(LONE_SESSION, approvalEvent());
-
-    await expectNoPublish();
-  });
-
-  it('sends nothing when the room has no live bridge', async () => {
-    startDelivery({ bridge: null });
-
-    park(ROOM_SESSION, approvalEvent());
-
-    await expectNoPublish();
-  });
-
-  it('sends nothing into a group chat, however many approvers are in it', async () => {
-    startDelivery({ bridge: bridgeOn({ platformChatType: 'group' }) });
-
-    park(ROOM_SESSION, approvalEvent());
-
-    await expectNoPublish();
-  });
-
-  it('sends nothing when the chat’s person is not on the approver list', async () => {
-    startDelivery({ keys: { [AGENT_AUTHOR]: '/agents/ana', [APPROVER_AUTHOR]: STRANGER_KEY } });
-
-    park(ROOM_SESSION, approvalEvent());
-
-    await expectNoPublish();
-  });
+  it.each<[string, World, string, Record<string, unknown>?]>([
+    ['the room has no live bridge', { bridge: null }, ROOM_SESSION],
+    ['no room owns the session', {}, LONE_SESSION],
+    [
+      'the chat is a group, however many approvers are in it',
+      { bridge: bridgeOn({ platformChatType: 'group' }) },
+      ROOM_SESSION,
+    ],
+    [
+      'the chat’s person is not on the approver list',
+      { keys: { [AGENT_AUTHOR]: '/agents/ana', [APPROVER_AUTHOR]: STRANGER_KEY } },
+      ROOM_SESSION,
+    ],
+    [
+      'the roster’s only outsider came through a different bot',
+      { keys: { [AGENT_AUTHOR]: '/agents/ana', [APPROVER_AUTHOR]: OTHER_BOT_KEY } },
+      ROOM_SESSION,
+    ],
+    ['the chat’s subject cannot be built', { subject: null }, ROOM_SESSION],
+    ['the Ask is a question, which the button path cannot carry', {}, ROOM_SESSION, questionEvent],
+  ])(
+    'sends nothing, and records no standing card, when %s',
+    async (_label, world, session, event) => {
+      startDelivery(world);
+      park(session, event ?? approvalEvent());
+      await expectNoPublish();
+      expect(delivery.hasStandingCard(ROOM_ID, AGENT_AUTHOR)).toBe(false);
+    }
+  );
 
   it('reads the allowlist the way the setup form stores it, one id per line', async () => {
     startDelivery({ approvers: ' 145223 \n 999999 ' });
-
     park(ROOM_SESSION, approvalEvent());
     await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
   });
 
-  it('sends nothing when the roster’s only outsider came through a different bot', async () => {
-    startDelivery({ keys: { [AGENT_AUTHOR]: '/agents/ana', [APPROVER_AUTHOR]: OTHER_BOT_KEY } });
-
-    park(ROOM_SESSION, approvalEvent());
-
-    await expectNoPublish();
-  });
-
-  it('sends nothing when the chat’s subject cannot be built', async () => {
-    startDelivery({ subject: null });
-
-    park(ROOM_SESSION, approvalEvent());
-
-    await expectNoPublish();
-  });
-
-  it('sends nothing for a question, which the button path cannot carry', async () => {
-    startDelivery();
-
-    park(ROOM_SESSION, {
-      type: 'question_prompt',
-      id: 'q-1',
-      startedAt: Date.now(),
-      remainingMs: TIMEOUT_MS,
-      timeoutMs: TIMEOUT_MS,
-      questions: [{ question: 'Which branch?', header: 'Branch' }],
-    });
-
-    await expectNoPublish();
-  });
-
-  it('sends nothing for an elicitation, which needs a form', async () => {
-    startDelivery();
-
-    park(ROOM_SESSION, {
-      type: 'elicitation_prompt',
-      id: 'e-1',
-      startedAt: Date.now(),
-      remainingMs: TIMEOUT_MS,
-      timeoutMs: TIMEOUT_MS,
-      serverName: 'linear',
-      message: 'Sign in to Linear',
-    });
-
-    await expectNoPublish();
-  });
-
   describe('the standing-card record', () => {
-    it('says a card is standing for the agent it sent one for, and only that one', async () => {
+    it('says a card is standing for the agent it sent one for, and forgets it once the turn resolves', async () => {
       startDelivery();
-
       park(ROOM_SESSION, approvalEvent());
       await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
 
       expect(delivery.hasStandingCard(ROOM_ID, AGENT_AUTHOR)).toBe(true);
       expect(delivery.hasStandingCard(ROOM_ID, 'author-someone-else')).toBe(false);
       expect(delivery.hasStandingCard('room_other', AGENT_AUTHOR)).toBe(false);
-      expect(delivery.hasStandingCard(ROOM_ID, undefined)).toBe(false);
-    });
-
-    it('says nothing is standing when no card was sent', async () => {
-      startDelivery({ bridge: null });
-
-      park(ROOM_SESSION, approvalEvent());
-      await expectNoPublish();
-
-      expect(delivery.hasStandingCard(ROOM_ID, AGENT_AUTHOR)).toBe(false);
-    });
-
-    it('records nothing when the consent gate refused the card', async () => {
-      // `canInitiate: false` comes back as a REJECTION, not a throw. Recording
-      // it would suppress the waiting sentence in exchange for a card that was
-      // never sent, and the approver would get silence — which is the failure
-      // this whole path exists to end.
-      publish.mockResolvedValue({
-        messageId: 'm-1',
-        deliveredTo: 0,
-        rejected: [{ endpointHash: 'e', reason: 'initiate_denied' }],
-      });
-      startDelivery();
-
-      park(ROOM_SESSION, approvalEvent());
-      await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
-
-      expect(delivery.hasStandingCard(ROOM_ID, AGENT_AUTHOR)).toBe(false);
-    });
-
-    it('records nothing when the platform refused the send', async () => {
-      publish.mockResolvedValue({
-        messageId: 'm-1',
-        deliveredTo: 1,
-        adapterResult: { success: false, error: 'chat not found' },
-      });
-      startDelivery();
-
-      park(ROOM_SESSION, approvalEvent());
-      await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
-
-      expect(delivery.hasStandingCard(ROOM_ID, AGENT_AUTHOR)).toBe(false);
-    });
-
-    it('records nothing when no adapter handled the publish at all', async () => {
-      publish.mockResolvedValue({ messageId: 'm-1', deliveredTo: 0 });
-      startDelivery();
-
-      park(ROOM_SESSION, approvalEvent());
-      await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
-
-      expect(delivery.hasStandingCard(ROOM_ID, AGENT_AUTHOR)).toBe(false);
-    });
-
-    it('forgets the card once the turn resolves, so suppression does not outlive it', async () => {
-      startDelivery();
-      park(ROOM_SESSION, approvalEvent());
-      await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
 
       getOrCreateProjector(ROOM_SESSION, '/work/alpha').resolveInteraction('tc-1', 'approved');
+      expect(delivery.hasStandingCard(ROOM_ID, AGENT_AUTHOR)).toBe(false);
+    });
 
+    // A refusal comes back as a RESULT, not a throw. Recording it would suppress
+    // the waiting sentence for a card that was never sent — silence for the approver.
+    it.each([
+      [
+        'the consent gate refused it',
+        {
+          messageId: 'm-1',
+          deliveredTo: 0,
+          rejected: [{ endpointHash: 'e', reason: 'initiate_denied' }],
+        },
+      ],
+      [
+        'the platform refused it',
+        {
+          messageId: 'm-1',
+          deliveredTo: 1,
+          adapterResult: { success: false, error: 'chat not found' },
+        },
+      ],
+      ['no adapter handled it', { messageId: 'm-1', deliveredTo: 0 }],
+    ])('records nothing when %s', async (_label, result) => {
+      publish.mockResolvedValue(result);
+      startDelivery();
+      park(ROOM_SESSION, approvalEvent());
+      await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
       expect(delivery.hasStandingCard(ROOM_ID, AGENT_AUTHOR)).toBe(false);
     });
   });

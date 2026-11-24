@@ -1140,7 +1140,7 @@ describe('Sessions Routes', () => {
     // request until client timeout. These pin that a rejection terminates as
     // a mapped error response.
 
-    it('maps a RuntimeNotRegisteredError rejection to 503 RUNTIME_NOT_AVAILABLE', async () => {
+    it('maps a RuntimeNotRegisteredError rejection to 503 runtime_not_available', async () => {
       vi.mocked(runtimeRegistry.resolveForSession).mockRejectedValueOnce(
         new RuntimeNotRegisteredError('codex', S1)
       );
@@ -1148,23 +1148,21 @@ describe('Sessions Routes', () => {
       const res = await request(server).get(`/api/sessions/${S1}`);
 
       expect(res.status).toBe(503);
-      expect(res.body.code).toBe('RUNTIME_NOT_AVAILABLE');
-      expect(res.body.runtime).toBe('codex');
+      expect(res.body.code).toBe('runtime_not_available');
       // **The same state, in the same words a room's `runtime_gone` notice uses**
       // (DOR-1720). The two surfaces reach this from opposite ends and used to
       // describe it differently — this one named a runtime slug and stopped
       // there, the room apologised for a broken agent — so a person meeting it
       // twice met two different problems. The program is named the way it is
       // named everywhere else, and the sentence says what to do about it.
-      expect(res.body.error).toContain('Codex');
-      expect(res.body.error).not.toContain('codex');
-      expect(res.body.error).toContain('Turn Codex back on');
-      // The raw type still rides the body for a client routing on it, which is
-      // what keeps the prose free to be prose.
-      expect(res.body.error).not.toMatch(/Error:|undefined/);
+      expect(res.body.detail).toContain('Codex');
+      expect(res.body.detail).not.toContain('codex');
+      expect(res.body.detail).toContain('Turn Codex back on');
+      // A client routes on the code, which keeps the prose free to be prose.
+      expect(res.body.detail).not.toMatch(/Error:|undefined/);
     });
 
-    it('maps an unexpected rejection on an interaction route to 500 INTERNAL_ERROR', async () => {
+    it('maps an unexpected rejection on an interaction route to 500 internal_error', async () => {
       // /approve never had its own try/catch — Express 5's native forwarding is its only guard.
       vi.mocked(runtimeRegistry.resolveForSession).mockRejectedValueOnce(
         new Error('settings store unavailable')
@@ -1175,7 +1173,7 @@ describe('Sessions Routes', () => {
         .send({ toolCallId: 'tool-1' });
 
       expect(res.status).toBe(500);
-      expect(res.body.code).toBe('INTERNAL_ERROR');
+      expect(res.body.code).toBe('internal_error');
     });
   });
 
@@ -1267,7 +1265,7 @@ describe('Sessions Routes', () => {
         .set('x-client-id', 'test-client');
 
       expect(res.status).toBe(500);
-      expect(res.body).toHaveProperty('error');
+      expect(res.body).toHaveProperty('code', 'internal_error');
     });
 
     it('GET /messages falls back to URL session ID when not in runtime', async () => {
@@ -1444,7 +1442,7 @@ describe('Sessions Routes', () => {
         .post(`/api/sessions/${S1}/messages`)
         .send({ content: 'continue', cwd: '/allowed/stale' });
       expect(response.status).toBe(403);
-      expect(response.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(response.body.code).toBe('outside_boundary');
       expect(fakeRuntime.acquireLock).not.toHaveBeenCalled();
       expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
     });

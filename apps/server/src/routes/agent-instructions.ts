@@ -23,13 +23,13 @@ import {
   type InstructionsRuntime,
 } from '@dorkos/shared/agent-instructions-schemas';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
-import { validationFailureBody } from '../lib/route-utils.js';
 import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { resolveAgentHome, homeOf } from '../services/core/agent-identity/index.js';
 import { buildInstructionsView } from '../services/runtimes/context-preview/preview.js';
+import { validationProblem } from '@dorkos/http-kit';
 
 /** What the routes read, resolved per request. */
 export interface AgentInstructionsRouterDeps {
@@ -92,7 +92,7 @@ export function createAgentInstructionsRoutes(deps: AgentInstructionsRouterDeps)
     const refusal = refuseNonPerson(c);
     if (refusal) return refusal;
     const query = InstructionsQuerySchema.safeParse(c.req.query());
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
     return c.json(
       await buildInstructionsView({
         runtime: query.data.runtime ?? 'claude-code',
@@ -107,7 +107,7 @@ export function createAgentInstructionsRoutes(deps: AgentInstructionsRouterDeps)
     const refusal = refuseNonPerson(c);
     if (refusal) return refusal;
     const query = InstructionsQuerySchema.safeParse(c.req.query());
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
     const id = c.req.param('id');
     const folder = deps.agentPath(id);
     const home = folder ? homeOf(resolveAgentHome(folder)) : undefined;

@@ -251,7 +251,8 @@ describe('turning a request into input', () => {
     const listener = serve([demo('demo.write', { method: 'put', path: '/api/demo/{agentId}' })]);
     const res = await request(listener).put('/api/demo/a1').send([1, 2]);
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Validation failed');
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   describe('the gate, as on the invoke endpoint', () => {

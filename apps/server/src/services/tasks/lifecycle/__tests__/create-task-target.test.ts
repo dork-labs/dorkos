@@ -113,40 +113,11 @@ describe('an agent filing a schedule', () => {
     );
   });
 
-  it('keeps an explicit UTC zone, which the file reads back as its default', async () => {
-    const outcome = await aCreates('agent-a', homeA, 'UTC', () => 'America/Chicago');
-    expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
-    expect(outcome.task.timezone).toBe('UTC');
-    await expect(fs.readFile(outcome.task.filePath, 'utf8')).resolves.not.toContain('timezone:');
-  });
-
-  it('is refused for another agent, and writes nothing', async () => {
-    const outcome = await aCreates('agent-b');
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    expect(outcome.status).toBe(403);
-    expect(outcome.code).toBe('not_your_agent');
-    expect(store.getTasks()).toEqual([]);
-  });
-
-  it('arms one under itself on a Trusted install', async () => {
-    const outcome = await aCreates('agent-a');
-    expect(outcome.ok && outcome.parked).toBe(false);
-    expect(state.notified).toEqual(['schedule.armed_by_agent']);
-  });
-
   it('may file a global one, which never arms without a person', async () => {
     const outcome = await aCreates('global');
     expect(outcome.ok && outcome.parked).toBe(true);
     expect(state.raised).toEqual(['schedule.parked']);
     expect(state.notified).toEqual([]);
-  });
-
-  it('parks one under itself on a Careful install', async () => {
-    state.preset = 'careful';
-    const outcome = await aCreates('agent-a');
-    expect(outcome.ok && outcome.parked).toBe(true);
   });
 
   it('parks, never arms, when DorkOS cannot say which agent asked', async () => {

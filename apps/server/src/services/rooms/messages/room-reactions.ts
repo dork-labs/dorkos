@@ -13,6 +13,7 @@
  */
 import {
   ROOM_RECEIPT_EMOJI,
+  isReactionEmoji,
   type RoomEntryReaction,
   type RoomReactionEvent,
 } from '@dorkos/shared/room-schemas';
@@ -63,7 +64,10 @@ export class RoomReactions {
    * The refusals, in the order they are asked and for reasons that are not
    * interchangeable:
    *
-   * - **Not visible** → `ROOM_NOT_FOUND`, before anything else, so a caller
+   * - **Not a real emoji** → `INVALID_REACTION`. The HTTP schema already refuses
+   *   one, but the agent tool and anything else that calls in here do not go
+   *   through it, so the service asks for itself.
+   * - **Not visible** → `ROOM_NOT_FOUND`, before anything about the room, so a caller
    *   holding a room id learns nothing by probing with an emoji.
    * - **Not a member** → `MEMBER_NOT_FOUND`. Seeing a room is not being in it;
    *   `post` draws the same line and this one is no looser.
@@ -79,7 +83,7 @@ export class RoomReactions {
    * @param roomId - The room.
    * @param entryId - The entry being reacted to.
    * @param viewerAuthorId - Who is reacting.
-   * @param emoji - The emoji, already validated by the request schema.
+   * @param emoji - The emoji, checked here whatever the caller validated.
    * @param on - The state to land in, when the caller names one instead of
    *   flipping. `true` ensures the reaction is there and `false` ensures it is
    *   not, both of them idempotent in effect — which is what a client that may
@@ -93,6 +97,9 @@ export class RoomReactions {
     emoji: string,
     on?: boolean
   ): { reacted: boolean; frequents: string[] } {
+    if (!isReactionEmoji(emoji)) {
+      throw new RoomError('INVALID_REACTION', 'A reaction has to be a single emoji');
+    }
     const room = this.visibility.requireVisibleRoom(roomId, viewerAuthorId);
     if (!this.store.getMember(roomId, viewerAuthorId)) {
       throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');

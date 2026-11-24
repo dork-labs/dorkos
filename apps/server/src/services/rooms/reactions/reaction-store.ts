@@ -30,6 +30,7 @@ import {
 import {
   REACTION_FREQUENTS_COUNT,
   REACTION_FREQUENTS_DEFAULT,
+  isReactionEmoji,
   type RoomEntryReaction,
 } from '@dorkos/shared/room-schemas';
 
@@ -204,6 +205,11 @@ export class ReactionStore {
    * roster, found the same way. Adding `emoji` last makes the answer total: two
    * installs holding identical rows draw identical rows.
    *
+   * **A row that is not a real emoji is left out.** The write path refuses one,
+   * but a row an older install stored under a looser check is still on disk, and
+   * every reader (the screen, an agent's room context, an export) takes this, so
+   * here is the one place it can be dropped for all of them.
+   *
    * @param roomId - The room the entries live in.
    * @param entryIds - The entries to read. An empty list reads nothing.
    * @returns One list per entry that HAS reactions; an entry with none is absent.
@@ -227,6 +233,7 @@ export class ReactionStore {
       .all();
 
     for (const row of rows) {
+      if (!isReactionEmoji(row.emoji)) continue;
       let pills = grouped.get(row.entryId);
       if (!pills) {
         pills = [];
@@ -278,6 +285,9 @@ export class ReactionStore {
    * capsule whose leftmost slots appeared one at a time as history accumulated
    * would reflow under the pointer for weeks.
    *
+   * A stored row that is not a real emoji is skipped, as in {@link listFor}, and
+   * its slot is padded like any other empty one.
+   *
    * @param authorId - Whose row to compute.
    */
   frequents(authorId: string): string[] {
@@ -301,7 +311,7 @@ export class ReactionStore {
       .limit(REACTION_FREQUENTS_COUNT)
       .all();
 
-    const row = rows.map((used) => used.emoji);
+    const row = rows.map((used) => used.emoji).filter(isReactionEmoji);
     for (const fallback of REACTION_FREQUENTS_DEFAULT) {
       if (row.length >= REACTION_FREQUENTS_COUNT) break;
       if (!row.includes(fallback)) row.push(fallback);

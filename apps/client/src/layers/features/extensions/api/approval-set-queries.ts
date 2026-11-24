@@ -12,6 +12,7 @@ import type {
 } from '@dorkos/shared/extension-approval-schemas';
 import { extensionQueryKeys } from '@/layers/entities/extension';
 import { extensionApiUrl } from '../model/extension-api-url';
+import { readResponseError } from '@/layers/shared/lib';
 
 /** A refusal from the server, with its code when it sent one. */
 export class ApprovalSetError extends Error {
@@ -27,11 +28,8 @@ export class ApprovalSetError extends Error {
 /** Read the server's answer, or throw its sentence and code. */
 async function answer<T>(res: Response, fallback: string): Promise<T> {
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
-    throw new ApprovalSetError(
-      body.error ?? `${fallback} The server answered ${res.status}.`,
-      body.code
-    );
+    const body = await readResponseError(res, `${fallback} The server answered ${res.status}.`);
+    throw new ApprovalSetError(body.message, body.code);
   }
   return res.json() as Promise<T>;
 }
