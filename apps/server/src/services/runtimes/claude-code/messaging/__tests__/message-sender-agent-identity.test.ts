@@ -30,6 +30,7 @@ import {
   resetAgentIdentityService,
 } from '../../../../core/agent-identity/index.js';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
+import { resolveLaunch } from '../launch-resolver.js';
 import type { AgentSession } from '../../agent-types.js';
 import {
   SPACE_ID_FILENAME,
@@ -217,6 +218,26 @@ describe('executeSdkQuery — the references a signature carries (DOR-5138)', ()
 
     expect(env).not.toHaveProperty('DORKOS_AGENT_ID');
     expect(env.DORKOS_SPACE_ID).toBe(spaceId);
+  });
+
+  it('pins the same Mesh id on the launch, so a changed id relaunches the warm process', async () => {
+    const resolved = await resolveLaunch({
+      sessionId: 's1',
+      content: 'hello',
+      session: makeSession(),
+      opts: {
+        cwd: AGENT_CWD,
+        meshCore: meshWithAgent(),
+        requiredLaunches,
+        onSdkSessionRebind: async () => {},
+      },
+      effectiveCwd: AGENT_CWD,
+    });
+
+    expect(resolved.launch.agentIdentity?.agentId).toBe('01JAGENT0000000000000000');
+    expect((resolved.launch.options.env as Record<string, string>).DORKOS_AGENT_ID).toBe(
+      resolved.launch.agentIdentity?.agentId
+    );
   });
 
   it('carries no space id and writes no file when the server never booted', async () => {
