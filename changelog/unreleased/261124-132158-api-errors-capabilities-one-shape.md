@@ -4,6 +4,7 @@ covers:
   - "refactor(api): debug's chat reads answer problems, and the old session-not-found body is gone (DOR-4979)"
   - 'fix(api): review round 1 on the capability refusals (DOR-4979)'
   - 'fix(api): review round 2 on the capability refusals (DOR-4979)'
+  - 'fix(api): the link capability test reads the refusal mapper, and the API document is regenerated (DOR-4979)'
 ---
 
 ### Changed

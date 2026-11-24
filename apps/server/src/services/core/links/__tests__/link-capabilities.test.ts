@@ -14,7 +14,7 @@ import {
   type CapabilityHandlerContext,
   type CapabilityRegistry,
 } from '../../capabilities/index.js';
-import { toolErrorStatus } from '../../../../routes/capability-dispatch.js';
+import { toolRefusalProblem } from '../../../../routes/capability-refusals.js';
 import { linkDomain } from '../link-capabilities.js';
 import type { DorkLinkLookups, LinkedEntry } from '../resolve-dork-link.js';
 
@@ -160,7 +160,10 @@ describe('link.resolve', () => {
 
     it('is a 404 on every HTTP door', () => {
       expect(LINK_NOT_FOUND_CODE).toBe('LINK_NOT_FOUND');
-      expect(toolErrorStatus(LINK_NOT_FOUND_CODE)).toBe(404);
+      expect(toolRefusalProblem({ code: LINK_NOT_FOUND_CODE })).toMatchObject({
+        status: 404,
+        code: 'not_found',
+      });
     });
   });
 });
