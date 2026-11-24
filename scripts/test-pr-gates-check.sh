@@ -288,14 +288,33 @@ run run 12
 check 'a comment over the size cap is ignored' 1 "$rc"
 
 reset_fixtures
-comments "$(review)" "$(review '' '' '' '' "$keys/other")"
+junk=$(marker made-up/repo 12 "$H" pass "$(sed '2s/^.\(.\)/\1A/' <<<"$good")")
+comments "$(review)" "$(review '' '' '' '' "$keys/other")" "$junk" "$(review '' '' '' fail)"
 run run 12
-check 'the newest marker for the head decides (bad after good)' 1 "$rc"
+check 'a valid signature followed by newer junk markers: still passes' 0 "$rc"
+check 'and names the valid comment' yes "$(has "$out" 'comment 101')"
 
 reset_fixtures
 comments "$(review '' '' '' '' "$keys/other")" "$(review)"
 run run 12
-check 'the newest marker for the head decides (good after bad)' 0 "$rc"
+check 'a valid signature after a junk marker: passes' 0 "$rc"
+
+reset_fixtures
+comments "$(review '' '' '' '' "$keys/other")" "$junk" "$(review '' '' '' '' '' other-namespace)"
+run run 12
+check 'only junk markers: fails' 1 "$rc"
+check "and gives the newest marker's reason" yes "$(has "$out" 'newest marker for this head (comment 103 does not verify')"
+
+bodies=("$(review)")
+for _ in $(seq 19); do bodies+=("$junk"); done
+reset_fixtures
+comments "${bodies[@]}"
+run run 12
+check 'a valid marker among the 20 newest: passes' 0 "$rc"
+reset_fixtures
+comments "${bodies[@]}" "$junk"
+run run 12
+check 'a valid marker older than the 20 newest is not tried' 1 "$rc"
 
 reset_fixtures
 comments "$(review)" "$(review made-up/repo 12 "$H2")"

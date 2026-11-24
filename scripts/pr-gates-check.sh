@@ -46,8 +46,9 @@
 #         newline. The text is rebuilt from this PR's own values, then:
 #           printf '%s' "$text" | ssh-keygen -Y verify -f <allowed_signers> \
 #             -I security@dorkos -n dorkos-security-review -s <sig>
-#         The newest marker comment for the head decides; who posted it does
-#         not matter, the signature is the proof. With no key line on main, no
+#         Any of the 20 newest marker comments for the head may carry it, so a
+#         junk marker cannot hide a valid one; who posted it does not matter,
+#         the signature is the proof. With no key line on main, no
 #         signature counts.
 #       - the cloud Security lens's passing `security-verdict` status (below).
 #     A `security-reviewed` label with neither is printed as a note.
@@ -155,11 +156,12 @@ MARKER_ARMOR='(?<sig>-----BEGIN SSH SIGNATURE-----\r?\n(?:[A-Za-z0-9+/=]{1,100}\
 # signed_review <pr> <head> <workdir>: sets SIGNED (pass | none | bad) and
 # SIGNED_WHY. A failed read is exit 2.
 signed_review() {
-  local pr=$1 head=$2 w=$3 sel repo mpr mhead verdict sig id line text
+  local pr=$1 head=$2 w=$3 cand n=0 why
   SIGNED=none SIGNED_WHY="no signed review marker for this head"
   "$GH" api --paginate "repos/$REPO/issues/$pr/comments?per_page=100" \
     --jq '.[] | {id, created_at, body} | tojson' >"$w/comments" || err "could not read #$pr's comments"
-  sel=$(jq -c -s --arg head "$head" --arg line "$MARKER_LINE" --arg armor "$MARKER_ARMOR" '
+  # The 20 newest marker comments for this head, newest first, one per line.
+  jq -c -s --arg head "$head" --arg line "$MARKER_LINE" --arg armor "$MARKER_ARMOR" '
     [ .[] | select(type == "object" and (.body | type) == "string" and (.body | length) <= 16384)
       | . as $c
       | ([$c.body | capture($line)] | .[0]) as $m
@@ -169,47 +171,64 @@ signed_review() {
          verdict: $m.verdict,
          sig: (if $a != null and ([$a.repo, $a.pr, $a.head, $a.verdict] == [$m.repo, $m.pr, $m.head, $m.verdict])
                then ($a.sig | gsub("\r"; "")) else null end)} ]
-    | sort_by(.at, .id) | last' "$w/comments") || err "could not read #$pr's comments"
-  [ -n "$sel" ] && [ "$sel" != null ] || return 0
+    | sort_by(.at, .id) | reverse | .[:20] | .[]' "$w/comments" >"$w/markers" ||
+    err "could not read #$pr's comments"
+  while IFS= read -r cand && [ "$n" -lt 20 ]; do
+    n=$((n + 1))
+    why=$(check_marker "$cand" "$pr" "$head" "$w") && {
+      SIGNED=pass SIGNED_WHY=$why
+      return 0
+    }
+    # Report the newest marker's reason when none verifies.
+    [ "$SIGNED" = bad ] || SIGNED_WHY="the newest marker for this head ($why)"
+    SIGNED=bad
+  done <"$w/markers"
+  return 0
+}
+
+# check_marker <candidate json> <pr> <head> <workdir>: exit 0 and prints
+# "comment <id>" when it verifies, else exit 1 and prints why not.
+check_marker() {
+  local sel=$1 pr=$2 head=$3 w=$4 repo mpr mhead verdict sig id line text
   id=$(jq -r '.id' <<<"$sel")
   repo=$(jq -r '.repo' <<<"$sel")
   mpr=$(jq -r '.pr' <<<"$sel")
   mhead=$(jq -r '.head' <<<"$sel")
   verdict=$(jq -r '.verdict' <<<"$sel")
   sig=$(jq -r '.sig // ""' <<<"$sel")
-  SIGNED=bad
   [[ "$id" =~ ^[0-9]{1,20}$ ]] || id="?"
   if [ "$repo" != "$REPO" ] || [ "$mpr" != "$pr" ] || [ "$mhead" != "$head" ]; then
-    SIGNED_WHY="the newest marker for this head (comment $id) names another repo or PR"
-    return 0
+    echo "comment $id names another repo or PR"
+    return 1
   fi
   if [ "$verdict" != pass ]; then
-    SIGNED_WHY="the newest marker for this head (comment $id) is not a pass"
-    return 0
+    echo "comment $id is not a pass"
+    return 1
   fi
-  if [ -z "$sig" ]; then
-    SIGNED_WHY="the newest marker for this head (comment $id) has no well-formed SSH signature"
-    return 0
-  fi
+  [ -n "$sig" ] || { echo "comment $id has no well-formed SSH signature"; return 1; }
   while IFS= read -r line; do
     [[ "$line" =~ ^(-----(BEGIN|END)\ SSH\ SIGNATURE-----|[A-Za-z0-9+/=]{1,100})$ ]] || {
-      SIGNED_WHY="the newest marker for this head (comment $id) has no well-formed SSH signature"
-      return 0
+      echo "comment $id has no well-formed SSH signature"
+      return 1
     }
   done <<<"$sig"
   if ! [ -f "$ALLOWED_SIGNERS" ] || ! grep -qvE '^[[:space:]]*(#|$)' "$ALLOWED_SIGNERS"; then
-    SIGNED_WHY="main has no Security key in ci/security/allowed_signers, so no signature counts yet"
-    return 0
+    echo "comment $id; main has no Security key in ci/security/allowed_signers, so no signature counts yet"
+    return 1
   fi
-  command -v ssh-keygen >/dev/null 2>&1 || err "ssh-keygen is not installed"
+  command -v ssh-keygen >/dev/null 2>&1 || {
+    echo "comment $id; ssh-keygen is not installed"
+    return 1
+  }
   printf '%s\n' "$sig" >"$w/review.sig"
   text="dorkos-security-review v1 repo=$REPO pr=$pr head=$head verdict=pass"
   if printf '%s' "$text" | ssh-keygen -Y verify -f "$ALLOWED_SIGNERS" -I "$SIG_PRINCIPAL" \
     -n "$SIG_NAMESPACE" -s "$w/review.sig" >"$w/verify.out" 2>&1; then
-    SIGNED=pass SIGNED_WHY="comment $id"
-  else
-    SIGNED_WHY="the newest marker for this head (comment $id) does not verify against main's key"
+    echo "comment $id"
+    return 0
   fi
+  echo "comment $id does not verify against main's key"
+  return 1
 }
 
 # Prints arm-door's payload for <pr>, built from the same reads as
