@@ -767,6 +767,12 @@ jobs:
       - name: Auto-revert fixtures
         run: bash scripts/test-auto-revert.sh
 
+      # daily-sweep.sh builds QA's and the designer's daily review list from
+      # the merged PRs, with design-ok.sh's and qa-real-data.sh's rules
+      # (DOR-5120). A PR it drops is a PR nobody reviews. Stub gh, jq only.
+      - name: Daily sweep fixtures
+        run: bash scripts/test-daily-sweep.sh
+
       # release-branch-contents.sh is the rule for what a pull request into a
       # release/v<X.Y.Z> branch may carry (DOR-4639): only cherry-picks of main
       # with a matching patch-id and the release commit. A rule that quietly

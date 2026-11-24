@@ -1,0 +1,85 @@
+name: daily-sweep
+
+# The day's merges, for QA's and the designer's batch review (DOR-5120, under
+# DOR-5098; Dorian, Nov 23: no local agent reviews an open PR, so QA and the
+# designer review everything merged since the last release, once a day).
+#
+# One GitHub issue per release window, labelled daily-sweep and titled
+# "Daily sweep: merged since vX.Y.Z", is rewritten each run with the PRs that
+# design-ok.sh or qa-real-data.sh flag (scripts/daily-sweep.sh). Ticks survive
+# the rewrite. The QA and designer agents pick it up from their heartbeats, fix
+# forward, tick, and close it when every item is ticked. Nothing here gates a
+# merge or a release.
+#
+# Runs main's copy of its scripts. No secret. Writes only that issue and its
+# label. Public text only: PR numbers, titles, authors and file paths.
+
+on:
+  schedule:
+    # Once a day, mid-morning US Pacific. GitHub may start it late.
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: daily-sweep
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/daily-sweep.sh
+            scripts/design-ok.sh
+            scripts/qa-real-data.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Build and post the sweep list
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          read -r tag since < <(gh api "repos/$REPO/releases/latest" --jq '"\(.tag_name) \(.published_at)"')
+          [[ "$tag" =~ ^v[0-9] && "$since" =~ ^[0-9]{4}- ]] || { echo "::error::no latest release to sweep from"; exit 1; }
+          work=$(mktemp -d)
+          bash scripts/daily-sweep.sh collect "$since" "$work/sweep"
+
+          title="Daily sweep: merged since $tag"
+          gh api "repos/$REPO/labels/daily-sweep" >/dev/null 2>&1 ||
+            gh api --method POST "repos/$REPO/labels" -f name=daily-sweep -f color=0e8a16 \
+              -f description="QA's and the designer's daily review list (DOR-5120)" >/dev/null || true
+          n=$(gh api --paginate "repos/$REPO/issues?state=open&labels=daily-sweep&per_page=100" \
+            --jq ".[] | select(.pull_request == null and .title == $(jq -Rn --arg t "$title" '$t')) | .number" | head -n 1)
+          if [ -n "$n" ]; then
+            gh api "repos/$REPO/issues/$n" --jq '.body // ""' >"$work/prev.md"
+          else
+            : >"$work/prev.md"
+          fi
+          bash scripts/daily-sweep.sh render "$work/sweep" "$tag" "$work/prev.md" >"$work/body.md"
+          {
+            echo
+            echo "Updated $(date -u +%Y-%m-%dT%H:%MZ) by daily-sweep.yml. Close this issue when every item is ticked."
+          } >>"$work/body.md"
+          if [ -n "$n" ]; then
+            gh api --method PATCH "repos/$REPO/issues/$n" -F body=@"$work/body.md" >/dev/null
+            echo "Updated #$n"
+          else
+            n=$(gh api --method POST "repos/$REPO/issues" -f title="$title" -F body=@"$work/body.md" \
+              -f "labels[]=daily-sweep" --jq .number)
+            echo "Opened #$n"
+          fi
+          cat "$work/body.md" >>"$GITHUB_STEP_SUMMARY"
