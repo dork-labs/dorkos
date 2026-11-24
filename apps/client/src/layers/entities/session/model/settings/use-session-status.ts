@@ -6,6 +6,7 @@ import { useTransport, useAppStore } from '@/layers/shared/model';
 import { awayFromTheComputerSentence } from '@/layers/shared/lib';
 import { useModels } from '../query/use-models';
 import { useSessionDetail } from '../query/use-session-detail';
+import { trackSessionSettings } from './pending-session-settings';
 import {
   useSessionSettingsOverride,
   useSessionSettingsOverridesStore,
@@ -274,7 +275,10 @@ export function useSessionStatus(
         // A stale caveat is worse than no caveat: it would call a settled
         // runtime a guess, which is the fixed bug pointing the other way.
         const { permissionModePendingUntilNextTurn, runtimeUnbound, ...updated } =
-          await transport.updateSession(sessionId, request, selectedCwd ?? undefined);
+          await trackSessionSettings(
+            sessionId,
+            transport.updateSession(sessionId, request, selectedCwd ?? undefined)
+          );
         if (permissionModePendingUntilNextTurn) {
           // The dial moves either way — the choice IS saved, and reverting it
           // would be the bigger lie. What the person is owed is the one thing

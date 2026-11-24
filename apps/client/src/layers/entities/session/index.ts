@@ -48,6 +48,7 @@ export { useRecordChatOpened } from './model/navigation/use-record-chat-opened';
 // permission mode, effort, and any change still in flight. `useSessionChatStatus`
 // below is whether the chat is idle, streaming or waiting.
 export { useSessionStatus } from './model/settings/use-session-status';
+export { getPendingSessionSettings } from './model/settings/pending-session-settings';
 export type { SessionStatusData } from './model/settings/use-session-status';
 // Query-key factory — the one place a session cache key is built, so a reader
 // can never look in an entry no writer fills (DOR-482).

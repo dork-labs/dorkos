@@ -2,9 +2,9 @@
 /** The composer empties when the words are genuinely on their way, and not one moment sooner. */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, act, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils/mock-factories';
+import { createMockSession, createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
@@ -140,6 +140,14 @@ vi.mock('../ui/SessionComposer', async () => {
           <button data-testid="send" onClick={() => void target?.send({ text: input })}>
             send
           </button>
+          <input
+            type="file"
+            aria-label="Attach a file"
+            onChange={(event) => target?.attachments?.add(Array.from(event.target.files ?? []))}
+          />
+          {target?.attachments?.staged.map(({ id, file }) => (
+            <span key={id}>{file.name}</span>
+          ))}
         </div>
       );
     },
@@ -153,6 +161,9 @@ import {
   useSessionListStore,
   useSessionStreamStore,
   resetSessionStreamBinding,
+  clearSessionRouteContext,
+  setSessionRouteContext,
+  useSessionStatus,
 } from '@/layers/entities/session';
 
 const SESSION_ID = 's1';
@@ -166,7 +177,8 @@ function renderPanel(
   transport: Transport,
   uploadAndGetPaths?: () => Promise<string[]>,
   seedQuery?: (queryClient: QueryClient) => void,
-  panelProps?: Partial<React.ComponentProps<typeof ChatPanel>>
+  panelProps?: Partial<React.ComponentProps<typeof ChatPanel>>,
+  controls?: React.ReactNode
 ) {
   uploadOverride.run = uploadAndGetPaths;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
@@ -174,6 +186,7 @@ function renderPanel(
   return render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
+        {controls}
         <ChatPanel sessionId={SESSION_ID} {...panelProps} />
       </TransportProvider>
     </QueryClientProvider>
@@ -220,7 +233,10 @@ beforeEach(() => {
   } as unknown as typeof ResizeObserver;
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  clearSessionRouteContext(SESSION_ID);
+});
 
 describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
   it('waits for newborn-agent provenance, then starts Codex with the registered path', async () => {
@@ -405,5 +421,60 @@ describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
     // Nothing was sent, and the sentence is still exactly where it was typed.
     expect(postMessage).not.toHaveBeenCalled();
     expect(draft()).toBe('look at this file');
+  });
+
+  it('sends the original files and keeps later text and files while first-turn settings save', async () => {
+    let confirm!: () => void;
+    const saved = new Promise<void>((resolve) => {
+      confirm = resolve;
+    });
+    const transport = createMockTransport({
+      updateSession: vi.fn(async () => {
+        await saved;
+        return createMockSession({ id: SESSION_ID, model: 'chosen-model' });
+      }),
+      postMessage: vi.fn(async (sessionId: string) => ({ sessionId })),
+      uploadFiles: vi.fn<Transport['uploadFiles']>(async (files) =>
+        files.map((file) => ({
+          originalName: file.name,
+          filename: file.name,
+          savedPath: '/test/dir/' + file.name,
+          size: 1,
+          mimeType: 'text/plain',
+        }))
+      ),
+    });
+    function SettingsControl() {
+      const { updateSession } = useSessionStatus(SESSION_ID, null, false, 'codex');
+      return (
+        <button onClick={() => void updateSession({ model: 'chosen-model' })}>Save model</button>
+      );
+    }
+    useAppStore.setState({ selectedCwd: '/test/dir' });
+    routerSearch.current = { dir: '/test/dir' };
+    setSessionRouteContext(SESSION_ID, { cwd: '/test/dir', draft: true, runtime: 'codex' });
+    renderPanel(transport, undefined, undefined, { launchRuntime: 'codex' }, <SettingsControl />);
+    await waitFor(() => expect(transport.getAgentByPath).toHaveBeenCalledWith('/test/dir'));
+    const attach = (name: string) =>
+      fireEvent.change(screen.getByLabelText('Attach a file'), {
+        target: { files: [new File(['x'], name, { type: 'text/plain' })] },
+      });
+    attach('first.txt');
+    fireEvent.click(screen.getByRole('button', { name: 'Save model' }));
+    await send('first message');
+    expect(transport.uploadFiles).not.toHaveBeenCalled();
+    fireEvent.input(screen.getByTestId('composer'), { target: { value: 'next message' } });
+    attach('next.txt');
+    await act(async () => confirm());
+    await waitFor(() => expect(transport.postMessage).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(transport.uploadFiles).mock.calls[0][0].map((file) => file.name)).toEqual([
+      'first.txt',
+    ]);
+    expect(vi.mocked(transport.postMessage).mock.calls[0][1]).toBe(
+      'Please read the following uploaded file(s):\n- first.txt\n\nfirst message'
+    );
+    expect(screen.queryByText('first.txt')).not.toBeInTheDocument();
+    expect(screen.getByText('next.txt')).toBeInTheDocument();
+    expect(draft()).toBe('next message');
   });
 });
