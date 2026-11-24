@@ -32,7 +32,9 @@ import {
 } from './room-test-harness.js';
 
 const ANA = { id: '01ANAAGENTULID00000000000', home: '/agents/ana' } as const;
-const PERSON: AuditActor = { accountId: 'install:inst-1', kind: 'person', name: 'Owner' };
+const BO = { id: '01BOAGENTULID000000000000', home: '/agents/bo' } as const;
+const PERSON: AuditActor = { accountId: 'install:inst-1', kind: 'person', name: 'Dana' };
+const AGENT: AuditActor = { accountId: BO.id, kind: 'agent', name: 'Bo' };
 
 const lookup = agentLookupFor({
   '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'always' },
@@ -90,20 +92,25 @@ describe('pausing an agent in the middle of its room turn (DOR-3178)', () => {
   beforeEach(() => {
     db = createTestDb();
     const now = new Date().toISOString();
-    db.insert(agents)
-      .values({
-        id: ANA.id,
-        name: 'ana',
-        displayName: 'Ana',
-        runtime: 'claude-code',
-        projectPath: ANA.home,
-        registeredAt: now,
-        updatedAt: now,
-      })
-      .run();
+    for (const [agent, name] of [
+      [ANA, 'Ana'],
+      [BO, 'Bo'],
+    ] as const) {
+      db.insert(agents)
+        .values({
+          id: agent.id,
+          name: name.toLowerCase(),
+          displayName: name,
+          runtime: 'claude-code',
+          projectPath: agent.home,
+          registeredAt: now,
+          updatedAt: now,
+        })
+        .run();
+    }
     setAgentHomeRegistry({
-      isRegisteredHome: (dir) => dir === ANA.home,
-      listRegisteredHomes: () => [ANA.home],
+      isRegisteredHome: (dir) => dir === ANA.home || dir === BO.home,
+      listRegisteredHomes: () => [ANA.home, BO.home],
       managedWorkspaceOwner: () => null,
       roomsDir: null,
     });
@@ -133,10 +140,10 @@ describe('pausing an agent in the middle of its room turn (DOR-3178)', () => {
       .filter((entry) => entry.kind === 'notice' && entry.body.subjectAuthorId === ana);
   }
 
-  async function pauseMidTurn(running: Promise<void>): Promise<void> {
+  async function pauseMidTurn(running: Promise<void>, by: AuditActor = PERSON): Promise<void> {
     service.post(room.id, { authorId: human, text: 'is the build green?' });
     await running;
-    const result = await pauses.pause(ANA.id, PERSON);
+    const result = await pauses.pause(ANA.id, by);
     // The pause reached the live turn itself, which is the path under test.
     expect(result.stoppedTurns).toBe(1);
     await service.triggersIdle();
@@ -148,9 +155,26 @@ describe('pausing an agent in the middle of its room turn (DOR-3178)', () => {
     await pauseMidTurn(running);
 
     expect(noticesAboutAna().map((entry) => entry.body.notice)).toEqual(['agent_paused']);
-    expect(noticesAboutAna()[0]!.body.text).toBe(
-      "Ana is paused, so it won't answer here until someone resumes it."
-    );
+    expect(noticesAboutAna()[0]!.body.text).toBe('Dana paused Ana, so this turn stopped.');
+  });
+
+  it('says the agent was paused, naming nobody, when no person paused it', async () => {
+    const { runner, running } = interruptibleRunner(pauses, { unanswered: 'failed' });
+    open(runner);
+    await pauseMidTurn(running, AGENT);
+
+    expect(noticesAboutAna().map((entry) => entry.body.text)).toEqual([
+      'Ana was paused, so this turn stopped.',
+    ]);
+  });
+
+  it('still reports a failure as one when only another agent is paused', async () => {
+    await pauses.pause(BO.id, PERSON);
+    open(outcomeRunner(() => ({ text: null, unanswered: 'failed' })));
+    service.post(room.id, { authorId: human, text: 'is the build green?' });
+    await service.triggersIdle();
+
+    expect(noticesAboutAna().map((entry) => entry.body.notice)).toEqual(['turn_failed']);
   });
 
   it('says the agent was paused when the stopped turn throws', async () => {

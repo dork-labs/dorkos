@@ -2339,7 +2339,7 @@ describe('session_start claims the work it starts (DOR-4019)', () => {
     ]);
   });
 
-  it('asks first: a key another chat of the agent holds is refused, and nothing starts', async () => {
+  it('refuses a key another chat holds without naming it when the caller cannot read it, and nothing starts', async () => {
     claims.claim('a1', 'other-chat', 'DOR-1');
     const result = await asScout()({ ...BASE, claim: 'DOR-1' });
     expect(result.isError).toBe(true);
@@ -2464,10 +2464,57 @@ describe('session_start hands back the chat already on the work (DOR-3690)', () 
     expect(dispatchMessage).not.toHaveBeenCalled();
   });
 
-  it('reads a pull request off the first message', async () => {
-    claims.claim('a1', 'other-chat', 'PR #3405');
+  it('claims a key only the first message names, for the chat it starts', async () => {
     const result = await fromCoordinator()({ ...BASE, prompt: 'Land PR #3405 through the queue.' });
-    expect(payloadOf(result)).toMatchObject({ status: 'already-running', claim: 'PR #3405' });
+    expect(payloadOf(result).status).toBe('started');
+    const minted = vi.mocked(dispatchMessage).mock.calls[0]![0].sessionId;
+    expect(claims.check('a1')).toEqual([
+      expect.objectContaining({ key: 'PR #3405', sessionId: `canon-${minted}` }),
+    ]);
+  });
+
+  it('never hands a chat back for a key only the first message names', async () => {
+    // A brief often names the work it relates to, not the work it is.
+    claims.claim('a1', 'other-chat', 'PR #3405');
+    const result = await fromCoordinator()({
+      ...BASE,
+      title: 'Docs lane',
+      prompt: 'Write the docs. PR #3405 has the code.',
+    });
+    expect(payloadOf(result).status).toBe('started');
+    expect(claims.check('a1')).toEqual([expect.objectContaining({ sessionId: 'other-chat' })]);
+  });
+
+  it('reads nothing off the brief of a start no chat made, so a person’s queued work never meets a claim', async () => {
+    // "A claim never blocks a person": the work queue starts with no calling chat.
+    claims.claim('a1', 'other-chat', 'DOR-20');
+    const queued = createSessionStartHandler(makeDeps(), queuedChatCaller(AGENT_HOME));
+    const result = await queued({ ...BASE, title: 'DOR-20 follow-up' });
+    expect(result.isError).toBeFalsy();
+    expect(payloadOf(result).status).toBe('started');
+    expect(claims.check('a1')).toEqual([expect.objectContaining({ sessionId: 'other-chat' })]);
+  });
+
+  it('starts a parallel lane on a ticket the calling chat itself holds, and keeps its claim', async () => {
+    claims.claim('a1', 'coordinator', 'DOR-21');
+    const result = await fromCoordinator()({ ...BASE, title: 'DOR-21 tests lane' });
+    expect(payloadOf(result).status).toBe('started');
+    expect(claims.check('a1')).toEqual([
+      expect.objectContaining({ key: 'DOR-21', sessionId: 'coordinator' }),
+    ]);
+  });
+
+  it('goes ahead when only another agent’s chat holds the ticket', async () => {
+    claims.claim('a2', 'their-chat', 'DOR-22');
+    const result = await fromCoordinator()({ ...BASE, title: 'DOR-22 lane' });
+    expect(payloadOf(result).status).toBe('started');
+    expect(claims.check('a1')).toEqual([expect.objectContaining({ key: 'DOR-22' })]);
+  });
+
+  it('claims the key it was given over one the brief names', async () => {
+    const result = await fromCoordinator()({ ...BASE, title: 'DOR-23 lane', claim: 'DOR-24' });
+    expect(payloadOf(result).status).toBe('started');
+    expect(claims.check('a1').map((claim) => claim.key)).toEqual(['DOR-24']);
   });
 
   it('claims a ticket read off the brief for the chat it starts', async () => {

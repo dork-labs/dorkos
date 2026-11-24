@@ -6,8 +6,18 @@
  * Either way it can call again with `startAnyway`.
  *
  * The key is the one the caller named, else the one ticket or pull request the
- * start's title, reason or first message names ({@link inferClaimKey}), so an
- * agent that forgets to name it still does not start a duplicate.
+ * start's title, reason or first message names ({@link inferWorkKey}), so an
+ * agent that forgets to name it still does not start a duplicate. A key read
+ * off the brief is a guess, so it is held to less:
+ *
+ * - Read only for a start made from a chat. The work queue starts a person's
+ *   queued work with no calling chat, and a claim never blocks a person.
+ * - Handed back only when the title or reason names it. A key only the first
+ *   message names is claimed when it is free and otherwise left alone, since a
+ *   brief often names the work it relates to rather than the work it is.
+ * - Never handed over from the calling chat: a coordinator that holds a ticket
+ *   and starts a parallel lane on it keeps the ticket. Naming `claim` is how a
+ *   caller hands its own work on.
  *
  * The claim is taken under the new chat's minted id before anything launches,
  * so two racing starts on one key cannot both get it; a start that is refused
@@ -21,7 +31,7 @@ import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { chatTitleOf, maySeeChat } from '../chat-messages/chat-message-wiring.js';
 import { normaliseClaimKey } from './work-claim-service.js';
 import { getWorkClaims } from './work-claim-current.js';
-import { inferClaimKey } from './work-claim-infer.js';
+import { inferWorkKey } from './work-claim-infer.js';
 
 /** What the start step needs from the call. */
 export interface ClaimForStartInput {
@@ -75,18 +85,24 @@ export type ClaimForStartHold =
  */
 export async function claimForStart(input: ClaimForStartInput): Promise<ClaimForStartHold | null> {
   const claims = getWorkClaims();
-  const raw = input.args.claim ?? inferClaimKey(input.args);
+  const named = input.args.claim;
+  const inferred =
+    named === undefined && input.callerSessionId !== null ? inferWorkKey(input.args) : null;
+  const raw = named ?? inferred?.key;
   if (!raw || !input.agentId || !claims) return null;
   const key = normaliseClaimKey(raw);
   if (!key) return null;
   const result = claims.claim(input.agentId, input.sessionId, key);
   if (result.ok || input.args.startAnyway) return null;
   const holder = result.holder.sessionId;
-  // The calling chat holds it itself: starting a lane for its own job hands the job on.
+  // The calling chat holds it itself: naming it hands the job on to the new lane, and a
+  // key only read off the brief leaves it where it is, the lane starting unclaimed.
   if (holder === input.callerSessionId) {
-    claims.handOver(input.agentId, key, holder, input.sessionId);
+    if (named !== undefined) claims.handOver(input.agentId, key, holder, input.sessionId);
     return null;
   }
+  // A key only the first message names is too weak a guess to turn a start away.
+  if (inferred?.from === 'prompt') return null;
   // Handed back only when the calling chat may read it; otherwise named as private.
   const visible =
     input.callerSessionId !== null &&

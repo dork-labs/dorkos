@@ -3,7 +3,7 @@
  * (DOR-3690), and refusing to guess when the brief is ambiguous.
  */
 import { describe, expect, it } from 'vitest';
-import { inferClaimKey } from '../work-claim-infer.js';
+import { inferClaimKey, inferWorkKey } from '../work-claim-infer.js';
 
 describe('inferClaimKey', () => {
   it('reads a ticket id from the title', () => {
@@ -27,8 +27,23 @@ describe('inferClaimKey', () => {
   it('reads pull requests only where the text says they are one', () => {
     expect(inferClaimKey({ title: 'Review PR #42' })).toBe('PR #42');
     expect(inferClaimKey({ title: 'pr 42 review' })).toBe('PR #42');
-    expect(inferClaimKey({ prompt: 'See https://github.com/acme/app/pull/42' })).toBe('PR #42');
     expect(inferClaimKey({ title: 'Land acme/app#42' })).toBe('ACME/APP#42');
+  });
+
+  it('keys a pull request by its repo when the link names one, so repos never collide', () => {
+    expect(inferClaimKey({ prompt: 'See https://github.com/acme/app/pull/42' })).toBe(
+      'ACME/APP#42'
+    );
+    expect(inferClaimKey({ prompt: 'See https://github.com/acme/site/pull/42' })).toBe(
+      'ACME/SITE#42'
+    );
+    expect(inferClaimKey({ title: 'Review /pull/42' })).toBe('PR #42');
+  });
+
+  it('says where it read the key, so a key only the first message names is told apart', () => {
+    expect(inferWorkKey({ title: 'DOR-3 lane' })).toEqual({ key: 'DOR-3', from: 'brief' });
+    expect(inferWorkKey({ prompt: 'Build DOR-3.' })).toEqual({ key: 'DOR-3', from: 'prompt' });
+    expect(inferWorkKey({ prompt: 'Nothing here.' })).toBeNull();
   });
 
   it('never reads a bare #number, a heading or a colour as a pull request', () => {
