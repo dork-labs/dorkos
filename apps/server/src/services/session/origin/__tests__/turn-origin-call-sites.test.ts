@@ -37,7 +37,7 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   // An owner opens a normal chat in the retained agent computer.
   'startup/computers.ts': ['interactive'],
   // A room turn, carrying the one fact that decides its power.
-  'services/rooms/room-turn-runner.ts': ['room'],
+  'services/rooms/session-bindings/room-turn-owner.ts': ['room'],
   // A task's run — the timer's, or a person's "Run now" — on either dispatch
   // path, recorded with the agent the scheduler verified (DOR-4027).
   'services/tasks/session/record-run-session.ts': ['schedule'],
