@@ -46,7 +46,11 @@
  */
 import { randomBytes } from 'node:crypto';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
-import { AGENT_CONTEXT_BLOCK_TAGS, defuseSystemTags } from '@dorkos/shared/untrusted-text';
+import {
+  AGENT_CONTEXT_BLOCK_TAGS,
+  defuseSystemTags,
+  stripHiddenCharacters,
+} from '@dorkos/shared/untrusted-text';
 
 /** Hex characters in a fence nonce. */
 export const NONCE_CHARS = 8;
@@ -114,8 +118,13 @@ export function defuseUntrustedText(text: string): string {
 const FILE_TEXT_TAGS = ['system-reminder'];
 
 /**
- * A file's text as a tool hands it to a model: every hidden character dropped,
- * and a reminder tag defused, but otherwise exactly as written.
+ * A file's text as a tool hands it to a model: as written, apart from the
+ * characters that draw nothing, which are dropped, and a reminder tag, which is
+ * defused.
+ *
+ * NEL and the line and paragraph separators are dropped too, not turned into
+ * `\n` as in a message: inside a string literal a `\n` would end the string,
+ * where dropping the character leaves the code valid.
  *
  * Narrower than {@link defuseUntrustedText} on purpose. The full tag set
  * escapes a `<` followed by `env`, which in code is a comparison
@@ -128,7 +137,7 @@ const FILE_TEXT_TAGS = ['system-reminder'];
  * @param text - The file's text, as read from disk.
  */
 export function defuseFileText(text: string): string {
-  return defuseSystemTags(text, FILE_TEXT_TAGS);
+  return defuseSystemTags(stripHiddenCharacters(text, { lineBreaks: 'drop' }), FILE_TEXT_TAGS);
 }
 
 /** What a fence is called and what it says about itself. */

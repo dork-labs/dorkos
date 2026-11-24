@@ -26,12 +26,13 @@
  * @module shared/untrusted-text
  */
 
-/** Default cap on a sanitized label, in characters. */
-export const IDENTITY_MAX_LENGTH = 80;
-
 import { stripHiddenCharacters } from './hidden-characters.js';
 
-export { stripStrayFlagLetters } from './hidden-characters.js';
+export { stripHiddenCharacters, stripStrayFlagLetters } from './hidden-characters.js';
+export type { StripHiddenOptions } from './hidden-characters.js';
+
+/** Default cap on a sanitized label, in characters. */
+export const IDENTITY_MAX_LENGTH = 80;
 
 /**
  * A UTF-16 half with no other half. It draws as a replacement mark, if at all,
@@ -46,11 +47,11 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
 /**
  * Sanitize a label for inclusion in a line DorkOS wrote.
  *
- * Drops broken UTF-16 halves and every character a person cannot see
- * (`stripHiddenCharacters`, which also turns U+2028/U+2029 into a line break),
- * then flattens the C0 and C1 control ranges plus DEL — including CR/LF and NEL
- * (U+0085), any of which could otherwise forge additional header lines —
- * collapses whitespace runs to a single space, strips `<`/`>`
+ * Drops broken UTF-16 halves, flattens the C0 and C1 control ranges plus DEL
+ * to spaces — including CR/LF and NEL (U+0085), any of which could otherwise
+ * forge additional header lines — then drops every other character a person
+ * cannot see (`stripHiddenCharacters`, which turns U+2028/U+2029 into a line
+ * break), collapses whitespace runs to a single space, strips `<`/`>`
  * so a name containing `</relay_context>` cannot close the structured block
  * early, trims, and caps the result.
  *
@@ -80,8 +81,11 @@ export function sanitizeIdentity(
   value: string,
   maxLength: number = IDENTITY_MAX_LENGTH
 ): string | undefined {
-  const collapsed = stripHiddenCharacters(value.replace(LONE_SURROGATE, ''))
-    .replace(CONTROL_CHARS, ' ')
+  // Controls become spaces BEFORE the strip, which would drop them: a name
+  // split by a line break keeps its two words apart.
+  const collapsed = stripHiddenCharacters(
+    value.replace(LONE_SURROGATE, '').replace(CONTROL_CHARS, ' ')
+  )
     .replace(/[<>]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -150,8 +154,10 @@ function systemTagPattern(names: readonly string[]): RegExp {
 /**
  * Defuse runtime tags in a message body, leaving the words alone.
  *
- * Characters a person cannot see are dropped outright (`stripHiddenCharacters`;
- * the line and paragraph separators become a line break); a matched tag keeps its
+ * Characters a person cannot see are dropped outright, control characters but
+ * tab, LF and CR among them, before any tag is matched (`stripHiddenCharacters`;
+ * NEL and the line and paragraph separators become a line break). So a control
+ * inside a tag name cannot hide the tag. A matched tag keeps its
  * text but has its opening `<` escaped, so a reader still sees that somebody
  * wrote `</room_context>` and no parser can act on it. Ordinary angle brackets
  * are untouched, so `Vec<T>`, `a < b` and `<div>` survive a paste into chat.

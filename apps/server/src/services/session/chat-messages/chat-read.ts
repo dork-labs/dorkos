@@ -13,6 +13,7 @@ import type { ChatState, ChatMessageKind, ChatMessageSender } from '@dorkos/shar
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { chatMarkdownLink } from '@dorkos/shared/session-link';
+import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { defuseUntrustedText } from '../../runtimes/shared/untrusted-fence.js';
 import type { ChatCaller } from './chat-message-service.js';
 import { ChatMessageError } from './chat-message-service.js';
@@ -160,15 +161,19 @@ function readMessages(message: HistoryMessage, include: 'text' | 'tools'): ChatR
         sender: stamp.from,
         kind: stamp.kind,
         ...at,
-        text: stamp.text,
+        // Another chat's words: defused like a room post's.
+        text: defuseUntrustedText(stamp.text),
       }));
     }
     const post = message.roomMessage;
     if (post && !post.author?.you) {
+      // Labels a member chose, sanitized like every label a tool hands back.
+      const name = post.roomLabel ? sanitizeIdentity(post.roomLabel) : undefined;
+      const author = post.author ? sanitizeIdentity(post.author.displayName) : undefined;
       const room = {
         id: post.roomId,
-        ...(post.roomLabel ? { name: post.roomLabel } : {}),
-        ...(post.author ? { author: post.author.displayName } : {}),
+        ...(name ? { name } : {}),
+        ...(author ? { author } : {}),
       };
       // Another member's words, handed to a model: defused the way the room
       // context defuses them, so a read cannot carry what the turn could not.

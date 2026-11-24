@@ -24,14 +24,15 @@
  */
 
 /** The hidden set, as the body of a `u`-mode character class. */
-const HIDDEN_CLASS = '\\p{Default_Ignorable_Code_Point}\\u2028\\u2029\\uFFF9-\\uFFFB';
+const HIDDEN_CLASS = '\\p{Default_Ignorable_Code_Point}\\u{2028}\\u{2029}\\u{FFF9}-\\u{FFFB}';
 
 /**
  * A single U+FE0F straight after an emoji. It only asks for the emoji's colour
- * form (`❤️`) and is in most emoji people type (DOR-5075), so neither
- * job treats it as hidden. A second selector, or one after anything else, is.
+ * form (U+2764 U+FE0F, a red heart) and is in most emoji people type
+ * (DOR-5075), so a consent surface does not mark it. A second selector, or one
+ * after anything else, is marked.
  */
-const EMOJI_COLOUR_SELECTOR = '(?<=\\p{Extended_Pictographic})\\uFE0F';
+const EMOJI_COLOUR_SELECTOR = '(?<=\\p{Extended_Pictographic})\\u{FE0F}';
 
 /**
  * Every hidden character, for showing to a person who is about to approve the
@@ -47,47 +48,109 @@ export const HIDDEN_CHARACTERS = new RegExp(`(?!${EMOJI_COLOUR_SELECTOR})[${HIDD
 const SUBDIVISION_FLAG =
   '\\u{1F3F4}\\u{E0067}\\u{E0062}(?:\\u{E0065}\\u{E006E}\\u{E0067}|\\u{E0073}\\u{E0063}\\u{E0074}|\\u{E0077}\\u{E006C}\\u{E0073})\\u{E007F}';
 
-/** The U+FE0F in a keycap (`1️⃣`), whose base is not an emoji on its own. */
-const KEYCAP_SELECTOR = '(?<=[0-9#*])\\uFE0F(?=\\u20E3)';
+/**
+ * The U+FE0F an agent keeps after an emoji: only after one that draws as text
+ * unless asked (U+2764, a heart). An emoji that already draws in colour
+ * (U+1F44D, thumbs up) looks the same without it, so there it is a bit nobody
+ * can see.
+ */
+const TEXT_EMOJI_COLOUR_SELECTOR =
+  '(?<=(?!\\p{Emoji_Presentation})\\p{Extended_Pictographic})\\u{FE0F}';
+
+/** The U+FE0F in a keycap (1, U+FE0F, U+20E3), whose base is not an emoji. */
+const KEYCAP_SELECTOR = '(?<=[0-9#*])\\u{FE0F}(?=\\u{20E3})';
 
 /**
- * A character a joiner may join: drawn, and not ASCII. Emoji, Persian, Arabic
- * and the Indic scripts are where a joiner changes what a person sees. Between
- * two ASCII characters it changes nothing, so it is a bit nobody can see.
+ * Scripts whose letters join or change shape next to each other, where a
+ * zero-width joiner or non-joiner changes what a person sees: the joining
+ * scripts (Arabic, which Persian is written in, Syriac, NKo, Mongolian, Mandaic,
+ * Adlam) and the Brahmic scripts of South and Southeast Asia. In any other
+ * script, Latin, Cyrillic and CJK among them, a joiner changes nothing on
+ * screen. Script extensions, so a combining mark these scripts share counts.
  */
-const JOINABLE = `(?![\\x00-\\x7F${HIDDEN_CLASS}])[\\p{L}\\p{M}\\p{N}\\p{S}]`;
+const SHAPING_SCRIPTS = [
+  'Arabic',
+  'Syriac',
+  'Nko',
+  'Mongolian',
+  'Mandaic',
+  'Adlam',
+  'Devanagari',
+  'Bengali',
+  'Gurmukhi',
+  'Gujarati',
+  'Oriya',
+  'Tamil',
+  'Telugu',
+  'Kannada',
+  'Malayalam',
+  'Sinhala',
+  'Tibetan',
+  'Myanmar',
+  'Khmer',
+]
+  .map((script) => `\\p{Script_Extensions=${script}}`)
+  .join('');
+
+/** A drawn letter or mark in one of the {@link SHAPING_SCRIPTS}. */
+const SHAPING_LETTER = `(?![${HIDDEN_CLASS}])(?=[\\p{L}\\p{M}])[${SHAPING_SCRIPTS}]`;
 
 /**
- * A zero-width joiner or non-joiner between two characters it can join, or
- * after an emoji's colour selector (`\u{1F3F3}️‍\u{1F308}`). Anywhere
- * else, at an edge or in a run, it joins nothing.
+ * What a joiner may keep, and nothing else:
+ *
+ * - a joiner or non-joiner between two letters of a shaping script (Persian
+ *   words, Devanagari conjuncts);
+ * - a joiner after an emoji (with its colour selector or skin tone, if any)
+ *   and before another, which is how families and the rainbow flag are
+ *   spelled. A non-joiner next to an emoji does nothing, so it never stays.
+ *
+ * At an edge, in a run, or anywhere else it joins nothing.
  */
-const KEPT_JOINER = `(?<=\\p{Extended_Pictographic}\\uFE0F|${JOINABLE})[\\u200C\\u200D](?=${JOINABLE})`;
+const KEPT_JOINER =
+  `(?<=${SHAPING_LETTER})[\\u{200C}\\u{200D}](?=${SHAPING_LETTER})` +
+  `|(?<=\\p{Extended_Pictographic}[\\u{FE0F}\\p{Emoji_Modifier}]?)\\u{200D}(?=\\p{Extended_Pictographic})`;
+
+/** C0 controls but tab, LF and CR; DEL; and C1 but NEL. None draws anything. */
+const DROPPED_CONTROLS = '\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F-\\x84\\x86-\\x9F';
 
 /**
  * One pass over text an agent reads: group 1 is something to keep as written,
- * group 2 a separator to turn into a line break, and any other match goes.
+ * group 2 a line break (NEL, the line and paragraph separators), and any other
+ * match goes.
  */
 const AGENT_HIDDEN = new RegExp(
-  `(${SUBDIVISION_FLAG}|${EMOJI_COLOUR_SELECTOR}|${KEYCAP_SELECTOR}|${KEPT_JOINER})|([\\u2028\\u2029])|[${HIDDEN_CLASS}]`,
+  `(${SUBDIVISION_FLAG}|${TEXT_EMOJI_COLOUR_SELECTOR}|${KEYCAP_SELECTOR}|${KEPT_JOINER})` +
+    `|([\\u{85}\\u{2028}\\u{2029}])|[${HIDDEN_CLASS}${DROPPED_CONTROLS}]`,
   'gu'
 );
 
+/** What {@link stripHiddenCharacters} does with NEL and the line and paragraph separators. */
+export interface StripHiddenOptions {
+  /**
+   * `'newline'` (default) turns each into `\n`, the break a person sees in a
+   * message. `'drop'` removes it, for code: inside a string literal a `\n`
+   * would end the string, where removing the character keeps the code valid.
+   */
+  lineBreaks?: 'newline' | 'drop';
+}
+
 /**
- * Drop every character a person cannot see from text an agent will read.
+ * Drop every character a person cannot see from text an agent will read,
+ * control characters included (tab, LF and CR stay).
  *
- * What stays is what draws something or changes how it draws: one colour
- * selector after an emoji, the selector in a keycap, a joiner between two
- * characters it joins (emoji sequences, Persian, the Indic scripts), and the
- * England, Scotland and Wales flags whole. The line and paragraph separators
- * become `\n`, the break a person sees. Idempotent.
+ * What stays is what draws something or changes how it draws: a colour
+ * selector after an emoji that needs one, the selector in a keycap, a joiner
+ * inside a Persian, Arabic or Indic word or an emoji sequence, and the
+ * England, Scotland and Wales flags whole. Idempotent.
  *
  * @param text - Any text.
+ * @param options - What to do with line breaks a person sees but `\n` is not.
  * @returns The text as a person sees it.
  */
-export function stripHiddenCharacters(text: string): string {
+export function stripHiddenCharacters(text: string, options: StripHiddenOptions = {}): string {
+  const lineBreak = options.lineBreaks === 'drop' ? '' : '\n';
   return text.replace(AGENT_HIDDEN, (_match, kept?: string, separator?: string) =>
-    kept !== undefined ? kept : separator !== undefined ? '\n' : ''
+    kept !== undefined ? kept : separator !== undefined ? lineBreak : ''
   );
 }
 
