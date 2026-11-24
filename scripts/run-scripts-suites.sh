@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# test-scripts.sh — every scripts suite `pnpm verify` runs (`pnpm test:scripts`).
+# run-scripts-suites.sh — every scripts suite `pnpm verify` runs (`pnpm test:scripts`).
 #
 # The list lives here, not in the root package.json, on purpose (DOR-4190):
 # Turborepo treats the root package.json as an input to every package, so
 # registering one suite there changed the hash of all of them, and a CI-only PR
 # re-ran typecheck and lint for the whole repo from scratch (about 7 minutes
 # instead of cached). One command per line also stops parallel CI PRs from
-# conflicting on one long line.
+# conflicting on one long line. Its name does not match `test-*.sh` on
+# purpose: the parity test treats every such file as a fixture suite.
 #
 # Register a new suite here AND in .github/workflows/scripts-test.yml;
 # scripts/__tests__/shell-suite-parity.test.ts checks the two agree.
@@ -37,6 +38,8 @@ bash scripts/test-build-test-deps.sh
 bash scripts/test-assert-shard-union.sh
 bash scripts/test-assert-browser-tests-executed.sh
 bash scripts/test-assert-migrations-current.sh
+bash scripts/test-should-arm-automerge.sh
+bash scripts/test-should-arm-automerge-input.sh
 bash scripts/test-queue-repeat-guard.sh
 bash scripts/test-arm-door.sh
 bash scripts/test-pr-gates-check.sh
