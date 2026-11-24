@@ -25047,11 +25047,13 @@
               }
             }
           }
-        }
+        },
+        "operationId": "sessionLocations.createChats"
       }
     },
     "/api/session-locations/chats": {
       "post": {
+        "operationId": "sessionLocations.createAgentChat",
         "tags": [
           "Sessions"
         ],
@@ -26201,7 +26203,8 @@
               }
             }
           }
-        }
+        },
+        "operationId": "todos.list"
       },
       "post": {
         "tags": [
@@ -26269,7 +26272,8 @@
               }
             }
           }
-        }
+        },
+        "operationId": "todos.create"
       }
     },
     "/api/todos/{id}": {
@@ -26310,7 +26314,8 @@
               }
             }
           }
-        }
+        },
+        "operationId": "todos.get"
       },
       "patch": {
         "tags": [
@@ -26398,7 +26403,8 @@
               }
             }
           }
-        }
+        },
+        "operationId": "todos.update"
       }
     },
     "/api/agents/{id}/work-queue": {
