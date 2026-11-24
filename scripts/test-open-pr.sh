@@ -356,7 +356,7 @@ printf 'Old line:\n%s\nThen more text.\n' "$quoted" >"$tmp/midbody.md"
 for case in 'quoted inline|quoted.md' 'quoted in a fence|fenced.md' 'mid-body with text after|midbody.md'; do
   OPEN_PR_TSX="$tmp/bin/tsx-ok" run --title 't: x' --body-file "$tmp/${case#*|}"
   check "a signature ${case%%|*} does not sign the body: one is appended" \
-    "yes,yes" "$(has "$out" 'provenance: appended: '),$(tail -1 "$GH_STATE.body" | grep -q 'dork:chat:abcdef12' && echo yes || echo no)"
+    "yes,yes" "$(has "$out" 'provenance: appended: '),$(grep -q 'dork:chat:abcdef12' <<<"$(tail -1 "$GH_STATE.body")" && echo yes || echo no)"
 done
 
 # A worktree with no install of its own borrows the main checkout's tsx, and
