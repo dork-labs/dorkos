@@ -3,13 +3,10 @@ import { describe, it, expect, vi } from 'vitest';
 import { createMemoryHistory } from '@tanstack/react-router';
 import { QueryClient } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
-import { createAppRouter } from '../router';
-
-// Cold route chunk transforms contend with the other client suites.
-vi.setConfig({ testTimeout: 15_000 });
+import { createAppRouterWithoutPages } from '../test-helpers/app-router-without-pages';
 
 async function loadRoute(url: string) {
-  const router = createAppRouter(new QueryClient(), createMockTransport());
+  const router = createAppRouterWithoutPages(new QueryClient(), createMockTransport());
   router.update({
     context: router.options.context,
     history: createMemoryHistory({ initialEntries: [url] }),
