@@ -297,20 +297,12 @@ it('a 404 says the file cannot be edited here, not that evidence is temporarily 
   expect(transport.writeFile).not.toHaveBeenCalled();
 });
 // DOR-4442: a refusal that names its check says why, in one plain line.
-it.each([
-  ['not_session', 'Only files on a chat’s canvas can be edited here.'],
-  [
-    'no_recorded_folder',
-    'This file’s folder wasn’t recorded when it was opened, so editing is off.',
-  ],
-  ['root_mismatch', 'This file isn’t in this chat’s agent folder, so editing is off.'],
-  ['folder_gone', 'This file’s folder was moved or deleted, so editing is off.'],
-  ['outside_boundary', 'This file is outside the folders this chat can edit.'],
-])('a 404 refused for %s says why', async (reason, line) => {
+it('a 404 refused shows the server’s sentence for the check that refused', async () => {
+  const line = 'This file’s folder was moved or deleted, so editing is off.';
   port.discover.mockRejectedValue(
-    Object.assign(new Error('The document save evidence is not available.'), {
+    Object.assign(new Error(line), {
       status: 404,
-      body: { code: 'not_found', reason },
+      body: { title: 'Not found.', status: 404, code: 'not_found', detail: line },
     })
   );
   view();
@@ -319,12 +311,9 @@ it.each([
   expect(screen.getByRole('button', { name: 'Edit file' })).toBeDisabled();
   expect(transport.writeFile).not.toHaveBeenCalled();
 });
-it('a 404 naming a reason the client does not know keeps the general line', async () => {
+it('a 404 with no sentence of its own keeps the general line', async () => {
   port.discover.mockRejectedValue(
-    Object.assign(new Error('The document save evidence is not available.'), {
-      status: 404,
-      body: { code: 'not_found', reason: 'something_new' },
-    })
+    Object.assign(new Error('HTTP 404'), { status: 404, body: { code: 'not_found' } })
   );
   view();
   await screen.findByText('This file can’t be edited from this canvas.');

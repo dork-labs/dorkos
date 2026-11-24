@@ -221,7 +221,6 @@ describe('POST /api/extensions/:id/start-work', () => {
     expect(res.body).toMatchObject({
       detail: 'Choose a folder inside one of your projects.',
       code: 'not_found',
-      reason: 'not_a_project',
     });
     // The service's own sentence, which names the extension, stays in the log.
     expect(JSON.stringify(res.body)).not.toContain('Hello World');
@@ -244,7 +243,7 @@ describe('POST /api/extensions/:id/start-work', () => {
     const res = await request(server).post('/api/extensions/hello/start-work').send(BODY);
 
     expect(res.status).toBe(429);
-    expect(res.body).toMatchObject({ code: 'rate_limited', reason: 'start_limit' });
+    expect(res.body).toMatchObject({ code: 'rate_limited' });
     expect(launches).toHaveLength(0);
   });
 

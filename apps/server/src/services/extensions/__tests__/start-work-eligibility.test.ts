@@ -142,7 +142,7 @@ describe('starting work where no account may work', () => {
 
     expect(res.status).toBe(409);
     expect(res.headers['content-type']).toContain('application/problem+json');
-    expect(res.body).toMatchObject({ code: 'conflict', reason: 'account_not_allowed_here' });
+    expect(res.body).toMatchObject({ code: 'account_not_allowed_here' });
     // A fixed sentence: the service's own words name the project, so they stay in the log.
     expect(res.body.detail).toMatch(/^That account can’t be used in this pr/);
     expect(res.body.detail).not.toMatch(SENTENCE);

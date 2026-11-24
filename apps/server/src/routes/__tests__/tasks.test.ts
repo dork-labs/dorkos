@@ -225,8 +225,8 @@ describe('Tasks routes', () => {
         const response = await request(fixtureServer)
           .patch(`/api/tasks/${task.id}`)
           .send({ status: 'active', expectedApprovalRevision: revision });
-        expect(response.status).toBe(409);
-        expect(response.body.code).toBe('schedule_review_changed');
+        expect(response.status).toBe(412);
+        expect(response.body.code).toBe('precondition_failed');
         expect(store.getTask(task.id)?.status).toBe('pending_approval');
         expect(scheduler.registerTask).not.toHaveBeenCalled();
       }
@@ -246,7 +246,7 @@ describe('Tasks routes', () => {
       const response = await request(fixtureServer)
         .patch(`/api/tasks/${task.id}`)
         .send({ status: 'active', expectedApprovalRevision: revision });
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(412);
       expect(store.getTask(task.id)?.status).toBe('pending_approval');
       expect(store.getTask(task.id)?.prompt).toBe(
         'Instructions changed while approval was checked'
@@ -260,7 +260,7 @@ describe('Tasks routes', () => {
       const missing = await request(fixtureServer)
         .patch(`/api/tasks/${task.id}`)
         .send({ status: 'active' });
-      expect(missing.status).toBe(409);
+      expect(missing.status).toBe(412);
       const listed = await request(fixtureServer).get('/api/tasks');
       const revision = listed.body.find(
         (item: { id: string }) => item.id === task.id

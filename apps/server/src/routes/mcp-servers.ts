@@ -68,8 +68,9 @@ import { noOwnerRefusal } from './relay-adapter-http.js';
 import { holdForStepUp } from './step-up-guard.js';
 
 /**
- * How each store refusal answers: its problem code and status. The store's own
- * code rides as `reason`, for a caller that words one of them itself.
+ * How each store refusal answers: its problem code and status. A server that
+ * changed since it was read is `precondition_failed`, and a removal that left
+ * a saved key behind is `secret_left`, which the app tells apart.
  */
 const PROBLEM_BY_STORE_CODE = {
   not_found: ['not_found', 404],
@@ -79,8 +80,8 @@ const PROBLEM_BY_STORE_CODE = {
   unsafe_command: ['invalid_request', 422],
   unsafe_env: ['invalid_request', 422],
   unreadable: ['temporarily_unavailable', 503],
-  changed: ['conflict', 409],
-  secret_left: ['internal_error', 500],
+  changed: ['precondition_failed', 412],
+  secret_left: ['secret_left', 500],
   masked_value: ['invalid_request', 422],
 } as const satisfies Record<GlobalMcpStoreError['code'], readonly [ProblemCode, ProblemStatus]>;
 
@@ -105,11 +106,7 @@ const DETAIL_BY_STORE_CODE: Record<GlobalMcpStoreError['code'], string> = {
 function storeProblem(err: GlobalMcpStoreError): Problem {
   const [code, status] = PROBLEM_BY_STORE_CODE[err.code];
   logger.info('[mcp-servers] store refused', { code: err.code, error: err.message });
-  return problemBody(code, {
-    detail: DETAIL_BY_STORE_CODE[err.code],
-    status,
-    extensions: { reason: err.code },
-  });
+  return problemBody(code, { detail: DETAIL_BY_STORE_CODE[err.code], status });
 }
 
 /** What the change bar names, in its refusal. */

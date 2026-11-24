@@ -39,7 +39,7 @@ interface PendingConsent {
 /** A refused response's body, as a {@link ForwardError}. */
 function refusalOf(status: number, body: unknown): ForwardError {
   const reading = readErrorBody(body, 'DorkOS could not do that. Try again.');
-  const code = sdkRefusalCode(status, reading.code, body) as ForwardErrorCode;
+  const code = sdkRefusalCode(status, reading.code) as ForwardErrorCode;
   return new ForwardError(code, reading.message);
 }
 
@@ -126,12 +126,12 @@ export function createExtensionForwardApi(extId: string): ExtensionForwardApi {
         throw new ForwardError('unavailable', 'DorkOS could not be reached. Try again.');
       }
       if (!res.ok) {
-        // A problem document; `reason: 'no_agent'` with a kept comment asks the person first.
+        // A problem document; `no_agent` with a kept comment asks the person first.
         const body = (await res.json().catch(() => ({}))) as {
-          reason?: string;
+          code?: string;
           consent?: PendingConsent;
         };
-        if (body.reason === 'no_agent' && body.consent) return askThenSend(body.consent);
+        if (body.code === 'no_agent' && body.consent) return askThenSend(body.consent);
         throw refusalOf(res.status, body);
       }
       return (await res.json()) as ForwardReceipt;

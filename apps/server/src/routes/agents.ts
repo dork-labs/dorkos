@@ -144,7 +144,7 @@ const PackageAgentIdentitySchema = CreateAgentOptionsSchema.pick({
 
 /** Body fields `/create` reads itself, never passed to the creator. */
 const TemplateDecisionSchema = z.object({
-  /** The content hash a person was shown on a `template_needs_review` answer. */
+  /** The content hash a person was shown on a `needs_review` answer. */
   approvedTemplateHash: z.string().min(1).optional(),
   /** The token from an agent's earlier `requires_confirmation` answer. */
   confirmationToken: z.string().min(1).optional(),
@@ -459,7 +459,9 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
       return c.json({ ...manifest, _path: result.installPath }, 201);
     } catch (err) {
       if (err instanceof DisclosureChangedError) {
-        return problem(c, 'disclosure_changed', { detail: err.message });
+        return problem(c, 'precondition_failed', {
+          detail: 'This package changed what it runs since you looked. Review it again.',
+        });
       }
       if (err instanceof InvalidPackageError) {
         return problem(c, 'invalid_request', {
@@ -557,7 +559,7 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
       );
     } catch (err) {
       if (err instanceof TemplateNeedsReviewError) {
-        return problem(c, 'template_needs_review', {
+        return problem(c, 'needs_review', {
           detail: err.message,
           extensions: { template: templateOf(err.inspection) },
         });

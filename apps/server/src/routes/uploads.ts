@@ -1,6 +1,7 @@
 import path from 'path';
 import { Hono, type Context } from 'hono';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 import { uploadHandler } from '../services/core/upload-handler.js';
 import { configManager } from '../services/core/config-manager.js';
 import { logger } from '../lib/logger.js';
@@ -17,14 +18,6 @@ const router = new Hono<ApiEnv>();
 /** The answer for a request with no `cwd` to find the uploads folder in. */
 const missingCwd = (c: Context<ApiEnv>) =>
   problem(c, 'invalid_request', { detail: 'Send `cwd`: the chat’s folder.' });
-
-/** The answer for a folder the boundary refused: a NUL byte is a bad path, else a refusal. */
-const boundaryRefusal = (c: Context<ApiEnv>, err: BoundaryError) =>
-  err.code === 'NULL_BYTE'
-    ? problem(c, 'invalid_request', { detail: 'That path has a character paths can’t hold.' })
-    : problem(c, 'outside_boundary', {
-        detail: 'That folder is outside the folders DorkOS may use.',
-      });
 
 /**
  * Upload files to a session's working directory for agent access.
@@ -67,7 +60,7 @@ router.post('/', async (c) => {
       })),
     });
   } catch (err) {
-    if (err instanceof BoundaryError) return boundaryRefusal(c, err);
+    if (err instanceof BoundaryError) return boundaryProblem(c, err);
     logger.error('[uploads] POST / failed', { err });
     return problem(c, 'internal_error', { detail: 'Couldn’t save the upload. Try again.' });
   }
@@ -114,7 +107,7 @@ router.get('/:filename', async (c) => {
       ? problem(c, 'not_found', { detail: 'That upload doesn’t exist.' })
       : problem(c, 'internal_error', { detail: 'Couldn’t send that upload. Try again.' });
   } catch (err) {
-    if (err instanceof BoundaryError) return boundaryRefusal(c, err);
+    if (err instanceof BoundaryError) return boundaryProblem(c, err);
     logger.error('[uploads] GET /:filename failed', { err });
     return problem(c, 'internal_error', { detail: 'Couldn’t send that upload. Try again.' });
   }

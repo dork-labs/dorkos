@@ -39,7 +39,7 @@ const NOT_OFFERED = new Set(['disabled', 'invalid', 'incompatible']);
  *
  * The browser is never told a copy's path, so the path half of "the same
  * copy" is the server's to check: the approval carries it, and a copy at
- * another path is refused with `409 conflict` (`reason: stale_approval`).
+ * another path is refused with `412 precondition_failed`.
  *
  * @param subject - What the history row was about.
  * @param extensions - Every discovered extension, as the list query returns it.

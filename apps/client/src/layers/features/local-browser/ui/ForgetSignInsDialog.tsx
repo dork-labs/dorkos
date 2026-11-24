@@ -68,7 +68,8 @@ export function ForgetSignInsDialog({
       await client.invalidateQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
       onOpenChange(false);
     } catch (cause) {
-      if (browserRefusalCode(cause) === 'profiles_folder_changed') setFolderChanged(true);
+      // The profiles folder changed since the dialog opened: say so, and read it again.
+      if (browserRefusalCode(cause) === 'precondition_failed') setFolderChanged(true);
       else setError(browserErrorMessage(cause));
     } finally {
       setPending(false);

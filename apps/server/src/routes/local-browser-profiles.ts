@@ -24,7 +24,6 @@ export interface LocalBrowserProfileRouteDeps {
 
 const NOT_FOUND = problemBody('not_found', {
   detail: 'That browser profile no longer exists. Refresh and try again.',
-  extensions: { reason: 'profile_not_found' },
 });
 const NO_AGENT = problemBody('not_found', { detail: 'That agent no longer exists.' });
 const OWNER_ONLY = problemBody('owner_only', {

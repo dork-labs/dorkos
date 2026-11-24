@@ -315,7 +315,7 @@ export function createSessionRelayPasskeyRoutes(
       presentsAgentIdentity(facts) ||
       facts.headers[APPROVAL_TOKEN_HEADER] !== undefined
     ) {
-      return problem(c, 'needs_person_at_this_computer', { detail: NOT_HERE });
+      return problem(c, 'operator_only', { detail: NOT_HERE });
     }
     const expectedOrigin = deps.enrolment.returnOrigin();
     if (

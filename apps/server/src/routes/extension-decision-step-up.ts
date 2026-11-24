@@ -47,10 +47,7 @@ export function holdRemoteExtensionAnswer(
   if (!view && action.extensionId)
     return problem(c, 'not_found', { detail: 'There is no such decision.' });
   if (!view)
-    return problem(c, 'conflict', {
-      detail: 'This request is no longer waiting.',
-      extensions: { reason: action.kind === 'offer' ? 'offer_gone' : 'already_resolved' },
-    });
+    return problem(c, 'already_resolved', { detail: 'This request is no longer waiting.' });
   return holdForStepUp(c, {
     kind: action.kind === 'offer' ? 'approval.grant-always' : 'approval.grant',
     target: action.id,

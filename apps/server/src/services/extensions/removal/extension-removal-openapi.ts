@@ -75,9 +75,8 @@ export function registerExtensionRemovalOpenApi(registry: OpenAPIRegistry): void
       403: error('`person_only`: an agent or another site cannot remove an extension'),
       404: error('`not_found`: no such extension'),
       409: error(
-        '`conflict`, with `reason`: it ships with DorkOS (`core`), came with a plugin ' +
-          '(`plugin`), runs from a dev link (`dev_link`), or its folder is not one DorkOS would ' +
-          'delete (`unexpected_folder`)'
+        '`conflict` (`detail` says which): it ships with DorkOS, came with a plugin, runs ' +
+          'from a dev link, or its folder is not one DorkOS would delete'
       ),
     },
   });
@@ -98,7 +97,7 @@ export function registerExtensionRemovalOpenApi(registry: OpenAPIRegistry): void
       401: error('`unauthenticated`: login is on and the caller is not signed in'),
       403: error('`person_only`: an agent or another site cannot forget an approval'),
       404: error('`not_found`: no approval is left for this id'),
-      409: error('`conflict`, `reason: installed`: stop it running or remove it instead'),
+      409: error('`conflict`: it is still installed; stop it running or remove it instead'),
     },
   });
 }

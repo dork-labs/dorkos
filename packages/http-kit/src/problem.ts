@@ -43,9 +43,10 @@ export interface ProblemOptions {
   /**
    * Extension members (RFC 9457 §3.2): extra fields a client acts on, such as
    * the id of a held action, named in camelCase. A standard member's name here
-   * is ignored; the standard member wins.
+   * is ignored; the standard member wins. Never a `reason`: what went wrong is
+   * the `code`, one per refusal, so a second name for it does not compile.
    */
-  extensions?: Readonly<Record<string, unknown>>;
+  extensions?: Readonly<Record<string, unknown>> & { readonly reason?: never };
 }
 
 /** The members RFC 9457 and this API define, which an extension may not reuse. */

@@ -379,7 +379,7 @@ describe('PATCH /api/config', () => {
       .patch('/api/config')
       .send({ server: { boundary: '/' } })
       .expect(403);
-    expect(refused.body.code).toBe('operator_only_config');
+    expect(refused.body.code).toBe('person_only');
     expect(refused.body.paths).toContain('server.boundary');
 
     const { configManager } = await import('../../services/core/config-manager.js');
@@ -400,7 +400,7 @@ describe('PATCH /api/config', () => {
         .patch('/api/config')
         .send({ network: { extraCaCertsPath: '/tmp/attacker-ca.pem' } })
         .expect(403);
-      expect(refused.body.code).toBe('operator_only_config');
+      expect(refused.body.code).toBe('person_only');
       expect(refused.body.paths).toEqual(['network.extraCaCertsPath']);
 
       const { configManager } = await import('../../services/core/config-manager.js');
@@ -515,7 +515,7 @@ describe('PATCH /api/config', () => {
         const refused = await request(server).patch('/api/config').send(leaf.patch);
 
         expect(refused.status, leaf.path).toBe(403);
-        expect(refused.body.code, leaf.path).toBe('operator_only_config');
+        expect(refused.body.code, leaf.path).toBe('person_only');
         expect(refused.body.paths, leaf.path).toContain(leaf.path);
         // `.toEqual`, not `.toBe`: `uploads.allowedTypes` carries an array, and
         // deep equality is the right comparison for every scalar leaf here too.
@@ -625,7 +625,7 @@ describe('PATCH /api/config', () => {
         .send({ notifications: { sounds: { knock: false } } })
         .expect(403);
 
-      expect(refused.body.code).toBe('operator_only_config');
+      expect(refused.body.code).toBe('person_only');
       expect(refused.body.paths).toContain('notifications.sounds.knock');
 
       const { configManager } = await import('../../services/core/config-manager.js');
@@ -666,7 +666,7 @@ describe('PATCH /api/config', () => {
           },
         })
         .expect(403);
-      expect(refused.body.code).toBe('operator_only_config');
+      expect(refused.body.code).toBe('person_only');
       expect(refused.body.paths).toContain('connectors.rawMcpServers[].url');
 
       const { configManager } = await import('../../services/core/config-manager.js');
@@ -1081,7 +1081,7 @@ describe('PATCH /api/config', () => {
         .patch('/api/config')
         .send({ auth: { enabled: false } })
         .expect(403);
-      expect(refused.body.code).toBe('operator_cookie_required');
+      expect(refused.body.code).toBe('person_only');
       expect(refused.body.paths).toEqual(['auth.enabled']);
 
       const { configManager } = await import('../../services/core/config-manager.js');
@@ -1158,7 +1158,7 @@ describe('PATCH /api/config', () => {
         { runtimes: { codex: { binaryPath: '/tmp/evil' } } },
       ]) {
         const refused = await request(server).patch('/api/config').send(patch).expect(403);
-        expect(refused.body.code).toBe('operator_cookie_required');
+        expect(refused.body.code).toBe('person_only');
       }
 
       const { configManager } = await import('../../services/core/config-manager.js');
@@ -1210,7 +1210,7 @@ describe('PATCH /api/config', () => {
         .patch('/api/config')
         .send({ auth: { enabled: false } })
         .expect(403);
-      expect(refused.body.code).toBe('operator_only_config');
+      expect(refused.body.code).toBe('person_only');
     });
 
     it('asks for the owner’s session before login turns on, once an owner exists (DOR-3330)', async () => {
@@ -2630,7 +2630,7 @@ describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
       .patch('/api/config')
       .send({ auth: { enabled: false } })
       .expect(403);
-    expect(res.body.code).toBe('needs_person_at_this_computer');
+    expect(res.body.code).toBe('operator_only');
     expect(res.body.paths).toEqual(['auth.enabled']);
   });
 
@@ -2655,7 +2655,7 @@ describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
       .patch('/api/config')
       .send({ server: { lanAccess: true } })
       .expect(403);
-    expect(res.body.code).toBe('needs_person_at_this_computer');
+    expect(res.body.code).toBe('operator_only');
   });
 
   it('still lets a Wi-Fi sign-in change an ordinary setting', async () => {

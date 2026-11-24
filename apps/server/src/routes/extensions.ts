@@ -515,8 +515,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       const caller = honoRequestFacts(c);
       // Not from a turn that read outside words, or an agent DorkOS can't name (Security S3).
       const marked = markedExtensionSecretRefusal(c);
-      const reason = marked?.code;
-      if (marked) return problem(c, 'forbidden', { detail: marked.error, extensions: { reason } });
+      if (marked) return problem(c, 'forbidden', { detail: marked.error });
       if (caller.agentIdentity !== undefined) return await run();
       return await runFrontDoorWrite(c, {
         kind: 'extensions.secret',

@@ -29,10 +29,10 @@ export function registerSessionApprovalOpenApi(registry: OpenAPIRegistry): void 
       400: failure('`invalid_request`: the body or the chat id failed its checks'),
       401: failure('`unauthenticated`: sign-in is on and nobody is signed in'),
       403: failure(
-        'Only a person may answer (`person_only`, `operator_cookie_required`); a yes is refused from Wi-Fi (`not_from_wifi`)'
+        'Only a person may answer (`person_only`); a yes is refused from Wi-Fi (`not_from_wifi`)'
       ),
       404: failure('`not_found`: no request is waiting for an answer'),
-      409: failure('`interaction_already_resolved`: it was already answered'),
+      409: failure('`already_resolved`: it was already answered'),
       428: confirmation,
     },
   });
@@ -57,7 +57,7 @@ export function registerSessionApprovalOpenApi(registry: OpenAPIRegistry): void 
       400: failure('`invalid_request`: the body or the chat id failed its checks'),
       401: failure('`unauthenticated`: sign-in is on and nobody is signed in'),
       403: failure(
-        'Only a person may answer (`person_only`, `operator_cookie_required`); a yes is refused from Wi-Fi (`not_from_wifi`); remote multi-item batches need separate confirmations (`forbidden`)'
+        'Only a person may answer (`person_only`); a yes is refused from Wi-Fi (`not_from_wifi`); remote multi-item batches need separate confirmations (`forbidden`)'
       ),
       404: failure('`not_found`: no request is waiting for an answer'),
       428: confirmation,

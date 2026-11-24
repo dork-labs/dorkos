@@ -12,12 +12,12 @@ import {
 } from '@/layers/shared/ui';
 import { changeError, savedSecretCount } from '../lib/server-lines';
 
-/** The `reason` a remove answers when the server is gone but a saved secret stayed. */
+/** The code a remove answers when the server is gone but a saved secret stayed. */
 const SECRET_LEFT_CODE = 'secret_left';
 
-/** The server's own refusal under a problem's code (`reason`), when it gave one. */
-function reasonOf(error: unknown): unknown {
-  return (error as { body?: { reason?: unknown } } | null)?.body?.reason;
+/** The refusal's problem code, when it gave one. */
+function codeOf(error: unknown): unknown {
+  return (error as { code?: unknown } | null)?.code;
 }
 
 interface RemoveServerDialogProps {
@@ -48,7 +48,7 @@ export function RemoveServerDialog({
     remove.mutate(server.name, {
       onSuccess: () => onRemoved({ keysLeft: false }),
       onError: (error) => {
-        if (reasonOf(error) === SECRET_LEFT_CODE) {
+        if (codeOf(error) === SECRET_LEFT_CODE) {
           onRemoved({ keysLeft: true });
         }
       },
@@ -79,7 +79,7 @@ export function RemoveServerDialog({
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {remove.isError && reasonOf(remove.error) !== SECRET_LEFT_CODE && (
+        {remove.isError && codeOf(remove.error) !== SECRET_LEFT_CODE && (
           <p role="alert" className="text-destructive text-sm">
             {changeError(remove.error)}
           </p>

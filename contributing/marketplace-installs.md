@@ -198,7 +198,7 @@ The door's orchestration lives in `flows/update-installed.ts` so the HTTP route 
 
 **The HTTP apply (`POST /updates`, DOR-2306).** The body is `{ apply: true, projectPath?, targets: [{ installPath, latestVersion, disclosed }], confirmationToken? }`, strict: each target is an installation exactly as a check reported it and a person was shown it, `disclosed` sent back untouched. First the tier gate: when `marketplace.install`'s tier could ask a person (above `act`) and the caller is not trusted, the batch is refused with a 403 `needs_approval` before any gate call; otherwise every distinct reinstall is authorized as `marketplace.install` (`reinstallInputsFor`, the caller's own spelling for the requested project) before any network work, stopping at the first refusal. Then `applyApprovedUpdates` plans with `disclose` and the route's gate:
 
-1. `updatesNotAsShown(updates, targets)`: any reinstall whose `latestVersion`, `contentHash` or `disclosed` differs from its target (compared with `sameDisclosedEffects`, the approval hash's canonicalization) refuses the whole batch with 409 `{ code: 'disclosure_changed', changed }`. Nothing runs.
+1. `updatesNotAsShown(updates, targets)`: any reinstall whose `latestVersion`, `contentHash` or `disclosed` differs from its target (compared with `sameDisclosedEffects`, the approval hash's canonicalization) refuses the whole batch with 409 `{ code: 'precondition_failed', changed }`. Nothing runs.
 2. A trusted caller (`trustedCaller`: the person in the app or their own terminal) proceeds.
 3. Anyone else (an agent) gets the card `marketplace_update` raises, through the same `ConfirmationProvider`: 202 `{ status: 'requires_confirmation', confirmationToken, updates, message }`, a retry with `confirmationToken` in the body, 403 `{ status: 'declined', reason }`. An agent can read any disclosure the app can, so echoing one proves nothing about a person having looked.
 
@@ -229,7 +229,7 @@ An AGENT's HTTP install of a global package of an activated type that runs anyth
   - a `.claude/agents` subagent that sets `hooks`, `mcpServers` or `permissionMode`, or that fails closed: not a YAML header, a repeated key, or deeper than `MAX_AGENTS_DEPTH`.
 - **Not `userEditable`, in any package:** these folders are on `EFFECT_BEARING_PATHS`.
 - **In the app:** a refused preview renders `PreviewRefusedNotice` (entities/marketplace), and Install is disabled. The agent creation flow does the same through `useOfferSchedules().refusal`, disabling Create on the arrival card and the naming step.
-- **Creating a marketplace agent in the app (DOR-2325):** `CreateAgentDialog` sends `package` to `POST /api/agents/create`, which runs the installer (`approvedDisclosure` + `approvedContentHash`, person only), so the agent is validated and created from the staged copy the preview showed. A raw template (`template`, or `dorkos agent create --template`) is not a package: it is cloned to a staging folder and read by `inspectTemplate` (`services/core/agent-templates/template-gate.ts`) with the same `findAgentWorkspaceConfig` rule, then shown to a person (409 `template_needs_review`) or carded for an agent (202 `requires_confirmation`) before it lands.
+- **Creating a marketplace agent in the app (DOR-2325):** `CreateAgentDialog` sends `package` to `POST /api/agents/create`, which runs the installer (`approvedDisclosure` + `approvedContentHash`, person only), so the agent is validated and created from the staged copy the preview showed. A raw template (`template`, or `dorkos agent create --template`) is not a package: it is cloned to a staging folder and read by `inspectTemplate` (`services/core/agent-templates/template-gate.ts`) with the same `findAgentWorkspaceConfig` rule, then shown to a person (409 `needs_review`) or carded for an agent (202 `requires_confirmation`) before it lands.
 
 **Memos.** `UpdateFlow` is one instance per server and holds two memos for 60 seconds (`UPDATE_MEMO_TTL_MS`): the commit lookup per (clone URL, ref) and the marketplace index per source. A named `dorkos update <name>` and the app's per-row Update send one request per package, so a per-request memo would never span them. Each stores the in-flight promise, so concurrent checks share one lookup, and a failure or placeholder commit is dropped as soon as it settles. Both are cleared after every apply and by `POST /sources/:name/refresh` (`dorkos marketplace refresh`). The honest claim is "shared within one CLI run or UI burst": without a refresh, a push from the last minute can still read as current.
 
@@ -684,7 +684,7 @@ All endpoints mount under `/api/marketplace/*`, served from the Hono `/api` app.
 | POST   | `/packages/:name/keep-files`  | `{ keepKey, review?, projectPath?, installRoot? }`           | `{ outcome, message, files?, approved? }`: a person keeps files an update couldn't sort as theirs; 403 for anyone else, 409 when they changed        |
 | POST   | `/packages/:name/update`      | `{ projectPath? }` (strict)                                  | `UpdateResult` — advisory only                                                                                                                       |
 | GET    | `/updates`                    | `?projectPath=<path>`                                        | `{ checks: InstallationUpdateCheck[] }` — advisory, one per installation, each newer version with `disclosed`                                        |
-| POST   | `/updates`                    | `{ apply: true, targets, projectPath?, confirmationToken? }` | `{ checks }` with `applied` / `applyError`; 202 card for an agent; 409 `disclosure_changed`                                                          |
+| POST   | `/updates`                    | `{ apply: true, targets, projectPath?, confirmationToken? }` | `{ checks }` with `applied` / `applyError`; 202 card for an agent; 409 `precondition_failed`                                                         |
 | GET    | `/dev-links`                  | —                                                            | Every dev link and whether it is in force                                                                                                            |
 | POST   | `/dev-links/preview`          | `{ path, scope, projectPath? }`                              | What linking that folder would do                                                                                                                    |
 | POST   | `/dev-links`                  | `{ path, scope, projectPath?, replaceInstalled?, via? }`     | The new link's status (201); gated by `marketplace.link`, so an agent gets an approval card                                                          |
@@ -707,19 +707,19 @@ Where `InstallRequestBody` is:
 
 Error mapping is centralised in `mapErrorToProblem()`, which answers a problem document (`application/problem+json`, see `contributing/api-reference.md`, "Errors"):
 
-| Error class                                     | Status and code                                         |
-| ----------------------------------------------- | ------------------------------------------------------- |
-| `InvalidPackageError`                           | 400 `invalid_request`, with `errors` and `codes`        |
-| `ConflictError`                                 | 409 `conflict`, with `conflicts`                        |
-| `DisclosureChangedError`                        | 409 `disclosure_changed`                                |
-| `PackageNotInstalledError`                      | 404 `not_found`                                         |
-| `PackageNotInstalledForUpdateError`             | 404 `not_found`, with `packageNames` and `installPaths` |
-| `GitRefNotFoundError`, `GitCommitNotFoundError` | 404 `not_found`                                         |
-| `GitRemoteUnreachableError`, `GitFetchError`    | 502 `upstream_unavailable`                              |
-| `PackageNotFoundError`                          | 404 `not_found`                                         |
-| `MarketplaceNotFoundError`                      | 404 `not_found`                                         |
-| `DevLinkError`                                  | its status, the dev link's own code as `reason`         |
-| (anything else)                                 | 500 `internal_error`                                    |
+| Error class                                     | Status and code                                                |
+| ----------------------------------------------- | -------------------------------------------------------------- |
+| `InvalidPackageError`                           | 400 `invalid_request`, with `errors` and `codes`               |
+| `ConflictError`                                 | 409 `conflict`, with `conflicts`                               |
+| `DisclosureChangedError`                        | 409 `precondition_failed`                                      |
+| `PackageNotInstalledError`                      | 404 `not_found`                                                |
+| `PackageNotInstalledForUpdateError`             | 404 `not_found`, with `packageNames` and `installPaths`        |
+| `GitRefNotFoundError`, `GitCommitNotFoundError` | 404 `not_found`                                                |
+| `GitRemoteUnreachableError`, `GitFetchError`    | 502 `upstream_unavailable`                                     |
+| `PackageNotFoundError`                          | 404 `not_found`                                                |
+| `MarketplaceNotFoundError`                      | 404 `not_found`                                                |
+| `DevLinkError`                                  | its status (412 `precondition_failed` when the folder changed) |
+| (anything else)                                 | 500 `internal_error`                                           |
 
 SSE streaming for clone progress is planned (the spec mentions it following the `discovery/scan` pattern) but deliberately not shipped with this spec — a half-implemented SSE is worse than a unary JSON response that works. A follow-up `POST /packages/:name/install/stream` variant will land in a dedicated task. The current `POST /packages/:name/install` handler has a `// TODO` marker for the wiring point.
 

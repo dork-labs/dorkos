@@ -52,19 +52,6 @@ function usersOf(tool: string, allows: readonly GlobalMcpStandingAllow[]): strin
 }
 
 /**
- * Why "Make it ask" was refused, naming the agent. The name is the server's record of the row,
- * never anything read from the settings file it left alone.
- */
-function refusal(error: unknown, agentName: string): string {
-  const reason = (error as { body?: { reason?: unknown } } | null)?.body?.reason;
-  if (reason === 'not_a_real_file') {
-    return `${agentName}’s settings file isn’t a plain file in its folder, so it was left alone.`;
-  }
-  if (reason === 'unreadable') return `${agentName}’s settings file couldn’t be read.`;
-  return changeError(error);
-}
-
-/**
  * "Who uses it without asking" and "What it can do" (DOR-4118): each agent's standing yes for
  * this server, with Make it ask, and the tools the server lists, checked when the sheet opens.
  *
@@ -163,7 +150,7 @@ export function WhoUsesIt({ server }: WhoUsesItProps) {
                     undo.isError &&
                     undo.variables !== undefined &&
                     keyOf(undo.variables) === keyOf(row.allow)
-                      ? refusal(undo.error, row.allow.agentName)
+                      ? changeError(undo.error)
                       : null
                   }
                   onMakeItAsk={() => makeItAsk(row.allow, row.index)}

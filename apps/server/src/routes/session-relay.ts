@@ -153,10 +153,7 @@ interface RelayRefusal {
   detail: string;
 }
 
-/**
- * Each way the password step-up can refuse. The answer carries the check's
- * own result as `reason`.
- */
+/** Each way the password step-up can refuse, with the sentence that says what to do. */
 const PASSWORD_REFUSALS: Record<Exclude<OwnerPasswordCheck, 'ok'>, RelayRefusal> = {
   required: { code: 'forbidden', status: 403, detail: 'Enter your password for this computer.' },
   wrong: { code: 'forbidden', status: 403, detail: 'That password didn’t match. Try again.' },
@@ -177,7 +174,7 @@ const PASSWORD_REFUSALS: Record<Exclude<OwnerPasswordCheck, 'ok'>, RelayRefusal>
   },
 };
 
-/** Each way linking can fail. The answer carries the refusal itself as `reason`. */
+/** Each way linking can fail, with the sentence that says what to do. */
 const LINK_REFUSALS: Record<SessionRelayLinkRefusal, RelayRefusal> = {
   'bad-code': {
     code: 'invalid_request',
@@ -221,10 +218,10 @@ const LINK_REFUSALS: Record<SessionRelayLinkRefusal, RelayRefusal> = {
   },
 };
 
-/** Answer one relay refusal, naming which one as `reason`. */
-function refuseWith(c: Context<ApiEnv>, refusal: RelayRefusal, reason: string): Response {
+/** Answer one relay refusal. */
+function refuseWith(c: Context<ApiEnv>, refusal: RelayRefusal): Response {
   const { code, status, detail } = refusal;
-  return problem(c, code, { status, detail, extensions: { reason } });
+  return problem(c, code, { status, detail });
 }
 
 /** The 409 for a link that is not there, or that changed under the request. */
@@ -290,7 +287,7 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
   function refusePerson(c: Context<ApiEnv>): Response | undefined {
     const refusal = requirePersonAtThisComputer(honoRequestFacts(c));
     if (!refusal) return undefined;
-    return problem(c, 'needs_person_at_this_computer', {
+    return problem(c, 'operator_only', {
       detail:
         refusal === 'not-at-this-computer'
           ? 'Change this on the computer DorkOS runs on.'
@@ -305,7 +302,7 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
   ): Promise<Response | undefined> {
     const check = await deps.checkPassword(password);
     if (check === 'ok') return undefined;
-    return refuseWith(c, PASSWORD_REFUSALS[check], check);
+    return refuseWith(c, PASSWORD_REFUSALS[check]);
   }
 
   // The whole group is off on a hub and while the experiment is off.
@@ -323,7 +320,7 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
     const refusal = refusePerson(c);
     if (refusal) return refusal;
     const parsed = SessionRelayLinkBodySchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return refuseWith(c, LINK_REFUSALS['bad-code'], 'bad-code');
+    if (!parsed.success) return refuseWith(c, LINK_REFUSALS['bad-code']);
     // The relay serves only an owner, so there must be one to serve.
     if (!deps.ownerExists()) return noOwner(c, ', then link');
     const input = {
@@ -349,7 +346,7 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
             'refused',
             result.reason
           );
-          return refuseWith(c, LINK_REFUSALS[result.reason], result.reason);
+          return refuseWith(c, LINK_REFUSALS[result.reason]);
         }
         audit('link', 'create', `Linked this computer to ${result.pin.hubOrigin}`, 'ok');
         return c.json(status());
@@ -463,7 +460,7 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
    */
   function refusePersonHere(c: Context<ApiEnv>): Response | undefined {
     if (isAtThisComputer(honoRequestFacts(c))) return refusePerson(c);
-    return problem(c, 'needs_person_at_this_computer', {
+    return problem(c, 'operator_only', {
       detail: 'Change this on the computer DorkOS runs on.',
     });
   }

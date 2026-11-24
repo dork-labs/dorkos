@@ -5,7 +5,7 @@
  * @module features/canvas/lib/doc-work
  */
 import type { CanvasDocWorkItem } from '@dorkos/shared/canvas-doc-routes';
-import { docRefusalReason } from './doc-refusal';
+import { docRefusalSentence } from './doc-refusal';
 
 /** A piece of work's state as a short status word. */
 export function workStatusLabel(status: CanvasDocWorkItem['status']): string {
@@ -49,38 +49,11 @@ export function workSummary(count: number): string {
   return `${count} to review`;
 }
 
-const NOT_A_PERSON = 'Only a signed-in person can change this.';
-const STALE = 'This work changed. The list is up to date now.';
-const REFUSALS: Record<string, string> = {
-  work_already_reviewed: 'This was already run again or cleared.',
-  work_still_running: 'It may still be running. Try again once it stops.',
-  work_not_found: STALE,
-  work_not_reviewable: STALE,
-  confirm_repeat_required: 'Confirm before running this again.',
-  grant_required: 'This route is off. Allow it first.',
-  grant_revoked: 'This route is off. Allow it first.',
-  grant_expired: 'This route’s approval ended. Allow it again first.',
-  manifest_changed: 'The document’s app changed. Allow the route again.',
-  route_changed: 'The route changed, so this can’t run again.',
-  inputs_gone: 'Some of its events are no longer kept.',
-  route_busy: 'Newer work is waiting on this route.',
-  agent_cannot_decide: NOT_A_PERSON,
-  requester_cannot_decide: NOT_A_PERSON,
-  person_required: NOT_A_PERSON,
-  operator_cookie_required: NOT_A_PERSON,
-  // The app's login gate, which answers before the document routes do.
-  AUTH_REQUIRED: 'Sign in to change this.',
-  unauthenticated: 'Sign in to change this.',
-};
-
 /**
  * What to tell a person when a replay or clear was refused.
  *
- * @param error - The thrown error, carrying the server's `reason` or `code` when there is one.
+ * @param error - The thrown error, carrying the server's sentence when there is one.
  */
 export function workRefusal(error: unknown): string {
-  const code = docRefusalReason(error);
-  if (code !== undefined && Object.hasOwn(REFUSALS, code)) return REFUSALS[code];
-  if (error instanceof TypeError) return 'Couldn’t reach DorkOS. Check your connection.';
-  return 'Couldn’t change this work. Try again.';
+  return docRefusalSentence(error, 'Couldn’t change this work. Try again.');
 }

@@ -41,17 +41,16 @@ export function handoffStep(
   return handoff.reason === 'wall' ? 'wall' : 'sign-in';
 }
 
-/** Server refusals written for a person. Anything else gets the card's plain message. */
-const PERSON_READABLE_REFUSALS: ReadonlySet<string> = new Set([
-  'handoff_ended',
+/**
+ * Codes the browser routes answer with a sentence written for a person: the
+ * server words every browser refusal itself (`routes/local-browser.ts`).
+ * Anything else gets the card's plain message.
+ */
+const PERSON_READABLE_CODES: ReadonlySet<string> = new Set([
   'signing_in',
-  'site_changed',
-  'profile_busy',
-  'sign_in_failed',
-  'no_tab',
-  'unsupported',
-  'handoff_open',
-  'window_unlabelled',
+  'history_refused',
+  'precondition_failed',
+  'conflict',
 ]);
 
 /**
@@ -62,6 +61,6 @@ const PERSON_READABLE_REFUSALS: ReadonlySet<string> = new Set([
 export function handoffErrorMessage(cause: unknown): string {
   const code = browserRefusalCode(cause);
   const message = (cause as { message?: string } | null)?.message;
-  if (code && message && PERSON_READABLE_REFUSALS.has(code)) return message;
+  if (code && message && PERSON_READABLE_CODES.has(code)) return message;
   return 'Couldn’t reach the browser. Try again.';
 }

@@ -149,7 +149,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // `requireOperatorCookieUnderLogin` runs.
     const cookieRefusal = requireOperatorCookieUnderLogin(caller, 'delete a scheduled task');
     if (cookieRefusal) {
-      return problem(c, 'operator_cookie_required', {
+      return problem(c, 'person_only', {
         detail: 'Only a person signed in to DorkOS can delete a scheduled task.',
       });
     }
@@ -285,7 +285,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // residual), so the shipped default posture is unchanged.
     const cookieRefusal = requireOperatorCookieUnderLogin(caller, 'cancel a scheduled run');
     if (cookieRefusal) {
-      return problem(c, 'operator_cookie_required', {
+      return problem(c, 'person_only', {
         detail: 'Only a person signed in to DorkOS can cancel a scheduled run.',
       });
     }

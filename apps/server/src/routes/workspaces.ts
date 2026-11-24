@@ -133,7 +133,7 @@ router.post('/ports', async (c) => {
 
 /**
  * Provision-or-reuse a workspace. A new one is shown before anything runs
- * there (DOR-2335): a person sees what it brings (409 `workspace_needs_review`)
+ * there (DOR-2335): a person sees what it brings (409 `needs_review`)
  * and sends back `approvedReviewHash`; an agent gets an approval card (202
  * `requires_confirmation`) and retries with `confirmationToken`. The person's
  * request with the hash waits for the owner's password (428, DOR-4355).
@@ -191,7 +191,7 @@ function ensureFailed(c: Context<ApiEnv>, err: unknown): Response {
     return problem(c, 'invalid_request', { detail: err.message });
   }
   if (err instanceof WorkspaceNeedsReviewError) {
-    return problem(c, 'workspace_needs_review', {
+    return problem(c, 'needs_review', {
       detail: err.message,
       extensions: { workspace: shownOf(err.inspection) },
     });
@@ -247,7 +247,7 @@ router.post('/:id/pin', async (c) => {
  *
  * A workspace made before its removal commands were recorded (DOR-2335) runs
  * only commands a person saw. A person is shown its source's `before_remove`
- * commands (409 `remove_hooks_need_review`) and allows exactly those with
+ * commands (409 `needs_review`) and allows exactly those with
  * `?approvedRemoveHooks=<reviewHash>`, or removes it without them with
  * `?skipRemoveHooks=true`. Any other caller removes it without running them.
  * Whenever they are left out, the response lists them in `skippedHooks`. Only
@@ -270,7 +270,7 @@ router.delete('/:id', async (c) => {
       });
       if (result.blocked === 'hooks') {
         // Made before DorkOS recorded removal commands, and its source declares some now.
-        return problem(c, 'remove_hooks_need_review', {
+        return problem(c, 'needs_review', {
           detail:
             'Look at its removal commands, then send approvedRemoveHooks with the review hash, ' +
             'or skipRemoveHooks=true.',

@@ -153,47 +153,15 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
     expect(machine.setTokenError).toHaveBeenLastCalledWith('Couldn’t save token. Try again.');
   });
 
-  it('tells a caller with no session cookie to sign in', async () => {
+  it('tells a caller that is not a person signed in to DorkOS what to do', async () => {
     const { transport, machine, actions } = setup();
-    vi.mocked(transport.updateConfig).mockRejectedValue(configRefusal('operator_cookie_required'));
+    vi.mocked(transport.updateConfig).mockRejectedValue(configRefusal('person_only'));
 
     await actions.current.handleSaveToken();
 
     expect(machine.setTokenError).toHaveBeenLastCalledWith(
-      'Sign in to DorkOS to change Remote access.'
+      'Nothing changed. Only you can change Remote access, signed in to DorkOS.'
     );
-  });
-
-  it('tells an agent that Remote Access settings are not its to change', async () => {
-    const { transport, machine, actions } = setup();
-    vi.mocked(transport.updateConfig).mockRejectedValue(configRefusal('operator_only_config'));
-
-    await actions.current.handleSaveToken();
-
-    expect(machine.setTokenError).toHaveBeenLastCalledWith(
-      'Nothing changed. Only you can change Remote access, not an agent.'
-    );
-  });
-
-  it('keeps the two operator refusals apart, which the server sentence cannot', async () => {
-    const cookie = setup();
-    vi.mocked(cookie.transport.updateConfig).mockRejectedValue(
-      configRefusal('operator_cookie_required')
-    );
-    await cookie.actions.current.handleSaveToken();
-
-    const agent = setup();
-    vi.mocked(agent.transport.updateConfig).mockRejectedValue(
-      configRefusal('operator_only_config')
-    );
-    await agent.actions.current.handleSaveToken();
-
-    const [cookieMessage] = vi.mocked(cookie.machine.setTokenError).mock.lastCall ?? [];
-    const [agentMessage] = vi.mocked(agent.machine.setTokenError).mock.lastCall ?? [];
-    expect(cookieMessage).not.toBe(agentMessage);
-    // Neither one repeats the single sentence the route sends for both.
-    expect(cookieMessage).not.toBe('Only a person can change those settings');
-    expect(agentMessage).not.toBe('Only a person can change those settings');
   });
 
   it('falls back to the generic line when the failure carries no message', async () => {
@@ -269,12 +237,12 @@ describe('useTunnelActions — handleSaveDomain no longer swallows failures', ()
 
   it('applies the operator-refusal copy to the domain save too', async () => {
     const { transport, machine, actions } = setup();
-    vi.mocked(transport.updateConfig).mockRejectedValue(configRefusal('operator_cookie_required'));
+    vi.mocked(transport.updateConfig).mockRejectedValue(configRefusal('person_only'));
 
     await actions.current.handleSaveDomain();
 
     expect(machine.setDomainError).toHaveBeenLastCalledWith(
-      'Sign in to DorkOS to change Remote access.'
+      'Nothing changed. Only you can change Remote access, signed in to DorkOS.'
     );
   });
 

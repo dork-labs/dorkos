@@ -27,8 +27,9 @@ const selectedPageQuery = z.object({
 });
 
 /**
- * A browser refusal: a problem document. A `409 conflict` carries the
- * browser's own refusal (`stale_page`, `signing_in`, …) in its `reason` member.
+ * A browser refusal: a problem document whose `code` is the one a reader acts
+ * on (`signing_in`, `history_refused`, `precondition_failed`) or `conflict`,
+ * with a sentence written for a person.
  */
 const refusal = problemResponse;
 
@@ -40,7 +41,10 @@ const stateResponses = {
   403: refusal(
     '`operator_only` (not at this computer), `owner_only`, or `person_only`: the caller is not the owner on this computer'
   ),
-  409: refusal('`conflict`: the browser cannot do this now; `reason` names its refusal'),
+  409: refusal(
+    '`signing_in` (finish signing in first), `history_refused`, or `conflict`: the browser cannot do this now'
+  ),
+  412: refusal('`precondition_failed`: the page changed since it was read'),
   500: refusal('The browser operation failed'),
 };
 
@@ -182,9 +186,7 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
         },
         400: refusal('The profile id is invalid'),
         403: refusal('The caller is not the owner in person on this computer'),
-        404: refusal(
-          '`not_found` (`reason`: `profile_not_found`): the browser profile no longer exists'
-        ),
+        404: refusal('`not_found`: the browser profile no longer exists'),
         409: refusal('A writer still holds the profile, or removal was incomplete'),
         500: refusal('The profile data could not be removed'),
       },

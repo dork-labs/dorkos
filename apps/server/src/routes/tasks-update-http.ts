@@ -300,7 +300,7 @@ export async function updateTaskHttp(
   const { changesFile, timingLandsOn, reviewedFileHash } = fileOutcome;
   // No await between this compare and activation.
   if (!review.beforeActivation(reviewedFileHash))
-    return taskProblem(c, personReview.STALE_SCHEDULE_REVIEW, 409);
+    return taskProblem(c, personReview.STALE_SCHEDULE_REVIEW, 412);
   // What would run before this write, as it RUNS, and the status it had: what
   // `settleApprovedWorkChange` below compares against.
   const before = { ...taskWorkOf(existing), status: existing.status };

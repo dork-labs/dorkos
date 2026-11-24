@@ -82,7 +82,6 @@ export function registerExtensionRestartRoute(
         logger.warn(`[Extensions] Restart of ${id} did not build`, result.error);
         return problem(c, 'conflict', {
           detail: 'It no longer builds. Open Settings to see why.',
-          extensions: { reason: result.status },
         });
       }
       if (!approvedToRun(manager, id)) {
@@ -94,7 +93,6 @@ export function registerExtensionRestartRoute(
       if ((record.hasServerEntry || record.hasDataProxy) && !manager.getServerHandler(id)) {
         return problem(c, 'upstream_unavailable', {
           detail: 'Couldn’t start the app. Open Settings to check.',
-          extensions: { reason: 'server_start_failed' },
         });
       }
       return c.json(result);
@@ -103,7 +101,6 @@ export function registerExtensionRestartRoute(
       logger.warn(`[Extensions] Restart of ${id} refused`, err);
       return problem(c, 'conflict', {
         detail: 'Couldn’t restart it. Check it’s turned on in Settings.',
-        extensions: { reason: 'restart_refused' },
       });
     }
   });

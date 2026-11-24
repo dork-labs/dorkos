@@ -103,7 +103,7 @@ describe('mutation error toast policy', () => {
   });
 
   // DOR-2969: a refusal because of where this device is, by design, not a fault.
-  it.each(['NOT_FROM_WIFI', 'needs_person_at_this_computer', 'NEEDS_PERSON_AT_THIS_COMPUTER'])(
+  it.each(['NOT_FROM_WIFI', 'operator_only', 'NEEDS_PERSON_AT_THIS_COMPUTER'])(
     'says a %s refusal calmly, with no Report action',
     (code) => {
       vi.mocked(toast).mockClear();

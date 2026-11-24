@@ -123,7 +123,7 @@ describe('POST /api/sessions/:id/submit-answers', () => {
       .send({ toolCallId: 'tc-1', answers: { '0': 'Option A' } });
 
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('interaction_already_resolved');
+    expect(res.body.code).toBe('already_resolved');
   });
 
   it('returns 400 when toolCallId is missing', async () => {
@@ -183,7 +183,7 @@ describe('POST /api/sessions/:id/approve', () => {
       .send({ toolCallId: 'tc-1' });
 
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('interaction_already_resolved');
+    expect(res.body.code).toBe('already_resolved');
   });
 });
 
@@ -218,7 +218,7 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
     // runtime's single-resolve semantics — approveTool returns true once (the
     // real entry is found and its resolve closure deletes it), then false on
     // every subsequent call (the entry is gone). The route must surface the
-    // first as success and the stale second as 409 interaction_already_resolved.
+    // first as success and the stale second as 409 already_resolved.
     fakeRuntime.hasSession.mockReturnValue(true);
     fakeRuntime.approveTool.mockReturnValueOnce(true).mockReturnValue(false);
 
@@ -232,7 +232,7 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1' });
     expect(second.status).toBe(409);
-    expect(second.body.code).toBe('interaction_already_resolved');
+    expect(second.body.code).toBe('already_resolved');
 
     // Exactly-once semantics: the route forwarded both calls to the runtime, but
     // only the first returned true. The guard — not a re-entrant SDK callback —
@@ -264,7 +264,7 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1' });
     expect(staleApprove.status).toBe(409);
-    expect(staleApprove.body.code).toBe('interaction_already_resolved');
+    expect(staleApprove.body.code).toBe('already_resolved');
 
     // First call was the deny (approved=false), second the stale approve.
     expect(fakeRuntime.approveTool).toHaveBeenNthCalledWith(1, SESSION_ID, 'tc-1', false, {
@@ -311,7 +311,7 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
       .post(`/api/sessions/${SESSION_ID}/submit-answers`)
       .send({ toolCallId: 'tc-1', answers: { '0': 'Option A' } });
     expect(second.status).toBe(409);
-    expect(second.body.code).toBe('interaction_already_resolved');
+    expect(second.body.code).toBe('already_resolved');
     expect(fakeRuntime.submitAnswers).toHaveBeenCalledTimes(2);
   });
 
@@ -331,7 +331,7 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
       .post(`/api/sessions/${SESSION_ID}/submit-elicitation`)
       .send({ interactionId: 'el-1', action: 'accept', content: { apiKey: 'x' } });
     expect(second.status).toBe(409);
-    expect(second.body.code).toBe('interaction_already_resolved');
+    expect(second.body.code).toBe('already_resolved');
     expect(fakeRuntime.submitElicitation).toHaveBeenCalledTimes(2);
   });
 

@@ -70,8 +70,6 @@ export interface ApiErrorBody {
   message?: string;
   /** Machine-readable error code, e.g. `AUTH_REQUIRED` from the login gate. */
   code?: string;
-  /** A problem's finer refusal under its `code`, e.g. a dev link's `dev_link_changed`. */
-  reason?: string;
 }
 
 /**

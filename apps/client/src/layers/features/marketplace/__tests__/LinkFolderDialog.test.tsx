@@ -59,9 +59,9 @@ function card(overrides: Partial<DevLinkPreviewResponse> = {}): DevLinkPreviewRe
 }
 
 /** A refusal shaped the way the HTTP transport raises one. */
-/** A refused request as the transport rejects it: the dev link's own refusal rides as `reason`. */
-function refusal(message: string, reason: string): Error {
-  return Object.assign(new Error(message), { code: 'conflict', body: { reason } });
+/** A refused request as the transport rejects it, with its problem code. */
+function refusal(message: string, code: string): Error {
+  return Object.assign(new Error(message), { code });
 }
 
 let transport: Transport;
@@ -98,7 +98,7 @@ describe('LinkFolderDialog', () => {
   it('keeps what was typed and says why when the folder cannot be linked', async () => {
     // Purpose: a refusal shows inline under the field and never clears the input.
     vi.mocked(transport.previewDevLink).mockRejectedValue(
-      refusal('No package found in this folder.', 'dev_link_not_a_package')
+      refusal('No package found in this folder.', 'invalid_request')
     );
     const user = userEvent.setup();
     renderDialog();
@@ -209,7 +209,7 @@ describe('LinkFolderDialog', () => {
       .mockResolvedValueOnce(card({ change: 'CARD-A' }))
       .mockResolvedValueOnce(card({ change: 'CARD-B', extensions: ['flow-dashboard', 'new'] }));
     vi.mocked(transport.linkDevLink).mockRejectedValue(
-      refusal('The folder changed after you approved it. Ask again.', 'dev_link_changed')
+      refusal('The folder changed after you approved it. Ask again.', 'precondition_failed')
     );
     const user = userEvent.setup();
     renderDialog();

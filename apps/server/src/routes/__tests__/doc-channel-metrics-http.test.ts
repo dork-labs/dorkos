@@ -312,7 +312,6 @@ describe('document metrics through the full app', () => {
       status: 400,
       problem: problemBody('malformed_request', {
         detail: 'The document event is not valid JSON.',
-        extensions: { reason: 'invalid_doc_event' },
       }),
       reason: 'invalid',
       variant: 'EVENTS',
@@ -323,7 +322,6 @@ describe('document metrics through the full app', () => {
       status: 413,
       problem: problemBody('request_too_large', {
         detail: 'The document event is too large. Send a smaller one.',
-        extensions: { reason: 'doc_event_too_large' },
       }),
       reason: 'too_large',
       variant: 'EvEnTs',
@@ -351,7 +349,7 @@ describe('document metrics through the full app', () => {
       .set('Cookie', cookies)
       .send({});
     expect(valid.status).toBe(400);
-    expect(valid.body).toMatchObject({ code: 'invalid_request', reason: 'invalid_doc_event' });
+    expect(valid.body).toMatchObject({ code: 'invalid_request' });
     const uppercase = await request(server)
       .post(`${endpoint()}/EVENTS`)
       .set('Cookie', cookies)
@@ -427,7 +425,6 @@ describe('document metrics through the full app', () => {
     expect(unavailable.status).toBe(503);
     expect(unavailable.body).toMatchObject({
       code: 'temporarily_unavailable',
-      reason: 'doc_channel_unavailable',
     });
     expect(attempts().rejectedRequestsByClass).toMatchObject({ authority: 1, unavailable: 1 });
   });

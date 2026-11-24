@@ -39,7 +39,7 @@ export function settleAppliedCheck(returned: InstallationUpdateCheck): Installat
  * Reinstall exactly the named installations at their newest version
  * (`POST /api/marketplace/updates`), each in the scope it is installed in, and
  * each held to the version and the disclosure the person was shown: a target
- * whose new version moved is refused (`disclosure_changed`), and the check is
+ * whose new version moved is refused (`precondition_failed`), and the check is
  * refreshed so the next confirm shows what it runs now.
  *
  * Failures are not toasted here (`meta.suppressErrorToast`): the caller that
@@ -65,7 +65,7 @@ export function useApplyUpdates() {
       // A new version changed what it runs after the check the person read:
       // nothing ran, and the check is stale. Ask again so the next confirm
       // shows what it runs now (DOR-2306).
-      if ((err as { code?: unknown }).code === 'disclosure_changed') {
+      if ((err as { code?: unknown }).code === 'precondition_failed') {
         void queryClient.invalidateQueries({ queryKey: marketplaceKeys.updates() });
       }
     },

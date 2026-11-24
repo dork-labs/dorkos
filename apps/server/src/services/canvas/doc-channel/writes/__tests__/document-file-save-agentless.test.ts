@@ -223,7 +223,7 @@ it('a chat with no agent cannot save a file outside the folder it recorded', asy
   const outside = await request(docs.server)
     .get(`/api/canvas/docs/${encodeURIComponent(opened.id)}/file-saves`)
     .expect(404);
-  expect(outside.body.reason).toBe('outside_boundary');
+  expect(outside.body.detail).toBe('This file is outside the folders this chat can edit.');
   expect(await fs.readFile(path, 'utf8')).toBe(content);
 });
 
@@ -246,7 +246,9 @@ it('a document with no recorded folder answers 404, not a server fault, on both 
   expect(discovery.headers['content-type']).toContain('application/problem+json');
   expect(discovery.body.code).toBe('not_found');
   // DOR-4442: the refusal says which check refused, as a code with no path in it.
-  expect(discovery.body.reason).toBe('no_recorded_folder');
+  expect(discovery.body.detail).toBe(
+    'This file’s folder wasn’t recorded when it was opened, so editing is off.'
+  );
   const saved = await request(files.server)
     .put('/api/files/content')
     .send({
@@ -287,7 +289,7 @@ it('binding the chat to an agent elsewhere moves the root and refuses the old fo
   await fs.mkdir(elsewhere);
   bindSession(h, elsewhere);
   const moved = await request(docs.server).get(doc.endpoint).expect(404);
-  expect(moved.body.reason).toBe('root_mismatch');
+  expect(moved.body.detail).toBe('This file isn’t in this chat’s agent folder, so editing is off.');
   const input = doc.input();
   await expect(
     saveOriginalDocumentFile(h.http.fileWrites, input, { headers: {} })
@@ -354,7 +356,7 @@ it('a recorded folder that no longer exists answers 404, not a fault worth retry
   await request(docs.server).get(doc.endpoint).expect(200);
   await fs.rm(recorded, { recursive: true });
   const gone = await request(docs.server).get(doc.endpoint).expect(404);
-  expect(gone.body.reason).toBe('folder_gone');
+  expect(gone.body.detail).toBe('This file’s folder was moved or deleted, so editing is off.');
 });
 
 it('never tells a caller who is not the owner why it was refused (DOR-4442)', async () => {
@@ -393,7 +395,7 @@ it('a caller who is not the owner gets the old body even where the folder is gon
   await fs.rm(recorded, { recursive: true });
   // The owner is told the folder is gone...
   const owner = await request(docs.server).get(doc.endpoint).expect(404);
-  expect(owner.body.reason).toBe('folder_gone');
+  expect(owner.body.detail).toBe('This file’s folder was moved or deleted, so editing is off.');
   // ...but a caller who is not the owner is refused before any folder is looked at.
   const stranger = await request(docs.server)
     .get(doc.endpoint)
@@ -427,7 +429,7 @@ it('a boundary refusal carries only its code, never the path, in the body or the
   const refused = await request(docs.server)
     .get(`/api/canvas/docs/${encodeURIComponent(opened.id)}/file-saves`)
     .expect(404);
-  expect(refused.body.reason).toBe('outside_boundary');
+  expect(refused.body.detail).toBe('This file is outside the folders this chat can edit.');
   expect(JSON.stringify(refused.body)).not.toContain(h.dir);
   const logged = info.mock.calls.filter(([message]) =>
     String(message).includes('document save check refused')

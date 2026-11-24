@@ -168,7 +168,7 @@ const OUTSIDE_BOUNDARY = problemOf(
   'outside_boundary',
   '`projectPath` is outside the folders DorkOS may use.'
 );
-const CLIENT_OUTDATED = problemCoded('client_outdated');
+const CLIENT_OUTDATED = problemCoded('invalid_request');
 const SOURCE_LIST = z
   .object({
     sources: z.array(
@@ -1092,7 +1092,6 @@ describe('contract: the marketplace groups, driven by hand (login off)', () => {
           'conflict',
           'This package already runs from a dev link here. Unlink it first.'
         ),
-        reason: 'dev_link_exists',
         name: LINKED_PACK,
       });
 

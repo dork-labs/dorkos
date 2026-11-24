@@ -3,9 +3,10 @@
  * (DOR-4979), whether the answer goes out at once or after a step-up confirm.
  *
  * The inbox keeps its own words for a refused answer (`already_resolved`,
- * `stale_decision`, …), which the app and extension pages branch on. Each goes
- * out as a code on the problem code list, and the ones the list has no word
- * for ride as the problem's `reason`.
+ * `stale_decision`, …). Each goes out as the code on the problem code list
+ * that means it, which the app and extension pages branch on: a question
+ * that changed is `precondition_failed`, a settled one or a closed offer is
+ * `already_resolved`, an extension that is off is `not_running`.
  *
  * @module routes/extension-decision-problems
  */
@@ -22,57 +23,38 @@ interface Wire {
   /** The fixed sentence for it: the inbox's own message is logged, never sent. */
   detail: string;
   status?: ProblemStatus;
-  /** Set when the code list has no word for it. */
-  reason?: string;
 }
 
 /** The inbox's refusal codes, as problem codes. */
 const WIRE: Readonly<Record<string, Wire>> = {
   not_found: { code: 'not_found', detail: 'There is no such decision.' },
   bad_answer: { code: 'invalid_request', detail: 'That answer doesn’t fit this question.' },
-  already_resolved: {
-    code: 'conflict',
-    detail: 'This was already settled.',
-    reason: 'already_resolved',
-  },
-  not_running: {
-    code: 'conflict',
-    detail: 'That extension isn’t running right now.',
-    reason: 'not_running',
-  },
+  already_resolved: { code: 'already_resolved', detail: 'This was already settled.' },
+  not_running: { code: 'not_running', detail: 'That extension isn’t running right now.' },
   stale_decision: {
-    code: 'conflict',
+    code: 'precondition_failed',
     detail: 'This question changed. Take another look.',
-    reason: 'stale_decision',
   },
-  offer_gone: { code: 'conflict', detail: 'That offer is no longer open.', reason: 'offer_gone' },
+  offer_gone: { code: 'already_resolved', detail: 'That offer is no longer open.' },
   busy: {
     code: 'conflict',
     detail: 'The extension is still working on this. Try again soon.',
-    reason: 'busy',
   },
   extension_timeout: {
     code: 'temporarily_unavailable',
     detail: 'The extension didn’t answer in time. Try again.',
     status: 504,
-    reason: 'extension_timeout',
   },
   extension_error: {
     code: 'temporarily_unavailable',
     detail: 'The extension couldn’t take that. Try again.',
     status: 502,
-    reason: 'extension_error',
   },
   offer_project_unavailable: {
     code: 'conflict',
     detail: 'That project is no longer available.',
-    reason: 'offer_project_unavailable',
   },
-  offer_failed: {
-    code: 'internal_error',
-    detail: 'Couldn’t change that. Try again.',
-    reason: 'offer_failed',
-  },
+  offer_failed: { code: 'internal_error', detail: 'Couldn’t change that. Try again.' },
 };
 
 /** A code the table does not know, by its status. */
@@ -104,7 +86,6 @@ export function decisionRefusal(refusal: {
   const body = problemBody(wire.code, {
     detail: wire.detail,
     ...(wire.status === undefined ? {} : { status: wire.status }),
-    ...(wire.reason === undefined ? {} : { extensions: { reason: wire.reason } }),
   });
   return { status: body.status, body };
 }

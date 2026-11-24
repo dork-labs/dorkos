@@ -146,8 +146,8 @@ describe('creating a marketplace agent in the app', () => {
 
     const res = await create({ name: 'x', package: { name: 'valid-agent', ...seen } });
 
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('disclosure_changed');
+    expect(res.status).toBe(412);
+    expect(res.body.code).toBe('precondition_failed');
     expect(await exists(path.join(dorkHome, 'agents', 'valid-agent'))).toBe(false);
   });
 

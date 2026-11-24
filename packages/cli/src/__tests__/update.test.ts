@@ -519,7 +519,7 @@ describe('runUpdate', () => {
           .mockResolvedValueOnce(
             mockResponse(409, {
               error: 'What an update would install is not what was shown.',
-              code: 'disclosure_changed',
+              code: 'precondition_failed',
             })
           )
       );

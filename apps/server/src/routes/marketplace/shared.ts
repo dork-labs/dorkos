@@ -181,7 +181,7 @@ function knownProblem(err: unknown): Problem | null {
   }
   // The package that resolved for the install is not the one the person was shown.
   if (err instanceof DisclosureChangedError) {
-    return problemBody('disclosure_changed', {
+    return problemBody('precondition_failed', {
       detail: 'This package changed what it runs since you looked. Review it again.',
     });
   }
@@ -243,7 +243,7 @@ export function fromOutdatedClient(body: unknown): boolean {
  * each new version runs before anything is applied, which an old client cannot.
  */
 export function outdatedClientResponse(c: Context): Response {
-  return problem(c, 'client_outdated', {
+  return problem(c, 'invalid_request', {
     detail: 'Nothing was updated. Run npm install -g dorkos, then run the update again.',
   });
 }
@@ -269,7 +269,7 @@ export type UpdateRefusal =
 export function updateRefusalResponse(c: Context, refusal: UpdateRefusal): Response {
   switch (refusal.kind) {
     case 'changed':
-      return problem(c, 'disclosure_changed', {
+      return problem(c, 'precondition_failed', {
         detail: 'Nothing was changed. A newer version arrived. Check again and review it.',
         extensions: { changed: refusal.changed },
       });

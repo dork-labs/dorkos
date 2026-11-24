@@ -58,7 +58,7 @@ export function registerConfigBackupsOpenApi(registry: OpenAPIRegistry): void {
       },
       401: error('Login is enabled and the caller is not signed in'),
       403: error(
-        'Refused: only a person can see this (`person_only`), or only at this computer (`needs_person_at_this_computer`)'
+        'Refused: only a person can see this (`person_only`), or only at this computer (`operator_only`)'
       ),
     },
   });
@@ -81,7 +81,7 @@ export function registerConfigBackupsOpenApi(registry: OpenAPIRegistry): void {
       401: error('Login is enabled and the caller is not signed in'),
       403: error(
         'Refused: only a person can remove a backup (`person_only`), or only at this computer ' +
-          '(`needs_person_at_this_computer`)'
+          '(`operator_only`)'
       ),
       404: error('No such older copy (`not_found`)'),
       409: error('`conflict`: DorkOS manages it, a write is in progress, or it changed'),
@@ -128,7 +128,7 @@ export function registerConfigBackupsOpenApi(registry: OpenAPIRegistry): void {
       401: error('Login is enabled and the caller is not signed in'),
       403: error(
         'Refused: only a person can move a backup (`person_only`), or only at this computer ' +
-          '(`needs_person_at_this_computer`); or DorkOS cannot write to the destination ' +
+          '(`operator_only`); or DorkOS cannot write to the destination ' +
           '(`forbidden`). The original stays.'
       ),
       404: error('No such older copy (`not_found`)'),
@@ -136,7 +136,7 @@ export function registerConfigBackupsOpenApi(registry: OpenAPIRegistry): void {
         '`conflict`: DorkOS manages it, it is busy or changed, a file of that name is already ' +
           'there, the copy could not be written, or it failed its check. The original stays.'
       ),
-      507: error('The destination’s disk is full (`insufficient_storage`). The original stays.'),
+      507: error('The destination’s disk is full (`internal_error`). The original stays.'),
     },
   });
 }

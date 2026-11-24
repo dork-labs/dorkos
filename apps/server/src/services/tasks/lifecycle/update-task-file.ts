@@ -56,7 +56,7 @@ export interface TaskFileUpdateDeps {
 export interface TaskFileUpdateRefusal {
   ok: false;
   /** The HTTP status this maps to. MCP callers only use it to pick their wording. */
-  status: 409 | 500;
+  status: 409 | 412 | 500;
   /** One line, written for whoever reads it. */
   error: string;
   /** A machine-readable code, on the refusals that carry one. */
@@ -307,7 +307,7 @@ async function rewriteTaskFile(
   }
 
   if (reviewStillMatches && !reviewStillMatches()) {
-    return { ok: false, status: 409, ...STALE_SCHEDULE_REVIEW };
+    return { ok: false, status: 412, ...STALE_SCHEDULE_REVIEW };
   }
   const dirPath = path.dirname(existing.filePath);
   try {

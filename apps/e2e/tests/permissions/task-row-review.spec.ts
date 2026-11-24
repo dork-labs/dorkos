@@ -220,13 +220,13 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
           approvalRevision: 'b'.repeat(64),
         };
         return route.fulfill({
-          status: 409,
+          status: 412,
           contentType: 'application/problem+json',
           body: JSON.stringify({
-            type: 'urn:dorkos:problem:schedule_review_changed',
-            title: 'This schedule changed. Review it again.',
-            status: 409,
-            code: 'schedule_review_changed',
+            type: 'urn:dorkos:problem:precondition_failed',
+            title: 'Something changed since you last looked.',
+            status: 412,
+            code: 'precondition_failed',
             detail: 'This schedule changed. Review it again.',
           }),
         });

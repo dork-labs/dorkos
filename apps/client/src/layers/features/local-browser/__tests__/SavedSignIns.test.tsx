@@ -103,9 +103,11 @@ describe('Saved sign-ins (DOR-4105)', () => {
     expect(transport.forgetLocalBrowserSignIns).toHaveBeenCalledExactlyOnceWith(profile.id);
   });
 
-  it('keeps a busy refusal visible in plain words, without raw details', async () => {
+  it('keeps a busy refusal visible in the server’s plain words', async () => {
     transport.forgetLocalBrowserSignIns.mockRejectedValue(
-      Object.assign(new Error('private path'), { code: 'profile_busy' })
+      Object.assign(new Error('Close the Agent browser and finish signing in, then try again.'), {
+        code: 'conflict',
+      })
     );
     mount();
     fireEvent.click(screen.getByRole('button', { name: 'Forget saved sign-ins…' }));
@@ -115,7 +117,6 @@ describe('Saved sign-ins (DOR-4105)', () => {
       'Close the Agent browser and finish signing in, then try again.'
     );
     expect(within(dialog).getByRole('button', { name: 'Forget sign-ins' })).toBeEnabled();
-    expect(screen.queryByText('private path')).toBeNull();
     // Nothing was cleared, so nothing may say it was.
     expect(screen.queryByText('Sign-ins forgotten.')).toBeNull();
     expect(screen.queryByText(/signed out of every site/)).toBeNull();
@@ -123,7 +124,7 @@ describe('Saved sign-ins (DOR-4105)', () => {
 
   it('becomes the answer when the folder was changed outside DorkOS: only Close, focused (DOR-4172)', async () => {
     transport.forgetLocalBrowserSignIns.mockRejectedValue(
-      Object.assign(new Error('private path'), { code: 'profiles_folder_changed' })
+      Object.assign(new Error('private path'), { code: 'precondition_failed' })
     );
     mount();
     const trigger = screen.getByRole('button', { name: 'Forget saved sign-ins…' });
@@ -151,7 +152,7 @@ describe('Saved sign-ins (DOR-4105)', () => {
 
   it('opens as the question again after a folder-changed refusal was closed', async () => {
     transport.forgetLocalBrowserSignIns.mockRejectedValueOnce(
-      Object.assign(new Error('private path'), { code: 'profiles_folder_changed' })
+      Object.assign(new Error('private path'), { code: 'precondition_failed' })
     );
     mount();
     fireEvent.click(screen.getByRole('button', { name: 'Forget saved sign-ins…' }));

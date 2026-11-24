@@ -1,6 +1,5 @@
 /** Historical save evidence never claims the current draft or an agent delivery was saved. */
 import type { ReactNode } from 'react';
-import type { DocSaveRefusalReason } from '@dorkos/shared/file-save/recovery';
 import { Ellipsis } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import {
@@ -25,20 +24,11 @@ const FAILED_CHECK = {
 } as const;
 
 /**
- * Why a refused file can't be edited, when the server says which check refused
- * (DOR-4442). Every line still says editing is off; none names a path.
+ * The sentence for a failed check: the server's own when it refused, which
+ * names the check that refused (DOR-4442). It never names a path.
  */
-const REFUSED_BECAUSE: Record<DocSaveRefusalReason, string> = {
-  not_session: 'Only files on a chat’s canvas can be edited here.',
-  no_recorded_folder: 'This file’s folder wasn’t recorded when it was opened, so editing is off.',
-  root_mismatch: 'This file isn’t in this chat’s agent folder, so editing is off.',
-  folder_gone: 'This file’s folder was moved or deleted, so editing is off.',
-  outside_boundary: 'This file is outside the folders this chat can edit.',
-};
-
-/** The sentence for a failed check: the refusal's own reason when there is one. */
 function failedCheckLine(recovery: Recovery): string {
-  if (recovery.phase === 'refused' && recovery.refusal) return REFUSED_BECAUSE[recovery.refusal];
+  if (recovery.phase === 'refused' && recovery.refusal) return recovery.refusal;
   return recovery.phase === 'refused' ? FAILED_CHECK.refused : FAILED_CHECK.unavailable;
 }
 

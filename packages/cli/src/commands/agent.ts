@@ -362,7 +362,7 @@ export async function runAgentCreate(args: AgentCreateArgs): Promise<number> {
       // A person's own template that brings settings or programs is shown to
       // them first, and used once they say so (DOR-2325).
       const template =
-        (err as ApiError).body?.code === 'template_needs_review'
+        (err as ApiError).body?.code === 'needs_review'
           ? ((err as ApiError).body as unknown as { template: TemplateBrings }).template
           : undefined;
       if (!(err instanceof ApiError) || !template) throw err;

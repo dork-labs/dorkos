@@ -179,14 +179,12 @@ describe('make it ask', () => {
     expect(check).toHaveBeenCalledTimes(checks);
   });
 
-  it('names the agent under its own row when refused, from the server’s record', async () => {
+  it('shows the server’s refusal under its own row', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    // The server's words name nobody; the row's own record names Quill.
+    // The server names the agent from its registry record, never from the file.
     const refused = Object.assign(
-      new Error(
-        "This agent's settings file isn't a plain file in its folder, so it was left alone."
-      ),
-      { code: 'conflict', body: { reason: 'not_a_real_file' } }
+      new Error('Quill’s settings file isn’t a plain file in its folder, so it was left alone.'),
+      { code: 'conflict' }
     );
     const undo = vi.fn().mockRejectedValue(refused);
     renderTab(transportWith({ undoGlobalMcpStandingAllow: undo }));

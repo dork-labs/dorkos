@@ -77,9 +77,12 @@ export function registerExtensionApprovalSetOpenApi(registry: OpenAPIRegistry): 
           'once from another device)'
       ),
       409: error(
-        '`conflict`, nothing was turned on. `reason`: a member was not installed by this plugin ' +
-          '(`not_in_set`), the set or a member’s files or permissions changed (`stale_set`), or ' +
-          'more than 10 wait (`too_many_in_set`)'
+        '`conflict`, nothing was turned on: a member was not installed by this plugin, or more ' +
+          'than 10 wait (`detail` says which)'
+      ),
+      412: error(
+        '`precondition_failed`, nothing was turned on: the set or a member’s files or ' +
+          'permissions changed since the card'
       ),
     },
   });

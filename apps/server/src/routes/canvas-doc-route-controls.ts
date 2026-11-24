@@ -96,7 +96,7 @@ function failure(c: Context<ApiEnv>, error: unknown): Response {
   if (status === 500) logger.error('[canvas-doc-route-controls] request failed', error);
   const message =
     CODE_MESSAGES[code] ?? STATUS_MESSAGES[status] ?? 'The route request could not be completed.';
-  return docRefusalProblem(c, { status, reason: code, detail: message });
+  return docRefusalProblem(c, { status, refusal: code, detail: message });
 }
 
 /**
@@ -152,7 +152,7 @@ export function createCanvasDocRouteControlRoutes(
     const result = decideAsPerson(honoRequestFacts(c));
     if ('decision' in result) return result.decision;
     const { status, error, code } = result.refusal;
-    return docRefusalProblem(c, { status, reason: code, detail: error });
+    return docRefusalProblem(c, { status, refusal: code, detail: error });
   }
 
   /** One `permission.answered` line for a person's allow, as `/api/approvals` writes. */
@@ -273,7 +273,7 @@ export function createCanvasDocRouteControlRoutes(
             const decided = decideAsPerson(who);
             if (!('decision' in decided)) {
               const { status, error, code } = decided.refusal;
-              return docRefusalProblem(c, { status, reason: code, detail: error });
+              return docRefusalProblem(c, { status, refusal: code, detail: error });
             }
             const { controls: service, actor } = controls();
             const { route, approvalId } = await service.approve(

@@ -85,7 +85,7 @@ function failure(c: Context<ApiEnv>, error: unknown): Response {
   if (status === 500) logger.error('[canvas-doc-work-review] request failed', error);
   const message =
     CODE_MESSAGES[code] ?? STATUS_MESSAGES[status] ?? 'The request could not be completed.';
-  return docRefusalProblem(c, { status, reason: code, detail: message });
+  return docRefusalProblem(c, { status, refusal: code, detail: message });
 }
 
 /**
@@ -121,7 +121,7 @@ export function createCanvasDocWorkReviewRoutes(
     const result = decideAsPerson(honoRequestFacts(c), 'unfinished document work');
     if ('decision' in result) return result.decision;
     const { status, error, code } = result.refusal;
-    return docRefusalProblem(c, { status, reason: code, detail: error });
+    return docRefusalProblem(c, { status, refusal: code, detail: error });
   }
 
   /** One line per replay or clear, naming who did it by the permission honesty rule. */

@@ -203,10 +203,10 @@ function configPatchFailed(c: Context<ApiEnv>, error: unknown): Response {
 
 /** Each settings refusal code, as the problem code it answers with. */
 const CONFIG_PROBLEM_CODES: Readonly<Record<string, ProblemCode>> = {
-  operator_only_config: 'operator_only_config',
-  operator_cookie_required: 'operator_cookie_required',
+  operator_only_config: 'person_only',
+  operator_cookie_required: 'person_only',
   owner_only: 'owner_only',
-  NEEDS_PERSON_AT_THIS_COMPUTER: 'needs_person_at_this_computer',
+  NEEDS_PERSON_AT_THIS_COMPUTER: 'operator_only',
   USE_PERMISSIONS_API: 'invalid_request',
   USE_REMOTE_ACCESS_API: 'invalid_request',
 };

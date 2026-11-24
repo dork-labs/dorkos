@@ -74,7 +74,6 @@ describe('document event Transport contract', () => {
             status: 404,
             code: 'not_found',
             detail: 'The document is not available.',
-            reason: 'canvas_document_not_found',
           }),
           { status: 404 }
         )
@@ -147,7 +146,6 @@ describe('actual numeric Retry-After error metadata', () => {
         code: 'rate_limited',
         detail: 'The document has too many pending events. Try again later.',
         retryAfterMs: 999,
-        reason: 'doc_event_rate_limit',
       };
       vi.mocked(fetch).mockResolvedValue(
         new Response(JSON.stringify(body), { status: 429, headers: { 'Retry-After': '2' } })
@@ -218,7 +216,6 @@ describe('actual numeric Retry-After error metadata', () => {
           status: 404,
           code: 'not_found',
           detail: 'The document is not available.',
-          reason: 'canvas_document_not_found',
         }),
         {
           status: 404,
@@ -232,7 +229,7 @@ describe('actual numeric Retry-After error metadata', () => {
     expect(error).toMatchObject({
       status: 404,
       code: 'not_found',
-      body: { reason: 'canvas_document_not_found' },
+      body: { detail: 'The document is not available.' },
     });
     expect(Object.hasOwn(error as object, 'retryAfterMs')).toBe(false);
   });
@@ -263,7 +260,6 @@ it('does not assign backoff metadata to a503 even when its header is numeric', a
         status: 503,
         code: 'temporarily_unavailable',
         detail: 'Document events are not available yet.',
-        reason: 'doc_channel_unavailable',
       }),
       {
         status: 503,

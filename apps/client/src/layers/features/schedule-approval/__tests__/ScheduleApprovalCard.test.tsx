@@ -2048,7 +2048,7 @@ describe('stale schedule approval', () => {
   it('refreshes instructions and mode before allowing another approval', async () => {
     let finishRefresh!: (tasks: Task[]) => void;
     const staleError = Object.assign(new Error('This schedule changed. Review it again.'), {
-      code: 'schedule_review_changed',
+      code: 'precondition_failed',
     });
     const updateTask = vi.fn().mockRejectedValueOnce(staleError).mockResolvedValue(proposal());
     const listTasks = vi.fn(

@@ -789,7 +789,7 @@ describe('LocalBrowserPanel', () => {
     it('leaves the turn alone when the browser wouldn’t close', async () => {
       transport.getLocalBrowserState.mockResolvedValue({ ...connected, handoff, signIn: null });
       transport.disconnectLocalBrowser.mockRejectedValue(
-        Object.assign(new Error('closing'), { code: 'busy' })
+        Object.assign(new Error('Browser is busy. Wait a moment.'), { code: 'conflict' })
       );
       mount();
       await chooseFromMenu('Close browser');
@@ -1100,47 +1100,21 @@ describe('LocalBrowserPanel', () => {
     other.remove();
   });
   it.each([
-    [
-      'browser_download',
-      'raw installer output',
-      'Couldn’t download the browser. Check your connection and try again.',
-    ],
-    [
-      'browser_storage',
-      'Free some space, then open the browser again.',
-      'Free some space, then open the browser again.',
-    ],
-    [
-      'browser_storage',
-      'Check folder permissions, then open the browser again.',
-      'Check folder permissions, then open the browser again.',
-    ],
-    [
-      'browser_storage',
-      '/private/install/path: secret process output',
-      'Couldn’t save the browser. Check free space and folder permissions.',
-    ],
-    ['cancelled', 'raw cancellation error', 'Browser setup stopped. Open it again to continue.'],
-    [
-      'busy',
-      'The browser is still closing. Wait before opening it again.',
-      'The browser is still closing. Wait, then try again.',
-    ],
-    ['busy', 'private busy details', 'Browser is busy. Wait a moment.'],
-    [
-      'busy',
-      'Restart DorkOS to finish closing this browser.',
-      'Restart DorkOS to finish closing this browser.',
-    ],
-  ])('shows safe recovery guidance for %s (%s)', async (code, message, guidance) => {
-    transport.openLocalBrowser.mockRejectedValue(Object.assign(new Error(message), { code }));
+    'Couldn’t download the browser. Check your connection and try again.',
+    'Free some space, then open the browser again.',
+    'Browser setup stopped. Open it again to continue.',
+    'The browser is still closing. Wait, then try again.',
+  ])('shows the server’s recovery guidance: %s', async (guidance) => {
+    // The server words every browser refusal for a person (`routes/local-browser.ts`).
+    transport.openLocalBrowser.mockRejectedValue(
+      Object.assign(new Error(guidance), { code: 'conflict' })
+    );
     mount();
     const open = await screen.findByRole('button', { name: 'Open browser' });
     await waitFor(() => expect(open).toBeEnabled());
     fireEvent.click(open);
     expect(await screen.findByRole('alert')).toHaveTextContent(guidance);
     expect(screen.getByRole('button', { name: 'Open browser' })).toBeEnabled();
-    if (message !== guidance) expect(screen.queryByText(message)).not.toBeInTheDocument();
     expect(transport.openLocalBrowser).toHaveBeenCalledTimes(1);
   });
   it.each(['resolve', 'reject'])(
@@ -1252,7 +1226,9 @@ describe('LocalBrowserPanel', () => {
   it('keeps the selected tab when another tab stops responding', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
     transport.selectLocalBrowserTab.mockRejectedValue(
-      Object.assign(new Error('raw browser focus error'), { code: 'focus_unavailable' })
+      Object.assign(new Error('This tab stopped responding. Choose it again.'), {
+        code: 'conflict',
+      })
     );
     mount();
     await choosePage('Second page');
@@ -1261,7 +1237,6 @@ describe('LocalBrowserPanel', () => {
     );
     const menu = await openMenu();
     expect(within(menu).getByRole('menuitemradio', { name: 'First page' })).toBeChecked();
-    expect(screen.queryByText('raw browser focus error')).not.toBeInTheDocument();
     expect(transport.selectLocalBrowserTab).toHaveBeenCalledTimes(1);
   });
   it('pauses agent actions from the pill while leaving human controls available', async () => {
@@ -1451,7 +1426,9 @@ describe('LocalBrowserPanel', () => {
     it('say why a refused step stayed put on the chrome’s notice line, as for a refused address', async () => {
       transport.getLocalBrowserState.mockResolvedValue(withHistory(true, false));
       transport.stepLocalBrowserHistory.mockRejectedValue(
-        Object.assign(new Error('raw redirect detail'), { code: 'history_refused' })
+        Object.assign(new Error('DorkOS doesn’t open that page here, so you stayed on this one.'), {
+          code: 'history_refused',
+        })
       );
       const { container } = mount();
       fireEvent.click(await screen.findByRole('button', { name: 'Back' }));
@@ -1472,7 +1449,7 @@ describe('LocalBrowserPanel', () => {
     it('leave a real step failure to the panel, not the notice line', async () => {
       transport.getLocalBrowserState.mockResolvedValue(withHistory(true, false));
       transport.stepLocalBrowserHistory.mockRejectedValue(
-        Object.assign(new Error('raw'), { code: 'navigation_uncertain' })
+        Object.assign(new Error('Check what happened before continuing.'), { code: 'conflict' })
       );
       const { container } = mount();
       fireEvent.click(await screen.findByRole('button', { name: 'Back' }));
@@ -1486,7 +1463,9 @@ describe('LocalBrowserPanel', () => {
   it('keeps a typed address when navigation becomes stale and never replays it', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
     transport.navigateLocalBrowser.mockRejectedValue(
-      Object.assign(new Error('changed'), { code: 'stale_page' })
+      Object.assign(new Error('Page changed. Read it again before continuing.'), {
+        code: 'precondition_failed',
+      })
     );
     mount();
     await typeAddress('https://new.example.com');
@@ -1498,27 +1477,27 @@ describe('LocalBrowserPanel', () => {
     );
     expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
   });
-  it.each(['navigation_uncertain', 'uncertain'])(
-    'keeps uncertain effects visible without offering a replay (%s)',
-    async (code) => {
-      transport.getLocalBrowserState.mockResolvedValue(connected);
-      transport.navigateLocalBrowser.mockRejectedValue(
-        Object.assign(new Error('unknown outcome'), { code })
-      );
-      mount();
-      await typeAddress('https://new.example.com');
-      expect(await screen.findByText('Check what happened before continuing.')).toBeInTheDocument();
-      expect(await screen.findByRole('textbox', { name: 'Address' })).toHaveValue(
-        'https://new.example.com'
-      );
-      expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
-      expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
-    }
-  );
+  it('keeps uncertain effects visible without offering a replay', async () => {
+    transport.getLocalBrowserState.mockResolvedValue(connected);
+    // The server words an uncertain navigation for a person (`routes/local-browser.ts`).
+    transport.navigateLocalBrowser.mockRejectedValue(
+      Object.assign(new Error('Check what happened before continuing.'), { code: 'conflict' })
+    );
+    mount();
+    await typeAddress('https://new.example.com');
+    expect(await screen.findByText('Check what happened before continuing.')).toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: 'Address' })).toHaveValue(
+      'https://new.example.com'
+    );
+    expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
+    expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
+  });
   // DOR-4419: the address box reads what the person typed with the shared address rules.
   describe('typed addresses', () => {
     const unreachable = () =>
-      Object.assign(new Error('no answer'), { code: 'navigation_unreachable' });
+      Object.assign(new Error('Couldn’t reach that site. Check the address and try again.'), {
+        code: 'conflict',
+      });
     const submit = typeAddress;
 
     it('puts https:// in front of a bare host, and http:// for a private one', async () => {
@@ -1580,7 +1559,9 @@ describe('LocalBrowserPanel', () => {
     it('says a site that timed out didn’t respond', async () => {
       transport.getLocalBrowserState.mockResolvedValue(connected);
       transport.navigateLocalBrowser.mockRejectedValue(
-        Object.assign(new Error('slow'), { code: 'navigation_timed_out' })
+        Object.assign(new Error('That site didn’t respond. Try again in a moment.'), {
+          code: 'conflict',
+        })
       );
       mount();
       await submit('slow.example');

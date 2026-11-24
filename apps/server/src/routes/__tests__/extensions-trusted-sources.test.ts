@@ -168,7 +168,7 @@ describe('trusted sources', () => {
       .post('/api/extensions/trusted-sources')
       .send({ source: 'someone/else' });
     expect(unproven.status).toBe(409);
-    expect(unproven.body).toMatchObject({ code: 'conflict', reason: 'unproven_source' });
+    expect(unproven.body).toMatchObject({ code: 'conflict' });
 
     const junk = await request(fixtureServer)
       .post('/api/extensions/trusted-sources')

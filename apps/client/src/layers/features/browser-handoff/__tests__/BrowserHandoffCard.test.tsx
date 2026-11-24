@@ -240,7 +240,7 @@ describe('BrowserHandoffCard', () => {
   it('sends no message when Hand back is refused, and says why', async () => {
     transport.getLocalBrowserState.mockResolvedValue(person());
     transport.handBackLocalBrowser.mockRejectedValue(
-      Object.assign(new Error('This handoff already ended.'), { code: 'handoff_ended' })
+      Object.assign(new Error('This handoff already ended.'), { code: 'conflict' })
     );
     mount();
     fireEvent.click(await button('Continue'));
@@ -512,7 +512,7 @@ describe('BrowserHandoffCard', () => {
       );
       transport.finishLocalBrowserSignIn.mockRejectedValue(
         Object.assign(new Error('x'), {
-          code: 'handoff_ended',
+          code: 'conflict',
           message: 'This handoff already ended.',
         })
       );

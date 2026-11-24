@@ -70,7 +70,7 @@ describe('createMarketplaceMethods() dev links (DOR-2696)', () => {
   });
 
   it('carries the refusal from a preview the server refused', async () => {
-    // Purpose: the dialog acts on the dev link's `reason` (dev_link_changed) and shows the sentence.
+    // Purpose: the dialog acts on the code (precondition_failed) and shows the sentence.
     answerWith(
       {
         type: 'urn:dorkos:problem:invalid_request',
@@ -78,7 +78,6 @@ describe('createMarketplaceMethods() dev links (DOR-2696)', () => {
         status: 400,
         code: 'invalid_request',
         detail: 'That path is a link. Use /real instead.',
-        reason: 'dev_link_path_not_real',
       },
       400
     );
@@ -87,7 +86,6 @@ describe('createMarketplaceMethods() dev links (DOR-2696)', () => {
     ).rejects.toMatchObject({
       message: 'That path is a link. Use /real instead.',
       code: 'invalid_request',
-      body: { reason: 'dev_link_path_not_real' },
     });
   });
 });

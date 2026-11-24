@@ -348,7 +348,7 @@ export function ApprovalPrompt({
         setError(STEP_UP_NOT_ALLOWED_MESSAGE);
         return;
       }
-      if (code === 'interaction_already_resolved') {
+      if (code === 'already_resolved') {
         setDecided('approved');
         onDecided?.();
       } else {
@@ -379,7 +379,7 @@ export function ApprovalPrompt({
           setError(STEP_UP_NOT_ALLOWED_MESSAGE);
           return;
         }
-        if (code === 'interaction_already_resolved') {
+        if (code === 'already_resolved') {
           setDecided('approved');
           onDecided?.();
         } else {
@@ -406,7 +406,7 @@ export function ApprovalPrompt({
     } catch (err) {
       const code = (err as { code?: string }).code;
       if (code === STEP_UP_REQUIRED_CODE) return;
-      if (code === 'interaction_already_resolved') {
+      if (code === 'already_resolved') {
         setDecided('denied');
         onDecided?.();
       } else {

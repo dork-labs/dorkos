@@ -1,9 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
-import {
-  STALE_APPROVAL_CODE,
-  type ApproveExtensionRequest,
-} from '@dorkos/shared/extension-approval-schemas';
+import type { ApproveExtensionRequest } from '@dorkos/shared/extension-approval-schemas';
 import { extensionQueryKeys, useExtensionList } from '@/layers/entities/extension';
 import { extensionApiUrl } from '../model/extension-api-url';
 import { readResponseError } from '@/layers/shared/lib';
@@ -161,7 +158,7 @@ export function useSetExtensionRunApproval(approve: boolean) {
     mutationFn: async ({ id, version, plugin, permissions, expectedDigest }: RunApprovalTarget) => {
       // Approving binds the copy the card shows — its version and carrying
       // plugin — so a copy that took its place since the card was drawn is
-      // refused with `reason: stale_approval` instead of approved (DOR-2517). The card
+      // refused with `412 precondition_failed` instead of approved (DOR-2517). The card
       // is never told a path; the server compares what it is sent.
       const res = await fetch(
         extensionApiUrl(`/extensions/${id}/${approve ? 'approve' : 'revoke'}`),
@@ -183,7 +180,7 @@ export function useSetExtensionRunApproval(approve: boolean) {
           res,
           `Couldn’t update ${id}. The server answered ${res.status}.`
         );
-        throw new RunApprovalError(body.message, body.reason === STALE_APPROVAL_CODE, body.code);
+        throw new RunApprovalError(body.message, body.code === 'precondition_failed', body.code);
       }
       return res.json() as Promise<ExtensionApprovalResponse>;
     },

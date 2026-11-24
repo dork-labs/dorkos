@@ -37,8 +37,6 @@ import type { Context, Hono } from 'hono';
 import {
   ApproveExtensionRequestSchema,
   DismissExtensionApprovalRequestSchema,
-  STALE_APPROVAL_CODE,
-  UNPINNABLE_APPROVAL_CODE,
 } from '@dorkos/shared/extension-approval-schemas';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import { isExpectedCopy } from '../services/extensions/pin/extension-expected-copy.js';
@@ -89,11 +87,14 @@ const noSuchExtension = (c: Context<ApiEnv>, id: string) =>
   problem(c, 'not_found', { detail: `No extension named ${id} is installed.` });
 
 /**
- * A `409 conflict` with the finer reason the app branches on: `stale_approval`
- * (the copy changed since the card was drawn) or `extension_unpinnable`.
+ * A `412 precondition_failed`: the copy changed since the card was drawn, so
+ * the app redraws the card and asks again.
  */
-const refusedCopy = (c: Context<ApiEnv>, reason: string, detail: string) =>
-  problem(c, 'conflict', { detail, extensions: { reason } });
+const staleCopy = (c: Context<ApiEnv>, detail: string) =>
+  problem(c, 'precondition_failed', { detail });
+
+/** A `409 conflict` for a copy DorkOS cannot check: asking again can't help. */
+const unpinnableCopy = (c: Context<ApiEnv>, detail: string) => problem(c, 'conflict', { detail });
 
 /** What a request without the copy it was shown is told. */
 const SEND_SHOWN = 'Send the path and version of the extension you were shown.';
@@ -187,7 +188,7 @@ export function registerExtensionApprovalRoutes(
           return problem(c, 'invalid_request', { detail: SEND_SHOWN });
         }
         if (!isExpectedCopy(record, expected.data)) {
-          return refusedCopy(c, STALE_APPROVAL_CODE, CHANGED);
+          return staleCopy(c, CHANGED);
         }
         // The files the card showed (DOR-3068): the manager refuses the yes
         // when they changed since, with the live digest read at the click.
@@ -200,8 +201,8 @@ export function registerExtensionApprovalRoutes(
       // is out of date; either way the person reads why in plain words.
       if (!record.devLink && expectedDigest === undefined) {
         return record.currentDigest
-          ? refusedCopy(c, STALE_APPROVAL_CODE, CHANGED)
-          : refusedCopy(c, UNPINNABLE_APPROVAL_CODE, await whyUnpinnable(record));
+          ? staleCopy(c, CHANGED)
+          : unpinnableCopy(c, await whyUnpinnable(record));
       }
 
       const run = async (facts: RequestFacts): Promise<Response> => {
@@ -211,11 +212,7 @@ export function registerExtensionApprovalRoutes(
           current.path !== record.path ||
           current.manifest.version !== record.manifest.version
         )
-          return refusedCopy(
-            c,
-            STALE_APPROVAL_CODE,
-            'This mini app changed. Nothing was turned on.'
-          );
+          return staleCopy(c, 'This mini app changed. Nothing was turned on.');
         let extension;
         try {
           extension = await extensionManager.approveToRun(id, { expectedDigest });
@@ -224,10 +221,10 @@ export function registerExtensionApprovalRoutes(
           // A fixed sentence per case, never the error's own text (it can name
           // files): one of the two unpinnable sentences, else the unreadable one.
           logger.warn(`[Extensions] Approval of ${id} refused`, err);
-          if (err.reason === 'stale') return refusedCopy(c, STALE_APPROVAL_CODE, CHANGED);
+          if (err.reason === 'stale') return staleCopy(c, CHANGED);
           const why =
             err.message === UNPINNABLE_SENTENCE ? UNPINNABLE_SENTENCE : UNREADABLE_SENTENCE;
-          return refusedCopy(c, UNPINNABLE_APPROVAL_CODE, why);
+          return unpinnableCopy(c, why);
         }
         if (!extension) return noSuchExtension(c, id);
 
@@ -304,11 +301,7 @@ export function registerExtensionApprovalRoutes(
             detail: `${id} ships with DorkOS and never asks to run.`,
           });
         }
-        return refusedCopy(
-          c,
-          STALE_APPROVAL_CODE,
-          'This extension changed since you saw it. Nothing changed.'
-        );
+        return staleCopy(c, 'This extension changed since you saw it. Nothing changed.');
       }
 
       return c.body(null, 204);

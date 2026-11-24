@@ -13,7 +13,7 @@ export function registerFileSaveRecoveryOpenApi(registry: OpenAPIRegistry): void
   const failures = {
     400: problemResponse('`invalid_request`: invalid recovery input'),
     404: problemResponse(
-      '`not_found`: current owning chat document or original operation unavailable; `reason` names the check that refused, for the owner (`not_session`, `no_recorded_folder`, `root_mismatch`, `folder_gone`, `outside_boundary`)'
+      '`not_found`: current owning chat document or original operation unavailable; `detail` names the check that refused, for the owner'
     ),
     503: problemResponse(
       '`temporarily_unavailable`: evidence, authority or storage unavailable; no fence is cleared'

@@ -8,8 +8,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
 import { toast } from 'sonner';
 import {
-  STALE_APPROVAL_CODE,
-  UNPINNABLE_APPROVAL_CODE,
   type ApproveExtensionRequest,
   type ExtensionTrustOffer,
   type PendingExtensionApproval,
@@ -21,10 +19,16 @@ import { useSeenBeforeStaleStore } from './seen-before-stale-store';
 import { useAllowNotConfirmedStore } from './allow-not-confirmed-store';
 import { readResponseError } from '@/layers/shared/lib';
 
+/** The code an answer to a copy that changed since the card was drawn is refused with. */
+const CHANGED_SINCE_SHOWN = 'precondition_failed';
+
+/** The code a yes to a copy DorkOS cannot check is refused with: asking again can't help. */
+const CANNOT_TURN_ON = 'conflict';
+
 /**
  * Which copy the person answered — the one their row showed — and the name to
  * use if it goes wrong. The server acts only if the copy on disk is still
- * exactly this one, and answers `409 conflict`, `reason: stale_approval`, otherwise.
+ * exactly this one, and answers `412 precondition_failed` otherwise.
  */
 export interface ExtensionAnswerInput {
   /** Extension id. */
@@ -63,9 +67,7 @@ class AnswerRefused extends Error {
   constructor(
     message: string,
     /** The server's refusal code, e.g. `step_up_required`. */
-    readonly code: string | undefined,
-    /** The finer reason under it, e.g. `stale_approval` under `conflict`. */
-    readonly reason?: string
+    readonly code: string | undefined
   ) {
     super(message);
   }
@@ -76,12 +78,12 @@ async function failureOf(res: Response): Promise<AnswerRefused> {
   const body = await readResponseError(res, `The server answered ${res.status}`, {
     oldMessageFirst: true,
   });
-  return new AnswerRefused(body.message, body.code, body.reason);
+  return new AnswerRefused(body.message, body.code);
 }
 
 /** Whether a refusal says the row went out of date while it was on screen. */
 function isStale(err: Error): boolean {
-  return err instanceof AnswerRefused && err.reason === STALE_APPROVAL_CODE;
+  return err instanceof AnswerRefused && err.code === CHANGED_SINCE_SHOWN;
 }
 
 /**
@@ -177,7 +179,7 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
         return;
       }
       // Trying again cannot help a copy DorkOS cannot check (DOR-3068).
-      if (err instanceof AnswerRefused && err.reason === UNPINNABLE_APPROVAL_CODE) {
+      if (err instanceof AnswerRefused && err.code === CANNOT_TURN_ON) {
         toast.error(`${name} can’t be turned on yet.`, { description: err.message });
         return;
       }

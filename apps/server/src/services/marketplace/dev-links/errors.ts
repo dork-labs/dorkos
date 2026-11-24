@@ -13,8 +13,8 @@ import type { Problem, ProblemCode } from '@dorkos/shared/problem';
 /**
  * The fixed sentence each dev-link refusal answers with. The error's own message
  * can name a folder or a slot on disk, so it stays in the server log and the
- * MCP tool result; an HTTP caller gets this, with the code as `reason` and the
- * structured details as extension members (DOR-4979).
+ * MCP tool result; an HTTP caller gets this, with the structured details as
+ * extension members (DOR-4979).
  */
 const DETAIL_BY_CODE: Record<DevLinkErrorCode, string> = {
   dev_link_path_not_real: 'That path is a link. Use the folder it points to.',
@@ -32,7 +32,11 @@ const DETAIL_BY_CODE: Record<DevLinkErrorCode, string> = {
   package_is_dev_linked: 'This package runs from a dev link. Unlink it first.',
 };
 
-/** The problem code each dev-link status answers with; the finer code rides as `reason`. */
+/**
+ * The problem code each dev-link status answers with. A folder that changed
+ * since it was approved is the exception: `412 precondition_failed`, the
+ * refusal the app and CLI act on by asking again.
+ */
 const PROBLEM_CODE_BY_STATUS: Record<DevLinkError['status'], ProblemCode> = {
   400: 'invalid_request',
   403: 'forbidden',
@@ -66,15 +70,20 @@ export class DevLinkError extends Error {
   }
 
   /**
-   * The problem document a route answers with: a code by status, the dev
-   * link's own refusal as `reason`, and its details as extension members.
+   * The problem document a route answers with: a code by status (or
+   * `precondition_failed` for a folder that changed), a fixed sentence, and its
+   * details as extension members.
    */
   toProblem(): Problem {
-    return problemBody(PROBLEM_CODE_BY_STATUS[this.status], {
-      detail: DETAIL_BY_CODE[this.code],
-      status: this.status,
-      extensions: { ...this.details, reason: this.code },
-    });
+    const changed = this.code === 'dev_link_changed';
+    const extensions = Object.keys(this.details).length > 0 ? { extensions: this.details } : {};
+    return changed
+      ? problemBody('precondition_failed', { detail: DETAIL_BY_CODE[this.code], ...extensions })
+      : problemBody(PROBLEM_CODE_BY_STATUS[this.status], {
+          detail: DETAIL_BY_CODE[this.code],
+          status: this.status,
+          ...extensions,
+        });
   }
 }
 

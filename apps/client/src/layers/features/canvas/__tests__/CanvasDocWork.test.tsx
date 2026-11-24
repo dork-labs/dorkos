@@ -195,10 +195,15 @@ describe('CanvasDocWork', () => {
 
   it('shows the server’s refusal in plain words and keeps the work listed', async () => {
     vi.mocked(transport.replayCanvasDocWork).mockRejectedValue(
-      Object.assign(new Error('refused'), {
+      Object.assign(new Error('This route is off. Allow it before running the work again.'), {
         code: 'conflict',
         status: 409,
-        body: { code: 'conflict', reason: 'grant_required' },
+        body: {
+          title: 'Refused.',
+          status: 409,
+          code: 'conflict',
+          detail: 'This route is off. Allow it before running the work again.',
+        },
       })
     );
     vi.mocked(transport.clearCanvasDocWork).mockRejectedValue(new TypeError('Failed to fetch'));
@@ -206,7 +211,7 @@ describe('CanvasDocWork', () => {
     const panel = await openPanel();
     fireEvent.click(within(panel).getByTestId('doc-work-replay-batch-1'));
     expect(await within(panel).findByRole('alert')).toHaveTextContent(
-      'This route is off. Allow it first.'
+      'This route is off. Allow it before running the work again.'
     );
     fireEvent.click(within(panel).getByTestId('doc-work-clear-batch-1'));
     await waitFor(() =>

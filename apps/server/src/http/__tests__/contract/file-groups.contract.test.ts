@@ -87,7 +87,7 @@ const OUTSIDE = {
   code: 'OUTSIDE_BOUNDARY',
 };
 const NULL_BYTE = { error: 'Invalid path: null bytes not allowed', code: 'NULL_BYTE' };
-const DIFF_OUTSIDE = problemBody('outside_boundary', {
+const PATH_OUTSIDE = problemBody('outside_boundary', {
   detail: 'Pick a folder inside the ones DorkOS may use.',
 });
 const DIFF_SESSION_NOT_FOUND = problemBody('session_not_found', {
@@ -99,16 +99,10 @@ const PATH_NUL = problemBody('invalid_request', {
 const UPLOAD_CWD_MISSING = problemBody('invalid_request', {
   detail: 'Send `cwd`: the chat’s folder.',
 });
-const UPLOAD_OUTSIDE = problemBody('outside_boundary', {
-  detail: 'That folder is outside the folders DorkOS may use.',
-});
 const UPLOAD_NO_FILES = problemBody('invalid_request', {
   detail: 'Attach at least one file in `files`.',
 });
 const UPLOAD_MISSING = problemBody('not_found', { detail: 'That upload doesn’t exist.' });
-const SERVE_OUTSIDE = problemBody('outside_boundary', {
-  detail: 'That file is outside the folders DorkOS may use.',
-});
 const SERVE_START_OUTSIDE = problemBody('outside_boundary', {
   detail: 'Pick a file inside the chat’s folder.',
 });
@@ -536,7 +530,7 @@ contractSuite('file, diff, upload and profile groups', [
   {
     name: 'GET /api/diff/baseline refuses a .. walk',
     path: `/api/diff/baseline?${at('../../../x.txt')}&sessionId=${SESSION}`,
-    expect: { status: 403, body: DIFF_OUTSIDE },
+    expect: { status: 403, body: PATH_OUTSIDE },
   },
   {
     name: 'GET /api/diff/baseline refuses a NUL byte',
@@ -556,7 +550,7 @@ contractSuite('file, diff, upload and profile groups', [
   {
     name: 'GET /api/diff/pending refuses a folder outside the boundary',
     path: `/api/diff/pending?cwd=${q(OUTSIDE_DIR)}&sessionId=${SESSION}`,
-    expect: { status: 403, body: DIFF_OUTSIDE },
+    expect: { status: 403, body: PATH_OUTSIDE },
   },
   {
     name: 'GET /api/diff/baseline/raw is a 404 when there is no before',
@@ -579,7 +573,7 @@ contractSuite('file, diff, upload and profile groups', [
   {
     name: 'GET /api/diff/baseline/raw refuses a symlink out',
     path: `/api/diff/baseline/raw?${at('escape.svg')}&sessionId=${SESSION}`,
-    expect: { status: 403, body: DIFF_OUTSIDE },
+    expect: { status: 403, body: PATH_OUTSIDE },
   },
   {
     name: 'POST /api/diff/baseline/advance is a no-op with no baseline',
@@ -633,7 +627,7 @@ contractSuite('file, diff, upload and profile groups', [
     path: `/api/uploads?cwd=${q(OUTSIDE_DIR)}`,
     headers: MULTIPART,
     body: multipart([{ field: 'files', filename: 'a.txt', type: 'text/plain', content: 'a' }]),
-    expect: { status: 403, body: UPLOAD_OUTSIDE },
+    expect: { status: 403, body: PATH_OUTSIDE },
   },
   {
     name: 'POST /api/uploads refuses a NUL byte in the cwd',
@@ -872,7 +866,7 @@ contractSuite('file, diff, upload and profile groups', [
   {
     name: 'GET /api/uploads/:filename refuses a folder outside the boundary',
     path: `/api/uploads/one.txt?cwd=${q(OUTSIDE_DIR)}`,
-    expect: { status: 403, body: UPLOAD_OUTSIDE },
+    expect: { status: 403, body: PATH_OUTSIDE },
   },
   {
     name: 'GET /api/uploads/:filename is a 404 for a missing file',
@@ -1046,7 +1040,7 @@ contractSuite('file, diff, upload and profile groups', [
     method: 'POST',
     path: '/api/workbench/sign',
     body: { kind: 'serve', cwd: OUTSIDE_DIR },
-    expect: { status: 403, body: SERVE_OUTSIDE },
+    expect: { status: 403, body: PATH_OUTSIDE },
   },
   {
     name: 'POST /api/workbench/sign refuses a NUL byte',
@@ -1269,9 +1263,9 @@ describe('contract: tokens, stored photos and saved uploads', () => {
         404,
         problemBody('not_found', { detail: 'That path is a folder, not a file.' }),
       ],
-      [`/api/workbench/serve/${token}/escape.html`, 403, SERVE_OUTSIDE],
+      [`/api/workbench/serve/${token}/escape.html`, 403, PATH_OUTSIDE],
       [`/api/workbench/serve/${token}/a%00b.html`, 400, PATH_NUL],
-      [`/api/workbench/serve/${token}/%2e%2e%2F%2e%2e%2Fpackage.json`, 403, SERVE_OUTSIDE],
+      [`/api/workbench/serve/${token}/%2e%2e%2F%2e%2e%2Fpackage.json`, 403, PATH_OUTSIDE],
     ];
     for (const [target, status, body] of cases) {
       const res = await call(base, 'GET', target);

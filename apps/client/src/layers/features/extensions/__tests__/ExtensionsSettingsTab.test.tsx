@@ -1428,14 +1428,13 @@ describe('what an extension can reach (DOR-2686)', () => {
           current = { ...ISOLATION, net: [...ISOLATION.net, 'api.example.com'] };
           return Promise.resolve({
             ok: false,
-            status: 409,
+            status: 412,
             json: () =>
               Promise.resolve({
-                title: 'That clashes with a change made meanwhile.',
-                status: 409,
-                code: 'conflict',
+                title: 'Something changed since you last looked.',
+                status: 412,
+                code: 'precondition_failed',
                 detail: 'This extension changed.',
-                reason: 'stale_approval',
               }),
           });
         }

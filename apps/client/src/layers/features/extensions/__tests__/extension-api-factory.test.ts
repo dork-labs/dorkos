@@ -1119,11 +1119,10 @@ describe('createExtensionAPI', () => {
           ok: false,
           status: 409,
           json: vi.fn().mockResolvedValue({
-            type: 'urn:dorkos:problem:conflict',
-            title: 'That clashes with a change made meanwhile.',
+            type: 'urn:dorkos:problem:already_resolved',
+            title: 'This was already settled.',
             status: 409,
-            code: 'conflict',
-            reason: 'already_resolved',
+            code: 'already_resolved',
             detail: 'This was already settled.',
           }),
         })
@@ -1248,7 +1247,6 @@ describe('createExtensionAPI', () => {
             title: 'Too many requests. Wait a moment, then try again.',
             status: 429,
             code: 'rate_limited',
-            reason: 'start_limit',
             detail: 'Mine has started a lot of chats in the last hour. Try again later.',
           }),
         })

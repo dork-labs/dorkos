@@ -303,7 +303,7 @@ describe('POST /api/session-relay/passkeys/start', () => {
       .post('/api/session-relay/passkeys/start')
       .send({ label: 'MacBook passkey' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('needs_person_at_this_computer');
+    expect(res.body.code).toBe('operator_only');
     expect(deps.passkeys.enrolment.open).toBe(false);
   });
 

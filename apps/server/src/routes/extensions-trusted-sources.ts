@@ -94,7 +94,6 @@ export function registerTrustedSourceRoutes(
             if (result === 'unproven') {
               return problem(c, 'conflict', {
                 detail: `Nothing from ${source} is installed yet, so there’s nothing to trust.`,
-                extensions: { reason: 'unproven_source' },
               });
             }
             if (result === 'added') {

@@ -359,7 +359,7 @@ describe('contract: the person-only routes at this computer, with an owner', () 
       );
       expect(res.status).toBe(403);
       expect(res.json.detail).toEqual(expect.any(String));
-      expect(['operator_only_config', 'operator_cookie_required']).toContain(res.json.code);
+      expect(res.json.code).toBe('person_only');
       expect(readFileSync(configFile()).equals(before)).toBe(true);
     });
 

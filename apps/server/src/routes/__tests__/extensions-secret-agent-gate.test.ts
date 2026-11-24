@@ -116,7 +116,7 @@ describe('an agent setting an extension secret', () => {
   it('refuses a turn marked by outside words, and saves nothing', async () => {
     const res = await duringMarkedTurn(() => put(AGENT[1]));
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: 'forbidden', reason: 'marked_turn_typed_secret' });
+    expect(res.body).toMatchObject({ code: 'forbidden' });
     expect(await secrets().has('api_key')).toBe(false);
   });
 

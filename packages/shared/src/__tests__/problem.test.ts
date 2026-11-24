@@ -32,11 +32,18 @@ describe('PROBLEM_CODE_LIST', () => {
 
   it.each([
     ['method_not_allowed', 405],
-    ['disclosure_changed', 409],
     ['declined', 403],
-    ['client_outdated', 400],
     ['upstream_unavailable', 502],
     ['outside_turn', 403],
+    ['precondition_failed', 412],
+    ['already_resolved', 409],
+    ['needs_review', 409],
+    ['not_running', 409],
+    ['no_agent', 409],
+    ['caller_token_invalid', 403],
+    ['secret_left', 500],
+    ['signing_in', 409],
+    ['history_refused', 409],
   ] as const)('sends %s with status %i by default', (code, status) => {
     expect(PROBLEM_CODES[code].status).toBe(status);
   });
@@ -60,10 +67,7 @@ describe('PROBLEM_CODE_LIST', () => {
       ['task_not_running', 409],
       ['not_supported', 501],
       ['account_not_allowed_here', 409],
-      ['interaction_already_resolved', 409],
-      ['operator_cookie_required', 403],
       ['expired', 410],
-      ['needs_person_at_this_computer', 403],
       ['room_not_found', 404],
       ['room_archived', 409],
       ['slug_taken', 409],
@@ -92,22 +96,14 @@ describe('PROBLEM_CODE_LIST', () => {
       ['file_too_large', 409],
       ['repo_cap_exceeded', 409],
       ['merge_in_flight', 429],
-      ['template_needs_review', 409],
-      ['workspace_needs_review', 409],
-      ['remove_hooks_need_review', 409],
       ['declined', 403],
-      ['disclosure_changed', 409],
       ['reports_to_cycle', 400],
       ['terminal_limit', 429],
       ['too_large', 413],
       ['not_a_file', 400],
       ['binary_file', 415],
-      ['schedule_review_changed', 409],
       ['schedule_package_owned', 409],
-      ['looser_than_proposed', 409],
       ['past_due', 400],
-      ['operator_only_config', 403],
-      ['insufficient_storage', 507],
     ];
     for (const [code, status] of expected) {
       expect(PROBLEM_CODES[code as keyof typeof PROBLEM_CODES]?.status, code).toBe(status);
@@ -210,13 +206,13 @@ describe('readErrorBody', () => {
     ).toEqual({ code: 'not_found', message: 'Not found.', status: 404 });
   });
 
-  it('carries a problem’s reason extension, and only a string one', () => {
-    const conflict = { title: 'Changed.', status: 409, code: 'conflict' };
-    expect(readErrorBody({ ...conflict, reason: 'stale_approval' }, 'HTTP 409')).toMatchObject({
-      code: 'conflict',
-      reason: 'stale_approval',
+  it('reads the code alone: a problem names its refusal in `code`, never a second member', () => {
+    const changed = { title: 'Changed.', status: 412, code: 'precondition_failed' };
+    expect(readErrorBody({ ...changed, reason: 'stale_approval' }, 'HTTP 412')).toEqual({
+      code: 'precondition_failed',
+      message: 'Changed.',
+      status: 412,
     });
-    expect(readErrorBody({ ...conflict, reason: 7 }, 'HTTP 409')).not.toHaveProperty('reason');
   });
 
   it('carries a problem’s issues and retry delay', () => {

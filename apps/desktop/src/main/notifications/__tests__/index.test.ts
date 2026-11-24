@@ -585,7 +585,7 @@ describe('watchNotifications — Asks', () => {
   });
 
   it('does NOT steal focus on a refused action — the server understood and said no (already resolved)', async () => {
-    // 409 interaction_already_resolved — someone else already answered it, or
+    // 409 already_resolved — someone else already answered it, or
     // it timed out. Reopening the app over a card that no longer exists would
     // surprise the person for nothing.
     fetchMock.mockResolvedValue(new Response(null, { status: 409 }));

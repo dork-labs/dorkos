@@ -39,14 +39,14 @@ const PRESENCE = json(
 );
 const OFF = problemResponse('On a hub, or while the `sessionRelay.enabled` experiment is off');
 const NOT_HERE = problemResponse(
-  '`needs_person_at_this_computer`: not the owner at this computer using the app: the ' +
+  '`operator_only`: not the owner at this computer using the app: the ' +
     'relay, another device, an agent, an approval token, an API key or any other bearer'
 );
 const AGENT = problemResponse('`forbidden`: a caller presenting agent identity');
 const NOT_LINKED = problemResponse('`conflict`: this computer is not linked');
 const PASSWORD = problemResponse(
-  "`needs_person_at_this_computer`, or `forbidden` with a `reason` when the owner's password " +
-    'was missing or wrong'
+  "`operator_only`, or `forbidden` when the owner's password was missing or wrong " +
+    '(`detail` says which)'
 );
 const THROTTLED = problemResponse('`rate_limited`: too many wrong passwords lately, from anywhere');
 

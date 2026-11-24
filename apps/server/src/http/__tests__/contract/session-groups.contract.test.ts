@@ -1441,7 +1441,7 @@ describe('contract: the session routes, driven by hand (login off)', { timeout: 
       await call(server, 'POST', `${S}/${asked}/approve`, { toolCallId: 'gated-edit-1' })
     ).toMatchObject({
       status: 409,
-      json: { code: 'interaction_already_resolved' },
+      json: { code: 'already_resolved' },
     });
 
     // An agent's own chat asks too, and the agent still cannot answer it.
@@ -1784,6 +1784,6 @@ describe('contract: the session routes with login on', { timeout: 60_000 }, () =
     // Answering is the person's, by cookie; there is nothing pending here.
     expect(
       await call(server, 'POST', `${S}/${sessionId}/approve`, { toolCallId: 't' }, cookie)
-    ).toMatchObject({ status: 409, json: { code: 'interaction_already_resolved' } });
+    ).toMatchObject({ status: 409, json: { code: 'already_resolved' } });
   });
 });

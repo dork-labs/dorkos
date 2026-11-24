@@ -269,7 +269,7 @@ describe('POST /api/extension-decisions/:id/action', () => {
       .send({ action: 'approve' });
     expect(second.status).toBe(409);
     expect(second.headers['content-type']).toBe('application/problem+json');
-    expect(second.body).toMatchObject({ code: 'conflict', reason: 'already_resolved' });
+    expect(second.body).toMatchObject({ code: 'already_resolved' });
     expect(fx.history()).toHaveLength(1);
   });
 
@@ -280,8 +280,7 @@ describe('POST /api/extension-decisions/:id/action', () => {
       .send({ action: 'approve' });
     expect(res.status).toBe(409);
     expect(res.body).toMatchObject({
-      code: 'conflict',
-      reason: 'not_running',
+      code: 'not_running',
       detail: 'That extension isn’t running right now.',
     });
   });
@@ -330,7 +329,7 @@ describe('POST /api/extension-decisions/:id/offer', () => {
       .post(`/api/extension-decisions/${id}/offer`)
       .send({ accept: true });
     expect(again.status).toBe(409);
-    expect(again.body).toMatchObject({ code: 'conflict', reason: 'offer_gone' });
+    expect(again.body).toMatchObject({ code: 'already_resolved' });
   });
 
   it('refuses an agent', async () => {

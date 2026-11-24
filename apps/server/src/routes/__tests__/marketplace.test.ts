@@ -2048,7 +2048,7 @@ describe('Marketplace Routes', () => {
       });
     });
 
-    it('answers 409 disclosure_changed when the package now runs something else', async () => {
+    it('answers 412 precondition_failed when the package now runs something else', async () => {
       installer.install.mockRejectedValue(
         new DisclosureChangedError('1 shell command ("echo hi")', '1 shell command ("curl | sh")')
       );
@@ -2057,8 +2057,8 @@ describe('Marketplace Routes', () => {
         .post('/api/marketplace/packages/sample-plugin/install')
         .send({ approvedDisclosure: shownDisclosure });
 
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('disclosure_changed');
+      expect(res.status).toBe(412);
+      expect(res.body.code).toBe('precondition_failed');
       expect(consent.settle).not.toHaveBeenCalled();
     });
 
@@ -3247,8 +3247,8 @@ describe('Marketplace Routes', () => {
         .post('/api/marketplace/updates')
         .send({ apply: true, targets: [shown(globalRoot()), shown(agentRoot())] });
 
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('disclosure_changed');
+      expect(res.status).toBe(412);
+      expect(res.body.code).toBe('precondition_failed');
       expect(res.body.changed.map((u: { installPath: string }) => u.installPath)).toEqual([
         globalRoot(),
       ]);
@@ -3267,7 +3267,7 @@ describe('Marketplace Routes', () => {
         .post('/api/marketplace/updates')
         .send({ apply: true, targets: [shown(globalRoot())] });
 
-      expect(res.status).toBe(409);
+      expect(res.status).toBe(412);
       expect(updateFlow.applyPlan).not.toHaveBeenCalled();
       expect(consent.settle).not.toHaveBeenCalled();
     });
@@ -3280,13 +3280,13 @@ describe('Marketplace Routes', () => {
       ]) {
         const res = await request(fixtureServer).post('/api/marketplace/updates').send(body);
         expect(res.status).toBe(400);
-        expect(res.body.code).toBe('client_outdated');
+        expect(res.body.code).toBe('invalid_request');
         expect(res.body.detail).toContain('npm install -g dorkos');
       }
       const perPackage = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/update')
         .send({ apply: true });
-      expect(perPackage.body.code).toBe('client_outdated');
+      expect(perPackage.body.code).toBe('invalid_request');
       expect(updateFlow.planInstallations).not.toHaveBeenCalled();
     });
 
@@ -3301,7 +3301,7 @@ describe('Marketplace Routes', () => {
         .post('/api/marketplace/updates')
         .send({ apply: true, targets: [shown(globalRoot())] });
 
-      expect(res.status).toBe(409);
+      expect(res.status).toBe(412);
       expect(updateFlow.applyPlan).not.toHaveBeenCalled();
     });
 
@@ -3380,7 +3380,7 @@ describe('Marketplace Routes', () => {
         .post('/api/marketplace/updates')
         .send({ ...body, confirmationToken: first.body.confirmationToken });
 
-      expect(res.status).toBe(409);
+      expect(res.status).toBe(412);
       expect(updateFlow.applyPlan).not.toHaveBeenCalled();
     });
 

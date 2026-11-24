@@ -59,14 +59,14 @@ export function refuseCredentialChange(c: Context<ApiEnv>): Response | undefined
 
 /**
  * The front-door bar's refusal (`refuseFrontDoorChange`) as a problem document:
- * `needs_person_at_this_computer`, its sentence as the detail.
+ * `operator_only`, its sentence as the detail.
  *
  * @param c - The request's context.
  * @param refusal - What the bar decided.
  * @returns The 403.
  */
 export function frontDoorProblem(c: Context, refusal: OperatorCookieRefusal): Response {
-  return problem(c, 'needs_person_at_this_computer', { detail: refusal.error });
+  return problem(c, 'operator_only', { detail: refusal.error });
 }
 
 /**

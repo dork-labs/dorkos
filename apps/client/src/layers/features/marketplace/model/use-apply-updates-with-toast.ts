@@ -124,7 +124,7 @@ function showOutcome(outcome: ApplyOutcomeToast, toastId: string | number): void
 const BATCH_NEEDS_APPROVAL = 'needs_approval';
 
 /** The server's code when a new version runs something the person was not shown. */
-const DISCLOSURE_CHANGED = 'disclosure_changed';
+const DISCLOSURE_CHANGED = 'precondition_failed';
 
 /**
  * Why a refused or failed apply failed, in a person's words. The one refusal

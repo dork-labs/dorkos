@@ -277,8 +277,8 @@ describe('mounted document HTTP endpoints', () => {
     expect(tooLarge.headers['content-type']).toContain('application/problem+json');
     expect(tooLarge.body).toMatchObject({
       code: 'request_too_large',
-      reason: 'doc_event_too_large',
     });
+    expect(tooLarge.body).not.toHaveProperty('reason');
   });
   it('keeps accepted retries before rate accounting and returns Retry-After for new input', async () => {
     localDocument();

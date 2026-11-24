@@ -9,9 +9,7 @@ import { useMemo, useState, useSyncExternalStore } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  DECISION_OFFER_GONE_CODE,
   DECISION_OFFER_TTL_MS,
-  DECISION_STALE_CODE,
   DecisionActionResponseSchema,
   DecisionOfferResponseSchema,
   ListExtensionDecisionsResponseSchema,
@@ -56,16 +54,20 @@ export interface ExtensionDecisionsState {
   isError: boolean;
 }
 
-/** A refused answer: the problem's code, and its finer `reason` (`stale_decision`). */
-type DecisionFailure = Error & { code?: string; reason?: string };
+/** A refused answer, with the problem's code (`precondition_failed` for a question that changed). */
+type DecisionFailure = Error & { code?: string };
+
+/** The code an answer to a question that changed since it was shown is refused with. */
+const QUESTION_CHANGED = 'precondition_failed';
+
+/** The code an answer to a settled question, or to an offer that lapsed, is refused with. */
+const ALREADY_SETTLED = 'already_resolved';
 
 /** A failed request's own sentence, or the status when it sent none. */
 async function failureOf(res: Response): Promise<DecisionFailure> {
   const body = await readResponseError(res, `The server answered ${res.status}`);
   const error: DecisionFailure = new Error(body.message);
   if (body.code) error.code = body.code;
-  const reason = (body.body as { reason?: unknown } | null | undefined)?.reason;
-  if (typeof reason === 'string') error.reason = reason;
   return error;
 }
 
@@ -256,7 +258,7 @@ export function useExtensionDecisionActions(): ExtensionDecisionActions {
           return null;
         }
         // A question that changed is not a failure to shout about.
-        if (err.reason === DECISION_STALE_CODE) toast(err.message);
+        if (err.code === QUESTION_CHANGED) toast(err.message);
         else toast.error(err.message);
         return null;
       }
@@ -314,7 +316,7 @@ export function useExtensionDecisionActions(): ExtensionDecisionActions {
         return;
       }
       // A dismiss of an offer that already lapsed is not news.
-      if (!accept && err.reason === DECISION_OFFER_GONE_CODE) return;
+      if (!accept && err.code === ALREADY_SETTLED) return;
       toast.error(err.message);
     },
     onSettled: (_data, _error, { decisionId }) => {

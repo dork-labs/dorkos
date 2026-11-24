@@ -603,7 +603,7 @@ describe('ClaudeAccountsSection', () => {
       Promise.reject(
         Object.assign(new Error('Only a person can change those settings'), {
           status: 403,
-          code: 'operator_only_config',
+          code: 'person_only',
         })
       );
     renderSection({

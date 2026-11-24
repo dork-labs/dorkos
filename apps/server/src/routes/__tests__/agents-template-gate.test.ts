@@ -269,7 +269,7 @@ describe('a person creating from their own template', () => {
 
     expect(shown.status).toBe(409);
     expect(shown.body).toMatchObject({
-      code: 'template_needs_review',
+      code: 'needs_review',
       template: {
         contentHash: expect.stringMatching(/^sha256:/),
         findings: [expect.objectContaining({ path: '.claude/settings.json' })],

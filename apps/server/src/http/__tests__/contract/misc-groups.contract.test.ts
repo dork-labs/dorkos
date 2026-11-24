@@ -97,11 +97,11 @@ const SAVED = z.object({ success: z.literal(true), config: z.object({}).loose() 
 const OPERATOR_ONLY = (paths: string[]) =>
   z
     .object({
-      type: z.literal('urn:dorkos:problem:operator_only_config'),
+      type: z.literal('urn:dorkos:problem:person_only'),
       title: z.string(),
       status: z.literal(403),
       detail: z.literal('Only a person can change those settings'),
-      code: z.literal('operator_only_config'),
+      code: z.literal('person_only'),
       paths: z.array(z.string()).refine((have) => have.join() === paths.join()),
       message: z.string(),
     })
@@ -118,20 +118,14 @@ const DOC_METRICS_FORBIDDEN = {
   code: 'DOC_METRICS_FORBIDDEN',
   error: 'Only the owner can read document metrics.',
 };
-const DOC_NOT_FOUND = problemBody('not_found', {
-  detail: 'The document is not available.',
-  extensions: { reason: 'canvas_document_not_found' },
-});
+const DOC_NOT_FOUND = problemBody('not_found', { detail: 'The document is not available.' });
 const DOC_EVENT_TOO_LARGE = problemBody('request_too_large', {
   detail: 'The document event is too large. Send a smaller one.',
-  extensions: { reason: 'doc_event_too_large' },
 });
-/** A document query or event id the routes refuse, with the channel's own reason. */
-const DOC_QUERY_REFUSED = (reason: string) =>
-  problemBody('invalid_request', {
-    detail: 'The document event or query is not valid.',
-    extensions: { reason },
-  });
+/** A document query or event id the routes refuse: one code, the sentence says it. */
+const DOC_QUERY_REFUSED = problemBody('invalid_request', {
+  detail: 'The document event or query is not valid.',
+});
 const SETUP_REFUSED = (code: string) => ({ error: 'Only the owner can set up DorkOS.', code });
 const RESET_TOKEN_REQUIRED = {
   error:
@@ -438,7 +432,9 @@ contractSuite(
       path: '/api/mcp-config?path=/etc',
       expect: {
         status: 403,
-        body: problemBody('outside_boundary', { detail: 'Pick a folder DorkOS may use.' }),
+        body: problemBody('outside_boundary', {
+          detail: 'Pick a folder inside the ones DorkOS may use.',
+        }),
       },
     },
     // feedback
@@ -519,7 +515,6 @@ contractSuite(
         headers: PROBLEM_TYPE,
         body: problemBody('malformed_request', {
           detail: 'The document event is not valid JSON.',
-          extensions: { reason: 'invalid_doc_event' },
         }),
       },
     },
@@ -549,7 +544,6 @@ contractSuite(
         status: 401,
         body: problemBody('agent_identity_unverified', {
           detail: 'Sign in or use a valid agent token.',
-          extensions: { reason: 'agent_identity_unverified' },
         }),
       },
     },
@@ -578,7 +572,7 @@ contractSuite(
       path: '/api/canvas/docs/doc-1/channel?since=abc',
       expect: {
         status: 400,
-        body: DOC_QUERY_REFUSED('invalid_doc_query'),
+        body: DOC_QUERY_REFUSED,
       },
     },
     {
@@ -586,7 +580,7 @@ contractSuite(
       path: '/api/canvas/docs/doc-1/channel?other=1',
       expect: {
         status: 400,
-        body: DOC_QUERY_REFUSED('invalid_doc_query'),
+        body: DOC_QUERY_REFUSED,
       },
     },
     {
@@ -594,7 +588,7 @@ contractSuite(
       path: '/api/canvas/docs/doc-1/events/not-an-id',
       expect: {
         status: 400,
-        body: DOC_QUERY_REFUSED('invalid_doc_event_id'),
+        body: DOC_QUERY_REFUSED,
       },
     },
     {
@@ -1607,7 +1601,7 @@ describe('contract: the same groups with login on', () => {
       body: { auth: { enabled: false } },
       expect: {
         status: 403,
-        body: problemBody('operator_cookie_required', {
+        body: problemBody('person_only', {
           detail: 'Only a person can change those settings',
           extensions: {
             paths: ['auth.enabled'],

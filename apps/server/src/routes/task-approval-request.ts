@@ -14,7 +14,7 @@ export interface TaskApprovalRequestRefusal {
 
 /** A PATCH refusal and the status it answers with. */
 export interface TaskPatchRefusal {
-  status: 400 | 409;
+  status: 400 | 409 | 412;
   body: { error: string; code: string };
 }
 
@@ -62,7 +62,7 @@ export async function prepareTaskApprovalRequest(
   const refusal: TaskPatchRefusal | null = rules
     ? { status: 400, body: rules }
     : review.stale
-      ? { status: 409, body: { ...personReview.STALE_SCHEDULE_REVIEW } }
+      ? { status: 412, body: { ...personReview.STALE_SCHEDULE_REVIEW } }
       : looser
         ? { status: 409, body: looser }
         : null;

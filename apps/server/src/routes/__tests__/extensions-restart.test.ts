@@ -137,7 +137,7 @@ describe('POST /api/extensions/:id/restart', () => {
     const res = await restart('people');
     expect(res.status).toBe(409);
     const body = await res.json();
-    expect(body).toMatchObject({ code: 'conflict', reason: 'restart_refused' });
+    expect(body).toMatchObject({ code: 'conflict' });
     expect(JSON.stringify(body)).not.toContain('did not reload it');
     expect(broadcast).toEqual([]);
   });
@@ -172,7 +172,6 @@ describe('POST /api/extensions/:id/restart', () => {
     expect(body).toMatchObject({
       code: 'conflict',
       detail: 'It no longer builds. Open Settings to see why.',
-      reason: 'compile_error',
     });
     // The build error names files: it stays in the log, never in the answer.
     expect(JSON.stringify(body)).not.toContain('Unexpected token');
@@ -185,7 +184,6 @@ describe('POST /api/extensions/:id/restart', () => {
     expect(res.status).toBe(502);
     expect(await res.json()).toMatchObject({
       code: 'upstream_unavailable',
-      reason: 'server_start_failed',
     });
     expect(broadcast).toEqual([['people']]);
   });

@@ -47,6 +47,9 @@ describe('problemBody options', () => {
     });
     expect(body.title).toBe(PROBLEM_CODES.conflict.title);
     expect(problemBody('conflict', { extensions: { detail: 'x' } })).not.toHaveProperty('detail');
+    // A refusal is named once, by its code: a `reason` beside it does not compile.
+    // @ts-expect-error `reason` is not an extension member
+    expect(problemBody('conflict', { extensions: { reason: 'stale' } }).code).toBe('conflict');
   });
 
   it('accepts only error statuses', () => {

@@ -84,7 +84,7 @@ export function registerApprovalsOpenApi(registry: OpenAPIRegistry): void {
         description:
           'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
           'holding the approval token (`REQUESTER_CANNOT_DECIDE`). With login on, only a person ' +
-          'signed in to the DorkOS app can decide (`operator_cookie_required`)',
+          'signed in to the DorkOS app can decide (`person_only`)',
         content: { 'application/json': { schema: ErrorResponseSchema } },
       },
       401: {

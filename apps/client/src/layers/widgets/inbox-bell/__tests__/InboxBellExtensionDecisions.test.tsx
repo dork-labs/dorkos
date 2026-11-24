@@ -149,14 +149,13 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
         staleNext = false;
         return json(
           {
-            type: 'urn:dorkos:problem:conflict',
-            title: 'That clashes with a change made meanwhile.',
-            status: 409,
-            code: 'conflict',
+            type: 'urn:dorkos:problem:precondition_failed',
+            title: 'Something changed since you last looked.',
+            status: 412,
+            code: 'precondition_failed',
             detail: 'This question changed. Take another look.',
-            reason: 'stale_decision',
           },
-          409
+          412
         );
       }
       if (actionResponse.resolved) decisions = [];

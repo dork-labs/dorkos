@@ -58,7 +58,7 @@ function refuseNonPerson(c: Context<ApiEnv>): Response | undefined {
       : problem(c, 'person_only', { detail: ONLY_A_PERSON });
   }
   if (requireOperatorCookieUnderLogin(facts, 'agent instructions')) {
-    return problem(c, 'operator_cookie_required', { detail: ONLY_A_PERSON });
+    return problem(c, 'person_only', { detail: ONLY_A_PERSON });
   }
   return undefined;
 }

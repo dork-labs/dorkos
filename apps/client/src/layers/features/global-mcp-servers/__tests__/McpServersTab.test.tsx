@@ -23,9 +23,9 @@ const AGENTS = [
 ];
 
 const refusal = (code: string, message = 'Refused.') => Object.assign(new Error(message), { code });
-/** A store refusal as the transport rejects it: the store's own code rides as `reason`. */
-const storeRefusal = (reason: string, message = 'Refused.') =>
-  Object.assign(new Error(message), { code: 'conflict', body: { reason } });
+/** A store refusal as the transport rejects it, with its problem code. */
+const storeRefusal = (code: string, message = 'Refused.') =>
+  Object.assign(new Error(message), { code });
 
 function transportWith(servers: GlobalMcpServerView[], over: Partial<Transport> = {}): Transport {
   return createMockTransport({
@@ -763,7 +763,7 @@ describe('removing a server', () => {
       transportWith([createMockGlobalMcpServer()], {
         removeGlobalMcpServer: vi
           .fn()
-          .mockRejectedValue(storeRefusal('unreadable', 'Nothing changed.')),
+          .mockRejectedValue(storeRefusal('temporarily_unavailable', 'Nothing changed.')),
       })
     );
     const ask = await askToRemove(user);

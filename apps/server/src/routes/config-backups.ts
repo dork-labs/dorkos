@@ -26,7 +26,7 @@ import {
   type BackupMoveRefusal,
 } from '@dorkos/db';
 import type { ApiEnv } from '../http/api-chain.js';
-import { problem, readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, type ProblemStatus } from '@dorkos/http-kit';
 import type { ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { requirePersonAtThisComputer } from '../lib/caller-authority.js';
@@ -60,10 +60,13 @@ type DestinationRefusal =
   'destination_invalid' | 'destination_outside' | 'destination_in_data_folder';
 
 /** What each refusal says, and the problem code it answers with. */
-const REFUSALS: Record<BackupMoveRefusal | RouteRefusal, { code: ProblemCode; detail: string }> = {
+const REFUSALS: Record<
+  BackupMoveRefusal | RouteRefusal,
+  { code: ProblemCode; detail: string; status?: ProblemStatus }
+> = {
   person_only: { code: 'person_only', detail: 'Only you can do this, from DorkOS.' },
   not_at_this_computer: {
-    code: 'needs_person_at_this_computer',
+    code: 'operator_only',
     detail: 'Do this on the computer DorkOS runs on.',
   },
   destination_outside: {
@@ -87,8 +90,10 @@ const REFUSALS: Record<BackupMoveRefusal | RouteRefusal, { code: ProblemCode; de
     code: 'conflict',
     detail: 'That folder already has a file with this name.',
   },
+  // A full disk is the server's to report, at the status HTTP names for it.
   destination_full: {
-    code: 'insufficient_storage',
+    code: 'internal_error',
+    status: 507,
     detail: 'That disk is full. The original stays.',
   },
   destination_not_writable: {
@@ -167,8 +172,8 @@ function decideDestination(asked: string, volumesRoot: string): string {
 
 /** Answer a refusal as a problem document with its sentence. */
 function refuse(c: Context<ApiEnv>, refusal: keyof typeof REFUSALS): Response {
-  const { code, detail } = REFUSALS[refusal];
-  return problem(c, code, { detail });
+  const { code, detail, status } = REFUSALS[refusal];
+  return problem(c, code, { detail, ...(status === undefined ? {} : { status }) });
 }
 
 /**

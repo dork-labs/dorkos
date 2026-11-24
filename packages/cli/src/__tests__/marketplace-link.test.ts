@@ -300,13 +300,12 @@ describe('runMarketplaceLink', () => {
     // refused; the person is told what happened and what to do, not a code.
     confirmMock.mockResolvedValueOnce(true);
     fetchMock.mockResolvedValueOnce(mockResponse(200, preview())).mockResolvedValueOnce(
-      mockResponse(409, {
-        type: 'urn:dorkos:problem:conflict',
-        title: 'That clashes with a change made meanwhile.',
-        status: 409,
-        code: 'conflict',
+      mockResponse(412, {
+        type: 'urn:dorkos:problem:precondition_failed',
+        title: 'Something changed since you last looked.',
+        status: 412,
+        code: 'precondition_failed',
         detail: 'The folder changed after you approved it. Ask again.',
-        reason: 'dev_link_changed',
       })
     );
 
@@ -340,7 +339,6 @@ describe('runMarketplaceLink', () => {
         status: 400,
         code: 'invalid_request',
         detail: "That folder isn't a package.",
-        reason: 'dev_link_not_a_package',
       })
     );
 

@@ -416,7 +416,7 @@ const LocalInstallRequestBodySchema = z.object({
   projectPath: z.string().optional(),
   approvedDisclosure: DisclosedEffectsSchema.optional().describe(
     "Install only: the preview's `disclosed`, sent back untouched. The install refuses a " +
-      'package that now runs anything else (409 `disclosure_changed`).'
+      'package that now runs anything else (412 `precondition_failed`).'
   ),
   approvedContentHash: z
     .string()
@@ -3313,8 +3313,7 @@ registry.registerPath({
     ),
     404: problemResponse('`not_found`: marketplace or package not found'),
     409: {
-      description:
-        '`conflict` (blocked by `conflicts`), or `disclosure_changed`: the package now runs something other than `approvedDisclosure`',
+      description: '`conflict`: blocked by the packages listed in `conflicts`',
       content: {
         [PROBLEM_CONTENT_TYPE]: {
           schema: ProblemSchema.extend({
@@ -3323,6 +3322,9 @@ registry.registerPath({
         },
       },
     },
+    412: problemResponse(
+      '`precondition_failed`: the package now runs something other than `approvedDisclosure`'
+    ),
   },
 });
 
@@ -3526,8 +3528,8 @@ registry.registerPath({
   description:
     'Reinstalls each target whose check is `update-available`, in the scope it was found in, one at ' +
     'a time. Each target carries the `latestVersion` and `disclosed` its check reported, sent back ' +
-    'untouched: the server recomputes both, and if either moved the whole apply is refused (409 ' +
-    '`disclosure_changed`) with nothing reinstalled; each reinstall is then held to its disclosure. ' +
+    'untouched: the server recomputes both, and if either moved the whole apply is refused (412 ' +
+    '`precondition_failed`) with nothing reinstalled; each reinstall is then held to its disclosure. ' +
     'Each reinstall is authorized as `marketplace.install` first. The person applies directly; an ' +
     "agent's apply raises the same approval card `marketplace_update` does (202 " +
     '`requires_confirmation`) and runs once retried with its `confirmationToken` after a person ' +
@@ -3576,7 +3578,9 @@ registry.registerPath({
         },
       },
     },
-    400: problemResponse('`client_outdated` (a body only an older CLI sends) or `invalid_request`'),
+    400: problemResponse(
+      '`invalid_request`: a body only an older CLI sends, or one that fails its checks'
+    ),
     403: problemResponse(
       '`needs_approval` (a batch that would need a card per package), `declined` (a person said no), `outside_boundary`, or the permission check’s refusal'
     ),
@@ -3584,9 +3588,9 @@ registry.registerPath({
       description: '`not_found`: a target install path is not installed in view',
       content: { [PROBLEM_CONTENT_TYPE]: { schema: NotInstalledForUpdateSchema } },
     },
-    409: {
+    412: {
       description:
-        '`disclosure_changed`: a new version, or what it runs, is not what was shown; nothing ran',
+        '`precondition_failed`: a new version, or what it runs, is not what was shown; nothing ran',
       content: {
         [PROBLEM_CONTENT_TYPE]: {
           schema: ProblemSchema.extend({ changed: z.array(z.unknown()) }),
@@ -3784,11 +3788,11 @@ registry.registerPath({
         },
       },
     },
-    400: problemResponse('`invalid_request`: not linkable; `reason` says why'),
+    400: problemResponse('`invalid_request`: not linkable; `detail` says why'),
     403: problemResponse(
-      '`forbidden` (`reason` says why) or `outside_boundary`: outside the folders DorkOS may use'
+      '`forbidden` (`detail` says why) or `outside_boundary`: outside the folders DorkOS may use'
     ),
-    409: problemResponse('`conflict`: the slot or the name is taken; `reason` says which'),
+    409: problemResponse('`conflict`: the slot or the name is taken; `detail` says which'),
   },
 });
 
@@ -3837,14 +3841,13 @@ registry.registerPath({
       content: { 'application/json': { schema: z.object({ status: z.string() }).passthrough() } },
     },
     400: problemResponse(
-      '`invalid_request`: not linkable (`reason` says why), or a malformed body'
+      '`invalid_request`: not linkable (`detail` says why), or a malformed body'
     ),
     403: problemResponse(
       'Refused by the permission check, or `forbidden`/`outside_boundary`: outside the folders DorkOS may use'
     ),
-    409: problemResponse(
-      '`conflict`: the slot or name is taken, or the folder changed after it was approved (`reason`: `dev_link_changed`)'
-    ),
+    409: problemResponse('`conflict`: the slot or name is taken'),
+    412: problemResponse('`precondition_failed`: the folder changed after it was approved'),
   },
 });
 
@@ -3883,7 +3886,7 @@ registry.registerPath({
     403: problemResponse(
       '`operator_only` (an agent) or `person_only` (sign-in is on and this is not a signed-in session)'
     ),
-    404: problemResponse('`not_found`: no such dev link (`reason`: `dev_link_not_found`)'),
+    404: problemResponse('`not_found`: no such dev link'),
   },
 });
 
@@ -5319,7 +5322,7 @@ registry.registerPath({
     'Records that a person allowed this extension to run code inside DorkOS, bound to the copy on ' +
     'disk (its folder and the plugin that carried it), and starts it. The body is optional: send ' +
     'the path, version and plugin of the copy the person was shown (the Activity inbox always ' +
-    'does), and the approval is refused with `409 conflict`, `reason: stale_approval`, unless the copy on disk is still ' +
+    'does), and the approval is refused with `412 precondition_failed` unless the copy on disk is still ' +
     'exactly that one, so an old row can never turn on a copy that took its place. Clears any ' +
     '"Not now" for this id. A caller naming itself an agent is refused in every posture, and a ' +
     'signed-in person is required when login is on. There is no MCP tool for this. When the ' +
@@ -5350,9 +5353,9 @@ registry.registerPath({
     403: problemResponse('`person_only`: an agent or another site cannot turn an extension on'),
     404: problemResponse('`not_found`: no such extension'),
     409: problemResponse(
-      '`conflict`: the extension ships with DorkOS, or the copy changed since the person saw ' +
-        'it (`reason: stale_approval`) or cannot be checked (`reason: extension_unpinnable`)'
+      '`conflict`: the extension ships with DorkOS, or its copy cannot be checked (`detail` says which)'
     ),
+    412: problemResponse('`precondition_failed`: the copy changed since the person saw it'),
   },
 });
 
@@ -5366,7 +5369,7 @@ registry.registerPath({
     'inbox stops asking until its path, plugin or version changes. Never destructive: nothing is ' +
     'uninstalled, turned off or revoked, and Settings → Extensions can still turn it on. The body ' +
     'names the copy the person was shown; if the copy on disk is no longer that one the answer is ' +
-    'refused with `409 conflict`, `reason: stale_approval`. The same person bar as approving applies: a caller naming ' +
+    'refused with `412 precondition_failed`. The same person bar as approving applies: a caller naming ' +
     'itself an agent is refused in every posture, and a signed-in person is required when login ' +
     'is on. There is no MCP tool for this.',
   request: {
@@ -5379,10 +5382,8 @@ registry.registerPath({
     401: problemResponse('`unauthenticated`: login is on and the caller is not signed in'),
     403: problemResponse('`person_only`: an agent or another site cannot answer this'),
     404: problemResponse('`not_found`: no such extension'),
-    409: problemResponse(
-      '`conflict`: the extension ships with DorkOS, or the copy changed since the person saw ' +
-        'it (`reason: stale_approval`)'
-    ),
+    409: problemResponse('`conflict`: the extension ships with DorkOS'),
+    412: problemResponse('`precondition_failed`: the copy changed since the person saw it'),
   },
 });
 
@@ -5431,9 +5432,7 @@ registry.registerPath({
       content: { 'application/json': { schema: TrustedSourcesResponseSchema } },
     },
     ...TRUSTED_SOURCE_BAR_RESPONSES,
-    409: problemResponse(
-      '`conflict`: nothing installed provably comes from that source (`reason: unproven_source`)'
-    ),
+    409: problemResponse('`conflict`: nothing installed provably comes from that source'),
   },
 });
 
@@ -5484,7 +5483,7 @@ const PERMISSION_WRITE_REFUSALS = {
     description:
       'Refused: only a person can change permissions. A caller presenting an agent identity ' +
       '(`AGENT_CANNOT_DECIDE`) or an approval token (`REQUESTER_CANNOT_DECIDE`) is refused in ' +
-      'every posture, and with login on a per-user API key is refused (`operator_cookie_required`)',
+      'every posture, and with login on a per-user API key is refused (`person_only`)',
     content: { 'application/json': { schema: ErrorResponseSchema } },
   },
 } as const;
@@ -5594,7 +5593,7 @@ registry.registerPath({
   description:
     'Makes the folder, scaffolds the agent and registers it. Two sources need more than that ' +
     '(DOR-2325). `template` is cloned into a staging folder and read before it lands: a person ' +
-    'whose template brings settings or programs gets 409 `template_needs_review` with what it ' +
+    'whose template brings settings or programs gets 409 `needs_review` with what it ' +
     'brings, and creates it by sending back `approvedTemplateHash`; anyone else (an agent) gets ' +
     '202 `requires_confirmation` and an approval card, and retries with `confirmationToken`. ' +
     '`package` creates the agent a marketplace package brings, through the marketplace installer, ' +
@@ -5636,8 +5635,9 @@ registry.registerPath({
       },
     },
     403: problemResponse('Turned down, nobody can be asked, or a package requested by an agent'),
-    409: problemResponse(
-      '`template_needs_review` (with `template`), `disclosure_changed`, or a collision'
+    409: problemResponse('`needs_review` (with `template`), or a collision'),
+    412: problemResponse(
+      '`precondition_failed`: the package changed what it runs since it was shown'
     ),
   },
 });

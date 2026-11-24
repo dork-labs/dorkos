@@ -346,9 +346,9 @@ describe('QuestionPrompt', () => {
     expect(container.className).toContain('bg-muted/50');
   });
 
-  it('treats interaction_already_resolved error as successful submission', async () => {
+  it('treats already_resolved error as successful submission', async () => {
     const alreadyResolvedError = Object.assign(new Error('Interaction already resolved'), {
-      code: 'interaction_already_resolved',
+      code: 'already_resolved',
       status: 409,
     });
     mockSubmitAnswers.mockRejectedValueOnce(alreadyResolvedError);

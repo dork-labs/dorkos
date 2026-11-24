@@ -37,7 +37,7 @@ export interface NamedChange {
 /** The outcome of one undo: what it put back. */
 export type AgentModeUndoOutcome =
   | { ok: true; task: Task; restored: string }
-  | { ok: false; status: 400 | 404 | 409 | 500; body: Record<string, unknown> };
+  | { ok: false; status: 400 | 404 | 409 | 412 | 500; body: Record<string, unknown> };
 
 /** Where the undo reads and writes. */
 type UndoDeps = {

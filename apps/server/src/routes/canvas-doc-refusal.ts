@@ -1,13 +1,13 @@
 /**
  * How the canvas document routes answer a refusal (DOR-4979): a problem
- * document whose `code` follows the HTTP status, and whose `reason` member is
- * the document channel's own refusal in `lower_snake` (`route_changed`,
- * `grant_revoked`, `work_already_reviewed`…), which the app words for a person.
+ * document whose `code` follows the HTTP status, and whose `detail` is the
+ * route's own sentence for the document channel's refusal, written for a person.
  *
  * The channel has dozens of refusals and the code list holds none of them on
  * purpose: they are one domain's detail, and every one of them is one of a
- * handful of HTTP meanings. A refusal that names who is asking is the
- * exception, because a status alone cannot say it.
+ * handful of HTTP meanings, told apart by the sentence. Two kinds are the
+ * exception, because a reader acts on them and a status alone cannot say
+ * them: who is asking, and a route that changed since the person reviewed it.
  *
  * @module routes/canvas-doc-refusal
  */
@@ -30,13 +30,20 @@ const CODE_BY_STATUS: Readonly<Record<number, ProblemCode>> = {
   503: 'temporarily_unavailable',
 };
 
-/** Refusals about who is asking, which keep their own code whatever the status. */
-const CODE_BY_REASON: Readonly<Record<string, ProblemCode>> = {
-  agent_identity_unverified: 'agent_identity_unverified',
-  person_required: 'person_only',
-  operator_cookie_required: 'person_only',
-  agent_cannot_decide: 'person_only',
-  requester_cannot_decide: 'person_only',
+/**
+ * Refusals that keep their own code whatever the status: who is asking, and
+ * what the person reviewed changing under them (the app reviews it again).
+ */
+const CODE_BY_REFUSAL: Readonly<Record<string, ProblemCode>> = {
+  AGENT_IDENTITY_UNVERIFIED: 'agent_identity_unverified',
+  PERSON_REQUIRED: 'person_only',
+  OPERATOR_COOKIE_REQUIRED: 'person_only',
+  AGENT_CANNOT_DECIDE: 'person_only',
+  REQUESTER_CANNOT_DECIDE: 'person_only',
+  ROUTE_CHANGED: 'precondition_failed',
+  GRANT_BINDING_CHANGED: 'precondition_failed',
+  DECLARATION_HASH_MISMATCH: 'precondition_failed',
+  MANIFEST_CHANGED: 'precondition_failed',
 };
 
 /** One refusal, as a document route decided it. */
@@ -44,7 +51,7 @@ export interface DocRefusal {
   /** The HTTP status, 400 to 599. */
   status: number;
   /** The document channel's own refusal code, in any case; omitted for a fault. */
-  reason?: string;
+  refusal?: string;
   /** One sentence for a person. Never a path, a payload or authority evidence. */
   detail: string;
   /** How long to wait, for a refusal that clears with time. */
@@ -55,23 +62,22 @@ export interface DocRefusal {
  * Answer a document route's refusal as a problem document.
  *
  * A status the table does not hold (a `507` storage failure, a `500`) is an
- * `internal_error` carrying its own status, and names no `reason`: a fault's
- * code is the server's business, not the caller's.
+ * `internal_error` carrying its own status. A refusal that something changed
+ * since the person reviewed it answers `412`, whatever status the channel gave.
  *
  * @param c - The request's context.
  * @param refusal - What was refused, and why.
  * @returns The response.
  */
 export function docRefusalProblem(c: Context, refusal: DocRefusal): Response {
-  const reason = refusal.reason?.toLowerCase();
+  const named = refusal.refusal?.toUpperCase();
   const code: ProblemCode =
-    (reason !== undefined ? CODE_BY_REASON[reason] : undefined) ??
+    (named !== undefined ? CODE_BY_REFUSAL[named] : undefined) ??
     CODE_BY_STATUS[refusal.status] ??
     'internal_error';
   return problem(c, code, {
-    status: refusal.status as ProblemStatus,
+    ...(code === 'precondition_failed' ? {} : { status: refusal.status as ProblemStatus }),
     detail: refusal.detail,
     ...(refusal.retryAfterMs === undefined ? {} : { retryAfterMs: refusal.retryAfterMs }),
-    ...(reason === undefined || code === 'internal_error' ? {} : { extensions: { reason } }),
   });
 }

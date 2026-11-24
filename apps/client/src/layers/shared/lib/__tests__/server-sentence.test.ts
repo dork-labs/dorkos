@@ -11,16 +11,14 @@ function refused(message: string, code?: string): Error {
 }
 
 describe('awayFromTheComputerSentence', () => {
-  it.each([
-    'not_from_wifi',
-    'NOT_FROM_WIFI',
-    'needs_person_at_this_computer',
-    'NEEDS_PERSON_AT_THIS_COMPUTER',
-  ])('passes the sentence of %s', (code) => {
-    expect(
-      awayFromTheComputerSentence(refused('The terminal opens only at this computer.', code))
-    ).toBe('The terminal opens only at this computer.');
-  });
+  it.each(['not_from_wifi', 'NOT_FROM_WIFI', 'operator_only', 'NEEDS_PERSON_AT_THIS_COMPUTER'])(
+    'passes the sentence of %s',
+    (code) => {
+      expect(
+        awayFromTheComputerSentence(refused('The terminal opens only at this computer.', code))
+      ).toBe('The terminal opens only at this computer.');
+    }
+  );
 
   it('is null for any other refusal, a bare code, or a non-error', () => {
     expect(

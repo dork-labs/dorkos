@@ -6,17 +6,12 @@
  */
 
 /**
- * Login is on and this caller proved itself with something other than a browser
- * session — so DorkOS knows who it is, but not that it is a person at the
- * keyboard (`caller-authority.ts`).
+ * Not a person at the keyboard: the caller named itself an agent
+ * (`tunnel.authtoken` / `tunnel.domain` are `operator-only` leaves,
+ * `config-write-policy.ts`), or login is on and it proved itself with something
+ * other than a browser session (`caller-authority.ts`).
  */
-const OPERATOR_COOKIE_REQUIRED = 'operator_cookie_required';
-
-/**
- * The caller named itself an agent, and `tunnel.authtoken` / `tunnel.domain` are
- * `operator-only` leaves (`config-write-policy.ts`).
- */
-const OPERATOR_ONLY_CONFIG = 'operator_only_config';
+const PERSON_ONLY = 'person_only';
 
 /** The shape `fetchJSON` throws for a non-OK response. */
 interface TransportFailure {
@@ -52,24 +47,14 @@ interface TransportFailure {
  * that tell a person nothing they can act on, and the second is not even the
  * server speaking.
  *
- * ## The two refusal codes are decided before any of that
+ * ## The not-a-person refusal is decided before any of that
  *
- * They do NOT get the server's sentence, for a reason that is a property of this
- * route rather than a preference about wording:
- *
- * - **`PATCH /api/config` sends the SAME `error` for both.** Its 403 body pairs
- *   one shared `error` — "Only a person can change those settings" — with a
- *   per-code `message`, and `fetchJSON` builds `.message` from `error`. So the
- *   sentence that reaches here cannot tell the two refusals apart, and neither
- *   of them says what to do about it.
- * - **`operator_only_config`'s detail is addressed to a model, not a person.**
- *   `describeOperatorOnlyRefusal` writes "These settings are the person's to
- *   choose, not yours… Ask the person to change them in DorkOS Settings" — text
- *   deliberately aimed at an agent reading a tool result. Piping it into a
- *   dialog would tell somebody they are not themselves.
- *
- * Both replacements are worded for the token field and the domain field alike,
- * because one helper serves both saves.
+ * It does NOT get the server's sentence: for an agent caller that sentence is
+ * addressed to a model, not a person (`describeOperatorOnlyRefusal` writes
+ * "These settings are the person's to choose, not yours… Ask the person to
+ * change them in DorkOS Settings"), and piping it into a dialog would tell
+ * somebody they are not themselves. The replacement is worded for the token
+ * field and the domain field alike, because one helper serves both saves.
  *
  * @param err - Whatever the transport rejected with.
  * @param fallback - What to say when nothing the failure carries was written for
@@ -80,12 +65,8 @@ interface TransportFailure {
 export function describeTunnelWriteFailure(err: unknown, fallback: string): string {
   const failure = (err ?? {}) as TransportFailure;
 
-  if (failure.code === OPERATOR_COOKIE_REQUIRED) {
-    return 'Sign in to DorkOS to change Remote access.';
-  }
-
-  if (failure.code === OPERATOR_ONLY_CONFIG) {
-    return 'Nothing changed. Only you can change Remote access, not an agent.';
+  if (failure.code === PERSON_ONLY) {
+    return 'Nothing changed. Only you can change Remote access, signed in to DorkOS.';
   }
 
   const status = failure.status;

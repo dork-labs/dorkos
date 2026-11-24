@@ -233,8 +233,8 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
       const response = await request(fixtureServer)
         .patch(`/api/tasks/${task.id}`)
         .send({ status: 'active', permissionMode: 'dontAsk', expectedApprovalRevision: revision });
-      expect(response.status).toBe(409);
-      expect(response.body.code).toBe('schedule_review_changed');
+      expect(response.status).toBe(412);
+      expect(response.body.code).toBe('precondition_failed');
       expect(store.getTask(task.id)).toMatchObject({
         status: 'pending_approval',
         permissionMode: 'acceptEdits',
@@ -542,7 +542,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
         permissionMode: 'bypassPermissions',
       });
     expect(response.status).toBe(409);
-    expect(response.body.code).toBe('looser_than_proposed');
+    expect(response.body.code).toBe('conflict');
     expect(store.getTask(task.id)?.status).toBe('pending_approval');
   });
 
@@ -559,8 +559,8 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
       status: 'active',
       permissionMode: 'bypassPermissions',
     });
-    expect(response.status).toBe(409);
-    expect(response.body.code).toBe('schedule_review_changed');
+    expect(response.status).toBe(412);
+    expect(response.body.code).toBe('precondition_failed');
   });
 
   it('measures outsider work that asked for plan against plan, as the card does', async () => {
@@ -578,7 +578,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
         permissionMode: 'dontAsk',
       });
     expect(looser.status).toBe(409);
-    expect(looser.body.code).toBe('looser_than_proposed');
+    expect(looser.body.code).toBe('conflict');
   });
 
   it('runs an outsider-written trial at the baseline, never at the saved mode', async () => {
@@ -605,7 +605,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
 
     const response = await request(fixtureServer).post(`/api/tasks/${task.id}/trigger`).send({});
     expect(response.status).toBe(409);
-    expect(response.body.code).toBe('looser_than_proposed');
+    expect(response.body.code).toBe('conflict');
     expect(scheduler.triggerManualRun).not.toHaveBeenCalled();
   });
 

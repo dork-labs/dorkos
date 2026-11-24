@@ -23,7 +23,6 @@ export function mountLocalBrowserProfileRemoval(
   const missing = (c: Context<ApiEnv>) =>
     problem(c, 'not_found', {
       detail: 'That browser profile no longer exists. Refresh and try again.',
-      extensions: { reason: 'profile_not_found' },
     });
   const audit = (id: string, deleted: boolean) =>
     recordAudit({

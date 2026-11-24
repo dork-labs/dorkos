@@ -140,7 +140,7 @@ describe('DevLinkService refusals', () => {
     const err = await refusal(service().preview({ path: alias, scope: 'global' }));
     expect(err.code).toBe('dev_link_path_not_real');
     expect(err.details).toEqual({ realPath: work });
-    expect(err.toProblem()).toMatchObject({ realPath: work, reason: 'dev_link_path_not_real' });
+    expect(err.toProblem()).toMatchObject({ realPath: work, code: 'invalid_request' });
     expect(err.message).toBe(`That path is a link. Use ${work} instead.`);
   });
 

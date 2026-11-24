@@ -51,8 +51,7 @@ const problem = (code: string, status: number, detail: string, extra: object = {
 });
 
 const CONSENT = {
-  ...problem('conflict', 409, 'Not allowed yet.'),
-  reason: 'no_agent',
+  ...problem('no_agent', 409, 'Not allowed yet.'),
   consent: {
     id: 'p1',
     agent: { id: 'pm', name: 'DorkOS PM', handle: 'dorkos-pm' },
@@ -107,10 +106,7 @@ describe('api.forward', () => {
   it('throws the server’s refusal as a ForwardError with its code', async () => {
     vi.stubGlobal(
       'fetch',
-      answer(
-        409,
-        problem('conflict', 409, 'Pick an agent for this mini app first.', { reason: 'no_agent' })
-      )
+      answer(409, problem('no_agent', 409, 'Pick an agent for this mini app first.'))
     );
     const err = await createExtensionForwardApi('dorian-desk')
       .send({ text: 'hi', itemId: 'i' })

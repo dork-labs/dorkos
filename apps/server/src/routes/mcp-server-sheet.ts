@@ -70,27 +70,23 @@ const UndoSchema = z.object({
 });
 
 /**
- * How each undo refusal answers: a fixed sentence (the error's own message can
- * name the settings file), and its own code as `reason`, in lower_snake.
+ * How each undo refusal answers: a fixed sentence per refusal, naming the agent
+ * by the registry's record of it. The error's own message can name the
+ * settings file, so it stays in the audit line.
  */
 const UNDO_PROBLEM: Record<
   StandingAllowUndoError['code'],
-  { code: 'invalid_request' | 'conflict'; reason: string; detail: string }
+  { code: 'invalid_request' | 'conflict'; detail: (agentName: string) => string }
 > = {
-  'bad-rule': {
-    code: 'invalid_request',
-    reason: 'bad_rule',
-    detail: "That rule can't be undone here.",
-  },
+  'bad-rule': { code: 'invalid_request', detail: () => "That rule can't be undone here." },
   'not-a-real-file': {
     code: 'conflict',
-    reason: 'not_a_real_file',
-    detail: "That agent's settings file isn't a plain file, so it was left alone.",
+    detail: (agentName) =>
+      `${agentName}’s settings file isn’t a plain file in its folder, so it was left alone.`,
   },
   unreadable: {
     code: 'conflict',
-    reason: 'unreadable',
-    detail: "That agent's settings file couldn't be read. Nothing changed.",
+    detail: (agentName) => `${agentName}’s settings file couldn’t be read. Nothing changed.`,
   },
 };
 
@@ -167,7 +163,6 @@ export function addMcpServerSheetRoutes(
     if (!parsed.success || standingAllowBreadth(parsed.data.rule, name, serverNames()) === null) {
       return problem(c, 'invalid_request', {
         detail: 'Send an agent and one rule for this server to undo.',
-        extensions: { reason: 'bad_rule' },
       });
     }
     const { agentId, rule } = parsed.data;
@@ -187,8 +182,8 @@ export function addMcpServerSheetRoutes(
         error: err.message,
         summary: `Couldn't undo ${rule} for ${agent.name}`,
       });
-      const { code, reason, detail } = UNDO_PROBLEM[err.code];
-      return problem(c, code, { detail, extensions: { reason } });
+      const { code, detail } = UNDO_PROBLEM[err.code];
+      return problem(c, code, { detail: detail(agent.name) });
     }
     if (outcome === 'not-found') {
       return problem(c, 'not_found', { detail: 'That agent no longer has that rule.' });

@@ -401,7 +401,7 @@ describe('useApplyUpdatesWithToast', () => {
     // person did not see (DOR-2306). The toast says so in plain words, and
     // points at looking again rather than retrying blind.
     const refusal = Object.assign(new Error('What an update would install is not what was shown'), {
-      code: 'disclosure_changed',
+      code: 'precondition_failed',
       status: 409,
     });
     await runApply([makeCheck()], { error: refusal });

@@ -90,12 +90,14 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
       403: error('`person_only`: not a person; `not_from_wifi`: a yes sent over Wi-Fi'),
       404: error('`not_found`: no such decision'),
       409: error(
-        '`conflict`, with `reason` `not_running`, `already_resolved`, `stale_decision` or `busy`'
+        '`not_running` (the extension is off), `already_resolved` (settled already), or ' +
+          '`conflict` (the extension is still working on it)'
       ),
-      502: error('`temporarily_unavailable`, `reason` `extension_error`: the decision stays open'),
+      412: error('`precondition_failed`: the question changed since the person saw it'),
+      502: error('`temporarily_unavailable`: the extension refused it; the decision stays open'),
       503: error('`temporarily_unavailable`: the inbox is not ready yet'),
       504: error(
-        '`temporarily_unavailable`, `reason` `extension_timeout`: the decision stays open'
+        '`temporarily_unavailable`: the extension did not answer in time; the decision stays open'
       ),
     },
   });
@@ -120,12 +122,10 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
       403: error('`person_only`: not a person; `not_from_wifi`: a yes sent over Wi-Fi'),
       404: error('`not_found`: no such decision'),
       409: error(
-        '`conflict`, `reason` `offer_gone` (used, dismissed or over 15 minutes old), ' +
-          '`not_running`, or `offer_project_unavailable` (the project is gone or out of scope)'
+        '`already_resolved` (the offer was used, dismissed or is over 15 minutes old), ' +
+          '`not_running`, or `conflict` (the project is gone or out of scope)'
       ),
-      500: error(
-        '`internal_error`, `reason` `offer_failed`: the settings store could not be written'
-      ),
+      500: error('`internal_error`: the settings store could not be written'),
       503: error('`temporarily_unavailable`: the inbox is not ready yet'),
     },
   });
@@ -168,10 +168,11 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
       400: error('`invalid_request`: the answer does not fit the decision'),
       403: error('`person_only`: not a person; `not_from_wifi`: a yes sent over Wi-Fi'),
       404: error('`not_found`: no such decision for this extension'),
-      409: error('`conflict`, with `reason` `not_running` or `already_resolved`'),
-      502: error('`temporarily_unavailable`, `reason` `extension_error`'),
+      409: error('`not_running` or `already_resolved`'),
+      412: error('`precondition_failed`: the question changed since it was shown'),
+      502: error('`temporarily_unavailable`: the extension refused it'),
       503: error('`temporarily_unavailable`: the inbox is not ready yet'),
-      504: error('`temporarily_unavailable`, `reason` `extension_timeout`'),
+      504: error('`temporarily_unavailable`: the extension did not answer in time'),
     },
   });
 
@@ -233,9 +234,11 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
       200: { description: 'Started', content: json(StartWorkResponseSchema) },
       400: error('`invalid_request`: the body breaks a length rule'),
       403: error('`person_only`: not a person'),
-      404: error('`not_found`: no such extension, or `reason` `not_a_project`'),
-      409: error('`conflict`: the extension is off, or `reason` `account_not_allowed_here`'),
-      429: error('`rate_limited`, `reason` `start_limit`: too many starts or working chats'),
+      404: error('`not_found`: no such extension, or the folder is not inside a project'),
+      409: error(
+        '`conflict`: the extension is off; `account_not_allowed_here`: that account can’t work there'
+      ),
+      429: error('`rate_limited`: too many starts or working chats'),
       503: error('`temporarily_unavailable`: chats cannot be started yet'),
     },
   });

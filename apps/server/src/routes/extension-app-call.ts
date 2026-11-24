@@ -25,12 +25,7 @@ import { problem } from '@dorkos/http-kit';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import {
-  CALLER_TOKEN_HEADER,
-  CALLER_TOKEN_INVALID,
-  isNotAWindow,
-  resolveCallerToken,
-} from './extension-caller-token.js';
+import { CALLER_TOKEN_HEADER, isNotAWindow, resolveCallerToken } from './extension-caller-token.js';
 import { EXTENSION_ID_HEADER } from './extension-write-binding.js';
 
 /** The header naming the app a call came from. Only the host sets it. */
@@ -96,10 +91,7 @@ export function refusedAppCall(
   if (token === undefined) return refuse(c, targetId, claimed!, 'no-token');
   const callerId = resolveCallerToken(token, facts);
   if (callerId === null) {
-    return problem(c, 'forbidden', {
-      detail: 'Ask for a new caller token.',
-      extensions: { reason: CALLER_TOKEN_INVALID },
-    });
+    return problem(c, 'caller_token_invalid', { detail: 'Ask for a new caller token.' });
   }
   if ((named !== undefined && named !== callerId) || (stamp !== undefined && stamp !== callerId)) {
     return refuse(c, targetId, callerId, 'mismatch');
@@ -156,11 +148,8 @@ function refuse(
       reason: reason as AppCallRefusal,
     });
   }
-  // `reason` names the rule in lower_snake (`not_declared`), for the calling app's maker.
-  return problem(c, 'forbidden', {
-    detail: REFUSAL_TEXT[reason],
-    extensions: { reason: reason.replaceAll('-', '_') },
-  });
+  // The sentence names the rule, for the calling app's maker; the audit line keeps its word.
+  return problem(c, 'forbidden', { detail: REFUSAL_TEXT[reason] });
 }
 
 /** Record one call between apps, allowed or refused, with both ids. */

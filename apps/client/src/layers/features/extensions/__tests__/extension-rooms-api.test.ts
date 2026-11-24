@@ -76,7 +76,6 @@ describe('api.rooms', () => {
         title: 'Refused.',
         status: 403,
         code: 'forbidden',
-        reason: 'room_not_allowed',
         detail: 'This mini app may not use that room.',
       })
     );

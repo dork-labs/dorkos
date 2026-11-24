@@ -50,9 +50,8 @@ const MOVE_REFUSALS: Record<MoveExtensionError['code'], string> = {
   'changed-while-moving': 'It changed while it was being moved. Nothing moved.',
 };
 
-/** A `409 conflict` for a mini app that can't be moved, with `reason: not_movable`. */
-const notMovable = (c: Context<ApiEnv>, detail: string) =>
-  problem(c, 'conflict', { detail, extensions: { reason: 'not_movable' } });
+/** A `409 conflict` for a mini app that can't be moved, with the sentence that says why. */
+const notMovable = (c: Context<ApiEnv>, detail: string) => problem(c, 'conflict', { detail });
 
 /** What these routes read. */
 export interface ExtensionStepUpRouteDeps {
@@ -109,10 +108,7 @@ export function registerExtensionStepUpRoutes(
       return c.json({ ok: true, movedTo });
     } catch (error) {
       if (error instanceof MoveExtensionError) {
-        return problem(c, 'conflict', {
-          detail: MOVE_REFUSALS[error.code],
-          extensions: { reason: error.code.replaceAll('-', '_') },
-        });
+        return problem(c, 'conflict', { detail: MOVE_REFUSALS[error.code] });
       }
       logger.error('[Extensions] A move out of an agent’s folder failed', {
         id,

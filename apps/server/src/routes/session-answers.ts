@@ -74,7 +74,7 @@ function answerRefusal(refusal: { code: string; error: string }): Problem {
     return problemBody('unauthenticated', { detail: refusal.error });
   }
   if (refusal.code === OPERATOR_COOKIE_REQUIRED_CODE) {
-    return problemBody('operator_cookie_required', { detail: ANSWERING_NEEDS_APP });
+    return problemBody('person_only', { detail: ANSWERING_NEEDS_APP });
   }
   return problemBody('person_only', { detail: refusal.error });
 }
@@ -202,7 +202,7 @@ function startAnswer(c: Context<ApiEnv>): Answering | Response {
 
 /** The answer was already given, by this window or another. */
 const ALREADY_RESOLVED = (): Problem =>
-  problemBody('interaction_already_resolved', {
+  problemBody('already_resolved', {
     detail: 'This was already answered. Nothing else changed.',
   });
 

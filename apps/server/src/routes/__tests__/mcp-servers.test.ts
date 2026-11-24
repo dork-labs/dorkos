@@ -261,13 +261,13 @@ describe('/api/mcp-servers', () => {
       .post('/api/mcp-servers')
       .send({ ...SERVER, connection: { ...SERVER.connection, command: './server.sh' } });
     expect(relative.status).toBe(422);
-    expect(relative.body).toMatchObject({ code: 'invalid_request', reason: 'unsafe_command' });
+    expect(relative.body).toMatchObject({ code: 'invalid_request' });
 
     const preload = await request(app())
       .post('/api/mcp-servers')
       .send({ ...SERVER, connection: { ...SERVER.connection, env: { LD_PRELOAD: '/tmp/x.so' } } });
     expect(preload.status).toBe(422);
-    expect(preload.body).toMatchObject({ code: 'invalid_request', reason: 'unsafe_env' });
+    expect(preload.body).toMatchObject({ code: 'invalid_request' });
     expect(store.list()).toEqual([]);
   });
 
@@ -294,7 +294,6 @@ describe('/api/mcp-servers', () => {
       expect(res.body).toMatchObject({
         status: 409,
         code: 'conflict',
-        reason: 'reserved_name',
         detail: "That name is one of DorkOS's own. Pick another.",
       });
       expect(store.list()).toEqual([]);

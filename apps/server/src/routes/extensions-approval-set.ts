@@ -14,7 +14,10 @@ import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { refuseApprovalYesFromWifi } from '../services/core/approvals/model/approval-answer-policy.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import type { Context, Hono } from 'hono';
-import { ApproveExtensionSetRequestSchema } from '@dorkos/shared/extension-approval-schemas';
+import {
+  ApproveExtensionSetRequestSchema,
+  STALE_SET_CODE,
+} from '@dorkos/shared/extension-approval-schemas';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import {
   approveExtensionSet,
@@ -32,11 +35,14 @@ import { broadcastExtensionReloaded } from './extensions.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 /**
- * A set refused before anything ran: `409 conflict`, with the set's own reason
- * (`stale_set`, `not_in_set`, `too_many_in_set`) as `reason`.
+ * A set refused before anything ran: `412 precondition_failed` when its
+ * members, files or permissions moved since the card, else `409 conflict`
+ * (a member its plugin did not install, or too many members).
  */
 function setRefused(c: Context<ApiEnv>, refusal: ApprovalSetRefusal): Response {
-  return problem(c, 'conflict', { detail: refusal.error, extensions: { reason: refusal.code } });
+  return problem(c, refusal.code === STALE_SET_CODE ? 'precondition_failed' : 'conflict', {
+    detail: refusal.error,
+  });
 }
 
 /**

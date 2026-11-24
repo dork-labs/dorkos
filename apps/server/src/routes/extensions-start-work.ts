@@ -41,12 +41,13 @@ const START_WORK_BAR: PersonBarCopy = {
 const TURNED_ON: ReadonlySet<ExtensionStatus> = new Set(['enabled', 'compiled', 'active']);
 
 /**
- * The problem code each refusal goes out as. Its own word rides as the
- * problem's `reason`, which `api.startWork` throws as a `StartWorkError`.
+ * The problem code each refusal goes out as. The app's host code reads it back
+ * into the word `api.startWork` throws as a `StartWorkError`
+ * (`extension-api-factory.ts` in the client holds the other half).
  */
 const CODE_FOR: Record<StartWorkError['code'], ProblemCode> = {
   not_a_project: 'not_found',
-  account_not_allowed_here: 'conflict',
+  account_not_allowed_here: 'account_not_allowed_here',
   start_limit: 'rate_limited',
 };
 
@@ -101,10 +102,7 @@ export function registerExtensionStartWorkRoute(
           code: err.code,
           why: err.message,
         });
-        return problem(c, CODE_FOR[err.code], {
-          detail: DETAIL_FOR[err.code],
-          extensions: { reason: err.code },
-        });
+        return problem(c, CODE_FOR[err.code], { detail: DETAIL_FOR[err.code] });
       }
       if (err instanceof StartWorkInputError) {
         logger.info('[Extensions] A start-work request broke a rule', { why: err.message });

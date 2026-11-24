@@ -204,7 +204,7 @@ describe('adding a server', () => {
     expect(res.body).toMatchObject({
       ok: true,
       status: 409,
-      result: { code: 'conflict', reason: 'name_taken' },
+      result: { code: 'conflict' },
     });
   });
 
@@ -738,8 +738,8 @@ describe('replacing a server', () => {
     const done = await confirm(id);
     expect(done.body).toMatchObject({
       ok: true,
-      status: 409,
-      result: { code: 'conflict', reason: 'changed' },
+      status: 412,
+      result: { code: 'precondition_failed' },
     });
     expect(store.list()[0]!.excludedAgents).toEqual(['agent-a']);
     expect(store.injectableFor('agent-b').github).toMatchObject({ env: { GITHUB_TOKEN: SECRET } });
@@ -902,15 +902,15 @@ describe('switching a server', () => {
     expect((await patch({ enabled: true })).status).toBe(428);
   });
 
-  it('a server that changed since the sheet was shown answers 409 and writes nothing', async () => {
+  it('a server that changed since the sheet was shown answers 412 and writes nothing', async () => {
     await store.add(stored({ enabled: false, excludedAgents: ['agent-a'] }));
     const id = heldId(await patch({ enabled: true }));
     expect((await patch({ excludedAgents: [] })).status).toBe(200);
     const res = await confirm(id);
     expect(res.body).toMatchObject({
       ok: true,
-      status: 409,
-      result: { code: 'conflict', reason: 'changed' },
+      status: 412,
+      result: { code: 'precondition_failed' },
     });
     expect(store.list()[0]!.enabled).toBe(false);
   });
@@ -923,7 +923,7 @@ describe('a mask sent back', () => {
       connection: { ...SERVER.connection, args: ['-y', '@made-up/server', '--token=•••'] },
     });
     expect(res.status).toBe(422);
-    expect(res.body).toMatchObject({ code: 'invalid_request', reason: 'masked_value' });
+    expect(res.body).toMatchObject({ code: 'invalid_request' });
     expect(store.list()).toEqual([]);
   });
 });
@@ -941,8 +941,7 @@ describe('removing a server', () => {
     expect(res.status).toBe(500);
     expect(res.headers['content-type']).toBe('application/problem+json');
     expect(res.body).toMatchObject({
-      code: 'internal_error',
-      reason: 'secret_left',
+      code: 'secret_left',
       detail: "The server is removed, but its saved key couldn't be deleted.",
     });
     expect(store.list()).toEqual([]);

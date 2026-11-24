@@ -20,7 +20,7 @@ import { problemResponse } from '../../../core/openapi/problem-openapi.js';
 
 /**
  * A refusal: a problem document whose `code` follows the status and whose
- * `reason` is the document channel's own refusal (`route_changed`, …).
+ * `detail` says which of the document channel's refusals it was.
  */
 const refusal = problemResponse;
 const id = z.string().min(1).max(200);
@@ -34,9 +34,9 @@ export function registerDocRouteControlsOpenApi(registry: OpenAPIRegistry): void
     400: refusal('`invalid_request`: invalid path, query or body'),
     401: refusal('`unauthenticated` or `agent_identity_unverified`: sign-in required'),
     403: refusal(
-      '`person_only` (not a person), `not_from_wifi` (allowing a route from Wi-Fi), or `forbidden` (the document is out of reach; `reason` says why)'
+      '`person_only` (not a person), `not_from_wifi` (allowing a route from Wi-Fi), or `forbidden` (the document is out of reach; `detail` says why)'
     ),
-    404: refusal('`not_found`: document, route or grant unavailable (`reason` says which)'),
+    404: refusal('`not_found`: document, route or grant unavailable (`detail` says which)'),
     503: refusal('`temporarily_unavailable`: document routes are not composed on this server'),
   };
   registry.registerPath({
@@ -82,7 +82,7 @@ export function registerDocRouteControlsOpenApi(registry: OpenAPIRegistry): void
     path: '/api/canvas/docs/{id}/routes/{routeId}/approve',
     tags: ['Canvas'],
     summary: 'Allow a reviewed route',
-    description: `${PERSON} Records a person's approval through the approval service and grants it only while the current binding still matches reviewHash; otherwise 409 conflict, reason route_changed.`,
+    description: `${PERSON} Records a person's approval through the approval service and grants it only while the current binding still matches reviewHash; otherwise 412 precondition_failed.`,
     request: {
       params: z.object({ id, routeId: id }),
       body: {
@@ -96,9 +96,8 @@ export function registerDocRouteControlsOpenApi(registry: OpenAPIRegistry): void
         content: { 'application/json': { schema: CanvasDocRouteChangeSchema } },
       },
       ...failures,
-      409: refusal(
-        '`conflict`: the route changed since review, or is already on (`reason` says which)'
-      ),
+      409: refusal('`conflict`: the route is already on'),
+      412: refusal('`precondition_failed`: the route changed since it was reviewed'),
     },
   });
   registry.registerPath({
@@ -160,8 +159,9 @@ export function registerDocRouteControlsOpenApi(registry: OpenAPIRegistry): void
       },
       ...failures,
       409: refusal(
-        '`conflict`: already reviewed, not reviewable, still running, no current grant, route changed, newer work waiting, inputs gone, or confirmation missing (`reason` says which)'
+        '`conflict`: already reviewed, not reviewable, still running, no current grant, newer work waiting, inputs gone, or confirmation missing (`detail` says which)'
       ),
+      412: refusal('`precondition_failed`: the route changed, so this work can’t run again'),
     },
   });
   registry.registerPath({
@@ -184,7 +184,7 @@ export function registerDocRouteControlsOpenApi(registry: OpenAPIRegistry): void
       },
       ...failures,
       409: refusal(
-        '`conflict`: already reviewed, not reviewable, or still running (`reason` says which)'
+        '`conflict`: already reviewed, not reviewable, or still running (`detail` says which)'
       ),
     },
   });

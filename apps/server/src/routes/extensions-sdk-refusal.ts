@@ -3,9 +3,9 @@
  * as problem documents (DOR-4979).
  *
  * The SDK throws its own small vocabulary (`ForwardErrorCode`,
- * `RoomAccessErrorCode` in `@dorkos/extension-api`). Each word maps to a code
- * on the problem code list; the three the list has no word for ride as the
- * problem's `reason`, so the app's host code can throw the SDK word back.
+ * `RoomAccessErrorCode` in `@dorkos/extension-api`). Each word maps to one
+ * code on the problem code list, so the app's host code can throw the SDK word
+ * back (`features/extensions/model/sdk-refusal-code.ts` in the client).
  *
  * @module routes/extensions-sdk-refusal
  */
@@ -24,15 +24,15 @@ export type SdkRefusalCode =
   | 'invalid_input'
   | 'unavailable';
 
-/** The problem code each SDK word goes out as, and its `reason` when the list has no word for it. */
-const WIRE: Readonly<Record<SdkRefusalCode, { code: ProblemCode; reason?: string }>> = {
-  no_agent: { code: 'conflict', reason: 'no_agent' },
-  extension_off: { code: 'conflict', reason: 'extension_off' },
-  room_not_allowed: { code: 'forbidden', reason: 'room_not_allowed' },
-  not_found: { code: 'not_found' },
-  person_required: { code: 'person_only' },
-  invalid_input: { code: 'invalid_request' },
-  unavailable: { code: 'temporarily_unavailable' },
+/** The problem code each SDK word goes out as: one code per word, read back one to one. */
+const WIRE: Readonly<Record<SdkRefusalCode, ProblemCode>> = {
+  no_agent: 'no_agent',
+  extension_off: 'not_running',
+  room_not_allowed: 'forbidden',
+  not_found: 'not_found',
+  person_required: 'person_only',
+  invalid_input: 'invalid_request',
+  unavailable: 'temporarily_unavailable',
 };
 
 /**
@@ -84,9 +84,8 @@ export function sdkRefusal(
   detail: string,
   extensions: Record<string, unknown> = {}
 ): Response {
-  const wire = WIRE[code];
-  return problem(c, wire.code, {
+  return problem(c, WIRE[code], {
     detail,
-    extensions: { ...extensions, ...(wire.reason === undefined ? {} : { reason: wire.reason }) },
+    ...(Object.keys(extensions).length > 0 ? { extensions } : {}),
   });
 }

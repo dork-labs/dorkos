@@ -280,9 +280,7 @@ const CASES: ContractCase[] = [
     body: { source: 'dork-labs/marketplace' },
     expect: {
       status: 409,
-      schema: z
-        .object({ code: z.literal('conflict'), reason: z.literal('unproven_source') })
-        .loose(),
+      schema: z.object({ code: z.literal('conflict') }).loose(),
     },
   },
   {

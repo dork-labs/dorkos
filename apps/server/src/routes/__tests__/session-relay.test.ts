@@ -72,7 +72,7 @@ import { PasskeyEnrolment } from '../../services/core/session-relay/passkeys/pas
 import { createSessionRelayRoutes, type SessionRelayRouteDeps } from '../session-relay.js';
 
 /** The person-at-this-computer bar's refusal code. */
-const NEEDS_THIS_COMPUTER = 'needs_person_at_this_computer';
+const NEEDS_THIS_COMPUTER = 'operator_only';
 
 const target = swappableServer();
 let home: string;
@@ -404,7 +404,7 @@ describe('POST /api/session-relay/link', () => {
     const res = await complete(request(app()).post('/api/session-relay/link').send(CODE));
     expect(res.status).toBe(status);
     expect(res.body.code).toBe(status === 502 ? 'temporarily_unavailable' : 'conflict');
-    expect(res.body.reason).toBe(reason);
+    expect(res.body).not.toHaveProperty('reason');
     expect(typeof res.body.detail).toBe('string');
     expect(readRelayPin(home)).toBeNull();
   });

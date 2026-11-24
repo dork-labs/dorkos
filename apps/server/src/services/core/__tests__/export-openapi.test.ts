@@ -165,7 +165,7 @@ describe('export-openapi', () => {
 
     expect(Object.keys(updates ?? {}).sort()).toEqual(['get', 'post']);
     // The read takes no body, and the apply names the per-installation result,
-    // the card an agent waits on (202), the refusal when what runs moved (409) and
+    // the card an agent waits on (202), the refusal when what runs moved (412) and
     // the owner's confirmation a person's apply waits for (428, DOR-4355).
     expect(updates?.get?.requestBody).toBeUndefined();
     expect(Object.keys(updates?.post?.responses ?? {}).sort()).toEqual([
@@ -174,7 +174,7 @@ describe('export-openapi', () => {
       '400',
       '403',
       '404',
-      '409',
+      '412',
       '428',
       '502',
     ]);

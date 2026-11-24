@@ -94,10 +94,7 @@ export function registerExtensionRemovalRoutes(
         if (result.reason === 'not_found') {
           return problem(c, 'not_found', { detail: `No extension named ${id} is installed.` });
         }
-        return problem(c, 'conflict', {
-          detail: REFUSAL_COPY[result.reason],
-          extensions: { reason: result.reason },
-        });
+        return problem(c, 'conflict', { detail: REFUSAL_COPY[result.reason] });
       }
 
       await activity?.emit({
@@ -135,7 +132,6 @@ export function registerExtensionRemovalRoutes(
         return result.reason === 'installed'
           ? problem(c, 'conflict', {
               detail: 'It’s still installed. Stop it running or remove it instead.',
-              extensions: { reason: 'installed' },
             })
           : problem(c, 'not_found', { detail: `No approval is left for ${id}.` });
       }

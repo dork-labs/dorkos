@@ -9,6 +9,7 @@ import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { readMcpJsonServers, summarizeMcpJsonServers } from '../services/mesh/mcp-json.js';
 import { logger } from '../lib/logger.js';
@@ -57,17 +58,7 @@ router.get('/', async (c) => {
     const mcpServers = await readMcpJsonServers(validatedPath);
     return c.json({ servers: summarizeMcpJsonServers(mcpServers) });
   } catch (err) {
-    if (err instanceof BoundaryError) {
-      if (err.code === 'OUTSIDE_BOUNDARY') {
-        return problem(c, 'outside_boundary', { detail: 'Pick a folder DorkOS may use.' });
-      }
-      if (err.code === 'NULL_BYTE') {
-        return problem(c, 'invalid_request', {
-          detail: 'That path has a character paths can’t hold.',
-        });
-      }
-      return problem(c, 'forbidden', { detail: "DorkOS can't read that folder." });
-    }
+    if (err instanceof BoundaryError) return boundaryProblem(c, err);
     logger.error('[mcp-config] GET / failed', { err, path: parsed.data.path });
     return problem(c, 'internal_error', { detail: "Couldn't read this folder's MCP servers." });
   }

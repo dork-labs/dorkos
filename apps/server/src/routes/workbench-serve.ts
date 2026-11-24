@@ -38,6 +38,7 @@ import {
   WorkbenchSignRequestSchema,
 } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 import { logger } from '../lib/logger.js';
 import { protectedPathRefusal } from '../services/runtimes/shared/policy/protected-file-guard.js';
 import { isPersonalComputer } from '../services/core/server-role/role-checks.js';
@@ -120,15 +121,6 @@ function tokenRefusal(c: Context<ApiEnv>, err: WorkbenchTokenError): Response {
     : problem(c, 'forbidden', { detail: 'This preview link isn’t valid. Open the preview again.' });
 }
 
-/** Answer a path the boundary refused: a NUL byte is a bad path, anything else a refusal. */
-function boundaryRefusal(c: Context<ApiEnv>, err: BoundaryError): Response {
-  return err.code === 'NULL_BYTE'
-    ? problem(c, 'invalid_request', { detail: 'That path has a character paths can’t hold.' })
-    : problem(c, 'outside_boundary', {
-        detail: 'That file is outside the folders DorkOS may use.',
-      });
-}
-
 /** The answer when serving failed on this side; the cause is in the log. */
 const serveFailed = (c: Context<ApiEnv>) =>
   problem(c, 'internal_error', { detail: 'Couldn’t serve that file. Try again.' });
@@ -163,7 +155,7 @@ router.post('/sign', async (c) => {
     try {
       validatedCwd = await validateBoundary(parsed.data.cwd);
     } catch (err) {
-      if (err instanceof BoundaryError) return boundaryRefusal(c, err);
+      if (err instanceof BoundaryError) return boundaryProblem(c, err);
       logger.error('[workbench-serve] sign(serve) boundary failed', { err });
       return problem(c, 'internal_error', { detail: 'Couldn’t check that folder. Try again.' });
     }
@@ -306,7 +298,7 @@ async function handleServe(c: Context<ApiEnv>) {
     const target = path.join(cwd, relPath);
     resolved = await validateBoundary(target, cwd);
   } catch (err) {
-    if (err instanceof BoundaryError) return boundaryRefusal(c, err);
+    if (err instanceof BoundaryError) return boundaryProblem(c, err);
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') return problem(c, 'not_found', { detail: 'That file doesn’t exist.' });
     if (code === 'ELOOP' || code === 'ENOTDIR') {

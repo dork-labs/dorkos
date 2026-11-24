@@ -1238,7 +1238,7 @@ describe('contract: the same groups with login on', () => {
       headers: apiKey,
       expect: {
         status: 403,
-        body: problemBody('operator_cookie_required', {
+        body: problemBody('person_only', {
           detail: 'Only a person signed in to DorkOS can delete a scheduled task.',
         }),
       },
@@ -1249,7 +1249,7 @@ describe('contract: the same groups with login on', () => {
       headers: apiKey,
       expect: {
         status: 403,
-        body: problemBody('operator_cookie_required', {
+        body: problemBody('person_only', {
           detail: 'Only a person signed in to DorkOS can cancel a scheduled run.',
         }),
       },

@@ -527,7 +527,7 @@ describe('who may answer a prompt', () => {
           .send(route.body);
 
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('operator_cookie_required');
+        expect(res.body.code).toBe('person_only');
         expect(res.body.detail).toContain('Open DorkOS and answer it there.');
       });
 

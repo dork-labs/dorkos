@@ -27,9 +27,6 @@ import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 /** The header a call between apps carries its token in. */
 export const CALLER_TOKEN_HEADER = 'x-dorkos-caller-token';
 
-/** The `reason` a refused or unknown token answers with, so the window can ask for a new one. */
-export const CALLER_TOKEN_INVALID = 'caller_token_invalid';
-
 /** How long a token lasts without being used. */
 export const CALLER_TOKEN_IDLE_MS = 10 * 60 * 1000;
 
@@ -107,12 +104,9 @@ export interface CallerTokenDeps {
   manifest(id: string): ExtensionManifest | undefined;
 }
 
-/** Answer a refused mint, with `reason: caller_token_invalid`. */
+/** Answer a refused mint: a bad request, or a window that may not have a token. */
 function refuseMint(c: Context<ApiEnv>, status: 400 | 403, detail: string): Response {
-  return problem(c, status === 400 ? 'invalid_request' : 'forbidden', {
-    detail,
-    extensions: { reason: CALLER_TOKEN_INVALID },
-  });
+  return problem(c, status === 400 ? 'invalid_request' : 'forbidden', { detail });
 }
 
 /**

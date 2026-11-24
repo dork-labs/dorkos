@@ -14,9 +14,9 @@ _openapi:
           DorkOS, bound to the copy on disk (its folder and the plugin that
           carried it), and starts it. The body is optional: send the path,
           version and plugin of the copy the person was shown (the Activity
-          inbox always does), and the approval is refused with `409 conflict`,
-          `reason: stale_approval`, unless the copy on disk is still exactly
-          that one, so an old row can never turn on a copy that took its place.
+          inbox always does), and the approval is refused with `412
+          precondition_failed` unless the copy on disk is still exactly that
+          one, so an old row can never turn on a copy that took its place.
           Clears any "Not now" for this id. A caller naming itself an agent is
           refused in every posture, and a signed-in person is required when
           login is on. There is no MCP tool for this. When the copy provably

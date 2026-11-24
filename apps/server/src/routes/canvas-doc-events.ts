@@ -96,14 +96,12 @@ export function canvasDocBodyRule(metrics: () => DocChannelMetrics | undefined):
             status: 413,
             body: problemBody('request_too_large', {
               detail: 'The document event is too large. Send a smaller one.',
-              extensions: { reason: 'doc_event_too_large' },
             }),
           }
         : {
             status: 400,
             body: problemBody('malformed_request', {
               detail: 'The document event is not valid JSON.',
-              extensions: { reason: 'invalid_doc_event' },
             }),
           };
     },
@@ -172,7 +170,7 @@ export function createCanvasDocEventRoutes(
     if (status === 500) logger.error('[canvas-doc-events] request failed', error);
     return docRefusalProblem(c, {
       status,
-      reason: code,
+      refusal: code,
       detail: messages[status] ?? 'The document request could not be completed.',
       ...(status === 429 && typeof refusal.retryAfterSeconds === 'number'
         ? { retryAfterMs: refusal.retryAfterSeconds * 1000 }

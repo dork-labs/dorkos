@@ -98,7 +98,7 @@ describe('POST /api/workbench/sign', () => {
     expect(res.headers['content-type']).toContain('application/problem+json');
     expect(res.body).toMatchObject({
       code: 'outside_boundary',
-      detail: 'That file is outside the folders DorkOS may use.',
+      detail: 'Pick a folder inside the ones DorkOS may use.',
     });
   });
 

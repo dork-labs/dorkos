@@ -25,7 +25,11 @@ import { sdkRefusalCode } from './sdk-refusal-code';
 /** A refused response, as a {@link RoomAccessError}. */
 async function refusal(res: Response): Promise<RoomAccessError> {
   const body = await readResponseError(res, 'DorkOS could not do that. Try again.');
-  const code = sdkRefusalCode(res.status, body.code, body.body) as RoomAccessErrorCode;
+  // The rooms routes refuse a room the mini app may not use as `forbidden`.
+  const code: RoomAccessErrorCode =
+    body.code === 'forbidden'
+      ? 'room_not_allowed'
+      : (sdkRefusalCode(res.status, body.code) as RoomAccessErrorCode);
   return new RoomAccessError(code, body.message);
 }
 

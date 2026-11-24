@@ -255,7 +255,7 @@ Content-Type: application/json
   The tool call is auto-denied only when that runs out.
 </Callout>
 
-Both `/approve`, `/deny`, and `/submit-answers` may return `409` with a problem document whose `code` is `interaction_already_resolved` if the SDK resolved the interaction before the request arrived. Treat this as success.
+Both `/approve`, `/deny`, and `/submit-answers` may return `409` with a problem document whose `code` is `already_resolved` if the SDK resolved the interaction before the request arrived. Treat this as success.
 
 </Tab>
 

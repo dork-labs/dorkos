@@ -61,8 +61,19 @@ export const PROBLEM_CODE_LIST = [
   },
   { code: 'step_up_required', status: 428, title: 'Confirm it’s you to continue.' },
   { code: 'forbidden', status: 403, title: 'This account isn’t allowed to do that.' },
+  /** The caller is signed in, as an account that does not own this DorkOS. */
   { code: 'owner_only', status: 403, title: 'Only the owner of this DorkOS can do that.' },
+  /**
+   * Only the operator may: the owner, in person, at the computer DorkOS runs
+   * on. An agent, another device (the tunnel, a remote link) or another
+   * member is refused. Doing it there, as the owner, fixes it.
+   */
   { code: 'operator_only', status: 403, title: 'Only the person at this computer can do that.' },
+  /**
+   * Any person may, and the caller is not one: an agent, a page from another
+   * site, or a caller without a person's sign-in while login is on. A person
+   * in the app fixes it.
+   */
   { code: 'person_only', status: 403, title: 'Only a person can do that, not an agent.' },
   { code: 'not_from_wifi', status: 403, title: 'This can’t be done from another device on Wi-Fi.' },
   { code: 'origin_not_allowed', status: 403, title: 'This page isn’t allowed to call DorkOS.' },
@@ -93,7 +104,18 @@ export const PROBLEM_CODE_LIST = [
    * `approval_required` is a held request (a `202` body), never a problem.
    */
   { code: 'needs_approval', status: 403, title: 'This waits for a person to approve it.' },
+  /**
+   * What the caller was shown (a card, a review, a disclosure, a folder's
+   * description) changed before its answer arrived. Look again, then answer.
+   */
   { code: 'precondition_failed', status: 412, title: 'Something changed since you last looked.' },
+  /**
+   * The question, approval or offer was answered, withdrawn or closed before
+   * this answer arrived. Nothing to do: treat it as settled.
+   */
+  { code: 'already_resolved', status: 409, title: 'This was already settled.' },
+  /** Look at what this brings (a template, a workspace's commands) first, then confirm. */
+  { code: 'needs_review', status: 409, title: 'Look at what this brings first.' },
   { code: 'rate_limited', status: 429, title: 'Too many requests. Wait a moment, then try again.' },
   // The server's own faults.
   { code: 'internal_error', status: 500, title: 'DorkOS hit an error on its side.' },
@@ -110,20 +132,26 @@ export const PROBLEM_CODE_LIST = [
   },
   /** The path exists, and does not answer that HTTP method. */
   { code: 'method_not_allowed', status: 405, title: 'That method isn’t allowed here.' },
-  /** What an install or update would bring is not what the person was shown. */
-  {
-    code: 'disclosure_changed',
-    status: 409,
-    title: 'What this installs changed since you looked.',
-  },
   /** A person was asked, and said no. */
   { code: 'declined', status: 403, title: 'A person said no to this.' },
-  /** A request only an older client sends; updating the client fixes it. */
-  { code: 'client_outdated', status: 400, title: 'This client is too old. Update it.' },
   /** A remote DorkOS fetches from (a git host, a package feed) failed or didn’t answer. */
   { code: 'upstream_unavailable', status: 502, title: 'A remote source didn’t answer. Try again.' },
   /** Something an agent's running turn blocks: asked before that turn ended. */
   { code: 'outside_turn', status: 403, title: 'Wait until the agent’s turn ends.' },
+  // Mini apps (extensions) and their calls.
+  /** The mini app is turned off, or stopped: turn it on first. */
+  { code: 'not_running', status: 409, title: 'That mini app isn’t running.' },
+  /** A forward named no agent the person allowed: pick one first. */
+  { code: 'no_agent', status: 409, title: 'Pick an agent for this mini app first.' },
+  /** A call between apps carried a token this server no longer knows: ask for a new one. */
+  { code: 'caller_token_invalid', status: 403, title: 'Ask for a new caller token.' },
+  /** The server is gone, and its saved key could not be deleted. */
+  { code: 'secret_left', status: 500, title: 'The server is gone, but its saved key stayed.' },
+  // The person's own browser.
+  /** A sign-in is open in the browser: finish it first. */
+  { code: 'signing_in', status: 409, title: 'Finish signing in first.' },
+  /** A Back or Forward would open a page DorkOS doesn't open here, so the browser stayed. */
+  { code: 'history_refused', status: 409, title: 'DorkOS doesn’t open that page here.' },
   // Chats: messages, questions, recordings and the chat's canvas.
   { code: 'agent_paused', status: 409, title: 'This agent is paused.' },
   {
@@ -142,19 +170,7 @@ export const PROBLEM_CODE_LIST = [
     status: 409,
     title: 'That account can’t work in this project.',
   },
-  { code: 'interaction_already_resolved', status: 409, title: 'This was already answered.' },
-  {
-    code: 'operator_cookie_required',
-    status: 403,
-    title: 'Only a person signed in to DorkOS can do that.',
-  },
   { code: 'expired', status: 410, title: 'That took too long. Start again.' },
-  // Agent programs (runtimes) and their accounts.
-  {
-    code: 'needs_person_at_this_computer',
-    status: 403,
-    title: 'Only the owner, at this computer, can change that.',
-  },
   // Rooms, direct chats, read state and profiles.
   { code: 'room_not_found', status: 404, title: 'That room doesn’t exist, or you’re not in it.' },
   { code: 'room_archived', status: 409, title: 'This room is archived.' },
@@ -209,17 +225,6 @@ export const PROBLEM_CODE_LIST = [
   { code: 'repo_cap_exceeded', status: 409, title: 'This room’s files are full.' },
   { code: 'merge_in_flight', status: 429, title: 'Another merge is running here. Try again soon.' },
   // Agents, the team, workspaces, terminals, diffs and the rest.
-  { code: 'template_needs_review', status: 409, title: 'Look at what this template brings first.' },
-  {
-    code: 'workspace_needs_review',
-    status: 409,
-    title: 'Look at what this workspace brings first.',
-  },
-  {
-    code: 'remove_hooks_need_review',
-    status: 409,
-    title: 'Look at this workspace’s removal commands first.',
-  },
   { code: 'reports_to_cycle', status: 400, title: 'That would make someone report to themselves.' },
   { code: 'terminal_limit', status: 429, title: 'Too many terminals are open.' },
   { code: 'too_large', status: 413, title: 'That file is too large to open here.' },
@@ -227,23 +232,11 @@ export const PROBLEM_CODE_LIST = [
   { code: 'binary_file', status: 415, title: 'That file isn’t text.' },
   // Tasks, to-dos, the work queue and settings.
   {
-    code: 'schedule_review_changed',
-    status: 409,
-    title: 'This schedule changed. Review it again.',
-  },
-  {
     code: 'schedule_package_owned',
     status: 409,
     title: 'A package owns this scheduled task, so it can’t be changed here.',
   },
-  {
-    code: 'looser_than_proposed',
-    status: 409,
-    title: 'That runs with more permission than the proposal asked for.',
-  },
   { code: 'past_due', status: 400, title: 'That time has already passed.' },
-  { code: 'operator_only_config', status: 403, title: 'Only a person can change those settings.' },
-  { code: 'insufficient_storage', status: 507, title: 'The disk is full.' },
 ] as const satisfies readonly ProblemCodeDefinition[];
 
 /** A failure code from {@link PROBLEM_CODE_LIST}. */
@@ -369,17 +362,6 @@ export interface ErrorBodyReading {
   issues?: ProblemIssues;
   /** How long to wait before retrying, when the body says. */
   retryAfterMs?: number;
-  /**
-   * A problem's `reason` extension member: the finer refusal a route names
-   * under a broader code (`stale_approval` under `conflict`), `lower_snake`.
-   */
-  reason?: string;
-}
-
-/** A problem's `reason` extension member, when it carries a string one. */
-function problemReason(body: Problem): { reason?: string } {
-  const reason = (body as { reason?: unknown }).reason;
-  return typeof reason === 'string' ? { reason } : {};
 }
 
 /** Whether a value is a validation failure in Zod's flattened form. */
@@ -406,7 +388,6 @@ export function readErrorBody(body: unknown, fallbackMessage: string): ErrorBody
       status: body.status,
       ...(body.issues === undefined ? {} : { issues: body.issues }),
       ...(body.retryAfterMs === undefined ? {} : { retryAfterMs: body.retryAfterMs }),
-      ...problemReason(body),
     };
   }
   if (typeof body !== 'object' || body === null) return { message: fallbackMessage };

@@ -161,7 +161,7 @@ describe('runAgentCreate with a template (DOR-2325)', () => {
   it('prints what a template brings and creates with the hash it showed (--yes)', async () => {
     apiCallMock
       .mockRejectedValueOnce(
-        new ApiError(409, { code: 'template_needs_review', template: TEMPLATE } as never)
+        new ApiError(409, { code: 'needs_review', template: TEMPLATE } as never)
       )
       .mockResolvedValueOnce({ id: 'new', name: 'bot', _path: '/tmp/bot' });
 
@@ -182,7 +182,7 @@ describe('runAgentCreate with a template (DOR-2325)', () => {
 
   it('creates nothing without a yes when it cannot ask', async () => {
     apiCallMock.mockRejectedValueOnce(
-      new ApiError(409, { code: 'template_needs_review', template: TEMPLATE } as never)
+      new ApiError(409, { code: 'needs_review', template: TEMPLATE } as never)
     );
     expect(await runAgentCreate({ ...base })).toBe(1);
     expect(apiCallMock).toHaveBeenCalledTimes(1);
