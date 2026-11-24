@@ -1,4 +1,4 @@
-/** First send through the real person cookie, saved-location route and runtime binder. */
+/** First send through the real owner cookie and runtime binder. */
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -15,8 +15,18 @@ import {
 import type { StreamEvent } from '@dorkos/shared/types';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { initBoundary } from '../../lib/boundary.js';
+import { readOwnerAccount } from '../../services/core/auth/index.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { SessionBirthWriteError } from '../../services/core/runtime-seam/session-birth-write.js';
+import {
+  createChatRiseFacts,
+  setChatRiseFacts,
+} from '../../services/core/turn-power/chat-rise-facts.js';
+import { AuthorRegistry } from '../../services/rooms/author-registry.js';
+import { roomSessionPlace } from '../../services/rooms/repo/room-turn-place.js';
+import { RoomStore } from '../../services/rooms/room-store.js';
+import { OpenCodeRuntime } from '../../services/runtimes/opencode/opencode-runtime.js';
+import { OpenCodeSessionMap } from '../../services/runtimes/opencode/sessions/session-map.js';
 import {
   onDispatchLifecycle,
   resetMessageDispatcher,
@@ -57,21 +67,33 @@ beforeAll(async () => {
 
 const harness = frontDoorStepUpHarness(() => {
   const db = harness.db();
-  runtime.withScenarios([reply, reply]);
+  runtime.withScenarios([reply, reply, reply, reply]);
   runtime.getInternalSessionId.mockReturnValue(undefined);
   runtimeRegistry.setDb(db);
   runtimeRegistry.register(runtime);
   runtimeRegistry.setDefault('opencode');
+  setChatRiseFacts(createChatRiseFacts(db));
   setMessageQueueStore(new MessageQueueStore(db));
+  const roomStore = new RoomStore(db);
+  const place = roomSessionPlace({
+    bindings: roomStore.sessionLedger,
+    authors: new AuthorRegistry(db),
+    seatBirth: roomStore.roomSeatBirth.bind(roomStore),
+    worktrees: () => null,
+  });
   return [
     { path: '/api/session-locations', routes: createSessionLocationsRoutes(db, { mintChatId }) },
-    { path: '/api/sessions', routes: createSessionRoutes({ personBirthDb: db }) },
+    {
+      path: '/api/sessions',
+      routes: createSessionRoutes({ personBirthDb: db, roomSessionPlace: place }),
+    },
   ];
 });
 
 afterAll(async () => {
   resetMessageDispatcher();
   setMessageQueueStore(undefined);
+  setChatRiseFacts(null);
   for (const id of ids) disposeProjector(id);
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
@@ -186,6 +208,135 @@ it('binds the acknowledged person location on the first authenticated send', asy
     stop();
   }
 });
+
+function makeOwnerRoomSeat(seatKind: 'legacy' | 'minted', slug: string) {
+  const owner = readOwnerAccount();
+  if (!owner) throw new Error('Expected the signed-in fixture owner');
+  const db = harness.db();
+  const registry = new AuthorRegistry(db);
+  const person = registry.bindOwner(owner.id);
+  const agent = registry.resolveAgent(cwd, 'Northwind agent');
+  const store = new RoomStore(db);
+  const roomId = randomUUID();
+  const sessionId = randomUUID();
+  const createdAt = new Date().toISOString();
+  store.createRoom(
+    { id: roomId, kind: 'channel', slug, title: 'Northwind room', topic: null, createdAt },
+    [
+      { authorId: person.id, responseMode: 'silent', joinedAt: createdAt },
+      { authorId: agent.id, responseMode: 'mention-only', joinedAt: createdAt },
+    ]
+  );
+  const birth = seatKind === 'minted' ? seatKind : undefined;
+  expect(store.bindRoomSession(roomId, agent.id, sessionId, createdAt, birth)).toBe(sessionId);
+  const pendingBirth = () => store.roomSeatBirth(roomId, agent.id, sessionId);
+  expect(row(sessionId)).toBeUndefined();
+  expect(pendingBirth()?.seatCreatedAt).toBe(birth ? createdAt : undefined);
+  return { sessionId, birth, pendingBirth };
+}
+
+it.each(['legacy', 'minted'] as const)(
+  'accepts the owner’s first message to a %s room seat',
+  async (seatKind) => {
+    const { sessionId, birth, pendingBirth } = makeOwnerRoomSeat(seatKind, seatKind);
+    const settled = vi.fn();
+    const stop = onDispatchLifecycle((event) => {
+      if (event.phase === 'settled') settled(event);
+    });
+    try {
+      const result = await send(sessionId);
+      expect(result.status).toBe(202);
+      expect(result.body.sessionId).toBe(sessionId);
+      expect(row(sessionId)).toMatchObject({
+        runtime: 'opencode',
+        agentPath: birth ? cwd : null,
+        launchOrigin: 'interactive',
+        modelLaunchState: birth ? 'pending-v1' : null,
+      });
+      expect(pendingBirth()).toBeUndefined();
+      await vi.waitFor(() =>
+        expect(settled).toHaveBeenCalledWith(expect.objectContaining({ sessionId }))
+      );
+      expect(runtime.sendMessage.mock.calls.filter(([id]) => id === sessionId)).toEqual([
+        [sessionId, 'Owned first-send fixture', expect.objectContaining({ cwd, forAgent: cwd })],
+      ]);
+    } finally {
+      stop();
+    }
+  }
+);
+
+it.each(['legacy', 'minted'] as const)(
+  'keeps settings saved before the owner’s first message to a %s room seat',
+  async (seatKind) => {
+    const { sessionId, birth, pendingBirth } = makeOwnerRoomSeat(seatKind, `settings-${seatKind}`);
+    const initialBirth = pendingBirth();
+    const getClient = vi.fn(async () => {
+      throw new Error('Unexpected OpenCode sidecar access');
+    });
+    const openCode = new OpenCodeRuntime({
+      provider: { getClient, peekClient: () => null },
+      sessionMap: new OpenCodeSessionMap(harness.db()),
+      runsOnCredits: () => false,
+    });
+    openCode.setSessionSettings(runtimeRegistry);
+    const sendNative = vi
+      .spyOn(openCode, 'sendMessage')
+      .mockImplementation(async function* (_id, _content, opts) {
+        opts?.dispatchHold?.proceed();
+        yield* reply();
+      });
+    runtimeRegistry.register(openCode);
+    const settled = vi.fn();
+    const stop = onDispatchLifecycle((event) => {
+      if (event.phase === 'settled') settled(event);
+    });
+    const patch = (settings: { fastMode: true } | { permissionMode: 'default' }) =>
+      harness.call('patch', `/api/sessions/${sessionId}`).query({ cwd }).send(settings);
+    try {
+      const first = await patch({ fastMode: true });
+      expect(first.status).toBe(200);
+      expect(first.body).toMatchObject({ id: sessionId, runtimeUnbound: true });
+      expect(row(sessionId)).toMatchObject({
+        runtime: null,
+        modelLaunchState: birth ? 'pending-v1' : null,
+        fastMode: true,
+      });
+      expect(pendingBirth()).toEqual(initialBirth);
+
+      const repeated = await patch({ permissionMode: 'default' });
+      expect(repeated.status).toBe(200);
+      expect(row(sessionId)).toMatchObject({
+        runtime: null,
+        permissionMode: 'default',
+        permissionModeByPerson: true,
+        fastMode: true,
+      });
+      expect(pendingBirth()).toEqual(initialBirth);
+
+      const result = await send(sessionId);
+      expect(result.status).toBe(202);
+      expect(result.body.sessionId).toBe(sessionId);
+      expect(row(sessionId)).toMatchObject({
+        runtime: 'opencode',
+        launchOrigin: 'interactive',
+        modelLaunchState: birth ? 'pending-v1' : null,
+        permissionMode: 'default',
+        permissionModeByPerson: true,
+        fastMode: true,
+      });
+      expect(pendingBirth()).toBeUndefined();
+      await vi.waitFor(() =>
+        expect(settled).toHaveBeenCalledWith(expect.objectContaining({ sessionId }))
+      );
+      expect(sendNative).toHaveBeenCalledTimes(1);
+      expect(getClient).not.toHaveBeenCalled();
+    } finally {
+      stop();
+      runtimeRegistry.register(runtime);
+    }
+  }
+);
 
 it('allocates distinct inert chats from one authenticated saved folder', async () => {
   if (!root) throw new Error('Expected the owned test root');

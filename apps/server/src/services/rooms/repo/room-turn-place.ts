@@ -68,6 +68,7 @@ import { logResolvedCwd } from '../../workspace/session-cwd-rung.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import { RoomError } from '../room-errors.js';
 import type { RoomSessionLedger } from '../session-bindings/room-session-ledger.js';
+import type { RoomStore } from '../room-store.js';
 import type { RoomWorktreeManager } from './room-worktree-manager.js';
 import { launchFiles, type RoomWorktreeRefreshDeps } from './room-worktree-refresh.js';
 
@@ -306,6 +307,8 @@ export interface RoomSessionPlaceDeps {
   bindings: Pick<RoomSessionLedger, 'bindingForSession'>;
   /** Author rows — where a room member's label and kind live. */
   authors: Pick<AuthorRegistry, 'getById'>;
+  /** The store's exact pending source lookup for the seat the ledger names. */
+  seatBirth?: RoomStore['roomSeatBirth'];
   /** The worktree manager, or `null` on an install whose repo machinery is off. */
   worktrees: () => RoomWorktreeManager | null;
   /** The runtime a session is bound to, to tell a session that cannot move home. */
@@ -332,6 +335,21 @@ export interface RoomSessionPlaceDeps {
  */
 export function roomSessionPlace(deps: RoomSessionPlaceDeps): RoomSessionPlacePort {
   return {
+    pendingSeatBirth(sessionId) {
+      const binding = deps.bindings.bindingForSession(sessionId);
+      if (binding?.sessionId !== sessionId) return;
+      const author = deps.authors.getById(binding.authorId);
+      if (author?.kind !== 'agent') return;
+      const birth = deps.seatBirth?.(binding.roomId, binding.authorId, sessionId);
+      if (!birth) return;
+      return {
+        kind: 'room-seat',
+        roomId: binding.roomId,
+        authorId: binding.authorId,
+        agentPath: author.naturalKey,
+        ...birth,
+      };
+    },
     roomFor(sessionId) {
       const binding = deps.bindings.bindingForSession(sessionId);
       if (!binding) return null;

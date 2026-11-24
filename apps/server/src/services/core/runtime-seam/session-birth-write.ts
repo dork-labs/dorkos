@@ -20,6 +20,18 @@ import {
 import { chatClientId } from '../../session/chat-messages/chat-client-id.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 
+/** The exact pending source for a newly inserted room seat. */
+export interface RoomSeatBirthWriteContext {
+  kind: 'room-seat';
+  allocationCreatedAt: string;
+  roomId: string;
+  authorId: string;
+  agentPath: string;
+  seatCreatedAt: string;
+  /** Set only after the ordinary HTTP route verifies the person and install owner. */
+  delivery?: 'owner-http';
+}
+
 /** Prepared server inputs. These values describe an admitted owner and never grant admission themselves. */
 export type SessionBirthWriteContext = {
   allocationCreatedAt: string;
@@ -50,16 +62,11 @@ export type SessionBirthWriteContext = {
       fromAgentPath: string;
       targetAgent?: { id: string; path: string };
     }
-  | {
-      kind: 'room-seat';
-      roomId: string;
-      authorId: string;
-      agentPath: string;
-      seatCreatedAt: string;
-    }
+  | RoomSeatBirthWriteContext
 );
 
 type InsertBirthFields = { readonly modelLaunchState?: 'pending-v1' };
+type BirthWritePurpose = 'room-seat-settings';
 type SyncWrite<T> = (
   tx: DbTransaction,
   insertBirth: InsertBirthFields
@@ -195,6 +202,7 @@ function assertSource(
   }
   if (
     source?.kind !== 'room-seat' ||
+    (context.delivery === 'owner-http' && primaryOf(sessionId) !== sessionId) ||
     source.roomId !== context.roomId ||
     source.authorId !== context.authorId ||
     source.boundSessionId !== sessionId ||
@@ -235,11 +243,16 @@ function writeWithin<T>(
   tx: DbTransaction,
   sessionId: string,
   context: SessionBirthWriteContext | undefined,
-  write: SyncWrite<T>
+  write: SyncWrite<T>,
+  purpose?: BirthWritePurpose
 ): T {
   if (Object.prototype.toString.call(write) === '[object AsyncFunction]')
     throw new SessionBirthWriteError('async');
   const prepared = context === undefined ? undefined : structuredClone(context);
+  const roomSeat = prepared?.kind === 'room-seat' ? prepared : undefined;
+  const retainRoomSeat = purpose === 'room-seat-settings';
+  if (retainRoomSeat && roomSeat?.delivery !== 'owner-http')
+    throw new SessionBirthWriteError('source');
   const allocation = tx
     .select()
     .from(sessionBirthAllocations)
@@ -254,7 +267,8 @@ function writeWithin<T>(
     .from(sessionMetadata)
     .where(eq(sessionMetadata.sessionId, sessionId))
     .get();
-  if (before) throw new SessionBirthWriteError('metadata');
+  if (before && !(roomSeat && isRoomSeatDraft(before)))
+    throw new SessionBirthWriteError('metadata');
   const source = assertSource(tx, sessionId, allocation, prepared);
   const result = runSync(write, tx, { modelLaunchState: 'pending-v1' });
   const after = tx
@@ -272,6 +286,12 @@ function writeWithin<T>(
     throw new SessionBirthWriteError('context');
   if (!isDeepStrictEqual(source, assertSource(tx, sessionId, allocation, prepared)))
     throw new SessionBirthWriteError('source');
+  if (retainRoomSeat) {
+    if (!isRoomSeatDraft(after)) throw new SessionBirthWriteError('write');
+    return result;
+  }
+  if (roomSeat && (after.runtime === null || after.agentPath !== roomSeat.agentPath))
+    throw new SessionBirthWriteError('write');
   if (source && after.runtime === null) {
     const recorded = tx.insert(sessionDraftSources).values(source).run();
     if (recorded.changes !== 1) throw new SessionBirthWriteError('write');
@@ -282,6 +302,15 @@ function writeWithin<T>(
     .run();
   if (consumed.changes !== 1) throw new SessionBirthWriteError('write');
   return result;
+}
+
+function isRoomSeatDraft(row: typeof sessionMetadata.$inferSelect): boolean {
+  return (
+    row.runtime === null &&
+    row.modelLaunchState === 'pending-v1' &&
+    row.agentPath === null &&
+    row.launchOrigin === null
+  );
 }
 
 function runSync<T>(write: SyncWrite<T>, tx: DbTransaction, fields: InsertBirthFields): T {
@@ -296,14 +325,15 @@ function runSync<T>(write: SyncWrite<T>, tx: DbTransaction, fields: InsertBirthF
   return result;
 }
 
-/** Standalone writers open one synchronous transaction. Existing outer transactions use Within directly. */
+/** Run a standalone birth transaction. Owner settings retain the pending room source until binding. */
 export function withSessionBirthWrite<T>(
   db: Db,
   sessionId: string,
   context: SessionBirthWriteContext | undefined,
-  write: SyncWrite<T>
+  write: SyncWrite<T>,
+  purpose?: BirthWritePurpose
 ): T {
-  return db.transaction((tx) => writeWithin(tx, sessionId, context, write), {
+  return db.transaction((tx) => writeWithin(tx, sessionId, context, write, purpose), {
     behavior: 'immediate',
   });
 }

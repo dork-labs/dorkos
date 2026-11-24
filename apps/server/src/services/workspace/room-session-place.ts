@@ -25,6 +25,7 @@ import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { isSameOrInside } from '@dorkos/shared/directory-grants';
 import { logger } from '../../lib/logger.js';
 import { assertOwnDesk, DeskNotOwnError } from '../core/agent-identity/index.js';
+import type { RoomSeatBirthWriteContext } from '../core/runtime-seam/session-birth-write.js';
 import { resolveSessionCwd, type ResolveSessionCwdRequest } from './resolve-session-cwd.js';
 import { logResolvedCwd, type ResolvedCwd } from './session-cwd-rung.js';
 
@@ -61,6 +62,8 @@ export interface RoomSessionPlacePort {
    * @param sessionId - The session about to take a turn.
    */
   roomFor(sessionId: string): { roomId: string; agentName: string; agentPath: string } | null;
+  /** Exact pending source of a currently bound seat, using only its own id. */
+  pendingSeatBirth?(sessionId: string): RoomSeatBirthWriteContext | undefined;
   /**
    * Place a turn for this agent in this room, exactly as a room turn is placed.
    * Never throws: a room whose files cannot be opened answers the home with no
@@ -132,11 +135,13 @@ export type ResolvedSessionPlace = ResolvedCwd & {
  * @param place - The rooms domain's answer to that lookup, or `undefined`.
  */
 export async function resolveSessionCwdWithRoom(
-  req: ResolveSessionCwdRequest & { sessionId: string },
+  req: ResolveSessionCwdRequest & { sessionId: string; expectedRoomId?: string },
   place: RoomSessionPlacePort | undefined
 ): Promise<ResolvedSessionPlace> {
   const bound = place ? roomForSession(place, req.sessionId) : null;
   if (!place || !bound) return resolveSessionCwd(req);
+  if (req.expectedRoomId !== undefined && req.expectedRoomId !== bound.roomId)
+    return resolveSessionCwd(req);
   const { agentPath, roomId, agentName } = bound;
   // **The room's binding names the agent, and a body that names another is
   // IGNORED for the room's purposes** (DOR-2091). The route only checks that a

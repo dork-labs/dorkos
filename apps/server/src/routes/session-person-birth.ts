@@ -3,14 +3,19 @@ import { agents, and, eq, sessionBirthAllocations, sessionLocations, type Db } f
 import type { MeshCore } from '@dorkos/mesh';
 import type { RequestFacts } from '../http/request-facts.js';
 import { BoundaryError, validateBoundaryOrDorkHome } from '../lib/boundary.js';
+import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { PreparedSettingsWriteError } from '../services/core/runtime-seam/prepared-settings-write.js';
 import {
   readDraftSource,
   type PersonChatBinding,
 } from '../services/core/runtime-seam/person-draft-settings.js';
-import { SessionBirthWriteError } from '../services/core/runtime-seam/session-birth-write.js';
+import {
+  SessionBirthWriteError,
+  type RoomSeatBirthWriteContext,
+} from '../services/core/runtime-seam/session-birth-write.js';
 import { primaryOf } from '../services/session/resolution/session-key-registry.js';
+import type { RoomSessionPlacePort } from '../services/workspace/room-session-place.js';
 import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 const PERSON_BAR: PersonBarCopy = {
@@ -69,6 +74,17 @@ export function observePersonChat(db: Db, id: string) {
   const draft = readDraftSource(db, id);
   if ((!allocation || allocation.sourceKind === 'internal') && !draft) return;
   return { allocation, draft };
+}
+
+/** Prepare the exact pending seat for the owner's ordinary send or settings route. */
+export function observeOwnerRoomSeat(
+  id: string,
+  facts: RequestFacts,
+  place: RoomSessionPlacePort | undefined
+): RoomSeatBirthWriteContext | undefined {
+  const seat = place?.pendingSeatBirth?.(id);
+  if (!seat || refuseUnlessAccountOwner(facts) !== undefined) return;
+  return { ...seat, delivery: 'owner-http' };
 }
 
 /** Revalidate an observed source for either ordinary settings or ordinary first send. */

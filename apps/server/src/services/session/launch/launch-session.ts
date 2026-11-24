@@ -26,14 +26,7 @@ import type { SendMessageRequest } from '@dorkos/shared/schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import {
-  SessionBirthWriteError,
-  type SessionBirthWriteContext,
-} from '../../core/runtime-seam/session-birth-write.js';
-import type {
-  PersonChatBinding,
-  PersonDraftWitness,
-} from '../../core/runtime-seam/person-draft-settings.js';
+import { SessionBirthWriteError } from '../../core/runtime-seam/session-birth-write.js';
 import { configManager } from '../../core/config-manager.js';
 import {
   homeOf,
@@ -65,7 +58,12 @@ import {
   type SessionLauncher,
 } from './launch-caller.js';
 import { auditLaunched, auditRefusedLaunch } from './launch-audit.js';
-import { matchesPersonChatPlace, resolveChatPlace } from './resolve-chat-place.js';
+import {
+  chatBirthWriteArgs,
+  matchesChatBirthPlace,
+  resolveChatPlace,
+  type ChatBirthSource,
+} from './resolve-chat-place.js';
 import { isRegisteredChatAgentPath } from './verify-chat-agent.js';
 import { recordedAgentOf, sessionToolWarnings } from './session-tool-warnings.js';
 import type { SessionLaunchWarning } from '@dorkos/shared/schemas';
@@ -87,8 +85,8 @@ export interface DispatchSessionMessageOpts {
    * the power a new session row is born with (DOR-2105).
    */
   origin: TurnOrigin;
-  /** Exact source prepared by the person-authenticated route for an acknowledged chat. */
-  personChatSource?: PersonChatBinding;
+  /** Exact first-write source prepared by the authenticated message route. */
+  chatBirthSource?: ChatBirthSource;
   /**
    * Fires once, when the detached turn this message started (or joined the
    * queue for) ends. Called after the dispatch buffer records the end.
@@ -501,11 +499,14 @@ async function launchSessionMessage(
   // (`cwd`) and runs the turn with `cwd = workspace.path` + its port block.
   // Additive + resilient: with no key (or a disabled/failing manager) the turn
   // proceeds with the original cwd, byte-for-byte unchanged.
+  const source = opts.chatBirthSource;
+  const roomSeat = source && 'roomSeat' in source ? source.roomSeat : undefined;
   const resolvedChatPlace = await resolveChatPlace({
     sessionId,
     ...(cwd !== undefined ? { cwd } : {}),
     ...(verifiedAgentPath !== undefined ? { agentPath: verifiedAgentPath } : {}),
     roomSessionPlace,
+    expectedRoomId: roomSeat?.roomId,
     workspaceKeyed: Boolean(workspaceKey),
   });
   if ('refusal' in resolvedChatPlace) {
@@ -516,10 +517,9 @@ async function launchSessionMessage(
   }
   let effectiveCwd = resolvedChatPlace.cwd;
   const existing = resolvedChatPlace.session;
-  const source = opts.personChatSource;
   if (
     source &&
-    (existing.bound || !matchesPersonChatPlace(source, resolvedChatPlace, verifiedAgentPath))
+    (existing.bound || !matchesChatBirthPlace(source, resolvedChatPlace, verifiedAgentPath))
   )
     throw new SessionBirthWriteError('source');
   // A room-bound session's agent and grants, when the room answered for it
@@ -670,17 +670,12 @@ async function launchSessionMessage(
   //
   // The caller's `origin` is passed through untouched: which power it unlocks is
   // `permissionSeedForOrigin`'s decision, never this module's (DOR-2105).
-  const sourceArgs: [SessionBirthWriteContext?, PersonDraftWitness?] = source
-    ? 'birth' in source
-      ? [source.birth]
-      : [undefined, source.draft]
-    : [];
   const isNewSession = await runtimeRegistry.persistSessionRuntime(
     sessionId,
     runtimeType,
     origin,
-    verifiedAgentPath,
-    ...sourceArgs
+    roomSeat?.agentPath ?? verifiedAgentPath,
+    ...chatBirthWriteArgs(source)
   );
   if (isNewSession && launchedBy !== undefined) {
     auditLaunched(sessionId, effectiveCwd ?? DEFAULT_CWD, launchedBy);

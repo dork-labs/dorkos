@@ -23,6 +23,7 @@ import {
 } from './session-model-gate.js';
 import {
   isPersonChatWriteRefusal,
+  observeOwnerRoomSeat,
   observePersonChat,
   preparePersonChat,
   personChatMissing,
@@ -48,7 +49,7 @@ const PREPARED_SETTINGS_RUNTIMES = new Set([
  */
 export function mountSessionSettingsPatch(
   router: Hono<ApiEnv>,
-  deps: Pick<SessionRouteDeps, 'personBirthDb' | 'meshCore'>,
+  deps: Pick<SessionRouteDeps, 'personBirthDb' | 'meshCore' | 'roomSessionPlace'>,
   personBirthDb?: Db
 ): void {
   // PATCH /api/sessions/:id - Update session settings
@@ -73,23 +74,21 @@ export function mountSessionSettingsPatch(
     } = parsed.data;
     const db = personBirthDb ?? deps.personBirthDb;
     const source = db && observePersonChat(db, sessionId);
+    const facts = honoRequestFacts(c);
+    const roomSeat = source
+      ? undefined
+      : observeOwnerRoomSeat(sessionId, facts, deps.roomSessionPlace);
     const prepared =
       db && source
-        ? await preparePersonChat(
-            db,
-            sessionId,
-            honoRequestFacts(c),
-            source,
-            deps.meshCore,
-            requestedCwd
-          )
+        ? await preparePersonChat(db, sessionId, facts, source, deps.meshCore, requestedCwd)
         : undefined;
     if (prepared && 'refusal' in prepared)
       return c.json(prepared.refusal.body, prepared.refusal.status);
-    const cwd = prepared?.cwd ?? (requestedCwd || DEFAULT_CWD);
+    const settingsSource = roomSeat ? { birth: roomSeat } : prepared?.binding;
+    const cwd = prepared?.cwd ?? (requestedCwd || roomSeat?.agentPath || DEFAULT_CWD);
     // The registration establishes who owns the draft. The normal folder
     // boundary still governs the effective place named for the settings read.
-    if (prepared?.registeredAgentPath) {
+    if (prepared?.registeredAgentPath || roomSeat) {
       const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
       if (outside) return c.json(outside, 403);
     }
@@ -149,7 +148,7 @@ export function mountSessionSettingsPatch(
       const onCredits = authority
         ? await sessionRunsOnCredits(authority, sessionId, {
             accountHint,
-            cwd: prepared?.cwd ?? requestedCwd,
+            cwd: roomSeat ? cwd : (prepared?.cwd ?? requestedCwd),
           })
         : false;
       const modelError = authority
@@ -169,14 +168,14 @@ export function mountSessionSettingsPatch(
     // updateSession no longer throws on a live mode-switch failure (ADR-0261):
     // the chosen mode is persisted and applies on the next turn, so there is no
     // 422 path — a failed live switch is not a request error.
-    if (prepared && (bound || internalSessionId !== sessionId))
+    if (settingsSource && (bound || internalSessionId !== sessionId))
       return c.json(personChatMissing.body, personChatMissing.status);
     const hasSettings =
       requestedMode !== undefined ||
       model !== undefined ||
       fastMode !== undefined ||
       (runtime.type !== 'opencode' && effort !== undefined);
-    if (prepared && hasSettings && !PREPARED_SETTINGS_RUNTIMES.has(runtime.type))
+    if (settingsSource && hasSettings && !PREPARED_SETTINGS_RUNTIMES.has(runtime.type))
       return c.json(personChatMissing.body, personChatMissing.status);
     const update = () =>
       runtime.updateSession(internalSessionId, {
@@ -186,11 +185,11 @@ export function mountSessionSettingsPatch(
         fastMode,
       });
     const updated = await (async () => {
-      if (!prepared || !hasSettings) return update();
+      if (!settingsSource || !hasSettings) return update();
       try {
-        return 'birth' in prepared.binding
-          ? await runPreparedSettingsMutation(sessionId, prepared.binding.birth, update)
-          : await runPreparedDraftSettingsMutation(sessionId, prepared.binding.draft, update);
+        return 'birth' in settingsSource
+          ? await runPreparedSettingsMutation(sessionId, settingsSource.birth, update)
+          : await runPreparedDraftSettingsMutation(sessionId, settingsSource.draft, update);
       } catch (error) {
         if (isPersonChatWriteRefusal(error))
           return { updated: false, permissionModePendingUntilNextTurn: false };
@@ -198,9 +197,9 @@ export function mountSessionSettingsPatch(
       }
     })();
     if (!updated.updated) return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
-    notePersonMode(sessionId, requestedMode);
+    if (!roomSeat) notePersonMode(sessionId, requestedMode);
 
-    if (!prepared) {
+    if (!settingsSource) {
       const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
       if (outside) return c.json(outside, 403);
     }

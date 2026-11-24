@@ -1,6 +1,8 @@
 import {
   and,
   eq,
+  inArray,
+  isNull,
   ne,
   or,
   roomSessions,
@@ -115,7 +117,7 @@ export function readRoomSeatBirth(db: Db, seat: SeatKey): RoomSeatBirth | undefi
   return { allocationCreatedAt: allocation.createdAt, seatCreatedAt: source.seatCreatedAt };
 }
 
-/** Retire only pending allocations that still belong to the seats the owner is removing. */
+/** Retire only the pending allocations and unbound drafts of the exact seats being removed. */
 export function forgetRoomSeatBirths(db: Db | DbTransaction, scope: SQL): void {
   const source = sessionBirthAllocations.internalSource;
   const seats = db
@@ -131,15 +133,27 @@ export function forgetRoomSeatBirths(db: Db | DbTransaction, scope: SQL): void {
         eq(roomSessions.createdAt, sql<string>`json_extract(${source}, '$.seatCreatedAt')`)
       )
     );
-  db.delete(sessionBirthAllocations)
+  const exactSource = and(
+    eq(sessionBirthAllocations.sourceKind, 'internal'),
+    sql`json_extract(${source}, '$.kind') = 'room-seat'`,
+    sql`exists ${seats}`
+  );
+  const exactDraftIds = db
+    .select({ sessionId: sessionBirthAllocations.sessionId })
+    .from(sessionBirthAllocations)
+    .where(exactSource);
+  db.delete(sessionMetadata)
     .where(
       and(
-        eq(sessionBirthAllocations.sourceKind, 'internal'),
-        sql`json_extract(${source}, '$.kind') = 'room-seat'`,
-        sql`exists ${seats}`
+        inArray(sessionMetadata.sessionId, exactDraftIds),
+        isNull(sessionMetadata.runtime),
+        eq(sessionMetadata.modelLaunchState, 'pending-v1'),
+        isNull(sessionMetadata.agentPath),
+        isNull(sessionMetadata.launchOrigin)
       )
     )
     .run();
+  db.delete(sessionBirthAllocations).where(exactSource).run();
 }
 
 /** Delete a seat and its exact pending birth inside the caller's transaction. */

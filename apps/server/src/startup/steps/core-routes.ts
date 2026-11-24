@@ -371,6 +371,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   refs.roomSessionPlacePort = roomSessionPlace({
     bindings: roomStore.sessionLedger,
     authors: roomAuthors,
+    seatBirth: roomStore.roomSeatBirth.bind(roomStore),
     worktrees: () => roomWorktrees,
     sessionRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
   });
