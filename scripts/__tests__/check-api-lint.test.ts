@@ -107,6 +107,16 @@ describe('operation-id', () => {
     expect(finding).toMatchObject({ kind: 'duplicate', rule: 'operation-id', unit: 'listAgents' });
     expect(describeFinding(finding!)).toContain('must be unique');
   });
+
+  it('fails ids that match once lowercased with underscores removed, as the generator does', () => {
+    const d = doc({
+      '/api/x/a': { get: op({ operationId: 'x.foo_bar' }) },
+      '/api/x/b': { get: op({ operationId: 'x.fooBar' }) },
+    });
+    expect(duplicateOperationIds(d)).toEqual({
+      'x.foo_bar': ['GET /api/x/a (x.foo_bar)', 'GET /api/x/b (x.fooBar)'],
+    });
+  });
 });
 
 describe('verb-path', () => {

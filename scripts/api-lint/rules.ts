@@ -180,18 +180,30 @@ export function operationIdItems(doc: OpenApiDocument): Items {
 
 /**
  * Operation ids two or more operations share: the hard half of
- * `operation-id`, which fails whatever the baseline says.
+ * `operation-id`, which fails whatever the baseline says. Two ids that match
+ * once lowercased with underscores removed count as shared, because the
+ * server's generator refuses that pair too.
  *
  * @param doc - The OpenAPI document.
  * @returns Shared id to the operations that carry it.
  */
 export function duplicateOperationIds(doc: OpenApiDocument): Record<string, string[]> {
-  const byId: Record<string, string[]> = {};
+  // Keyed the way the server's generator checks collisions
+  // (`services/core/openapi/operation-ids.ts`): lowercased, underscores removed.
+  const byKey = new Map<string, { id: string; label: string }[]>();
   for (const operation of operations(doc)) {
     const id = operation.op.operationId;
-    if (id) (byId[id] ??= []).push(label(operation));
+    if (!id) continue;
+    const key = id.toLowerCase().replaceAll('_', '');
+    byKey.set(key, [...(byKey.get(key) ?? []), { id, label: label(operation) }]);
   }
-  return Object.fromEntries(Object.entries(byId).filter(([, ops]) => ops.length > 1));
+  const found: Record<string, string[]> = {};
+  for (const ops of byKey.values()) {
+    if (ops.length < 2) continue;
+    const exact = ops.every((o) => o.id === ops[0]!.id);
+    found[ops[0]!.id] = ops.map((o) => (exact ? o.label : `${o.label} (${o.id})`));
+  }
+  return found;
 }
 
 /**
