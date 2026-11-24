@@ -442,6 +442,68 @@ describe('desktopReleaseRuns (tracked.desktop-release-wall-clock)', () => {
   });
 });
 
+describe('merges and release contents (tracked.merged-to-released)', () => {
+  const COMPARE = 'repos/o/r/compare/v0.9.0...v1.0.0?per_page=100&page=1';
+  const PICKED = '0123456789abcdef0123456789abcdef01234567';
+  /** The day's release v1.0.0, with v0.9.0 published before it, and its compare range. */
+  function withPredecessor(total = 3): Recording {
+    const rec = dayRecording();
+    rec.rest['repos/o/r/releases?per_page=100'] = [
+      { tag_name: 'v1.0.0', published_at: `${DAY}T15:00:00Z`, draft: false },
+      { tag_name: 'v0.9.0', published_at: '2026-09-10T15:00:00Z', draft: false },
+    ];
+    rec.rest[COMPARE] = {
+      total_commits: total,
+      commits: [
+        { sha: 'ccc', commit: { message: 'feat: x (#7)' } },
+        {
+          sha: 'ddd000000000ffff',
+          commit: { message: `fix: y (#8)\n\n(cherry picked from commit ${PICKED})` },
+        },
+        { sha: 'eee', commit: { message: 'chore(release): v1.0.0 (#9)' } },
+      ],
+    };
+    return rec;
+  }
+
+  it('records each merged PR s merge commit, timed by mergedAt', () => {
+    const { snap } = runCollect(dayRecording());
+    expect(snap.merges).toEqual([{ pr: 7, sha: 'ccc', at: `${DAY}T12:45:00Z` }]);
+  });
+
+  it('records a release with nothing published before it as a range it cannot tell, with no request', () => {
+    // The recording holds no compare response, so a request would have thrown.
+    const { r, snap } = runCollect(dayRecording());
+    expect(r.healthy).toBe(true);
+    expect(snap.release_contents).toEqual([
+      { tag: 'v1.0.0', published_at: `${DAY}T15:00:00Z`, base: null, shas: [] },
+    ]);
+  });
+
+  it('compares a release with the one before it: the range, cherry-pick sources, never the release commit', () => {
+    const { r, snap } = runCollect(withPredecessor());
+    expect(r.healthy).toBe(true);
+    expect(snap.release_contents).toEqual([
+      {
+        tag: 'v1.0.0',
+        published_at: `${DAY}T15:00:00Z`,
+        base: 'v0.9.0',
+        shas: ['0123456789ab', 'ccc', 'ddd000000000'],
+      },
+    ]);
+    // Only the day's own release is compared: v0.9.0 belongs to another day.
+    expect(snap.releases).toEqual([{ tag: 'v1.0.0', published_at: `${DAY}T15:00:00Z` }]);
+  });
+
+  it('says out loud when a compare range comes back short', () => {
+    const { snap } = runCollect(withPredecessor(150));
+    expect(snap.release_contents?.[0]?.shas).toHaveLength(3);
+    expect(snap.health.warnings.join('\n')).toContain(
+      'Release contents: the compare range for v1.0.0 came back shorter'
+    );
+  });
+});
+
 describe('repeatEjections (tracked.repeat-ejections)', () => {
   const build = (sha: string, pr: number, at: string, gates: string[]) => ({
     sha,
@@ -453,6 +515,7 @@ describe('repeatEjections (tracked.repeat-ejections)', () => {
   const pr = (ejections: { at: string; head: number }[]) => ({
     number: 1,
     mergedAt: '2026-09-18T20:00:00Z',
+    mergeSha: null,
     leadTimeMin: 1,
     queueWaitMin: 1,
     queueBuildMin: null,
@@ -535,6 +598,42 @@ describe('refreshOlderDays', () => {
     expect(gh.calls).toBe(2);
     // Done once: a second pass spends nothing.
     expect(refresh(rec, dataDir).gh.calls).toBe(0);
+  });
+
+  it('adds merges and release contents to a day collected before them, with no run listing', () => {
+    const { dataDir } = runCollect(dayRecording());
+    const snap0 = readData(dataDir, snapshotPath(DAY), SnapshotSchema)!;
+    delete snap0.merges;
+    delete snap0.release_contents;
+    writeFileSync(path.join(dataDir, snapshotPath(DAY)), JSON.stringify(snap0));
+    const rec = dayRecording();
+    rec.rest['repos/o/r/compare/v0.9.0...v1.0.0?per_page=100&page=1'] = {
+      total_commits: 1,
+      commits: [{ sha: 'ccc', commit: { message: 'feat: x (#7)' } }],
+    };
+    const s = setup();
+    const gh = replayGh(rec, 700, writeArtifact);
+    const opts = {
+      gh,
+      files: s.files,
+      workflows: s.workflows,
+      dataDir,
+      now: new Date(NOW),
+      tmpDir: temp('ci-steward-tmp-'),
+    };
+    const releases = [
+      { tag: 'v1.0.0', published_at: `${DAY}T15:00:00Z` },
+      { tag: 'v0.9.0', published_at: '2026-09-10T15:00:00Z' },
+    ];
+    expect(refreshOlderDays(opts, releases)).toEqual([DAY]);
+    const snap = readData(dataDir, snapshotPath(DAY), SnapshotSchema)!;
+    expect(snap.merges).toEqual([{ pr: 7, sha: 'ccc', at: `${DAY}T12:45:00Z` }]);
+    expect(snap.release_contents).toEqual([
+      { tag: 'v1.0.0', published_at: `${DAY}T15:00:00Z`, base: 'v0.9.0', shas: ['ccc'] },
+    ]);
+    // One merged-PR search and one compare; repeat_ejections was already there.
+    expect(gh.calls).toBe(2);
+    expect(refreshOlderDays(opts, releases)).toEqual([]);
   });
 
   it('leaves a day untouched when its run listing comes back short', () => {

@@ -24,7 +24,7 @@ const TIMELINE_PAGE = `pageInfo { hasNextPage endCursor }
       ... on HeadRefForcePushedEvent { createdAt }
     }`;
 
-const PR_FIELDS = `number createdAt mergedAt headRefName
+const PR_FIELDS = `number createdAt mergedAt headRefName mergeCommit { oid }
   timelineItems(first: 100, itemTypes: [${TIMELINE_TYPES}]) { ${TIMELINE_PAGE} }`;
 
 /**
@@ -63,6 +63,8 @@ export function mergedPrQuery(
 export interface PrFacts {
   number: number;
   mergedAt: string;
+  /** The merge commit on the default branch; null when GitHub did not report one. */
+  mergeSha: string | null;
   leadTimeMin: number;
   queueWaitMin: number | null;
   /** Entry to merge, for a PR never removed from the queue except by merging. */
@@ -104,9 +106,11 @@ function prFacts(p: Obj): PrFacts {
         head: pushes.filter((c) => c <= r).length,
       };
     });
+  const oid = isObj(p.mergeCommit) ? p.mergeCommit.oid : undefined;
   return {
     number: Number(p.number),
     mergedAt,
+    mergeSha: typeof oid === 'string' ? oid : null,
     leadTimeMin: round(minutesBetween(ready ?? String(p.createdAt), mergedAt), 1),
     queueWaitMin: adds.length ? round(minutesBetween(adds[0]!, mergedAt), 1) : null,
     queueBuildMin:
