@@ -302,13 +302,13 @@ expect() {
 # a parse error.
 presence() { case "$2" in *"$1"*) echo present ;; *) echo absent ;; esac; }
 
-mt=$repo_root/.github/workflows/merge-tail.yml
+mt=$repo_root/.github/workflows/review-redispatch.yml
 projection=$(sed -n 's/.*workflow_runs\[\]? | {\(.*\)}\].*/\1/p' "$mt")
 gate_src=$(cat "$gate")
 expect "the runs projection was found" yes \
   "$([[ -n "$projection" ]] && echo yes || echo no)"
 for field in status conclusion run_attempt updated_at; do
-  expect "merge-tail sends .$field" present "$(presence "$field" "$projection")"
+  expect "review-redispatch sends .$field" present "$(presence "$field" "$projection")"
   expect "the gate still reads .$field" present "$(presence ".$field" "$gate_src")"
 done
 

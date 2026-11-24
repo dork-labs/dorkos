@@ -2,7 +2,7 @@
 id: 260923-165836
 title: merge-tail refuses a GraphQL error body instead of reading it as a clean answer
 kind: incident-fix
-status: active
+status: reverted
 actor: agent
 gates:
   - wf.merge-tail.arm
@@ -56,3 +56,5 @@ verdict date by grepping merge-tail logs for `graphql-error` and `could-not-read
 Revert if `failure_rate@schedule` rises above 0.05 with the `is inert: GitHub gave no readable
 answer` error, while the same PRs read fine by hand: that is a routine partial-error answer this
 change treats as no answer.
+
+Retired 2026-11-24 with the workflow it changed (DOR-5124, ledger 261124-010000): PRs auto-merge at open, so nothing arms.

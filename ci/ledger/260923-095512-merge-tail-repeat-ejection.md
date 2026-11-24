@@ -2,7 +2,7 @@
 id: 260923-095512
 title: merge-tail stops re-arming a PR the queue rejected twice for the same check
 kind: incident-fix
-status: proposed
+status: reverted
 actor: agent
 gates:
   - wf.merge-tail.arm
@@ -42,3 +42,5 @@ the head's first check-suite time); until then this entry is judged by re-runnin
 above by hand. Revert if a flaky check starts failing twice in a row on unchanged heads often enough
 that merge-tail strands green PRs, visible as `repeat-queue-failure` skips on PRs that later merge
 with no new commit.
+
+Retired 2026-11-24 with the workflow it changed (DOR-5124, ledger 261124-010000): PRs auto-merge at open, so nothing arms.

@@ -60,8 +60,6 @@ const UNDOCUMENTED_ON_PURPOSE: Record<string, string> = {
   DORKOS_TEST_RUNTIME: 'e2e only — swaps the real runtime for the fake one',
   DORKOS_REPLAY_RECORDING:
     'demo-boot only — selects a recording in a marked throwaway home; requires the test runtime',
-  DORKOS_UPDATE_CHECK_DISABLED:
-    'tests only — keeps a contract test server off the npm registry (DOR-3226)',
   DORKOS_TEST_RUNTIME_SECONDARY: 'e2e only — a second fake runtime, for the multi-runtime UI',
   DORKOS_TEST_RUNTIME_CLAUDE_ALIAS: 'e2e only — a third fake runtime under the claude-code name',
   DORKOS_TEST_RUNTIME_DOE: 'e2e only — the DorkOS runtime beside the fake one, on the fake Cloud',

@@ -44,7 +44,7 @@
  * | `hero_install_copy`   | Visitor copies an install command (`install_ref` when the copy carried one, see {@link prepareInstallCopy}) |
  * | `hero_download`       | Visitor clicks a desktop-download link — macOS (install hero, nav, or the off-Mac terminal-hero link) or Windows (install hero, nav, or the "Other ways to install" link) |
  * | `docs_visit`          | Visitor lands on a `/docs` page                      |
- * | `marketplace_browse`  | Visitor lands on `/marketplace`                      |
+ * | `marketplace_browse`  | Visitor lands on `/marketplace` (checked filters, whether a search was active, a result bucket; no search words) |
  * | `github_click`        | Visitor clicks an outbound GitHub link (header, footer, or mobile hero CTA) |
  * | `newsletter_signup`   | Visitor completes the newsletter signup form         |
  *
@@ -96,6 +96,7 @@
 import posthog from 'posthog-js';
 import { env } from '@/env';
 import { hasDntSignal, hasGpcSignal } from '@/lib/consent';
+import { errorSignature } from '@/lib/telemetry/error-signature';
 import {
   createInstallRefToken,
   formatInstallRef,
@@ -210,16 +211,58 @@ export function trackDocsVisit(path: string): void {
   capture('docs_visit', { path });
 }
 
-/** Active filters on the marketplace catalog at the moment of the visit. */
-export interface MarketplaceBrowseFilters {
+/**
+ * A marketplace visit as analytics records it. The search words are not part
+ * of it: the caller passes only whether a search was active, so the words
+ * never reach this module (DOR-4992). The page URL, which can hold them, is
+ * cut down on the send path (`lib/telemetry/before-send.ts`).
+ */
+export interface MarketplaceBrowseVisit {
+  /** A package type from the catalog's own list, `other` for anything else. */
   type?: string;
+  /** A category from the catalog's own list, `other` for anything else. */
   category?: string;
-  q?: string;
+  /** Whether a search was active. */
+  hasQuery: boolean;
+  /** How many packages the page showed, or `null` when the catalog could not load. */
+  resultCount: number | null;
 }
 
-/** Fires when a visitor lands on the `/marketplace` catalog page. */
-export function trackMarketplaceBrowse(filters: MarketplaceBrowseFilters): void {
-  capture('marketplace_browse', { ...filters });
+/** How many packages a marketplace visit showed, coarsely. */
+export type ResultCountBucket = '0' | '1-5' | '6-20' | '21+' | 'unavailable';
+
+/**
+ * Bucket a result count so `marketplace_browse` says how a search went without
+ * a count precise enough to fingerprint one query: `0` (nothing matched, the
+ * case worth fixing), `1-5` (a narrow match), `6-20` (a page or so; the whole
+ * catalog of 15 packages, November 2026, lands here), `21+` (room for the
+ * catalog to grow), and `unavailable` when the catalog could not load, which
+ * is not the same as a search that matched nothing.
+ *
+ * @param count - How many packages the page showed, or `null` when it could not tell.
+ */
+export function resultCountBucket(count: number | null): ResultCountBucket {
+  if (count === null) return 'unavailable';
+  if (count <= 0) return '0';
+  if (count <= 5) return '1-5';
+  if (count <= 20) return '6-20';
+  return '21+';
+}
+
+/**
+ * Fires when a visitor lands on the `/marketplace` catalog page, with the
+ * checked type and category filters, whether a search was active, and a
+ * result-count bucket.
+ *
+ * @param visit - The visit, already checked by the marketplace feature.
+ */
+export function trackMarketplaceBrowse(visit: MarketplaceBrowseVisit): void {
+  capture('marketplace_browse', {
+    type: visit.type,
+    category: visit.category,
+    has_query: visit.hasQuery,
+    result_count: resultCountBucket(visit.resultCount),
+  });
 }
 
 /** Where on the site an outbound GitHub link was clicked. */
@@ -240,7 +283,16 @@ export function trackNewsletterSignup(source: string, emailDomain: string): void
 // one place for event names, and one place that already knows how to no-op
 // safely when no key is configured.
 
-/** Fires when a route-level error boundary catches an unhandled error. */
+/**
+ * Fires when a route-level error boundary catches an unhandled error. The
+ * event names the error by its signature (type and first stack frame) and
+ * Next.js's digest, never its message (DOR-4992). The error also goes to
+ * PostHog Error Tracking, whose `before_send` hook empties the message there
+ * (see `lib/telemetry/before-send.ts`).
+ *
+ * @param error - The error the boundary caught.
+ * @param scope - `route` for `app/error.tsx`, `global` for `app/global-error.tsx`.
+ */
 export function trackClientError(
   error: Error & { digest?: string },
   scope: 'route' | 'global'
@@ -248,7 +300,7 @@ export function trackClientError(
   if (!analyticsEnabled) return;
   posthog.captureException(error);
   capture(scope === 'global' ? 'global_error' : 'client_error', {
-    error_message: error.message,
+    error_signature: errorSignature(error),
     error_digest: error.digest,
   });
 }

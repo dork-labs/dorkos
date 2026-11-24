@@ -56,7 +56,7 @@ function suiteNames(text: string): string[] {
 
 /**
  * The suites `pnpm verify` runs, read from the real `test:scripts` chain. The
- * root package.json delegates to `scripts/test-scripts.sh` (DOR-4190: the list
+ * root package.json delegates to `scripts/run-scripts-suites.sh` (DOR-4190: the list
  * lives outside package.json so registering a suite does not change every
  * package's turbo hash), so this pins the delegation and reads that file,
  * comment lines dropped.
@@ -67,10 +67,11 @@ function localSuites(): string[] {
   };
   // Not a soft check: if the script is renamed away, every assertion below
   // would compare CI against an empty set and pass by vacuum.
-  expect(pkg.scripts?.['test:scripts'], 'root test:scripts must run scripts/test-scripts.sh').toBe(
-    'bash scripts/test-scripts.sh'
-  );
-  const chain = readFileSync(path.join(repoRoot, 'scripts/test-scripts.sh'), 'utf8')
+  expect(
+    pkg.scripts?.['test:scripts'],
+    'root test:scripts must run scripts/run-scripts-suites.sh'
+  ).toBe('bash scripts/run-scripts-suites.sh');
+  const chain = readFileSync(path.join(repoRoot, 'scripts/run-scripts-suites.sh'), 'utf8')
     .split('\n')
     .filter((line) => !line.trimStart().startsWith('#'))
     .join('\n');

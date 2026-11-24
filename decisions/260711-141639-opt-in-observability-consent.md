@@ -16,6 +16,12 @@ Accepted (DOR-293, implemented in PR-A: consent + heartbeat + /telemetry page). 
 namespace, public payload docs, and no-PII tests stand, but the heartbeat and install channels
 move from opt-in to anonymous opt-out under its Tier 1 rules.
 
+**Amendment proposed by** [261122-133041](261122-133041-telemetry-defaults-follow-the-build-channel.md)
+(proposed, awaiting Security review). Once accepted, the rule "Off by default, always" holds
+everywhere except stamped official release builds, where `install`, `heartbeat`, `usage` and the
+account link default on. The one consent namespace, the public payloads and the no-PII tests still
+stand.
+
 ## Context
 
 The brand promise is **private by default, opt-in, payloads documented publicly** (GTM plan

@@ -555,7 +555,14 @@ DorkOS checks the npm registry for new versions each time it starts. When a newe
 └───────────────────────────────────────┘
 ```
 
-The check runs in the background with a 3-second timeout, so it never slows down your startup, and caches results for 24 hours. To update:
+The check runs in the background with a 3-second timeout, so it never slows down your startup, and caches results for 24 hours. The server also asks npm when it starts, then at most once an hour while it runs (sooner after a failed check), so the app can show you when an update is ready. Both checks only ask npm for the latest version number; neither sends your settings or an install id.
+
+To turn both checks off, set any one of these environment variables to `1` (or `true`):
+
+- `DORKOS_UPDATE_CHECK_DISABLED` stops only the update checks.
+- `DO_NOT_TRACK` or `DORKOS_TELEMETRY_DISABLED` stops the update checks and every telemetry channel (see [Telemetry](/docs/self-hosting/telemetry)).
+
+To update:
 
 ```bash tab="npm"
 npm install -g dorkos@latest

@@ -61,6 +61,12 @@ A settings file you wrote by hand starts normally unless it includes retired set
         'Log verbosity, as a number from 0 (quietest) to 5 (noisiest). Leave it unset unless you are debugging.',
       type: 'number (0-5)',
     },
+    DORKOS_UPDATE_CHECK_DISABLED: {
+      description:
+        'Set to `1` or `true` to stop DorkOS asking npm for a newer version, both when the `dorkos` command starts and in the running server. `DO_NOT_TRACK` and `DORKOS_TELEMETRY_DISABLED` stop the checks too.',
+      type: 'boolean',
+      default: 'unset',
+    },
   }}
 />
 
@@ -1414,7 +1420,7 @@ Tell DorkBot what kind of work you do, and every agent on this machine knows who
 
 ### Telemetry
 
-DorkOS sends us nothing unless you turn it on. Three anonymous channels are available, all off by default: a daily heartbeat, marketplace install counts, and a few named feature-usage events (no prompts, code, paths, or session content). DorkOS shows a first-run notice explaining them, and you can turn them on any time with `dorkos telemetry enable` or the Privacy & Data settings tab. `DO_NOT_TRACK=1` keeps everything off no matter what the settings say. Crash reporting is separate and also stays off until you turn it on. See the full [telemetry contract](/docs/self-hosting/telemetry) for the exact payload.
+DorkOS sends us no usage data unless you turn it on. Three anonymous channels are available, all off by default: a daily heartbeat, marketplace install counts, and a few named feature-usage events (no prompts, code, paths, or chat content). DorkOS shows a first-run notice explaining them, and you can turn them on any time in the Privacy & Data settings tab or with `dorkos telemetry enable --channel <name>`. A bare `dorkos telemetry enable` turns on every channel it knows, crash reports included. `DO_NOT_TRACK=1` keeps every channel off no matter what the settings say. Crash reports, AI run summaries (`telemetry.aiMetadata`), and linking analytics to your account (`telemetry.linkAnalyticsToAccount`) are separate choices, and each stays off until you turn it on. See the full [telemetry contract](/docs/self-hosting/telemetry) for the exact payload.
 
 <TypeTable
   type={{
@@ -1438,13 +1444,25 @@ DorkOS sends us nothing unless you turn it on. Three anonymous channels are avai
     },
     'telemetry.usage': {
       description:
-        'Send a few named, anonymous feature-usage events to dorkos.ai, like "the app started" or "a chat was created", so we can see which features and runtimes get used. Never prompts, code, paths, or session content. Opt-in; a first-run notice is shown before anything sends.',
+        'Send a few named, anonymous feature-usage events to dorkos.ai, which passes them to PostHog. Opt-in; a first-run notice is shown before anything sends.',
+      type: 'boolean',
+      default: 'false',
+    },
+    'telemetry.aiMetadata': {
+      description:
+        'Send a short summary of each finished agent turn (model, runtime, token counts, time, cost) to dorkos.ai, which passes it to PostHog. Never a prompt, code, a path, or anything said. A separate opt-in. Set it here or in the Privacy & Data tab.',
+      type: 'boolean',
+      default: 'false',
+    },
+    'telemetry.linkAnalyticsToAccount': {
+      description:
+        "When you link this computer to a DorkOS account, also tie this install's usage data to that account. Takes effect at the next link. A separate opt-in, set by the checkbox in the account-link flow.",
       type: 'boolean',
       default: 'false',
     },
     'telemetry.errorReporting': {
       description:
-        'Send scrubbed crash reports to dorkos.ai when something breaks, never a third party. A separate opt-in from the anonymous channels. Sends the error type and a cleaned stack trace, never the message, paths, or session data. See the telemetry page.',
+        'Send scrubbed crash reports to dorkos.ai, which passes them to PostHog Error Tracking, when something breaks. A separate opt-in from the anonymous channels. Sends the error type and a cleaned stack trace, never the message, paths, or session data. See the telemetry page.',
       type: 'boolean',
       default: 'false',
     },
@@ -1458,10 +1476,13 @@ DorkOS sends us nothing unless you turn it on. Three anonymous channels are avai
 />
 
 <Callout type="info">
-  Two environment variables turn everything off no matter what these settings say: `DO_NOT_TRACK`
-  and `DORKOS_TELEMETRY_DISABLED`. Set either to `1` and DorkOS sends nothing. `dorkos telemetry
-  status` shows each channel and any override; `DORKOS_TELEMETRY_DEBUG=1` prints the exact payload
-  to your terminal instead of sending it. See the [telemetry page](/docs/self-hosting/telemetry).
+  Two environment variables turn every telemetry channel off no matter what these settings say:
+  `DO_NOT_TRACK` and `DORKOS_TELEMETRY_DISABLED`. Set either to `1` and every telemetry channel and
+  the update checks stay off. A few other requests keep going; see [what they do not
+  stop](/docs/self-hosting/telemetry#what-the-kill-switches-do-not-stop). Feedback you send by
+  pressing Send still goes, by design. `dorkos telemetry status` shows each channel and any
+  override; `DORKOS_TELEMETRY_DEBUG=1` prints the exact payload to your terminal instead of sending
+  it. See the [telemetry page](/docs/self-hosting/telemetry).
 </Callout>
 
 ### Experiments

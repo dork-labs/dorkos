@@ -2,7 +2,7 @@
 id: 261117-012245
 title: 'merge-tail: unreadable labels, and every other unreadable field, mean skip'
 kind: hygiene
-status: proposed
+status: reverted
 actor: agent
 gates:
   - wf.merge-tail.arm
@@ -30,3 +30,5 @@ against the previous gate, 17 of them as ARM.
 
 No workflow, trigger or permission changed. Revert if a fully green, unheld PR built by
 `should-arm-automerge-input.sh` from a real GitHub answer is skipped by one of these slugs.
+
+Retired 2026-11-24 with the workflow it changed (DOR-5124, ledger 261124-010000): PRs auto-merge at open, so nothing arms.

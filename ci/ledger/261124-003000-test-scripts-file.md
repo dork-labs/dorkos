@@ -15,7 +15,7 @@ field-changes: []
 Under DOR-4190. Registering a scripts suite edited `test:scripts` in the root package.json, which
 Turborepo hashes into every package. So a CI-only PR (#4192, Nov 23) put all 34 packages in
 scope with no cache: typecheck took 8m07s (6m09s in the turbo step), and lint about as long. The
-list now lives in `scripts/test-scripts.sh`, one suite per line; package.json only calls it, and
+list now lives in `scripts/run-scripts-suites.sh` (renamed Nov 24 from `test-scripts.sh`, which the parity test took for a fixture suite), one suite per line; package.json only calls it, and
 `shell-suite-parity.test.ts` pins the delegation and reads the file. The long line was also the
 merge-conflict hot spot between parallel CI PRs (three times on Nov 23).
 

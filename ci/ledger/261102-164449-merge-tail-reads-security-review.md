@@ -2,7 +2,7 @@
 id: 261102-164449
 title: merge-tail arms only when main's security-review is success at the head
 kind: hygiene
-status: proposed
+status: reverted
 actor: agent
 gates:
   - wf.merge-tail.arm
@@ -28,3 +28,5 @@ merge-tail arms 0 security-path PRs whose head's `security-review` is not `succe
 A workflow a PR adds can still forge `security-review: success` until the Security App exists (#3426's condition), so `arm.sh` stays the arming path and merge-tail stays off until Security says otherwise.
 
 Revert if merge-tail stops arming PRs whose `security-review` is `success`.
+
+Retired 2026-11-24 with the workflow it changed (DOR-5124, ledger 261124-010000): PRs auto-merge at open, so nothing arms.

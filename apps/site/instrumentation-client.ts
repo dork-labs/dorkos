@@ -1,6 +1,7 @@
 import posthog from 'posthog-js';
 import { env } from '@/env';
 import { deriveUiHost } from '@/lib/posthog-host';
+import { scrubAnalyticsEvent } from '@/lib/telemetry/before-send';
 
 // PostHog stays entirely uninitialized until NEXT_PUBLIC_POSTHOG_KEY is set
 // (a BUILD-time value: changing it in Vercel requires a fresh, uncached build).
@@ -65,6 +66,14 @@ if (env.NEXT_PUBLIC_POSTHOG_KEY) {
     respect_dnt: true,
     // Enables capturing unhandled exceptions via Error Tracking
     capture_exceptions: true,
+    // /privacy says the site does not log what you type (DOR-4992). Every
+    // event leaves with its page URLs cut to the catalog filters, and every
+    // `$exception`, captured here or by an error boundary, with its message
+    // emptied. See src/lib/telemetry/before-send.ts.
+    before_send: scrubAnalyticsEvent,
+    // The site uses no feature flags, and the flags request carries the raw
+    // landing address past before_send, so it is never made (DOR-4992).
+    advanced_disable_flags: true,
     // Turn on debug in development mode
     debug: env.NODE_ENV === 'development',
   });
