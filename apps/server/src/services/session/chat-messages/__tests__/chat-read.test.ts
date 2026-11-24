@@ -85,6 +85,18 @@ describe('readChat — include status', () => {
   });
 });
 
+describe('readChat — the link names the chat as it is called now (DOR-5202)', () => {
+  it('links the id a re-key moved the chat to, and keeps the id it was asked by', async () => {
+    deps.currentId = vi.fn((id: string) => (id === TARGET ? 'target-now' : id));
+
+    const { chat } = await readChat(deps, CALLER, { chat: TARGET, include: 'status' });
+
+    expect(chat.id).toBe(TARGET);
+    expect(chat.link).toBe('[Build](/r/dork:chat:target-now)');
+    expect(chat.ref).toBe('dork:chat:target-now');
+  });
+});
+
 describe('readChat — your own messages (DOR-2994)', () => {
   /** A message the caller sent the target. */
   function sent(id: string, status: 'queued' | 'delivered' | 'failed', extra = {}) {

@@ -66,7 +66,7 @@ describe('chat domain', () => {
       chat: {
         id: 'child',
         title: 'Build',
-        link: '/session?session=child',
+        link: '[Build](/r/dork:chat:child)',
         agent: 'Builder',
         state: 'never-started',
         startupFailure: 'Runtime unavailable.',

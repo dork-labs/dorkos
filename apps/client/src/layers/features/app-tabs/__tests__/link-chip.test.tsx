@@ -194,6 +194,8 @@ describe('a chat link in markdown', () => {
 
     const link = await screen.findByRole('link', { name: 'Chat not found' });
     expect(link).toHaveAttribute('data-chip', 'missing');
+    // Only a `/r/` link has a reference to resolve.
+    expect(transport.resolveDorkLink).not.toHaveBeenCalled();
   });
 
   it('keeps the link’s words when the chat cannot be read for another reason', async () => {
@@ -322,7 +324,8 @@ describe('a /r/ chat link in markdown (DOR-5202)', () => {
     expect(link.querySelector('[data-status="working"]')).not.toBeNull();
   });
 
-  it('says "Chat not found" for a chat that is gone', async () => {
+  it('says "Chat not found" for a chat that is gone, after asking the link once', async () => {
+    // The mock transport's resolver answers 404, as for a link that opens nothing.
     vi.mocked(transport.getSession).mockRejectedValue(notFound());
     renderMarkdown('See [the old chat](/r/dork:chat:chat-1)');
 
@@ -330,6 +333,25 @@ describe('a /r/ chat link in markdown (DOR-5202)', () => {
       'data-chip',
       'missing'
     );
+    expect(transport.resolveDorkLink).toHaveBeenCalledTimes(1);
+    expect(transport.resolveDorkLink).toHaveBeenCalledWith('dork:chat:chat-1');
+  });
+
+  it('names the chat a re-key moved it to, and keeps the link as written', async () => {
+    vi.mocked(transport.getSession).mockImplementation(async (id: string) => {
+      if (id === 'old-1') throw notFound();
+      return createMockSession({ id, title: 'Fix the login bug', cwd: '/Users/kai/api' });
+    });
+    vi.mocked(transport.resolveDorkLink).mockResolvedValueOnce({
+      kind: 'chat',
+      sessionId: 'chat-1',
+    });
+    renderMarkdown('See [the fix](/r/dork:chat:old-1)');
+
+    const link = await screen.findByRole('link', { name: /^Fix the login bug, Scout/ });
+    expect(link).toHaveAttribute('data-chip', 'ready');
+    expect(link).toHaveAttribute('href', '/r/dork:chat:old-1');
+    expect(transport.resolveDorkLink).toHaveBeenCalledTimes(1);
   });
 
   it('opens through the /r/ route in place on one click', async () => {
