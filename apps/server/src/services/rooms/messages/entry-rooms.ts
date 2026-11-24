@@ -34,11 +34,10 @@ const MAX_ENTRY_ROOMS = 4;
  * Every room that holds a message with this id, in room order then log order,
  * so the capped answer is the same on every call.
  *
- * **It scans `room_entries`.** The table is keyed by room, and nothing indexes
- * an entry id on its own, so every call reads the whole table. Any caller can
- * reach it: a person opening a `/r/` link, and an agent through the
- * `resolve_link` tool or `GET /api/links/target`. Nothing on a hot path may
- * call it. A follow-up adds an index on `room_entries(id)`.
+ * **It is one index lookup.** `idx_room_entries_id` (migration 218, DOR-5196)
+ * leads with the entry id, so a call reads only the rows that carry it, never
+ * the whole table. Any caller can reach it: a person opening a `/r/` link, and
+ * an agent through the `resolve_link` tool or `GET /api/links/target`.
  *
  * @param db - The server database.
  * @param entryId - The message's id, exactly as minted.

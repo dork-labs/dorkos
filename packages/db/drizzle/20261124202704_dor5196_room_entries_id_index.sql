@@ -1,0 +1,1 @@
+CREATE INDEX `idx_room_entries_id` ON `room_entries` (`id`);
