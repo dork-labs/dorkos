@@ -174,6 +174,10 @@ export { SlackAdapter, SLACK_MANIFEST } from './adapters/slack/index.js';
 // Built-in adapters
 export { ClaudeCodeAdapter, CLAUDE_CODE_MANIFEST } from './adapters/claude-code/index.js';
 export type { ApprovalAuthorizer } from './adapters/claude-code/index.js';
+export {
+  CARRIED_TURN_LIMITS_FIELD,
+  TURN_SHAPING_PAYLOAD_FIELDS,
+} from './adapters/claude-code/index.js';
 export type {
   ClaudeCodeAdapterConfig,
   ClaudeCodeAdapterDeps,

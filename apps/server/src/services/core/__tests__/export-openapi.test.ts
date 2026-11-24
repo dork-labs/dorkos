@@ -207,7 +207,7 @@ describe('export-openapi', () => {
   it('documents additive relay receipts, uniform missing reads and safe availability errors', () => {
     const paths = generateOpenAPISpec().paths ?? {};
     const post = paths['/api/relay/messages']?.post;
-    expect(post?.description).toContain('caller-supplied `from`');
+    expect(post?.description).toContain('The server sets its sender.');
     expect(Object.keys(post?.responses ?? {}).sort()).toEqual([
       '200',
       '400',

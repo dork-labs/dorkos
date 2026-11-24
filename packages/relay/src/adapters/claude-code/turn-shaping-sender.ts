@@ -4,19 +4,23 @@
  *
  * @module relay/adapters/claude-code/turn-shaping-sender
  */
-import type { MessageOpts } from '@dorkos/shared/agent-runtime';
+import type {
+  MessageOpts,
+  TurnPermissionBound,
+  TurnPermissionCeiling,
+} from '@dorkos/shared/agent-runtime';
 
 /**
  * Senders whose payload may shape a turn — its folder, the agent it acts as and
  * its permission mode: a person reached through a binding (`relay.human.*`),
  * the server's own principals (`relay.system.*`) and chat bridges
  * (`relay.bridge.*`). Every other sender — an agent (`relay.agent.*`), a
- * session (`relay.session.*`), an external MCP caller — is read for its words
- * only. An agent's `from` is stamped by the server from its own identity, so
- * an agent cannot claim to be a person. A caller of the HTTP API
- * (`POST /api/relay/messages`) may name a `relay.human.*` sender and is then
- * trusted as the person, exactly as the rest of `/api` trusts its caller; only
- * the server's own principals are refused there.
+ * session (`relay.session.*`), an external MCP or HTTP caller — is read for its
+ * words only. The server sets `from` on every path into the bus: an agent's
+ * from its own identity, and on the HTTP API (`POST /api/relay/messages`) a
+ * `relay.human.*` sender only for the person's own turn, while any other
+ * caller's message goes from its own address with these fields removed
+ * (DOR-5151).
  *
  * @param from - The envelope's sender address.
  */
@@ -29,13 +33,81 @@ export function isTurnShapingSender(from: string): boolean {
 }
 
 /**
+ * The payload fields that shape a turn, read only from a sender that may shape
+ * it ({@link isTurnShapingSender}). A route that forwards a caller's payload for
+ * any other sender removes them.
+ */
+export const TURN_SHAPING_PAYLOAD_FIELDS = [
+  'cwd',
+  'forAgent',
+  '__bindingPermissions',
+  '__untrustedWords',
+] as const;
+
+/**
+ * The payload field that carries the limits the sender's own turns hold onto
+ * the turn its message starts: `{ permissionCeiling?, carriedMarks? }`, as
+ * `launcherTurnCeiling` builds them on the server (DOR-5151). The server sets
+ * it; a route that forwards a caller's payload removes the caller's copy.
+ * Every bound in it can only hold a turn lower, never raise it.
+ */
+export const CARRIED_TURN_LIMITS_FIELD = '__carriedTurnLimits';
+
+/** The limits a message carries onto its turn ({@link CARRIED_TURN_LIMITS_FIELD}). */
+type CarriedTurnLimits = Pick<MessageOpts, 'permissionCeiling' | 'carriedMarks'>;
+
+const ASKS = new Set(['always', 'when-risky', 'never']);
+const REACH = new Set(['read', 'edit', 'workspace', 'everything']);
+
+/** One carried bound as written, or the runtime's default when it can't be read. */
+function readBound(value: unknown): TurnPermissionBound {
+  if (value === 'runtime-default' || typeof value !== 'object' || value === null) {
+    return 'runtime-default';
+  }
+  const level = value as Record<string, unknown>;
+  const teammate = level.teammate;
+  const teammateOk =
+    teammate === undefined ||
+    (Array.isArray(teammate) &&
+      teammate.every((o) => typeof o?.roomId === 'string' && typeof o?.authorId === 'string'));
+  if (!ASKS.has(level.asks as string) || !REACH.has(level.reach as string) || !teammateOk) {
+    return 'runtime-default';
+  }
+  return value as TurnPermissionBound;
+}
+
+/**
+ * The limits a payload carries onto its turn. Anything there that can't be
+ * read holds the turn at the runtime's default and marks it, never looser.
+ */
+function carriedTurnLimitsOf(payload: Record<string, unknown> | null): CarriedTurnLimits {
+  const raw = payload?.[CARRIED_TURN_LIMITS_FIELD];
+  if (raw === undefined) return {};
+  if (typeof raw !== 'object' || raw === null) {
+    return { permissionCeiling: 'runtime-default', carriedMarks: { outsider: true } };
+  }
+  const { permissionCeiling, carriedMarks } = raw as Record<string, unknown>;
+  const bounds = permissionCeiling === undefined ? [] : [permissionCeiling].flat();
+  return {
+    ...(bounds.length > 0 ? { permissionCeiling: bounds.map(readBound) } : {}),
+    ...(carriedMarks !== undefined ? { carriedMarks: { outsider: true } } : {}),
+  };
+}
+
+/** A ceiling as the list of bounds that all hold. */
+function boundsOf(ceiling: TurnPermissionCeiling | undefined): TurnPermissionBound[] {
+  if (ceiling === undefined) return [];
+  return Array.isArray(ceiling) ? [...ceiling] : [ceiling as TurnPermissionBound];
+}
+
+/**
  * The power bounds and marks a relay turn is sent with, decided by its sender.
  *
  * **The ceiling.** A binding's permission mode only reaches a conversation that
  * is NEW: a runtime resolves a turn as per-send → stored → its own default, and
  * a warm or stored conversation keeps the level it already has. So a sender
  * that may not shape the turn (another agent, the A2A gateway, an external MCP
- * client) also bounds THIS turn at the runtime's default, whatever the
+ * or HTTP caller) also bounds THIS turn at the runtime's default, whatever the
  * conversation is set to. Power flows downstream, never up (spec
  * `trusted-by-default-flip` §4).
  *
@@ -46,15 +118,32 @@ export function isTurnShapingSender(from: string): boolean {
  * person. It is a mark, never a ceiling: the turn keeps its agent's set level
  * (DOR-3440), and a ceiling would lower it.
  *
+ * **What the sender's own turns carry (DOR-5151).** A message sent over HTTP
+ * by an agent whose running turns are marked or held carries those limits
+ * ({@link CARRIED_TURN_LIMITS_FIELD}), exactly as a chat it starts over the
+ * sessions API does, so the message's turn holds them too. They add to the
+ * bounds above and never lift one.
+ *
  * @param trustedShaper - Whether the sender may shape the turn ({@link isTurnShapingSender}).
- * @param stranger - Whether the flag is on and the host found the sender unproven.
+ * @param markStrangers - Whether DOR-3858's flag is on, so a sender the host found unproven
+ *   (`__untrustedWords` from a shaping sender) is marked.
+ * @param payload - The message's payload, for whether the host found the sender unproven and
+ *   the limits it carries.
  */
 export function turnPowerOptions(
   trustedShaper: boolean,
-  stranger: boolean
-): Pick<MessageOpts, 'permissionCeiling' | 'carriedMarks'> {
+  markStrangers: boolean,
+  payload: Record<string, unknown> | null = null
+): CarriedTurnLimits {
+  const stranger = markStrangers && trustedShaper && payload?.__untrustedWords === true;
+  const carried = carriedTurnLimitsOf(payload);
+  const bounds: TurnPermissionBound[] = [
+    ...(trustedShaper ? [] : ['runtime-default' as const]),
+    ...boundsOf(carried.permissionCeiling),
+  ];
+  const marked = stranger || carried.carriedMarks !== undefined;
   return {
-    ...(trustedShaper ? {} : { permissionCeiling: 'runtime-default' as const }),
-    ...(stranger ? { carriedMarks: { outsider: true as const } } : {}),
+    ...(bounds.length > 0 ? { permissionCeiling: bounds.length === 1 ? bounds[0]! : bounds } : {}),
+    ...(marked ? { carriedMarks: { outsider: true as const } } : {}),
   };
 }

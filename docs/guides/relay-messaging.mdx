@@ -58,11 +58,11 @@ curl -X POST http://localhost:4242/api/relay/messages \
   -d '{
     "subject": "relay.agent.backend",
     "payload": { "task": "Run the test suite" },
-    "from": "relay.human.console.my-client"
+    "from": "relay.external.my-script"
   }'
 ```
 
-This HTTP example lets you choose a human sender address. Read [Sending from local programs](#sending-from-local-programs) for access checks and sender authority.
+DorkOS decides who a message is from. Read [Sending from local programs](#sending-from-local-programs) for access checks and who a message is sent as.
 
 </Step>
 <Step>
@@ -150,9 +150,15 @@ With sign-in off, this endpoint needs no app credential. DorkOS checks the reque
 
 Browser requests still follow CORS (the browser rule that controls which sites may call your server). Requests without an `Origin` header are allowed by this policy. CORS does not authenticate the sender.
 
-You choose `from`. DorkOS refuses reserved server senders, destinations, and reply addresses. It permits human addresses such as `relay.human.console.my-client`. This address is a caller's claim; it does not prove who sent the request. Signing in permits the request but does not bind `from` to the signed-in person. A program run by an agent can also choose a permitted human address through HTTP.
+DorkOS refuses reserved server senders, destinations, and reply addresses. It also sets who a message is from. You still send a `from`, but only you, in the DorkOS app, keep it:
 
-A permitted `relay.human.*` sender can supply three fields that shape a receiving turn:
+- **You, in the app**, send from the address you choose, including a person's address such as `relay.human.console`. With nobody signed up yet, any program on this computer counts as you, because there is no one to sign in as.
+- **An agent** sends from its own address, whatever its `from` says.
+- **Any other program** sends from `relay.external.http`.
+
+A program that names a person's address (`relay.human.*`) is refused. When the app's own window is refused this way, it asks for your password once and then sends. A per-user API key counts as a program here, not as you.
+
+Your own message can shape the turn it starts with three fields:
 
 - `payload.cwd`: the working folder.
 - `payload.forAgent`: the agent's home path.
@@ -160,9 +166,9 @@ A permitted `relay.human.*` sender can supply three fields that shape a receivin
 
 Existing folder and agent checks still apply. Without the nested approval mode, the Relay turn handler uses `default`. A top-level `payload.permissionMode` does not set it. The receiving runtime determines which approval modes it supports.
 
-DorkOS's MCP tools (MCP is the standard that lets AI tools talk to each other) use the sender DorkOS assigns them. They do not accept a caller-chosen `from`. MCP authentication and tool permissions are separate checks. Messages from agent, chat, or external MCP sender addresses cannot use those three fields to shape the receiving turn. This restriction follows the sender address, not the program making an HTTP call.
+A message from anyone else can't shape the turn: DorkOS removes those three fields. DorkOS's MCP tools (MCP is the standard that lets AI tools talk to each other) work the same way: they use the sender DorkOS assigns them, and MCP authentication and tool permissions are separate checks.
 
-A message from one of those senders also runs no looser than the receiving runtime's starting level, even in a chat already set higher. A message an agent sends never gives the receiving agent more power than a new chat gets, and a message from another company's agent over A2A is never treated as one of yours.
+A message from an agent, a chat, an MCP tool or a program also runs no looser than the receiving runtime's starting level, even in a chat already set higher. When an agent's own running work is held back or marked, a message it sends carries that onto the turn it starts. A message an agent sends never gives the receiving agent more power than a new chat gets, and a message from another company's agent over A2A is never treated as one of yours.
 
 An `account` request follows separate host account rules. It applies to a new chat and grants no sender authority.
 
@@ -236,7 +242,7 @@ curl -X POST http://localhost:4242/api/relay/messages \
   -d '{
     "subject": "relay.agent.backend",
     "payload": { "task": "Refactor the auth module" },
-    "from": "relay.human.console.my-client",
+    "from": "relay.external.my-script",
     "budget": {
       "maxHops": 3,
       "ttl": 1798761600000,

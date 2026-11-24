@@ -52558,7 +52558,7 @@
           "Relay"
         ],
         "summary": "Send a relay message",
-        "description": "Publish a message using the caller-supplied `from`. Reserved server senders, destinations, and reply addresses are refused. `from` is a caller's claim, not authenticated attribution. HTTP authentication permits the request but does not bind the sender to the authenticated person. A program run by an agent can also choose a permitted `relay.human.*` address.\n\nWith login off, no app credential is required. The Host allowlist permits loopback addresses, configured trusted hosts, and the live tunnel unless `DORKOS_ALLOW_INSECURE_BIND` disables it. With login on, a session cookie or per-user bearer API key is required and the Host guard is off. CORS browser-origin policy still applies and permits requests without Origin; it does not authenticate the sender.\n\nA permitted human sender may supply `payload.cwd`, `payload.forAgent` (agent home path), and `payload.__bindingPermissions.permissionMode`. Existing folder and agent checks apply. The nested mode defaults to `default`; top-level `payload.permissionMode` does not set it. Supported approval modes depend on the receiving runtime. MCP send tools instead publish a server-resolved sender under separate MCP authentication and tool permissions. Agent, session, and external MCP sender addresses cannot use those three turn-shaping fields. Account selection follows separate host policy for new conversations and grants no sender authority.",
+        "description": "Publish a message. The server sets its sender. The person's own turn (no agent identity, and the person's browser session wherever one can exist) sends from the `from` it names. An agent whose token verified sends from its own registered address, or `relay.external.http` when the registry does not know it. Any other caller sends from `relay.external.http`. A caller other than the person naming a `relay.human.*` sender is refused with `person_required`; an app window without a session is asked for the password instead (`person_session_required`). Reserved server senders, destinations, and reply addresses are refused.\n\nWith login off, no app credential is required. The Host allowlist permits loopback addresses, configured trusted hosts, and the live tunnel unless `DORKOS_ALLOW_INSECURE_BIND` disables it. With login on, a session cookie or per-user bearer API key is required and the Host guard is off; an API key is not the person. CORS browser-origin policy still applies and permits requests without Origin; it does not authenticate the sender.\n\nThe person's message may supply `payload.cwd`, `payload.forAgent` (agent home path), and `payload.__bindingPermissions.permissionMode`. Existing folder and agent checks apply. The nested mode defaults to `default`; top-level `payload.permissionMode` does not set it. Supported approval modes depend on the receiving runtime. Any other caller's message has those fields removed, runs no looser than the receiving runtime's default, and carries the marks its agent's running turns hold. MCP send tools instead publish a server-resolved sender under separate MCP authentication and tool permissions. Account selection follows separate host policy for new conversations and grants no sender authority.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -52678,7 +52678,7 @@
             }
           },
           "401": {
-            "description": "Login requires a verified session or per-user API key",
+            "description": "Login requires a verified session or per-user API key, or an app window without a session must confirm the person (person_session_required)",
             "content": {
               "application/json": {
                 "schema": {
@@ -52688,7 +52688,7 @@
             }
           },
           "403": {
-            "description": "Reserved sender, destination or reply address",
+            "description": "Reserved sender, destination or reply address, or a person's address from someone other than the person",
             "content": {
               "application/json": {
                 "schema": {
