@@ -948,3 +948,41 @@ export function markSlotlessApprovals(store: {
   if (slotless.length === 0) return;
   store.set('extensions', { ...extensions, legacySlotless: [...new Set(slotless)] });
 }
+
+/**
+ * Migration body: record that no registered Claude account is open to agents'
+ * own picks yet, by writing `agentsMayPick: false` on every row that lacks the
+ * field (DOR-5033).
+ *
+ * Absent already reads as closed, so this changes no behaviour: it puts the
+ * choice on disk, where Settings and a hand-editing person both see it. A row
+ * that already carries the field, `true` or `false`, is kept as stored, so a
+ * person's choice is never overwritten and running it twice changes nothing.
+ * Every other member of every row is kept. A config with no rows is left
+ * alone. Writes the whole `runtimes` section, as `keepAccountOutOfAutoMoves`
+ * does.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedAgentsMayPickOff(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (!runtimes || typeof runtimes !== 'object' || Array.isArray(runtimes)) return;
+  const block = (runtimes as Record<string, unknown>).claudeCode;
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return;
+  const accounts = (block as Record<string, unknown>).accounts;
+  if (!Array.isArray(accounts)) return;
+  const lacks = (row: unknown): row is Record<string, unknown> =>
+    !!row && typeof row === 'object' && !Array.isArray(row) && !('agentsMayPick' in row);
+  if (!accounts.some(lacks)) return;
+  const rows = accounts.map((row: unknown) =>
+    lacks(row) ? { ...row, agentsMayPick: false } : row
+  );
+  store.set('runtimes', {
+    ...(runtimes as Record<string, unknown>),
+    claudeCode: { ...(block as Record<string, unknown>), accounts: rows },
+  });
+}

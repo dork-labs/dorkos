@@ -1808,6 +1808,17 @@
           "noAutoMove"
         ]
       },
+      "AgentsMayPick": {
+        "type": "object",
+        "properties": {
+          "agentsMayPick": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agentsMayPick"
+        ]
+      },
       "KeepAwakeStatus": {
         "type": "object",
         "properties": {
@@ -25977,6 +25988,128 @@
           }
         },
         "operationId": "runtimes.updateClaudeCodeAccountsNoAutoMove"
+      }
+    },
+    "/api/runtimes/claude-code/accounts/{id}/agents-may-pick": {
+      "put": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Let agents pick a Claude account by name",
+        "description": "With `agentsMayPick: true`, an agent may start a chat on this registered account by naming it while no account advisor (Flow) is set up; `false` refuses it again. Opening an account waits for the owner to confirm it’s them; closing it is immediate. Recorded in Activity. Main (`default`) has no registry row, so it answers `404`. Only a person may call it: a request from another site, a caller that names itself an agent (`X-DorkOS-Agent`), and, with Require login on, a caller without a signed-in session are refused with `403`. With Require login off, a local caller that sends no agent header is trusted, and an approved extension's own browser code shares the app's page, so it passes in either posture. Each change is recorded in Activity.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The Claude account’s id; `default` is Main"
+            },
+            "required": true,
+            "description": "The Claude account’s id; `default` is Main",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentsMayPick"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The flag as it is now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentsMayPick"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "There is no such registered account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The change could not be saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "runtimes.updateClaudeCodeAccountsAgentsMayPick"
       }
     },
     "/api/keep-awake": {

@@ -2,7 +2,7 @@
  * The only writers of the account rules (spec `flow-multiproject` §8.1, §8.6):
  * a project's allow list, an account's `onlyProjects`, the rename that
  * carries an account id through every allow list, and an account's
- * `noAutoMove` flag (Re-seat P0).
+ * `noAutoMove` (Re-seat P0) and `agentsMayPick` (DOR-5033) flags.
  *
  * **Never a dotted key path.** `projectAccounts` is keyed by absolute project
  * roots, and roots contain dots (`/Users/x/client.app`), which `conf` would
@@ -96,6 +96,31 @@ export function writeOnlyProjects(
     if (found || !isRecord(row) || row.id !== accountId) return row;
     found = true;
     return { ...row, onlyProjects: value };
+  });
+  if (!found) return false;
+  writeBlock(store, runtimes, { ...block, accounts: next });
+  return true;
+}
+
+/**
+ * Let agents pick an account by name, or refuse them: its `agentsMayPick` flag
+ * (DOR-5033). Written as `true` or `false`, never removed, so a row says what a
+ * person last chose. The first row with the id is the one every reader lists,
+ * so it is the one written.
+ *
+ * @param store - The config.
+ * @param accountId - A registry id.
+ * @param on - `true` to let agents pick it.
+ * @returns False when `accountId` names no registry row.
+ */
+export function writeAgentsMayPick(store: RuntimesStore, accountId: string, on: boolean): boolean {
+  const { runtimes, block } = readBlock(store);
+  const rows = Array.isArray(block.accounts) ? block.accounts : [];
+  let found = false;
+  const next = rows.map((row: unknown) => {
+    if (found || !isRecord(row) || row.id !== accountId) return row;
+    found = true;
+    return { ...row, agentsMayPick: on };
   });
   if (!found) return false;
   writeBlock(store, runtimes, { ...block, accounts: next });

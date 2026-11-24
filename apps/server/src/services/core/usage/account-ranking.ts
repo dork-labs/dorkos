@@ -6,8 +6,8 @@
  * validates its answer; without one, or when it fails, core's default ranks by
  * weekly headroom. {@link checkAccountLaunch} is the gate for an account an
  * AGENT or a RELAY message names. With an advisor registered, the advisor
- * decides. Without one, an agent's pick follows core's own rule, the one
- * core's own automatic picks follow (DOR-5033), and a relay message's pick is
+ * decides. Without one, an agent's pick follows core's own opt-in rule (only an
+ * account a person let agents pick, DOR-5033), and a relay message's pick is
  * refused, because anyone outside can write one. A person's own pick never
  * goes through it.
  *
@@ -118,11 +118,13 @@ export interface AccountLaunchRequest {
 export type AccountLaunchDecision = { allowed: true } | { allowed: false; reason: string };
 
 /** Refusal of a relay message's account when no advisor is registered (spec D6). */
-export const NO_ADVISOR_REASON =
-  'A message can pick an account only when a mini app such as Flow says which accounts it may use.';
+export const NO_ADVISOR_REASON = 'A message can pick an account only when Flow allows it.';
 
 /** Refusal of the runtime's main sign-in for an agent, with no advisor registered (DOR-5033). */
 const MAIN_ACCOUNT_REASON = 'Agents can’t pick the main sign-in. Name another account.';
+
+/** Refusal of an account no person opened to agents (`agentsMayPick`), with no advisor registered. */
+const NOT_LET_REASON = 'A person hasn’t let agents pick this account. Ask them in Settings.';
 
 /** Refusal of an account a person kept agents off (`noAutoMove`), with no advisor registered. */
 const KEPT_OFF_REASON = 'A person kept agents off this account.';
@@ -590,18 +592,20 @@ export async function checkAccountLaunch(
 
 /**
  * Core's own answer to an agent naming an account when no advisor is
- * registered (DOR-5033; spec `claude-account-fleet` D5, as amended): the rule
- * core's own automatic picks already follow (a room seat's move, the work
- * queue), plus the main sign-in, which an agent never picks. Allowed only for
- * an account core ranks for the project that is not the main sign-in, not DorkOS
- * credits, not one a person kept agents off (its "Move agents here
- * automatically" switch), and that DorkOS may pick on its own (not out of usage,
- * a sign-in that needs no look, not last seen signed out). Never asks an
- * extension, so a mini app that is off or broken cannot block it.
+ * registered (DOR-5033; spec `claude-account-fleet` D5, as amended). Opt-in:
+ * allowed only for an account a person let agents pick (its row's
+ * `agentsMayPick`, Settings' "Agents may pick this account" switch), on top of
+ * every refusal core's own automatic picks make. So it is refused when core does
+ * not rank it for the project, when it is the main sign-in (`default`, its alias
+ * row, or any row on Main's folder), DorkOS credits (by id, or a row on the
+ * credits folder or a link to it), kept off agents by a person (`noAutoMove`),
+ * or not one DorkOS may pick on its own now (out of usage, a sign-in that needs
+ * a look, last seen signed out). Never asks an extension, so a mini app that is
+ * off, broken or still loading cannot widen it.
  *
  * @param runtime - The session's runtime.
  * @param accountId - The account the agent named.
- * @param project - The folder's project, or null; the account rules already allowed it.
+ * @param project - The folder's project (null for none), already allowed by the account rules.
  */
 function coreAgentLaunch(
   runtime: string,
@@ -611,12 +615,24 @@ function coreAgentLaunch(
   if (accountId === CREDITS_ACCOUNT_ID) return { allowed: false, reason: CREDITS_REASON };
   const row = coreRanking(runtime, project).find((a) => a.id === accountId);
   if (!row) return { allowed: false, reason: ACCOUNT_HIDDEN_REASON };
-  if (row.isDefault === true || row.id === IMPLICIT_ACCOUNT_ID) {
+  const listed = isLedgerRuntime(runtime)
+    ? (getAccountUsageStore()?.listAccounts(runtime) ?? [])
+    : [];
+  const account = listed.find((a) => a.id === accountId && a.routable);
+  const folder = account ? signinRoot(account) : row.usage.path;
+  const main = listed.find((a) => a.isDefault);
+  const mainFolder = main ? signinRoot(main) : null;
+  if (
+    row.isDefault === true ||
+    row.id === IMPLICIT_ACCOUNT_ID ||
+    (folder !== null && mainFolder !== null && folder === mainFolder)
+  ) {
     return { allowed: false, reason: MAIN_ACCOUNT_REASON };
   }
-  if (runtime === 'claude-code' && row.usage.path !== null && isCreditsClaudeRoot(row.usage.path)) {
+  if (runtime === 'claude-code' && folder !== null && isCreditsClaudeRoot(folder)) {
     return { allowed: false, reason: CREDITS_REASON };
   }
+  if (account?.agentsMayPick !== true) return { allowed: false, reason: NOT_LET_REASON };
   if (row.noAutoMove === true) return { allowed: false, reason: KEPT_OFF_REASON };
   return mayAutoPick(row) ? { allowed: true } : { allowed: false, reason: row.reason };
 }

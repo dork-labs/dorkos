@@ -62,6 +62,24 @@ describe('resolveRuntimeAccounts (contract §1.1a rev 6d)', () => {
     ]);
   });
 
+  it('carries a stored agentsMayPick true onto the account, and nothing for false or absent (DOR-5033)', () => {
+    const { accounts } = resolveRuntimeAccounts('claude-code', {
+      config: config([
+        { id: 'northwind', path: '/home/op/.claude-northwind', agentsMayPick: true },
+        { id: 'side', path: '/home/op/.claude-side', agentsMayPick: false },
+        { id: 'plain', path: '/home/op/.claude-plain' },
+      ]),
+      home: HOME,
+      realpath,
+    });
+    expect(accounts.map((a) => [a.id, a.agentsMayPick])).toEqual([
+      ['northwind', true],
+      ['side', undefined],
+      ['plain', undefined],
+      ['default', undefined],
+    ]);
+  });
+
   it('a routable row in the default folder (through a symlink) makes default its alias', () => {
     const { accounts } = resolveRuntimeAccounts('claude-code', {
       config: config([{ id: 'main', path: '/links/main', label: null }]),

@@ -548,8 +548,18 @@ describe('session_start', () => {
       });
     });
 
+    it('an account no person let agents pick, when no advisor is registered', async () => {
+      expect(await expectRefused({ ...BASE, account: 'client' })).toMatchObject({
+        code: 'ACCOUNT_REFUSED',
+        error: 'A person hasn’t let agents pick this account. Ask them in Settings.',
+      });
+    });
+
     it('an account a person kept agents off, when no advisor is registered', async () => {
-      installStore([account('work'), { ...account('client'), noAutoMove: true }]);
+      installStore([
+        account('work'),
+        { ...account('client'), agentsMayPick: true, noAutoMove: true },
+      ]);
       expect(await expectRefused({ ...BASE, account: 'client' })).toMatchObject({
         code: 'ACCOUNT_REFUSED',
         error: 'A person kept agents off this account.',
@@ -724,6 +734,7 @@ describe('session_start', () => {
   });
 
   it('starts on a named account with no advisor registered, by core’s own rule (DOR-5033)', async () => {
+    installStore([account('work'), { ...account('client'), agentsMayPick: true }]);
     const result = await asScout()({ ...BASE, account: 'client' });
     expect(payloadOf(result)).toMatchObject({ account: { id: 'client', label: 'CLIENT' } });
     expect(vi.mocked(dispatchMessage).mock.calls[0]![0].accountHint).toBe('client');

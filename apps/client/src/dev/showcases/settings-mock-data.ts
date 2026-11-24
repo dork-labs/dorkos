@@ -217,6 +217,9 @@ export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
         // Kept to the client's own repository (spec `flow-multiproject` §8.5),
         // so the row shows its "Only for" line.
         onlyProjects: [{ root: '/Users/dev/Dev/acme-app', name: 'acme-app' }],
+        // Opened to agents' own picks (DOR-5033), so the showcase draws the
+        // "Agents may pick this account" switch on as well as off.
+        agentsMayPick: true,
       },
       {
         id: 'claude3',

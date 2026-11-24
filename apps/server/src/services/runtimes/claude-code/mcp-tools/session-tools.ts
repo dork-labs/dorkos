@@ -31,10 +31,10 @@
  *   the caller's model cannot do counts as Default.
  * - **No account the operator has not opened to agents.** A named account is
  *   checked by `checkAccountLaunch`: the account advisor (the Flow extension)
- *   decides when one is registered; otherwise core's own rule does (DOR-5033),
- *   which never allows the main sign-in, DorkOS credits, or an account a person
- *   kept agents off. Leaving it out walks the usual ladder, exactly as a
- *   person's launch does.
+ *   decides when one is registered; otherwise core's own opt-in rule does
+ *   (DOR-5033): only an account a person let agents pick in Settings, and never
+ *   the main sign-in, DorkOS credits, or an account kept out of automatic moves.
+ *   Leaving it out walks the usual ladder, exactly as a person's launch does.
  * - **No pile-up.** Every launch counts against `runtimes.maxAgentChats` in the
  *   launch service, released when its turn settles.
  * - **No way around an extension's limits.** The new chat records who started
@@ -600,9 +600,9 @@ export function getSessionTools(deps: McpToolDeps, resolveCaller?: SessionStartC
       'session_start',
       'Start a new session of your own (it runs as you) with a first message, in a folder, and ' +
         'return its id at once (the session then works on its own). Optionally on a named account (the account usage ' +
-        'tool lists them), which the account policy must allow: never the main sign-in, DorkOS ' +
-        'credits, or an account a person kept agents off. Otherwise the usual account is ' +
-        'used. The session runs at your own permission level unless you ask for a lower one; a ' +
+        'tool lists them), which the account policy must allow. Without Flow, only an account a ' +
+        'person let agents pick in Settings, never the main sign-in or DorkOS credits. Leave ' +
+        'account out and the usual account is used. The session runs at your own permission level unless you ask for a lower one; a ' +
         'higher one is refused, and never above what a person set for you. From your own chat ' +
         'at Full autonomy, with nothing outside in view, it starts at Full; otherwise Full ' +
         'autonomy is granted only when named in permissionMode. ' +

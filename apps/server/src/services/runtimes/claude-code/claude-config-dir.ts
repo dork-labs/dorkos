@@ -934,6 +934,8 @@ export function describeClaudeCodeAccounts(
         // Sent only when on, so Settings' "Move agents here automatically" switch
         // reads it, and a row without it reads the same wire as before.
         ...(account.noAutoMove === true ? { noAutoMove: true } : {}),
+        // Sent only when on, for Settings' "Agents may pick this account" switch.
+        ...(account.agentsMayPick === true ? { agentsMayPick: true } : {}),
       })),
     ...describeAccountRules(config, unavailable),
     credits,

@@ -110,6 +110,12 @@ export interface RuntimeAccount {
    * `noAutoMove`, Re-seat P0); absent otherwise, an implicit default included.
    */
   noAutoMove?: true;
+  /**
+   * `true` when a person let agents start chats on this account by naming it
+   * (its row's `agentsMayPick`, DOR-5033); absent otherwise, an implicit
+   * default included.
+   */
+  agentsMayPick?: true;
   /** True when `<runtime>:default` names this account (the standalone default, or its alias). */
   isDefault: boolean;
   /** The ledger file's id (`<ledgerId>.json`), or `null` when it has no ledger. */
@@ -297,6 +303,7 @@ function readRegistered(
         ledgerId: routable ? row.id : null,
         ...(typeof row.renamedFrom === 'string' ? { renamedFrom: row.renamedFrom } : {}),
         ...(row.noAutoMove === true ? { noAutoMove: true as const } : {}),
+        ...(row.agentsMayPick === true ? { agentsMayPick: true as const } : {}),
       };
     });
   return {

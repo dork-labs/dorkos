@@ -19,6 +19,7 @@ import type {
 } from '@dorkos/shared/account-usage';
 import type {
   AccountEligibilityResponse,
+  AgentsMayPick,
   NoAutoMove,
   OnlyProjectsResponse,
 } from '@dorkos/shared/project-schemas';
@@ -135,6 +136,14 @@ export function createAccountMethods(baseUrl: string) {
         baseUrl,
         `/runtimes/claude-code/accounts/${encodeURIComponent(accountId)}/no-auto-move`,
         { method: 'PUT', body: JSON.stringify({ noAutoMove }) }
+      );
+    },
+
+    setAccountAgentsMayPick(accountId: string, agentsMayPick: boolean): Promise<AgentsMayPick> {
+      return fetchJSON<AgentsMayPick>(
+        baseUrl,
+        `/runtimes/claude-code/accounts/${encodeURIComponent(accountId)}/agents-may-pick`,
+        { method: 'PUT', body: JSON.stringify({ agentsMayPick }) }
       );
     },
   };

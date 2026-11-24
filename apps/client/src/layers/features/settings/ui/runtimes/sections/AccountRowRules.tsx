@@ -1,9 +1,10 @@
 /**
  * The rules under one Claude account's row in Settings → Runtimes: where it may
  * work ("Only for client-app" and "Limit to projects…") and, for a registered
- * account, whether DorkOS moves room agents to it on its own (Re-seat P0).
+ * account, whether DorkOS moves room agents to it on its own (Re-seat P0) and
+ * whether agents may pick it by name while Flow is off (DOR-5033).
  *
- * Both writes are person-only routes; a refusal shows the server's sentence.
+ * Every write is a person-only route; a refusal shows the server's sentence.
  *
  * @module features/settings/ui/runtimes/sections/AccountRowRules
  */
@@ -32,6 +33,11 @@ export interface AccountRule {
    * with no registry row (Main standing alone), which has no switch.
    */
   noAutoMove?: boolean;
+  /**
+   * Whether agents may pick it by name while Flow is off (DOR-5033). Absent for
+   * an account with no registry row, which agents never pick.
+   */
+  agentsMayPick?: boolean;
 }
 
 /**
@@ -47,6 +53,68 @@ export function useSetAccountNoAutoMove(accountId: string) {
     mutationFn: (noAutoMove: boolean) => transport.setAccountNoAutoMove(accountId, noAutoMove),
     onSuccess: invalidate,
   });
+}
+
+/**
+ * Let agents pick an account by name, or refuse them, then refresh what the
+ * rules feed.
+ *
+ * @param accountId - The account's registry id.
+ */
+function useSetAccountAgentsMayPick(accountId: string) {
+  const transport = useTransport();
+  const invalidate = useInvalidateRules();
+  return useMutation({
+    mutationFn: (agentsMayPick: boolean) =>
+      transport.setAccountAgentsMayPick(accountId, agentsMayPick),
+    onSuccess: invalidate,
+  });
+}
+
+/**
+ * "Agents may pick this account": off until a person opens it. Core's own rule
+ * reads it while no mini app such as Flow decides (DOR-5033).
+ */
+function AgentsMayPickSwitch({
+  accountId,
+  agentsMayPick,
+  disabled,
+}: {
+  accountId: string;
+  agentsMayPick: boolean;
+  disabled: boolean;
+}) {
+  const id = useId();
+  const save = useSetAccountAgentsMayPick(accountId);
+  // While a change is saving, show where it is going rather than where it was.
+  const on = save.isPending ? save.variables === true : agentsMayPick;
+  return (
+    <div className="mt-1 space-y-1">
+      <div className="flex items-start gap-2">
+        <Switch
+          id={id}
+          size="sm"
+          className="mt-0.5"
+          checked={on}
+          onCheckedChange={(next) => save.mutate(next)}
+          disabled={disabled || save.isPending}
+          data-testid="claude-account-agents-may-pick"
+        />
+        <div className="min-w-0">
+          <Label htmlFor={id} className="text-xs font-normal">
+            Agents may pick this account
+          </Label>
+          <p className="text-muted-foreground text-xs">Used when Flow is off.</p>
+        </div>
+      </div>
+      {save.error && (
+        <p role="alert" className="text-destructive flex items-start gap-1.5 text-xs">
+          <CircleAlert className="mt-px size-3 shrink-0" aria-hidden />
+          <span>{messageOf(save.error)}</span>
+        </p>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -99,7 +167,8 @@ function AutoMoveSwitch({
 
 /**
  * The rules under an account's row: the "Only for" line, the "Limit to
- * projects…" dialog, and the automatic-moves switch when the account has one.
+ * projects…" dialog, and the automatic-moves and agents-may-pick switches when
+ * the account has a registry row.
  *
  * @param props.name - What the person calls the account.
  * @param props.rule - Its id and rules.
@@ -141,6 +210,13 @@ export function AccountRowRules({
         <AutoMoveSwitch
           accountId={rule.accountId}
           noAutoMove={rule.noAutoMove}
+          disabled={disabled}
+        />
+      )}
+      {rule.agentsMayPick !== undefined && (
+        <AgentsMayPickSwitch
+          accountId={rule.accountId}
+          agentsMayPick={rule.agentsMayPick}
           disabled={disabled}
         />
       )}

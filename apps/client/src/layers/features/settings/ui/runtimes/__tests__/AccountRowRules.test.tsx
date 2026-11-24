@@ -81,3 +81,50 @@ describe('AccountRowRules — automatic moves', () => {
     );
   });
 });
+
+const PICK_SWITCH = { name: 'Agents may pick this account' };
+
+describe('AccountRowRules — agents may pick this account (DOR-5033)', () => {
+  // Purpose: the default reads off, and turning it on lets agents name the account.
+  it('shows the switch off, and turning it on sends agentsMayPick: true', async () => {
+    const transport = renderRules({
+      accountId: 'work',
+      onlyProjects: null,
+      noAutoMove: false,
+      agentsMayPick: false,
+    });
+    const toggle = screen.getByRole('switch', PICK_SWITCH);
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByText('Used when Flow is off.')).toBeInTheDocument();
+
+    await userEvent.click(toggle);
+
+    await waitFor(() =>
+      expect(transport.setAccountAgentsMayPick).toHaveBeenCalledWith('work', true)
+    );
+  });
+
+  // Purpose: an account a person let agents pick reads on, and turning it off takes it back.
+  it('shows the switch on for an account agents may pick, and turning it off sends false', async () => {
+    const transport = renderRules({
+      accountId: 'work',
+      onlyProjects: null,
+      noAutoMove: false,
+      agentsMayPick: true,
+    });
+    const toggle = screen.getByRole('switch', PICK_SWITCH);
+    expect(toggle).toBeChecked();
+
+    await userEvent.click(toggle);
+
+    await waitFor(() =>
+      expect(transport.setAccountAgentsMayPick).toHaveBeenCalledWith('work', false)
+    );
+  });
+
+  // Purpose: Main with no registry row is never picked by an agent, so it has no switch.
+  it('draws no switch for an account with no registry row', () => {
+    renderRules({ accountId: 'default', onlyProjects: null });
+    expect(screen.queryByRole('switch', PICK_SWITCH)).not.toBeInTheDocument();
+  });
+});

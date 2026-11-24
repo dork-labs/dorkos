@@ -288,6 +288,28 @@ describe('PATCH /api/config, who may write what', () => {
     });
   });
 
+  describe('an account agents may pick by name (DOR-5033)', () => {
+    const row = { id: 'claude-ab1', path: '/Users/me/.claude-ab1', label: 'AB1', color: null };
+    const storedFlag = async () =>
+      (
+        (await store()).getDot('runtimes.claudeCode.accounts') as Array<{
+          id: string;
+          agentsMayPick?: unknown;
+        }>
+      ).find((a) => a.id === 'claude-ab1')?.agentsMayPick;
+    const flagPatch = (agentsMayPick: boolean) => ({
+      runtimes: { claudeCode: { accounts: [{ ...row, agentsMayPick }] } },
+    });
+
+    it('refuses an agent letting itself pick the account, and keeps it off', async () => {
+      expect((await asPerson(send(flagPatch(false)))).status).toBe(200);
+      expect(await storedFlag()).toBe(false);
+
+      await expectAgentRefused(flagPatch(true), 'runtimes.claudeCode.accounts[].agentsMayPick');
+      expect(await storedFlag()).toBe(false);
+    });
+  });
+
   describe('every operator-only setting, with login on (DOR-505)', () => {
     it('refuses a caller holding a per-user API key the login gate and every other operator-only path', async () => {
       // A program with one of the person's keys satisfies `sessionGate` as a

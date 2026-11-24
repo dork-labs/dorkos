@@ -5010,6 +5010,10 @@ export const ServerConfigSchema = z
                 description:
                   'True when DorkOS never moves a room agent to this account on its own (a person still may). Absent otherwise, and on a server too old to report it. Change it with PUT /api/runtimes/claude-code/accounts/:id/no-auto-move',
               }),
+              agentsMayPick: z.boolean().optional().openapi({
+                description:
+                  'True when a person let agents start chats on this account by naming it, while no mini app such as Flow decides (DOR-5033). Absent otherwise, and on a server too old to report it. Change it with PUT /api/runtimes/claude-code/accounts/:id/agents-may-pick',
+              }),
             })
           )
           .openapi({ description: 'The Claude accounts the operator has registered' }),
