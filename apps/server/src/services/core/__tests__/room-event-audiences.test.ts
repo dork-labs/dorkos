@@ -182,7 +182,8 @@ it('every in-process listener is a reviewed one, and none picks out a read curso
     'services/notifications/emitters/shift-report.ts',
   ]);
   expect(listeners.filter(({ named }) => named.length > 0)).toEqual([]);
-});
+  // It reads every server source file, which took about 6 s on a loaded CI shard.
+}, 30_000);
 
 it('requires room and dynamic audiences at compile time in both APIs', () => {
   const path = join(sourceRoot, 'services/core/event-fan-out.ts');
