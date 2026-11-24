@@ -415,8 +415,9 @@ export function RoomSurface({
         onRetry={stream.retry}
         onScrollToRow={scrollToRow}
       />
-      {/* Why nothing will answer, in a channel with no agent in it — the app's
-          to say, not a line written into the room (DOR-2823). */}
+      {/* Why nothing will answer, in a channel with no agent in it or a DM
+          whose agents all left the team — the app's to say, not a line
+          written into the room (DOR-2823, DOR-2365). */}
       <NoAgentHint
         room={room}
         hasEntries={entries.length > 0}
